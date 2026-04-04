@@ -21,6 +21,60 @@ function tourProductLabelKo(
   return (product.name_ko || product.name || product.name_en || '투어').trim();
 }
 
+function ticketBookingStatusBadgeClass(status: string | null | undefined): string {
+  const s = (status ?? '').toLowerCase();
+  switch (s) {
+    case 'pending':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'confirmed':
+      return 'bg-green-100 text-green-800';
+    case 'cancelled':
+    case 'canceled':
+      return 'bg-red-100 text-red-800';
+    case 'completed':
+      return 'bg-blue-100 text-blue-800';
+    case 'credit':
+      return 'bg-cyan-100 text-cyan-800';
+    case 'cancellation_requested':
+      return 'bg-orange-100 text-orange-800';
+    case 'guest_change_requested':
+      return 'bg-purple-100 text-purple-800';
+    case 'time_change_requested':
+      return 'bg-indigo-100 text-indigo-800';
+    case 'payment_requested':
+      return 'bg-pink-100 text-pink-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
+function ticketBookingStatusLabelKo(status: string | null | undefined): string {
+  const s = (status ?? '').toLowerCase();
+  switch (s) {
+    case 'pending':
+      return '대기';
+    case 'confirmed':
+      return '확정';
+    case 'cancelled':
+    case 'canceled':
+      return '취소';
+    case 'completed':
+      return '완료';
+    case 'credit':
+      return '크레딧';
+    case 'cancellation_requested':
+      return '전체 취소 요청';
+    case 'guest_change_requested':
+      return '인원 변경 요청';
+    case 'time_change_requested':
+      return '시간 변경 요청';
+    case 'payment_requested':
+      return '결제 요청';
+    default:
+      return (status ?? '').trim() || '—';
+  }
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -546,6 +600,7 @@ export default function TicketInvoiceUploadModal({
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 text-gray-600 sticky top-0">
                   <tr>
+                    <th className="px-2 py-1.5 text-left font-medium whitespace-nowrap">상태</th>
                     <th className="px-2 py-1.5 text-left font-medium">회사</th>
                     <th className="px-2 py-1.5 text-left font-medium min-w-[7rem]">투어연결</th>
                     <th className="px-2 py-1.5 text-right font-medium whitespace-nowrap">투어총인원</th>
@@ -563,6 +618,14 @@ export default function TicketInvoiceUploadModal({
                     const fieldDisabled = applyBusy || ocrPhase === 'running' || rowBusy;
                     return (
                       <tr key={b.id} className="bg-white hover:bg-gray-50/80">
+                        <td className="px-2 py-1.5 align-middle max-w-[7.5rem]">
+                          <span
+                            className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold rounded-full leading-snug text-center ${ticketBookingStatusBadgeClass(b.status)}`}
+                            title={b.status ?? ''}
+                          >
+                            {ticketBookingStatusLabelKo(b.status)}
+                          </span>
+                        </td>
                         <td className="px-2 py-1.5 text-gray-900">{b.company || '—'}</td>
                         <td className="px-2 py-1.5 text-gray-800">
                           {b.tour_id && b.tours ? (

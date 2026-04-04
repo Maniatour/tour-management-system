@@ -26,6 +26,7 @@ export type TicketBookingLike = {
   rn_number: string;
   ea: number;
   company: string;
+  status?: string;
   invoice_number?: string | null;
   /** ticket_bookings.note */
   note?: string | null;

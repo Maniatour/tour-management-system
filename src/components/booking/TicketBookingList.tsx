@@ -1632,6 +1632,7 @@ export default function TicketBookingList() {
       (booking.rn_number || '').toLowerCase().includes(searchLower) ||
       (booking.invoice_number || '').toLowerCase().includes(searchLower) ||
       (booking.zelle_confirmation_number || '').toLowerCase().includes(searchLower) ||
+      (booking.note || '').toLowerCase().includes(searchLower) ||
       (booking.company || '').toLowerCase().includes(searchLower)
     );
   };

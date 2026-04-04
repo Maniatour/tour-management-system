@@ -5,6 +5,23 @@ import { supabase } from '@/lib/supabase';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useTranslations } from 'next-intl';
 
+/** 원격 DB에 ticket_bookings.zelle_confirmation_number 가 아직 없을 때 PostgREST PGRST204 */
+function isMissingZelleConfirmationColumnError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string; message?: string };
+  return (
+    e.code === 'PGRST204' &&
+    typeof e.message === 'string' &&
+    e.message.includes('zelle_confirmation_number')
+  );
+}
+
+/**
+ * 한 번 스키마에 컬럼이 없다고 확인되면, 같은 탭 세션 동안은 Zelle 필드를 보내지 않음.
+ * (매 저장마다 400 → 재시도 PATCH가 나가는 것을 막음. 마이그레이션 적용 후에는 새로고침하면 다시 전송됨.)
+ */
+let omitZelleConfirmationInTicketBookingsPayload = false;
+
 interface TicketBooking {
   id?: string;
   category: string;
@@ -714,6 +731,9 @@ export default function TicketBookingForm({
         : []
       const mergedFileUrls = [...existingFileUrls, ...newUploadedUrls]
 
+      const zelleDb =
+        formData.zelle_confirmation_number?.trim() ? formData.zelle_confirmation_number.trim() : null
+
       // DB에 없는 필드(supplier_product_id, uploaded_files 등)를 제거한 payload만 전송 (400 방지)
       const dbPayload = {
         category: formData.category,
@@ -727,9 +747,9 @@ export default function TicketBookingForm({
         payment_method: formData.payment_method || null,
         rn_number: formData.rn_number || null,
         invoice_number: formData.invoice_number?.trim() ? formData.invoice_number.trim() : null,
-        zelle_confirmation_number: formData.zelle_confirmation_number?.trim()
-          ? formData.zelle_confirmation_number.trim()
-          : null,
+        ...(omitZelleConfirmationInTicketBookingsPayload
+          ? {}
+          : { zelle_confirmation_number: zelleDb }),
         tour_id: tourId,
         reservation_id: reservationId,
         note: formData.note || null,
@@ -756,7 +776,9 @@ export default function TicketBookingForm({
           payment_method: dbPayload.payment_method,
           rn_number: dbPayload.rn_number,
           invoice_number: dbPayload.invoice_number,
-          zelle_confirmation_number: dbPayload.zelle_confirmation_number,
+          ...(omitZelleConfirmationInTicketBookingsPayload
+            ? {}
+            : { zelle_confirmation_number: zelleDb }),
           tour_id: dbPayload.tour_id,
           reservation_id: dbPayload.reservation_id,
           note: dbPayload.note,
@@ -765,23 +787,38 @@ export default function TicketBookingForm({
           uploaded_file_urls: dbPayload.uploaded_file_urls
         };
         console.log('업데이트할 데이터:', updateData);
-        
-        const { error: updateError } = await (supabase as any)
-          .from('ticket_bookings')
-          .update(updateData)
-          .eq('id', booking.id);
+
+        let updateError = (
+          await (supabase as any).from('ticket_bookings').update(updateData).eq('id', booking.id)
+        ).error;
+        if (isMissingZelleConfirmationColumnError(updateError)) {
+          omitZelleConfirmationInTicketBookingsPayload = true;
+          console.warn(
+            '[ticket_bookings] zelle_confirmation_number 컬럼이 스키마에 없어 해당 필드 없이 다시 저장합니다. ' +
+              'supabase/migrations/20260401160000_ticket_bookings_zelle_confirmation_number.sql 을 적용하면 Zelle 확인#도 저장됩니다.'
+          );
+          const { zelle_confirmation_number: _z, ...withoutZelle } = updateData;
+          updateError = (
+            await (supabase as any).from('ticket_bookings').update(withoutZelle).eq('id', booking.id)
+          ).error;
+        }
         error = updateError;
         savedId = booking.id;
       } else {
         // 새로 생성인 경우 - DB 컬럼만 insert
         console.log('새로 생성 모드');
-        const { data: insertedData, error: insertError } = await (supabase as any)
-          .from('ticket_bookings')
-          .insert(dbPayload)
-          .select()
-          .single();
-        error = insertError;
-        savedId = insertedData?.id;
+        let insertRes = await (supabase as any).from('ticket_bookings').insert(dbPayload).select().single();
+        if (isMissingZelleConfirmationColumnError(insertRes.error)) {
+          omitZelleConfirmationInTicketBookingsPayload = true;
+          console.warn(
+            '[ticket_bookings] zelle_confirmation_number 컬럼이 스키마에 없어 해당 필드 없이 다시 저장합니다. ' +
+              'supabase/migrations/20260401160000_ticket_bookings_zelle_confirmation_number.sql 을 적용하면 Zelle 확인#도 저장됩니다.'
+          );
+          const { zelle_confirmation_number: _z, ...withoutZelle } = dbPayload;
+          insertRes = await (supabase as any).from('ticket_bookings').insert(withoutZelle).select().single();
+        }
+        error = insertRes.error;
+        savedId = insertRes.data?.id;
       }
 
       if (error) throw error;
