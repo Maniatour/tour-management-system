@@ -258,19 +258,46 @@ export default function TicketBookingList() {
   const [invoiceAttachmentMap, setInvoiceAttachmentMap] = useState<Map<string, string[]>>(
     () => new Map()
   );
+  /** 동일 Invoice#의 Zelle 확인 스크린샷 URL */
+  const [zelleAttachmentMap, setZelleAttachmentMap] = useState<Map<string, string[]>>(
+    () => new Map()
+  );
   const [invoiceQuickPhotoUrls, setInvoiceQuickPhotoUrls] = useState<string[]>([]);
+  const [zelleQuickPhotoUrls, setZelleQuickPhotoUrls] = useState<string[]>([]);
   const [invoicePhotoLoading, setInvoicePhotoLoading] = useState(false);
   const [invoicePhotoUploading, setInvoicePhotoUploading] = useState(false);
+  const [zellePhotoUploading, setZellePhotoUploading] = useState(false);
   const [invoicePhotoRemoving, setInvoicePhotoRemoving] = useState(false);
   const invoicePhotoInputRef = useRef<HTMLInputElement>(null);
+  const zellePhotoInputRef = useRef<HTMLInputElement>(null);
+  const invoiceQuickPhotoUrlsRef = useRef<string[]>([]);
+  const zelleQuickPhotoUrlsRef = useRef<string[]>([]);
   /** 디바운스 조회와 업로드가 겹칠 때 오래된 응답이 목록을 지우지 않도록 세대 관리 */
   const invoicePhotoLoadGenRef = useRef(0);
   const [invoiceLightbox, setInvoiceLightbox] = useState<{
     company: string;
     invoiceNumber: string;
     urls: string[];
+    kind?: 'invoice' | 'zelle';
   } | null>(null);
   const [invoiceLightboxIndex, setInvoiceLightboxIndex] = useState(0);
+  /** Invoice·Zelle 모달에서 Ctrl+V 붙여넣기 대상 (해당 박스를 클릭한 뒤에만 적용) */
+  const [invoiceModalPasteTarget, setInvoiceModalPasteTarget] = useState<
+    'invoice' | 'zelle' | null
+  >(null);
+
+  useEffect(() => {
+    invoiceQuickPhotoUrlsRef.current = invoiceQuickPhotoUrls;
+  }, [invoiceQuickPhotoUrls]);
+  useEffect(() => {
+    zelleQuickPhotoUrlsRef.current = zelleQuickPhotoUrls;
+  }, [zelleQuickPhotoUrls]);
+
+  const attachmentModalBusy =
+    invoiceQuickSaving ||
+    invoicePhotoUploading ||
+    zellePhotoUploading ||
+    invoicePhotoRemoving;
 
   // 상품 이름을 로케일에 따라 반환하는 함수
   const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
@@ -334,6 +361,7 @@ export default function TicketBookingList() {
       }
       if (companies.size === 0) {
         setInvoiceAttachmentMap(new Map());
+        setZelleAttachmentMap(new Map());
         return;
       }
       const companyList = [...companies];
@@ -342,6 +370,7 @@ export default function TicketBookingList() {
       /** .in() URL 길이·서버 한도를 피하기 위해 회사 목록을 나눔 */
       const COMPANY_BATCH = 40;
       const m = new Map<string, string[]>();
+      const zm = new Map<string, string[]>();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ticket_invoice_attachments 타입 미정
       const sb = supabase as any;
       for (let ci = 0; ci < companyList.length; ci += COMPANY_BATCH) {
@@ -350,7 +379,7 @@ export default function TicketBookingList() {
         for (;;) {
           const { data, error } = await sb
             .from('ticket_invoice_attachments')
-            .select('company, invoice_number, file_urls')
+            .select('company, invoice_number, file_urls, zelle_file_urls')
             .in('company', batch)
             .range(from, from + ATTACH_PAGE - 1);
           if (error) {
@@ -361,17 +390,21 @@ export default function TicketBookingList() {
             company: string;
             invoice_number: string;
             file_urls: unknown;
+            zelle_file_urls?: unknown;
           }[];
           for (const row of rows) {
             const inv = row.invoice_number?.trim();
             if (!inv) continue;
-            m.set(makeInvoiceKey(row.company, inv), normalizeDbFileUrls(row.file_urls));
+            const key = makeInvoiceKey(row.company, inv);
+            m.set(key, normalizeDbFileUrls(row.file_urls));
+            zm.set(key, normalizeDbFileUrls(row.zelle_file_urls));
           }
           if (rows.length < ATTACH_PAGE) break;
           from += ATTACH_PAGE;
         }
       }
       setInvoiceAttachmentMap(m);
+      setZelleAttachmentMap(zm);
     },
     []
   );
@@ -382,6 +415,7 @@ export default function TicketBookingList() {
     if (!inv || !co) {
       invoicePhotoLoadGenRef.current += 1;
       setInvoiceQuickPhotoUrls([]);
+      setZelleQuickPhotoUrls([]);
       return;
     }
     const gen = ++invoicePhotoLoadGenRef.current;
@@ -390,13 +424,14 @@ export default function TicketBookingList() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('ticket_invoice_attachments')
-        .select('file_urls')
+        .select('file_urls, zelle_file_urls')
         .eq('company', co)
         .eq('invoice_number', inv)
         .maybeSingle();
       if (error) throw error;
       if (gen !== invoicePhotoLoadGenRef.current) return;
       setInvoiceQuickPhotoUrls(normalizeDbFileUrls(data?.file_urls));
+      setZelleQuickPhotoUrls(normalizeDbFileUrls(data?.zelle_file_urls));
     } catch (e) {
       console.error(e);
       if (gen !== invoicePhotoLoadGenRef.current) return;
@@ -482,6 +517,7 @@ export default function TicketBookingList() {
       if (!bookingsData || bookingsData.length === 0) {
         setBookings([]);
         setInvoiceAttachmentMap(new Map());
+        setZelleAttachmentMap(new Map());
         return;
       }
 
@@ -884,6 +920,8 @@ export default function TicketBookingList() {
     setInvoiceQuickBooking(booking);
     setInvoiceQuickDraft(booking.invoice_number?.trim() || '');
     setInvoiceQuickPhotoUrls([]);
+    setZelleQuickPhotoUrls([]);
+    setInvoiceModalPasteTarget(null);
   };
 
   useEffect(() => {
@@ -899,6 +937,7 @@ export default function TicketBookingList() {
     const v = invoiceQuickDraft.trim();
     const co = invoiceCompanyNorm(invoiceQuickBooking.company);
     const urlsSnapshot = [...invoiceQuickPhotoUrls];
+    const zelleSnapshot = [...zelleQuickPhotoUrls];
     const id = invoiceQuickBooking.id;
     setInvoiceQuickSaving(true);
     try {
@@ -909,7 +948,7 @@ export default function TicketBookingList() {
       if (error) throw error;
 
       /** 붙여넣기 직후 DB 반영·맵 새로고침 타이밍 문제를 줄이기 위해, 저장 시점에 첨부 URL도 한 번 더 맞춤 */
-      if (co && v && urlsSnapshot.length > 0) {
+      if (co && v && (urlsSnapshot.length > 0 || zelleSnapshot.length > 0)) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: attachErr } = await (supabase as any)
           .from('ticket_invoice_attachments')
@@ -918,6 +957,7 @@ export default function TicketBookingList() {
               company: co,
               invoice_number: v,
               file_urls: urlsSnapshot,
+              zelle_file_urls: zelleSnapshot,
               updated_at: new Date().toISOString(),
             },
             { onConflict: 'company,invoice_number' }
@@ -943,7 +983,7 @@ export default function TicketBookingList() {
   const uploadInvoicePhotos = useCallback(
     async (files: File[]) => {
       if (!invoiceQuickBooking || !files.length) return;
-      if (invoicePhotoUploading || invoicePhotoRemoving) return;
+      if (invoicePhotoUploading || zellePhotoUploading || invoicePhotoRemoving) return;
       const inv = invoiceQuickDraft.trim();
       if (!inv) {
         alert('먼저 Invoice 번호를 입력해 주세요.');
@@ -975,22 +1015,33 @@ export default function TicketBookingList() {
           company,
           invoice_number: inv,
           file_urls: merged,
+          zelle_file_urls: zelleQuickPhotoUrlsRef.current,
           updated_at: new Date().toISOString(),
         };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: upsertRow, error } = await (supabase as any)
           .from('ticket_invoice_attachments')
           .upsert(payload, { onConflict: 'company,invoice_number' })
-          .select('file_urls')
+          .select('file_urls, zelle_file_urls')
           .maybeSingle();
         if (error) throw error;
         const urlsFromDb = normalizeDbFileUrls(upsertRow?.file_urls);
         const finalUrls = urlsFromDb.length > 0 ? urlsFromDb : merged;
+        const zelleFromDb = normalizeDbFileUrls(upsertRow?.zelle_file_urls);
+        const finalZelle =
+          zelleFromDb.length > 0 ? zelleFromDb : zelleQuickPhotoUrlsRef.current;
         invoicePhotoLoadGenRef.current += 1;
         setInvoiceQuickPhotoUrls(finalUrls);
+        setZelleQuickPhotoUrls(finalZelle);
         setInvoiceAttachmentMap((prev) => {
           const next = new Map(prev);
           next.set(makeInvoiceKey(company, inv), finalUrls);
+          return next;
+        });
+        setZelleAttachmentMap((prev) => {
+          const next = new Map(prev);
+          if (finalZelle.length === 0) next.delete(makeInvoiceKey(company, inv));
+          else next.set(makeInvoiceKey(company, inv), finalZelle);
           return next;
         });
       } catch (e) {
@@ -1005,6 +1056,89 @@ export default function TicketBookingList() {
       invoiceQuickBooking,
       invoiceQuickDraft,
       invoicePhotoUploading,
+      zellePhotoUploading,
+      invoicePhotoRemoving,
+    ]
+  );
+
+  const uploadZellePhotos = useCallback(
+    async (files: File[]) => {
+      if (!invoiceQuickBooking || !files.length) return;
+      if (invoicePhotoUploading || zellePhotoUploading || invoicePhotoRemoving) return;
+      const inv = invoiceQuickDraft.trim();
+      if (!inv) {
+        alert('먼저 Invoice 번호를 입력해 주세요.');
+        return;
+      }
+      const company = invoiceCompanyNorm(invoiceQuickBooking.company);
+      if (!company) {
+        alert('회사(company) 정보가 없어 Zelle 첨부를 저장할 수 없습니다.');
+        return;
+      }
+      setZellePhotoUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append('bucketType', 'ticket_bookings');
+        files.forEach((f) => fd.append('files', f));
+        const res = await fetchUploadApi(fd);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(typeof data?.error === 'string' ? data.error : '파일 업로드에 실패했습니다.');
+          return;
+        }
+        const newUrls = Array.isArray(data.urls) ? data.urls : [];
+        let merged: string[] = [];
+        setZelleQuickPhotoUrls((prev) => {
+          merged = [...prev, ...newUrls];
+          return merged;
+        });
+        const payload = {
+          company,
+          invoice_number: inv,
+          file_urls: invoiceQuickPhotoUrlsRef.current,
+          zelle_file_urls: merged,
+          updated_at: new Date().toISOString(),
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: upsertRow, error } = await (supabase as any)
+          .from('ticket_invoice_attachments')
+          .upsert(payload, { onConflict: 'company,invoice_number' })
+          .select('file_urls, zelle_file_urls')
+          .maybeSingle();
+        if (error) throw error;
+        const invFromDb = normalizeDbFileUrls(upsertRow?.file_urls);
+        const finalInv =
+          invFromDb.length > 0 ? invFromDb : invoiceQuickPhotoUrlsRef.current;
+        const zelleFromDb = normalizeDbFileUrls(upsertRow?.zelle_file_urls);
+        const finalZelle = zelleFromDb.length > 0 ? zelleFromDb : merged;
+        invoicePhotoLoadGenRef.current += 1;
+        setInvoiceQuickPhotoUrls(finalInv);
+        setZelleQuickPhotoUrls(finalZelle);
+        const key = makeInvoiceKey(company, inv);
+        setInvoiceAttachmentMap((prev) => {
+          const next = new Map(prev);
+          if (finalInv.length === 0) next.delete(key);
+          else next.set(key, finalInv);
+          return next;
+        });
+        setZelleAttachmentMap((prev) => {
+          const next = new Map(prev);
+          next.set(key, finalZelle);
+          return next;
+        });
+      } catch (e) {
+        console.error(e);
+        alert('Zelle 첨부 저장에 실패했습니다.');
+      } finally {
+        setZellePhotoUploading(false);
+        if (zellePhotoInputRef.current) zellePhotoInputRef.current.value = '';
+      }
+    },
+    [
+      invoiceQuickBooking,
+      invoiceQuickDraft,
+      invoicePhotoUploading,
+      zellePhotoUploading,
       invoicePhotoRemoving,
     ]
   );
@@ -1014,8 +1148,13 @@ export default function TicketBookingList() {
     void uploadInvoicePhotos(Array.from(files));
   };
 
+  const handleZellePhotoPick = (files: FileList | null) => {
+    if (!files?.length) return;
+    void uploadZellePhotos(Array.from(files));
+  };
+
   const removeInvoicePhotoUrl = async (urlToRemove: string) => {
-    if (!invoiceQuickBooking || invoicePhotoRemoving || invoicePhotoUploading) return;
+    if (!invoiceQuickBooking || invoicePhotoRemoving || invoicePhotoUploading || zellePhotoUploading) return;
     const inv = invoiceQuickDraft.trim();
     if (!inv) return;
     if (!confirm('이 첨부를 삭제할까요?')) return;
@@ -1024,12 +1163,23 @@ export default function TicketBookingList() {
     setInvoicePhotoRemoving(true);
     try {
       const newUrls = invoiceQuickPhotoUrls.filter((u) => u !== urlToRemove);
+      const zelleKeep = zelleQuickPhotoUrls;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any;
-      if (newUrls.length === 0) {
+      if (newUrls.length === 0 && zelleKeep.length === 0) {
         const { error } = await sb
           .from('ticket_invoice_attachments')
           .delete()
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+      } else if (newUrls.length === 0) {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .update({
+            file_urls: [],
+            updated_at: new Date().toISOString(),
+          })
           .eq('company', company)
           .eq('invoice_number', inv);
         if (error) throw error;
@@ -1060,6 +1210,63 @@ export default function TicketBookingList() {
     }
   };
 
+  const removeZellePhotoUrl = async (urlToRemove: string) => {
+    if (!invoiceQuickBooking || invoicePhotoRemoving || invoicePhotoUploading || zellePhotoUploading) return;
+    const inv = invoiceQuickDraft.trim();
+    if (!inv) return;
+    if (!confirm('이 첨부를 삭제할까요?')) return;
+    const company = invoiceCompanyNorm(invoiceQuickBooking.company);
+    if (!company) return;
+    setInvoicePhotoRemoving(true);
+    try {
+      const newZelle = zelleQuickPhotoUrls.filter((u) => u !== urlToRemove);
+      const invKeep = invoiceQuickPhotoUrls;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any;
+      if (newZelle.length === 0 && invKeep.length === 0) {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .delete()
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+      } else if (newZelle.length === 0) {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .update({
+            zelle_file_urls: [],
+            updated_at: new Date().toISOString(),
+          })
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+      } else {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .update({
+            zelle_file_urls: newZelle,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+      }
+      invoicePhotoLoadGenRef.current += 1;
+      setZelleQuickPhotoUrls(newZelle);
+      setZelleAttachmentMap((prev) => {
+        const next = new Map(prev);
+        if (newZelle.length === 0) next.delete(makeInvoiceKey(company, inv));
+        else next.set(makeInvoiceKey(company, inv), newZelle);
+        return next;
+      });
+    } catch (e) {
+      console.error(e);
+      alert('첨부 삭제에 실패했습니다.');
+    } finally {
+      setInvoicePhotoRemoving(false);
+    }
+  };
+
   const openInvoiceAttachmentView = (booking: TicketBooking) => {
     const inv = booking.invoice_number?.trim();
     if (!inv) {
@@ -1071,22 +1278,62 @@ export default function TicketBookingList() {
       openInvoiceQuickModal(booking);
       return;
     }
-    setInvoiceLightbox({ company: booking.company, invoiceNumber: inv, urls });
+    setInvoiceLightbox({
+      company: booking.company,
+      invoiceNumber: inv,
+      urls,
+      kind: 'invoice',
+    });
     setInvoiceLightboxIndex(0);
   };
 
-  const removeInvoicePhotoFromLightbox = async (urlToRemove: string) => {
+  const openZelleAttachmentView = (booking: TicketBooking) => {
+    const inv = booking.invoice_number?.trim();
+    if (!inv) {
+      openInvoiceQuickModal(booking);
+      return;
+    }
+    const urls = zelleAttachmentMap.get(makeInvoiceKey(booking.company, inv)) || [];
+    if (urls.length === 0) {
+      openInvoiceQuickModal(booking);
+      return;
+    }
+    setInvoiceLightbox({
+      company: booking.company,
+      invoiceNumber: inv,
+      urls,
+      kind: 'zelle',
+    });
+    setInvoiceLightboxIndex(0);
+  };
+
+  const removeAttachmentFromLightbox = async (urlToRemove: string) => {
     if (!invoiceLightbox || invoicePhotoRemoving) return;
     if (!confirm('이 첨부를 삭제할까요?')) return;
-    const { company: companyRaw, invoiceNumber: inv, urls } = invoiceLightbox;
+    const { company: companyRaw, invoiceNumber: inv } = invoiceLightbox;
+    const kind = invoiceLightbox.kind ?? 'invoice';
     const company = invoiceCompanyNorm(companyRaw);
     if (!company) return;
     setInvoicePhotoRemoving(true);
     try {
-      const newUrls = urls.filter((u) => u !== urlToRemove);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sb = supabase as any;
-      if (newUrls.length === 0) {
+      const { data: row, error: fetchErr } = await sb
+        .from('ticket_invoice_attachments')
+        .select('file_urls, zelle_file_urls')
+        .eq('company', company)
+        .eq('invoice_number', inv)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+      let nextInv = normalizeDbFileUrls(row?.file_urls);
+      let nextZelle = normalizeDbFileUrls(row?.zelle_file_urls);
+      if (kind === 'invoice') {
+        nextInv = nextInv.filter((u) => u !== urlToRemove);
+      } else {
+        nextZelle = nextZelle.filter((u) => u !== urlToRemove);
+      }
+      const key = makeInvoiceKey(company, inv);
+      if (nextInv.length === 0 && nextZelle.length === 0) {
         const { error } = await sb
           .from('ticket_invoice_attachments')
           .delete()
@@ -1098,24 +1345,32 @@ export default function TicketBookingList() {
         const { error } = await sb
           .from('ticket_invoice_attachments')
           .update({
-            file_urls: newUrls,
+            file_urls: nextInv,
+            zelle_file_urls: nextZelle,
             updated_at: new Date().toISOString(),
           })
           .eq('company', company)
           .eq('invoice_number', inv);
         if (error) throw error;
+        const urlsForBox = kind === 'zelle' ? nextZelle : nextInv;
         setInvoiceLightbox((prev) =>
-          prev ? { ...prev, urls: newUrls } : null
+          prev ? { ...prev, urls: urlsForBox } : null
         );
-        const imgLeft = newUrls.filter(isImageAttachmentUrl);
+        const imgLeft = urlsForBox.filter(isImageAttachmentUrl);
         setInvoiceLightboxIndex((i) =>
           Math.min(i, Math.max(0, imgLeft.length - 1))
         );
       }
       setInvoiceAttachmentMap((prev) => {
         const next = new Map(prev);
-        if (newUrls.length === 0) next.delete(makeInvoiceKey(company, inv));
-        else next.set(makeInvoiceKey(company, inv), newUrls);
+        if (nextInv.length === 0) next.delete(key);
+        else next.set(key, nextInv);
+        return next;
+      });
+      setZelleAttachmentMap((prev) => {
+        const next = new Map(prev);
+        if (nextZelle.length === 0) next.delete(key);
+        else next.set(key, nextZelle);
         return next;
       });
     } catch (e) {
@@ -1131,12 +1386,26 @@ export default function TicketBookingList() {
     const onPaste = (e: ClipboardEvent) => {
       const files = clipboardFilesFromPasteEvent(e);
       if (!files.length) return;
+      if (!invoiceModalPasteTarget) {
+        e.preventDefault();
+        alert('인보이스 또는 Zelle 추가 박스를 먼저 클릭한 뒤 붙여넣기(Ctrl+V) 해 주세요.');
+        return;
+      }
       e.preventDefault();
-      void uploadInvoicePhotos(Array.from(files));
+      if (invoiceModalPasteTarget === 'invoice') {
+        void uploadInvoicePhotos(Array.from(files));
+      } else {
+        void uploadZellePhotos(Array.from(files));
+      }
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, [invoiceQuickBooking, uploadInvoicePhotos]);
+  }, [
+    invoiceQuickBooking,
+    invoiceModalPasteTarget,
+    uploadInvoicePhotos,
+    uploadZellePhotos,
+  ]);
 
   useEffect(() => {
     if (!invoiceQuickBooking && !invoiceLightbox) return;
@@ -1557,6 +1826,28 @@ export default function TicketBookingList() {
         <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
           <button
             type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openInvoiceQuickModal(booking);
+            }}
+            className="px-2 py-1 border border-gray-200 bg-white text-gray-800 text-xs rounded-lg hover:bg-gray-50"
+          >
+            Invoice·첨부
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openZelleAttachmentView(booking);
+            }}
+            className="px-2 py-1 border border-emerald-200 bg-emerald-50/60 text-emerald-900 text-xs rounded-lg hover:bg-emerald-100/80"
+          >
+            Zelle 첨부
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
+          <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); handleEdit(booking); }}
             className="px-2 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
           >
@@ -1922,6 +2213,9 @@ export default function TicketBookingList() {
                     <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Zelle 확인#
                     </th>
+                    <th className="hidden lg:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Zelle 첨부
+                    </th>
                     <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       CC
                     </th>
@@ -2132,6 +2426,29 @@ export default function TicketBookingList() {
                           {booking.zelle_confirmation_number?.trim() || '—'}
                         </div>
                       </td>
+                      <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openZelleAttachmentView(booking);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-emerald-700"
+                          title="Zelle 확인 스크린샷"
+                        >
+                          {(() => {
+                            const inv = booking.invoice_number?.trim();
+                            const has =
+                              inv &&
+                              (zelleAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
+                            return has ? (
+                              <Paperclip className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+                            ) : (
+                              <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+                            );
+                          })()}
+                        </button>
+                      </td>
                       <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
                         <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
                           {getCCStatusText(booking.cc)}
@@ -2254,14 +2571,14 @@ export default function TicketBookingList() {
                         if (gi > 0) {
                           nodes.push(
                             <tr key={`rn-gap-${g.key}`} className="pointer-events-none" aria-hidden>
-                              <td colSpan={19} className="h-3 bg-neutral-300 p-0 border-y-2 border-neutral-400" />
+                              <td colSpan={20} className="h-3 bg-neutral-300 p-0 border-y-2 border-neutral-400" />
                             </tr>
                           );
                         }
                         nodes.push(
                           <Fragment key={g.key}>
                             <tr className={palette.headerRow}>
-                              <td colSpan={19} className="px-3 py-2.5 text-xs border-0">
+                              <td colSpan={20} className="px-3 py-2.5 text-xs border-0">
                                 <span className="text-sm font-bold text-neutral-900 tracking-tight">RN# {g.label}</span>
                                 <span className="text-neutral-800 font-medium ml-3">
                                   {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
@@ -2642,6 +2959,22 @@ export default function TicketBookingList() {
                             {booking.zelle_confirmation_number?.trim() || '—'}
                           </span>
                         </div>
+                        <div className="col-span-2 flex flex-wrap gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => openInvoiceQuickModal(booking)}
+                            className="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 hover:bg-gray-50"
+                          >
+                            Invoice·첨부
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openZelleAttachmentView(booking)}
+                            className="rounded border border-emerald-200 bg-emerald-50/70 px-2 py-1 text-xs text-emerald-900 hover:bg-emerald-100/80"
+                          >
+                            Zelle 첨부
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -2885,27 +3218,26 @@ export default function TicketBookingList() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="ticket-invoice-quick-title"
-          onClick={() =>
-            !invoiceQuickSaving &&
-            !invoicePhotoUploading &&
-            !invoicePhotoRemoving &&
-            setInvoiceQuickBooking(null)
-          }
+          onClick={() => !attachmentModalBusy && setInvoiceQuickBooking(null)}
         >
           <div
             className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id="ticket-invoice-quick-title" className="text-base font-semibold text-gray-900">
-              Invoice # · 인보이스 사진
+              Invoice # · 인보이스 · Zelle 확인
             </h3>
             <p className="mt-1 text-xs text-gray-500">
               RN# {invoiceQuickBooking.rn_number?.trim() || '—'} · {invoiceQuickBooking.company}
             </p>
             <p className="mt-2 text-xs text-gray-600">
-              같은 Invoice #를 쓰는 모든 행에 동일한 인보이스 사진이 표시됩니다. 사진은 Invoice 번호 입력 후 추가·삭제할 수
-              있습니다. <span className="text-gray-700">저장</span>을 누르면 Invoice 번호가 부킹에 반영되고, 아래에 보이는
-              첨부 URL도 서버에 함께 맞춰 둡니다.
+              같은 Invoice #를 쓰는 모든 행에 동일한 인보이스·Zelle 스크린샷이 표시됩니다. Invoice 번호 입력 후 아래에서
+              파일을 추가·삭제할 수 있습니다. 인보이스·Zelle 영역 중{' '}
+              <span className="text-gray-800 font-medium">붙여넣기 박스를 한 번 클릭</span>한 뒤{' '}
+              <span className="text-gray-800 font-medium">Ctrl+V</span>로 넣거나, 각 영역 아래 링크로 PC에서 파일을 고를 수
+              있습니다.{' '}
+              <span className="text-gray-700">저장</span>을 누르면 Invoice 번호가 부킹에 반영되고, 보이는 첨부 URL도 서버에
+              함께 맞춥니다.
             </p>
             <input
               type="text"
@@ -2931,22 +3263,35 @@ export default function TicketBookingList() {
               className="hidden"
               onChange={(e) => void handleInvoicePhotoPick(e.target.files)}
             />
+            <p className="mt-4 text-xs font-semibold text-gray-700">인보이스</p>
             <button
               type="button"
-              disabled={invoiceQuickSaving || invoicePhotoUploading || invoicePhotoRemoving}
-              onClick={() => invoicePhotoInputRef.current?.click()}
-              className="mt-4 flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-600 transition-colors hover:border-blue-400 hover:bg-blue-50/50 disabled:opacity-50"
+              disabled={attachmentModalBusy}
+              onClick={() => setInvoiceModalPasteTarget('invoice')}
+              className={`mt-2 flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm text-gray-600 transition-colors hover:border-blue-400 hover:bg-blue-50/50 disabled:opacity-50 ${
+                invoiceModalPasteTarget === 'invoice'
+                  ? 'border-blue-500 bg-blue-50/70 ring-2 ring-blue-400/60 ring-offset-2'
+                  : 'border-gray-300 bg-gray-50'
+              }`}
             >
               {invoicePhotoUploading ? (
                 <span>업로드 중…</span>
               ) : (
                 <>
-                  <span className="font-medium text-gray-800">인보이스 사진·파일 추가</span>
+                  <span className="font-medium text-gray-800">인보이스 붙여넣기 영역</span>
                   <span className="mt-1 text-xs text-gray-500">
-                    Invoice 번호 입력 후 클릭 또는 <span className="text-gray-700">Ctrl+V</span>
+                    클릭한 뒤 <span className="text-gray-700">Ctrl+V</span>로 붙여넣기
                   </span>
                 </>
               )}
+            </button>
+            <button
+              type="button"
+              disabled={attachmentModalBusy}
+              onClick={() => invoicePhotoInputRef.current?.click()}
+              className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50"
+            >
+              PC에서 인보이스 파일 선택…
             </button>
 
             {invoiceQuickPhotoUrls.length > 0 ? (
@@ -2975,7 +3320,7 @@ export default function TicketBookingList() {
                       <button
                         type="button"
                         onClick={() => void removeInvoicePhotoUrl(url)}
-                        disabled={invoicePhotoUploading || invoicePhotoRemoving}
+                        disabled={attachmentModalBusy}
                         className="shrink-0 self-start rounded-md p-2 text-red-600 hover:bg-red-50 disabled:opacity-50"
                         title="삭제"
                       >
@@ -2989,10 +3334,90 @@ export default function TicketBookingList() {
               <p className="mt-3 text-sm text-gray-400">등록된 인보이스 파일이 없습니다.</p>
             )}
 
+            <div className="mt-6 border-t border-gray-100 pt-4">
+              <p className="text-xs font-semibold text-gray-700">Zelle 확인 스크린샷</p>
+              <input
+                ref={zellePhotoInputRef}
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => void handleZellePhotoPick(e.target.files)}
+              />
+              <button
+                type="button"
+                disabled={attachmentModalBusy}
+                onClick={() => setInvoiceModalPasteTarget('zelle')}
+                className={`mt-2 flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-5 text-center text-sm text-gray-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50/70 disabled:opacity-50 ${
+                  invoiceModalPasteTarget === 'zelle'
+                    ? 'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-400/60 ring-offset-2'
+                    : 'border-emerald-200 bg-emerald-50/40'
+                }`}
+              >
+                {zellePhotoUploading ? (
+                  <span>업로드 중…</span>
+                ) : (
+                  <>
+                    <span className="font-medium text-gray-800">Zelle 캡처 붙여넣기 영역</span>
+                    <span className="mt-1 text-xs text-gray-500">
+                      클릭한 뒤 <span className="text-gray-700">Ctrl+V</span>로 붙여넣기
+                    </span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={attachmentModalBusy}
+                onClick={() => zellePhotoInputRef.current?.click()}
+                className="mt-2 text-xs font-medium text-emerald-700 hover:text-emerald-900 hover:underline disabled:opacity-50"
+              >
+                PC에서 Zelle 캡처 이미지 선택…
+              </button>
+              {zelleQuickPhotoUrls.length > 0 ? (
+                <ul className="mt-3 space-y-3">
+                  {zelleQuickPhotoUrls.map((url) => {
+                    const isImg = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+                    return (
+                      <li key={url} className="flex gap-2 rounded-lg border border-emerald-100 bg-white p-2">
+                        <div className="min-w-0 flex-1">
+                          {isImg ? (
+                            <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt="" className="max-h-36 w-auto max-w-full rounded object-contain" />
+                            </a>
+                          ) : (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="break-all text-sm text-blue-600 hover:underline"
+                            >
+                              {url.split('/').pop() || url}
+                            </a>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void removeZellePhotoUrl(url)}
+                          disabled={attachmentModalBusy}
+                          className="shrink-0 self-start rounded-md p-2 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                          title="삭제"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-gray-400">등록된 Zelle 스크린샷이 없습니다.</p>
+              )}
+            </div>
+
             <div className="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
               <button
                 type="button"
-                disabled={invoiceQuickSaving || invoicePhotoUploading || invoicePhotoRemoving}
+                disabled={attachmentModalBusy}
                 onClick={() => setInvoiceQuickBooking(null)}
                 className="rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
               >
@@ -3000,7 +3425,7 @@ export default function TicketBookingList() {
               </button>
               <button
                 type="button"
-                disabled={invoiceQuickSaving || invoicePhotoUploading || invoicePhotoRemoving}
+                disabled={attachmentModalBusy}
                 onClick={() => void saveInvoiceQuick()}
                 className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
@@ -3016,7 +3441,9 @@ export default function TicketBookingList() {
           className="fixed inset-0 z-[125] flex items-center justify-center bg-black/90 p-3"
           role="dialog"
           aria-modal="true"
-          aria-label="Invoice 인보이스 미리보기"
+          aria-label={
+            invoiceLightbox.kind === 'zelle' ? 'Zelle 확인 미리보기' : 'Invoice 인보이스 미리보기'
+          }
           onClick={() => !invoicePhotoRemoving && setInvoiceLightbox(null)}
         >
           <div
@@ -3024,7 +3451,10 @@ export default function TicketBookingList() {
             onClick={(e) => e.stopPropagation()}
           >
             <p className="absolute left-0 top-0 z-20 max-w-[70%] truncate text-left text-xs text-white/80">
-              Invoice {invoiceLightbox.invoiceNumber} · {invoiceLightbox.company}
+              {invoiceLightbox.kind === 'zelle'
+                ? `Zelle 확인 · Invoice ${invoiceLightbox.invoiceNumber}`
+                : `Invoice ${invoiceLightbox.invoiceNumber}`}{' '}
+              · {invoiceLightbox.company}
             </p>
             <button
               type="button"
@@ -3090,7 +3520,7 @@ export default function TicketBookingList() {
                   type="button"
                   disabled={invoicePhotoRemoving}
                   onClick={() =>
-                    void removeInvoicePhotoFromLightbox(
+                    void removeAttachmentFromLightbox(
                       invoiceLightboxImageUrls[invoiceLightboxSafeIndex]
                     )
                   }
@@ -3128,7 +3558,7 @@ export default function TicketBookingList() {
                       <button
                         type="button"
                         disabled={invoicePhotoRemoving}
-                        onClick={() => void removeInvoicePhotoFromLightbox(url)}
+                        onClick={() => void removeAttachmentFromLightbox(url)}
                         className="shrink-0 rounded p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50"
                         title="삭제"
                       >
