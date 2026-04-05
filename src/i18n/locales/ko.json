@@ -1798,6 +1798,8 @@
     "completed": "완료됨",
     "deleteConfirm": "정말로 이 예약을 삭제하시겠습니까?",
     "deleteConfirmSoft": "이 예약을 삭제하시겠습니까? 데이터는 삭제되지 않고 상태만 '삭제됨'으로 변경됩니다.",
+    "openDeletedReservationsModal": "삭제된 예약 보기",
+    "deletedReservationsModalTitle": "삭제된 예약 (목록에 표시되지 않음)",
     "cardDeluxe": "카드 딜럭",
     "filters": {
       "allStatus": "모든 상태",
@@ -2205,6 +2207,8 @@
 },
   "tours": {
     "title": "투어 관리",
+    "openDeletedToursModal": "삭제된 투어 보기",
+    "deletedToursModalTitle": "삭제된 투어 (목록·달력에 표시되지 않음)",
     "addTour": "투어 추가",
     "guideTours": {
       "loading": "투어 데이터를 불러오는 중...",

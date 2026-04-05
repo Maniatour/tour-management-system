@@ -243,6 +243,11 @@ function toNum(v: unknown): number {
   return Number(v) || 0
 }
 
+/** DB/일부 UI는 쿠폰·추가 할인을 음수로 두기도 함. 영수증 계산은 항상 양수 할인액으로 통일 */
+function discountAmount(v: unknown): number {
+  return Math.abs(toNum(v))
+}
+
 /** 고객 언어가 한국어이면 true (한국어가 아니면 영수증은 영어로 표시) */
 function isCustomerKorean(lang: string | null | undefined): boolean {
   if (!lang) return false
@@ -269,19 +274,27 @@ function formatMoney(amount: number, currency: string): string {
   return `$${amount.toFixed(2)}`
 }
 
-/** 예약 수정 - 가격 계산의 "고객 총 결제 금액"과 동일한 계산. 옵션 합계를 넘기면 pricing.option_total 대신 사용(영수증 표시 옵션과 일치) */
+/**
+ * 예약 화면 PricingSection.calculateTotalCustomerPayment 와 동일한 고객 총액.
+ * choices_total 은 더하지 않음 — 초이스 판매액이 불포함·상품가 등과 이중 계산될 수 있음(폼 주석과 동일).
+ * 옵션 합계를 넘기면 pricing.option_total 대신 사용(영수증 표시 행과 일치).
+ */
 function getCustomerTotalPayment(
   pricing: ReceiptData['pricing'],
   totalPeople: number,
   optionsTotal?: number
 ): number {
-  const discounted = pricing.product_price_total - pricing.coupon_discount - pricing.additional_discount
+  const couponMag = discountAmount(pricing.coupon_discount)
+  const addMag = discountAmount(pricing.additional_discount)
+  const people = Math.max(1, totalPeople)
+  const ppt = toNum(pricing.product_price_total)
+  const productBase = ppt > 0 ? ppt : toNum(pricing.adult_product_price) * people
+  const discounted = productBase - couponMag - addMag
   const notIncluded = (pricing.not_included_price ?? 0) * totalPeople
   const optionSum = optionsTotal !== undefined ? optionsTotal : (pricing.option_total ?? 0)
   return (
     discounted +
     optionSum +
-    (pricing.choices_total ?? 0) +
     notIncluded +
     (pricing.additional_cost ?? 0) +
     (pricing.tax ?? 0) +
@@ -478,8 +491,8 @@ export default function CustomerReceiptModal({
               balance_amount: toNum(pricing?.balance_amount),
               deposit_amount: toNum(pricing?.deposit_amount),
               paid_amount_from_records: paidAmountFromRecords,
-              coupon_discount: toNum((pricing as any)?.coupon_discount),
-              additional_discount: toNum((pricing as any)?.additional_discount),
+              coupon_discount: discountAmount((pricing as any)?.coupon_discount),
+              additional_discount: discountAmount((pricing as any)?.additional_discount),
               option_total: toNum((pricing as any)?.option_total),
               choices_total: toNum((pricing as any)?.choices_total),
               additional_cost: toNum((pricing as any)?.additional_cost),
@@ -700,27 +713,15 @@ export default function CustomerReceiptModal({
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
                 const notIncludedPerPerson = d.pricing.not_included_price ?? 0
                 const notIncludedTotal = notIncludedPerPerson * totalPeople
-                // 상품 행 단가: adult_product_price가 있으면 사용, 0이면 상품 총액/인원으로 표시 (절대 $0으로 나오지 않도록)
-                const productUnitPrice = (d.pricing.adult_product_price ?? 0) > 0
-                  ? (d.pricing.adult_product_price ?? 0)
-                  : totalPeople > 0
-                    ? (d.pricing.product_price_total ?? 0) / totalPeople
-                    : 0
-                // 상품 행 Amount: 단가×수량으로 표시 (Unit × Qty = Amount 일치)
-                const productRowAmount = productUnitPrice * totalPeople
-                // Product Total·Grand Total을 표시된 항목(상품+불포함)과 일치시키기 위해 표시 기준 합계 사용
+                // 할인은 reservation_pricing.product_price_total 기준(예약 폼과 동일). 성인단가×인원과 다를 수 있음(아동/유아 등)
+                const ppt = toNum(d.pricing.product_price_total)
+                const adultLine = toNum(d.pricing.adult_product_price) * totalPeople
+                const productRowAmount = ppt > 0 ? ppt : adultLine
+                const productUnitPrice = totalPeople > 0 ? productRowAmount / totalPeople : 0
                 const productRowTotal = productRowAmount + notIncludedTotal
-                // Grand Total도 표시된 상품 합계(productRowAmount + notIncluded - 할인) 기준으로 계산
-                const customerTotalPayment =
-                  (productRowAmount - (d.pricing.coupon_discount ?? 0) - (d.pricing.additional_discount ?? 0)) +
-                  notIncludedTotal +
-                  optionsTotal +
-                  (d.pricing.choices_total ?? 0) +
-                  (d.pricing.additional_cost ?? 0) +
-                  (d.pricing.tax ?? 0) +
-                  (d.pricing.card_fee ?? 0) +
-                  (d.pricing.prepayment_cost ?? 0) +
-                  (d.pricing.prepayment_tip ?? 0)
+                const couponMag = discountAmount(d.pricing.coupon_discount)
+                const addMag = discountAmount(d.pricing.additional_discount)
+                const customerTotalPayment = getCustomerTotalPayment(d.pricing, totalPeople, optionsTotal)
                 const paidAmountToShow = d.pricing.paid_amount_from_records ?? d.pricing.deposit_amount ?? 0
                 const balanceAmount = customerTotalPayment - paidAmountToShow
                 const tip10PerPerson = (customerTotalPayment * 0.10) / totalPeople
@@ -810,12 +811,12 @@ export default function CustomerReceiptModal({
                             </tr>
                           )}
                           {/* 할인 (상품 바로 아래) */}
-                          {(d.pricing.coupon_discount + d.pricing.additional_discount) > 0 && (
+                          {(couponMag + addMag) > 0 && (
                             <tr className="border-b border-gray-100 bg-red-50/30">
                               <td className="px-1.5 py-1" />
                               <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.discount}</td>
                               <td className="px-1.5 py-1 text-right text-red-600 whitespace-nowrap" colSpan={3}>
-                                -{formatMoney(d.pricing.coupon_discount + d.pricing.additional_discount, cur)}
+                                -{formatMoney(couponMag + addMag, cur)}
                               </td>
                             </tr>
                           )}
@@ -824,7 +825,7 @@ export default function CustomerReceiptModal({
                             <td className="px-1.5 py-1" />
                             <td className="px-1.5 py-1 font-medium text-gray-900">{L.productTotal}</td>
                             <td className="px-1.5 py-1 text-right font-medium text-gray-900 whitespace-nowrap" colSpan={3}>
-                              {formatMoney(productRowTotal - d.pricing.coupon_discount - d.pricing.additional_discount, cur)}
+                              {formatMoney(productRowTotal - couponMag - addMag, cur)}
                             </td>
                           </tr>
                           {/* 옵션 */}

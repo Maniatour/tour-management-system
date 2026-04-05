@@ -3,7 +3,12 @@ import { useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
-import { calculateAssignedPeople, getDefaultTeamTypeForProduct, sumPeopleSameProductDate } from '@/utils/tourUtils'
+import {
+  calculateAssignedPeople,
+  getDefaultTeamTypeForProduct,
+  sumPeopleSameProductDate,
+  isReservationDeletedStatus,
+} from '@/utils/tourUtils'
 import { useAuth } from '@/contexts/AuthContext'
 
 // 타입 정의
@@ -759,7 +764,7 @@ export function useTourDetailData() {
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
             
-            return !isInAnyTour && isConfirmedOrRecruiting
+            return !isInAnyTour && isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
           })
           
           // pendingReservations에 고객 정보 매핑
@@ -798,8 +803,8 @@ export function useTourDetailData() {
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
             
-            // confirmed 또는 recruiting이 아닌 예약만 포함
-            return !isConfirmedOrRecruiting
+            // confirmed/recruiting/deleted 제외 (삭제 예약은 예약 관리 페이지에서 확인)
+            return !isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
           })
 
           // otherStatusReservations에 고객 정보 매핑
@@ -835,11 +840,15 @@ export function useTourDetailData() {
             return normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' || normalizedStatus.includes('cancel')
           }
 
-          // assignedReservations에서 cancelled 상태 제외
-          const activeAssignedReservations = assignedReservations.filter(r => !isCancelled(r.status))
+          // assignedReservations에서 cancelled·deleted 제외
+          const activeAssignedReservations = assignedReservations.filter(
+            r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
+          )
 
-          // otherToursAssignedReservations에서도 cancelled 상태 제외
-          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(r => !isCancelled(r.status))
+          // otherToursAssignedReservations에서도 cancelled·deleted 제외
+          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(
+            r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
+          )
 
           const allOtherStatusReservations = otherStatusReservations
           
@@ -957,7 +966,9 @@ export function useTourDetailData() {
           const allAssignedReservations = allSameDateProductReservationsList.filter(r => 
             assignedReservationIds.includes(r.id)
           )
-          const activeAssignedReservations = allAssignedReservations.filter(r => !isCancelled(r.status))
+          const activeAssignedReservations = allAssignedReservations.filter(
+            r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
+          )
           
           // 3. 배정 대기 중인 예약
           const pendingReservations = allSameDateProductReservationsList.filter(r => {
@@ -966,7 +977,7 @@ export function useTourDetailData() {
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
             
-            return !isInAnyTour && isConfirmedOrRecruiting
+            return !isInAnyTour && isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
           })
           
           // 4. 다른 상태의 예약
@@ -977,8 +988,7 @@ export function useTourDetailData() {
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
             
-            // confirmed 또는 recruiting이 아닌 예약만 포함
-            return !isConfirmedOrRecruiting
+            return !isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
           })
           
           setAssignedReservations(activeAssignedReservations as ExtendedReservationRow[])
@@ -1320,6 +1330,7 @@ export function useTourDetailData() {
           const reservationToTourMap = new Map<string, string>()
 
           const toursList = (allSameDateProductTours || []) as Array<{ id: string; reservation_ids?: unknown }>
+          setSameDayTourIds(toursList.map((t) => t.id))
           if (toursList.length > 0) {
             toursList.forEach(t => {
               const tourRow = t as TourRow
@@ -1388,13 +1399,13 @@ export function useTourDetailData() {
             const isInAnyTour = allAssignedReservationIdsSet.has(reservationId)
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
-            return !isInAnyTour && isConfirmedOrRecruiting
+            return !isInAnyTour && isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
           })
 
           const otherStatusReservations = reservationsList.filter(r => {
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
-            return !isConfirmedOrRecruiting
+            return !isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
           })
 
           const isCancelled = (status: string | null | undefined): boolean => {
@@ -1403,8 +1414,12 @@ export function useTourDetailData() {
             return normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' || normalizedStatus.includes('cancel')
           }
 
-          const activeAssignedReservations = assignedReservations.filter(r => !isCancelled(r.status))
-          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(r => !isCancelled(r.status))
+          const activeAssignedReservations = assignedReservations.filter(
+            r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
+          )
+          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(
+            r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
+          )
 
           setAssignedReservations(activeAssignedReservations)
           setPendingReservations(pendingReservations)

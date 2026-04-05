@@ -12,7 +12,8 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
-import { isReservationCancelledStatus } from '@/utils/tourUtils'
+import { isReservationCancelledStatus, isReservationDeletedStatus, isTourDeletedStatus } from '@/utils/tourUtils'
+import { DeletedToursTableModal } from '@/components/shared/DeletedToursTableModal'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -55,7 +56,8 @@ export default function AdminTours() {
   const locale = useLocale()
   const router = useRouter()
   const supabase = createClientSupabase()
-  const { userRole, authUser, simulatedUser, isSimulating } = useAuth()
+  const { userRole, authUser, simulatedUser, isSimulating, user } = useAuth()
+  const adminUserEmail = (isSimulating && simulatedUser?.email) || authUser?.email || user?.email || null
   
   // 사용자 position 가져오기
   const [userPosition, setUserPosition] = useState<string | null>(null)
@@ -88,6 +90,8 @@ export default function AdminTours() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<ExtendedTour[]>([])
+  const [deletedToursBin, setDeletedToursBin] = useState<ExtendedTour[]>([])
+  const [showDeletedToursModal, setShowDeletedToursModal] = useState(false)
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
   const [tourUi, setTourUi] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
@@ -116,7 +120,7 @@ export default function AdminTours() {
   const [statusOptions, setStatusOptions] = useState<string[]>([])
 
   // 최적화된 데이터 로딩
-  const { data: toursData, loading: toursLoading } = useOptimizedData({
+  const { data: toursData, loading: toursLoading, refetch: refetchTours } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('tours')
@@ -382,7 +386,7 @@ export default function AdminTours() {
         const productId = (res?.product_id ? String(res.product_id) : '').trim()
         const date = (res?.tour_date ? String(res.tour_date) : '').trim()
         const key = `${productId}__${date}`
-        if (!isReservationCancelledStatus(res?.status)) {
+        if (!isReservationCancelledStatus(res?.status) && !isReservationDeletedStatus(res?.status)) {
           productDateKeyToTotalPeople.set(key, (productDateKeyToTotalPeople.get(key) || 0) + (res?.total_people || 0))
           if (res?.tour_id === null) {
             productDateKeyToUnassignedPeople.set(key, (productDateKeyToUnassignedPeople.get(key) || 0) + (res?.total_people || 0))
@@ -419,7 +423,7 @@ export default function AdminTours() {
           counted.add(rid)
           const row = reservationIdToRow.get(rid)
           if (!row) continue
-          if (isReservationCancelledStatus(row.status)) continue
+          if (isReservationCancelledStatus(row.status) || isReservationDeletedStatus(row.status)) continue
           // 동일한 상품/날짜에 속하는 예약만 합산 (잘못 연결된 ID 방지)
           if ((row.product_id || '') === (tour.product_id || '') && (row.tour_date || '') === (tour.tour_date || '')) {
             assignedPeople += row.total_people || 0
@@ -465,11 +469,18 @@ export default function AdminTours() {
         }
       })
 
-      setTours(toursWithDetails)
+      const deletedTourRows = toursWithDetails.filter((t) =>
+        isTourDeletedStatus((t.tour_status || t.status || '').toString())
+      )
+      const visibleTourRows = toursWithDetails.filter(
+        (t) => !isTourDeletedStatus((t.tour_status || t.status || '').toString())
+      )
+      setDeletedToursBin(deletedTourRows)
+      setTours(visibleTourRows)
 
-      // 상태 옵션을 실제 컬럼 값으로 구성
+      // 상태 옵션은 목록에 노출되는 투어 기준 (deleted 제외)
       const statusesSet = new Set<string>()
-      for (const t of toursWithDetails) {
+      for (const t of visibleTourRows) {
         const s = (t.tour_status || t.status || '').toString().trim()
         if (s) statusesSet.add(s)
       }
@@ -704,6 +715,16 @@ export default function AdminTours() {
             >
               <Plus size={16} />
               <span className="hidden sm:inline">{t('addTour')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDeletedToursModal(true)}
+              className="bg-gray-700 text-white px-3 py-1.5 rounded-md hover:bg-gray-800 flex items-center gap-1.5 text-sm font-medium"
+            >
+              <span>{t('openDeletedToursModal')}</span>
+              {deletedToursBin.length > 0 ? (
+                <span className="text-xs opacity-90">({deletedToursBin.length})</span>
+              ) : null}
             </button>
           </div>
         </div>
@@ -997,6 +1018,30 @@ export default function AdminTours() {
           </div>
         </>
       )}
+
+      <DeletedToursTableModal
+        isOpen={showDeletedToursModal}
+        onClose={() => setShowDeletedToursModal(false)}
+        title={t('deletedToursModalTitle')}
+        tours={deletedToursBin.map((row) => ({
+          id: row.id,
+          tour_date: row.tour_date,
+          tour_status: (row.tour_status || row.status) as string | null,
+          product_id: row.product_id,
+          tour_guide_id: row.tour_guide_id,
+        }))}
+        userEmail={adminUserEmail}
+        locale={locale}
+        onPermanentDelete={async (tourId) => {
+          const { error } = await supabase.from('tours').delete().eq('id', tourId)
+          if (error) {
+            alert(locale === 'ko' ? '영구 삭제 실패: ' + error.message : 'Purge failed: ' + error.message)
+            throw error
+          }
+          setDeletedToursBin((prev) => prev.filter((x) => x.id !== tourId))
+          await refetchTours()
+        }}
+      />
     </div>
   )
 }

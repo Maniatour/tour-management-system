@@ -49,6 +49,7 @@ import type {
   PickupHotel
 } from '@/types/reservation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
 
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -342,6 +343,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [filterModalOpen, setFilterModalOpen] = useState(false) // 필터 모달 열림 상태
+  const [showDeletedReservationsModal, setShowDeletedReservationsModal] = useState(false)
+  const [deletedReservationsModalRows, setDeletedReservationsModalRows] = useState<
+    Array<{ id: string; customer_id?: string | null; tour_date?: string | null; status?: string | null; customer_name?: string | null }>
+  >([])
+  const [deletedReservationsModalLoading, setDeletedReservationsModalLoading] = useState(false)
 
   // 그룹 접기/펼치기 함수 - useCallback으로 메모이제이션
   const toggleGroupCollapse = useCallback((date: string) => {
@@ -401,6 +407,45 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [emailDropdownOpen])
+
+  useEffect(() => {
+    if (!showDeletedReservationsModal) return
+    let cancelled = false
+    void (async () => {
+      setDeletedReservationsModalLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('reservations')
+          .select('id, customer_id, tour_date, status')
+          .eq('status', 'deleted')
+          .order('updated_at', { ascending: false })
+          .limit(500)
+        if (error || cancelled) {
+          if (error) console.error('삭제된 예약 목록 조회 오류:', error)
+          return
+        }
+        const rows = data || []
+        const custIds = [...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[])]
+        let nameById = new Map<string, string>()
+        if (custIds.length > 0) {
+          const { data: custs } = await supabase.from('customers').select('id, name').in('id', custIds)
+          nameById = new Map((custs || []).map((c: { id: string; name: string }) => [c.id, c.name]))
+        }
+        if (cancelled) return
+        setDeletedReservationsModalRows(
+          rows.map((r) => ({
+            ...r,
+            customer_name: r.customer_id ? nameById.get(r.customer_id) ?? null : null,
+          }))
+        )
+      } finally {
+        if (!cancelled) setDeletedReservationsModalLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [showDeletedReservationsModal])
 
   // 투어 정보 상태
   const [tourInfoMap, setTourInfoMap] = useState<Map<string, {
@@ -2172,6 +2217,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           <SlidersHorizontal className="w-4 h-4" />
           <span>필터</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setShowDeletedReservationsModal(true)}
+          className="bg-gray-700 text-white px-3 py-1.5 rounded-md hover:bg-gray-800 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
+        >
+          {t('openDeletedReservationsModal')}
+        </button>
       </div>
 
       {/* 필터 버튼(데스크톱) + 필터 모달 */}
@@ -2751,6 +2803,25 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           </div>
         </div>
       )}
+
+      <DeletedReservationsTableModal
+        isOpen={showDeletedReservationsModal}
+        onClose={() => setShowDeletedReservationsModal(false)}
+        title={t('deletedReservationsModalTitle')}
+        reservations={deletedReservationsModalRows}
+        loading={deletedReservationsModalLoading}
+        userEmail={user?.email ?? null}
+        locale={locale}
+        onPermanentDelete={async (reservationId) => {
+          const { error } = await supabase.from('reservations').delete().eq('id', reservationId)
+          if (error) {
+            alert(locale === 'ko' ? '영구 삭제 실패: ' + error.message : 'Purge failed: ' + error.message)
+            throw error
+          }
+          setDeletedReservationsModalRows((prev) => prev.filter((r) => r.id !== reservationId))
+          await refreshReservations()
+        }}
+      />
     </div>
   )
 }

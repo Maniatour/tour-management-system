@@ -1789,6 +1789,8 @@
     "completed": "completed",
     "deleteConfirm": "Are you sure you want to delete this reservation?",
     "deleteConfirmSoft": "Delete this reservation? Data will not be removed; only the status will be changed to 'Deleted'.",
+    "openDeletedReservationsModal": "View deleted reservations",
+    "deletedReservationsModalTitle": "Deleted reservations (hidden from main list)",
     "cardDeluxe": "Card Deluxe",
     "filters": {
       "allStatus": "All Status",
@@ -2186,6 +2188,8 @@
 },
     "tours": {
     "title": "Tour Management",
+    "openDeletedToursModal": "View deleted tours",
+    "deletedToursModalTitle": "Deleted tours (hidden from list and calendar)",
     "addTour": "Add Tour",
       "guideTours": {
         "loading": "Loading tour data...",

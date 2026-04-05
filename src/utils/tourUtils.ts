@@ -33,6 +33,23 @@ export function isReservationCancelledStatus(status: string | null | undefined):
   return s === 'cancelled' || s === 'canceled' || s.includes('cancel')
 }
 
+/** 예약 상태가 소프트 삭제(deleted)인지 */
+export function isReservationDeletedStatus(status: string | null | undefined): boolean {
+  return (status || '').toString().toLowerCase().trim() === 'deleted'
+}
+
+/** 투어 상태가 삭제(deleted)인지 (tour_status 또는 레거시 status) */
+export function isTourDeletedStatus(status: string | null | undefined): boolean {
+  return (status || '').toString().toLowerCase().trim() === 'deleted'
+}
+
+/** DB에서 예약/투어 행을 완전히 제거할 수 있는 계정 (클라이언트 표시용, 서버 RLS와 별도) */
+export const PERMANENT_DELETE_ALLOWED_EMAIL = 'info@maniatour.com'
+
+export function canPermanentDeleteRecords(userEmail: string | null | undefined): boolean {
+  return (userEmail || '').toLowerCase().trim() === PERMANENT_DELETE_ALLOWED_EMAIL.toLowerCase()
+}
+
 type ReservationLike = {
   id?: string | null
   product_id?: string | null
@@ -61,7 +78,8 @@ export function sumPeopleSameProductDate(
       return sum
     }
     const cancelled = isReservationCancelledStatus(r.status)
-    if (mode === 'nonCancelled' && cancelled) return sum
+    const deleted = isReservationDeletedStatus(r.status)
+    if (mode === 'nonCancelled' && (cancelled || deleted)) return sum
     if (mode === 'cancelled' && !cancelled) return sum
     const p = r.total_people
     if (typeof p === 'number' && !Number.isNaN(p)) return sum + p
@@ -83,6 +101,7 @@ export const calculateAssignedPeople = (tour: any, reservations: any[]) => {
   return reservations.reduce((total: number, reservation: ReservationLike) => {
     if (!idSet.has(String(reservation.id ?? '').trim())) return total
     if (isReservationCancelledStatus(reservation.status)) return total
+    if (isReservationDeletedStatus(reservation.status)) return total
     const p = reservation.total_people
     if (typeof p === 'number' && !Number.isNaN(p)) return total + p
     const adults = Number(reservation.adults) || 0
@@ -104,7 +123,8 @@ export const calculateUnassignedPeople = (tour: any, reservations: any[]) => {
   const unassignedReservations = reservations.filter(r => 
     !assignedReservationIds.includes(r.id) && 
     r.product_id === tour.product_id && 
-    r.tour_date === tour.tour_date
+    r.tour_date === tour.tour_date &&
+    !isReservationDeletedStatus(r.status)
   )
   
   return unassignedReservations.reduce((total, reservation) => {
@@ -120,7 +140,8 @@ export const getPendingReservations = (tour: any, reservations: any[]) => {
   return reservations.filter(r => 
     !assignedReservationIds.includes(r.id) && 
     r.product_id === tour.product_id && 
-    r.tour_date === tour.tour_date
+    r.tour_date === tour.tour_date &&
+    !isReservationDeletedStatus(r.status)
   )
 }
 
