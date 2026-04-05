@@ -43,6 +43,7 @@ import {
   type ResidentLineKey,
 } from '@/utils/usResidentChoiceSync'
 import { getFallbackOtaSalePrice, getFallbackOtaAndNotIncluded } from '@/utils/choicePricingMatcher'
+import { computeChannelSettlementAmount } from '@/utils/channelSettlement'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
   Customer, 
@@ -4306,7 +4307,7 @@ export default function ReservationForm({
     try {
       const fd = formDataRef.current
       // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격·수수료·잔액 컬럼 포함)
-      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount'
+      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount'
       const { data: existingRow, error: checkError } = await (supabase as any)
         .from('reservation_pricing')
         .select(selectColumns)
@@ -4336,6 +4337,62 @@ export default function ReservationForm({
       const newChoicesTotal = toNum(fd.choicesTotal)
       const newOptionTotal = toNum(fd.optionTotal)
       const newRequiredOptionTotal = toNum(fd.requiredOptionTotal)
+
+      let returnedAmount = 0
+      try {
+        const { data: payRows } = await (supabase as any)
+          .from('payment_records')
+          .select('amount, payment_status')
+          .eq('reservation_id', reservationId)
+        ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
+          const status = row.payment_status || ''
+          const sl = status.toLowerCase()
+          if (status.includes('Returned') || sl === 'returned') {
+            returnedAmount += Number(row.amount) || 0
+          }
+        })
+      } catch {
+        returnedAmount = 0
+      }
+
+      let isOTAChannel = false
+      try {
+        if (fd.channelId) {
+          const { data: chRow } = await (supabase as any)
+            .from('channels')
+            .select('type, category')
+            .eq('id', fd.channelId)
+            .maybeSingle()
+          if (chRow) {
+            isOTAChannel =
+              String((chRow as any).type || '').toLowerCase() === 'ota' ||
+              (chRow as any).category === 'OTA'
+          }
+        }
+      } catch {
+        isOTAChannel = false
+      }
+
+      const commissionBaseForRow =
+        toNum(fd.commission_base_price) || toNum(fd.onlinePaymentAmount) || toNum((existing as any)?.commission_base_price)
+
+      const channelSettlementComputed = computeChannelSettlementAmount({
+        depositAmount: overrides?.depositAmount ?? toNum(fd.depositAmount),
+        onlinePaymentAmount: toNum(fd.onlinePaymentAmount) || commissionBaseForRow,
+        productPriceTotal: newProductTotal,
+        couponDiscount: Number(fd.couponDiscount) || 0,
+        additionalDiscount: Number(fd.additionalDiscount) || 0,
+        optionTotalSum: newOptionTotal,
+        additionalCost: Number(fd.additionalCost) || 0,
+        tax: Number(fd.tax) || 0,
+        cardFee: Number(fd.cardFee) || 0,
+        prepaymentTip: Number(fd.prepaymentTip) || 0,
+        onSiteBalanceAmount: Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0,
+        returnedAmount,
+        commissionAmount: Number(fd.commission_amount) || 0,
+        reservationStatus: fd.status,
+        isOTAChannel,
+      })
 
       // 업데이트 시: 가격이 0이면 기존 DB 값을 유지 (의도치 않은 0 덮어쓰기 방지)
       const keep = (newVal: number, existingVal: unknown) =>
@@ -4372,6 +4429,11 @@ export default function ReservationForm({
         commission_percent: Number(fd.commission_percent) || 0,
         commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
         pricing_adults: Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0)),
+        commission_base_price: keep(
+          commissionBaseForRow,
+          (existing as any)?.commission_base_price
+        ),
+        channel_settlement_amount: Math.round(channelSettlementComputed * 100) / 100,
       }
 
       let error: unknown

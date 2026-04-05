@@ -445,6 +445,8 @@ export const getFallbackColumns = (tableName: string): ColumnInfo[] => {
       { name: 'balance_amount', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'commission_percent', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'commission_amount', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'commission_base_price', type: 'numeric', nullable: true, default: null },
+      { name: 'channel_settlement_amount', type: 'numeric', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp', nullable: true, default: 'now()' }
     ],
