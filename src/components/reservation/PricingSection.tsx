@@ -693,7 +693,6 @@ export default function PricingSection({
 
       // 계산 결과를 state에 저장 (총 결제 예정 금액 저장 시 사용하도록 formData에도 동기화)
       setCalculatedBalanceReceivedTotal(balanceReceivedTotal)
-      setFormData((prev: typeof formData) => ({ ...prev, balanceReceivedTotal }))
       setRefundedAmount(refundedTotal)
       setReturnedAmount(returnedTotal)
 
@@ -716,10 +715,9 @@ export default function PricingSection({
         (selectedChannel as any).name?.toLowerCase().includes('getyourguide')
       )
 
-      // 입금 내역이 있으면 항상 자동으로 업데이트 (입금 내역이 실제 데이터이므로 우선)
-      // 입금 내역이 없으면 할인 후 상품가를 기본값으로 설정 (새 예약 추가 시)
+      // 입금 내역이 있을 때만 보증금·잔액을 입금 합계 기준으로 덮어씀.
+      // 입금 내역이 없으면 DB/사용자가 입력한 보증금·잔액을 유지 (할인가로 덮어쓰면 저장값이 사라지는 버그 방지)
       const discountedPrice = fd.productPriceTotal - fd.couponDiscount - fd.additionalDiscount
-      // 불포함 가격 제외한 할인 후 상품가
       const notIncludedPrice = splitNotIncludedForDisplay(
         (fd as any).choiceNotIncludedTotal ?? 0,
         (fd as any).choiceNotIncludedBaseTotal ?? 0,
@@ -730,41 +728,30 @@ export default function PricingSection({
         (fd as any).residentStatusAmounts
       ).totalUsd
       const discountedPriceWithoutNotIncluded = discountedPrice - notIncludedPrice
-      
-      // 보증금/잔액 반영값 (저장용)
       const depositToSave = depositTotal > 0 ? depositTotal : (discountedPriceWithoutNotIncluded > 0 ? discountedPriceWithoutNotIncluded : 0)
 
-      // OTA 채널일 경우 depositAmount를 먼저 설정하고, 잔액은 기존 useEffect에서 자동 계산
-      if (isOTAChannel) {
-        // OTA 채널: depositAmount만 먼저 설정 (잔액은 useEffect에서 자동 계산됨)
-        // 입금 내역이 있으면 입금 내역 사용, 없으면 할인 후 상품가(불포함 가격 제외) 사용
-        setFormData((prev: typeof formData) => {
-          return {
-            ...prev,
-            depositAmount: depositToSave
-          }
-        })
+      if (paymentRecords.length > 0) {
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          balanceReceivedTotal,
+          depositAmount: depositToSave,
+          ...(isOTAChannel
+            ? {}
+            : {
+                onSiteBalanceAmount: remainingBalance,
+                balanceAmount: remainingBalance
+              })
+        }))
+        if (reservationId) {
+          savePricingInfo(reservationId, { depositAmount: depositToSave, balanceAmount: remainingBalance }).catch((err) => {
+            console.error('PricingSection: 입금 내역 반영 저장 오류', err)
+          })
+        }
       } else {
-        // 일반 채널: 기존대로 동시에 설정
-        // 입금 내역이 있으면 입금 내역 사용, 없으면 할인 후 상품가(불포함 가격 제외) 사용
-        setFormData((prev: typeof formData) => {
-          return {
-            ...prev,
-            // 입금 내역이 있으면 자동으로 업데이트, 없으면 할인 후 상품가(불포함 가격 제외)
-            depositAmount: depositToSave,
-            // 잔금 수령이 있으면 남은 잔액 계산, 없으면 전체 잔액 계산
-            onSiteBalanceAmount: remainingBalance,
-            balanceAmount: remainingBalance
-          }
-        })
-      }
-
-      // 입금 내역 반영 후 보증금/잔액을 DB에 저장 (deposit_amount = 총 결제 예정 금액, balance_amount = 잔액)
-      if (reservationId && paymentRecords.length > 0) {
-        const totalScheduledPayment = depositToSave + balanceReceivedTotal + remainingBalance
-        savePricingInfo(reservationId, { depositAmount: totalScheduledPayment, balanceAmount: remainingBalance }).catch((err) => {
-          console.error('PricingSection: 입금 내역 반영 저장 오류', err)
-        })
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          balanceReceivedTotal
+        }))
       }
     } catch (error) {
       console.error('PricingSection: 입금 내역 조회 중 오류', error)
@@ -895,11 +882,19 @@ export default function PricingSection({
         const currentDeposit = formData.depositAmount || 0
         const priceDifference = Math.abs(currentDeposit - discountedPrice)
         
-        // OTA 채널: depositAmount = 고객 총 결제 금액(잔액 0), 채널 결제 금액 = 판매가×인원(productPriceTotal), 채널 수수료 $ = 채널 결제 금액 × 수수료 %
+        // OTA 채널: depositAmount = 고객 총 결제 금액(잔액 0), 채널 결제 금액 = 쿠폰 시 할인 후 상품가·아니면 판매가×인원, 채널 수수료 $ = 채널 결제 금액 × 수수료 %
         // 단, 입금 내역이 있거나 DB에서 불러온 deposit_amount가 있으면 고객 실제 지불액(보증금)을 덮어쓰지 않음
         if (isOTAChannel) {
           const totalCustomerPayment = calculateTotalCustomerPayment()
-          const salePriceTimesPax = formData.productPriceTotal
+          const salePriceTimesPax =
+            formData.couponDiscount > 0
+              ? Math.max(
+                  0,
+                  formData.productPriceTotal -
+                    formData.couponDiscount -
+                    formData.additionalDiscount
+                )
+              : formData.productPriceTotal
           /** 불포함(현장/추가 결제) 금액이 있으면 고객 총 결제 = 판매·옵션 등 + 불포함. 보증금(실제 지불액)은 불포함을 제외한 금액, 잔액(투어 당일) = 불포함 합. */
           const notIncludedTotal = notIncludedBreakdown.totalUsd
           const depositPortion =
@@ -1017,6 +1012,15 @@ export default function PricingSection({
   /** 취소된 예약은 채널 수수료를 적용하지 않음(DB 값이 남아 있어도 정산·표시는 0) */
   const effectiveCommissionAmount = isReservationCancelled ? 0 : (Number(formData.commission_amount) || 0)
 
+  // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (정산·채널 결제 UI에서 공통)
+  const discountedProductPrice =
+    formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+  /** OTA: 쿠폰 적용 시 채널 결제(상품) 기준 = 할인 후 상품가, 없으면 판매가×인원 */
+  const otaChannelProductPaymentGross =
+    formData.couponDiscount > 0
+      ? Math.max(0, discountedProductPrice)
+      : formData.productPriceTotal
+
   /**
    * 위「채널 결제 금액」입력 필드와 동일: gross 기준 후 파트너 Returned 차감(표시 금액).
    * 채널 정산 금액은 이 값에서 채널 수수료(또는 자체 채널 카드 수수료)를 뺀다.
@@ -1027,11 +1031,10 @@ export default function PricingSection({
       return Math.max(0, base - returnedAmount)
     }
     if (isOTAChannel) {
-      const salePriceTimesPax = formData.productPriceTotal
       const base =
         formData.onlinePaymentAmount ||
         formData.depositAmount ||
-        (salePriceTimesPax > 0 ? salePriceTimesPax : 0)
+        (otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : 0)
       return Math.max(0, base - returnedAmount)
     }
     const productSubtotal =
@@ -1407,23 +1410,21 @@ export default function PricingSection({
   // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
   const otaSalePrice = formData.onlinePaymentAmount ?? 0
   const currentCommissionBase = formData.commission_base_price ?? 0
-  // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인
-  const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-  
-  // 채널 결제 금액 = 판매가 × 인원 (productPriceTotal). 0일 때 자동 설정.
+
+  // OTA는 쿠폰 시 할인 후 상품가, 그 외는 판매가×인원. 0이 아닐 때 onlinePaymentAmount 자동 설정.
   useEffect(() => {
-    const salePriceTimesPax = formData.productPriceTotal
-    
-    if (salePriceTimesPax > 0) {
+    const targetOnline = isOTAChannel ? otaChannelProductPaymentGross : formData.productPriceTotal
+
+    if (targetOnline > 0) {
       setFormData((prev: typeof formData) => {
         const currentOnlinePaymentAmount = prev.onlinePaymentAmount || 0
-        const priceDifference = Math.abs(currentOnlinePaymentAmount - salePriceTimesPax)
-        
+        const priceDifference = Math.abs(currentOnlinePaymentAmount - targetOnline)
+
         if (currentOnlinePaymentAmount === 0 || (priceDifference > 0.01 && !isChannelPaymentAmountFocused)) {
           return {
             ...prev,
-            onlinePaymentAmount: salePriceTimesPax,
-            commission_base_price: isOTAChannel ? (prev.commission_base_price || salePriceTimesPax) : prev.commission_base_price
+            onlinePaymentAmount: targetOnline,
+            commission_base_price: isOTAChannel ? (prev.commission_base_price || targetOnline) : prev.commission_base_price
           }
         }
         return prev
@@ -2706,9 +2707,10 @@ export default function PricingSection({
                         }
                         
                         if (isOTAChannel) {
-                          // OTA 채널: 채널 결제 금액 = 판매가×인원(productPriceTotal)
-                          const salePriceTimesPax = formData.productPriceTotal
-                          const baseAmount = formData.onlinePaymentAmount || formData.depositAmount || (salePriceTimesPax > 0 ? salePriceTimesPax : 0)
+                          const baseAmount =
+                            formData.onlinePaymentAmount ||
+                            formData.depositAmount ||
+                            (otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : 0)
                           return Math.max(0, baseAmount - returnedAmount).toFixed(2)
                         } else {
                           const productSubtotal = (
@@ -2736,9 +2738,8 @@ export default function PricingSection({
                         const actualAmount = numValue + returnedAmount
                         
                         if (isOTAChannel) {
-                          // OTA 채널: 채널 결제 금액 = 판매가×인원(productPriceTotal)
-                          const salePriceTimesPax = formData.productPriceTotal
-                          const defaultBasePrice = salePriceTimesPax > 0 ? salePriceTimesPax : formData.subtotal
+                          const defaultBasePrice =
+                            otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : formData.subtotal
                           const commissionBasePrice = formData.commission_base_price !== undefined
                             ? formData.commission_base_price
                             : (actualAmount > 0 ? actualAmount : defaultBasePrice)
@@ -2777,9 +2778,9 @@ export default function PricingSection({
                             return Math.max(0, baseAmount - returnedAmount)
                           }
                           if (isOTAChannel) {
-                            // 채널 결제 금액 = 판매가×인원(productPriceTotal)
-                            const salePriceTimesPax = formData.productPriceTotal
-                            const baseAmount = formData.onlinePaymentAmount || (salePriceTimesPax > 0 ? salePriceTimesPax : 0)
+                            const baseAmount =
+                              formData.onlinePaymentAmount ||
+                              (otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : 0)
                             return Math.max(0, baseAmount - returnedAmount)
                           } else {
                             const productSubtotal = (

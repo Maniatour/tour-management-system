@@ -40,6 +40,7 @@ import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds } from '@/utils/tourUtils'
+import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 import { 
   getStatusColor,
   getStatusText,
@@ -2105,6 +2106,11 @@ export default function TourDetailPage() {
                     continue
                   }
 
+                  // 미정은 reservations.choices JSON에만 두고 reservation_choices(FK)에는 넣지 않음
+                  if (choice.option_id === UNDECIDED_OPTION_ID) {
+                    continue
+                  }
+
                   // choice_options 테이블에서 option_id 존재 여부 확인
                   const { data: optionExists, error: checkError } = await supabase
                     .from('choice_options')
@@ -2113,7 +2119,14 @@ export default function TourDetailPage() {
                     .maybeSingle()
 
                   if (checkError) {
-                    console.error('choice_options 확인 오류:', checkError)
+                    const ce = checkError as { message?: string; code?: string; details?: string; hint?: string }
+                    console.error('choice_options 확인 오류:', {
+                      message: ce.message,
+                      code: ce.code,
+                      details: ce.details,
+                      hint: ce.hint,
+                      option_id: choice.option_id
+                    })
                     continue
                   }
 

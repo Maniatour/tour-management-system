@@ -1307,6 +1307,49 @@ export default function ScheduleView() {
     []
   )
 
+  /** 상품별 인원 모달에서 상태만 빠르게 변경 */
+  const productCellQuickStatusValues = ['pending', 'recruiting', 'confirmed', 'completed', 'cancelled', 'deleted'] as const
+  const [productCellStatusSavingId, setProductCellStatusSavingId] = useState<string | null>(null)
+
+  const handleProductCellReservationStatusChange = useCallback(
+    async (reservationId: string, newStatus: string) => {
+      const next = newStatus.trim().toLowerCase()
+      if (!next) return
+      const currentRow = (reservations as Reservation[]).find((r) => String(r.id) === reservationId)
+      const prevStatus = currentRow?.status
+      if (String(prevStatus ?? '').toLowerCase() === next) return
+
+      setProductCellStatusSavingId(reservationId)
+      setReservations((prev) =>
+        (prev as Reservation[]).map((r) =>
+          String(r.id) === reservationId ? { ...r, status: next } : r
+        )
+      )
+      try {
+        const { error } = await supabase.from('reservations').update({ status: next }).eq('id', reservationId)
+        if (error) {
+          setReservations((prev) =>
+            (prev as Reservation[]).map((r) =>
+              String(r.id) === reservationId ? { ...r, status: prevStatus } : r
+            )
+          )
+          showMessage(locale === 'ko' ? '오류' : 'Error', error.message, 'error')
+          return
+        }
+      } catch (e) {
+        setReservations((prev) =>
+          (prev as Reservation[]).map((r) =>
+            String(r.id) === reservationId ? { ...r, status: prevStatus } : r
+          )
+        )
+        showMessage(locale === 'ko' ? '오류' : 'Error', String(e), 'error')
+      } finally {
+        setProductCellStatusSavingId(null)
+      }
+    },
+    [reservations, locale, showMessage]
+  )
+
   const productCellReservationList = useMemo(() => {
     if (!productCellReservationsModal) return [] as Reservation[]
     const { productId, dateString } = productCellReservationsModal
@@ -2530,14 +2573,13 @@ export default function ScheduleView() {
   }
 
 
-  // 투어 요약 정보 생성
-  const getTourSummary = (tour: Tour) => {
+  // 투어 요약에 쓰는 공통 집계 (모달 요약 · 가이드 스케줄 호버 등)
+  const getTourSummaryCore = (tour: Tour) => {
     const productName = tour.products?.name || 'N/A'
     const tourDate = tour.tour_date
-    
-    // 인원 계산 (Recruiting/Confirmed 상태만)
-    const dayReservations = reservations.filter(r => 
-      r.tour_date === tour.tour_date && 
+
+    const dayReservations = reservations.filter(r =>
+      r.tour_date === tour.tour_date &&
       r.product_id === tour.product_id &&
       (r.status?.toLowerCase() === 'confirmed' || r.status?.toLowerCase() === 'recruiting')
     )
@@ -2555,17 +2597,14 @@ export default function ScheduleView() {
     }
     const assignedEn = Math.max(assignedPeople - assignedKo, 0)
 
-    // 가이드/어시스턴트 이름 (닉네임 우선)
     const guide = teamMembers.find(t => t.email === tour.tour_guide_id)
     const assistant = teamMembers.find(t => t.email === tour.assistant_id)
     const guideName = (guide as any)?.nick_name || guide?.name_ko || '-'
     const assistantName = (assistant as any)?.nick_name || assistant?.name_ko || '-'
 
-    // 차량 번호(가능한 필드 우선 사용)
     const vehicleNumber = tour.vehicle_number || tour.vehicle_id || '-'
     const vehicleAssigned = tour.tour_car_id && String(tour.tour_car_id).trim().length > 0
 
-    // 부킹 Confirm EA 합계 (대소문자 무관)
     const confirmedEa = ticketBookings
       .filter(tb => {
         if (tb.tour_id !== tour.id) return false
@@ -2574,11 +2613,8 @@ export default function ScheduleView() {
       })
       .reduce((s, tb) => s + (tb.ea || 0), 0)
 
-    // 단독투어 여부 확인
     const isPrivateTour = tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
 
-    // 배정 예약 기준 초이스 당 인원 (X / L / U / 기타)
-    // 예약당 초이스 행이 1개면 해당 예약의 total_people 사용, 여러 개면 quantity 합산 (DB에 quantity가 1로만 들어 있는 경우 대비)
     const assignedIds = new Set((tour.reservation_ids && Array.isArray(tour.reservation_ids)) ? (tour.reservation_ids as string[]) : [])
     const assignedResList = dayReservations.filter(r => assignedIds.has(r.id))
     const choiceRowsByRes = new Map<string, Array<{ choiceKey: string; quantity: number }>>()
@@ -2609,17 +2645,50 @@ export default function ScheduleView() {
       .map(k => `${keyToLabel[k]} : ${choiceCounts[k]}`)
     const choiceLine = choiceParts.length > 0 ? `초이스: ${choiceParts.join(' / ')}` : null
 
+    return {
+      productName,
+      tourDate,
+      assignedPeople,
+      totalPeopleAll,
+      assignedKo,
+      assignedEn,
+      guideName,
+      assistantName,
+      vehicleNumber,
+      vehicleAssigned,
+      confirmedEa,
+      isPrivateTour,
+      choiceLine
+    }
+  }
+
+  /** 가이드 스케줄 셀 호버: 상세 모달과 동일 집계, 빠른 확인용 줄 순서 */
+  const getGuideScheduleTourHoverText = (tour: Tour) => {
+    const c = getTourSummaryCore(tour)
     const lines = [
-      `투어: ${productName}${isPrivateTour ? ' (단독투어)' : ''}`,
-      `날짜: ${tourDate}`,
-      `인원: ${assignedPeople} / ${totalPeopleAll}`,
-      `배정 언어: ko ${assignedKo} / en ${assignedEn}`,
-      ...(choiceLine ? [choiceLine] : []),
-      `가이드: ${guideName}`,
-      `어시스턴트: ${assistantName}`,
-      `차량: ${vehicleNumber}`,
-      `배차: ${vehicleAssigned ? '배차 완료' : '미배차'}`,
-      `Confirm EA: ${confirmedEa}`
+      `가이드: ${c.guideName}`,
+      `어시스턴트: ${c.assistantName}`,
+      `차량: ${c.vehicleNumber}`,
+      `인원: ${c.assignedPeople} / ${c.totalPeopleAll}`,
+      `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn}`
+    ]
+    if (c.choiceLine) lines.push(c.choiceLine)
+    return lines.join('\n')
+  }
+
+  const getTourSummary = (tour: Tour) => {
+    const c = getTourSummaryCore(tour)
+    const lines = [
+      `투어: ${c.productName}${c.isPrivateTour ? ' (단독투어)' : ''}`,
+      `날짜: ${c.tourDate}`,
+      `인원: ${c.assignedPeople} / ${c.totalPeopleAll}`,
+      `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn}`,
+      ...(c.choiceLine ? [c.choiceLine] : []),
+      `가이드: ${c.guideName}`,
+      `어시스턴트: ${c.assistantName}`,
+      `차량: ${c.vehicleNumber}`,
+      `배차: ${c.vehicleAssigned ? '배차 완료' : '미배차'}`,
+      `Confirm EA: ${c.confirmedEa}`
     ]
     return lines.join('\n')
   }
@@ -3883,7 +3952,7 @@ export default function ScheduleView() {
                                                 : undefined,
                                               boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                                             }}
-                                            title={guide.team_member_name}
+                                            title={guideTours.length > 0 ? getGuideScheduleTourHoverText(guideTours[0]) : guide.team_member_name}
                                             draggable
                                             onDragStart={(e) => {
                                               if (guideTours.length > 0) {
@@ -3933,7 +4002,7 @@ export default function ScheduleView() {
                                               ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
                                               : undefined
                                           }}
-                                          title={guide.team_member_name}
+                                          title={guideTours.length > 0 ? getGuideScheduleTourHoverText(guideTours[0]) : guide.team_member_name}
                                           draggable
                                           onDragStart={(e) => {
                                             if (guideTours.length > 0) {
@@ -4021,7 +4090,7 @@ export default function ScheduleView() {
                                                 : undefined,
                                               boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                                             }}
-                                          title={guide.team_member_name}
+                                          title={assistantTours.length > 0 ? getGuideScheduleTourHoverText(assistantTours[0]) : guide.team_member_name}
                                           draggable
                                           onDragStart={(e) => {
                                             if (assistantTours.length > 0) {
@@ -4071,7 +4140,7 @@ export default function ScheduleView() {
                                               ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
                                               : undefined
                                           }}
-                                          title={guide.team_member_name}
+                                          title={assistantTours.length > 0 ? getGuideScheduleTourHoverText(assistantTours[0]) : guide.team_member_name}
                                           draggable
                                           onDragStart={(e) => {
                                             if (assistantTours.length > 0) {
@@ -4223,7 +4292,7 @@ export default function ScheduleView() {
                                     openTourDetailModal(mdRowTours[0].id)
                                   }
                                 }}
-                                title={guide.team_member_name}
+                                title={mdRowTours.length > 0 ? getGuideScheduleTourHoverText(mdRowTours[0]) : guide.team_member_name}
                               >
                                 {hasUnassignedVehicleMd && (
                                   <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
@@ -5056,7 +5125,9 @@ export default function ScheduleView() {
             </DialogTitle>
           </DialogHeader>
           <p className="text-xs text-gray-500 -mt-2 mb-2">
-            {locale === 'ko' ? '예약을 선택하면 수정 화면이 열립니다.' : 'Select a reservation to open the edit form.'}
+            {locale === 'ko'
+              ? '이름 영역을 누르면 수정 화면이 열립니다. 오른쪽에서 상태만 바로 변경할 수 있습니다.'
+              : 'Click the name to open the edit form. Change status quickly from the menu on the right.'}
           </p>
           <div className="overflow-y-auto flex-1 min-h-0 space-y-1.5 pr-1">
             {productCellReservationList.length === 0 ? (
@@ -5066,31 +5137,65 @@ export default function ScheduleView() {
             ) : (
               productCellReservationList.map((res) => {
                 const st = String(res.status ?? '')
+                const normalizedSt = st.trim().toLowerCase()
+                const quickSet = productCellQuickStatusValues as readonly string[]
+                const statusSelectOptions =
+                  normalizedSt && !quickSet.includes(normalizedSt)
+                    ? [normalizedSt, ...quickSet]
+                    : [...quickSet]
                 return (
-                  <button
+                  <div
                     key={res.id}
-                    type="button"
-                    className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50 transition-colors flex flex-col gap-1.5"
-                    onClick={() => {
-                      setProductCellReservationsModal(null)
-                      setReservationIdForScheduleEdit(String(res.id))
-                    }}
+                    className="w-full rounded-lg border border-gray-200 px-2 py-2 hover:bg-gray-50 transition-colors flex flex-row gap-2 items-stretch min-w-0"
                   >
-                    <div className="flex items-center justify-between gap-2 min-w-0">
-                      <span className="font-medium text-sm text-gray-900 truncate">
-                        {getCustomerName(String(res.customer_id || ''), customers as Customer[])}
-                      </span>
-                      <span className="text-xs text-gray-600 shrink-0 tabular-nums">
-                        {res.total_people ?? 0}
-                        {locale === 'ko' ? '명' : ' pax'}
-                      </span>
-                    </div>
-                    <span
-                      className={`inline-flex text-xs px-2 py-0.5 rounded-md w-fit font-medium ${getStatusColor(st)}`}
+                    <button
+                      type="button"
+                      className="flex-1 min-w-0 text-left flex flex-col gap-1 justify-center rounded-md px-1 py-0.5 -m-0.5 hover:bg-gray-100/80 transition-colors"
+                      onClick={() => {
+                        setProductCellReservationsModal(null)
+                        setReservationIdForScheduleEdit(String(res.id))
+                      }}
                     >
-                      {st ? getStatusLabel(st, tReservations) : '—'}
-                    </span>
-                  </button>
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <span className="font-medium text-sm text-gray-900 truncate">
+                          {getCustomerName(String(res.customer_id || ''), customers as Customer[])}
+                        </span>
+                        <span className="text-xs text-gray-600 shrink-0 tabular-nums">
+                          {res.total_people ?? 0}
+                          {locale === 'ko' ? '명' : ' pax'}
+                        </span>
+                      </div>
+                      <span
+                        className={`inline-flex text-xs px-2 py-0.5 rounded-md w-fit font-medium ${getStatusColor(st)}`}
+                      >
+                        {st ? getStatusLabel(st, tReservations) : '—'}
+                      </span>
+                    </button>
+                    <div
+                      className="shrink-0 flex flex-col justify-center gap-0.5 border-l border-gray-100 pl-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <label htmlFor={`schedule-product-cell-status-${res.id}`} className="text-[10px] text-gray-500 whitespace-nowrap">
+                        {locale === 'ko' ? '상태 변경' : 'Status'}
+                      </label>
+                      <select
+                        id={`schedule-product-cell-status-${res.id}`}
+                        className="text-xs border border-gray-300 rounded-md px-1.5 py-1 bg-white max-w-[7.5rem] disabled:opacity-50"
+                        value={normalizedSt || 'pending'}
+                        disabled={productCellStatusSavingId === String(res.id)}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          void handleProductCellReservationStatusChange(String(res.id), e.target.value)
+                        }}
+                      >
+                        {statusSelectOptions.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {getStatusLabel(opt, tReservations)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 )
               })
             )}

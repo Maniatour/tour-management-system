@@ -81,6 +81,43 @@ const CHAT_MGMT_UI_DEFAULT = {
   activeTab: 'upcoming' as 'upcoming' | 'past' | 'inactive'
 }
 
+/** PostgREST `id=in.(…)` 벌크 PATCH가 400(PGRST100 등)을 내는 경우가 있어 행 단위 `eq`로 나눔 */
+const CHAT_ROOM_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function dedupeValidChatRoomIds(ids: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of ids) {
+    const id = String(raw).trim().toLowerCase()
+    if (!CHAT_ROOM_UUID_RE.test(id) || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+async function bulkUpdateChatRoomsActive(
+  roomIds: string[],
+  isActive: boolean,
+  extraFields?: Record<string, unknown>
+): Promise<{ error: { message: string; code?: string; details?: string; hint?: string } | null }> {
+  const ids = dedupeValidChatRoomIds(roomIds)
+  if (ids.length === 0) return { error: null }
+
+  const payload: Record<string, unknown> = { is_active: isActive, ...extraFields }
+  const CONCURRENCY = 20
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const chunk = ids.slice(i, i + CONCURRENCY)
+    const results = await Promise.all(
+      chunk.map((id) => supabase.from('chat_rooms').update(payload).eq('id', id))
+    )
+    const failed = results.find((r) => r.error)
+    if (failed?.error) return { error: failed.error }
+  }
+  return { error: null }
+}
+
 interface TourInfo {
   id: string
   product_id: string
@@ -548,9 +585,8 @@ export default function ChatManagementPage() {
             const roomIdsToDeactivate = roomsToDeactivate.map((room: any) => room.id)
             
             try {
-              const updateQuery = (supabase.from('chat_rooms') as any).update({ is_active: false } as any)
-              const { error: updateError } = await updateQuery.in('id', roomIdsToDeactivate)
-              
+              const { error: updateError } = await bulkUpdateChatRoomsActive(roomIdsToDeactivate, false)
+
               if (updateError) {
                 console.warn('[ChatManagement] 채팅방 비활성화 중 오류:', updateError)
               } else {
@@ -1540,11 +1576,9 @@ export default function ChatManagementPage() {
     try {
       const roomIds = pastRooms.map(room => room.id)
 
-      // 해당 채팅방들을 비활성화
-      const { error: updateError } = await supabase
-        .from('chat_rooms')
-        .update({ is_active: false, updated_at: new Date().toISOString() })
-        .in('id', roomIds)
+      const { error: updateError } = await bulkUpdateChatRoomsActive(roomIds, false, {
+        updated_at: new Date().toISOString(),
+      })
 
       if (updateError) throw updateError
 

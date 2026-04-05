@@ -16,34 +16,81 @@ import type {
   Reservation 
 } from '@/types/reservation'
 
+/** PostgREST or= 필터용: 큰 OFFSET 대신 (created_at DESC, id DESC) 키셋 페이지네이션 */
+function customersCreatedAtDescKeysetOr(created_at: string, id: string): string {
+  const q = (s: string) => String(s).replace(/"/g, '""')
+  return `created_at.lt."${q(created_at)}",and(created_at.eq."${q(created_at)}",id.lt."${q(id)}")`
+}
+
 export function useReservationData() {
   // 최적화된 데이터 로딩
   const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
     fetchFn: async () => {
-      let allCustomers: Customer[] = []
-      let from = 0
+      const allCustomers: Customer[] = []
       const pageSize = 1000
-      let hasMore = true
 
-      while (hasMore) {
-        const { data, error } = await supabase
+      // 1) created_at 이 있는 행: OFFSET 없이 키셋 (깊은 페이지에서 500/타임아웃 방지)
+      let cursor: { created_at: string; id: string } | null = null
+      for (;;) {
+        let q = supabase
           .from('customers')
           .select('*')
-          .order('created_at', { ascending: false })
-          .range(from, from + pageSize - 1)
+          .not('created_at', 'is', null)
+          .order('created_at', { ascending: false, nullsFirst: false })
+          .order('id', { ascending: false })
+          .limit(pageSize)
+
+        if (cursor) {
+          q = q.or(customersCreatedAtDescKeysetOr(cursor.created_at, cursor.id))
+        }
+
+        const { data, error } = await q
 
         if (error) {
           console.warn('Error fetching customers:', error)
           break
         }
 
-        if (data && data.length > 0) {
-          allCustomers = [...allCustomers, ...data]
-          from += pageSize
-          hasMore = data.length >= pageSize
-        } else {
-          hasMore = false
+        const batch = (data || []) as Customer[]
+        if (batch.length === 0) break
+
+        allCustomers.push(...batch)
+        if (batch.length < pageSize) break
+
+        const last = batch[batch.length - 1] as { created_at?: string | null; id: string }
+        const lastTs = last.created_at
+        if (lastTs == null || lastTs === '') break
+        cursor = { created_at: lastTs, id: last.id }
+      }
+
+      // 2) created_at IS NULL (있으면 id 내림차순으로 이어서 로드)
+      let nullCursor: string | null = null
+      for (;;) {
+        let q = supabase
+          .from('customers')
+          .select('*')
+          .is('created_at', null)
+          .order('id', { ascending: false })
+          .limit(pageSize)
+
+        if (nullCursor) {
+          q = q.lt('id', nullCursor)
         }
+
+        const { data, error } = await q
+
+        if (error) {
+          console.warn('Error fetching customers (null created_at batch):', error)
+          break
+        }
+
+        const batch = (data || []) as Customer[]
+        if (batch.length === 0) break
+
+        allCustomers.push(...batch)
+        if (batch.length < pageSize) break
+
+        nullCursor = (batch[batch.length - 1] as { id: string }).id
       }
 
       return allCustomers

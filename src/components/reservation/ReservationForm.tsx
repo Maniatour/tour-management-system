@@ -4366,7 +4366,7 @@ export default function ReservationForm({
         selected_options: fd.selectedOptionalOptions,
         option_total: keep(newOptionTotal, (existing as any)?.option_total),
         total_price: keep(newTotal, (existing as any)?.total_price),
-        deposit_amount: overrides?.depositAmount ?? ((Number(fd.depositAmount) || 0) + (Number(fd.balanceReceivedTotal) || 0) + (Number(fd.onSiteBalanceAmount) || 0)),
+        deposit_amount: overrides?.depositAmount ?? (Number(fd.depositAmount) || 0),
         balance_amount: overrides?.balanceAmount ?? (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
         commission_percent: Number(fd.commission_percent) || 0,
@@ -4685,8 +4685,8 @@ export default function ReservationForm({
           selectedOptionalOptions: fd.selectedOptionalOptions,
           optionTotal: toNum(fd.optionTotal),
           totalPrice: toNum(fd.totalPrice),
-          // DB deposit_amount = 총 결제 예정 금액 (보증금 + 잔금 수령 + 잔액), balance_amount = 잔액(투어 당일 지불)만
-          depositAmount: toNum((fd.depositAmount || 0) + (fd.balanceReceivedTotal ?? 0) + (fd.onSiteBalanceAmount ?? 0)),
+          // DB deposit_amount = 고객 실제 지불액(보증금)만. 잔금 수령은 payment_records·balanceReceivedTotal, 잔액은 balance_amount
+          depositAmount: toNum(fd.depositAmount),
           balanceAmount: toNum(fd.onSiteBalanceAmount ?? fd.balanceAmount ?? 0),
           isPrivateTour: fd.isPrivateTour,
           privateTourAdditionalCost: toNum(fd.privateTourAdditionalCost),

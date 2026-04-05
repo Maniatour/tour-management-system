@@ -43,6 +43,7 @@ import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
+import { useAdminTourChatUnreadCount } from '@/hooks/useAdminTourChatUnreadCount'
 import { useTranslations } from 'next-intl'
 import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
@@ -102,6 +103,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [expiringDocumentsCount, setExpiringDocumentsCount] = useState(0)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
   const { teamChatUnreadCount } = useAuth()
+  const tourChatUnreadCount = useAdminTourChatUnreadCount(
+    Boolean(authUser?.email && userRole && userRole !== 'customer')
+  )
   const [isSuper, setIsSuper] = useState(false)
   
   // 출퇴근 동기화 훅 사용
@@ -576,16 +580,26 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 >
                   {t('tours')}
                 </Link>
-                <Link
-                  href={`/${locale}/admin/chat-management`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/${locale}/admin/chat-management`)
-                  }}
-                >
-                  {t('chatManagement')}
-                </Link>
+                <div className="relative inline-block">
+                  <Link
+                    href={`/${locale}/admin/chat-management`}
+                    className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10 inline-flex items-center"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      router.push(`/${locale}/admin/chat-management`)
+                    }}
+                  >
+                    {t('chatManagement')}
+                  </Link>
+                  {tourChatUnreadCount > 0 && (
+                    <span
+                      className="absolute -top-1.5 -right-1.5 z-20 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[18px] h-[18px] px-1 leading-none pointer-events-none"
+                      aria-label={`읽지 않은 투어 채팅 ${tourChatUnreadCount}건`}
+                    >
+                      {tourChatUnreadCount > 99 ? '99+' : tourChatUnreadCount}
+                    </span>
+                  )}
+                </div>
                 {/* 새 예약 추가 버튼 (모든 admin 페이지에서 표시) */}
                 <button
                   onClick={() => {
