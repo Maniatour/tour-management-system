@@ -93,6 +93,63 @@ function dedupeChannelsById<T extends { id: string }>(list: T[]): T[] {
   })
 }
 
+/** 테이블 행과 동일한 식으로 합계(헤더·tfoot 공통) */
+type ChannelPricingRowLike = {
+  totalPeople?: number
+  adultPrice?: number
+  productPriceTotal?: number
+  couponDiscount?: number
+  additionalDiscount?: number
+  additionalCost?: number
+  commissionAmount?: number
+  optionTotal?: number
+  partnerReceivedAmount?: number
+  channelSettlementAmount?: number
+}
+
+function aggregateChannelPricingRows<T extends ChannelPricingRowLike>(items: T[]) {
+  return items.reduce(
+    (acc, item) => {
+      const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
+      const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
+      const totalPrice = grandTotal - (item.commissionAmount || 0)
+      const netPrice = totalPrice + (item.optionTotal || 0)
+      return {
+        grandTotal: acc.grandTotal + grandTotal,
+        commission: acc.commission + (item.commissionAmount || 0),
+        totalPrice: acc.totalPrice + totalPrice,
+        netPrice: acc.netPrice + netPrice,
+        optionTotal: acc.optionTotal + (item.optionTotal || 0),
+        partnerReceived: acc.partnerReceived + (item.partnerReceivedAmount ?? 0),
+        channelSettlement: acc.channelSettlement + (item.channelSettlementAmount ?? 0),
+        discountTotal: acc.discountTotal + discountTotal,
+        productPriceTotalSum: acc.productPriceTotalSum + (item.productPriceTotal || 0),
+        additionalCostSum: acc.additionalCostSum + (item.additionalCost || 0),
+        adultPriceSum: acc.adultPriceSum + (item.adultPrice || 0),
+        totalPeople: acc.totalPeople + (item.totalPeople || 0),
+      }
+    },
+    {
+      grandTotal: 0,
+      commission: 0,
+      totalPrice: 0,
+      netPrice: 0,
+      optionTotal: 0,
+      partnerReceived: 0,
+      channelSettlement: 0,
+      discountTotal: 0,
+      productPriceTotalSum: 0,
+      additionalCostSum: 0,
+      adultPriceSum: 0,
+      totalPeople: 0,
+    }
+  )
+}
+
+function formatUsd2(n: number): string {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function ChannelSettlementTab({ dateRange, selectedChannelId = '', onChannelChange, selectedStatuses, searchQuery = '', isSuper = false }: ChannelSettlementTabProps) {
   const t = useTranslations('reservations')
   const { authUser } = useAuth()
@@ -1492,20 +1549,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                             return reservationSortOrder === 'asc' ? dateA - dateB : dateB - dateA
                           })
 
-                          // 채널별 통계 계산
-                          const channelStats = channelItems.reduce((acc, item) => {
-                            const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                            const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                            const totalPrice = grandTotal - (item.commissionAmount || 0)
-                            const netPrice = totalPrice + (item.optionTotal || 0)
-                            
-                            return {
-                              grandTotal: acc.grandTotal + grandTotal,
-                              commission: acc.commission + (item.commissionAmount || 0),
-                              totalPrice: acc.totalPrice + totalPrice,
-                              netPrice: acc.netPrice + netPrice
-                            }
-                          }, { grandTotal: 0, commission: 0, totalPrice: 0, netPrice: 0 })
+                          const channelRowTotals = aggregateChannelPricingRows(channelItems)
 
                           return (
                             <div key={channel.id} className="border-t border-gray-200">
@@ -1522,15 +1566,27 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                 )}
                                   <span className="font-medium text-gray-800 text-sm sm:text-base truncate">{channel.name}</span>
                                   <span className="text-xs text-gray-500">({channelItems.length}건)</span>
-                                  <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-4 gap-y-0 text-xs">
+                                  <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 text-[11px] sm:text-xs">
                                     <span className="font-medium text-green-600">
-                                      Grand Total: ${channelStats.grandTotal.toLocaleString()}
+                                      Grand Total: ${formatUsd2(channelRowTotals.grandTotal)}
                                     </span>
                                     <span className="font-medium text-blue-600">
-                                      Commission: ${channelStats.commission.toLocaleString()}
+                                      Commission: ${formatUsd2(channelRowTotals.commission)}
                                     </span>
                                     <span className="font-medium text-purple-600">
-                                      총 가격: ${channelStats.totalPrice.toLocaleString()}
+                                      총 가격: ${formatUsd2(channelRowTotals.totalPrice)}
+                                    </span>
+                                    <span className="font-medium text-gray-700">
+                                      옵션: ${formatUsd2(channelRowTotals.optionTotal)}
+                                    </span>
+                                    <span className="font-medium text-purple-600">
+                                      Net: ${formatUsd2(channelRowTotals.netPrice)}
+                                    </span>
+                                    <span className="font-medium text-teal-600">
+                                      입금내역: ${formatUsd2(channelRowTotals.partnerReceived)}
+                                    </span>
+                                    <span className="font-medium text-amber-600">
+                                      채널 정산: ${formatUsd2(channelRowTotals.channelSettlement)}
                                     </span>
                                   </div>
                                 </div>
@@ -1668,47 +1724,40 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                       합계
                     </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
-                                          {channelItems.reduce((sum, item) => sum + (item.totalPeople || 0), 0)}
+                                          {channelRowTotals.totalPeople}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
-                                          ${channelItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.adultPriceSum)}
                     </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
-                                          ${channelItems.reduce((sum, item) => sum + (item.productPriceTotal || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.productPriceTotalSum)}
                     </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-red-600 text-right">
-                                          -${channelItems.reduce((sum, item) => sum + (item.couponDiscount || 0) + (item.additionalDiscount || 0), 0).toLocaleString()}
+                                          -${formatUsd2(channelRowTotals.discountTotal)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-orange-600 text-right">
-                                          ${channelItems.reduce((sum, item) => sum + (item.additionalCost || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.additionalCostSum)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${channelItems.reduce((sum, item) => {
-                                            const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                            return sum + ((item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0))
-                                          }, 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.grandTotal)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-blue-600 text-right">
-                                          ${channelItems.reduce((sum, item) => sum + (item.commissionAmount || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.commission)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${channelItems.reduce((sum, item) => {
-                                            const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                            const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                            return sum + (grandTotal - (item.commissionAmount || 0))
-                                          }, 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.totalPrice)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
-                                          ${channelItems.reduce((sum, item) => sum + (item.optionTotal || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.optionTotal)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
-                                          ${channelStats.netPrice.toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.netPrice)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
-                                          ${channelItems.reduce((sum, item) => sum + (item.partnerReceivedAmount ?? 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.partnerReceived)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
-                                          ${channelItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.channelSettlement)}
                                         </td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                   </tr>
@@ -2028,20 +2077,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                             return tourSortOrder === 'asc' ? dateA - dateB : dateB - dateA
                           })
 
-                          // 채널별 통계 계산 (투어 진행 내역)
-                          const channelStats = sortedChannelItems.reduce((acc, item) => {
-                            const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                            const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                            const totalPrice = grandTotal - (item.commissionAmount || 0)
-                            const netPrice = totalPrice + (item.optionTotal || 0)
-                            
-                            return {
-                              grandTotal: acc.grandTotal + grandTotal,
-                              commission: acc.commission + (item.commissionAmount || 0),
-                              totalPrice: acc.totalPrice + totalPrice,
-                              netPrice: acc.netPrice + netPrice
-                            }
-                          }, { grandTotal: 0, commission: 0, totalPrice: 0, netPrice: 0 })
+                          const channelRowTotals = aggregateChannelPricingRows(sortedChannelItems)
 
                           const formatDateForInvoice = (d: string) => {
                             if (!d) return '-'
@@ -2098,15 +2134,27 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                     )}
                                     <span className="font-medium text-gray-800">{channel.name}</span>
                                     <span className="text-xs text-gray-500">({sortedChannelItems.length}건)</span>
-                                    <div className="flex items-center space-x-4 text-xs">
+                                    <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 text-[11px] sm:text-xs">
                                       <span className="font-medium text-green-600">
-                                        Grand Total: ${channelStats.grandTotal.toLocaleString()}
+                                        Grand Total: ${formatUsd2(channelRowTotals.grandTotal)}
                                       </span>
                                       <span className="font-medium text-blue-600">
-                                        Commission: ${channelStats.commission.toLocaleString()}
+                                        Commission: ${formatUsd2(channelRowTotals.commission)}
                                       </span>
                                       <span className="font-medium text-purple-600">
-                                        총 가격: ${channelStats.totalPrice.toLocaleString()}
+                                        총 가격: ${formatUsd2(channelRowTotals.totalPrice)}
+                                      </span>
+                                      <span className="font-medium text-gray-700">
+                                        옵션: ${formatUsd2(channelRowTotals.optionTotal)}
+                                      </span>
+                                      <span className="font-medium text-purple-600">
+                                        Net: ${formatUsd2(channelRowTotals.netPrice)}
+                                      </span>
+                                      <span className="font-medium text-teal-600">
+                                        입금내역: ${formatUsd2(channelRowTotals.partnerReceived)}
+                                      </span>
+                                      <span className="font-medium text-amber-600">
+                                        채널 정산: ${formatUsd2(channelRowTotals.channelSettlement)}
                                       </span>
                                     </div>
                                   </div>
@@ -2256,47 +2304,40 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                         합계
                       </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
-                                          {sortedChannelItems.reduce((sum, item) => sum + (item.totalPeople || 0), 0)}
+                                          {channelRowTotals.totalPeople}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.adultPriceSum)}
                       </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.productPriceTotal || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.productPriceTotalSum)}
                       </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-red-600 text-right">
-                                          -${sortedChannelItems.reduce((sum, item) => sum + (item.couponDiscount || 0) + (item.additionalDiscount || 0), 0).toLocaleString()}
+                                          -${formatUsd2(channelRowTotals.discountTotal)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-orange-600 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.additionalCost || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.additionalCostSum)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => {
-                                            const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                            return sum + ((item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0))
-                                          }, 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.grandTotal)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-blue-600 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.commissionAmount || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.commission)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => {
-                                            const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                            const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                            return sum + (grandTotal - (item.commissionAmount || 0))
-                                          }, 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.totalPrice)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.optionTotal || 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.optionTotal)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
-                                          ${channelStats.netPrice.toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.netPrice)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.partnerReceivedAmount ?? 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.partnerReceived)}
                                         </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
-                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
+                                          ${formatUsd2(channelRowTotals.channelSettlement)}
                                         </td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                     </tr>
