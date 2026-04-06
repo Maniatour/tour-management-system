@@ -17,6 +17,7 @@ import {
   calculateTotalPrice 
 } from '@/utils/reservationUtils'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import type { Reservation, Customer } from '@/types/reservation'
@@ -24,7 +25,7 @@ import type { Reservation, Customer } from '@/types/reservation'
 interface ReservationCardItemProps {
   reservation: Reservation
   customers: Customer[]
-  products: Array<{ id: string; name: string; sub_category?: string }>
+  products: Array<{ id: string; name: string; sub_category?: string; product_code?: string | null }>
   channels: Array<{ id: string; name: string; favicon_url?: string }>
   pickupHotels: Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>
   productOptions: Array<{ id: string; name: string; is_required?: boolean }>
@@ -108,7 +109,6 @@ interface ReservationCardItemProps {
       }
     }
   }>>>
-  showResidentStatusIcon?: boolean
   /** reservations.tour_id가 비어 있을 때 tours.reservation_ids 기준 투어 ID */
   linkedTourId?: string | null
 }
@@ -145,11 +145,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   getGroupColorClasses,
   getSelectedChoicesFromNewSystem,
   choicesCacheRef,
-  showResidentStatusIcon = false,
   linkedTourId = null
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
+
+  const showResidentStatusUi = productShowsResidentStatusSectionByCode(
+    products.find((p) => p.id === reservation.productId)?.product_code ?? null
+  )
 
   const normalizeTourId = (raw: string | null | undefined) => {
     const s = (raw || '').trim()
@@ -338,7 +341,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             })()}
             
             {/* 거주 상태 아이콘 */}
-            {showResidentStatusIcon && (
+            {showResidentStatusUi && (
               <ResidentStatusIcon
                 reservationId={reservation.id}
                 customerId={reservation.customerId}

@@ -36,11 +36,13 @@ import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupSche
 import PickupScheduleEmailPreviewModal from '@/components/tour/modals/PickupScheduleEmailPreviewModal'
 import TourEditModal from '@/components/tour/modals/TourEditModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
+import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds } from '@/utils/tourUtils'
 import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { 
   getStatusColor,
   getStatusText,
@@ -1739,6 +1741,9 @@ export default function TourDetailPage() {
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
               getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) || ''}
           openGoogleMaps={openGoogleMaps}
+              residentStatusIndicatorsEnabled={productShowsResidentStatusSectionByCode(
+                tourData.product?.product_code
+              )}
         />
         </div>
 
@@ -1863,6 +1868,7 @@ export default function TourDetailPage() {
               productId={tourData.tour?.product_id ?? null}
               tourDate={tourData.tour?.tour_date ?? null}
               onAutoAssignSuccess={tourData.refreshReservations}
+              allProducts={tourData.allProducts ?? []}
             />
             </div>
           </div>
@@ -2044,14 +2050,23 @@ export default function TourDetailPage() {
           pickupHotels={tourData.pickupHotels}
           coupons={reservationFormData.coupons}
           titleAction={
-            <button
-              type="button"
-              onClick={() => setShowEditReceiptModal(true)}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-              title={locale === 'ko' ? '영수증 인쇄' : 'Print receipt'}
-            >
-              <Printer className="w-5 h-5" />
-            </button>
+            <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => setShowEditReceiptModal(true)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                title={locale === 'ko' ? '영수증 인쇄' : 'Print receipt'}
+              >
+                <Printer className="w-5 h-5" />
+              </button>
+              <div className="hidden sm:block h-6 w-px bg-gray-200 shrink-0" aria-hidden />
+              <ReservationFormEmailSendButtons
+                reservation={editingReservation}
+                customers={tourData.customers}
+                sentBy={authUser?.email ?? null}
+                uiLocale={locale === 'en' ? 'en' : 'ko'}
+              />
+            </div>
           }
           onSubmit={async (reservationData: any) => {
             try {

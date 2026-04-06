@@ -35,6 +35,8 @@ interface PickupScheduleProps {
   getCustomerName: (customerId: string) => string
   getCustomerLanguage?: (customerId: string) => string
   openGoogleMaps: (link: string) => void
+  /** 투어 상품이 거주 상태 UI 대상일 때만 예약 행에 거주 아이콘·조회 */
+  residentStatusIndicatorsEnabled?: boolean
 }
 
 export const PickupSchedule: React.FC<PickupScheduleProps> = ({
@@ -49,7 +51,8 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   getPickupHotelNameOnly,
   getCustomerName,
   getCustomerLanguage,
-  openGoogleMaps
+  openGoogleMaps,
+  residentStatusIndicatorsEnabled = false
 }) => {
   const t = useTranslations('tours.pickupSchedule')
   const tCommon = useTranslations('common')
@@ -94,6 +97,10 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   // 예약별 거주 상태 정보 가져오기
   useEffect(() => {
     const fetchResidentStatus = async () => {
+      if (!residentStatusIndicatorsEnabled) {
+        setReservationResidentStatus({})
+        return
+      }
       if (assignedReservations.length === 0) return
 
       const reservationIds = assignedReservations.map(r => r.id)
@@ -132,7 +139,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     }
 
     fetchResidentStatus()
-  }, [assignedReservations])
+  }, [assignedReservations, residentStatusIndicatorsEnabled])
 
   // 예약별 이메일 발송 현황 가져오기
   useEffect(() => {
@@ -238,6 +245,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
 
   // 거주 상태 아이콘 가져오기
   const getResidentStatusIcon = (reservationId: string) => {
+    if (!residentStatusIndicatorsEnabled) return null
     const status = reservationResidentStatus[reservationId]
     if (!status) return null
 

@@ -602,7 +602,11 @@ export function useReservationData() {
       ])
       const totalCount = firstMapped.length + restMapped.length
 
-      setReservations(prev => [...prev, ...restMapped])
+      setReservations(prev => {
+        const ids = new Set(prev.map((r) => r.id))
+        const extra = restMapped.filter((r) => !ids.has(r.id))
+        return extra.length === 0 ? prev : [...prev, ...extra]
+      })
       setReservationPricingMap(prev => new Map([...prev, ...restPricingMap]))
       setToursMap(prev => mergeTourMaps(prev, restToursById, restToursByOverlap))
       setLoadingProgress({ current: totalCount, total: totalCount })

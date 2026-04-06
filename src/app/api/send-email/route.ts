@@ -827,6 +827,11 @@ export function generateEmailContent(
               </div>
             `
           }).join('')}
+          <p style="margin: 18px 0 0 0; padding-top: 14px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; line-height: 1.6;">
+            ${isEnglish
+              ? 'The schedule above is illustrative and may change depending on local conditions.'
+              : '위 스케줄은 예시이며, 스케줄은 현지 사정에 따라 변동될 수 있습니다.'}
+          </p>
         </div>
       </div>
     `

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
@@ -21,6 +21,7 @@ import type {
   PickupHotel, 
   Reservation 
 } from '@/types/reservation'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 
 // 새로운 간결한 초이스 시스템 타입 정의
 interface ChoiceOption {
@@ -380,6 +381,15 @@ export default function ReservationFormNew({
     setFormData(prev => ({ ...prev, [field]: value }))
   }, [])
 
+  const showResidentStatusSection = useMemo(
+    () =>
+      productShowsResidentStatusSectionByCode(
+        (products.find((p) => p.id === formData.product_id) as { product_code?: string | null } | undefined)
+          ?.product_code ?? null
+      ),
+    [products, formData.product_id]
+  )
+
   // 기존 컴포넌트들 렌더링 (간소화)
   const formContent = (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -451,6 +461,7 @@ export default function ReservationFormNew({
 
       {/* 참가자 섹션 */}
       <ParticipantsSection
+        showResidentStatusSection={showResidentStatusSection}
         formData={{
           adults: 0,
           child: 0,

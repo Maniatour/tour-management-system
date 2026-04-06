@@ -42,8 +42,13 @@ import {
   type ResidentLineState,
   type ResidentLineKey,
 } from '@/utils/usResidentChoiceSync'
-import { getFallbackOtaSalePrice, getFallbackOtaAndNotIncluded } from '@/utils/choicePricingMatcher'
+import {
+  getFallbackOtaSalePrice,
+  getFallbackOtaAndNotIncluded,
+  getNoChoiceOtaAndNotIncluded,
+} from '@/utils/choicePricingMatcher'
 import { computeChannelSettlementAmount } from '@/utils/channelSettlement'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
   Customer, 
@@ -874,6 +879,8 @@ export default function ReservationForm({
   const prevCouponParams = useRef<{productId: string, tourDate: string, channelId: string} | null>(null)
   /** 이메일 금액 기준 쿠폰 자동 적용이 이미 이 입력 조합에 대해 끝났는지 (중복 setFormData 방지) */
   const emailCouponApplyRef = useRef<string>('')
+  /** Viator Net Rate 자동 쿠폰: 사용자가 쿠폰 드롭다운을 건드리면 재강제하지 않음 (수수료 재계산 effect와 충돌 방지) */
+  const viatorImportCouponUserAdjustedRef = useRef(false)
   /** 예약 가져오기 쿠폰 매칭을 다른 가격 useEffect 이후로 미루는 타이머 */
   const importEmailCouponRafRef = useRef<number | null>(null)
   const importEmailCouponTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -993,6 +1000,18 @@ export default function ReservationForm({
     isImportMode,
     initialChannelVariantLabelFromImport,
   ])
+
+  const showResidentStatusSection = useMemo(
+    () =>
+      productShowsResidentStatusSectionByCode(
+        (
+          products.find((p: { id: string }) => p.id === formData.productId) as
+            | { product_code?: string | null }
+            | undefined
+        )?.product_code ?? null
+      ),
+    [products, formData.productId]
+  )
 
   // 데이터베이스에서 불러온 commission_amount 값을 추적 (자동 계산에 의해 덮어쓰이지 않도록)
   const loadedCommissionAmount = useRef<number | null>(null)
@@ -2723,10 +2742,14 @@ export default function ReservationForm({
                     .sort()
                     .join('+')
                 : ''
-              const fallbackOta = getFallbackOtaSalePrice(
+              let fallbackOta = getFallbackOtaSalePrice(
                 { id: fallbackKey || 'fallback', combination_key: fallbackKey },
                 choicesPricing
               )
+              const noChoiceRow = getNoChoiceOtaAndNotIncluded(choicesPricing)
+              if ((fallbackOta === undefined || fallbackOta <= 0) && noChoiceRow && noChoiceRow.ota_sale_price > 0) {
+                fallbackOta = noChoiceRow.ota_sale_price
+              }
               if (fallbackOta !== undefined && fallbackOta > 0) {
                 adultPrice = fallbackOta
                 childPrice = isSinglePrice ? fallbackOta : fallbackOta
@@ -3009,10 +3032,17 @@ export default function ReservationForm({
           ? false
           : (requiredChoices.length === 0 || requiredChoices.every(choice => selectedChoiceIds.has(choice.id)))
         
-        // choices_pricing이 있고 필수 초이스가 모두 선택되었으면 초이스별 가격 우선 사용
+        // choices_pricing이 있고 (필수 초이스 완료 또는 OTA 채널)이면 초이스별 가격 우선 시도
+        // 이메일 가져오기 직후 productChoices 미로드 시 allRequiredChoicesSelected가 항상 false라
+        // choices_pricing을 건너뛰고 행 adult_price(기본가)만 쓰는 문제 방지 — OTA는 선택된 초이스만으로도 OTA가 로드되게 함
         // 초이스별 가격이 있으면 기본 가격(adult_price, child_price, infant_price)은 무시
         let useChoicePricing = false
-        if (hasChoicesPricing && pricingSelectedChoices && pricingSelectedChoices.length > 0 && allRequiredChoicesSelected) {
+        if (
+          hasChoicesPricing &&
+          pricingSelectedChoices &&
+          pricingSelectedChoices.length > 0 &&
+          (allRequiredChoicesSelected || isOTAChannel)
+        ) {
           try {
             
             console.log('choices_pricing 데이터:', choicesPricing)
@@ -3373,6 +3403,31 @@ export default function ReservationForm({
             }
           } catch (e) {
             console.warn('choices_pricing 파싱 오류:', e)
+          }
+        }
+
+        // 초이스 없는 상품: VIATOR OTA 등은 choices_pricing['no_choice'].ota_sale_price 에만 저장됨 (행 adult_price는 기본가)
+        if (!useChoicePricing && isOTAChannel && hasChoicesPricing) {
+          const hasDefiniteSelection = (pricingSelectedChoices || []).some(
+            (c: any) =>
+              c.option_id !== UNDECIDED_OPTION_ID_PRICING &&
+              (c as any).option_key !== UNDECIDED_OPTION_ID_PRICING
+          )
+          if (!hasDefiniteSelection) {
+            const nc = getNoChoiceOtaAndNotIncluded(choicesPricing)
+            if (nc && nc.ota_sale_price > 0) {
+              adultPrice = nc.ota_sale_price
+              childPrice = isSinglePrice ? nc.ota_sale_price : nc.ota_sale_price
+              infantPrice = isSinglePrice ? nc.ota_sale_price : nc.ota_sale_price
+              if (nc.not_included_price != null && nc.not_included_price > 0) {
+                notIncludedPrice = nc.not_included_price
+              }
+              useChoicePricing = true
+              console.log('choices_pricing no_choice OTA 적용 (확정 초이스 없음):', {
+                ota_sale_price: nc.ota_sale_price,
+                not_included_price: nc.not_included_price,
+              })
+            }
           }
         }
         
@@ -3741,34 +3796,43 @@ export default function ReservationForm({
   }, [formData.productId, formData.tourDate, formData.channelId, coupons, getCouponDiscountSubtotal, calculateCouponDiscount, setFormData])
 
   /** 예약 가져오기: 이메일 금액과 맞도록 쿠폰 선택 (product_id 없음 = 채널 공통 쿠폰 포함).
-   *  Viator compareSettlementToNet: 채널 정산 ≈ (할인 후 채널 결제 기준액) × (1 − 채널 수수료%) 이 값이 Net Rate와 다르면 9% 쿠폰만 적용.
-   *  할인 후 기준액 = productPriceTotal − couponDiscount − additionalDiscount (OTA commission_base와 동일) */
+   *  Viator compareSettlementToNet: PricingSection·`computeChannelSettlementAmount`와 동일한 채널 정산 금액을 Net Rate와 비교.
+   *  일치하면 쿠폰을 건드리지 않음. 불일치할 때만 9% 쿠폰을 시도.
+   *  `formDataRef`로 최신 상태를 읽고 콜백 의존성에서 couponDiscount를 빼서, 사용자가 쿠폰을 해제해도 effect만으로 재강제되지 않게 함. */
   const applyCouponToMatchEmailAmount = useCallback(
     (emailTarget: number, opts?: { compareSettlementToNet?: boolean }) => {
-      if (!formData.productId || !formData.tourDate || !formData.channelId) return
+      const fd = formDataRef.current
+      if (!fd.productId || !fd.tourDate || !fd.channelId) return
       const compareSettlementToNet = opts?.compareSettlementToNet === true
+      if (compareSettlementToNet && viatorImportCouponUserAdjustedRef.current) return
       const base = getCouponDiscountSubtotal()
-      const productTotal = formData.productPriceTotal || 0
-      const additionalDisc = formData.additionalDiscount || 0
-      const channelRow = channels.find(c => c.id === formData.channelId)
+      const productTotal = fd.productPriceTotal || 0
+      const additionalDisc = fd.additionalDiscount || 0
+      const channelRow = channels.find(c => c.id === fd.channelId)
       const commissionPctForKey =
-        formData.commission_percent != null && formData.commission_percent > 0
-          ? Number(formData.commission_percent)
+        fd.commission_percent != null && fd.commission_percent > 0
+          ? Number(fd.commission_percent)
           : Number(
               (channelRow as { commission_percent?: number; commission_rate?: number; commission?: number })
                 ?.commission_percent ??
                 (channelRow as { commission_rate?: number })?.commission_rate ??
                 (channelRow as { commission?: number })?.commission
             ) || 0
-      const key = `${formData.productId}|${emailTarget.toFixed(2)}|${base.toFixed(2)}|${productTotal.toFixed(2)}|${additionalDisc.toFixed(2)}|${(formData.couponDiscount || 0).toFixed(2)}|${commissionPctForKey.toFixed(4)}|${formData.channelId}|${compareSettlementToNet ? 'net' : 'price'}`
+      const toN = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
+      const billingPax = (fd.pricingAdults ?? fd.adults) + fd.child + fd.infant
+      const notIncludedTotal = (Number(fd.not_included_price) || 0) * (billingPax || 1)
+      const productTotalForSettlement = (Number(fd.productPriceTotal) || 0) + notIncludedTotal
+      const commissionBaseForRow = toN(fd.commission_base_price) || toN(fd.onlinePaymentAmount)
+      const onlinePaymentForCompute = toN(fd.onlinePaymentAmount) || commissionBaseForRow
+      const key = `${fd.productId}|${emailTarget.toFixed(2)}|${base.toFixed(2)}|${productTotalForSettlement.toFixed(2)}|${additionalDisc.toFixed(2)}|${(fd.couponDiscount || 0).toFixed(2)}|${onlinePaymentForCompute.toFixed(2)}|${toN(fd.commission_amount).toFixed(4)}|${commissionPctForKey.toFixed(4)}|${fd.channelId}|${compareSettlementToNet ? 'net' : 'price'}`
       if (base <= 0) return
       if (emailCouponApplyRef.current === key) return
 
-      const tourDate = new Date(formData.tourDate)
+      const tourDate = new Date(fd.tourDate)
       const matchingCoupons = coupons.filter(coupon => {
         if (coupon.status !== 'active') return false
-        if (!couponMatchesChannel(coupon, formData.channelId)) return false
-        if (coupon.product_id && coupon.product_id !== formData.productId) return false
+        if (!couponMatchesChannel(coupon, fd.channelId)) return false
+        if (coupon.product_id && coupon.product_id !== fd.productId) return false
         if (coupon.start_date) {
           const startDate = new Date(coupon.start_date)
           if (tourDate < startDate) return false
@@ -3781,17 +3845,49 @@ export default function ReservationForm({
       })
 
       if (compareSettlementToNet) {
-        const commissionPct =
-          formData.commission_percent != null && formData.commission_percent > 0
-            ? Number(formData.commission_percent)
-            : commissionPctForKey
-        const effectivePayment = Math.max(0, productTotal - (formData.couponDiscount || 0) - additionalDisc)
-        const settlementFromFormula =
-          commissionPct > 0 && commissionPct <= 100
-            ? effectivePayment * (1 - commissionPct / 100)
-            : effectivePayment
+        const isOTAChannel = !!(
+          channelRow &&
+          (((channelRow as { type?: string }).type?.toLowerCase() === 'ota') ||
+            (channelRow as { category?: string }).category === 'OTA')
+        )
+        let commissionAmt = toN(fd.commission_amount)
+        if (commissionAmt < 0.005 && isOTAChannel) {
+          const pct =
+            fd.commission_percent != null && fd.commission_percent > 0
+              ? Number(fd.commission_percent)
+              : commissionPctForKey
+          const basePrice =
+            fd.commission_base_price !== undefined &&
+            fd.commission_base_price !== null &&
+            String(fd.commission_base_price) !== ''
+              ? Number(fd.commission_base_price)
+              : onlinePaymentForCompute ||
+                Math.max(0, productTotalForSettlement - toN(fd.couponDiscount) - toN(fd.additionalDiscount))
+          const adjustedBase = Math.max(0, basePrice)
+          if (pct > 0 && pct <= 100 && adjustedBase > 0) {
+            commissionAmt = Math.round(adjustedBase * (pct / 100) * 100) / 100
+          }
+        }
 
-        if (Math.abs(settlementFromFormula - emailTarget) < 0.02) {
+        const settlementUi = computeChannelSettlementAmount({
+          depositAmount: toN(fd.depositAmount),
+          onlinePaymentAmount: onlinePaymentForCompute,
+          productPriceTotal: productTotalForSettlement,
+          couponDiscount: toN(fd.couponDiscount),
+          additionalDiscount: toN(fd.additionalDiscount),
+          optionTotalSum: toN(fd.optionTotal),
+          additionalCost: toN(fd.additionalCost),
+          tax: toN(fd.tax),
+          cardFee: toN(fd.cardFee),
+          prepaymentTip: toN(fd.prepaymentTip),
+          onSiteBalanceAmount: toN(fd.onSiteBalanceAmount ?? fd.balanceAmount),
+          returnedAmount: 0,
+          commissionAmount: commissionAmt,
+          reservationStatus: fd.status,
+          isOTAChannel,
+        })
+
+        if (Math.abs(settlementUi - emailTarget) < 0.02) {
           emailCouponApplyRef.current = key
           return
         }
@@ -3800,7 +3896,7 @@ export default function ReservationForm({
         if (!nineCoupon) {
           nineCoupon = coupons.find(c => {
             if (c.status !== 'active') return false
-            if (!couponMatchesChannel(c, formData.channelId)) return false
+            if (!couponMatchesChannel(c, fd.channelId)) return false
             if (c.start_date) {
               const startDate = new Date(c.start_date)
               if (tourDate < startDate) return false
@@ -3814,11 +3910,11 @@ export default function ReservationForm({
         }
         if (nineCoupon) {
           const couponDiscount = calculateCouponDiscount(nineCoupon, base)
-          console.log('Viator Net Rate: 채널정산(기준×(1-수수료%)) 불일치 → 9% 쿠폰', {
+          console.log('Viator Net Rate: 채널정산(표시 산식) 불일치 → 9% 쿠폰', {
             emailTarget,
-            commissionPct,
-            effectivePayment,
-            settlementFromFormula,
+            settlementUi,
+            commissionAmt,
+            onlinePaymentForCompute,
             coupon: nineCoupon.coupon_code,
             couponDiscount,
           })
@@ -3872,21 +3968,19 @@ export default function ReservationForm({
         emailCouponApplyRef.current = key
       }
     },
-    [
-      formData.productId,
-      formData.tourDate,
-      formData.channelId,
-      formData.commission_percent,
-      formData.couponDiscount,
-      formData.productPriceTotal,
-      formData.additionalDiscount,
-      channels,
-      coupons,
-      getCouponDiscountSubtotal,
-      calculateCouponDiscount,
-      setFormData,
-    ]
+    [channels, coupons, getCouponDiscountSubtotal, calculateCouponDiscount, setFormData]
   )
+
+  const isImportViatorNetRateMode =
+    isImportMode && parseMoneyFromImportString(initialViatorNetRateFromImport) != null
+
+  const pricingSectionAutoSelectCoupon = useCallback(() => {
+    if (isImportViatorNetRateMode) {
+      viatorImportCouponUserAdjustedRef.current = false
+      emailCouponApplyRef.current = ''
+    }
+    autoSelectCoupon()
+  }, [isImportViatorNetRateMode, autoSelectCoupon])
 
   // 상품이 변경될 때 choice 데이터 로드 (편집 모드에서는 기존 데이터 보존)
   useEffect(() => {
@@ -4027,10 +4121,17 @@ export default function ReservationForm({
     loadPricingInfo(productId, tourDateNorm, channelId, reservation?.id, selectedChoicesArray)
   }, [isImportMode, (reservation as any)?.product_id, (reservation as any)?.tour_date, (reservation as any)?.channel_id, reservation?.id, formData.variantKey, formData.selectedChoices, loadPricingInfo, importChoicesHydratedProductId])
 
-  // 상품·이메일 금액 변경 시 이메일 기준 쿠폰 재시도 가능하도록
+  // 상품·채널·날짜·이메일 금액 변경 시 이메일 기준 쿠폰 재시도 가능하도록 (수동 쿠폰 조작 플래그도 초기화)
   useEffect(() => {
     emailCouponApplyRef.current = ''
-  }, [formData.productId, initialAmountFromImport, initialViatorNetRateFromImport])
+    viatorImportCouponUserAdjustedRef.current = false
+  }, [
+    formData.productId,
+    formData.channelId,
+    formData.tourDate,
+    initialAmountFromImport,
+    initialViatorNetRateFromImport,
+  ])
 
   // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택 (예약 가져오기는 아래 전용 effect에서 마지막에 처리)
   useEffect(() => {
@@ -4220,6 +4321,7 @@ export default function ReservationForm({
     applyCouponToMatchEmailAmount,
     coupons,
     formData.commission_percent,
+    formData.commission_amount,
   ])
 
   // dynamic_pricing에서 특정 choice의 가격 정보를 가져오는 함수
@@ -4339,6 +4441,7 @@ export default function ReservationForm({
       const newRequiredOptionTotal = toNum(fd.requiredOptionTotal)
 
       let returnedAmount = 0
+      let partnerReceivedAmount = 0
       try {
         const { data: payRows } = await (supabase as any)
           .from('payment_records')
@@ -4347,12 +4450,16 @@ export default function ReservationForm({
         ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
           const status = row.payment_status || ''
           const sl = status.toLowerCase()
+          if (status === 'Partner Received') {
+            partnerReceivedAmount += Number(row.amount) || 0
+          }
           if (status.includes('Returned') || sl === 'returned') {
             returnedAmount += Number(row.amount) || 0
           }
         })
       } catch {
         returnedAmount = 0
+        partnerReceivedAmount = 0
       }
 
       let isOTAChannel = false
@@ -4389,6 +4496,7 @@ export default function ReservationForm({
         prepaymentTip: Number(fd.prepaymentTip) || 0,
         onSiteBalanceAmount: Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0,
         returnedAmount,
+        partnerReceivedAmount,
         commissionAmount: Number(fd.commission_amount) || 0,
         reservationStatus: fd.status,
         isOTAChannel,
@@ -5368,6 +5476,7 @@ export default function ReservationForm({
                 </div>
                 <div id="participants-section">
                   <ParticipantsSection
+                    showResidentStatusSection={showResidentStatusSection}
                     formData={formData}
                     setFormData={setFormData}
                     applyResidentParticipantPatch={applyResidentParticipantPatch}
@@ -5453,7 +5562,14 @@ export default function ReservationForm({
                 }
                 options={options}
                 t={t}
-                autoSelectCoupon={autoSelectCoupon}
+                autoSelectCoupon={pricingSectionAutoSelectCoupon}
+                {...(isImportViatorNetRateMode
+                  ? {
+                      onCouponDropdownUserInput: () => {
+                        viatorImportCouponUserAdjustedRef.current = true
+                      },
+                    }
+                  : {})}
                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                 isExistingPricingLoaded={isExistingPricingLoaded}
                 pricingFieldsFromDb={pricingFieldsFromDb}

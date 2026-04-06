@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { X, Search, SlidersHorizontal } from 'lucide-react'
+import { X, Search, SlidersHorizontal, Printer } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
@@ -32,6 +32,7 @@ import ReservationsPagination from '@/components/reservation/ReservationsPaginat
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 import ReservationActionRequiredModal from '@/components/reservation/ReservationActionRequiredModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
+import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { useAuth } from '@/contexts/AuthContext'
 import { 
   getPickupHotelDisplay, 
@@ -2400,7 +2401,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         getGroupColorClasses={getGroupColorClasses}
                         getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                         choicesCacheRef={choicesCacheRef}
-                        showResidentStatusIcon={false}
                         linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
                       />
                     ))}
@@ -2462,10 +2462,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     onStatusChange={handleStatusChange}
                     generatePriceCalculation={generatePriceCalculation}
                     getGroupColorClasses={getGroupColorClasses}
-                    getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
-                    choicesCacheRef={choicesCacheRef}
-                    showResidentStatusIcon={false}
-                    linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+                        getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
+                        choicesCacheRef={choicesCacheRef}
+                        linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
                   />
                 ))}
               </div>
@@ -2509,6 +2508,27 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           onDelete={handleDeleteReservation}
           layout="modal"
           allowPastDateEdit={isSuper}
+          titleAction={
+            editingReservation ? (
+              <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleReceiptClick(editingReservation)}
+                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                  title={t('print') || '영수증 인쇄'}
+                >
+                  <Printer className="w-5 h-5" />
+                </button>
+                <div className="hidden sm:block h-6 w-px bg-gray-200 shrink-0" aria-hidden />
+                <ReservationFormEmailSendButtons
+                  reservation={editingReservation}
+                  customers={(customers || []) as Customer[]}
+                  sentBy={user?.email ?? null}
+                  uiLocale={locale === 'en' ? 'en' : 'ko'}
+                />
+              </div>
+            ) : undefined
+          }
         />
       )}
 

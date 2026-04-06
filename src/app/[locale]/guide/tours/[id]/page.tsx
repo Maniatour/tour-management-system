@@ -36,6 +36,7 @@ import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import { formatTimeWithAMPM } from '@/lib/utils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { toast } from 'sonner'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -169,6 +170,7 @@ export default function GuideTourDetailPage() {
 
       setTour(tourData)
 
+      let tourProductRow: ProductRow | null = null
       // 상품 정보 가져오기
       if ((tourData as TourRow & { product_id?: string }).product_id) {
         const { data: productData } = await supabase
@@ -176,6 +178,7 @@ export default function GuideTourDetailPage() {
           .select('*')
           .eq('id', (tourData as TourRow & { product_id: string }).product_id)
           .single()
+        tourProductRow = productData
         setProduct(productData)
       }
 
@@ -351,8 +354,18 @@ export default function GuideTourDetailPage() {
         .select('id, name, favicon_url');
       setChannels(channelsData || [])
 
-      // 거주 상태별 인원 수 합산 가져오기
-      if (allReservationIds.length > 0) {
+      // 거주 상태별 인원 수 합산 가져오기 (해당 상품 코드에서만)
+      const showResidentSummary = productShowsResidentStatusSectionByCode(
+        (tourProductRow as { product_code?: string | null } | null)?.product_code
+      )
+      if (!showResidentSummary) {
+        setResidentStatusSummary({
+          usResident: 0,
+          nonResident: 0,
+          nonResidentWithPass: 0,
+          passCoveredCount: 0
+        })
+      } else if (allReservationIds.length > 0) {
         const { data: reservationCustomers, error: rcError } = await supabase
           .from('reservation_customers')
           .select('resident_status, pass_covered_count')
@@ -1080,7 +1093,7 @@ export default function GuideTourDetailPage() {
             })()}
             
                   {/* 거주 상태별 인원 수 합산 */}
-                  {reservations.length > 0 && (
+                  {productShowsResidentStatusSectionByCode(product?.product_code) && reservations.length > 0 && (
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {tCommon('residentStatusByCount')}

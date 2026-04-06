@@ -469,7 +469,6 @@ export default function ReservationActionRequiredModal({
                     getGroupColorClasses={getGroupColorClasses}
                     getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
                     choicesCacheRef={choicesCacheRef}
-                    showResidentStatusIcon={false}
                     linkedTourId={tourIdByReservationId?.get(reservation.id) ?? null}
                   />
                 ))}

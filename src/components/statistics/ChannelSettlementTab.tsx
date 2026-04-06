@@ -73,6 +73,26 @@ interface ReservationItem {
 // 배포/team 조회 실패 시에도 Audit 가능하도록 Super 관리자 이메일 직접 확인
 const SUPER_ADMIN_EMAILS = ['wooyong.shim09@gmail.com']
 
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const item of items) {
+    if (!item.id || seen.has(item.id)) continue
+    seen.add(item.id)
+    out.push(item)
+  }
+  return out
+}
+
+function dedupeChannelsById<T extends { id: string }>(list: T[]): T[] {
+  const seen = new Set<string>()
+  return list.filter((ch) => {
+    if (!ch.id || seen.has(ch.id)) return false
+    seen.add(ch.id)
+    return true
+  })
+}
+
 export default function ChannelSettlementTab({ dateRange, selectedChannelId = '', onChannelChange, selectedStatuses, searchQuery = '', isSuper = false }: ChannelSettlementTabProps) {
   const t = useTranslations('reservations')
   const { authUser } = useAuth()
@@ -337,17 +357,27 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   const channelGroups = useMemo((): ChannelGroup[] => {
     if (!channels || channels.length === 0) return []
     
-    const otaChannels = channels.filter(channel => {
-      const type = (channel.type || '').toLowerCase()
-      const category = (channel.category || '').toLowerCase()
-      return type === 'ota' || category === 'ota'
-    })
-    
-    const selfChannels = channels.filter(channel => {
-      const type = (channel.type || '').toLowerCase()
-      const category = (channel.category || '').toLowerCase()
-      return type === 'self' || type === 'partner' || category === 'own' || category === 'self' || category === 'partner'
-    })
+    const otaChannels = dedupeChannelsById(
+      channels.filter(channel => {
+        const type = (channel.type || '').toLowerCase()
+        const category = (channel.category || '').toLowerCase()
+        return type === 'ota' || category === 'ota'
+      })
+    )
+
+    const selfChannels = dedupeChannelsById(
+      channels.filter(channel => {
+        const type = (channel.type || '').toLowerCase()
+        const category = (channel.category || '').toLowerCase()
+        return (
+          type === 'self' ||
+          type === 'partner' ||
+          category === 'own' ||
+          category === 'self' ||
+          category === 'partner'
+        )
+      })
+    )
     
     return [
       {
@@ -400,7 +430,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
   // 예약 내역 필터링 (등록일 기준, 상태 필터, 검색 필터, 채널 필터)
   const filteredReservations = useMemo(() => {
-    return reservations.filter(reservation => {
+    const matched = reservations.filter(reservation => {
       // 채널 필터 (선택된 경우에만)
       if (channelFilter && reservation.channelId !== channelFilter) return false
       
@@ -442,6 +472,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
       return true
     })
+    return dedupeById(matched)
   }, [reservations, selectedStatuses, dateRange, searchQuery, customers, products, channelFilter])
 
   // 채널별로 예약 필터링하는 헬퍼 함수
@@ -631,6 +662,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           reservationStatus: reservation.status,
           isOTAChannel: isOtaChannelId(reservation.channelId),
           returnedAmount: returnedAmountByReservation[reservation.id] ?? 0,
+          partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
         }
       )
       return {
@@ -724,6 +756,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
           return true
         })
+
+        tourDateFilteredReservations = dedupeById(tourDateFilteredReservations)
 
         if (tourDateFilteredReservations.length === 0) {
           setTourItems([])
@@ -877,6 +911,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
               reservationStatus: reservation.status,
               isOTAChannel: isOtaChannelId(reservation.channelId),
               returnedAmount: returnedMapTour[reservation.id] ?? 0,
+              partnerReceivedAmount: partnerReceivedMap[reservation.id] ?? 0,
             }
           )
           return {
@@ -1108,7 +1143,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             ) : (
                channelGroups.map(group => {
                  const isGroupExpanded = expandedGroups.has(group.type)
-                 const groupReservations = group.channels.flatMap(ch => getReservationsByChannel(ch.id))
+                 const groupReservations = dedupeById(
+                   group.channels.flatMap(ch => getReservationsByChannel(ch.id))
+                 )
                  const groupTotal = groupReservations.reduce((sum, r) => {
                    const pricing = reservationPricingData[r.id] || {}
                    const discountTotal = (pricing.couponDiscount || 0) + (pricing.additionalDiscount || 0)
@@ -1414,6 +1451,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                 reservationStatus: reservation.status,
                                 isOTAChannel: isOtaChannelId(reservation.channelId),
                                 returnedAmount: returnedAmountByReservation[reservation.id] ?? 0,
+                                partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
                               }
                             )
                             return {
@@ -1723,7 +1761,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             ) : (
               channelGroups.map(group => {
                 const isGroupExpanded = expandedGroups.has(group.type)
-                const groupTourItems = group.channels.flatMap(ch => getTourItemsByChannel(ch.id))
+                const groupTourItems = dedupeById(
+                  group.channels.flatMap(ch => getTourItemsByChannel(ch.id))
+                )
                 const groupTotal = groupTourItems.reduce((sum, item) => {
                   const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
                   const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)

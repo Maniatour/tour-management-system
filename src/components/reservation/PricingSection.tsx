@@ -19,6 +19,11 @@ function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/** OTA 채널 수수료 $: (결제 그로스−Returned) 기준액 × % 가 바뀌면 자동 갱신, 이후 사용자가 $만 수정한 경우는 유지 */
+function otaCommissionFeeFingerprint(commissionCalcBase: number, commissionPercent: number): string {
+  return `${roundUsd2(Math.max(0, commissionCalcBase))}|${Number(commissionPercent || 0).toFixed(4)}`
+}
+
 /** 동적가격 계산 결과: 비거주 합산 전(base) / 비거주 / 합계 */
 type NotIncludedCalcResult = {
   baseTotal: number
@@ -191,6 +196,8 @@ interface PricingSectionProps {
   options: Option[]
   t: (key: string) => string
   autoSelectCoupon: () => void
+  /** 쿠폰 `<select>` 사용자 조작 시(예: Viator 가져오기에서 자동 쿠폰 재적용 억제) */
+  onCouponDropdownUserInput?: () => void
   reservationOptionsTotalPrice?: number
   isExistingPricingLoaded?: boolean
   /** DB에서 불러온 필드면 검은색, 계산값이면 빨간색 표시 */
@@ -208,6 +215,7 @@ export default function PricingSection({
   calculateCouponDiscount,
   coupons,
   autoSelectCoupon,
+  onCouponDropdownUserInput,
   reservationOptionsTotalPrice = 0,
   isExistingPricingLoaded,
   pricingFieldsFromDb = {},
@@ -234,6 +242,8 @@ export default function PricingSection({
   const [returnedAmount, setReturnedAmount] = useState(0) // 파트너 환불 (Returned)
   // 카드 수수료 수동 입력 여부 추적
   const isCardFeeManuallyEdited = useRef(false)
+  /** OTA: 마지막 자동 수수료 $ 기준(수수료 산출 base × %) — 이 키가 바뀌면 $를 다시 계산 */
+  const otaCommissionAutoFingerprintRef = useRef<string>('')
   // 채널 수수료 $ 입력 필드 로컬 상태 (입력 중 포맷팅 방지)
   const [commissionAmountInput, setCommissionAmountInput] = useState<string>('')
   const [isCommissionAmountFocused, setIsCommissionAmountFocused] = useState(false)
@@ -245,6 +255,10 @@ export default function PricingSection({
   const [isOnSiteBalanceAmountFocused, setIsOnSiteBalanceAmountFocused] = useState(false)
 
   // fetchPaymentRecords 등에서 formData/channels 의존 루프 방지용 (항상 최신 참조)
+  useEffect(() => {
+    otaCommissionAutoFingerprintRef.current = ''
+  }, [reservationId])
+
   const formDataRef = useRef(formData)
   formDataRef.current = formData
   const channelsRef = useRef(channels)
@@ -885,6 +899,33 @@ export default function PricingSection({
         // OTA 채널: depositAmount = 고객 총 결제 금액(잔액 0), 채널 결제 금액 = 쿠폰 시 할인 후 상품가·아니면 판매가×인원, 채널 수수료 $ = 채널 결제 금액 × 수수료 %
         // 단, 입금 내역이 있거나 DB에서 불러온 deposit_amount가 있으면 고객 실제 지불액(보증금)을 덮어쓰지 않음
         if (isOTAChannel) {
+          const resolveNextOtaCommissionAmount = (
+            commissionCalcBase: number,
+            pct: number,
+            calculatedComm: number
+          ): number => {
+            const fp = otaCommissionFeeFingerprint(commissionCalcBase, pct)
+            const refEmpty = otaCommissionAutoFingerprintRef.current === ''
+            const currentStored = formData.commission_amount ?? 0
+            if (refEmpty && isExistingPricingLoaded) {
+              otaCommissionAutoFingerprintRef.current = fp
+              isCardFeeManuallyEdited.current = false
+              return currentStored
+            }
+            if (fp !== otaCommissionAutoFingerprintRef.current) {
+              otaCommissionAutoFingerprintRef.current = fp
+              isCardFeeManuallyEdited.current = false
+              return calculatedComm
+            }
+            if (isCardFeeManuallyEdited.current) {
+              return currentStored
+            }
+            if (isExistingPricingLoaded) {
+              return currentStored
+            }
+            return calculatedComm
+          }
+
           const totalCustomerPayment = calculateTotalCustomerPayment()
           const salePriceTimesPax =
             formData.couponDiscount > 0
@@ -911,13 +952,18 @@ export default function PricingSection({
             const calculatedCommission = (commissionPercent > 0 && channelPaymentBase > 0)
               ? Math.round(channelPaymentBase * (commissionPercent / 100) * 100) / 100
               : (formData.commission_amount ?? 0)
+            const nextCommissionAmount = resolveNextOtaCommissionAmount(
+              channelPaymentBase,
+              commissionPercent,
+              calculatedCommission
+            )
             const sameOnline = Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01
             if (!sameOnline) {
               setFormData((prev: typeof formData) => ({
                 ...prev,
                 onlinePaymentAmount: salePriceTimesPax,
                 commission_base_price: salePriceTimesPax,
-                commission_amount: isExistingPricingLoaded ? (prev.commission_amount ?? 0) : calculatedCommission
+                commission_amount: nextCommissionAmount,
               }))
             }
           } else if (currentDeposit === 0 || priceDifference > 0.01) {
@@ -928,7 +974,12 @@ export default function PricingSection({
             const calculatedCommission = (commissionPercent > 0 && channelPaymentBase > 0)
               ? Math.round(channelPaymentBase * (commissionPercent / 100) * 100) / 100
               : (formData.commission_amount ?? 0)
-            const commissionToSet = isExistingPricingLoaded ? (formData.commission_amount ?? 0) : calculatedCommission
+            const nextCommissionAmount = resolveNextOtaCommissionAmount(
+              channelPaymentBase,
+              commissionPercent,
+              calculatedCommission
+            )
+            const commissionToSet = nextCommissionAmount
             const otaRemainingBalance = Math.max(
               0,
               roundUsd2(totalCustomerPayment - depositPortion - calculatedBalanceReceivedTotal)
@@ -945,7 +996,7 @@ export default function PricingSection({
                 onlinePaymentAmount: salePriceTimesPax,
                 commission_base_price: salePriceTimesPax,
                 commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : commissionPercent,
-                commission_amount: isExistingPricingLoaded ? (prev.commission_amount ?? 0) : calculatedCommission,
+                commission_amount: nextCommissionAmount,
                 onSiteBalanceAmount: otaRemainingBalance,
                 balanceAmount: otaRemainingBalance
               }))
@@ -1508,13 +1559,14 @@ export default function PricingSection({
     let nextCommissionAmount = formData.commission_amount ?? 0
     if (isOTAChannel) {
       nextCommissionBase = deposit
-      if (!isExistingPricingLoaded) {
-        const currentCommissionAmount = formData.commission_amount || 0
-        if (currentCommissionAmount === 0) {
-          const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
-          nextCommissionAmount = Math.max(0, deposit - returnedAmount) * (commissionPercent / 100)
-        }
-      }
+      const commissionCalcBase = Math.max(0, deposit - returnedAmount)
+      const pct = formData.commission_percent || channelCommissionPercent || 0
+      nextCommissionAmount =
+        commissionCalcBase > 0 && pct > 0
+          ? Math.round(commissionCalcBase * (pct / 100) * 100) / 100
+          : (formData.commission_amount ?? 0)
+      otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(commissionCalcBase, pct)
+      isCardFeeManuallyEdited.current = false
     }
     const last = lastDepositSyncRef.current
     if (last && Math.abs(last.depositAmount - deposit) < 0.01 &&
@@ -1581,11 +1633,18 @@ export default function PricingSection({
     if (formData.channelId !== prevChannelIdRef.current) {
       prevChannelIdRef.current = formData.channelId
       loadedCommissionAmountRef.current = null
+      isCardFeeManuallyEdited.current = false
+      otaCommissionAutoFingerprintRef.current = ''
       if (isOTAChannel && channelCommissionPercent > 0) {
         const basePrice = formData.commission_base_price !== undefined
           ? formData.commission_base_price
           : (discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal))
-        const calculatedAmount = basePrice * (channelCommissionPercent / 100)
+        const commissionCalcBase = Math.max(0, basePrice - returnedAmount)
+        const calculatedAmount = commissionCalcBase * (channelCommissionPercent / 100)
+        otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
+          commissionCalcBase,
+          channelCommissionPercent
+        )
         setFormData((prev: typeof formData) => ({
           ...prev,
           commission_percent: channelCommissionPercent,
@@ -1593,7 +1652,7 @@ export default function PricingSection({
         }))
       }
     }
-  }, [formData.channelId, isOTAChannel, isExistingPricingLoaded, channelCommissionPercent, formData.commission_base_price, discountedProductPrice, otaSalePrice, formData.subtotal, setFormData])
+  }, [formData.channelId, isOTAChannel, isExistingPricingLoaded, channelCommissionPercent, formData.commission_base_price, discountedProductPrice, otaSalePrice, formData.subtotal, returnedAmount, setFormData])
 
   // 채널의 commission_percent를 기본값으로 설정 (초기 로딩 시 또는 commission_percent가 0일 때)
   useEffect(() => {
@@ -1626,6 +1685,7 @@ export default function PricingSection({
   useEffect(() => {
     // DB에 commission이 있으면 계산하지 말고 그 값 유지
     if (hasDbCommissionRef.current || isExistingPricingLoaded) return
+    if (isCardFeeManuallyEdited.current) return
     const basePrice = discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal)
     if (basePrice <= 0) return
     if (formData.commission_base_price !== undefined && Math.abs(currentCommissionBase - basePrice) >= 0.01) return
@@ -1634,6 +1694,12 @@ export default function PricingSection({
     const needBase = formData.commission_base_price === undefined || Math.abs(currentCommissionBase - basePrice) >= 0.01
     const needAmount = formData.commission_percent > 0 && (formData.commission_amount === undefined || Math.abs((formData.commission_amount ?? 0) - calculatedAmount) >= 0.01)
     if (!needBase && !needAmount) return
+
+    if (isOTAChannel && (formData.commission_percent ?? 0) > 0) {
+      const ccb = Math.max(0, basePrice - returnedAmount)
+      otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(ccb, formData.commission_percent ?? 0)
+      isCardFeeManuallyEdited.current = false
+    }
 
     setFormData((prev: typeof formData) => {
       const newBase = basePrice
@@ -1655,6 +1721,8 @@ export default function PricingSection({
     formData.couponDiscount,
     formData.additionalDiscount,
     isExistingPricingLoaded,
+    isOTAChannel,
+    returnedAmount,
     setFormData
   ])
 
@@ -2183,31 +2251,29 @@ export default function PricingSection({
                 <select
                   value={formData.couponCode}
                   onChange={(e) => {
+                    onCouponDropdownUserInput?.()
                     const selectedCouponCode = e.target.value
-                    // 필터링된 쿠폰 목록에서 찾기 (채널이 ota가 아니면 Homepage 연결 쿠폰도 포함)
-                    const filteredCoupons = coupons.filter(coupon => 
-                      !formData.channelId || 
-                      !coupon.channel_id || 
-                      coupon.channel_id === formData.channelId ||
-                      (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
-                    )
-                    const selectedCoupon = filteredCoupons.find(coupon => 
-                      coupon.coupon_code && 
-                      coupon.coupon_code.trim().toLowerCase() === selectedCouponCode.trim().toLowerCase()
-                    )
-                    
-                    // 불포함 가격 계산 (쿠폰 할인 계산에서 제외)
                     const notIncludedPrice = notIncludedBreakdown.totalUsd
-                    // OTA 채널일 때는 OTA 판매가에 직접 쿠폰 할인 적용 (불포함 가격 제외)
-                    const subtotal = isOTAChannel 
-                      ? formData.productPriceTotal - notIncludedPrice
-                      : calculateProductPriceTotal() + calculateChoiceTotal() - notIncludedPrice
-                    const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
-                    
-                    setFormData({
-                      ...formData,
-                      couponCode: selectedCoupon?.coupon_code || '', // coupons.coupon_code를 저장 (대소문자 구분 없이 사용)
-                      couponDiscount: couponDiscount
+                    setFormData((prev: typeof formData) => {
+                      const filteredCoupons = coupons.filter(coupon => 
+                        !prev.channelId || 
+                        !coupon.channel_id || 
+                        coupon.channel_id === prev.channelId ||
+                        (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
+                      )
+                      const selectedCoupon = filteredCoupons.find(coupon => 
+                        coupon.coupon_code && 
+                        coupon.coupon_code.trim().toLowerCase() === selectedCouponCode.trim().toLowerCase()
+                      )
+                      const subtotal = isOTAChannel 
+                        ? prev.productPriceTotal - notIncludedPrice
+                        : calculateProductPriceTotal() + calculateChoiceTotal() - notIncludedPrice
+                      const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
+                      return {
+                        ...prev,
+                        couponCode: selectedCoupon?.coupon_code || '',
+                        couponDiscount,
+                      }
                     })
                   }}
                   className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
@@ -2593,30 +2659,34 @@ export default function PricingSection({
                         const totalCustomerPayment = calculateTotalCustomerPayment()
                         const totalPaid = newDepositAmount + calculatedBalanceReceivedTotal
                         const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
-                        
-                        // 채널 결제 금액도 같은 값으로 업데이트
-                        const updatedData: any = {
-                          ...formData,
-                          depositAmount: newDepositAmount,
-                          onSiteBalanceAmount: calculatedBalance,
-                          balanceAmount: calculatedBalance,
-                          onlinePaymentAmount: newDepositAmount
-                        }
-                        
-                        // OTA 채널인 경우 commission_base_price도 업데이트
-                        if (isOTAChannel) {
-                          updatedData.commission_base_price = newDepositAmount
-                          // commission_amount가 0일 때만 자동 계산
-                          const currentCommissionAmount = formData.commission_amount || 0
-                          if (currentCommissionAmount === 0) {
-                            const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
-                            const adjustedBasePrice = Math.max(0, newDepositAmount - returnedAmount)
-                            const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
-                            updatedData.commission_amount = calculatedCommission
+                        setFormData((prev: typeof formData) => {
+                          const next = {
+                            ...prev,
+                            depositAmount: newDepositAmount,
+                            onSiteBalanceAmount: calculatedBalance,
+                            balanceAmount: calculatedBalance,
+                            onlinePaymentAmount: newDepositAmount,
                           }
-                        }
-                        
-                        setFormData(updatedData)
+                          if (isOTAChannel) {
+                            const commissionPercent = prev.commission_percent || channelCommissionPercent || 0
+                            const adjustedBasePrice = Math.max(0, newDepositAmount - returnedAmount)
+                            const calculatedCommission =
+                              adjustedBasePrice > 0 && commissionPercent > 0
+                                ? Math.round(adjustedBasePrice * (commissionPercent / 100) * 100) / 100
+                                : 0
+                            otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
+                              adjustedBasePrice,
+                              commissionPercent
+                            )
+                            isCardFeeManuallyEdited.current = false
+                            return {
+                              ...next,
+                              commission_base_price: newDepositAmount,
+                              commission_amount: calculatedCommission,
+                            }
+                          }
+                          return next
+                        })
                       }}
                       className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('depositAmount')}`}
                       step="0.01"
@@ -2743,25 +2813,23 @@ export default function PricingSection({
                           const commissionBasePrice = formData.commission_base_price !== undefined
                             ? formData.commission_base_price
                             : (actualAmount > 0 ? actualAmount : defaultBasePrice)
-                          // Returned 차감 후 수수료 계산
-                          const adjustedBasePrice = Math.max(0, commissionBasePrice - returnedAmount)
+                          const adjustedBasePrice = Math.max(0, actualAmount - returnedAmount)
                           const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
-                          const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
-                          
-                          // commission_amount가 0일 때만 자동 계산
-                          const currentCommissionAmount = formData.commission_amount || 0
-                          const newCommissionAmount = currentCommissionAmount === 0 ? calculatedCommission : formData.commission_amount
-                          
-                          if (currentCommissionAmount === 0) {
-                            isCardFeeManuallyEdited.current = false // 채널 결제 금액 변경 시 자동 계산 허용
-                          }
-                          
-                          setFormData({
-                            ...formData,
+                          const calculatedCommission =
+                            adjustedBasePrice > 0 && commissionPercent > 0
+                              ? Math.round(adjustedBasePrice * (commissionPercent / 100) * 100) / 100
+                              : 0
+                          otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
+                            adjustedBasePrice,
+                            commissionPercent
+                          )
+                          isCardFeeManuallyEdited.current = false
+                          setFormData((prev: typeof formData) => ({
+                            ...prev,
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount > 0 ? actualAmount : commissionBasePrice,
-                            commission_amount: newCommissionAmount
-                          })
+                            commission_amount: calculatedCommission,
+                          }))
                         } else {
                           // 자체 채널 로직
                           setFormData({
@@ -2805,33 +2873,29 @@ export default function PricingSection({
                         const actualAmount = finalValue + returnedAmount
                         
                         if (isOTAChannel) {
-                          // OTA 채널 로직
-                          // 할인 후 상품가 계산 (불포함 가격 제외)
                           const notIncludedPrice = notIncludedBreakdown.totalUsd
                           const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                           const defaultBasePrice = discountedPrice > 0 ? discountedPrice : formData.subtotal
                           const commissionBasePrice = formData.commission_base_price !== undefined
                             ? formData.commission_base_price
                             : (actualAmount > 0 ? actualAmount : defaultBasePrice)
-                          // Returned 차감 후 수수료 계산
-                          const adjustedBasePrice = Math.max(0, commissionBasePrice - returnedAmount)
+                          const adjustedBasePrice = Math.max(0, actualAmount - returnedAmount)
                           const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
-                          const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
-                          
-                          // commission_amount가 0일 때만 자동 계산
-                          const currentCommissionAmount = formData.commission_amount || 0
-                          const newCommissionAmount = currentCommissionAmount === 0 ? calculatedCommission : formData.commission_amount
-                          
-                          if (currentCommissionAmount === 0) {
-                            isCardFeeManuallyEdited.current = false
-                          }
-                          
-                          setFormData({
-                            ...formData,
+                          const calculatedCommission =
+                            adjustedBasePrice > 0 && commissionPercent > 0
+                              ? Math.round(adjustedBasePrice * (commissionPercent / 100) * 100) / 100
+                              : 0
+                          otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
+                            adjustedBasePrice,
+                            commissionPercent
+                          )
+                          isCardFeeManuallyEdited.current = false
+                          setFormData((prev: typeof formData) => ({
+                            ...prev,
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount > 0 ? actualAmount : commissionBasePrice,
-                            commission_amount: newCommissionAmount
-                          })
+                            commission_amount: calculatedCommission,
+                          }))
                         } else {
                           // 자체 채널 로직
                           setFormData({
@@ -2943,13 +3007,20 @@ export default function PricingSection({
                                 })())
                             // Returned 차감 후 수수료 계산
                             const adjustedBasePrice = Math.max(0, basePrice - returnedAmount)
-                            const calculatedAmount = adjustedBasePrice * (percent / 100)
-                            isCardFeeManuallyEdited.current = false // 수수료 % 변경 시 자동 계산 허용
-                            setFormData({ 
-                              ...formData, 
+                            const calculatedAmount =
+                              adjustedBasePrice > 0 && percent > 0
+                                ? Math.round(adjustedBasePrice * (percent / 100) * 100) / 100
+                                : 0
+                            isCardFeeManuallyEdited.current = false
+                            otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
+                              adjustedBasePrice,
+                              percent
+                            )
+                            setFormData((prev: typeof formData) => ({
+                              ...prev,
                               commission_percent: percent,
-                              commission_amount: calculatedAmount
-                            })
+                              commission_amount: calculatedAmount,
+                            }))
                           }}
                           className={`w-16 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                           step="0.01"
@@ -2984,7 +3055,7 @@ export default function PricingSection({
                           const newAmount = Number(inputValue) || 0
                           isCardFeeManuallyEdited.current = true
                           console.log('PricingSection: commission_amount 수동 입력:', newAmount)
-                          setFormData({ ...formData, commission_amount: newAmount })
+                          setFormData((prev: typeof formData) => ({ ...prev, commission_amount: newAmount }))
                         }}
                         onFocus={() => {
                           setIsCommissionAmountFocused(true)
@@ -2993,7 +3064,8 @@ export default function PricingSection({
                         onBlur={() => {
                           setIsCommissionAmountFocused(false)
                           const finalAmount = Number(commissionAmountInput) || formData.commission_amount || 0
-                          setFormData({ ...formData, commission_amount: finalAmount })
+                          isCardFeeManuallyEdited.current = true
+                          setFormData((prev: typeof formData) => ({ ...prev, commission_amount: finalAmount }))
                           setCommissionAmountInput('')
                         }}
                         className={`w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')} ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
@@ -3064,7 +3136,7 @@ export default function PricingSection({
                             setCommissionAmountInput(inputValue)
                             const newAmount = Number(inputValue) || 0
                             isCardFeeManuallyEdited.current = true
-                            setFormData({ ...formData, commission_amount: newAmount })
+                            setFormData((prev: typeof formData) => ({ ...prev, commission_amount: newAmount }))
                           }}
                           onFocus={() => {
                             setIsCommissionAmountFocused(true)
@@ -3073,7 +3145,8 @@ export default function PricingSection({
                           onBlur={() => {
                             setIsCommissionAmountFocused(false)
                             const finalAmount = Number(commissionAmountInput) || formData.commission_amount || 0
-                            setFormData({ ...formData, commission_amount: finalAmount })
+                            isCardFeeManuallyEdited.current = true
+                            setFormData((prev: typeof formData) => ({ ...prev, commission_amount: finalAmount }))
                             setCommissionAmountInput('')
                           }}
                           className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')} ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}

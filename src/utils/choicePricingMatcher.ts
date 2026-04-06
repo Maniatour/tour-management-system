@@ -133,6 +133,30 @@ export function getFallbackOtaSalePrice(
   return result?.ota_sale_price;
 }
 
+/** 동적가격 UI에서 초이스 없는 상품의 OTA/불포함을 `no_choice` 키로 저장함 (DynamicPricingManager) */
+const NO_CHOICE_PRICING_KEYS = ['no_choice', 'no-choice'] as const;
+
+export function getNoChoiceOtaAndNotIncluded(
+  choicesPricing: Record<string, any>
+): { ota_sale_price: number; not_included_price?: number } | undefined {
+  if (!choicesPricing || typeof choicesPricing !== 'object') return undefined;
+  for (const k of NO_CHOICE_PRICING_KEYS) {
+    const entry = choicesPricing[k];
+    if (!entry || typeof entry !== 'object') continue;
+    const otaRaw = entry.ota_sale_price;
+    if (otaRaw === undefined || otaRaw === null) continue;
+    const ota = Number(otaRaw);
+    if (Number.isNaN(ota) || ota <= 0) continue;
+    const niRaw = entry.not_included_price;
+    const ni =
+      niRaw !== undefined && niRaw !== null && !Number.isNaN(Number(niRaw)) && Number(niRaw) > 0
+        ? Number(niRaw)
+        : undefined;
+    return { ota_sale_price: ota, not_included_price: ni };
+  }
+  return undefined;
+}
+
 /**
  * 폴백 시 ota_sale_price와 not_included_price를 함께 반환.
  * 폼의 choice_id/option_id가 DB 키와 다를 때(가져오기 등) 같은 entry에서 불포함 가격도 로드하기 위함.

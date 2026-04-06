@@ -70,6 +70,8 @@ interface AssignmentManagementProps {
   productId?: string | null
   tourDate?: string | null
   onAutoAssignSuccess?: () => Promise<void>
+  /** 예약 product_id → product_code (거주 상태 UI) */
+  allProducts?: Array<{ id: string; product_code?: string | null }>
 }
 
 export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
@@ -101,8 +103,18 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   currentTourId = '',
   productId = null,
   tourDate = null,
-  onAutoAssignSuccess
+  onAutoAssignSuccess,
+  allProducts = []
 }) => {
+  const getProductCodeForReservation = React.useCallback(
+    (r: Reservation) => {
+      const pid = r.product_id
+      if (!pid || !allProducts.length) return null
+      return allProducts.find((p) => p.id === pid)?.product_code ?? null
+    },
+    [allProducts]
+  )
+
   const t = useTranslations('tours.assignmentManagement')
   const tHeader = useTranslations('tours.tourHeader')
   const locale = useLocale()
@@ -325,6 +337,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
               {...(onRefresh && { onRefresh })}
+              getProductCodeForReservation={getProductCodeForReservation}
             />
 
             {/* 2. 배정 대기 중인 예약 */}
@@ -346,6 +359,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
               {...(onRefresh && { onRefresh })}
+              getProductCodeForReservation={getProductCodeForReservation}
             />
 
             {/* 3. 다른 투어에 배정된 예약 - 투어 ID별 그룹화 */}
@@ -476,6 +490,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                            safeJsonParse={safeJsonParse}
                            pickupHotels={pickupHotels}
                            {...(onRefresh && { onRefresh })}
+                           getProductCodeForReservation={getProductCodeForReservation}
                          />
                        </div>
                      )
@@ -502,6 +517,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
               {...(onRefresh && { onRefresh })}
+              getProductCodeForReservation={getProductCodeForReservation}
             />
           </div>
         )}

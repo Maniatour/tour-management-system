@@ -40,6 +40,7 @@ interface ReservationSectionProps {
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
+  getProductCodeForReservation?: (reservation: Reservation) => string | null | undefined
 }
 
 export const ReservationSection: React.FC<ReservationSectionProps> = ({
@@ -62,7 +63,8 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   getChannelInfo,
   safeJsonParse,
   pickupHotels = [],
-  onRefresh
+  onRefresh,
+  getProductCodeForReservation
 }) => {
   // 중복 제거: 같은 ID를 가진 예약 중 첫 번째 것만 유지
   const uniqueReservations = React.useMemo(() => {
@@ -108,6 +110,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
             <ReservationCard
               key={reservation.id}
               reservation={reservation}
+              productCode={getProductCodeForReservation?.(reservation) ?? null}
               isStaff={isStaff}
               showActions={showActions}
               showStatus={showStatus}

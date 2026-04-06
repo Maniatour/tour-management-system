@@ -1518,18 +1518,33 @@ function extractViator(
 
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
 
-  // Traveler Names: Sheri Johnson, Delveton Chestnut → 대표 고객 = 첫 콤마 앞 (Viator 복수 여행자 라벨)
-  const travelerNamesPlural = normalized.match(/Traveler\s*Names\s*:?\s*([^\n]+)/im)
-  if (travelerNamesPlural) {
-    const firstOnly = travelerNamesPlural[1].trim().split(',')[0]?.trim()
-    if (firstOnly) out.customer_name = firstOnly
-  }
-  // Lead Traveler Name / Traveler Name (단수)
-  if (!out.customer_name) {
-    const leadTraveler = normalized.match(
-      /(?:Lead\s*Traveler\s*Name|Traveler\s*Name)\s*:?\s*([A-Za-z\u00C0-\u024F\s'-]+?)(?=\s*(?:Phone|Email|Tour\s*Language|\n\n|$))/im
+  /** HTML/공백 정리 후 한 줄로 붙은 Viator 본문: 값이 Travelers: 까지 이어지는 경우가 있어 다음 레이블 전까지만 캡처 */
+  const viatorStopAfterLeadOrSingular =
+    /(?=\s*(?:Traveler\s*Names|Travelers\s*:|Product\s*Code\s*:|Tour\s*Option\s*:|Tour\s*Name\s*:|Tour\s*Grade|Phone\s*:|Email\s*:|Tour\s*[Ll]anguage\s*:|Hotel\s*Pickup|Pickup\s*Location|Booking\s*Reference|Net\s*Rate\s*:|Please\s+respond|\n\n|$))/i
+  const viatorStopAfterTravelerNamesPlural =
+    /(?=\s*(?:Travelers\s*:|Product\s*Code\s*:|Tour\s*Option\s*:|Tour\s*Name\s*:|Tour\s*Grade|Phone\s*:|Email\s*:|Lead\s*Traveler|Tour\s*[Ll]anguage\s*:|Hotel\s*Pickup|Pickup\s*Location|Booking\s*Reference|Net\s*Rate\s*:|Please\s+respond|\n\n|$))/i
+
+  // Lead Traveler Name / Traveler Name (단수) — Traveler Names 보다 우선 (대표 고객)
+  const leadTraveler = normalized.match(
+    new RegExp(
+      `(?:Lead\\s*Traveler\\s*Name|Traveler\\s*Name)\\s*:?\\s*([A-Za-z\\u00C0-\\u024F\\s'-]+?)${viatorStopAfterLeadOrSingular.source}`,
+      'im'
     )
-    if (leadTraveler) out.customer_name = leadTraveler[1].trim()
+  )
+  if (leadTraveler?.[1]) out.customer_name = leadTraveler[1].trim()
+
+  // Traveler Names: Sheri Johnson, Delveton Chestnut → 대표 고객 = 첫 콤마 앞 (Lead/단수 없을 때만)
+  if (!out.customer_name) {
+    const travelerNamesPlural = normalized.match(
+      new RegExp(
+        `Traveler\\s*Names\\s*:?\\s*([\\s\\S]+?)${viatorStopAfterTravelerNamesPlural.source}`,
+        'im'
+      )
+    )
+    if (travelerNamesPlural?.[1]) {
+      const firstOnly = travelerNamesPlural[1].replace(/\s+/g, ' ').trim().split(',')[0]?.trim()
+      if (firstOnly) out.customer_name = firstOnly
+    }
   }
 
   // Phone: (Alternate Phone)US+1 (843) 509-2495 Send the customer... → +1 (843) 509-2495 (괄호 포함 번호는 별도 패턴)

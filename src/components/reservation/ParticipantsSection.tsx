@@ -9,6 +9,8 @@ import {
 } from '@/utils/usResidentChoiceSync'
 
 interface ParticipantsSectionProps {
+  /** 미국 거주자 구분 연동 블록(거주 상태별 인원·금액) — 지정 상품 코드에서만 true */
+  showResidentStatusSection?: boolean
   formData: {
     adults: number
     child: number
@@ -67,6 +69,7 @@ const RESIDENT_ROWS: {
 ]
 
 export default function ParticipantsSection({
+  showResidentStatusSection = false,
   formData,
   setFormData,
   applyResidentParticipantPatch,
@@ -173,6 +176,7 @@ export default function ParticipantsSection({
         </div>
       </div>
 
+      {showResidentStatusSection ? (
       <div className="mt-4 pt-4 border-t border-gray-200">
         <label className="block text-xs font-medium text-gray-700 mb-2">
           거주 상태별 인원 수 · 금액 (미국 거주자 구분 및 기타 입장료와 연동)
@@ -280,6 +284,7 @@ export default function ParticipantsSection({
           highlight={needsEvidenceHighlight}
         />
       </div>
+      ) : null}
 
       <div className="mt-4 mb-0">
         <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.eventNote')}</label>

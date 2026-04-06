@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 
 interface Reservation {
   id: string
@@ -81,6 +82,8 @@ interface ReservationCardProps {
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
   /** 새로고침. 픽업 수정 직후 픽업 스케줄 반영을 위해 수정된 픽업 정보를 넘기면 즉시 반영 후 서버 새로고침을 수행합니다. */
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
+  /** 예약 상품의 product_code (거주 상태 UI 표시용) */
+  productCode?: string | null
 }
 
 export const ReservationCard: React.FC<ReservationCardProps> = ({
@@ -99,8 +102,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   getChannelInfo,
   safeJsonParse,
   pickupHotels = [],
-  onRefresh
+  onRefresh,
+  productCode = null
 }) => {
+  const showResidentStatusUi = productShowsResidentStatusSectionByCode(productCode)
   /** 요청 중단(AbortError) 여부 — 컴포넌트 언마운트/의존성 변경 시 정상 취소이므로 로그 생략 */
   const isAbortError = useCallback((err: unknown): boolean => {
     if (err instanceof Error && err.name === 'AbortError') return true
@@ -1332,7 +1337,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           />
           
           {/* 거주 상태 아이콘 */}
-          {isStaff && customerData && (
+          {showResidentStatusUi && isStaff && customerData && (
             <span className="flex-shrink-0 relative resident-status-dropdown">
               {(() => {
                 const residentStatus = customerData.resident_status
@@ -1810,7 +1815,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
        />
 
        {/* 거주 상태별 인원 수 설정 모달 */}
-       {showResidentStatusModal && (
+       {showResidentStatusUi && showResidentStatusModal && (
          <div 
            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
            onClick={(e) => {

@@ -19,6 +19,8 @@ export type ChannelSettlementComputeInput = {
   onSiteBalanceAmount: number
   /** payment_records Returned 합계(앱과 동일하게 부호 그대로 합산) */
   returnedAmount: number
+  /** payment_records Partner Received 합계. OTA에서 commission_base가 과대(옵션 포함 등)일 때 실제 입금 기준으로 상한 */
+  partnerReceivedAmount?: number
   commissionAmount: number
   reservationStatus?: string | null
   isOTAChannel: boolean
@@ -80,7 +82,11 @@ export function computeChannelSettlementAmount(inp: ChannelSettlementComputeInpu
     .trim()
   const cancelled = st === 'cancelled' || st === 'canceled'
   const effectiveCommission = cancelled ? 0 : toN(inp.commissionAmount)
-  const pay = computeChannelPaymentAfterReturn(inp)
+  let pay = computeChannelPaymentAfterReturn(inp)
+  const pr = toN(inp.partnerReceivedAmount)
+  if (inp.isOTAChannel && pr > 0 && pay > pr + 0.005) {
+    pay = pr
+  }
   return Math.max(0, pay - effectiveCommission)
 }
 
@@ -102,6 +108,7 @@ export type ReservationPricingLike = {
 
 /**
  * 통계 등: DB에 저장된 값이 있으면 우선, 없으면 동일 산식으로 계산.
+ * OTA이고 Partner Received 입금이 있으면 commission_base·저장값이 옵션까지 포함해 과대인 경우가 있어, 항상 동일 산식(입금 상한)으로 맞춘다.
  */
 export function resolveChannelSettlementForReport(
   pricing: ReservationPricingLike,
@@ -109,14 +116,12 @@ export function resolveChannelSettlementForReport(
     reservationStatus: string
     isOTAChannel: boolean
     returnedAmount: number
+    partnerReceivedAmount?: number
   }
 ): number {
-  const stored = pricing.channelSettlementAmount
-  if (stored != null && stored !== undefined && Number.isFinite(Number(stored))) {
-    return Math.max(0, Number(stored))
-  }
+  const partnerReceived = toN(ctx.partnerReceivedAmount)
   const online = toN(pricing.commissionBasePrice)
-  return computeChannelSettlementAmount({
+  const recomputed = computeChannelSettlementAmount({
     depositAmount: toN(pricing.depositAmount),
     onlinePaymentAmount: online,
     productPriceTotal: toN(pricing.productPriceTotal),
@@ -129,8 +134,17 @@ export function resolveChannelSettlementForReport(
     prepaymentTip: toN(pricing.prepaymentTip),
     onSiteBalanceAmount: toN(pricing.balanceAmount),
     returnedAmount: toN(ctx.returnedAmount),
+    partnerReceivedAmount: partnerReceived,
     commissionAmount: toN(pricing.commissionAmount),
     reservationStatus: ctx.reservationStatus,
     isOTAChannel: ctx.isOTAChannel,
   })
+  if (ctx.isOTAChannel && partnerReceived > 0) {
+    return recomputed
+  }
+  const stored = pricing.channelSettlementAmount
+  if (stored != null && stored !== undefined && Number.isFinite(Number(stored))) {
+    return Math.max(0, Number(stored))
+  }
+  return recomputed
 }

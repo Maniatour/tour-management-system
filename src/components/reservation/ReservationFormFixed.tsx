@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
@@ -18,6 +18,7 @@ import TourConnectionSection from '@/components/reservation/TourConnectionSectio
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import { getRequiredOptionsForProduct, getOptionalOptionsForProduct } from '@/utils/reservationUtils'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import type { 
   Customer, 
   Product, 
@@ -365,6 +366,15 @@ export default function ReservationFormNew({
     setFormData(prev => ({ ...prev, [field]: value }))
   }, [])
 
+  const showResidentStatusSection = useMemo(
+    () =>
+      productShowsResidentStatusSectionByCode(
+        (products.find((p) => p.id === formData.product_id) as { product_code?: string | null } | undefined)
+          ?.product_code ?? null
+      ),
+    [products, formData.product_id]
+  )
+
   // 기존 컴포넌트들 렌더링 (간소화)
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -434,6 +444,7 @@ export default function ReservationFormNew({
 
       {/* 참가자 섹션 */}
       <ParticipantsSection
+        showResidentStatusSection={showResidentStatusSection}
         formData={{
           adults: 0,
           child: 0,

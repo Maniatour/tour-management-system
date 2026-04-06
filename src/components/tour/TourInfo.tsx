@@ -4,6 +4,7 @@ import { ConnectionStatusLabel } from './TourUIComponents'
 import { Edit2, Check, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { TourStatusModal } from './modals/TourStatusModal'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 
 interface TourInfoProps {
   tour: any
@@ -31,6 +32,7 @@ interface Product {
   name?: string | null
   name_ko?: string | null
   name_en?: string | null
+  product_code?: string | null
   tour_departure_times?: string[] | unknown
 }
 
@@ -74,7 +76,8 @@ export const TourInfo: React.FC<TourInfoProps> = ({
     return '08:00'
   }
   const defaultTimeStr = getDefaultTimeString()
-  
+  const showResidentStatusSection = productShowsResidentStatusSectionByCode(product?.product_code)
+
   // 편집 상태 관리
   const [editingProduct, setEditingProduct] = useState(false)
   const [showStatusModal, setShowStatusModal] = useState(false)
@@ -89,10 +92,21 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   // 거주 상태별 인원 수 합산 가져오기
   useEffect(() => {
     const fetchResidentStatusSummary = async () => {
+      if (!showResidentStatusSection) {
+        setResidentStatusSummary({
+          usResident: 0,
+          nonResident: 0,
+          nonResidentUnder16: 0,
+          nonResidentWithPass: 0,
+          passCoveredCount: 0
+        })
+        return
+      }
       if (!assignedReservations || assignedReservations.length === 0) {
         setResidentStatusSummary({
           usResident: 0,
           nonResident: 0,
+          nonResidentUnder16: 0,
           nonResidentWithPass: 0,
           passCoveredCount: 0
         })
@@ -422,7 +436,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
         </div>
         
         {/* 거주 상태별 인원 수 합산 */}
-        {assignedReservations && assignedReservations.length > 0 && (
+        {showResidentStatusSection && assignedReservations && assignedReservations.length > 0 && (
           <div className="mt-4 pt-4 border-t border-gray-200">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {tCommon('residentStatusByCount')}

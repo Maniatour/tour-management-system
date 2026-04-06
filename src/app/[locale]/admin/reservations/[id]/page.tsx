@@ -11,6 +11,7 @@ import type { Reservation, Customer } from '@/types/reservation'
 import { useAuth } from '@/contexts/AuthContext'
 import { X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare, Printer } from 'lucide-react'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
+import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { getCustomerName } from '@/utils/reservationUtils'
 
 // 리사이즈 가능한 모달 컴포넌트
@@ -408,19 +409,47 @@ export default function ReservationDetailsPage() {
           onViewCustomer={() => setShowReservationDetailModal(true)}
           allowPastDateEdit={isSuper || !!reservation}
           titleAction={
-            <button
-              type="button"
-              onClick={() => setShowReceiptModal(true)}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-              title={t('print') || '영수증 인쇄'}
-            >
-              <Printer className="w-5 h-5" />
-            </button>
+            <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => setShowReceiptModal(true)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                title={t('print') || '영수증 인쇄'}
+              >
+                <Printer className="w-5 h-5" />
+              </button>
+              <div className="hidden sm:block h-6 w-px bg-gray-200 shrink-0" aria-hidden />
+              <ReservationFormEmailSendButtons
+                reservation={reservation}
+                customers={(customers as Customer[]) || []}
+                sentBy={user?.email ?? null}
+                uiLocale={params?.locale === 'en' ? 'en' : 'ko'}
+              />
+            </div>
           }
         />
       </div>
     )
-  }, [loading, loadingReservation, reservation, customers, products, channels, productOptions, options, pickupHotels, coupons, handleSubmit, handleDelete, params?.locale, router, refreshCustomers])
+  }, [
+    loading,
+    loadingReservation,
+    reservation,
+    customers,
+    products,
+    channels,
+    productOptions,
+    options,
+    pickupHotels,
+    coupons,
+    handleSubmit,
+    handleDelete,
+    params?.locale,
+    router,
+    refreshCustomers,
+    user?.email,
+    t,
+    isSuper,
+  ])
 
   return (
     <div>
