@@ -248,6 +248,8 @@ export default function PricingSection({
   const [partnerReceivedForSettlement, setPartnerReceivedForSettlement] = useState(0)
   // 카드 수수료 수동 입력 여부 추적
   const isCardFeeManuallyEdited = useRef(false)
+  /** OTA 채널 결제 금액을 사용자가 직접 입력한 뒤에는 상품가 동기화 effect가 덮어쓰지 않음(블러 직후 리셋 방지) */
+  const otaChannelPaymentUserEditedRef = useRef(false)
   /** OTA: 마지막 자동 수수료 $ 기준(수수료 산출 base × %) — 이 키가 바뀌면 $를 다시 계산 */
   const otaCommissionAutoFingerprintRef = useRef<string>('')
   // 채널 수수료 $ 입력 필드 로컬 상태 (입력 중 포맷팅 방지)
@@ -263,7 +265,20 @@ export default function PricingSection({
   // fetchPaymentRecords 등에서 formData/channels 의존 루프 방지용 (항상 최신 참조)
   useEffect(() => {
     otaCommissionAutoFingerprintRef.current = ''
+    otaChannelPaymentUserEditedRef.current = false
   }, [reservationId])
+
+  /** 상품가·할인·인원이 바뀌면 OTA 채널 결제 자동 동기화를 다시 허용 */
+  useEffect(() => {
+    otaChannelPaymentUserEditedRef.current = false
+  }, [
+    formData.productPriceTotal,
+    formData.couponDiscount,
+    formData.additionalDiscount,
+    formData.pricingAdults,
+    formData.child,
+    formData.infant,
+  ])
 
   const formDataRef = useRef(formData)
   formDataRef.current = formData
@@ -591,9 +606,12 @@ export default function PricingSection({
 
   // 고객 총 결제금액 계산 (화면 "고객 총 결제 금액" 표시와 동일한 식: 잔액 = 이 값 - 보증금 - 잔금 수령)
   const calculateTotalCustomerPayment = useCallback(() => {
+    const cancelled =
+      (formData as { status?: string }).status != null &&
+      ['cancelled', 'canceled'].includes(String((formData as { status?: string }).status).toLowerCase().trim())
     const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-    const optionsTotal = reservationOptionsTotalPrice || 0
-    const notIncludedPrice = notIncludedBreakdown.totalUsd
+    const optionsTotal = cancelled ? 0 : reservationOptionsTotalPrice || 0
+    const notIncludedPrice = cancelled ? 0 : notIncludedBreakdown.totalUsd
     const additionalCost = formData.additionalCost || 0
     const tax = formData.tax || 0
     const cardFee = formData.cardFee || 0
@@ -616,11 +634,16 @@ export default function PricingSection({
     formData.prepaymentTip,
     reservationOptionsTotalPrice,
     notIncludedBreakdown.totalUsd,
+    (formData as { status?: string }).status,
   ])
   calculateTotalCustomerPaymentRef.current = calculateTotalCustomerPayment
 
   /** 표시·포커스: DB/OTA가 0으로 남아 있어도 계산 잔액이 크면 계산값을 보여 줌 */
   const displayedOnSiteBalance = useCallback(() => {
+    const cancelled =
+      (formData as { status?: string }).status != null &&
+      ['cancelled', 'canceled'].includes(String((formData as { status?: string }).status).toLowerCase().trim())
+    if (cancelled) return 0
     const totalCustomerPayment = calculateTotalCustomerPayment()
     const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
     const defaultBalance = Math.max(0, roundUsd2(totalCustomerPayment - totalPaid))
@@ -633,6 +656,7 @@ export default function PricingSection({
     formData.depositAmount,
     formData.onSiteBalanceAmount,
     calculatedBalanceReceivedTotal,
+    (formData as { status?: string }).status,
   ])
 
   // 입금 내역 조회 및 자동 계산 (formData는 formDataRef로만 참조해 의존성 루프 방지)
@@ -911,6 +935,13 @@ export default function PricingSection({
         // OTA 채널: depositAmount = 고객 총 결제 금액(잔액 0), 채널 결제 금액 = 쿠폰 시 할인 후 상품가·아니면 판매가×인원, 채널 수수료 $ = 채널 결제 금액 × 수수료 %
         // 단, 입금 내역이 있거나 DB에서 불러온 deposit_amount가 있으면 고객 실제 지불액(보증금)을 덮어쓰지 않음
         if (isOTAChannel) {
+          const reservationCancelled =
+            formData.status != null &&
+            ['cancelled', 'canceled'].includes(String(formData.status).toLowerCase().trim())
+          /** 입금·상품가 effect가 채널 결제 입력을 덮어쓰지 않음 (수동 입력·취소 후 부분 정산) */
+          const skipOtaChannelPaymentAuto =
+            reservationCancelled || otaChannelPaymentUserEditedRef.current
+
           const resolveNextOtaCommissionAmount = (
             commissionCalcBase: number,
             pct: number,
@@ -970,7 +1001,7 @@ export default function PricingSection({
               calculatedCommission
             )
             const sameOnline = Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01
-            if (!sameOnline) {
+            if (!sameOnline && !skipOtaChannelPaymentAuto) {
               setFormData((prev: typeof formData) => ({
                 ...prev,
                 onlinePaymentAmount: salePriceTimesPax,
@@ -1001,7 +1032,7 @@ export default function PricingSection({
               Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01 &&
               Math.abs((formData.commission_amount ?? 0) - commissionToSet) < 0.01 &&
               Math.abs((formData.onSiteBalanceAmount ?? 0) - otaRemainingBalance) < 0.01
-            if (!same) {
+            if (!same && !skipOtaChannelPaymentAuto) {
               setFormData((prev: typeof formData) => ({
                 ...prev,
                 depositAmount: depositPortion,
@@ -1043,7 +1074,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, setFormData, notIncludedBreakdown.totalUsd])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, setFormData, notIncludedBreakdown.totalUsd])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1072,8 +1103,8 @@ export default function PricingSection({
   const isReservationCancelled =
     reservationStatusRaw != null &&
     ['cancelled', 'canceled'].includes(String(reservationStatusRaw).toLowerCase().trim())
-  /** 취소된 예약은 채널 수수료를 적용하지 않음(DB 값이 남아 있어도 정산·표시는 0) */
-  const effectiveCommissionAmount = isReservationCancelled ? 0 : (Number(formData.commission_amount) || 0)
+  /** 취소 후에도 OTA 부분 정산 시 `commission_amount` 그대로 반영 (미입력이면 0) */
+  const effectiveCommissionAmount = Number(formData.commission_amount) || 0
 
   // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (정산·채널 결제 UI에서 공통)
   const discountedProductPrice =
@@ -1142,7 +1173,10 @@ export default function PricingSection({
       Math.floor(Number(formData.pricingAdults ?? formData.adults) || 0)
     )
     const billingPax = pricingAdultsVal + (formData.child || 0) + (formData.infant || 0)
-    const notIncludedTotal = (Number(formData.not_included_price) || 0) * (billingPax || 1)
+    const cancelledOtaSettle = isReservationCancelled && !!isOTAChannel
+    const notIncludedTotal = cancelledOtaSettle
+      ? 0
+      : (Number(formData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(formData.productPriceTotal) || 0) + notIncludedTotal
 
     return computeChannelSettlementAmount({
@@ -1151,7 +1185,7 @@ export default function PricingSection({
       productPriceTotal: productTotalForSettlement,
       couponDiscount: Number(formData.couponDiscount) || 0,
       additionalDiscount: Number(formData.additionalDiscount) || 0,
-      optionTotalSum: Number(formData.optionTotal) || 0,
+      optionTotalSum: cancelledOtaSettle ? 0 : Number(formData.optionTotal) || 0,
       additionalCost: Number(formData.additionalCost) || 0,
       tax: Number(formData.tax) || 0,
       cardFee: Number(formData.cardFee) || 0,
@@ -1187,10 +1221,12 @@ export default function PricingSection({
     formData.commission_amount,
     formData.status,
     isOTAChannel,
+    isReservationCancelled,
   ])
 
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
   useEffect(() => {
+    if (otaChannelPaymentUserEditedRef.current) return
     if (returnedAmount <= 0.005) return
     const otaOrDeposit = !!isOTAChannel || (Number(formData.depositAmount) || 0) > 0
     if (!otaOrDeposit) return
@@ -1552,7 +1588,10 @@ export default function PricingSection({
 
   // Net 가격 계산
   const calculateNetPrice = () => {
-    if (isReservationCancelled) return 0
+    if (isReservationCancelled) {
+      if (isOTAChannel) return channelSettlementBeforePartnerReturn
+      return 0
+    }
     // OTA 채널일 때는 단순 계산: OTA 판매가 - 쿠폰 할인 + 추가비용 - 커미션
     if (isOTAChannel) {
       const otaSalePrice = formData.productPriceTotal // OTA 판매가 (초이스 포함)
@@ -1603,7 +1642,12 @@ export default function PricingSection({
 
   // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합)
   const calculateProfit = () => {
-    if (isReservationCancelled) return 0
+    if (isReservationCancelled) {
+      if (isOTAChannel) {
+        return channelSettlementBeforePartnerReturn - reservationExpensesTotal - tourExpensesTotal
+      }
+      return 0
+    }
     const netPrice = calculateNetPrice()
     return netPrice - reservationExpensesTotal - tourExpensesTotal
   }
@@ -1613,7 +1657,10 @@ export default function PricingSection({
   const currentCommissionBase = formData.commission_base_price ?? 0
 
   // OTA는 쿠폰 시 할인 후 상품가, 그 외는 판매가×인원. 0이 아닐 때 onlinePaymentAmount 자동 설정.
+  // 취소 OTA·부분 정산은 수동 입력만 쓰므로 자동 덮어쓰기 안 함. 수동 입력 후 블러 시에도 사용자 값 유지.
   useEffect(() => {
+    if (isOTAChannel && isReservationCancelled) return
+
     const targetOnline = isOTAChannel ? otaChannelProductPaymentGross : formData.productPriceTotal
 
     if (targetOnline > 0) {
@@ -1621,7 +1668,12 @@ export default function PricingSection({
         const currentOnlinePaymentAmount = prev.onlinePaymentAmount || 0
         const priceDifference = Math.abs(currentOnlinePaymentAmount - targetOnline)
 
-        if (currentOnlinePaymentAmount === 0 || (priceDifference > 0.01 && !isChannelPaymentAmountFocused)) {
+        const shouldSyncFromProduct =
+          !otaChannelPaymentUserEditedRef.current &&
+          (currentOnlinePaymentAmount === 0 ||
+            (priceDifference > 0.01 && !isChannelPaymentAmountFocused))
+
+        if (shouldSyncFromProduct) {
           const netChannel = isOTAChannel ? Math.max(0, targetOnline - returnedAmount) : targetOnline
           return {
             ...prev,
@@ -1641,6 +1693,7 @@ export default function PricingSection({
     formData.child,
     formData.infant,
     isOTAChannel,
+    isReservationCancelled,
     isChannelPaymentAmountFocused,
     returnedAmount,
     setFormData,
@@ -1712,6 +1765,7 @@ export default function PricingSection({
   // depositAmount 변경 시 채널 결제 금액 자동 업데이트 (입력 중이 아닐 때만)
   useEffect(() => {
     if (isReservationCancelled) return
+    if (isOTAChannel && otaChannelPaymentUserEditedRef.current) return
     if (isChannelPaymentAmountFocused || formData.depositAmount <= 0) return
     const deposit = formData.depositAmount
     const currentOnlinePaymentAmount = formData.onlinePaymentAmount || 0
@@ -2658,8 +2712,8 @@ export default function PricingSection({
                 </span>
               </div>
               
-              {/* 옵션 추가 */}
-              {reservationOptionsTotalPrice > 0 && (
+              {/* 옵션 추가 — 취소 예약은 징수 없음 */}
+              {!isReservationCancelled && reservationOptionsTotalPrice > 0 && (
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="text-[10px] text-gray-600">{isKorean ? '+ 옵션 추가' : '+ Options'}</span>
                   <span className="text-[10px] text-gray-700">+${reservationOptionsTotalPrice.toFixed(2)}</span>
@@ -2668,8 +2722,9 @@ export default function PricingSection({
               
               <div className="border-t border-gray-200 my-1.5"></div>
               
-              {/* 불포함 가격 (입장권 + 비거주자 비용 분리 표기) */}
+              {/* 불포함 가격 (입장권 + 비거주자 비용 분리 표기) — 취소 예약은 징수 없음 */}
               {(() => {
+                if (isReservationCancelled) return null
                 const { baseUsd, residentFeesUsd, totalUsd } = notIncludedBreakdown
                 if (totalUsd <= 0) return null
                 return (
@@ -2750,48 +2805,11 @@ export default function PricingSection({
               
               <div className="border-t border-gray-200 my-1.5"></div>
               
-              {/* 고객 총 결제 금액 */}
+              {/* 고객 총 결제 금액 (취소 시 옵션·불포함 제외 = calculateTotalCustomerPayment와 동일) */}
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-sm font-bold text-blue-800">{isKorean ? '고객 총 결제 금액' : 'Total Customer Payment'}</span>
                 <span className={`text-sm font-bold ${priceTextClass('totalPrice')}`}>
-                  ${(() => {
-                    // 할인 후 상품가 = 상품 가격 총합 - 쿠폰 할인 - 추가 할인
-                    const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-                    
-                    // 옵션 추가
-                    const optionsTotal = reservationOptionsTotalPrice || 0
-                    
-                    // 불포함 가격 (입장권 + 비거주 합 = notIncludedBreakdown.totalUsd)
-                    const notIncludedTotal = notIncludedBreakdown.totalUsd
-                    
-                    // 추가 비용
-                    const additionalCost = formData.additionalCost || 0
-                    
-                    // 세금
-                    const tax = formData.tax || 0
-                    
-                    // 카드 수수료
-                    const cardFee = formData.cardFee || 0
-                    
-                    // 선결제 지출
-                    const prepaymentCost = formData.prepaymentCost || 0
-                    
-                    // 선결제 팁
-                    const prepaymentTip = formData.prepaymentTip || 0
-                    
-                    // 고객 총 결제 금액 = 할인 후 상품가 + 옵션 + 불포함 가격 + … (초이스 판매총액은 불포함과 중복이므로 제외)
-                    const totalCustomerPayment = 
-                      discountedProductPrice +
-                      optionsTotal +
-                      notIncludedTotal +
-                      additionalCost +
-                      tax +
-                      cardFee +
-                      prepaymentCost +
-                      prepaymentTip
-                    
-                    return totalCustomerPayment.toFixed(2)
-                  })()}
+                  ${calculateTotalCustomerPayment().toFixed(2)}
                 </span>
               </div>
             </div>
@@ -2942,6 +2960,13 @@ export default function PricingSection({
                 </h5>
                 <span className="ml-1.5 text-[10px] text-gray-500">(Channel / OTA View)</span>
               </div>
+              {isReservationCancelled && isOTAChannel && (
+                <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1 mb-2 leading-snug">
+                  {isKorean
+                    ? '취소 후에도 플랫폼이 부분 정산·입금한 경우: 반영된 판매가·채널 결제 금액·수수료 %/$를 실제 입금에 맞게 입력하세요.'
+                    : 'After cancel, if the platform still pays out: enter the adjusted sale price, channel payment, and commission to match the deposit.'}
+                </p>
+              )}
               
               {/* 채널 결제 금액 */}
               <div className="flex justify-between items-center mb-1.5">
@@ -2966,6 +2991,7 @@ export default function PricingSection({
                         const actualAmount = numValue + returnedAmount
                         
                         if (isOTAChannel) {
+                          if (numValue > 0.005) otaChannelPaymentUserEditedRef.current = true
                           const defaultBasePrice =
                             otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : formData.subtotal
                           const commissionBasePrice = formData.commission_base_price !== undefined
@@ -3006,6 +3032,7 @@ export default function PricingSection({
                         const actualAmount = finalValue + returnedAmount
                         
                         if (isOTAChannel) {
+                          if (finalValue > 0.005) otaChannelPaymentUserEditedRef.current = true
                           const notIncludedPrice = notIncludedBreakdown.totalUsd
                           const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                           const defaultBasePrice = discountedPrice > 0 ? discountedPrice : formData.subtotal
@@ -3113,10 +3140,14 @@ export default function PricingSection({
                         <input
                           type="number"
                           value={formData.commission_percent ?? channelCommissionPercent ?? 0}
-                          readOnly={isReservationCancelled}
-                          title={isReservationCancelled ? (isKorean ? '취소된 예약은 채널 수수료가 없습니다.' : 'No channel commission for cancelled reservations.') : undefined}
+                          title={
+                            isReservationCancelled
+                              ? isKorean
+                                ? '취소 후에도 플랫폼이 부분 정산하면 실제 채널 결제·수수료를 입력하세요.'
+                                : 'If the platform still settles after cancel, enter channel payment and fee.'
+                              : undefined
+                          }
                           onChange={(e) => {
-                            if (isReservationCancelled) return
                             const percent = Number(e.target.value) || 0
                             const basePrice = formData.commission_base_price !== undefined 
                               ? formData.commission_base_price 
@@ -3126,8 +3157,13 @@ export default function PricingSection({
                                   const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                                   return discountedPrice > 0 ? discountedPrice : formData.subtotal
                                 })())
-                            // Returned 차감 후 수수료 계산
-                            const adjustedBasePrice = Math.max(0, basePrice - returnedAmount)
+                            const adjustedBasePrice =
+                              isReservationCancelled
+                                ? Math.max(
+                                    0,
+                                    Number(formData.commission_base_price) || channelPaymentAmountAfterReturn || 0
+                                  )
+                                : Math.max(0, basePrice - returnedAmount)
                             const calculatedAmount =
                               adjustedBasePrice > 0 && percent > 0
                                 ? Math.round(adjustedBasePrice * (percent / 100) * 100) / 100
@@ -3143,7 +3179,7 @@ export default function PricingSection({
                               commission_amount: calculatedAmount,
                             }))
                           }}
-                          className={`w-16 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                          className="w-16 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                           step="0.01"
                           min="0"
                           max="100"
@@ -3167,10 +3203,14 @@ export default function PricingSection({
                       <input
                         type="number"
                         value={isCommissionAmountFocused ? commissionAmountInput : effectiveCommissionAmount.toFixed(2)}
-                        readOnly={isReservationCancelled}
-                        title={isReservationCancelled ? (isKorean ? '취소된 예약은 채널 수수료가 없습니다.' : 'No channel commission for cancelled reservations.') : undefined}
+                        title={
+                          isReservationCancelled
+                            ? isKorean
+                              ? '플랫폼이 차감한 수수료 금액을 입력하세요.'
+                              : 'Enter the commission retained by the platform.'
+                            : undefined
+                        }
                         onChange={(e) => {
-                          if (isReservationCancelled) return
                           const inputValue = e.target.value
                           setCommissionAmountInput(inputValue)
                           const newAmount = Number(inputValue) || 0
@@ -3189,7 +3229,7 @@ export default function PricingSection({
                           setFormData((prev: typeof formData) => ({ ...prev, commission_amount: finalAmount }))
                           setCommissionAmountInput('')
                         }}
-                        className={`w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')} ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')}`}
                         step="0.01"
                         min="0"
                         placeholder="0"
@@ -3445,7 +3485,10 @@ export default function PricingSection({
                 <span className="text-sm font-bold text-green-800">{isKorean ? '총 매출' : 'Total Revenue'}</span>
                 <span className="text-base font-bold text-green-600">
                   ${(() => {
-                    if (isReservationCancelled) return '0.00'
+                    if (isReservationCancelled) {
+                      if (isOTAChannel) return channelSettlementBeforePartnerReturn.toFixed(2)
+                      return '0.00'
+                    }
                     const channelSettlementAmount = channelSettlementBeforePartnerReturn
 
                     // 불포함 가격 계산
@@ -3515,7 +3558,14 @@ export default function PricingSection({
                 <span className="text-sm font-bold text-purple-800">{isKorean ? '운영 이익' : 'Operating Profit'}</span>
                 <span className="text-base font-bold text-purple-600">
                   ${(() => {
-                    if (isReservationCancelled) return '0.00'
+                    if (isReservationCancelled) {
+                      if (isOTAChannel) {
+                        return (
+                          channelSettlementBeforePartnerReturn - (formData.prepaymentTip || 0)
+                        ).toFixed(2)
+                      }
+                      return '0.00'
+                    }
                     const channelSettlementAmount = channelSettlementBeforePartnerReturn
 
                     // 불포함 가격 계산

@@ -113,13 +113,9 @@ export function computeChannelPaymentAfterReturn(inp: ChannelSettlementComputeIn
   return Math.max(0, base - returnedAmount)
 }
 
-/** 채널 정산 금액 = 채널 결제(표시) − 수수료$ (취소 예약은 수수료 0) */
+/** 채널 정산 금액 = 채널 결제(표시) − 수수료$ (취소 후에도 플랫폼 부분 정산이 있으면 수수료 $를 직접 입력) */
 export function computeChannelSettlementAmount(inp: ChannelSettlementComputeInput): number {
-  const st = String(inp.reservationStatus ?? '')
-    .toLowerCase()
-    .trim()
-  const cancelled = st === 'cancelled' || st === 'canceled'
-  const effectiveCommission = cancelled ? 0 : toN(inp.commissionAmount)
+  const effectiveCommission = toN(inp.commissionAmount)
   let pay = computeChannelPaymentAfterReturn(inp)
   const pr = toN(inp.partnerReceivedAmount)
   if (inp.isOTAChannel && pr > 0 && pay > pr + 0.005) {

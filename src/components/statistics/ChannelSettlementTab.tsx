@@ -73,8 +73,8 @@ interface ReservationItem {
   prepaymentTip?: number
   /** 입금내역 (Partner Received) 합계 */
   partnerReceivedAmount?: number
-  /** 채널 정산 금액 (예약 가격 계산과 동일) */
-  channelSettlementAmount?: number
+  /** DB `reservation_pricing.channel_settlement_amount` (통계 투어 탭은 재계산 없이 그대로 표시) */
+  channelSettlementAmount?: number | null
   amountAudited?: boolean
   amountAuditedAt?: string | null
   amountAuditedBy?: string | null
@@ -130,7 +130,7 @@ type ChannelPricingRowLike = {
   commissionAmount?: number
   optionTotal?: number
   partnerReceivedAmount?: number
-  channelSettlementAmount?: number
+  channelSettlementAmount?: number | null
 }
 
 function aggregateChannelPricingRows<T extends ChannelPricingRowLike>(items: T[]) {
@@ -174,6 +174,12 @@ function aggregateChannelPricingRows<T extends ChannelPricingRowLike>(items: T[]
 
 function formatUsd2(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** 투어 상세 테이블: `channel_settlement_amount` 없음 → 재계산 대신 대시 */
+function formatTourChannelSettlementCell(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n))) return '—'
+  return `$${Number(n).toLocaleString()}`
 }
 
 /** 인보이스 COMMISION %: 채널 마스터 비율 고정 (22 = 22%). DB에 소수(0.22)로 저장된 경우 변환 */
@@ -1091,29 +1097,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             commissionBasePrice: null,
             pricingAdults: null,
           }
-          const channelSettlementAmount = resolveChannelSettlementForReport(
-            {
-              channelSettlementAmount: pricing.channelSettlementStored,
-              commissionBasePrice: pricing.commissionBasePrice,
-              productPriceTotal: pricing.productPriceTotal,
-              couponDiscount: pricing.couponDiscount,
-              additionalDiscount: pricing.additionalDiscount,
-              optionTotal: pricing.optionTotal,
-              additionalCost: pricing.additionalCost,
-              tax: pricing.tax,
-              cardFee: pricing.cardFee,
-              prepaymentTip: pricing.prepaymentTip,
-              depositAmount: pricing.depositAmount,
-              balanceAmount: pricing.balanceAmount,
-              commissionAmount: pricing.commissionAmount,
-            },
-            {
-              reservationStatus: reservation.status,
-              isOTAChannel: isOtaChannelId(reservation.channelId),
-              returnedAmount: returnedMapTour[reservation.id] ?? 0,
-              partnerReceivedAmount: partnerReceivedMap[reservation.id] ?? 0,
-            }
-          )
+          /** 투어 진행 내역: 채널 정산은 DB `channel_settlement_amount`만 표시 (페이지에서 재계산하지 않음) */
+          const channelSettlementAmount = pricing.channelSettlementStored
           const pricingAdultsResolved =
             pricing.pricingAdults != null
               ? pricing.pricingAdults
@@ -2134,7 +2119,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
-                                        ${(item.channelSettlementAmount ?? 0).toLocaleString()}
+                                        {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                       </td>
                                       <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                         <input
@@ -2478,7 +2463,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                                 ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
-                                                ${(item.channelSettlementAmount ?? 0).toLocaleString()}
+                                                {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                               </td>
                                               <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                                 <input
