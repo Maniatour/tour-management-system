@@ -1,11 +1,14 @@
 /**
  * PricingSection「채널 결제 금액」「채널 정산 금액」과 동일한 산식.
  * DB `reservation_pricing.channel_settlement_amount` 저장·통계 표시에 공통 사용.
+ *
+ * DB `commission_base_price`는 Returned 차감 **후** 금액(UI「채널 결제 금액」과 동일).
+ * 이 모듈의 `onlinePaymentAmount` 인자는 산식용 **gross**(보통 폼의 `onlinePaymentAmount`).
  */
 
 export type ChannelSettlementComputeInput = {
   depositAmount: number
-  /** commission_base_price / onlinePaymentAmount (채널 결제 gross) */
+  /** 채널 결제 gross — 폼 `onlinePaymentAmount` 우선. DB `commission_base_price`는 net이므로 복원 시 `deriveCommissionGrossForSettlement` 사용 */
   onlinePaymentAmount: number
   productPriceTotal: number
   couponDiscount: number
@@ -30,6 +33,41 @@ function toN(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+const GROSS_NET_EPS = 0.02
+
+/**
+ * DB·폼에 남아 있는 `commission_base_price`가 net(신규)인지 gross(기존 행)인지에 따라
+ * `computeChannelSettlementAmount`에 넣을 gross를 복원한다.
+ */
+export function deriveCommissionGrossForSettlement(
+  storedCommissionBase: number,
+  ctx: {
+    returnedAmount: number
+    depositAmount: number
+    productPriceTotal: number
+    isOTAChannel: boolean
+  }
+): number {
+  const cb = toN(storedCommissionBase)
+  const ret = toN(ctx.returnedAmount)
+  const dep = toN(ctx.depositAmount)
+  const ppt = toN(ctx.productPriceTotal)
+  const otaLike = ctx.isOTAChannel || dep > 0
+  if (!otaLike || ret < GROSS_NET_EPS) return cb
+
+  const sum = cb + ret
+  const sumMatchesDep = Math.abs(sum - dep) < GROSS_NET_EPS
+  const sumMatchesPpt = Math.abs(sum - ppt) < GROSS_NET_EPS
+  if (sumMatchesDep || sumMatchesPpt) return sum
+
+  const cbMatchesDep = Math.abs(cb - dep) < GROSS_NET_EPS
+  const cbMatchesPpt = Math.abs(cb - ppt) < GROSS_NET_EPS
+  const cbLooksLikeFullProduct = cb >= ppt - GROSS_NET_EPS
+  if (cbMatchesDep || cbMatchesPpt || cbLooksLikeFullProduct) return cb
+
+  return sum
 }
 
 /** 채널 결제(표시) = gross − Returned (gross는 분기별 base) */
@@ -120,10 +158,16 @@ export function resolveChannelSettlementForReport(
   }
 ): number {
   const partnerReceived = toN(ctx.partnerReceivedAmount)
-  const online = toN(pricing.commissionBasePrice)
+  const storedCb = toN(pricing.commissionBasePrice)
+  const gross = deriveCommissionGrossForSettlement(storedCb, {
+    returnedAmount: toN(ctx.returnedAmount),
+    depositAmount: toN(pricing.depositAmount),
+    productPriceTotal: toN(pricing.productPriceTotal),
+    isOTAChannel: ctx.isOTAChannel,
+  })
   const recomputed = computeChannelSettlementAmount({
     depositAmount: toN(pricing.depositAmount),
-    onlinePaymentAmount: online,
+    onlinePaymentAmount: gross,
     productPriceTotal: toN(pricing.productPriceTotal),
     couponDiscount: toN(pricing.couponDiscount),
     additionalDiscount: toN(pricing.additionalDiscount),

@@ -874,7 +874,18 @@ export default function AdminCustomers() {
             balance_amount: pricingInfo.balanceAmount || 0,
             private_tour_additional_cost: pricingInfo.privateTourAdditionalCost || 0,
             commission_percent: pricingInfo.commission_percent || 0,
-            commission_amount: pricingInfo.commission_amount || 0
+            commission_amount: pricingInfo.commission_amount || 0,
+            pricing_adults: Math.max(
+              0,
+              Math.floor(
+                Number(
+                  pricingInfo.pricingAdults ??
+                    pricingInfo.pricing_adults ??
+                    reservationData.adults ??
+                    0
+                ) || 0
+              )
+            ),
           }
 
           console.log('고객 관리: reservation_pricing 저장 데이터:', pricingData)

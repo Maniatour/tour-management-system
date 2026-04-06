@@ -5,6 +5,11 @@
 import { supabase } from './supabase'
 import { autoCreateOrUpdateTour } from './tourAutoCreation'
 import type { Reservation } from '@/types/reservation'
+import {
+  computeChannelPaymentAfterReturn,
+  computeChannelSettlementAmount,
+  deriveCommissionGrossForSettlement,
+} from '@/utils/channelSettlement'
 
 const UNDECIDED_OPTION_ID = '__undecided__'
 const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
@@ -185,7 +190,9 @@ export async function updateReservation(
 
       const { data: existingRow } = await supabase
         .from('reservation_pricing')
-        .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount')
+        .select(
+          'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price'
+        )
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -203,6 +210,93 @@ export async function updateReservation(
       const newChoicesTotal = toNum(pricingInfo.choicesTotal)
       const newOptionTotal = toNum(pricingInfo.optionTotal)
       const newRequiredOptionTotal = toNum(pricingInfo.requiredOptionTotal)
+
+      // savePricingInfo와 동일: 채널 정산 산식용 상품 합계(불포함 × 청구 인원)
+      const pricingAdultsVal = Math.max(
+        0,
+        Math.floor(toNum(pricingInfo.pricingAdults ?? pricingInfo.pricing_adults ?? payload.adults))
+      )
+      const billingPaxForSettlement = pricingAdultsVal + (payload.child || 0) + (payload.infant || 0)
+      const notIncludedForSettlement = toNum(pricingInfo.not_included_price) * (billingPaxForSettlement || 1)
+      const productTotalForChannelSettlement = toNum(pricingInfo.productPriceTotal) + notIncludedForSettlement
+
+      let returnedAmount = 0
+      let partnerReceivedAmount = 0
+      try {
+        const { data: payRows } = await (supabase as any)
+          .from('payment_records')
+          .select('amount, payment_status')
+          .eq('reservation_id', reservationId)
+        ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
+          const status = row.payment_status || ''
+          const sl = status.toLowerCase()
+          if (status === 'Partner Received') {
+            partnerReceivedAmount += Number(row.amount) || 0
+          }
+          if (status.includes('Returned') || sl === 'returned') {
+            returnedAmount += Number(row.amount) || 0
+          }
+        })
+      } catch {
+        returnedAmount = 0
+        partnerReceivedAmount = 0
+      }
+
+      let isOTAChannel = false
+      try {
+        if (payload.channelId) {
+          const { data: chRow } = await (supabase as any)
+            .from('channels')
+            .select('type, category')
+            .eq('id', payload.channelId)
+            .maybeSingle()
+          if (chRow) {
+            isOTAChannel =
+              String((chRow as { type?: string }).type || '').toLowerCase() === 'ota' ||
+              (chRow as { category?: string }).category === 'OTA'
+          }
+        }
+      } catch {
+        isOTAChannel = false
+      }
+
+      const storedCb =
+        toNum(pricingInfo.commission_base_price) ||
+        toNum(pricingInfo.commissionBasePrice) ||
+        toNum((existingRow as { commission_base_price?: number } | null)?.commission_base_price)
+
+      const commissionGross =
+        toNum(pricingInfo.onlinePaymentAmount) ||
+        toNum(pricingInfo.depositAmount) ||
+        deriveCommissionGrossForSettlement(storedCb, {
+          returnedAmount,
+          depositAmount: toNum(pricingInfo.depositAmount),
+          productPriceTotal: productTotalForChannelSettlement,
+          isOTAChannel,
+        }) ||
+        storedCb
+
+      const channelSettlementComputeInput = {
+        depositAmount: toNum(pricingInfo.depositAmount),
+        onlinePaymentAmount: commissionGross,
+        productPriceTotal: productTotalForChannelSettlement,
+        couponDiscount: toNum(pricingInfo.couponDiscount),
+        additionalDiscount: toNum(pricingInfo.additionalDiscount),
+        optionTotalSum: newOptionTotal,
+        additionalCost: toNum(pricingInfo.additionalCost),
+        tax: toNum(pricingInfo.tax),
+        cardFee: toNum(pricingInfo.cardFee ?? (pricingInfo as { card_fee?: unknown }).card_fee),
+        prepaymentTip: toNum(pricingInfo.prepaymentTip),
+        onSiteBalanceAmount: toNum(pricingInfo.balanceAmount),
+        returnedAmount,
+        partnerReceivedAmount,
+        commissionAmount: toNum(pricingInfo.commission_amount),
+        reservationStatus: payload.status,
+        isOTAChannel,
+      }
+
+      const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
+      const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
       // DB에 저장할 컬럼을 모두 명시 (card_fee, balance_amount, commission_amount 등 누락 방지)
       const pricingData = {
@@ -233,17 +327,29 @@ export async function updateReservation(
         private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
         commission_percent: toNum(pricingInfo.commission_percent),
         commission_amount: keep(toNum(pricingInfo.commission_amount), existingRow?.commission_amount),
+        pricing_adults: pricingAdultsVal,
+        commission_base_price: keep(
+          Math.round(channelPayNet * 100) / 100,
+          (existingRow as { commission_base_price?: number } | null)?.commission_base_price
+        ),
+        channel_settlement_amount: Math.round(channelSettlementComputed * 100) / 100,
       }
 
       if (existingRow?.id) {
-        await supabase
+        const { error: pricingUpdateError } = await supabase
           .from('reservation_pricing')
-          .update(pricingData)
+          .update(pricingData as any)
           .eq('id', existingRow.id)
+        if (pricingUpdateError) {
+          return { success: false, error: '가격 정보: ' + pricingUpdateError.message }
+        }
       } else {
-        await supabase
+        const { error: pricingInsertError } = await supabase
           .from('reservation_pricing')
           .insert({ ...pricingData, id: crypto.randomUUID() } as any)
+        if (pricingInsertError) {
+          return { success: false, error: '가격 정보(신규): ' + pricingInsertError.message }
+        }
       }
     }
 

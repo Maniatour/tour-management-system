@@ -47,7 +47,11 @@ import {
   getFallbackOtaAndNotIncluded,
   getNoChoiceOtaAndNotIncluded,
 } from '@/utils/choicePricingMatcher'
-import { computeChannelSettlementAmount } from '@/utils/channelSettlement'
+import {
+  computeChannelPaymentAfterReturn,
+  computeChannelSettlementAmount,
+  deriveCommissionGrossForSettlement,
+} from '@/utils/channelSettlement'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
@@ -2919,7 +2923,9 @@ export default function ReservationForm({
             not_included_price: (existingPricing as any).not_included_price != null && (existingPricing as any).not_included_price !== '',
             choicesTotal: (existingPricing as any).choices_total != null && (existingPricing as any).choices_total !== '',
             onSiteBalanceAmount: (existingPricing as any).balance_amount != null && (existingPricing as any).balance_amount !== '',
-            onlinePaymentAmount: (existingPricing as any).commission_base_price != null && (existingPricing as any).commission_base_price !== ''
+            onlinePaymentAmount: (existingPricing as any).commission_base_price != null && (existingPricing as any).commission_base_price !== '',
+            pricingAdults:
+              (existingPricing as any).pricing_adults != null && (existingPricing as any).pricing_adults !== '',
           })
 
           // 상품 단가·불포함이 모두 0이면 dynamic_pricing에서 채우기 위해 아래로 진행 (불포함은 DB 컬럼 값 유지)
@@ -4480,12 +4486,24 @@ export default function ReservationForm({
         isOTAChannel = false
       }
 
-      const commissionBaseForRow =
-        toNum(fd.commission_base_price) || toNum(fd.onlinePaymentAmount) || toNum((existing as any)?.commission_base_price)
+      const depAmt = overrides?.depositAmount ?? toNum(fd.depositAmount)
+      const storedCb =
+        toNum(fd.commission_base_price) || toNum((existing as any)?.commission_base_price)
 
-      const channelSettlementComputed = computeChannelSettlementAmount({
-        depositAmount: overrides?.depositAmount ?? toNum(fd.depositAmount),
-        onlinePaymentAmount: toNum(fd.onlinePaymentAmount) || commissionBaseForRow,
+      const commissionGross =
+        toNum(fd.onlinePaymentAmount) ||
+        depAmt ||
+        deriveCommissionGrossForSettlement(storedCb, {
+          returnedAmount,
+          depositAmount: depAmt,
+          productPriceTotal: newProductTotal,
+          isOTAChannel,
+        }) ||
+        storedCb
+
+      const channelSettlementComputeInput = {
+        depositAmount: depAmt,
+        onlinePaymentAmount: commissionGross,
         productPriceTotal: newProductTotal,
         couponDiscount: Number(fd.couponDiscount) || 0,
         additionalDiscount: Number(fd.additionalDiscount) || 0,
@@ -4500,7 +4518,10 @@ export default function ReservationForm({
         commissionAmount: Number(fd.commission_amount) || 0,
         reservationStatus: fd.status,
         isOTAChannel,
-      })
+      }
+
+      const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
+      const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
       // 업데이트 시: 가격이 0이면 기존 DB 값을 유지 (의도치 않은 0 덮어쓰기 방지)
       const keep = (newVal: number, existingVal: unknown) =>
@@ -4538,7 +4559,7 @@ export default function ReservationForm({
         commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
         pricing_adults: Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0)),
         commission_base_price: keep(
-          commissionBaseForRow,
+          Math.round(channelPayNet * 100) / 100,
           (existing as any)?.commission_base_price
         ),
         channel_settlement_amount: Math.round(channelSettlementComputed * 100) / 100,
@@ -4861,8 +4882,17 @@ export default function ReservationForm({
           isPrivateTour: fd.isPrivateTour,
           privateTourAdditionalCost: toNum(fd.privateTourAdditionalCost),
           commission_percent: toNum(fd.commission_percent),
+          /** DB `commission_amount` — 가격 계산 3. 채널 정산 기준 · 채널 수수료 $ */
           commission_amount: toNum(fd.commission_amount),
-          pricingAdults: Math.max(0, Math.floor(toNum(fd.pricingAdults ?? fd.adults)))
+          /** DB `pricing_adults` — 상품가격 · 예약 성인 인원 */
+          pricingAdults: Math.max(0, Math.floor(toNum(fd.pricingAdults ?? fd.adults))),
+          /**
+           * DB `commission_base_price` — UI「채널 결제 금액」(Returned 차감 후 net).
+           * gross는 `onlinePaymentAmount`·보증금 등으로 `savePricingInfo`·`updateReservation`에서 복원.
+           */
+          commission_base_price: toNum(fd.commission_base_price),
+          onlinePaymentAmount:
+            toNum(fd.onlinePaymentAmount) || toNum(fd.commission_base_price),
         }
       }
       
