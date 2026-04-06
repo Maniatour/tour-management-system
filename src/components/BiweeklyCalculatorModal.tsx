@@ -1522,21 +1522,31 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     // YYYY-MM-DD 형식의 문자열을 그대로 사용
     const [year, month, day] = dateString.split('-')
     const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
-    
-    const formatted = date.toLocaleDateString('ko-KR', {
+
+    return date.toLocaleDateString('ko-KR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       weekday: 'short'
     })
-    
-    console.log('날짜 포맷팅:', {
-      input: dateString,
-      year, month, day,
-      formatted
+  }
+
+  /** company_expenses의 timestamptz: UTC 날짜만 자르면 행마다 하루가 어긋날 수 있어, 라스베가스 달력으로 통일 */
+  const formatCompanyExpenseTableDate = (value: string | null | undefined) => {
+    if (value == null || String(value).trim() === '') return '—'
+    const trimmed = String(value).trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return formatDate(trimmed)
+    }
+    const d = new Date(trimmed)
+    if (Number.isNaN(d.getTime())) return '—'
+    return d.toLocaleDateString('ko-KR', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short'
     })
-    
-    return formatted
   }
 
   // 숫자 포맷팅 함수 (천 단위 구분 기호 추가)
@@ -2815,7 +2825,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       {companyExpensesForEmployee.map((row) => (
                         <tr key={row.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                            {row.paid_on ? formatDate(row.paid_on.slice(0, 10)) : row.submit_on ? formatDate(row.submit_on.slice(0, 10)) : '—'}
+                            {formatCompanyExpenseTableDate(row.paid_on || row.submit_on)}
                           </td>
                           <td className="px-3 py-2 text-xs text-gray-900">{row.paid_to || '—'}</td>
                           <td className="px-3 py-2 text-xs text-gray-900">{row.paid_for || '—'}</td>
