@@ -23,6 +23,15 @@ function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/** exactOptionalPropertyTypes: `channelSettlementAmount: undefined` 불가 — 키를 제거해 DB 정산 캐시 무효화 */
+function omitChannelSettlementAmount<T extends Record<string, unknown>>(
+  prev: T
+): Omit<T, 'channelSettlementAmount'> {
+  const { channelSettlementAmount: _drop, ...rest } = prev as T & { channelSettlementAmount?: number }
+  void _drop
+  return rest as Omit<T, 'channelSettlementAmount'>
+}
+
 /** OTA 채널 수수료 $: (결제 그로스−Returned) 기준액 × % 가 바뀌면 자동 갱신, 이후 사용자가 $만 수정한 경우는 유지 */
 function otaCommissionFeeFingerprint(commissionCalcBase: number, commissionPercent: number): string {
   return `${roundUsd2(Math.max(0, commissionCalcBase))}|${Number(commissionPercent || 0).toFixed(4)}`
@@ -151,6 +160,8 @@ interface PricingSectionProps {
     commission_percent: number
     commission_amount: number
     commission_base_price?: number
+    /** DB `channel_settlement_amount` — 로드 시 정산 행 표시 우선 */
+    channelSettlementAmount?: number
     onlinePaymentAmount?: number
     onSiteBalanceAmount?: number
     not_included_price?: number
@@ -234,6 +245,10 @@ export default function PricingSection({
   const isKorean = locale === 'ko'
   /** DB 값 = 검은색, 계산값 = 빨간색 */
   const priceTextClass = (field: string) => (pricingFieldsFromDb[field] ? 'text-gray-900' : 'text-red-600')
+  /** reservation_pricing에 commission_base_price(채널 결제 net)가 있으면 상품가·보증금 effect로 덮어쓰지 않음 */
+  const channelPaymentLoadedFromDb = Boolean(
+    pricingFieldsFromDb.onlinePaymentAmount || pricingFieldsFromDb.commission_base_price
+  )
   const [showHelp, setShowHelp] = useState(false)
   const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
   const [loadingExpenses, setLoadingExpenses] = useState(false)
@@ -730,9 +745,17 @@ export default function PricingSection({
         }
       })
 
+      /** 파트너 환불(Returned)은 파트너 수령(Partner Received) 구간에서만 보증금 합에서 차감: (Partner Received − Returned) + 기타 입금 */
+      const depositTotalNet =
+        depositTotal > 0
+          ? roundUsd2(depositTotal - Math.min(partnerReceivedStrict, returnedTotal))
+          : depositTotal
+
       if (process.env.NODE_ENV === 'development') {
         console.log('PricingSection: 입금 내역 계산 결과', {
           depositTotal,
+          depositTotalNet,
+          partnerReceivedStrict,
           balanceReceivedTotal,
           refundedTotal,
           returnedTotal,
@@ -748,7 +771,7 @@ export default function PricingSection({
 
       // depositAmount와 balanceReceivedTotal을 기반으로 잔액 계산
       const totalCustomerPayment = calculateTotalCustomerPaymentRef.current()
-      const totalPaid = depositTotal + balanceReceivedTotal
+      const totalPaid = depositTotalNet + balanceReceivedTotal
       const remainingBalance = Math.max(0, totalCustomerPayment - totalPaid)
 
       // OTA 채널 여부 확인 (최신 formData/channels는 ref에서 참조)
@@ -778,7 +801,12 @@ export default function PricingSection({
         (fd as any).residentStatusAmounts
       ).totalUsd
       const discountedPriceWithoutNotIncluded = discountedPrice - notIncludedPrice
-      const depositToSave = depositTotal > 0 ? depositTotal : (discountedPriceWithoutNotIncluded > 0 ? discountedPriceWithoutNotIncluded : 0)
+      const depositToSave =
+        depositTotal > 0
+          ? depositTotalNet
+          : discountedPriceWithoutNotIncluded > 0
+            ? discountedPriceWithoutNotIncluded
+            : 0
 
       if (paymentRecords.length > 0) {
         setFormData((prev: typeof formData) => ({
@@ -938,9 +966,9 @@ export default function PricingSection({
           const reservationCancelled =
             formData.status != null &&
             ['cancelled', 'canceled'].includes(String(formData.status).toLowerCase().trim())
-          /** 입금·상품가 effect가 채널 결제 입력을 덮어쓰지 않음 (수동 입력·취소 후 부분 정산) */
+          /** 입금·상품가 effect가 채널 결제 입력을 덮어쓰지 않음 (수동 입력·취소 후 부분 정산·DB 저장값) */
           const skipOtaChannelPaymentAuto =
-            reservationCancelled || otaChannelPaymentUserEditedRef.current
+            reservationCancelled || otaChannelPaymentUserEditedRef.current || channelPaymentLoadedFromDb
 
           const resolveNextOtaCommissionAmount = (
             commissionCalcBase: number,
@@ -1074,7 +1102,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, setFormData, notIncludedBreakdown.totalUsd])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, setFormData, notIncludedBreakdown.totalUsd])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1166,8 +1194,18 @@ export default function PricingSection({
     return Math.max(0, base - returnedAmount)
   })()
 
-  /** DB `channel_settlement_amount`와 동일(`computeChannelSettlementAmount`, Partner Received 상한 포함). */
+  /** DB `channel_settlement_amount` 우선, 없거나 사용자가 정산 관련 값을 바꾼 뒤에는 `computeChannelSettlementAmount`. */
   const channelSettlementBeforePartnerReturn = useMemo(() => {
+    const fromDb = formData.channelSettlementAmount
+    if (
+      pricingFieldsFromDb.channel_settlement_amount &&
+      fromDb != null &&
+      String(fromDb) !== '' &&
+      Number.isFinite(Number(fromDb))
+    ) {
+      return Math.max(0, Number(fromDb))
+    }
+
     const pricingAdultsVal = Math.max(
       0,
       Math.floor(Number(formData.pricingAdults ?? formData.adults) || 0)
@@ -1198,6 +1236,8 @@ export default function PricingSection({
       isOTAChannel: !!isOTAChannel,
     })
   }, [
+    formData.channelSettlementAmount,
+    pricingFieldsFromDb.channel_settlement_amount,
     formData.depositAmount,
     formData.onlinePaymentAmount,
     channelPaymentGrossDb,
@@ -1263,6 +1303,7 @@ export default function PricingSection({
     if (isReservationCancelled) return
     if (!isOTAChannel || isCardFeeManuallyEdited.current) return
     if (isExistingPricingLoaded) return // DB에 값이 있으면 계산하지 않음
+    if (pricingFieldsFromDb.commission_amount) return
     const currentCommissionAmount = formData.commission_amount || 0
     if (currentCommissionAmount !== 0) return
 
@@ -1295,6 +1336,7 @@ export default function PricingSection({
     formData.subtotal,
     channelCommissionPercent,
     channelPaymentAmountAfterReturn,
+    pricingFieldsFromDb,
     setFormData,
   ])
 
@@ -1303,6 +1345,7 @@ export default function PricingSection({
     if (isReservationCancelled) return
     if (!isOTAChannel || isCardFeeManuallyEdited.current) return
     if (isExistingPricingLoaded) return // DB에 값이 있으면 계산하지 않음
+    if (pricingFieldsFromDb.commission_amount) return
     const currentCommissionAmount = formData.commission_amount || 0
     if (currentCommissionAmount !== 0) return
 
@@ -1335,6 +1378,7 @@ export default function PricingSection({
     formData.subtotal,
     channelCommissionPercent,
     channelPaymentAmountAfterReturn,
+    pricingFieldsFromDb,
     setFormData,
   ])
 
@@ -1342,6 +1386,7 @@ export default function PricingSection({
   useEffect(() => {
     if (isReservationCancelled) return
     if (!formData.channelId || !channels?.length || isExistingPricingLoaded) return
+    if (pricingFieldsFromDb.commission_amount) return
     const ch = channels.find((c: { id: string }) => c.id === formData.channelId)
     const isOTA = ch && ((ch as any).type?.toLowerCase() === 'ota' || (ch as any).category === 'OTA')
     if (!isOTA) return
@@ -1384,6 +1429,7 @@ export default function PricingSection({
     formData.subtotal,
     returnedAmount,
     channelPaymentAmountAfterReturn,
+    pricingFieldsFromDb,
     setFormData,
   ])
 
@@ -1659,6 +1705,7 @@ export default function PricingSection({
   // OTA는 쿠폰 시 할인 후 상품가, 그 외는 판매가×인원. 0이 아닐 때 onlinePaymentAmount 자동 설정.
   // 취소 OTA·부분 정산은 수동 입력만 쓰므로 자동 덮어쓰기 안 함. 수동 입력 후 블러 시에도 사용자 값 유지.
   useEffect(() => {
+    if (channelPaymentLoadedFromDb) return
     if (isOTAChannel && isReservationCancelled) return
 
     const targetOnline = isOTAChannel ? otaChannelProductPaymentGross : formData.productPriceTotal
@@ -1696,6 +1743,7 @@ export default function PricingSection({
     isReservationCancelled,
     isChannelPaymentAmountFocused,
     returnedAmount,
+    channelPaymentLoadedFromDb,
     setFormData,
   ])
 
@@ -1765,6 +1813,7 @@ export default function PricingSection({
   // depositAmount 변경 시 채널 결제 금액 자동 업데이트 (입력 중이 아닐 때만)
   useEffect(() => {
     if (isReservationCancelled) return
+    if (channelPaymentLoadedFromDb) return
     if (isOTAChannel && otaChannelPaymentUserEditedRef.current) return
     if (isChannelPaymentAmountFocused || formData.depositAmount <= 0) return
     const deposit = formData.depositAmount
@@ -1815,6 +1864,7 @@ export default function PricingSection({
     returnedAmount,
     isChannelPaymentAmountFocused,
     isExistingPricingLoaded,
+    channelPaymentLoadedFromDb,
     setFormData,
     isReservationCancelled
   ])
@@ -2844,9 +2894,18 @@ export default function PricingSection({
                 </span>
               </div>
               
-              {/* 고객 실제 지불액 (보증금) */}
+              {/* 고객 실제 지불액 (보증금) — 입금 동기화 시 Partner Received − Returned(파트너 환불) 반영 */}
               <div className="flex justify-between items-center mb-1.5">
-                <span className="text-xs text-gray-700">{isKorean ? '고객 실제 지불액 (보증금)' : 'Customer Payment (Deposit)'}</span>
+                <span
+                  className="text-xs text-gray-700 cursor-help"
+                  title={
+                    isKorean
+                      ? '입금 내역이 있으면: 파트너 수령(Partner Received) 합계에서 파트너 환불(Returned)을 뺀 금액이 보증금에 반영됩니다.'
+                      : 'With payment records: deposit = Partner Received total minus partner refunds (Returned), plus other deposit lines.'
+                  }
+                >
+                  {isKorean ? '고객 실제 지불액 (보증금)' : 'Customer Payment (Deposit)'}
+                </span>
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
@@ -3009,14 +3068,14 @@ export default function PricingSection({
                           )
                           isCardFeeManuallyEdited.current = false
                           setFormData((prev: typeof formData) => ({
-                            ...prev,
+                            ...omitChannelSettlementAmount(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: numValue > 0 ? numValue : commissionBasePrice,
                             commission_amount: calculatedCommission,
                           }))
                         } else {
                           setFormData({
-                            ...formData,
+                            ...omitChannelSettlementAmount(formData),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount,
                           })
@@ -3051,14 +3110,14 @@ export default function PricingSection({
                           )
                           isCardFeeManuallyEdited.current = false
                           setFormData((prev: typeof formData) => ({
-                            ...prev,
+                            ...omitChannelSettlementAmount(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: finalValue > 0 ? finalValue : commissionBasePrice,
                             commission_amount: calculatedCommission,
                           }))
                         } else {
                           setFormData({
-                            ...formData,
+                            ...omitChannelSettlementAmount(formData),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount,
                           })
@@ -3174,7 +3233,7 @@ export default function PricingSection({
                               percent
                             )
                             setFormData((prev: typeof formData) => ({
-                              ...prev,
+                              ...omitChannelSettlementAmount(prev),
                               commission_percent: percent,
                               commission_amount: calculatedAmount,
                             }))
@@ -3216,7 +3275,10 @@ export default function PricingSection({
                           const newAmount = Number(inputValue) || 0
                           isCardFeeManuallyEdited.current = true
                           console.log('PricingSection: commission_amount 수동 입력:', newAmount)
-                          setFormData((prev: typeof formData) => ({ ...prev, commission_amount: newAmount }))
+                          setFormData((prev: typeof formData) => ({
+                            ...omitChannelSettlementAmount(prev),
+                            commission_amount: newAmount,
+                          }))
                         }}
                         onFocus={() => {
                           setIsCommissionAmountFocused(true)
@@ -3226,7 +3288,10 @@ export default function PricingSection({
                           setIsCommissionAmountFocused(false)
                           const finalAmount = Number(commissionAmountInput) || formData.commission_amount || 0
                           isCardFeeManuallyEdited.current = true
-                          setFormData((prev: typeof formData) => ({ ...prev, commission_amount: finalAmount }))
+                          setFormData((prev: typeof formData) => ({
+                            ...omitChannelSettlementAmount(prev),
+                            commission_amount: finalAmount,
+                          }))
                           setCommissionAmountInput('')
                         }}
                         className={`w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')}`}
@@ -3258,10 +3323,10 @@ export default function PricingSection({
                               : (formData.depositAmount || 0)
                             const newAmount = Number((basePrice * (newPercent / 100) + 0.15).toFixed(2))
                             setFormData({ 
-                              ...formData, 
+                              ...omitChannelSettlementAmount(formData), 
                               commission_base_price: basePrice,
                               commission_percent: newPercent,
-                              commission_amount: newAmount
+                              commission_amount: newAmount,
                             })
                           }}
                           className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
@@ -3297,7 +3362,10 @@ export default function PricingSection({
                             setCommissionAmountInput(inputValue)
                             const newAmount = Number(inputValue) || 0
                             isCardFeeManuallyEdited.current = true
-                            setFormData((prev: typeof formData) => ({ ...prev, commission_amount: newAmount }))
+                            setFormData((prev: typeof formData) => ({
+                              ...omitChannelSettlementAmount(prev),
+                              commission_amount: newAmount,
+                            }))
                           }}
                           onFocus={() => {
                             setIsCommissionAmountFocused(true)
@@ -3307,7 +3375,10 @@ export default function PricingSection({
                             setIsCommissionAmountFocused(false)
                             const finalAmount = Number(commissionAmountInput) || formData.commission_amount || 0
                             isCardFeeManuallyEdited.current = true
-                            setFormData((prev: typeof formData) => ({ ...prev, commission_amount: finalAmount }))
+                            setFormData((prev: typeof formData) => ({
+                              ...omitChannelSettlementAmount(prev),
+                              commission_amount: finalAmount,
+                            }))
                             setCommissionAmountInput('')
                           }}
                           className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('commission_amount')} ${isReservationCancelled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
@@ -3346,7 +3417,7 @@ export default function PricingSection({
                 <span className="text-xs font-bold text-gray-700">
                   {isKorean ? '채널 정산 금액' : 'Channel Settlement Amount'}
                 </span>
-                <span className={`text-xs font-bold ${priceTextClass('')}`}>
+                <span className={`text-xs font-bold ${priceTextClass('channel_settlement_amount')}`}>
                   ${channelSettlementBeforePartnerReturn.toFixed(2)}
                 </span>
               </div>
@@ -3371,7 +3442,7 @@ export default function PricingSection({
                 <span className="text-xs font-medium text-gray-700">
                   {isKorean ? '채널 정산금액' : 'Channel Settlement Amount'}
                 </span>
-                <span className={`text-xs font-medium ${priceTextClass('')}`}>
+                <span className={`text-xs font-medium ${priceTextClass('channel_settlement_amount')}`}>
                   ${channelSettlementBeforePartnerReturn.toFixed(2)}
                 </span>
               </div>

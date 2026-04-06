@@ -387,16 +387,29 @@ export default function CustomerReceiptModal({
           if (paymentRecords && paymentRecords.length > 0) {
             let depositTotal = 0
             let balanceReceivedTotal = 0
+            let partnerReceivedStrict = 0
+            let returnedTotal = 0
             paymentRecords.forEach((r: { payment_status?: string; amount?: number }) => {
-              const status = (r.payment_status || '').toLowerCase()
+              const raw = r.payment_status || ''
+              const status = raw.toLowerCase()
               const amount = Number(r.amount) || 0
+              if (raw === 'Partner Received') {
+                partnerReceivedStrict += amount
+              }
+              if (raw.includes('Returned') || status === 'returned') {
+                returnedTotal += amount
+              }
               if (status.includes('partner received') || status.includes('deposit received') || status.includes("customer's cc charged")) {
                 depositTotal += amount
               } else if (status.includes('balance received') || status.includes('balance requested')) {
                 balanceReceivedTotal += amount
               }
             })
-            paidAmountFromRecords = depositTotal + balanceReceivedTotal
+            const depositTotalNet =
+              depositTotal > 0
+                ? Math.round((depositTotal - Math.min(partnerReceivedStrict, returnedTotal)) * 100) / 100
+                : depositTotal
+            paidAmountFromRecords = depositTotalNet + balanceReceivedTotal
           }
           // reservation_options (status 필터 없이 모두 조회) + option names
           const { data: optsRows, error: optsErr } = await supabase

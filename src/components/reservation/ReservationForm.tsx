@@ -475,6 +475,8 @@ export default function ReservationForm({
     commission_percent: number
     commission_amount: number
     commission_base_price?: number
+    /** DB `channel_settlement_amount` — 로드 시 표시 우선, 없으면 PricingSection에서 계산 */
+    channelSettlementAmount?: number
     not_included_price?: number
     // OTA/현장 결제 분리
     onlinePaymentAmount: number
@@ -2653,7 +2655,9 @@ export default function ReservationForm({
         }
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
-          .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, choices, choices_total, pricing_adults')
+          .select(
+            'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, choices, choices_total, pricing_adults'
+          )
           .eq('reservation_id', pricingReservationId)
           .maybeSingle()
 
@@ -2787,13 +2791,21 @@ export default function ReservationForm({
           const onSiteBalanceAmount = shouldLoadBalanceAmount && balanceAmount > 0 ? balanceAmount : 0
           
           setFormData(prev => {
+            const { channelSettlementAmount: _stripChSettle, ...prevWithoutChSettle } = prev
+            void _stripChSettle
             const paRaw = (existingPricing as any).pricing_adults
-            const pricingAdultsLoaded =
-              paRaw != null && paRaw !== ''
-                ? Math.max(0, Math.floor(toNum(paRaw)))
-                : prev.pricingAdults ?? prev.adults
+            const paNum = paRaw != null && paRaw !== '' ? Number(paRaw) : NaN
+            const pricingAdultsLoaded = Number.isFinite(paNum)
+              ? Math.max(0, Math.floor(paNum))
+              : prev.pricingAdults ?? prev.adults
+            const channelSettlementFromDb = (() => {
+              const v = (existingPricing as any).channel_settlement_amount
+              if (v == null || v === '') return null
+              const n = Number(v)
+              return Number.isFinite(n) ? n : null
+            })()
             const updated = {
-              ...prev,
+              ...prevWithoutChSettle,
               pricingAdults: pricingAdultsLoaded,
               adultProductPrice: adultPrice,
               childProductPrice: childPrice,
@@ -2827,6 +2839,7 @@ export default function ReservationForm({
               commission_base_price: (existingPricing as any).commission_base_price !== undefined && (existingPricing as any).commission_base_price !== null
                 ? Number((existingPricing as any).commission_base_price) 
                 : 0,
+              ...(channelSettlementFromDb != null ? { channelSettlementAmount: channelSettlementFromDb } : {}),
               onSiteBalanceAmount: onSiteBalanceAmount,
               choices: existingPricing.choices || {},
               choicesTotal: Number(existingPricing.choices_total) || 0
@@ -2889,6 +2902,27 @@ export default function ReservationForm({
               updatedCommissionAmount: updated.commission_amount,
               finalCommissionAmount
             })
+
+            /** DB `commission_base_price`는 net(Returned 반영)일 수 있음 → gross `onlinePaymentAmount`를 동기화 (입금 Returned는 이후 PricingSection에서 반영) */
+            let nextOnlinePayment = prev.onlinePaymentAmount ?? 0
+            const rawCbForOnline = (existingPricing as any).commission_base_price
+            if (rawCbForOnline != null && rawCbForOnline !== '') {
+              const cbNum = Number(rawCbForOnline)
+              if (Number.isFinite(cbNum)) {
+                const chRow = channels.find((c: { id: string }) => c.id === prev.channelId) as
+                  | { type?: string; category?: string }
+                  | undefined
+                const isOtaLoad =
+                  !!chRow &&
+                  (String(chRow.type || '').toLowerCase() === 'ota' || chRow.category === 'OTA')
+                nextOnlinePayment = deriveCommissionGrossForSettlement(cbNum, {
+                  returnedAmount: 0,
+                  depositAmount: Number(updated.depositAmount) || 0,
+                  productPriceTotal: newProductPriceTotal,
+                  isOTAChannel: isOtaLoad,
+                })
+              }
+            }
             
             return {
               ...updated,
@@ -2900,7 +2934,8 @@ export default function ReservationForm({
               // commission_amount와 commission_percent 명시적으로 보존 (데이터베이스 값 우선)
               commission_amount: finalCommissionAmount,
               commission_percent: updated.commission_percent,
-              commission_base_price: updated.commission_base_price
+              commission_base_price: updated.commission_base_price,
+              onlinePaymentAmount: nextOnlinePayment,
             }
           })
           
@@ -2924,6 +2959,11 @@ export default function ReservationForm({
             choicesTotal: (existingPricing as any).choices_total != null && (existingPricing as any).choices_total !== '',
             onSiteBalanceAmount: (existingPricing as any).balance_amount != null && (existingPricing as any).balance_amount !== '',
             onlinePaymentAmount: (existingPricing as any).commission_base_price != null && (existingPricing as any).commission_base_price !== '',
+            /** 채널 결제(net) DB 보존 — PricingSection 자동 덮어쓰기 억제용 */
+            commission_base_price: (existingPricing as any).commission_base_price != null && (existingPricing as any).commission_base_price !== '',
+            channel_settlement_amount:
+              (existingPricing as any).channel_settlement_amount != null &&
+              (existingPricing as any).channel_settlement_amount !== '',
             pricingAdults:
               (existingPricing as any).pricing_adults != null && (existingPricing as any).pricing_adults !== '',
           })
@@ -4408,12 +4448,15 @@ export default function ReservationForm({
 
   // 가격 정보 저장 함수 (외부에서 호출 가능)
   // overrides: 입금 내역 반영 등으로 보증금/잔액만 갱신할 때 사용. 항상 formDataRef에서 최신 formData 사용.
+  // 주의: 가격 로드 전에는 pricingAdults가 adults와 동일한 초기값이라, 입금만 갱신 시 pricing_adults를 UPDATE에 넣으면
+  // DB에 저장된 청구 성인 수(예: 1)가 예약 인원(2)으로 덮어씌워지는 버그가 난다 → 기존 행 업데이트 시 해당 컬럼은 생략.
   const savePricingInfo = useCallback(async (
     reservationId: string,
     overrides?: { depositAmount?: number; balanceAmount?: number }
   ) => {
     try {
       const fd = formDataRef.current
+      const isPartialPaymentSync = overrides != null
       // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격·수수료·잔액 컬럼 포함)
       const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount'
       const { data: existingRow, error: checkError } = await (supabase as any)
@@ -4565,6 +4608,15 @@ export default function ReservationForm({
         channel_settlement_amount: Math.round(channelSettlementComputed * 100) / 100,
       }
 
+      const pricingDataForUpdate =
+        isPartialPaymentSync && existing?.id
+          ? (() => {
+              const row = { ...pricingData } as Record<string, unknown>
+              delete row.pricing_adults
+              return row
+            })()
+          : pricingData
+
       let error: unknown
       if (checkError && checkError.code !== 'PGRST116') { // PGRST116은 "no rows returned" 오류
         console.error('기존 가격 정보 확인 오류:', checkError)
@@ -4575,7 +4627,7 @@ export default function ReservationForm({
         // 기존 데이터가 있으면 업데이트 (전체 컬럼 명시로 card_fee, balance_amount, commission_amount 등 누락 방지)
         const { error: updateError } = await (supabase as any)
           .from('reservation_pricing')
-          .update(pricingData)
+          .update(pricingDataForUpdate)
           .eq('reservation_id', reservationId)
         
         error = updateError
