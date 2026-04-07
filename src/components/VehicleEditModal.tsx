@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { VEHICLE_STATUS_SELECT_OPTIONS } from '@/lib/vehicleStatus'
 import VehicleTypeManagementModal from './VehicleTypeManagementModal'
 
@@ -39,23 +40,29 @@ interface Vehicle {
   vehicle_category?: string
   rental_company?: string
   daily_rate?: number
+  /** 예약(약정) 시점 금액 — 실제 정산 총액(rental_total_cost)과 별도 */
+  rental_booking_price?: number | null
   rental_start_date?: string
   rental_end_date?: string
   rental_pickup_location?: string
   rental_return_location?: string
   rental_total_cost?: number
   rental_notes?: string
+  /** Rental Agreement # (예약 번호·RN과 별도) */
+  rental_agreement_number?: string | null
   /** 달력/일정 뷰 표시용 닉네임 */
   nick?: string | null
 }
 
 interface VehicleEditModalProps {
   vehicle: Vehicle | null
+  /** 신규 추가(vehicle === null)일 때만 폼 초기값에 병합 */
+  prefill?: Partial<Vehicle> | null
   onSave: (vehicleData: Partial<Vehicle>) => void
   onClose: () => void
 }
 
-export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEditModalProps) {
+export default function VehicleEditModal({ vehicle, prefill = null, onSave, onClose }: VehicleEditModalProps) {
   const [formData, setFormData] = useState<Partial<Vehicle>>({
     vehicle_number: '',
     vin: '',
@@ -86,7 +93,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     // 렌터카를 기본값으로 설정
     vehicle_category: 'rental',
     rental_company: '',
-    daily_rate: 0,
+    rental_booking_price: 0,
     rental_start_date: '',
     rental_end_date: '',
     rental_pickup_location: '',
@@ -94,6 +101,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     rental_total_cost: 0,
     status: 'available',
     rental_notes: '',
+    rental_agreement_number: '',
     nick: ''
   })
 
@@ -287,7 +295,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         interest_rate: vehicle.interest_rate || 0,
         monthly_payment: vehicle.monthly_payment || 0,
         additional_payment: vehicle.additional_payment || 0,
-        daily_rate: vehicle.daily_rate || 0,
+        rental_booking_price: vehicle.rental_booking_price ?? 0,
         rental_total_cost: vehicle.rental_total_cost || 0,
         // 문자열 필드들
         vehicle_number: vehicle.vehicle_number || '',
@@ -308,8 +316,11 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         rental_start_date: vehicle.rental_start_date || '',
         rental_end_date: vehicle.rental_end_date || '',
         rental_pickup_location: vehicle.rental_pickup_location || '',
-        rental_return_location: vehicle.rental_return_location || '',
+        rental_return_location: vehicle.rental_return_location?.trim()
+          ? vehicle.rental_return_location
+          : vehicle.rental_pickup_location || '',
         rental_notes: vehicle.rental_notes || '',
+        rental_agreement_number: vehicle.rental_agreement_number || '',
         nick: vehicle.nick || '',
         // 불린 필드들
         is_installment: vehicle.is_installment || false,
@@ -317,12 +328,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         status: vehicle.status || 'available',
         vehicle_category: vehicle.vehicle_category || 'company'
       })
-      if (vehicle.vehicle_image_url) {
-        setImagePreview(vehicle.vehicle_image_url)
-      }
     } else {
-      // 새 차량인 경우 기본값 설정 (렌터카를 기본값으로)
-      setFormData({
+      // 새 차량인 경우 기본값 설정 (렌터카를 기본값으로) + 선택적 prefill
+      const base: Partial<Vehicle> = {
         vehicle_number: '',
         vin: '',
         vehicle_type: '',
@@ -349,10 +357,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         installment_start_date: '',
         installment_end_date: '',
         vehicle_image_url: '',
-        // 렌터카를 기본값으로 설정
         vehicle_category: 'rental',
         rental_company: '',
-        daily_rate: 0,
+        rental_booking_price: 0,
         rental_start_date: '',
         rental_end_date: '',
         rental_pickup_location: '',
@@ -360,10 +367,15 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         rental_total_cost: 0,
         status: 'available',
         rental_notes: '',
-        nick: ''
+        rental_agreement_number: '',
+        nick: '',
+      }
+      setFormData({
+        ...base,
+        ...(prefill != null && typeof prefill === 'object' ? prefill : {}),
       })
     }
-  }, [vehicle])
+  }, [vehicle, prefill])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
@@ -413,6 +425,18 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         // vehiclePhotos 상태에도 저장
         setVehiclePhotos(selectedType.photos)
       }
+    } else if (name === 'rental_pickup_location') {
+      setFormData((prev) => {
+        const prevPickup = prev.rental_pickup_location ?? ''
+        const prevReturn = prev.rental_return_location ?? ''
+        const returnMirrorsPickup =
+          !prevReturn.trim() || prevReturn === prevPickup
+        return {
+          ...prev,
+          rental_pickup_location: value,
+          ...(returnMirrorsPickup ? { rental_return_location: value } : {}),
+        }
+      })
     } else {
       setFormData(prev => ({ ...prev, [name]: value }))
     }
@@ -578,10 +602,11 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
       if (items[i].type.indexOf('image') !== -1) {
         const file = items[i].getAsFile()
         if (file) {
-          setImageFile(file)
+          setImageFiles((prev) => [...prev, file])
           const reader = new FileReader()
-          reader.onload = (e) => {
-            setImagePreview(e.target?.result as string)
+          reader.onload = (ev) => {
+            const url = ev.target?.result as string
+            if (url) setImagePreviews((prev) => [...prev, url])
           }
           reader.readAsDataURL(file)
         }
@@ -616,7 +641,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
       // 숫자 필드 정리
       const numberFields = [
         'year', 'capacity', 'mileage_at_purchase', 'purchase_amount',
-        'monthly_payment', 'rental_total_cost'
+        'monthly_payment', 'rental_total_cost', 'rental_booking_price',
       ]
       
       numberFields.forEach(field => {
@@ -628,6 +653,16 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
           cleanedData[field as keyof typeof cleanedData] = isNaN(numValue) ? 0 : numValue
         }
       })
+
+      if (cleanedData.vehicle_category === 'rental') {
+        const booking = Number(cleanedData.rental_booking_price) || 0
+        const implied = rentalImpliedDailyUsd(
+          booking,
+          cleanedData.rental_start_date,
+          cleanedData.rental_end_date
+        )
+        ;(cleanedData as Record<string, unknown>).daily_rate = implied ? implied.perDay : 0
+      }
 
       // 차량 데이터 저장 (이미지는 별도로 처리)
       const vehicleData = {
@@ -699,60 +734,122 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     return Math.max(0, total - paid)
   }
 
+  const rentalBookingImplied = useMemo(
+    () =>
+      formData.vehicle_category === 'rental'
+        ? rentalImpliedDailyUsd(
+            Number(formData.rental_booking_price) || 0,
+            formData.rental_start_date,
+            formData.rental_end_date
+          )
+        : null,
+    [
+      formData.vehicle_category,
+      formData.rental_booking_price,
+      formData.rental_start_date,
+      formData.rental_end_date,
+    ]
+  )
+
+  const fieldClass =
+    'mt-1.5 block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20'
+  const sectionCard =
+    'rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5'
+  const sectionHeading =
+    'flex items-center gap-2 border-b border-gray-100 pb-3 mb-4 text-sm font-semibold tracking-tight text-gray-900'
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-end justify-center px-2 pt-2 pb-4 text-center sm:items-center sm:p-4">
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={onClose}></div>
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="vehicle-edit-modal-title"
+    >
+      <div
+        className="fixed inset-0 bg-black/50 backdrop-blur-[1px] transition-opacity"
+        aria-hidden
+        onClick={onClose}
+      />
 
-        <div className="relative z-10 inline-block w-full max-w-4xl align-bottom text-left sm:align-middle">
-          <form onSubmit={handleSubmit} className="flex max-h-[min(92vh,900px)] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-2 sm:px-4 sm:pt-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="flex items-center text-base font-semibold text-gray-900">
-                  <Car className="mr-1.5 h-4 w-4 shrink-0" />
+      <div className="relative z-10 flex max-h-[min(92vh,900px)] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white text-left shadow-2xl sm:rounded-xl">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-gradient-to-r from-slate-50 via-white to-slate-50/80 px-4 py-3.5 sm:items-center sm:px-5">
+            <div className="min-w-0 flex-1">
+              <h3
+                id="vehicle-edit-modal-title"
+                className="flex items-center gap-2.5 text-base font-semibold text-gray-900 sm:text-lg"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-700 ring-1 ring-blue-600/15">
+                  <Car className="h-4 w-4" />
+                </span>
+                <span className="truncate">
                   {vehicle ? (vehicle.id ? '차량 정보 수정' : '새 차량 추가 (복사)') : '새 차량 추가'}
-                </h3>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
+                </span>
+              </h3>
+              <p className="mt-1.5 text-xs leading-relaxed text-gray-500 sm:text-sm sm:pl-11">
+                {vehicle?.id
+                  ? '변경 사항을 저장하면 목록에 반영됩니다.'
+                  : '카테고리·차종을 먼저 정한 뒤 필수 항목을 채워 주세요.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+              aria-label="닫기"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/80 px-4 py-4 sm:px-5 sm:py-5">
+            <div className="flex flex-col gap-5">
               {/* 렌터카일 때는 1열 레이아웃, 회사 차량일 때는 2열 레이아웃 */}
-              <div className={`grid gap-3 ${formData.vehicle_category === 'rental' ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
+              <div
+                className={`grid gap-5 ${formData.vehicle_category === 'rental' ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}
+              >
                 {/* 기본 정보 */}
-                <div className="space-y-2">
-                  <h4 className="flex items-center text-sm font-semibold text-gray-900">
-                    <Car className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                <section className={sectionCard}>
+                  <h4 className={sectionHeading}>
+                    <Car className="h-4 w-4 shrink-0 text-blue-600" />
                     기본 정보
                   </h4>
-                  
+                  <div className="space-y-3 sm:space-y-4">
                   {/* 차량 카테고리 선택 */}
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">차량 카테고리 *</label>
-                    <div className="flex space-x-4">
-                      <label className="flex items-center">
+                    <span className="mb-2 block text-sm font-medium text-gray-700">차량 카테고리 *</span>
+                    <div className="grid grid-cols-2 gap-2 sm:max-w-md">
+                      <label
+                        className={`flex cursor-pointer items-center justify-center rounded-xl border-2 px-3 py-2.5 text-center text-sm font-medium transition-all ${
+                          formData.vehicle_category === 'company'
+                            ? 'border-blue-500 bg-blue-50/90 text-blue-900 shadow-sm'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50/80'
+                        }`}
+                      >
                         <input
                           type="radio"
                           name="vehicle_category"
                           value="company"
                           checked={formData.vehicle_category === 'company'}
                           onChange={handleInputChange}
-                          className="mr-2"
+                          className="sr-only"
                         />
                         회사 차량
                       </label>
-                      <label className="flex items-center">
+                      <label
+                        className={`flex cursor-pointer items-center justify-center rounded-xl border-2 px-3 py-2.5 text-center text-sm font-medium transition-all ${
+                          formData.vehicle_category === 'rental'
+                            ? 'border-blue-500 bg-blue-50/90 text-blue-900 shadow-sm'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50/80'
+                        }`}
+                      >
                         <input
                           type="radio"
                           name="vehicle_category"
                           value="rental"
                           checked={formData.vehicle_category === 'rental'}
                           onChange={handleInputChange}
-                          className="mr-2"
+                          className="sr-only"
                         />
                         렌터카
                       </label>
@@ -768,7 +865,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.vehicle_number}
                         onChange={handleInputChange}
                         required
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       />
                     </div>
                     <div>
@@ -780,7 +877,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         name="vin"
                         value={formData.vin}
                         onChange={handleInputChange}
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       />
                     </div>
                   </div>
@@ -793,7 +890,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       value={formData.nick ?? ''}
                       onChange={handleInputChange}
                       placeholder="예: 1번차, 빨간버스"
-                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      className={fieldClass}
                     />
                     <p className="mt-1 text-xs text-gray-500">입력 시 달력/일정 뷰에 이 이름으로 표시됩니다. 비워두면 차량 번호가 표시됩니다.</p>
                   </div>
@@ -804,7 +901,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       <button
                         type="button"
                         onClick={() => setShowVehicleTypeManagement(true)}
-                        className="inline-flex items-center px-2 py-1 border border-gray-300 rounded-md shadow-sm text-xs font-medium text-gray-700 bg-white hover:bg-gray-50"
+                        className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50"
                       >
                         <Settings className="w-3 h-3 mr-1" />
                         차종 관리
@@ -815,7 +912,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       value={formData.vehicle_type}
                       onChange={handleInputChange}
                       required
-                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      className={fieldClass}
                     >
                       <option value="">차종을 선택하세요</option>
                       {vehicleTypes.map((type) => (
@@ -840,7 +937,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       onChange={handleInputChange}
                       required
                       min="1"
-                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      className={fieldClass}
                     />
                   </div>
 
@@ -857,7 +954,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           required
                           min="1900"
                           max={new Date().getFullYear() + 1}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
 
@@ -870,7 +967,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                             value={formData.mileage_at_purchase}
                             onChange={handleInputChange}
                             min="0"
-                            className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            className={fieldClass}
                           />
                         </div>
                         <div>
@@ -882,7 +979,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                             onChange={handleInputChange}
                             min="0"
                             step="0.01"
-                            className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            className={fieldClass}
                           />
                         </div>
                       </div>
@@ -894,7 +991,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="purchase_date"
                           value={formData.purchase_date}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                     </>
@@ -907,20 +1004,39 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       value={formData.memo}
                       onChange={handleInputChange}
                       rows={2}
-                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      className={fieldClass}
                     />
                   </div>
-                </div>
+                  </div>
+                </section>
 
                 {/* 렌터카 정보 (렌터카 선택시에만 표시) */}
                 {formData.vehicle_category === 'rental' && (
-                  <div className="space-y-2">
-                    <h4 className="flex items-center text-sm font-semibold text-gray-900">
-                      <Calendar className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                  <section className={sectionCard}>
+                    <h4 className={sectionHeading}>
+                      <Calendar className="h-4 w-4 shrink-0 text-emerald-600" />
                       렌터카 정보
                     </h4>
+                    <div className="space-y-3 sm:space-y-4">
 
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        Rental Agreement #
+                      </label>
+                      <input
+                        type="text"
+                        name="rental_agreement_number"
+                        value={formData.rental_agreement_number ?? ''}
+                        onChange={handleInputChange}
+                        className={fieldClass}
+                        placeholder="렌터카 계약서 번호"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        예약 번호(RN 등)와 계약서상 번호가 다를 때 입력합니다.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">렌터카 회사 *</label>
                         <input
@@ -929,23 +1045,23 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           value={formData.rental_company}
                           onChange={handleInputChange}
                           required
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                           placeholder="예: Hertz, Enterprise, Budget"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">일일 요금 ($)</label>
-                        <input
-                          type="number"
-                          name="daily_rate"
-                          value={formData.daily_rate}
+                        <label className="block text-sm font-medium text-gray-700">렌터카 상태</label>
+                        <select
+                          name="status"
+                          value={formData.status}
                           onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
+                          className={fieldClass}
+                        >
+                          {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
 
@@ -957,7 +1073,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_start_date"
                           value={formData.rental_start_date}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -967,7 +1083,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_end_date"
                           value={formData.rental_end_date}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                     </div>
@@ -980,7 +1096,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_pickup_location"
                           value={formData.rental_pickup_location}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -990,14 +1106,45 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_return_location"
                           value={formData.rental_return_location}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">예약 가격 ($)</label>
+                        <input
+                          type="number"
+                          name="rental_booking_price"
+                          value={formData.rental_booking_price ?? 0}
+                          onChange={handleInputChange}
+                          min="0"
+                          step="0.01"
+                          className={fieldClass}
+                          placeholder="예약 시 약정 금액"
+                        />
+                        <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
+                          {rentalBookingImplied ? (
+                            <>
+                              일일 환산:{' '}
+                              <span className="font-medium text-gray-700">
+                                ${rentalBookingImplied.perDay.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </span>
+                              <span className="text-gray-400"> · </span>
+                              렌탈 {rentalBookingImplied.days}일 기준 (시작~종료 포함 일수 − 1일, 최소 1일)
+                            </>
+                          ) : (
+                            <>시작일·종료일과 금액을 입력하면 일일 환산 금액이 표시됩니다.</>
+                          )}
+                        </p>
+                      </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700">총 비용 ($)</label>
+                        <p className="mb-1.5 text-xs text-gray-500">실제 정산·청구 총액</p>
                         <input
                           type="number"
                           name="rental_total_cost"
@@ -1005,22 +1152,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                           placeholder="0.00"
                         />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">렌터카 상태</label>
-                        <select
-                          name="status"
-                          value={formData.status}
-                          onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        >
-                          {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
                       </div>
                     </div>
 
@@ -1031,19 +1165,21 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.rental_notes}
                         onChange={handleInputChange}
                         rows={2}
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       />
                     </div>
-                  </div>
+                    </div>
+                  </section>
                 )}
 
                 {/* 관리 정보 (회사 차량일 때만 표시) */}
                 {formData.vehicle_category === 'company' && (
-                  <div className="space-y-2">
-                    <h4 className="flex items-center text-sm font-semibold text-gray-900">
-                      <Wrench className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                  <section className={sectionCard}>
+                    <h4 className={sectionHeading}>
+                      <Wrench className="h-4 w-4 shrink-0 text-amber-600" />
                       관리 정보
                     </h4>
+                    <div className="space-y-3 sm:space-y-4">
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700">엔진오일 교체 주기 (miles)</label>
@@ -1053,7 +1189,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.engine_oil_change_cycle}
                         onChange={handleInputChange}
                         min="0"
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       />
                     </div>
 
@@ -1065,7 +1201,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.current_mileage}
                         onChange={handleInputChange}
                         min="0"
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       />
                     </div>
 
@@ -1077,7 +1213,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.recent_engine_oil_change_mileage}
                         onChange={handleInputChange}
                         min="0"
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       />
                       <p className="mt-1 text-xs text-gray-500">엔진오일 교체 비용 등록 시 자동 업데이트됩니다</p>
                     </div>
@@ -1088,7 +1224,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         name="status"
                         value={formData.status}
                         onChange={handleInputChange}
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       >
                         {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1105,7 +1241,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           value={formData.front_tire_size}
                           onChange={handleInputChange}
                           placeholder="예: 205/55R16"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1116,7 +1252,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           value={formData.rear_tire_size}
                           onChange={handleInputChange}
                           placeholder="예: 205/55R16"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                     </div>
@@ -1129,7 +1265,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.windshield_wiper_size}
                         onChange={handleInputChange}
                         placeholder="예: 26인치"
-                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className={fieldClass}
                       />
                     </div>
 
@@ -1141,7 +1277,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="headlight_model"
                           value={formData.headlight_model}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1151,23 +1287,25 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="headlight_model_name"
                           value={formData.headlight_model_name}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                     </div>
-                  </div>
+                    </div>
+                  </section>
                 )}
               </div>
 
               {/* 할부 정보 (회사 차량일 때만 표시) */}
               {formData.vehicle_category === 'company' && (
-                <div className="mt-3 space-y-2">
-                  <h4 className="flex items-center text-sm font-semibold text-gray-900">
-                    <DollarSign className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                <section className={sectionCard}>
+                  <h4 className={sectionHeading}>
+                    <DollarSign className="h-4 w-4 shrink-0 text-violet-600" />
                     할부 정보
                   </h4>
+                  <div className="space-y-3 sm:space-y-4">
 
-                  <div className="flex items-center">
+                  <div className="flex items-center rounded-lg border border-gray-100 bg-slate-50/80 px-3 py-2.5">
                     <input
                       type="checkbox"
                       name="is_installment"
@@ -1189,7 +1327,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1201,7 +1339,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1213,7 +1351,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1225,7 +1363,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1235,7 +1373,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="payment_due_date"
                           value={formData.payment_due_date}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1245,7 +1383,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="installment_start_date"
                           value={formData.installment_start_date}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                       <div>
@@ -1255,14 +1393,14 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="installment_end_date"
                           value={formData.installment_end_date}
                           onChange={handleInputChange}
-                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          className={fieldClass}
                         />
                       </div>
                     </div>
                   )}
 
                   {formData.is_installment && (
-                    <div className="grid grid-cols-2 gap-2 rounded-md bg-gray-50 p-2">
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-100 bg-slate-50/90 p-3">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">총 납부 금액</label>
                         <p className="mt-1 text-sm text-gray-900">${calculateTotalPayment().toLocaleString()} (자동 계산)</p>
@@ -1273,14 +1411,15 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       </div>
                     </div>
                   )}
-                </div>
+                  </div>
+                </section>
               )}
 
               {/* 차량 이미지 - 모든 차량 타입에 대해 표시 */}
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="flex items-center text-sm font-semibold text-gray-900">
-                    <Upload className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+              <section className={sectionCard}>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                  <h4 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-gray-900">
+                    <Upload className="h-4 w-4 shrink-0 text-sky-600" />
                     차량 이미지 ({vehiclePhotos.length + imagePreviews.length}장)
                   </h4>
                   {formData.vehicle_type && (
@@ -1356,7 +1495,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
 
                 {/* 새로 추가할 사진들 */}
                 <div
-                  className="rounded-lg border-2 border-dashed border-gray-300 p-3 text-center"
+                  className="rounded-xl border-2 border-dashed border-gray-200 bg-slate-50/50 p-4 text-center transition-colors hover:border-gray-300 hover:bg-slate-50"
                   onPaste={handlePasteImage}
                 >
                   {imagePreviews.length > 0 ? (
@@ -1425,27 +1564,27 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                     </div>
                   )}
                 </div>
-              </div>
+              </section>
             </div>
+          </div>
 
-            <div className="flex flex-shrink-0 flex-row-reverse gap-2 border-t border-gray-200 bg-gray-50 px-3 py-2 sm:px-4">
+          <div className="flex shrink-0 flex-row-reverse gap-2 border-t border-gray-200 bg-slate-50/90 px-4 py-3 sm:px-5">
               <button
                 type="submit"
-                className="inline-flex justify-center rounded-md border border-transparent bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 저장
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex justify-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                className="inline-flex justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
               >
                 취소
               </button>
-            </div>
+          </div>
           </form>
         </div>
-      </div>
 
       {/* 사진 갤러리 모달 */}
       {showPhotoGallery && (

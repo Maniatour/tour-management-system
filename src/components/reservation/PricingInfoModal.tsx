@@ -40,6 +40,7 @@ interface PricingData {
   not_included_price?: number
   commission_amount?: number
   commission_percent?: number
+  channel_settlement_amount?: number
 }
 
 interface Coupon {
@@ -110,7 +111,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       const reservationId = String(reservation.id)
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent')
+        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, channel_settlement_amount')
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -186,7 +187,11 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           choices_total: pricingInfo?.choicesTotal || 0,
           not_included_price: pricingInfo?.not_included_price || 0,
           commission_amount: 0,
-          commission_percent: pricingInfo?.commission_percent || 0
+          commission_percent: pricingInfo?.commission_percent || 0,
+          channel_settlement_amount: Math.max(
+            0,
+            (pricingInfo?.depositAmount || 0) - (Number(pricingInfo?.commission_amount) || 0)
+          ),
         }
         setPricingData(defaultData)
         setEditData(defaultData)
@@ -221,6 +226,13 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           ? productPriceTotalFromDb
           : (adultPrice * (reservation?.adults || 0) + childPrice * (reservation?.child || 0) + infantPrice * (reservation?.infant || 0))
 
+      const dep = toNum(raw.deposit_amount)
+      const comm = toNum(raw.commission_amount)
+      const chSettleFromDb =
+        raw.channel_settlement_amount != null && raw.channel_settlement_amount !== ''
+          ? toNum(raw.channel_settlement_amount)
+          : Math.max(0, dep - comm)
+
       const pricingDataWithDefaults: PricingData = {
         ...data,
         id: (data as { id?: string }).id,
@@ -231,7 +243,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         choices_total: toNum(data.choices_total),
         not_included_price: toNum(data.not_included_price),
         commission_amount: toNum(data.commission_amount),
-        commission_percent: commissionPercentToUse
+        commission_percent: commissionPercentToUse,
+        channel_settlement_amount: chSettleFromDb,
       }
       
       setPricingData(pricingDataWithDefaults)
@@ -910,11 +923,21 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                         </div>
                       </div>
                       <div className="border-t border-gray-100 my-1" />
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center">
                         <span className="font-semibold text-gray-700">채널 정산 금액</span>
-                        <span className="font-bold text-blue-600">
-                          ${Math.max(0, (editData?.deposit_amount || 0) - (editData?.commission_amount || 0)).toFixed(2)}
-                        </span>
+                        <div className="relative">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
+                          <input
+                            type="number"
+                            value={editData?.channel_settlement_amount ?? ''}
+                            onChange={(e) =>
+                              handleInputChange('channel_settlement_amount', Math.max(0, Number(e.target.value) || 0))
+                            }
+                            className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right font-semibold text-blue-600"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -926,7 +949,11 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       <span className="font-semibold text-gray-800">최종 매출 & 운영 이익</span>
                     </div>
                     {(() => {
-                      const channelSettlement = Math.max(0, (editData?.deposit_amount || 0) - (editData?.commission_amount || 0))
+                      const channelSettlement =
+                        editData?.channel_settlement_amount != null &&
+                        Number.isFinite(Number(editData.channel_settlement_amount))
+                          ? Math.max(0, Number(editData.channel_settlement_amount))
+                          : Math.max(0, (editData?.deposit_amount || 0) - (editData?.commission_amount || 0))
                       const choicesTotal = editData?.choices_total ?? 0
                       const people = (reservation?.adults || 0) + (reservation?.child || 0) + (reservation?.infant || 0)
                       const notIncludedTotal = (editData?.not_included_price || 0) * people

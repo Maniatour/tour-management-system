@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye, Copy, Settings } from 'lucide-react'
+import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye, Copy, Settings, Building2 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import VehicleEditModal from '@/components/VehicleEditModal'
 // 차종 관리 모달은 lazy load로 최적화
@@ -16,6 +16,7 @@ import {
   getVehicleStatusLabelKo,
   VEHICLE_STATUS_SELECT_OPTIONS,
 } from '@/lib/vehicleStatus'
+import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 interface VehiclePhoto {
@@ -69,12 +70,15 @@ interface Vehicle {
   vehicle_category?: string
   rental_company?: string
   daily_rate?: number
+  rental_booking_price?: number | null
   rental_start_date?: string
   rental_end_date?: string
   rental_pickup_location?: string
   rental_return_location?: string
   rental_total_cost?: number
   rental_notes?: string
+  /** Rental Agreement # */
+  rental_agreement_number?: string | null
   /** 달력/일정 뷰 표시용 닉네임 (미입력 시 vehicle_number 사용) */
   nick?: string | null
 }
@@ -82,6 +86,32 @@ interface Vehicle {
 const VEHICLES_UI_DEFAULT = {
   searchTerm: '',
   activeTab: 'company' as 'company' | 'rental_active' | 'rental_returned' | 'vehicle_types',
+}
+
+/** 오늘 기준 로컬 달력으로 N일 뒤 YYYY-MM-DD */
+function addLocalDaysYmd(daysFromToday: number): string {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysFromToday)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Enterprise 렌터카 추가 버튼용 — 모달 prefill */
+function getEnterpriseRentalPrefill(): Partial<Vehicle> {
+  return {
+    vehicle_category: 'rental',
+    vehicle_number: 'RENT',
+    vehicle_type: 'Ford Transit 15 passenger',
+    capacity: 15,
+    rental_company: 'Enterprise',
+    status: 'reserved',
+    rental_start_date: addLocalDaysYmd(1),
+    rental_end_date: addLocalDaysYmd(2),
+    rental_pickup_location: 'Airport Rent a Car Center',
+    rental_return_location: 'Airport Rent a Car Center',
+  }
 }
 
 export default function VehiclesPage() {
@@ -100,6 +130,7 @@ export default function VehiclesPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [isVehicleTypeModalOpen, setIsVehicleTypeModalOpen] = useState(false)
+  const [vehicleModalPrefill, setVehicleModalPrefill] = useState<Partial<Vehicle> | null>(null)
   // 렌터카 관리 모달 상태 제거
 
   const fetchVehicles = useCallback(async () => {
@@ -141,12 +172,14 @@ export default function VehiclesPage() {
           vehicle_category,
           rental_company,
           daily_rate,
+          rental_booking_price,
           rental_start_date,
           rental_end_date,
           rental_pickup_location,
           rental_return_location,
           rental_total_cost,
           rental_notes,
+          rental_agreement_number,
           nick,
           created_at,
           updated_at
@@ -343,6 +376,13 @@ export default function VehiclesPage() {
   }, [])
 
   const handleAddVehicle = useCallback(() => {
+    setVehicleModalPrefill(null)
+    setSelectedVehicle(null)
+    setIsEditModalOpen(true)
+  }, [])
+
+  const handleAddEnterpriseRental = useCallback(() => {
+    setVehicleModalPrefill(getEnterpriseRentalPrefill())
     setSelectedVehicle(null)
     setIsEditModalOpen(true)
   }, [])
@@ -361,13 +401,14 @@ export default function VehiclesPage() {
       // 렌터카 관련 필드들만 유지하고 나머지는 초기화
       vehicle_category: 'rental',
       rental_company: vehicle.rental_company || '',
-      daily_rate: vehicle.daily_rate || 0,
+      rental_booking_price: 0,
       rental_start_date: '',
       rental_end_date: '',
       rental_pickup_location: vehicle.rental_pickup_location || '',
       rental_return_location: vehicle.rental_return_location || '',
       rental_total_cost: 0,
       rental_notes: vehicle.rental_notes || '',
+      rental_agreement_number: vehicle.rental_agreement_number || '',
       // 회사 차량 관련 필드들은 초기화
       year: new Date().getFullYear(),
       mileage_at_purchase: 0,
@@ -423,12 +464,14 @@ export default function VehiclesPage() {
     if (!vehicles || vehicles.length === 0) return []
     
     return vehicles.filter(vehicle => {
-      // 검색어 필터링 (id, vehicle_number, vehicle_type, rental_company)
-      const term = searchTerm.toLowerCase()
-      const matchesSearch = !searchTerm ||
+      // 검색어 필터링 (id, 차량번호, 차종, VIN/RN, Rental Agreement #, 렌터카 회사, 닉네임)
+      const term = searchTerm.toLowerCase().trim()
+      const matchesSearch = !term ||
         (vehicle.id && vehicle.id.toLowerCase().includes(term)) ||
         vehicle.vehicle_number.toLowerCase().includes(term) ||
         vehicle.vehicle_type.toLowerCase().includes(term) ||
+        (vehicle.vin && vehicle.vin.toLowerCase().includes(term)) ||
+        (vehicle.rental_agreement_number && vehicle.rental_agreement_number.toLowerCase().includes(term)) ||
         (vehicle.rental_company && vehicle.rental_company.toLowerCase().includes(term)) ||
         (vehicle.nick && vehicle.nick.toLowerCase().includes(term))
       
@@ -493,9 +536,9 @@ export default function VehiclesPage() {
         'headlight_model', 'headlight_model_name', 'is_installment', 'installment_amount',
         'interest_rate', 'monthly_payment', 'additional_payment', 'payment_due_date',
         'installment_start_date', 'installment_end_date', 'vehicle_image_url',
-        'vehicle_category', 'rental_company', 'daily_rate', 'rental_start_date',
+        'vehicle_category', 'rental_company', 'daily_rate', 'rental_booking_price', 'rental_start_date',
         'rental_end_date',         'rental_pickup_location', 'rental_return_location',
-        'rental_total_cost', 'rental_notes', 'nick'
+        'rental_total_cost', 'rental_notes', 'rental_agreement_number', 'nick'
       ]
       
       // 날짜 필드 정리
@@ -553,6 +596,7 @@ export default function VehiclesPage() {
       
       setIsEditModalOpen(false)
       setSelectedVehicle(null)
+      setVehicleModalPrefill(null)
       alert('차량 정보가 성공적으로 저장되었습니다.')
     } catch (error) {
       console.error('차량 저장 중 오류가 발생했습니다:', error)
@@ -598,13 +642,23 @@ export default function VehiclesPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">차량 관리</h1>
           <p className="mt-1 text-sm text-gray-500 hidden sm:block">차량 정보와 예약 일정을 관리하세요</p>
         </div>
-        <div className="flex-shrink-0">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <button
+            type="button"
             onClick={handleAddVehicle}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
           >
             <Plus size={16} />
             차량 추가
+          </button>
+          <button
+            type="button"
+            onClick={handleAddEnterpriseRental}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700"
+            title="Enterprise 렌터카 기본값으로 새 차량 폼 열기"
+          >
+            <Building2 size={16} className="shrink-0" />
+            Enterprise 렌터카 추가
           </button>
         </div>
       </div>
@@ -673,7 +727,7 @@ export default function VehiclesPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="ID, 차량 번호, 차종, 렌터카 회사로 검색..."
+              placeholder="ID, 차량 번호, 차종, VIN/RN, Rental Agreement #, 렌터카 회사, 닉네임..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-3 sm:pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
@@ -790,16 +844,58 @@ export default function VehiclesPage() {
                   {/* 렌터카 정보 */}
                   {(activeTab === 'rental_active' || activeTab === 'rental_returned') && (
                     <>
-                      <p><span className="font-medium">렌터카 회사:</span> {vehicle.rental_company || 'N/A'}</p>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                        <p>
+                          <span className="font-medium">렌터카 회사:</span>{' '}
+                          {vehicle.rental_company || '—'}
+                        </p>
+                        <p>
+                          <span className="font-medium">렌터카 상태:</span>{' '}
+                          <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${getVehicleStatusBadgeClass(vehicle.status || 'available')}`}>
+                            {getVehicleStatusLabelKo(vehicle.status || 'available')}
+                          </span>
+                        </p>
+                      </div>
                       <p>
                         <span className="font-medium">RN:</span>{' '}
                         <span className="font-mono text-gray-700 break-all">
                           {(vehicle.vin && vehicle.vin.trim()) || 'N/A'}
                         </span>
                       </p>
-                      <p><span className="font-medium">일일 요금:</span> ${vehicle.daily_rate?.toLocaleString() || 'N/A'}</p>
+                      <p>
+                        <span className="font-medium">Rental Agreement #:</span>{' '}
+                        <span className="font-mono text-gray-700 break-all">
+                          {(vehicle.rental_agreement_number && vehicle.rental_agreement_number.trim()) || '—'}
+                        </span>
+                      </p>
                       <p><span className="font-medium">렌탈 기간:</span> {vehicle.rental_start_date || 'N/A'} ~ {vehicle.rental_end_date || 'N/A'}</p>
-                      <p><span className="font-medium">총 비용:</span> ${vehicle.rental_total_cost?.toLocaleString() || 'N/A'}</p>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                        <p>
+                          <span className="font-medium">예약 가격:</span>{' '}
+                          {vehicle.rental_booking_price != null
+                            ? `$${Number(vehicle.rental_booking_price).toLocaleString()}`
+                            : '—'}
+                        </p>
+                        <p>
+                          <span className="font-medium">총 비용:</span>{' '}
+                          {vehicle.rental_total_cost != null
+                            ? `$${Number(vehicle.rental_total_cost).toLocaleString()}`
+                            : '—'}
+                        </p>
+                      </div>
+                      {(() => {
+                        const implied = rentalImpliedDailyUsd(
+                          Number(vehicle.rental_booking_price) || 0,
+                          vehicle.rental_start_date,
+                          vehicle.rental_end_date
+                        )
+                        return implied ? (
+                          <p className="text-gray-500">
+                            <span className="font-medium text-gray-600">일일 환산(예약):</span>{' '}
+                            ${implied.perDay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · {implied.days}일 기준 (1일 제외)
+                          </p>
+                        ) : null
+                      })()}
                       {vehicle.rental_notes && (
                         <p><span className="font-medium">메모:</span> {vehicle.rental_notes}</p>
                       )}
@@ -889,10 +985,12 @@ export default function VehiclesPage() {
       {isEditModalOpen && (
         <VehicleEditModal
           vehicle={selectedVehicle}
+          prefill={selectedVehicle ? null : vehicleModalPrefill}
           onSave={handleSaveVehicle}
           onClose={() => {
             setIsEditModalOpen(false)
             setSelectedVehicle(null)
+            setVehicleModalPrefill(null)
           }}
         />
       )}

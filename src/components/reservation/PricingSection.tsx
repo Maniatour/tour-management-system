@@ -219,6 +219,8 @@ interface PricingSectionProps {
   pricingFieldsFromDb?: Record<string, boolean>
   /** 동적가격 로드·정산 연쇄 계산 중이면 숫자 대신 오버레이 (깜빡임 완화) */
   priceCalculationPending?: boolean
+  /** 사용자가 채널 정산 금액을 직접 수정하면 DB 출처 표시(검정)를 끔 */
+  onChannelSettlementEdited?: () => void
 }
 
 export default function PricingSection({
@@ -235,6 +237,7 @@ export default function PricingSection({
   isExistingPricingLoaded,
   pricingFieldsFromDb = {},
   priceCalculationPending = false,
+  onChannelSettlementEdited,
   reservationId,
   expenseUpdateTrigger,
   channels = [],
@@ -276,6 +279,8 @@ export default function PricingSection({
   // 잔액 (투어 당일 지불) 입력 필드 로컬 상태 (입력 중 포맷팅 방지)
   const [onSiteBalanceAmountInput, setOnSiteBalanceAmountInput] = useState<string>('')
   const [isOnSiteBalanceAmountFocused, setIsOnSiteBalanceAmountFocused] = useState(false)
+  const [channelSettlementAmountInput, setChannelSettlementAmountInput] = useState('')
+  const [isChannelSettlementAmountFocused, setIsChannelSettlementAmountFocused] = useState(false)
 
   // fetchPaymentRecords 등에서 formData/channels 의존 루프 방지용 (항상 최신 참조)
   useEffect(() => {
@@ -1194,16 +1199,16 @@ export default function PricingSection({
     return Math.max(0, base - returnedAmount)
   })()
 
-  /** DB `channel_settlement_amount` 우선, 없거나 사용자가 정산 관련 값을 바꾼 뒤에는 `computeChannelSettlementAmount`. */
+  /** 폼에 `channelSettlementAmount`가 있으면 그 값(수동·DB 로드), 없으면 `computeChannelSettlementAmount`. */
   const channelSettlementBeforePartnerReturn = useMemo(() => {
-    const fromDb = formData.channelSettlementAmount
+    const fromForm = formData.channelSettlementAmount
     if (
-      pricingFieldsFromDb.channel_settlement_amount &&
-      fromDb != null &&
-      String(fromDb) !== '' &&
-      Number.isFinite(Number(fromDb))
+      fromForm !== undefined &&
+      fromForm !== null &&
+      String(fromForm) !== '' &&
+      Number.isFinite(Number(fromForm))
     ) {
-      return Math.max(0, Number(fromDb))
+      return Math.max(0, Number(fromForm))
     }
 
     const pricingAdultsVal = Math.max(
@@ -1237,7 +1242,6 @@ export default function PricingSection({
     })
   }, [
     formData.channelSettlementAmount,
-    pricingFieldsFromDb.channel_settlement_amount,
     formData.depositAmount,
     formData.onlinePaymentAmount,
     channelPaymentGrossDb,
@@ -3412,14 +3416,58 @@ export default function PricingSection({
               
               {/* 구분선: 카드 수수료 $ / 채널 수수료 $ 와 채널 정산 금액 사이 */}
               <div className="border-t border-gray-200 my-1.5"></div>
-              {/* 채널 정산금액 (계산값 → 빨간색) */}
+              {/* 채널 정산 금액 — 직접 입력(비우고 블러 시 자동 산식으로 복귀) */}
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-xs font-bold text-gray-700">
                   {isKorean ? '채널 정산 금액' : 'Channel Settlement Amount'}
                 </span>
-                <span className={`text-xs font-bold ${priceTextClass('channel_settlement_amount')}`}>
-                  ${channelSettlementBeforePartnerReturn.toFixed(2)}
-                </span>
+                <div className="relative">
+                  <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                  <input
+                    type="number"
+                    value={
+                      isChannelSettlementAmountFocused
+                        ? channelSettlementAmountInput
+                        : channelSettlementBeforePartnerReturn.toFixed(2)
+                    }
+                    onChange={(e) => {
+                      const inputValue = e.target.value
+                      setChannelSettlementAmountInput(inputValue)
+                      const n = Number(inputValue)
+                      if (inputValue === '' || inputValue === '-') return
+                      if (Number.isFinite(n)) {
+                        setFormData((prev: typeof formData) => ({
+                          ...prev,
+                          channelSettlementAmount: Math.max(0, n),
+                        }))
+                        onChannelSettlementEdited?.()
+                      }
+                    }}
+                    onFocus={() => {
+                      setIsChannelSettlementAmountFocused(true)
+                      setChannelSettlementAmountInput(channelSettlementBeforePartnerReturn.toString())
+                    }}
+                    onBlur={() => {
+                      setIsChannelSettlementAmountFocused(false)
+                      const raw = channelSettlementAmountInput.trim()
+                      if (raw === '') {
+                        setFormData((prev: typeof formData) => omitChannelSettlementAmount({ ...prev }))
+                      } else {
+                        const finalValue = Math.max(0, roundUsd2(Number(raw) || 0))
+                        setFormData((prev: typeof formData) => ({
+                          ...prev,
+                          channelSettlementAmount: finalValue,
+                        }))
+                        onChannelSettlementEdited?.()
+                      }
+                      setChannelSettlementAmountInput('')
+                    }}
+                    className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('channel_settlement_amount')}`}
+                    step="0.01"
+                    min="0"
+                    placeholder="0"
+                  />
+                </div>
               </div>
               <p className="text-[10px] text-gray-500 mt-0.5">✔️ 이 금액은 회사 계좌로 들어오는 돈 | ✔️ 고객 추가 현금, 잔금, 팁 포함 ❌</p>
             </div>

@@ -33,7 +33,7 @@ import TourReportForm from '@/components/TourReportForm'
 import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
-import { formatTimeWithAMPM } from '@/lib/utils'
+import { formatTimeWithAMPM, timeToHHmm } from '@/lib/utils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { toast } from 'sonner'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
@@ -57,6 +57,15 @@ type TeamMember = {
 /** 픽업 호텔 미지정 예약을 한 그룹으로 묶기 위한 키 (DB id와 충돌하지 않도록 함) */
 const GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY = '__guide_pickup_hotel_unassigned__'
 const REPORT_REMINDER_START_DATE = '2026-04-01'
+
+/** 티켓 부킹 회사 표시명 (관리 화면과 동일 규칙) */
+function normalizeTicketCompanyName(company: string | null | undefined): string {
+  const c = company || 'Unknown'
+  const companyLower = c.toLowerCase()
+  if (companyLower === 'see canyon') return 'Dixies'
+  if (companyLower === 'mei tour' || companyLower === "ken's tour") return "Ken's"
+  return c
+}
 
 function groupReservationsByPickupHotel(reservations: ReservationRow[]) {
   return reservations.reduce(
@@ -613,6 +622,15 @@ export default function GuideTourDetailPage() {
     }
   }
 
+  /** DB `ticket_bookings.time` 표시 (입장권 부킹) */
+  const formatTicketBookingTime = (time: string | null | undefined) => {
+    if (time == null || String(time).trim() === '') return t('timeTbd')
+    const hhmm = timeToHHmm(String(time))
+    const base = hhmm || String(time).substring(0, 5)
+    if (locale === 'en') return formatTimeWithAMPM(base) || base
+    return base
+  }
+
   // MDGCSUNRISE 상품의 일출 시간 기반 투어 시간 계산 함수
   const calculateSunriseTourTimes = useCallback(async (tourDate: string, durationHours: number = 8) => {
     try {
@@ -1041,51 +1059,51 @@ export default function GuideTourDetailPage() {
               </span>
             </div>
             
-            {/* 티켓 부킹 정보 - company별 ea 합산 */}
+            {/* 티켓 부킹 정보 - 회사별 요약 + 건별 시간·RN# */}
             {ticketBookings.length > 0 && (() => {
-              // 회사명 변환 로직
-              const getCompanyName = (company: string) => {
-                const companyLower = company?.toLowerCase() || ''
-                if (companyLower === 'see canyon') return 'Dixies'
-                if (companyLower === 'mei tour' || companyLower === 'ken\'s tour') return 'Ken\'s'
-                return company
-              }
-              
-              // company별로 ea 합산 및 rn_number 수집
-              const companyMap = new Map<string, { totalEa: number; rnNumbers: string[] }>()
+              const companyMap = new Map<
+                string,
+                { totalEa: number; rows: { sortKey: string; timeLabel: string; rn: string; ea: number }[] }
+              >()
               ticketBookings.forEach(booking => {
-                const company = getCompanyName(booking.company || 'Unknown')
+                const company = normalizeTicketCompanyName(booking.company)
                 const ea = booking.ea || 0
-                
+                const timeLabel = formatTicketBookingTime(booking.time)
+                const sortKey =
+                  timeToHHmm(String(booking.time ?? '')) || String(booking.time || '').substring(0, 8) || '00:00'
+                const rn = (booking.rn_number && String(booking.rn_number).trim()) || ''
+
                 if (!companyMap.has(company)) {
-                  companyMap.set(company, { totalEa: 0, rnNumbers: [] })
+                  companyMap.set(company, { totalEa: 0, rows: [] })
                 }
-                
                 const companyData = companyMap.get(company)!
                 companyData.totalEa += ea
-                if (booking.rn_number) {
-                  companyData.rnNumbers.push(booking.rn_number)
-                }
+                companyData.rows.push({ sortKey, timeLabel, rn, ea })
               })
-              
+
               return (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <hr className="border-gray-200" />
                   {Array.from(companyMap.entries())
                     .sort(([companyA], [companyB]) => companyA.localeCompare(companyB))
-                    .map(([company, { totalEa, rnNumbers }]) => (
-                      <div key={company} className="flex items-center space-x-2 text-sm">
-                        <span className="text-gray-700">
-                          {company}
-                        </span>
-                        <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                          👥 {totalEa}
-                        </span>
-                        {rnNumbers.length > 0 && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                            # {rnNumbers.join(', ')}
+                    .map(([company, { totalEa, rows }]) => (
+                      <div key={company} className="text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-gray-700 font-medium">{company}</span>
+                          <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
+                            👥 {totalEa}
                           </span>
-                        )}
+                        </div>
+                        <ul className="mt-1 ml-1 text-xs text-gray-600 space-y-0.5 list-disc list-inside">
+                          {[...rows]
+                            .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+                            .map((row, idx) => (
+                              <li key={`${company}-${idx}-${row.sortKey}`}>
+                                {t('bookingTime')}: {row.timeLabel} · {t('rnNumber')}:{' '}
+                                {row.rn || t('noInfo')} · {t('ea')}: {row.ea}
+                              </li>
+                            ))}
+                        </ul>
                       </div>
                     ))}
                 </div>
@@ -1530,82 +1548,124 @@ export default function GuideTourDetailPage() {
             <div className="mb-6">
               <h3 className="text-lg font-medium text-gray-800 mb-3">{t('hotelBooking')}</h3>
               <div className="space-y-3">
-                {tourHotelBookings.map((booking) => (
-                  <div key={booking.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-gray-900 text-sm sm:text-base">{booking.hotel_name}</h4>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        booking.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                        booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {booking.status}
-                      </span>
+                {tourHotelBookings.map((booking) => {
+                  const row = booking as TourHotelBooking & {
+                    hotel_name?: string | null
+                    room_count?: number | null
+                    notes?: string | null
+                    note?: string | null
+                  }
+                  const hotelTitle =
+                    (row.hotel && String(row.hotel).trim()) ||
+                    (row.hotel_name && String(row.hotel_name).trim()) ||
+                    t('noInfo')
+                  const roomsVal = row.rooms ?? row.room_count
+                  const cityVal = row.city && String(row.city).trim()
+                  const resName = row.reservation_name && String(row.reservation_name).trim()
+                  const rnVal = row.rn_number && String(row.rn_number).trim()
+                  const memoVal =
+                    (row.note && String(row.note).trim()) ||
+                    (row.notes && String(row.notes).trim()) ||
+                    ''
+
+                  return (
+                    <div key={booking.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-gray-900 text-sm sm:text-base">{hotelTitle}</h4>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            booking.status === 'confirmed'
+                              ? 'bg-green-100 text-green-800'
+                              : booking.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {booking.status}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <p>
+                          {t('city')}: {cityVal || t('noInfo')}
+                        </p>
+                        <p>
+                          {t('bookerName')}: {resName || t('noInfo')}
+                        </p>
+                        <p>
+                          {t('rnNumber')}: {rnVal || t('noInfo')}
+                        </p>
+                        <p>
+                          {t('roomCount')}: {roomsVal != null ? roomsVal : t('noInfo')}
+                        </p>
+                        <p>
+                          {t('checkIn')}: {booking.check_in_date}
+                        </p>
+                        <p>
+                          {t('checkOut')}: {booking.check_out_date}
+                        </p>
+                        {memoVal ? (
+                          <p className="mt-2">
+                            {t('memo')}: {memoVal}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600 space-y-1">
-                      <p>{t('checkIn')}: {booking.check_in_date}</p>
-                      <p>{t('checkOut')}: {booking.check_out_date}</p>
-                      <p>{t('roomCount')}: {(booking as { room_count?: number }).room_count || t('noInfo')}</p>
-                      {(booking as { notes?: string }).notes && <p className="mt-2">{t('memo')}: {(booking as unknown as { notes: string }).notes}</p>}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
 
-          {/* 티켓 부킹 - company별 ea 합산 */}
-          {ticketBookings.length > 0 && (() => {
-            // 회사명 결정 로직
-            const getCompanyName = (company: string) => {
-              const companyLower = company?.toLowerCase() || ''
-              if (companyLower === 'see canyon') return 'Dixies'
-              if (companyLower === 'mei tour' || companyLower === 'ken\'s tour') return 'Ken\'s'
-              return company
-            }
-            
-            // company별로 ea 합산 및 rn_number 수집
-            const companyMap = new Map<string, { totalEa: number; rnNumbers: string[] }>()
-            ticketBookings.forEach(booking => {
-              const company = getCompanyName(booking.company || 'Unknown')
-              const ea = booking.ea || 0
-              
-              if (!companyMap.has(company)) {
-                companyMap.set(company, { totalEa: 0, rnNumbers: [] })
-              }
-              
-              const companyData = companyMap.get(company)!
-              companyData.totalEa += ea
-              if (booking.rn_number) {
-                companyData.rnNumbers.push(booking.rn_number)
-              }
-            })
-            
-            return (
-              <div>
-                <h3 className="text-lg font-medium text-gray-800 mb-3">{t('ticketBooking')}</h3>
-                <div className="space-y-3">
-                  {Array.from(companyMap.entries())
-                    .sort(([companyA], [companyB]) => companyA.localeCompare(companyB))
-                    .map(([company, { totalEa, rnNumbers }]) => (
-                      <div key={company} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
+          {/* 티켓 부킹 — 건별 시간·RN#·EA (가이드 확인용) */}
+          {ticketBookings.length > 0 && (
+            <div>
+              <h3 className="text-lg font-medium text-gray-800 mb-3">{t('ticketBooking')}</h3>
+              <div className="space-y-3">
+                {[...ticketBookings]
+                  .sort((a, b) => {
+                    const ta = timeToHHmm(String(a.time ?? '')) || String(a.time || '').substring(0, 8) || ''
+                    const tb = timeToHHmm(String(b.time ?? '')) || String(b.time || '').substring(0, 8) || ''
+                    const byTime = ta.localeCompare(tb)
+                    if (byTime !== 0) return byTime
+                    return normalizeTicketCompanyName(a.company).localeCompare(normalizeTicketCompanyName(b.company))
+                  })
+                  .map(booking => {
+                    const rnVal = booking.rn_number && String(booking.rn_number).trim()
+                    return (
+                      <div key={booking.id} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2 gap-2">
                           <h4 className="font-medium text-gray-900 text-sm sm:text-base">
-                            {company}
+                            {normalizeTicketCompanyName(booking.company)}
                           </h4>
+                          <span
+                            className={`shrink-0 px-2 py-1 rounded-full text-xs font-medium ${
+                              booking.status === 'confirmed'
+                                ? 'bg-green-100 text-green-800'
+                                : booking.status === 'pending'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {booking.status}
+                          </span>
                         </div>
                         <div className="text-sm text-gray-600 space-y-1">
-                          <p>{t('ea')}: {totalEa}</p>
-                          {rnNumbers.length > 0 && (
-                            <p>{t('rnNumber')}: {rnNumbers.join(', ')}</p>
-                          )}
+                          <p>
+                            {t('bookingTime')}: {formatTicketBookingTime(booking.time)}
+                          </p>
+                          <p>
+                            {t('rnNumber')}: {rnVal || t('noInfo')}
+                          </p>
+                          <p>
+                            {t('ea')}: {booking.ea ?? 0}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                </div>
+                    )
+                  })}
               </div>
-            )
-          })()}
+            </div>
+          )}
 
           {tourHotelBookings.length === 0 && ticketBookings.length === 0 && (
             <p className="text-gray-500">{t('noBookingInfo')}</p>

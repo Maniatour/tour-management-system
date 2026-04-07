@@ -14,7 +14,6 @@ import { type ChannelInvoiceItem } from '@/utils/pdfExport'
 import ChannelInvoicePreviewModal from '@/components/statistics/ChannelInvoicePreviewModal'
 import type { Reservation } from '@/types/reservation'
 import {
-  resolveChannelSettlementForReport,
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
@@ -73,7 +72,7 @@ interface ReservationItem {
   prepaymentTip?: number
   /** 입금내역 (Partner Received) 합계 */
   partnerReceivedAmount?: number
-  /** DB `reservation_pricing.channel_settlement_amount` (통계 투어 탭은 재계산 없이 그대로 표시) */
+  /** DB `reservation_pricing.channel_settlement_amount`만 표시 (통계 화면에서 재계산 없음) */
   channelSettlementAmount?: number | null
   amountAudited?: boolean
   amountAuditedAt?: string | null
@@ -176,7 +175,53 @@ function formatUsd2(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** 투어 상세 테이블: `channel_settlement_amount` 없음 → 재계산 대신 대시 */
+function numericDbOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && value.trim() === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/** DB `channel_settlement_amount` 컬럼만 (commission_base_price와 혼용·대체 없음) */
+function channelSettlementAmountFromRow(row: { channel_settlement_amount?: unknown }): number | null {
+  return numericDbOrNull(row.channel_settlement_amount)
+}
+
+/** 인보이스 PDF 등 — `commission_base_price`만 */
+function commissionBasePriceFromRow(row: { commission_base_price?: unknown }): number | null {
+  return numericDbOrNull(row.commission_base_price)
+}
+
+/** 채널별 정산 탭 예약·투어 가격 조회/동기화 공통 */
+const CHANNEL_SETTLEMENT_PRICING_SELECT =
+  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, channel_settlement_amount, commission_base_price, pricing_adults'
+
+function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
+  return {
+    adultPrice: Number(p.adult_product_price) || 0,
+    productPriceTotal: Number(p.product_price_total) || 0,
+    optionTotal: Number(p.option_total) || 0,
+    subtotal: Number(p.subtotal) || 0,
+    commissionAmount: Number(p.commission_amount) || 0,
+    couponDiscount: Number(p.coupon_discount) || 0,
+    additionalDiscount: Number(p.additional_discount) || 0,
+    additionalCost: Number(p.additional_cost) || 0,
+    tax: Number(p.tax) || 0,
+    depositAmount: Number(p.deposit_amount) || 0,
+    balanceAmount: Number(p.balance_amount) || 0,
+    choicesTotal: p.choices_total != null && p.choices_total !== '' ? Number(p.choices_total) : 0,
+    cardFee: Number(p.card_fee) || 0,
+    prepaymentTip: Number(p.prepayment_tip) || 0,
+    channelSettlementStored: channelSettlementAmountFromRow(p),
+    commissionBasePrice: commissionBasePriceFromRow(p),
+    pricingAdults:
+      p.pricing_adults != null && p.pricing_adults !== ''
+        ? Math.max(0, Math.floor(Number(p.pricing_adults)))
+        : null,
+  }
+}
+
+/** `channel_settlement_amount` 없음 → 대시 (DB 값만 표시) */
 function formatTourChannelSettlementCell(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(Number(n))) return '—'
   return `$${Number(n).toLocaleString()}`
@@ -277,6 +322,60 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     const reservation = reservations.find(r => r.id === reservationId)
     setEditingReservation(reservation ? (reservation as Reservation) : null)
   }, [reservations])
+
+  /** 예약 폼에서「가격 정보만 저장」시 통계 테이블이 바로 갱신되도록 DB에서 다시 읽어 반영 */
+  const handlePricingSaved = useCallback(async (reservationId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('reservation_pricing')
+        .select(CHANNEL_SETTLEMENT_PRICING_SELECT)
+        .eq('reservation_id', reservationId)
+        .maybeSingle()
+      if (error || !data) return
+      const row = data as Record<string, unknown>
+      const mapped = mapPricingRowToChannelTabState(row)
+      const totalPrice = Number(row.total_price) || 0
+      setReservationPrices((prev) => ({ ...prev, [reservationId]: totalPrice }))
+      setReservationPricingData((prev) => ({ ...prev, [reservationId]: mapped }))
+      setTourItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== reservationId) return item
+          const next: ReservationItem = {
+            ...item,
+            totalPrice,
+            adultPrice: mapped.adultPrice,
+            productPriceTotal: mapped.productPriceTotal,
+            optionTotal: mapped.optionTotal,
+            subtotal: mapped.subtotal,
+            commissionAmount: mapped.commissionAmount,
+            couponDiscount: mapped.couponDiscount,
+            additionalDiscount: mapped.additionalDiscount,
+            additionalCost: mapped.additionalCost,
+            tax: mapped.tax,
+            depositAmount: mapped.depositAmount,
+            balanceAmount: mapped.balanceAmount,
+            cardFee: mapped.cardFee,
+            prepaymentTip: mapped.prepaymentTip,
+            channelSettlementAmount: mapped.channelSettlementStored,
+            pricingAdults:
+              mapped.pricingAdults != null
+                ? mapped.pricingAdults
+                : item.pricingAdults != null
+                  ? item.pricingAdults
+                  : Math.max(0, Math.floor(Number(item.adults ?? item.totalPeople ?? 0))),
+          }
+          if (mapped.commissionBasePrice != null) {
+            next.commissionBasePrice = mapped.commissionBasePrice
+          } else {
+            delete next.commissionBasePrice
+          }
+          return next
+        })
+      )
+    } catch (e) {
+      console.error('handlePricingSaved:', e)
+    }
+  }, [])
 
   const handleEditReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
     if (!editingReservation) return
@@ -720,7 +819,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           
           const { data: pricingData, error } = await supabase
             .from('reservation_pricing')
-            .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, channel_settlement_amount, commission_base_price, pricing_adults')
+            .select(CHANNEL_SETTLEMENT_PRICING_SELECT)
             .in('reservation_id', chunk)
 
           if (error) {
@@ -730,28 +829,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
           pricingData?.forEach((p: any) => {
             pricesMap[p.reservation_id] = p.total_price || 0
-            pricingDataMap[p.reservation_id] = {
-              adultPrice: p.adult_product_price || 0,
-              productPriceTotal: p.product_price_total || 0,
-              optionTotal: p.option_total || 0,
-              subtotal: p.subtotal || 0,
-              commissionAmount: p.commission_amount || 0,
-              couponDiscount: p.coupon_discount || 0,
-              additionalDiscount: p.additional_discount || 0,
-              additionalCost: p.additional_cost || 0,
-              tax: p.tax || 0,
-              depositAmount: p.deposit_amount || 0,
-              balanceAmount: p.balance_amount || 0,
-              choicesTotal: p.choices_total ?? 0,
-              cardFee: p.card_fee || 0,
-              prepaymentTip: p.prepayment_tip || 0,
-              channelSettlementStored: p.channel_settlement_amount != null ? Number(p.channel_settlement_amount) : null,
-              commissionBasePrice: p.commission_base_price != null ? Number(p.commission_base_price) : null,
-              pricingAdults:
-                p.pricing_adults != null && p.pricing_adults !== ''
-                  ? Math.max(0, Math.floor(Number(p.pricing_adults)))
-                  : null,
-            }
+            pricingDataMap[p.reservation_id] = mapPricingRowToChannelTabState(p)
           })
         }
 
@@ -841,29 +919,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         pricing.pricingAdults != null
           ? pricing.pricingAdults
           : Math.max(0, Math.floor(Number(reservation.adults ?? 0)))
-      const channelSettlementAmount = resolveChannelSettlementForReport(
-        {
-          channelSettlementAmount: pricing.channelSettlementStored,
-          commissionBasePrice: pricing.commissionBasePrice,
-          productPriceTotal: pricing.productPriceTotal,
-          couponDiscount: pricing.couponDiscount,
-          additionalDiscount: pricing.additionalDiscount,
-          optionTotal: pricing.optionTotal,
-          additionalCost: pricing.additionalCost,
-          tax: pricing.tax,
-          cardFee: pricing.cardFee,
-          prepaymentTip: pricing.prepaymentTip,
-          depositAmount: pricing.depositAmount,
-          balanceAmount: pricing.balanceAmount,
-          commissionAmount: pricing.commissionAmount,
-        },
-        {
-          reservationStatus: reservation.status,
-          isOTAChannel: isOtaChannelId(reservation.channelId),
-          returnedAmount: returnedAmountByReservation[reservation.id] ?? 0,
-          partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
-        }
-      )
+      const channelSettlementAmount = pricing.channelSettlementStored
       return {
         id: reservation.id,
         tourDate: reservation.tourDate,
@@ -905,7 +961,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       const dateB = new Date(b.registrationDate).getTime()
       return reservationSortOrder === 'asc' ? dateA - dateB : dateB - dateA
     })
-  }, [filteredReservations, customers, products, reservationPrices, reservationPricingData, reservationSortOrder, partnerReceivedByReservation, returnedAmountByReservation, reservationAudit, isOtaChannelId])
+  }, [filteredReservations, customers, products, reservationPrices, reservationPricingData, reservationSortOrder, partnerReceivedByReservation, returnedAmountByReservation, reservationAudit])
 
   // 선택된 채널의 투어 진행 내역 가져오기 (투어 날짜 기준 예약 목록)
   useEffect(() => {
@@ -994,10 +1050,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           const chunkSize = 100
           for (let i = 0; i < reservationIds.length; i += chunkSize) {
             const chunk = reservationIds.slice(i, i + chunkSize)
-            
+
+            // 투어 상세「채널 정산 금액」은 channel_settlement_amount만 사용. commission_base_price는 인보이스 PDF 산식용으로만 매핑.
             const { data: pricingData, error } = await supabase
               .from('reservation_pricing')
-              .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, channel_settlement_amount, commission_base_price, pricing_adults')
+              .select(CHANNEL_SETTLEMENT_PRICING_SELECT)
               .in('reservation_id', chunk)
 
             if (error) {
@@ -1007,28 +1064,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             
             pricingData?.forEach((p: any) => {
               pricesMap[p.reservation_id] = p.total_price || 0
-              pricingDataMap[p.reservation_id] = {
-                adultPrice: p.adult_product_price || 0,
-                productPriceTotal: p.product_price_total || 0,
-                optionTotal: p.option_total || 0,
-                subtotal: p.subtotal || 0,
-                commissionAmount: p.commission_amount || 0,
-                couponDiscount: p.coupon_discount || 0,
-                additionalDiscount: p.additional_discount || 0,
-                additionalCost: p.additional_cost || 0,
-                tax: p.tax || 0,
-                depositAmount: p.deposit_amount || 0,
-                balanceAmount: p.balance_amount || 0,
-                choicesTotal: p.choices_total ?? 0,
-                cardFee: p.card_fee || 0,
-                prepaymentTip: p.prepayment_tip || 0,
-                channelSettlementStored: p.channel_settlement_amount != null ? Number(p.channel_settlement_amount) : null,
-                commissionBasePrice: p.commission_base_price != null ? Number(p.commission_base_price) : null,
-                pricingAdults:
-                  p.pricing_adults != null && p.pricing_adults !== ''
-                    ? Math.max(0, Math.floor(Number(p.pricing_adults)))
-                    : null,
-              }
+              pricingDataMap[p.reservation_id] = mapPricingRowToChannelTabState(p)
             })
           }
         }
@@ -1097,7 +1133,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             commissionBasePrice: null,
             pricingAdults: null,
           }
-          /** 투어 진행 내역: 채널 정산은 DB `channel_settlement_amount`만 표시 (페이지에서 재계산하지 않음) */
+          /** 채널 정산 금액: `channel_settlement_amount`만 (commission_base_price 미사용) */
           const channelSettlementAmount = pricing.channelSettlementStored
           const pricingAdultsResolved =
             pricing.pricingAdults != null
@@ -1140,9 +1176,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             amountAuditedAt: auditMap[reservation.id]?.amount_audited_at ?? null,
             amountAuditedBy: auditMap[reservation.id]?.amount_audited_by ?? null
           }
-          return pricing.commissionBasePrice != null
-            ? { ...baseRow, commissionBasePrice: Number(pricing.commissionBasePrice) }
-            : baseRow
+          return {
+            ...baseRow,
+            ...(pricing.commissionBasePrice != null ? { commissionBasePrice: pricing.commissionBasePrice } : {}),
+          }
         })
 
         setTourItems(tourReservationItems)
@@ -1639,29 +1676,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               pricing.pricingAdults != null
                                 ? pricing.pricingAdults
                                 : Math.max(0, Math.floor(Number(reservation.adults ?? 0)))
-                            const channelSettlementAmount = resolveChannelSettlementForReport(
-                              {
-                                channelSettlementAmount: pricing.channelSettlementStored,
-                                commissionBasePrice: pricing.commissionBasePrice,
-                                productPriceTotal: pricing.productPriceTotal,
-                                couponDiscount: pricing.couponDiscount,
-                                additionalDiscount: pricing.additionalDiscount,
-                                optionTotal: pricing.optionTotal,
-                                additionalCost: pricing.additionalCost,
-                                tax: pricing.tax,
-                                cardFee: pricing.cardFee,
-                                prepaymentTip: pricing.prepaymentTip,
-                                depositAmount: pricing.depositAmount,
-                                balanceAmount: pricing.balanceAmount,
-                                commissionAmount: pricing.commissionAmount,
-                              },
-                              {
-                                reservationStatus: reservation.status,
-                                isOTAChannel: isOtaChannelId(reservation.channelId),
-                                returnedAmount: returnedAmountByReservation[reservation.id] ?? 0,
-                                partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
-                              }
-                            )
+                            const channelSettlementAmount = pricing.channelSettlementStored
                             return {
                               id: reservation.id,
                               tourDate: reservation.tourDate,
@@ -1853,7 +1868,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                                 ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
-                                                ${(item.channelSettlementAmount ?? 0).toLocaleString()}
+                                                {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                                 <input
@@ -2646,6 +2661,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           onCancel={() => setEditingReservation(null)}
           onRefreshCustomers={refreshCustomers}
           onDelete={handleDeleteReservation}
+          onPricingSaved={handlePricingSaved}
           layout="modal"
           allowPastDateEdit={isSuper || isSuperByEmail}
         />

@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react'
 import { X, Car, Calendar, Clock, User, Check, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
+import { getVehicleStatusLabelKo } from '@/lib/vehicleStatus'
 
 interface Vehicle {
   id: string
@@ -15,11 +17,13 @@ interface Vehicle {
   vehicle_category: string
   rental_company?: string
   daily_rate?: number
+  rental_booking_price?: number | null
   rental_start_date?: string
   rental_end_date?: string
   rental_pickup_location?: string
   rental_return_location?: string
   rental_total_cost?: number
+  rental_agreement_number?: string | null
 }
 
 interface VehicleAssignmentModalProps {
@@ -281,9 +285,37 @@ export default function VehicleAssignmentModal({
                     {selectedVehicleData.vehicle_category === 'rental' && (
                       <>
                         <p><span className="font-medium">렌터카 회사:</span> {selectedVehicleData.rental_company}</p>
+                        <p><span className="font-medium">렌터카 상태:</span> {getVehicleStatusLabelKo(selectedVehicleData.status)}</p>
+                        <p className="col-span-2">
+                          <span className="font-medium">Rental Agreement #:</span>{' '}
+                          {(selectedVehicleData.rental_agreement_number && selectedVehicleData.rental_agreement_number.trim()) || '—'}
+                        </p>
                         <p><span className="font-medium">렌탈 기간:</span> {selectedVehicleData.rental_start_date} ~ {selectedVehicleData.rental_end_date}</p>
-                        <p><span className="font-medium">일일 요금:</span> ${selectedVehicleData.daily_rate?.toLocaleString() || 'N/A'}</p>
-                        <p><span className="font-medium">총 비용:</span> ${selectedVehicleData.rental_total_cost?.toLocaleString() || 'N/A'}</p>
+                        <p>
+                          <span className="font-medium">예약 가격:</span>{' '}
+                          {selectedVehicleData.rental_booking_price != null
+                            ? `$${Number(selectedVehicleData.rental_booking_price).toLocaleString()}`
+                            : '—'}
+                        </p>
+                        <p>
+                          <span className="font-medium">총 비용:</span>{' '}
+                          {selectedVehicleData.rental_total_cost != null
+                            ? `$${Number(selectedVehicleData.rental_total_cost).toLocaleString()}`
+                            : '—'}
+                        </p>
+                        {(() => {
+                          const implied = rentalImpliedDailyUsd(
+                            Number(selectedVehicleData.rental_booking_price) || 0,
+                            selectedVehicleData.rental_start_date,
+                            selectedVehicleData.rental_end_date
+                          )
+                          return implied ? (
+                            <p className="col-span-2">
+                              <span className="font-medium">일일 환산(예약):</span>{' '}
+                              ${implied.perDay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · {implied.days}일 기준 (1일 제외)
+                            </p>
+                          ) : null
+                        })()}
                       </>
                     )}
                   </div>

@@ -218,6 +218,8 @@ interface ReservationFormProps {
   onCancel: () => void
   onRefreshCustomers: () => Promise<void>
   onDelete: (id: string) => void
+  /** 가격 정보만 저장(savePricingInfo) 성공 직후 — 부모가 목록/통계 로컬 상태를 갱신할 때 사용 */
+  onPricingSaved?: (reservationId: string) => void | Promise<void>
   layout?: 'modal' | 'page'
   onViewCustomer?: () => void
   initialCustomerId?: string
@@ -312,7 +314,8 @@ export default function ReservationForm({
   onSubmit, 
   onCancel, 
   onRefreshCustomers, 
-  onDelete, 
+  onDelete,
+  onPricingSaved,
   layout = 'modal',
   onViewCustomer,
   initialCustomerId,
@@ -4605,7 +4608,13 @@ export default function ReservationForm({
           Math.round(channelPayNet * 100) / 100,
           (existing as any)?.commission_base_price
         ),
-        channel_settlement_amount: Math.round(channelSettlementComputed * 100) / 100,
+        channel_settlement_amount: (() => {
+          const m = fd.channelSettlementAmount
+          if (m !== undefined && m !== null && String(m) !== '' && Number.isFinite(Number(m))) {
+            return Math.round(Number(m) * 100) / 100
+          }
+          return Math.round(channelSettlementComputed * 100) / 100
+        })(),
       }
 
       const pricingDataForUpdate =
@@ -4646,11 +4655,12 @@ export default function ReservationForm({
       }
 
       console.log('가격 정보가 성공적으로 저장되었습니다.')
+      await Promise.resolve(onPricingSaved?.(reservationId))
     } catch (error) {
       console.error('가격 정보 저장 중 오류:', error)
       throw error
     }
-  }, [])
+  }, [onPricingSaved])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -5655,6 +5665,9 @@ export default function ReservationForm({
                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                 isExistingPricingLoaded={isExistingPricingLoaded}
                 pricingFieldsFromDb={pricingFieldsFromDb}
+                onChannelSettlementEdited={() =>
+                  setPricingFieldsFromDb((prev) => ({ ...prev, channel_settlement_amount: false }))
+                }
                 priceCalculationPending={
                   Boolean(formData.productId && formData.tourDate && formData.channelId) && !pricingLoadComplete
                 }
