@@ -5,7 +5,13 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
-import { isManiatourHomepageBookingEmail, isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
+import {
+  isManiatourHomepageBookingEmail,
+  isCancellationRequestEmailSubject,
+  isTidesquareChannelEmailSubject,
+  isMyrealtripNewBookingEmailSubject,
+  isMyrealtripChannelFromEmail,
+} from '@/lib/emailReservationParser'
 import {
   extractPriceFromEmailBodyForImport,
   extractViatorNetRateFromEmailBodyForImport,
@@ -103,7 +109,11 @@ export default function ReservationImportDetailPage() {
       ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
         ? 'kkday'
         : null) ||
-      (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null)
+      (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null) ||
+      (isTidesquareChannelEmailSubject(data.subject) ? 'tidesquare' : null) ||
+      (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
+        ? 'myrealtrip'
+        : null)
     const rawCombinedForGyG = `${data.subject || ''}\n${data.raw_body_text || ''}\n${data.raw_body_html || ''}`
     // GetYourGuide: DB에 옛날 extracted_data만 있으면 고객 정보는 있는데 product_id/초이스가 비어 재파싱이 스킵되던 경우 보완
     const gygLikelyHasVariantLine =
@@ -144,7 +154,11 @@ export default function ReservationImportDetailPage() {
       ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
         ? 'kkday'
         : null) ||
-      (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null)
+      (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null) ||
+      (isTidesquareChannelEmailSubject(data.subject) ? 'tidesquare' : null) ||
+      (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
+        ? 'myrealtrip'
+        : null)
     const channelsSafe = (typeof channelsList !== 'undefined' && Array.isArray(channelsList)) ? channelsList : []
     const mappedChannelId = effectiveKeyForChannel ? getChannelIdForPlatform(effectiveKeyForChannel) : null
     const channelForImport = mappedChannelId
@@ -190,7 +204,11 @@ export default function ReservationImportDetailPage() {
     (row && ((row.source_email ?? '').toLowerCase().includes('kkday') || (row.subject ?? '').trim().startsWith('[KKday]'))
       ? 'kkday'
       : null) ||
-    (row && isManiatourHomepageBookingEmail(row.source_email, row.subject) ? 'maniatour' : null)
+    (row && isManiatourHomepageBookingEmail(row.source_email, row.subject) ? 'maniatour' : null) ||
+    (row && isTidesquareChannelEmailSubject(row.subject) ? 'tidesquare' : null) ||
+    (row && (isMyrealtripChannelFromEmail(row.source_email) || isMyrealtripNewBookingEmailSubject(row.subject))
+      ? 'myrealtrip'
+      : null)
 
   /** Viator만 Net Rate ↔ 채널 정산 비교 쿠폰 경로 사용 */
   const isViatorEmailImport =

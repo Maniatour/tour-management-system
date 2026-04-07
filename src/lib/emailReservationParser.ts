@@ -22,6 +22,7 @@ const PLATFORM_FROM_PATTERNS: { pattern: RegExp | string; key: string }[] = [
   { pattern: /tripadvisor/i, key: 'tripadvisor' },
   { pattern: /klook/i, key: 'klook' },
   { pattern: /kkday\.com|kkday/i, key: 'kkday' },
+  { pattern: /myrealtrip/i, key: 'myrealtrip' },
   { pattern: /booking\.com/i, key: 'booking' },
   { pattern: /expedia/i, key: 'expedia' },
   { pattern: /airbnb/i, key: 'airbnb' },
@@ -113,6 +114,45 @@ export function isManiatourHomepageBookingEmail(
 }
 
 /**
+ * Viator 신규 예약 알림 제목 (플랫폼이 viator일 때 is_booking_confirmed·목록 탭 분류에 사용)
+ * - "Please Respond: New Booking Request: …"
+ * - "New Booking for Thu, Jun 25,2026 (#BR-1381898811)" 등
+ */
+export function isViatorBookingRequestEmailSubject(subject: string | null | undefined): boolean {
+  const t = (subject ?? '').trim()
+  const lower = t.toLowerCase()
+  if (lower.includes('please respond: new booking request:')) return true
+  if (/^new booking\s+for\b/i.test(t)) return true
+  return false
+}
+
+/** 제목에 [타이드스퀘어] 가 있으면 해당 채널 메일로 간주 */
+export function isTidesquareChannelEmailSubject(subject: string | null | undefined): boolean {
+  return /\[타이드스퀘어\]/.test((subject ?? '').trim())
+}
+
+/**
+ * 타이드스퀘어 신규 예약 안내 제목
+ * 예: [타이드스퀘어] 신규 예약 안내 - ORD3014450645
+ */
+export function isTidesquareNewBookingEmailSubject(subject: string | null | undefined): boolean {
+  return /\[타이드스퀘어\]\s*신규\s*예약\s*안내/i.test((subject ?? '').trim())
+}
+
+/**
+ * 마이리얼트립 신규·대기 예약 알림 제목
+ * 예: [확정대기] 2026-04-21 / 라스베가스 > 그랜드캐년 일출+앤텔롭캐년+…
+ */
+export function isMyrealtripNewBookingEmailSubject(subject: string | null | undefined): boolean {
+  return /^\[확정대기\]\s*\d{4}-\d{2}-\d{2}\s*\//.test((subject ?? '').trim())
+}
+
+/** 발신에 myrealtrip 이 포함되면 마이리얼트립 채널 메일로 간주 */
+export function isMyrealtripChannelFromEmail(sourceEmail: string | null | undefined): boolean {
+  return /myrealtrip/i.test(sourceEmail ?? '')
+}
+
+/**
  * 이메일 공통 패턴 오탐(예: "Clients"에서 client만 매칭 → "s details") 또는 섹션 제목을 이름으로 넣은 경우
  */
 export function isGarbageImportedCustomerName(raw: string | null | undefined): boolean {
@@ -129,6 +169,8 @@ export function isGarbageImportedCustomerName(raw: string | null | undefined): b
 
 function detectPlatform(sourceEmail: string | null, subject: string): string | null {
   if (isManiatourHomepageBookingEmail(sourceEmail, subject)) return 'maniatour'
+  if (isTidesquareChannelEmailSubject(subject)) return 'tidesquare'
+  if (isMyrealtripNewBookingEmailSubject(subject)) return 'myrealtrip'
   const from = (sourceEmail || '').toLowerCase()
   const subj = (subject || '').toLowerCase()
   for (const { pattern, key } of PLATFORM_FROM_PATTERNS) {
@@ -245,10 +287,10 @@ function mapWixHomepageProductTitleToProduct(
   if (
     /라스베가스\s*[>＞]\s*그랜드캐년\s*일출/i.test(s) ||
     (/그랜드\s*캐년\s*일출/i.test(s) &&
-      /(?:앤텔로프|홀슈|밴드|Antelope|Horseshoe)/i.test(s)) ||
-    /그랜드캐년\s*일출\s*[&＆].*(?:앤텔로프|홀슈|밴드)/i.test(s) ||
+      /(?:앤텔로프|앤텔롭|홀슈|밴드|Antelope|Horseshoe)/i.test(s)) ||
+    /그랜드캐년\s*일출\s*[&＆+].*(?:앤텔로프|앤텔롭|홀슈|밴드)/i.test(s) ||
     /Las\s+Vegas\s*[>＞:]\s*[^\n]*Grand\s+Canyon\s*Sunrise/i.test(s) ||
-    /Grand\s+Canyon\s*Sunrise\s*[&＆].*(?:Antelope|Horseshoe)/i.test(s)
+    /Grand\s+Canyon\s*Sunrise\s*[&＆+].*(?:Antelope|Horseshoe)/i.test(s)
   ) {
     return { product_id: 'MDGCSUNRISE', product_name: '밤도깨비 그랜드캐년 일출 투어' }
   }
@@ -1664,6 +1706,73 @@ function extractViator(
   return out
 }
 
+/** 타이드스퀘어: 제목에서 주문·예약 번호(ORD…) 추출 */
+function extractTidesquare(_text: string, subject: string): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  const sub = subject.trim()
+  const m = sub.match(/\[타이드스퀘어\]\s*신규\s*예약\s*안내\s*[-–]\s*([A-Z0-9]+)/i)
+  if (m?.[1]) out.channel_rn = m[1].trim()
+  if (!out.channel_rn) {
+    const tail = sub.match(/[-–]\s*(ORD\d+)\s*$/i)
+    if (tail?.[1]) out.channel_rn = tail[1].trim()
+  }
+  return out
+}
+
+/** 마이리얼트립 본문/제목에서 상품·고객명 매핑 (상품명 탭 행, 여행자, [확정대기] 제목) */
+function extractMyrealtrip(text: string, subject: string): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  const sub = subject.trim()
+  const t = (text || '').replace(/\r\n/g, '\n')
+
+  const applySunriseProductFromTitle = (rawTitle: string) => {
+    const forMap = rawTitle.split(/\s*\|\s*/)[0].trim()
+    if (!forMap) return
+    const mapped = mapWixHomepageProductTitleToProduct(forMap)
+    if (mapped.product_id) {
+      out.product_id = mapped.product_id
+      if (mapped.product_name) out.product_name = mapped.product_name
+      out.tour_time = '00:00'
+      out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
+      if (/로어\s*앤텔롭|앤텔롭|Lower\s*Antelope/i.test(forMap)) {
+        out.import_choice_option_names = ['Lower Antelope Canyon']
+      }
+    } else if (!out.product_name) {
+      out.product_name = rawTitle.trim()
+    }
+  }
+
+  // 본문: "상품명\t…" 또는 "상품명：…"
+  const productM = t.match(/상품명\s*[：:\t]\s*([^\n]+)/)
+  if (productM?.[1]) applySunriseProductFromTitle(productM[1].trim())
+
+  // 본문: "여행자\t최윤선" 등 (한글 이름)
+  let travelerLine: string | null = null
+  const travelerM = t.match(/여행자\s*[：:\t]\s*([^\n]+)/)
+  if (travelerM?.[1]) travelerLine = travelerM[1].trim()
+  else {
+    const travelerNext = t.match(/여행자\s*\n+\s*([^\n]+)/)
+    if (travelerNext?.[1]) travelerLine = travelerNext[1].trim()
+  }
+  if (travelerLine && !isGarbageImportedCustomerName(travelerLine)) {
+    out.customer_name = travelerLine.replace(/\s+/g, ' ')
+  }
+
+  const dateM = sub.match(/^\[확정대기\]\s*(\d{4}-\d{2}-\d{2})\s*\//)
+  if (dateM?.[1]) out.tour_date = dateM[1]
+
+  // 제목 폴백: 본문에 상품명 없을 때만
+  if (!out.product_name && !out.product_id) {
+    const prodM = sub.match(/>\s*(.+)$/)
+    if (prodM?.[1]) {
+      const name = prodM[1].replace(/\.{3,}\s*$/, '').trim()
+      if (name) applySunriseProductFromTitle(name)
+    }
+  }
+
+  return out
+}
+
 /** 채널별 파서 등록: 플랫폼 키 → 전처리 + 추출. 새 채널 추가 시 여기에 한 줄씩 등록. */
 const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
   getyourguide: {
@@ -1705,6 +1814,14 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
     preprocess: toPlainTextWix,
     extract: (text, subject, sourceEmail, rawHtml) =>
       extractManiatour(text, subject, sourceEmail, rawHtml ?? null),
+  },
+  tidesquare: {
+    preprocess: toPlainText,
+    extract: (text, subject) => extractTidesquare(text, subject),
+  },
+  myrealtrip: {
+    preprocess: toPlainText,
+    extract: (text, subject) => extractMyrealtrip(text, subject),
   },
 }
 
@@ -1759,12 +1876,17 @@ export function extractReservationFromEmail(options: {
   if (platform_key === 'kkday' && /^\[KKday\]\s*예약번호\s*[：:].*주문이\s*접수되었습니다/i.test((subject || '').trim())) {
     merged.is_booking_confirmed = true
   }
-  // Viator: Please Respond: New Booking Request:
-  if (platform_key === 'viator' && (subject || '').trim().toLowerCase().includes('please respond: new booking request:')) {
+  if (platform_key === 'viator' && isViatorBookingRequestEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
   // 홈페이지(maniatour): detectPlatform에서 vegasmaniatour@ + 제목 You got a new booking 일 때만 maniatour
   if (platform_key === 'maniatour') {
+    merged.is_booking_confirmed = true
+  }
+  if (platform_key === 'tidesquare' && isTidesquareNewBookingEmailSubject(subject)) {
+    merged.is_booking_confirmed = true
+  }
+  if (platform_key === 'myrealtrip' && isMyrealtripNewBookingEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
 
@@ -1788,6 +1910,8 @@ export const SUPPORTED_EMAIL_CHANNELS = [
   'kkday',
   'viator',
   'maniatour',
+  'tidesquare',
+  'myrealtrip',
   'tripadvisor',
   'booking',
   'expedia',

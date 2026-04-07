@@ -10,6 +10,9 @@ export const PLATFORM_CHANNEL_MAP: Record<string, string> = {
   kkday: 'kkday',
   /** 자사 Wix 홈페이지 예약 — channels 테이블의 Homepage 채널 id */
   maniatour: 'M00001',
+  /** 타이드스퀘어 OTA — channels.id 가 다르면 관리자에서 매핑 조정 */
+  tidesquare: 'tidesquare',
+  myrealtrip: 'myrealtrip',
   booking: 'booking',
   expedia: 'expedia',
   airbnb: 'airbnb',

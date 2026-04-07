@@ -4,7 +4,15 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter, Ban } from 'lucide-react'
-import { isManiatourHomepageBookingEmail, isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
+import {
+  isManiatourHomepageBookingEmail,
+  isCancellationRequestEmailSubject,
+  isViatorBookingRequestEmailSubject,
+  isTidesquareChannelEmailSubject,
+  isTidesquareNewBookingEmailSubject,
+  isMyrealtripNewBookingEmailSubject,
+  isMyrealtripChannelFromEmail,
+} from '@/lib/emailReservationParser'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -206,19 +214,30 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const isKKdayBookingSubject = (row: ImportItem) =>
     /^\[KKday\]\s*예약번호\s*[：:].*주문이\s*접수되었습니다/i.test((row.subject ?? '').trim())
 
-  /** Viator 예약 접수: Please Respond: New Booking Request: */
-  const isViatorBookingSubject = (row: ImportItem) =>
-    (row.subject ?? '').trim().toLowerCase().includes('please respond: new booking request:')
+  /** Viator 예약 접수 제목 (파서 is_booking_confirmed와 동일 규칙) */
+  const isViatorBookingSubject = (row: ImportItem) => isViatorBookingRequestEmailSubject(row.subject)
 
   /** 홈페이지(maniatour): 플랫폼 키 또는 자사 Wix 발신 vegasmaniatour@wixsiteautomations.com */
   const isManiaTourRow = (row: ImportItem) =>
     row.platform_key === 'maniatour' ||
     /vegasmaniatour@wixsiteautomations\.com/i.test(row.source_email ?? '')
 
+  /** 타이드스퀘어: platform_key 또는 제목 [타이드스퀘어] */
+  const isTidesquareRow = (row: ImportItem) =>
+    row.platform_key === 'tidesquare' || isTidesquareChannelEmailSubject(row.subject)
+
+  /** 마이리얼트립: platform_key · 발신 · [확정대기] YYYY-MM-DD / 제목 */
+  const isMyrealtripRow = (row: ImportItem) =>
+    row.platform_key === 'myrealtrip' ||
+    isMyrealtripChannelFromEmail(row.source_email) ||
+    isMyrealtripNewBookingEmailSubject(row.subject)
+
   /** 목록에 표시할 플랫폼 (KKday / maniatour 보정 포함). Klook은 variant까지 표시 */
   const displayPlatform = (row: ImportItem) => {
     if (isKKdayRow(row)) return 'kkday'
     if (isManiaTourRow(row)) return 'maniatour'
+    if (isTidesquareRow(row)) return '타이드스퀘어'
+    if (isMyrealtripRow(row)) return '마이리얼트립'
     const base = row.platform_key ?? '-'
     if (base === 'klook') {
       const label = (row.extracted_data?.channel_variant_label ?? '').trim()
@@ -237,6 +256,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     Boolean(row.extracted_data?.is_booking_confirmed === true) ||
     (isKKdayRow(row) && isKKdayBookingSubject(row)) ||
     (row.platform_key === 'viator' && isViatorBookingSubject(row)) ||
+    (isTidesquareRow(row) && isTidesquareNewBookingEmailSubject(row.subject)) ||
+    (isMyrealtripRow(row) && isMyrealtripNewBookingEmailSubject(row.subject)) ||
     isManiatourHomepageBookingEmail(row.source_email, row.subject) ||
     isGyGBookingRow(row)
 
@@ -262,6 +283,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     } else if (platformFilter) {
       if (platformFilter === 'klook') {
         if ((row.platform_key || '').toLowerCase() !== 'klook') return false
+      } else if (platformFilter === 'tidesquare') {
+        if (!isTidesquareRow(row)) return false
+      } else if (platformFilter === 'myrealtrip') {
+        if (!isMyrealtripRow(row)) return false
       } else if (platform !== platformFilter) {
         return false
       }
@@ -280,6 +305,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     { value: 'kkday', label: 'KKday' },
     { value: 'viator', label: 'Viator' },
     { value: 'maniatour', label: 'Maniatour (홈페이지)' },
+    { value: 'tidesquare', label: '타이드스퀘어' },
+    { value: 'myrealtrip', label: '마이리얼트립' },
     { value: 'tripadvisor', label: 'Tripadvisor' },
     { value: 'booking', label: 'Booking' },
     { value: 'expedia', label: 'Expedia' },
@@ -663,7 +690,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <input
             type="search"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => setListUi((prev) => ({ ...prev, searchQuery: e.target.value }))}
             placeholder="제목, 발신자, 고객명·날짜 등 검색..."
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             aria-label="이메일 목록 검색"

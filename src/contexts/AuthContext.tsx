@@ -1,10 +1,32 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { supabase, updateSupabaseToken } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
+
+function authUserFromSupabaseSessionUser(sessionUser: User): AuthUser {
+  return {
+    id: sessionUser.id,
+    email: sessionUser.email || '',
+    name:
+      sessionUser.user_metadata?.name ||
+      sessionUser.user_metadata?.full_name ||
+      (sessionUser.email ? sessionUser.email.split('@')[0] : 'User'),
+    avatar_url: sessionUser.user_metadata?.avatar_url,
+    created_at: sessionUser.created_at,
+    user_metadata: sessionUser.user_metadata,
+  }
+}
+
+function persistSupabaseSessionToStorage(session: Session) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem('sb-access-token', session.access_token)
+  localStorage.setItem('sb-refresh-token', session.refresh_token)
+  const tokenExpiry = session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
+  localStorage.setItem('sb-expires-at', tokenExpiry.toString())
+}
 
 interface AuthContextType {
   user: AuthUser | null
@@ -52,6 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 시뮬레이션 상태 (SSR 호환성을 위해 초기값은 null/false로 설정)
   const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
+
+  const userRef = useRef<AuthUser | null>(null)
+  userRef.current = user
 
   // 토큰 자동 갱신 함수
   const refreshTokenIfNeeded = useCallback(async () => {
@@ -725,13 +750,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         })
         
         if (event === 'SIGNED_OUT') {
-          console.log('AuthContext: User signed out')
-          setUser(null)
-          setAuthUser(null)
-          setUserRole('customer')
-          setUserPosition(null)
-          setPermissions(null)
-          setLoading(false)
+          // 모바일에서 다른 앱으로 전환 후 복귀 시 일시적 SIGNED_OUT이 올 수 있음.
+          // 세션/리프레시 토큰으로 한 번 더 확인한 뒤에만 로그아웃 처리한다.
+          console.log('AuthContext: SIGNED_OUT received, verifying session (mobile resume guard)')
+          void (async () => {
+            const clearSignedOutState = () => {
+              setUser(null)
+              setAuthUser(null)
+              setUserRole('customer')
+              setUserPosition(null)
+              setPermissions(null)
+              setLoading(false)
+            }
+            try {
+              await new Promise((r) => setTimeout(r, 200))
+              if (!supabase) {
+                clearSignedOutState()
+                return
+              }
+              const { data: { session: verifySession } } = await supabase.auth.getSession()
+              if (verifySession?.user?.email) {
+                console.log('AuthContext: Session still valid after SIGNED_OUT, keeping user')
+                const authUserData = authUserFromSupabaseSessionUser(verifySession.user)
+                setUser(authUserData)
+                setAuthUser(authUserData)
+                persistSupabaseSessionToStorage(verifySession)
+                updateSupabaseToken(verifySession.access_token)
+                return
+              }
+              const rt = localStorage.getItem('sb-refresh-token')
+              if (rt) {
+                const { data, error } = await supabase.auth.refreshSession({ refresh_token: rt })
+                if (data.session?.user?.email && !error) {
+                  console.log('AuthContext: Session recovered via refresh after SIGNED_OUT')
+                  const s = data.session
+                  const authUserData = authUserFromSupabaseSessionUser(s.user)
+                  setUser(authUserData)
+                  setAuthUser(authUserData)
+                  persistSupabaseSessionToStorage(s)
+                  updateSupabaseToken(s.access_token)
+                  return
+                }
+              }
+            } catch (e) {
+              console.warn('AuthContext: SIGNED_OUT verification failed:', e)
+            }
+            console.log('AuthContext: User signed out (confirmed)')
+            clearSignedOutState()
+          })()
           return
         }
 
@@ -819,6 +885,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe()
     }
   }, [checkUserRole, isSimulating, simulatedUser])
+
+  // 모바일: 다른 앱 후 복귀 시(bfcache·visibility) React 상태와 Supabase 세션이 어긋나면 가이드 레이아웃이 auth로 보내는 문제 방지
+  useEffect(() => {
+    if (typeof window === 'undefined' || !supabase) return
+
+    let lastResumeSync = 0
+    const THROTTLE_MS = 800
+
+    const resumeSync = async () => {
+      if (document.visibilityState !== 'visible') return
+      if (isSimulating && simulatedUser) return
+
+      const now = Date.now()
+      if (now - lastResumeSync < THROTTLE_MS) return
+      lastResumeSync = now
+
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error || !session?.user?.email) return
+
+        persistSupabaseSessionToStorage(session)
+        updateSupabaseToken(session.access_token)
+
+        const prev = userRef.current
+        if (prev?.email === session.user.email) return
+
+        const authUserData = authUserFromSupabaseSessionUser(session.user)
+        setUser(authUserData)
+        setAuthUser(authUserData)
+        void checkUserRole(session.user.email).catch((err) => {
+          console.error('AuthContext: Team check failed on resume:', err)
+          setUserRole('customer')
+          setUserPosition(null)
+          setPermissions(null)
+          setLoading(false)
+          setIsInitialized(true)
+        })
+      } catch (e) {
+        console.warn('AuthContext: resume session sync failed:', e)
+      }
+    }
+
+    const onVisibility = () => {
+      void resumeSync()
+    }
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) void resumeSync()
+    }
+
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pageshow', onPageShow)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [isSimulating, simulatedUser, checkUserRole])
 
   // 로그아웃 함수
   const signOut = async () => {

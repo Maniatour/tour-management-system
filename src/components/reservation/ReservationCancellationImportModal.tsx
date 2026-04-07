@@ -44,6 +44,49 @@ function formatMatchCustomerName(c: MatchRow['customers']): string {
   return ko || en || n || '—'
 }
 
+/** 입금 내역 중복 방지 (동일 메모로 이미 기록된 경우 스킵) */
+const IMPORT_CANCEL_PARTNER_REFUND_MEMO = '예약 가져오기 페이지에서 간단 취소됨.'
+
+/**
+ * 예약 가져오기 모달에서 취소로 저장 시: 파트너 환불 입금 1건 자동 추가
+ * — payment_status Returned, payment_method PAYM033, 금액 commission_base_price
+ */
+async function ensurePartnerRefundPaymentOnImportCancel(reservationId: string): Promise<void> {
+  const { data: dup } = await supabase
+    .from('payment_records')
+    .select('id')
+    .eq('reservation_id', reservationId)
+    .eq('note', IMPORT_CANCEL_PARTNER_REFUND_MEMO)
+    .limit(1)
+  if (dup && dup.length > 0) return
+
+  const { data: sessionData } = await supabase.auth.getSession()
+  const submitBy = sessionData?.session?.user?.email ?? null
+
+  const { data: pricingRows } = await supabase
+    .from('reservation_pricing')
+    .select('commission_base_price')
+    .eq('reservation_id', reservationId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  const rawBase = pricingRows?.[0]?.commission_base_price
+  const amount =
+    rawBase != null && rawBase !== '' && !Number.isNaN(Number(rawBase)) ? Number(rawBase) : 0
+
+  const paymentId = `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  const { error } = await supabase.from('payment_records').insert({
+    id: paymentId,
+    reservation_id: reservationId,
+    payment_status: 'Returned',
+    amount,
+    payment_method: 'PAYM033',
+    note: IMPORT_CANCEL_PARTNER_REFUND_MEMO,
+    submit_by: submitBy,
+  })
+  if (error) throw error
+}
+
 type ReservationBaseRow = {
   id: string
   status: string
@@ -332,10 +375,24 @@ export function ReservationCancellationImportModal({
     if (!match) return
     const next = statusDraft[reservationId] ?? match.status
     if (next === match.status) return
+    const wasCancelled = match.status === 'cancelled'
+    const becomesCancelled = next === 'cancelled'
     setStatusSaving(reservationId)
     try {
       const { error } = await supabase.from('reservations').update({ status: next }).eq('id', reservationId)
       if (error) throw error
+      if (!wasCancelled && becomesCancelled) {
+        try {
+          await ensurePartnerRefundPaymentOnImportCancel(reservationId)
+        } catch (payErr) {
+          console.error('[cancellation-import] partner refund payment_record:', payErr)
+          alert(
+            payErr instanceof Error
+              ? `예약은 취소되었으나 입금 내역(파트너 환불) 자동 추가에 실패했습니다: ${payErr.message}`
+              : '예약은 취소되었으나 입금 내역 자동 추가에 실패했습니다.'
+          )
+        }
+      }
       setMatches((prev) =>
         prev ? prev.map((r) => (r.id === reservationId ? { ...r, status: next } : r)) : prev
       )

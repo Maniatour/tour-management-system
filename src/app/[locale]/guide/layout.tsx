@@ -29,7 +29,7 @@ interface GuideLayoutProps {
 }
 
 export default function GuideLayout({ children, params }: GuideLayoutProps) {
-  const { user, userRole, isLoading, simulatedUser, isSimulating, signOut, stopSimulation } = useAuth()
+  const { user, userRole, loading: isLoading, simulatedUser, isSimulating, signOut, stopSimulation } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const t = useTranslations('guide')
