@@ -86,7 +86,10 @@ export default async function LocaleLayout({
   const pathname = headersList.get('x-pathname') || cookieStore.get('x-pathname')?.value || '';
   const isAdminPage = pathname.includes('/admin');
   const isEmbedPage = pathname.includes('/embed');
-  const isGuidePage = pathname.includes('/guide');
+  const isGuidePage =
+    pathname.includes('/guide') ||
+    headersList.get('x-is-guide-route') === '1' ||
+    cookieStore.get('x-is-guide-route')?.value === '1';
   const isPhotosPage = pathname.includes('/photos/'); // 사진 공유 링크 페이지
   const isCustomerPage = pathname.includes('/dashboard') || 
                          pathname.includes('/products') || 
@@ -109,13 +112,14 @@ export default async function LocaleLayout({
     );
   }
 
-  // 가이드: 헤더(Navigation)는 guide/layout.tsx에서 렌더 (서버 x-pathname 누락 시에도 상단 바 유지)
+  // 가이드: Navigation은 여기서만 렌더 → guide/layout과 이중 헤더 방지 (x-pathname 누락 시 x-is-guide-route로 분기)
   if (isGuidePage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <FloatingChatProvider>
           <StripeErrorHandler />
           <div className="min-h-screen bg-gray-50">
+            <Navigation />
             {children}
             <FloatingChatContainer />
           </div>

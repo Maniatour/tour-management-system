@@ -51,12 +51,20 @@ export async function middleware(req: NextRequest) {
   // pathname을 서버(레이아웃)로 전달: 요청 헤더에 설정해야 layout의 headers()에서 읽을 수 있음
   const requestHeaders = new Headers(req.headers)
   requestHeaders.set('x-pathname', pathname)
+  // /ko/guide, /en/guide … 가이드 구간 (pathname 누락 시에도 레이아웃 분기용)
+  const isGuideRoute = /^\/(ko|en)\/guide(\/|$)/.test(pathname)
+  requestHeaders.set('x-is-guide-route', isGuideRoute ? '1' : '0')
 
   const res = NextResponse.next({
     request: { headers: requestHeaders }
   })
   // pathname 쿠키도 설정 (일부 환경에서 요청 헤더가 전달되지 않을 수 있어 레이아웃 fallback용)
   res.cookies.set('x-pathname', pathname, { path: '/', maxAge: 60, sameSite: 'lax' })
+  res.cookies.set('x-is-guide-route', isGuideRoute ? '1' : '0', {
+    path: '/',
+    maxAge: 60,
+    sameSite: 'lax',
+  })
   // intlMiddleware가 설정한 쿠키/헤더 복사
   response.cookies.getAll().forEach(c => res.cookies.set(c.name, c.value, c))
   response.headers.forEach((v, k) => { if (k !== 'x-middleware-skip') res.headers.set(k, v) })
