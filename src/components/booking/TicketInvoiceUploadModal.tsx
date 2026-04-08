@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { FileUp, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { fetchUploadApi } from '@/lib/uploadClient';
 import {
   matchInvoiceLinesToBookings,
   normalizeBookingDateToIso,
@@ -13,6 +14,13 @@ import {
   type ParsedTicketInvoice,
   type TicketBookingLike,
 } from '@/utils/ticketInvoiceParse';
+
+function normalizeDbFileUrls(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw))
+    return raw.filter((u): u is string => typeof u === 'string' && u.trim() !== '');
+  return [];
+}
 
 function tourProductLabelKo(
   product: { name_ko?: string; name?: string; name_en?: string } | undefined
@@ -102,11 +110,17 @@ export default function TicketInvoiceUploadModal({
   const [companyFilter, setCompanyFilter] = useState('');
   const [applyBusy, setApplyBusy] = useState(false);
   const [overwriteExisting, setOverwriteExisting] = useState(false);
+  /** 파싱 줄 기반 자동 매칭 행 포함 여부 (끄면 목록에서 선택한 행만 적용) */
+  const [applyAutoMatch, setApplyAutoMatch] = useState(true);
+  /** 해당일 티켓 부킹 테이블에서 수동 선택한 부킹 id */
+  const [selectedBookingIds, setSelectedBookingIds] = useState<Set<string>>(() => new Set());
   /** RN# / 메모 입력 중 로컬 값 (키: booking id) */
   const [rnDrafts, setRnDrafts] = useState<Record<string, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   /** 해당 행에서 RN 또는 메모 저장 중 */
   const [rowSavingId, setRowSavingId] = useState<string | null>(null);
+  /** OCR에 사용한 마지막 인보이스 이미지(붙여넣기·파일 선택) — 적용 시 ticket_invoice_attachments 로 업로드 */
+  const lastInvoiceImageFileRef = useRef<File | null>(null);
 
   const companies = useMemo(() => {
     const s = new Set<string>();
@@ -174,9 +188,12 @@ export default function TicketInvoiceUploadModal({
     setInvoiceDateDraft('');
     setCompanyFilter('');
     setOverwriteExisting(false);
+    setApplyAutoMatch(true);
+    setSelectedBookingIds(new Set());
     setRnDrafts({});
     setNoteDrafts({});
     setRowSavingId(null);
+    lastInvoiceImageFileRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -184,8 +201,27 @@ export default function TicketInvoiceUploadModal({
       setRnDrafts({});
       setNoteDrafts({});
       setRowSavingId(null);
+      setSelectedBookingIds(new Set());
+      lastInvoiceImageFileRef.current = null;
     }
   }, [open]);
+
+  const toggleBookingSelected = useCallback((id: string) => {
+    setSelectedBookingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAllSameDay = useCallback(() => {
+    setSelectedBookingIds(new Set(sameDayBookings.map((b) => b.id)));
+  }, [sameDayBookings]);
+
+  const clearManualSelection = useCallback(() => {
+    setSelectedBookingIds(new Set());
+  }, []);
 
   const saveRnIfChanged = useCallback(
     async (b: TicketBookingLike, inputValue: string) => {
@@ -268,6 +304,7 @@ export default function TicketInvoiceUploadModal({
       setOcrPhase('error');
       return;
     }
+    lastInvoiceImageFileRef.current = file;
     setOcrPhase('running');
     setOcrError(null);
     try {
@@ -332,23 +369,47 @@ export default function TicketInvoiceUploadModal({
       return;
     }
 
-    const toUpdate = okMatches.filter((r) => {
-      if (r.kind !== 'ok') return false;
-      const existing = r.booking.invoice_number?.trim();
+    const fromAuto = applyAutoMatch
+      ? okMatches.filter((r) => {
+          if (r.kind !== 'ok') return false;
+          const existing = r.booking.invoice_number?.trim();
+          if (existing && existing !== inv && !overwriteExisting) return false;
+          return true;
+        })
+      : [];
+
+    const manualRows = sameDayBookings.filter((b) => selectedBookingIds.has(b.id));
+    const fromManual = manualRows.filter((b) => {
+      const existing = b.invoice_number?.trim();
       if (existing && existing !== inv && !overwriteExisting) return false;
       return true;
     });
 
-    if (toUpdate.length === 0) {
-      if (blockedByExisting.length > 0 && !overwriteExisting) {
+    const byId = new Map<string, TicketBookingLike>();
+    for (const r of fromAuto) {
+      if (r.kind === 'ok') byId.set(r.booking.id, r.booking);
+    }
+    for (const b of fromManual) {
+      byId.set(b.id, b);
+    }
+    const toUpdateBookings = [...byId.values()];
+
+    if (toUpdateBookings.length === 0) {
+      if (blockedByExisting.length > 0 && !overwriteExisting && applyAutoMatch) {
         alert('이미 다른 Invoice #가 있는 행이 있습니다. 덮어쓰기에 체크하거나 수동으로 정리해 주세요.');
+      } else if (!applyAutoMatch && selectedBookingIds.size > 0) {
+        alert('선택한 행은 모두 다른 Invoice #가 있어 건너뜁니다. 덮어쓰기에 체크해 주세요.');
       } else {
-        alert('적용할 매칭된 행이 없습니다. 날짜·시간·RN#·수량·회사 필터를 확인해 주세요.');
+        alert(
+          applyAutoMatch
+            ? '적용할 행이 없습니다. 자동 매칭을 확인하거나, 아래 목록에서 부킹을 선택해 주세요.'
+            : '목록에서 적용할 부킹을 선택해 주세요.'
+        );
       }
       return;
     }
 
-    const ambiguous = matchResults.filter((r) => r.kind === 'ambiguous');
+    const ambiguous = applyAutoMatch ? matchResults.filter((r) => r.kind === 'ambiguous') : [];
     if (ambiguous.length > 0) {
       const ok = window.confirm(
         `동일 조건으로 여러 행이 있는 줄이 ${ambiguous.length}개 있습니다. 이 상태로 매칭된 행만 저장할까요?`
@@ -359,16 +420,85 @@ export default function TicketInvoiceUploadModal({
     setApplyBusy(true);
     try {
       const updates: { id: string; invoice_number: string }[] = [];
-      for (const r of toUpdate) {
-        if (r.kind !== 'ok') continue;
+      for (const booking of toUpdateBookings) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error } = await (supabase as any)
           .from('ticket_bookings')
           .update({ invoice_number: inv })
-          .eq('id', r.booking.id);
+          .eq('id', booking.id);
         if (error) throw error;
-        updates.push({ id: r.booking.id, invoice_number: inv });
+        updates.push({ id: booking.id, invoice_number: inv });
       }
+
+      const attachFile = lastInvoiceImageFileRef.current;
+      if (attachFile) {
+        const companySet = new Set<string>();
+        for (const b of toUpdateBookings) {
+          const c = (b.company ?? '').trim();
+          if (c) companySet.add(c);
+        }
+        const companiesForAttach = [...companySet];
+        if (companiesForAttach.length === 0) {
+          alert(
+            'Invoice #은 저장됐으나, 적용한 부킹에 회사(company) 정보가 없어 인보이스 이미지 첨부는 할 수 없습니다.'
+          );
+        } else {
+          try {
+            const fd = new FormData();
+            fd.append('bucketType', 'ticket_bookings');
+            fd.append('files', attachFile);
+            const res = await fetchUploadApi(fd);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              console.error('ticket invoice image upload:', data);
+              alert(
+                typeof (data as { error?: string })?.error === 'string'
+                  ? (data as { error: string }).error
+                  : 'Invoice #은 저장됐으나 인보이스 이미지 업로드에 실패했습니다. 행에서 인보이스 첨부를 다시 추가해 주세요.'
+              );
+            } else {
+              const newUrls = Array.isArray((data as { urls?: unknown }).urls)
+                ? (data as { urls: string[] }).urls.filter((u) => typeof u === 'string' && u.trim() !== '')
+                : [];
+              if (newUrls.length > 0) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const sb = supabase as any;
+                for (const co of companiesForAttach) {
+                  const { data: row } = await sb
+                    .from('ticket_invoice_attachments')
+                    .select('file_urls, zelle_file_urls')
+                    .eq('company', co)
+                    .eq('invoice_number', inv)
+                    .maybeSingle();
+                  const existingInv = normalizeDbFileUrls(row?.file_urls);
+                  const existingZelle = normalizeDbFileUrls(row?.zelle_file_urls);
+                  const mergedInv = [...existingInv];
+                  for (const u of newUrls) {
+                    if (!mergedInv.includes(u)) mergedInv.push(u);
+                  }
+                  const { error: upErr } = await sb.from('ticket_invoice_attachments').upsert(
+                    {
+                      company: co,
+                      invoice_number: inv,
+                      file_urls: mergedInv,
+                      zelle_file_urls: existingZelle,
+                      updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'company,invoice_number' }
+                  );
+                  if (upErr) throw upErr;
+                }
+              }
+            }
+          } catch (attachErr) {
+            console.error('apply invoice attachment:', attachErr);
+            alert(
+              'Invoice #은 저장됐으나 인보이스 이미지 첨부 저장 중 오류가 발생했습니다. 행에서 인보이스 첨부를 다시 시도해 주세요.'
+            );
+          }
+        }
+      }
+
       onApplied(updates);
       resetForm();
       onClose();
@@ -440,7 +570,7 @@ export default function TicketInvoiceUploadModal({
               JPEG, PNG, GIF, WebP (첫 인식에 시간이 걸릴 수 있습니다) · 모달이 열린 상태에서{' '}
               <kbd className="rounded border border-gray-300 bg-white px-1 font-mono text-[10px]">Ctrl</kbd>+
               <kbd className="rounded border border-gray-300 bg-white px-1 font-mono text-[10px]">V</kbd>로
-              클립보드 이미지 붙여넣기 가능
+              클립보드 이미지 붙여넣기 가능 · Invoice # 적용 시 같은 이미지가 인보이스 첨부로 함께 저장됩니다
             </span>
             <input
               type="file"
@@ -593,6 +723,29 @@ export default function TicketInvoiceUploadModal({
               <>인보이스 날짜가 정해지면 같은 날짜의 부킹이 여기에 표시됩니다.</>
             )}
           </p>
+          {parsedEffective.invoiceDateIso && sameDayBookings.length > 0 ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => selectAllSameDay()}
+                disabled={applyBusy || ocrPhase === 'running'}
+                className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                목록 전체 선택
+              </button>
+              <button
+                type="button"
+                onClick={() => clearManualSelection()}
+                disabled={applyBusy || ocrPhase === 'running' || selectedBookingIds.size === 0}
+                className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                선택 해제
+              </button>
+              <span className="text-xs text-gray-500">
+                선택 {selectedBookingIds.size}건 · 체크한 행에도 Invoice #을 적용합니다
+              </span>
+            </div>
+          ) : null}
           {!parsedEffective.invoiceDateIso ? null : sameDayBookings.length === 0 ? (
             <p className="mt-2 text-sm text-gray-500">조건에 맞는 부킹이 없습니다.</p>
           ) : (
@@ -600,6 +753,31 @@ export default function TicketInvoiceUploadModal({
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 text-gray-600 sticky top-0">
                   <tr>
+                    <th className="px-2 py-1.5 text-center font-medium whitespace-nowrap w-10">
+                      <span className="sr-only">인보이스 적용 선택</span>
+                      <input
+                        type="checkbox"
+                        checked={
+                          sameDayBookings.length > 0 &&
+                          sameDayBookings.every((b) => selectedBookingIds.has(b.id))
+                        }
+                        ref={(el) => {
+                          if (!el) return;
+                          const n = sameDayBookings.filter((b) => selectedBookingIds.has(b.id)).length;
+                          el.indeterminate = n > 0 && n < sameDayBookings.length;
+                        }}
+                        onChange={() => {
+                          const allOn =
+                            sameDayBookings.length > 0 &&
+                            sameDayBookings.every((b) => selectedBookingIds.has(b.id));
+                          if (allOn) clearManualSelection();
+                          else selectAllSameDay();
+                        }}
+                        disabled={applyBusy || ocrPhase === 'running'}
+                        title="목록 전체 선택/해제"
+                        aria-label="목록 전체 선택 또는 해제"
+                      />
+                    </th>
                     <th className="px-2 py-1.5 text-left font-medium whitespace-nowrap">상태</th>
                     <th className="px-2 py-1.5 text-left font-medium">회사</th>
                     <th className="px-2 py-1.5 text-left font-medium min-w-[7rem]">투어연결</th>
@@ -618,6 +796,15 @@ export default function TicketInvoiceUploadModal({
                     const fieldDisabled = applyBusy || ocrPhase === 'running' || rowBusy;
                     return (
                       <tr key={b.id} className="bg-white hover:bg-gray-50/80">
+                        <td className="px-2 py-1.5 align-middle text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedBookingIds.has(b.id)}
+                            onChange={() => toggleBookingSelected(b.id)}
+                            disabled={fieldDisabled}
+                            aria-label={`Invoice 적용: ${b.company ?? ''} RN ${b.rn_number ?? ''}`}
+                          />
+                        </td>
                         <td className="px-2 py-1.5 align-middle max-w-[7.5rem]">
                           <span
                             className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold rounded-full leading-snug text-center ${ticketBookingStatusBadgeClass(b.status)}`}
@@ -694,6 +881,19 @@ export default function TicketInvoiceUploadModal({
         </div>
 
         <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={applyAutoMatch}
+            onChange={(e) => setApplyAutoMatch(e.target.checked)}
+            disabled={applyBusy}
+          />
+          시간·RN#·수량이 일치하는 행 자동 매칭에 포함
+        </label>
+        <p className="mt-1 text-xs text-gray-500 pl-6">
+          끄면 아래 목록에서만 선택한 행에 적용합니다 (OCR 줄 매칭은 사용하지 않음).
+        </p>
+
+        <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
           <input
             type="checkbox"
             checked={overwriteExisting}

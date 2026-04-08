@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { Save, AlertCircle, Users, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
@@ -129,6 +129,8 @@ export default function ProductDetailsTab({
   const [channelGroups, setChannelGroups] = useState<ChannelGroup[]>([])
   /** 채널별 선택된 variant_key 목록 (다중 선택 가능) */
   const [selectedChannelVariants, setSelectedChannelVariants] = useState<Record<string, string[]>>({})
+  const selectedChannelVariantsRef = useRef<Record<string, string[]>>({})
+  selectedChannelVariantsRef.current = selectedChannelVariants
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [loadingChannelData, setLoadingChannelData] = useState(false)
   const [_copyFromChannel, _setCopyFromChannel] = useState<string | null>(null)
@@ -723,21 +725,23 @@ export default function ProductDetailsTab({
           ...prev,
           ...loadedCustomerPageVisibilityByLanguage,
         }))
-        // 현재 formData와 비교하여 변경이 있을 때만 업데이트
+        // 채널에서 온 언어만 덮어쓰고, 나머지 언어(en 등)는 기존 formData·글로벌 로드 값 유지
+        // (전체 치환 시 채널 행에 없는 언어가 사라져 영문 편집/저장이 깨짐)
         setFormData(prev => {
-          const currentLang = prev.currentLanguage || 'ko'
-          const currentDetails = prev.productDetails?.[currentLang]
-          const newDetails = multilingualDetails[currentLang]
-          
-          // 데이터가 실제로 변경되었는지 확인
-          if (currentDetails && newDetails && 
-              JSON.stringify(currentDetails) === JSON.stringify(newDetails)) {
-            return prev // 변경사항이 없으면 이전 상태 반환
+          const mergedProductDetails: Record<string, ProductDetailsFields> = {
+            ...prev.productDetails
           }
-          
+          for (const [lang, details] of Object.entries(multilingualDetails)) {
+            mergedProductDetails[lang] = details
+          }
+
+          if (JSON.stringify(prev.productDetails) === JSON.stringify(mergedProductDetails)) {
+            return prev
+          }
+
           return {
             ...prev,
-            productDetails: multilingualDetails
+            productDetails: mergedProductDetails
           }
         })
       }
@@ -1865,21 +1869,38 @@ export default function ProductDetailsTab({
       console.log('multilingualDetails.en:', multilingualDetails.en)
       
       setFormData(prev => {
-        // 현재 데이터와 비교하여 변경이 있을 때만 업데이트
+        const hasChannelSelection = Object.values(selectedChannelVariantsRef.current).some(
+          (arr) => (arr?.length ?? 0) > 0
+        )
+
+        let nextProductDetails: Record<string, ProductDetailsFields>
+        if (hasChannelSelection) {
+          nextProductDetails = { ...prev.productDetails }
+          for (const [lang, details] of Object.entries(multilingualDetails)) {
+            const existing = prev.productDetails?.[lang]
+            nextProductDetails[lang] = existing ? { ...details, ...existing } : details
+          }
+        } else {
+          nextProductDetails = multilingualDetails
+        }
+
         const currentLang = prev.currentLanguage || 'ko'
         const currentDetails = prev.productDetails?.[currentLang]
-        const newDetails = multilingualDetails[currentLang]
-        
-        // 데이터가 실제로 변경되었는지 확인
-        if (currentDetails && newDetails && 
-            JSON.stringify(currentDetails) === JSON.stringify(newDetails) &&
-            prev.useCommonDetails === false) {
-          return prev // 변경사항이 없으면 이전 상태 반환
+        const newDetails = nextProductDetails[currentLang]
+
+        if (
+          currentDetails &&
+          newDetails &&
+          JSON.stringify(currentDetails) === JSON.stringify(newDetails) &&
+          JSON.stringify(prev.productDetails) === JSON.stringify(nextProductDetails) &&
+          prev.useCommonDetails === false
+        ) {
+          return prev
         }
-        
+
         return {
           ...prev,
-          productDetails: multilingualDetails,
+          productDetails: nextProductDetails,
           useCommonDetails: false
         }
       })
@@ -2519,6 +2540,32 @@ export default function ProductDetailsTab({
     }
   }
 
+  /** 미리보기 편집·Import 모달 등에서 DB 저장 (채널 선택 시 채널·variant 행, 없으면 공통 행) */
+  const saveDetailsFromModal = async () => {
+    if (isNewProduct) {
+      setSaveMessage(t('msgNewProductUseFullSave'))
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 5000)
+      return
+    }
+    if (authLoading) {
+      setSaveMessage(t('msgAuthChecking'))
+      setSaveMessageType(null)
+      return
+    }
+    if (!user) {
+      setSaveMessage(t('msgLoginRequired'))
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 5000)
+      return
+    }
+    if (selectedPairCount > 0) {
+      await saveSelectedChannelsDetails()
+    } else {
+      await handleSave()
+    }
+  }
+
   // 채널 간 전체 복사는 현재 미사용
   void _copyChannelData
 
@@ -2979,6 +3026,14 @@ export default function ProductDetailsTab({
               >
                 닫기
               </button>
+              <button
+                type="button"
+                onClick={() => void saveDetailsFromModal()}
+                disabled={saving || isNewProduct}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? t('saveLoading') : t('save')}
+              </button>
             </div>
           </div>
         </div>
@@ -3076,6 +3131,14 @@ export default function ProductDetailsTab({
                 className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm"
               >
                 취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveDetailsFromModal()}
+                disabled={saving || isNewProduct}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
+              >
+                {saving ? t('saveLoading') : t('save')}
               </button>
               <button
                 type="button"
