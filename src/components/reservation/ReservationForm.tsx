@@ -5478,8 +5478,8 @@ export default function ReservationForm({
               </div>
             </div>
 
-            {/* Follow up - 1열 고객 정보 아래 */}
-            {layout === 'page' && reservation && effectiveReservationId && (
+            {/* Follow up - 1열 고객 정보 아래 (상세 페이지·예약 수정 모달 공통) */}
+            {reservation && effectiveReservationId && (
               <div className="max-lg:order-9 max-lg:mt-4 lg:shrink-0">
                 <ReservationFollowUpSection reservationId={effectiveReservationId} status={formData.status as string} />
               </div>

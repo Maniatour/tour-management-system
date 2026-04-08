@@ -16,6 +16,7 @@ import type { Reservation } from '@/types/reservation'
 import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
+  computeCompanyTotalRevenueLikePricingSection,
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
 
@@ -79,6 +80,117 @@ interface ReservationItem {
   amountAudited?: boolean
   amountAuditedAt?: string | null
   amountAuditedBy?: string | null
+  /** 채널 정산 집계용 — enrichItemsWithCompanyTotalRevenue 로 채움 */
+  companyTotalRevenue?: number
+  /** Partner Received − Returned(파트너 환불) */
+  partnerReceivedNet?: number
+}
+
+/** PricingSection 가격계산 4번「총 매출」용 부가 필드 (reservation_pricing) */
+type StatsPricingExtras = {
+  notIncludedPrice: number
+  onlinePaymentAmount: number
+  prepaymentCost: number
+  commissionBasePrice: number | null
+}
+
+function defaultStatsExtras(): StatsPricingExtras {
+  return { notIncludedPrice: 0, onlinePaymentAmount: 0, prepaymentCost: 0, commissionBasePrice: null }
+}
+
+function billingPaxForSettlementFromItem(item: {
+  pricingAdults?: number | null
+  adults?: number
+  child?: number
+  infant?: number
+}): number {
+  const pricingAdultsVal = Math.max(0, Math.floor(Number(item.pricingAdults ?? item.adults) || 0))
+  return (
+    pricingAdultsVal +
+    Math.max(0, Math.floor(Number(item.child) || 0)) +
+    Math.max(0, Math.floor(Number(item.infant) || 0))
+  )
+}
+
+/** DB channel_settlement_amount 우선, 없으면 PricingSection과 동일한 computeChannelSettlementAmount */
+function channelSettlementBaseForStatsRow(
+  item: ReservationItem,
+  extras: StatsPricingExtras,
+  returnedAmount: number,
+  partnerReceived: number,
+  isOta: boolean
+): number {
+  const stored = item.channelSettlementAmount
+  if (stored != null && Number.isFinite(Number(stored))) {
+    return Math.max(0, Number(stored))
+  }
+  const billingPax = billingPaxForSettlementFromItem(item) || 1
+  const notIncludedForSettlement = (extras.notIncludedPrice || 0) * billingPax
+  const productTotalForSettlement = (item.productPriceTotal || 0) + notIncludedForSettlement
+
+  const storedCb = Number(item.commissionBasePrice ?? extras.commissionBasePrice ?? 0)
+  const onlineRaw = Number(extras.onlinePaymentAmount) || 0
+  const online =
+    Math.abs(onlineRaw) > 0.005
+      ? onlineRaw
+      : deriveCommissionGrossForSettlement(storedCb, {
+          returnedAmount,
+          depositAmount: item.depositAmount ?? 0,
+          productPriceTotal: productTotalForSettlement,
+          isOTAChannel: isOta,
+        }) || storedCb
+
+  return computeChannelSettlementAmount({
+    depositAmount: item.depositAmount ?? 0,
+    onlinePaymentAmount: online,
+    productPriceTotal: productTotalForSettlement,
+    couponDiscount: item.couponDiscount ?? 0,
+    additionalDiscount: item.additionalDiscount ?? 0,
+    optionTotalSum: item.optionTotal ?? 0,
+    additionalCost: item.additionalCost ?? 0,
+    tax: item.tax ?? 0,
+    cardFee: item.cardFee ?? 0,
+    prepaymentTip: item.prepaymentTip ?? 0,
+    onSiteBalanceAmount: item.balanceAmount ?? 0,
+    returnedAmount,
+    partnerReceivedAmount: partnerReceived,
+    commissionAmount: item.commissionAmount ?? 0,
+    reservationStatus: item.status,
+    isOTAChannel: isOta,
+  })
+}
+
+/** 예약 정보 수정 → 가격정보 → 4번 총 매출과 동일 산식 */
+function buildCompanyTotalRevenueForChannelRow(
+  item: ReservationItem,
+  extras: StatsPricingExtras,
+  ctx: {
+    returnedAmount: number
+    partnerReceived: number
+    refundedOur: number
+    reservationOptionsSum: number
+    isOta: boolean
+  }
+): number {
+  const base = channelSettlementBaseForStatsRow(item, extras, ctx.returnedAmount, ctx.partnerReceived, ctx.isOta)
+  const billingPax = billingPaxForSettlementFromItem(item) || 1
+  const notIncludedTotalUsd = (extras.notIncludedPrice || 0) * billingPax
+  const st = String(item.status || '').toLowerCase().trim()
+  const isReservationCancelled = st === 'cancelled' || st === 'canceled'
+
+  return computeCompanyTotalRevenueLikePricingSection({
+    channelSettlementBase: base,
+    isOTAChannel: ctx.isOta,
+    isReservationCancelled,
+    reservationOptionsTotalPrice: ctx.isOta ? ctx.reservationOptionsSum : 0,
+    notIncludedTotalUsd,
+    additionalDiscount: item.additionalDiscount ?? 0,
+    additionalCost: item.additionalCost ?? 0,
+    tax: item.tax ?? 0,
+    cardFee: item.cardFee ?? 0,
+    prepaymentCost: extras.prepaymentCost ?? 0,
+    refundedOurAmount: ctx.refundedOur,
+  })
 }
 
 // TourItem을 ReservationItem과 동일하게 사용
@@ -132,6 +244,9 @@ type ChannelPricingRowLike = {
   optionTotal?: number
   partnerReceivedAmount?: number
   channelSettlementAmount?: number | null
+  /** PricingSection「총 매출」— enrichItemsWithCompanyTotalRevenue 후 설정 */
+  companyTotalRevenue?: number
+  partnerReceivedNet?: number
 }
 
 function aggregateChannelPricingRows<T extends ChannelPricingRowLike>(items: T[]) {
@@ -140,14 +255,16 @@ function aggregateChannelPricingRows<T extends ChannelPricingRowLike>(items: T[]
       const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
       const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
       const totalPrice = grandTotal - (item.commissionAmount || 0)
-      const netPrice = totalPrice + (item.optionTotal || 0)
+      const netPriceLegacy = totalPrice + (item.optionTotal || 0)
+      const companyRev = item.companyTotalRevenue ?? netPriceLegacy
       return {
         grandTotal: acc.grandTotal + grandTotal,
         commission: acc.commission + (item.commissionAmount || 0),
         totalPrice: acc.totalPrice + totalPrice,
-        netPrice: acc.netPrice + netPrice,
+        netPrice: acc.netPrice + companyRev,
         optionTotal: acc.optionTotal + (item.optionTotal || 0),
-        partnerReceived: acc.partnerReceived + (item.partnerReceivedAmount ?? 0),
+        partnerReceived:
+          acc.partnerReceived + (item.partnerReceivedNet ?? item.partnerReceivedAmount ?? 0),
         channelSettlement: acc.channelSettlement + (item.channelSettlementAmount ?? 0),
         discountTotal: acc.discountTotal + discountTotal,
         productPriceTotalSum: acc.productPriceTotalSum + (item.productPriceTotal || 0),
@@ -177,6 +294,14 @@ function formatUsd2(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** 입금내역 셀 — 순입금(수령−Returned) 및 상세 툴팁 */
+function partnerReceivedNetTooltip(partnerReceived: number, returnedPartner: number): string {
+  const pr = Number(partnerReceived) || 0
+  const ret = Number(returnedPartner) || 0
+  const net = Math.max(0, Math.round((pr - ret) * 100) / 100)
+  return `파트너 수령: $${formatUsd2(pr)} · Returned(파트너 환불): $${formatUsd2(ret)} · 순입금: $${formatUsd2(net)}`
+}
+
 function numericDbOrNull(value: unknown): number | null {
   if (value === null || value === undefined) return null
   if (typeof value === 'string' && value.trim() === '') return null
@@ -195,8 +320,9 @@ function commissionBasePriceFromRow(row: { commission_base_price?: unknown }): n
 }
 
 /** 채널별 정산 탭 예약·투어 가격 조회/동기화 공통 */
+/** `online_payment_amount` 등은 스키마에 없을 수 있어 SELECT에 넣지 않음 — 매퍼에서 없으면 0 */
 const CHANNEL_SETTLEMENT_PRICING_SELECT =
-  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, channel_settlement_amount, commission_base_price, pricing_adults'
+  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, prepayment_cost, channel_settlement_amount, commission_base_price, pricing_adults, not_included_price'
 
 /** DB 수수료율 → 표시·검증용 % (0.22 → 22) */
 function commissionPercentFromPricingRow(raw: unknown): number | null {
@@ -225,6 +351,9 @@ function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
     choicesTotal: p.choices_total != null && p.choices_total !== '' ? Number(p.choices_total) : 0,
     cardFee: Number(p.card_fee) || 0,
     prepaymentTip: Number(p.prepayment_tip) || 0,
+    prepaymentCost: Number(p.prepayment_cost) || 0,
+    notIncludedPrice: Number(p.not_included_price) || 0,
+    onlinePaymentAmount: Number(p.online_payment_amount) || 0,
     channelSettlementStored: channelSettlementAmountFromRow(p),
     commissionBasePrice: commissionBasePriceFromRow(p),
     pricingAdults:
@@ -233,6 +362,8 @@ function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
         : null,
   }
 }
+
+type ChannelTabPricingState = ReturnType<typeof mapPricingRowToChannelTabState>
 
 /** `channel_settlement_amount` 없음 → 대시 (DB 값만 표시) */
 function formatTourChannelSettlementCell(n: number | null | undefined): string {
@@ -362,26 +493,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   const [toursLoading, setToursLoading] = useState(false)
   const [tourItems, setTourItems] = useState<ReservationItem[]>([])
   const [reservationPrices, setReservationPrices] = useState<Record<string, number>>({})
-  const [reservationPricingData, setReservationPricingData] = useState<Record<string, {
-    adultPrice: number
-    productPriceTotal: number
-    optionTotal: number
-    subtotal: number
-    commissionAmount: number
-    couponDiscount: number
-    additionalDiscount: number
-    additionalCost: number
-    tax: number
-    depositAmount: number
-    balanceAmount: number
-    choicesTotal: number
-    cardFee: number
-    prepaymentTip: number
-    channelSettlementStored: number | null
-    pricingCommissionPercent: number | null
-    commissionBasePrice: number | null
-    pricingAdults: number | null
-  }>>({})
+  const [reservationPricingData, setReservationPricingData] = useState<Record<string, ChannelTabPricingState>>({})
   const [pricesLoading, setPricesLoading] = useState(false)
   const CHANNEL_SETTLEMENT_UI_DEFAULT = {
     activeDetailTab: 'reservations' as 'reservations' | 'tours',
@@ -399,6 +511,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   const channelFilter = selectedChannelId ?? ''
   const [partnerReceivedByReservation, setPartnerReceivedByReservation] = useState<Record<string, number>>({})
   const [returnedAmountByReservation, setReturnedAmountByReservation] = useState<Record<string, number>>({})
+  /** payment_records Refunded(우리 쪽 환불) — PricingSection 총매출 차감과 동일 */
+  const [refundedOurByReservation, setRefundedOurByReservation] = useState<Record<string, number>>({})
+  /** reservation_options total_price 합 (취소·환불 제외) — OTA 총매출 가산용 */
+  const [reservationOptionsSumByReservation, setReservationOptionsSumByReservation] = useState<Record<string, number>>({})
   const [reservationAudit, setReservationAudit] = useState<Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }>>({})
   const [channelInvoicePreview, setChannelInvoicePreview] = useState<{
     channelName: string
@@ -414,6 +530,52 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       return String(ch.type || '').toLowerCase() === 'ota' || ch.category === 'OTA'
     },
     [channels]
+  )
+
+  const reservationRowPricingExtras = useCallback(
+    (reservationId: string): StatsPricingExtras => {
+      const p = reservationPricingData[reservationId]
+      if (!p) return defaultStatsExtras()
+      return {
+        notIncludedPrice: p.notIncludedPrice ?? 0,
+        onlinePaymentAmount: p.onlinePaymentAmount ?? 0,
+        prepaymentCost: p.prepaymentCost ?? 0,
+        commissionBasePrice: p.commissionBasePrice ?? null,
+      }
+    },
+    [reservationPricingData]
+  )
+
+  const enrichItemsWithCompanyTotalRevenue = useCallback(
+    (items: ReservationItem[]): ReservationItem[] =>
+      items.map((item) => {
+        const pr = partnerReceivedByReservation[item.id] ?? 0
+        const ret = returnedAmountByReservation[item.id] ?? 0
+        const partnerReceivedNet = Math.max(0, Math.round((pr - ret) * 100) / 100)
+        return {
+          ...item,
+          partnerReceivedNet,
+          companyTotalRevenue: buildCompanyTotalRevenueForChannelRow(
+            item,
+            reservationRowPricingExtras(item.id),
+            {
+              returnedAmount: ret,
+              partnerReceived: pr,
+              refundedOur: refundedOurByReservation[item.id] ?? 0,
+              reservationOptionsSum: reservationOptionsSumByReservation[item.id] ?? 0,
+              isOta: isOtaChannelId(item.channelId),
+            }
+          ),
+        }
+      }) as ReservationItem[],
+    [
+      reservationRowPricingExtras,
+      returnedAmountByReservation,
+      partnerReceivedByReservation,
+      refundedOurByReservation,
+      reservationOptionsSumByReservation,
+      isOtaChannelId,
+    ]
   )
 
   // 예약 클릭 시 수정 모달 열기
@@ -892,26 +1054,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         }
 
         const pricesMap: Record<string, number> = {}
-        const pricingDataMap: Record<string, {
-          adultPrice: number
-          productPriceTotal: number
-          optionTotal: number
-          subtotal: number
-          commissionAmount: number
-          couponDiscount: number
-          additionalDiscount: number
-          additionalCost: number
-          tax: number
-          depositAmount: number
-          balanceAmount: number
-          choicesTotal: number
-          cardFee: number
-          prepaymentTip: number
-          channelSettlementStored: number | null
-          pricingCommissionPercent: number | null
-          commissionBasePrice: number | null
-          pricingAdults: number | null
-        }> = {}
+        const pricingDataMap: Record<string, ChannelTabPricingState> = {}
 
         // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
         const chunkSize = 100
@@ -936,6 +1079,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
         const partnerReceivedMap: Record<string, number> = {}
         const returnedMap: Record<string, number> = {}
+        const refundedOurMap: Record<string, number> = {}
         for (let i = 0; i < reservationIds.length; i += chunkSize) {
           const chunk = reservationIds.slice(i, i + chunkSize)
           const { data: paymentData } = await supabase
@@ -950,13 +1094,32 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             }
             const st = row.payment_status || ''
             const sl = st.toLowerCase()
-            if (st.includes('Returned') || sl === 'returned') {
+            if (st.includes('Refunded') || sl === 'refunded') {
+              refundedOurMap[rid] = (refundedOurMap[rid] ?? 0) + amt
+            } else if (st.includes('Returned') || sl === 'returned') {
               returnedMap[rid] = (returnedMap[rid] ?? 0) + amt
             }
           })
         }
         setPartnerReceivedByReservation(prev => ({ ...prev, ...partnerReceivedMap }))
         setReturnedAmountByReservation(prev => ({ ...prev, ...returnedMap }))
+        setRefundedOurByReservation(prev => ({ ...prev, ...refundedOurMap }))
+
+        const optionsSumMap: Record<string, number> = {}
+        for (let i = 0; i < reservationIds.length; i += chunkSize) {
+          const chunk = reservationIds.slice(i, i + chunkSize)
+          const { data: optRows } = await supabase
+            .from('reservation_options')
+            .select('reservation_id, total_price, status')
+            .in('reservation_id', chunk)
+          optRows?.forEach((row: { reservation_id: string; total_price?: number | null; status?: string | null }) => {
+            const rid = row.reservation_id
+            const ost = String(row.status || '').toLowerCase()
+            if (ost === 'cancelled' || ost === 'refunded') return
+            optionsSumMap[rid] = (optionsSumMap[rid] ?? 0) + (Number(row.total_price) || 0)
+          })
+        }
+        setReservationOptionsSumByReservation(prev => ({ ...prev, ...optionsSumMap }))
 
         // 금액 Audit 여부 조회 (amount_audited, amount_audited_at, amount_audited_by)
         const auditMap: Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }> = {}
@@ -1012,6 +1175,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         choicesTotal: 0,
         cardFee: 0,
         prepaymentTip: 0,
+        prepaymentCost: 0,
+        notIncludedPrice: 0,
+        onlinePaymentAmount: 0,
         channelSettlementStored: null,
         pricingCommissionPercent: null,
         commissionBasePrice: null,
@@ -1037,6 +1203,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         pricingAdults: pricingAdultsResolved,
         status: reservation.status,
         channelRN: reservation.channelRN || '',
+        channelId: reservation.channelId,
+        channelName: getChannelName(reservation.channelId, channels || []),
         totalPrice: reservationPrices[reservation.id] || 0,
         adultPrice: pricing.adultPrice,
         productPriceTotal: pricing.productPriceTotal,
@@ -1049,12 +1217,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         tax: pricing.tax,
         depositAmount: pricing.depositAmount,
         balanceAmount: pricing.balanceAmount,
+        cardFee: pricing.cardFee,
+        prepaymentTip: pricing.prepaymentTip,
         partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
         channelSettlementAmount,
         pricingCommissionPercent: pricing.pricingCommissionPercent ?? null,
         amountAudited: reservationAudit[reservation.id]?.amount_audited ?? false,
         amountAuditedAt: reservationAudit[reservation.id]?.amount_audited_at ?? null,
-        amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null
+        amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null,
+        ...(pricing.commissionBasePrice != null ? { commissionBasePrice: pricing.commissionBasePrice } : {}),
       }
     })
     
@@ -1064,7 +1235,18 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       const dateB = new Date(b.registrationDate).getTime()
       return reservationSortOrder === 'asc' ? dateA - dateB : dateB - dateA
     })
-  }, [filteredReservations, customers, products, reservationPrices, reservationPricingData, reservationSortOrder, partnerReceivedByReservation, returnedAmountByReservation, reservationAudit])
+  }, [
+    filteredReservations,
+    customers,
+    products,
+    channels,
+    reservationPrices,
+    reservationPricingData,
+    reservationSortOrder,
+    partnerReceivedByReservation,
+    returnedAmountByReservation,
+    reservationAudit,
+  ])
 
   // 선택된 채널의 투어 진행 내역 가져오기 (투어 날짜 기준 예약 목록)
   useEffect(() => {
@@ -1128,26 +1310,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         const reservationIds = tourDateFilteredReservations.map(r => r.id)
         
         const pricesMap: Record<string, number> = {}
-        const pricingDataMap: Record<string, {
-          adultPrice: number
-          productPriceTotal: number
-          optionTotal: number
-          subtotal: number
-          commissionAmount: number
-          couponDiscount: number
-          additionalDiscount: number
-          additionalCost: number
-          tax: number
-          depositAmount: number
-          balanceAmount: number
-          choicesTotal: number
-          cardFee: number
-          prepaymentTip: number
-          channelSettlementStored: number | null
-          pricingCommissionPercent: number | null
-          commissionBasePrice: number | null
-          pricingAdults: number | null
-        }> = {}
+        const pricingDataMap: Record<string, ChannelTabPricingState> = {}
 
         // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
         if (reservationIds.length > 0) {
@@ -1173,9 +1336,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           }
         }
 
-        // 입금내역 (Partner Received / Returned) 및 Audit 조회 (투어 탭용)
+        // 입금내역 (Partner Received / Returned / Refunded) 및 Audit 조회 (투어 탭용)
         const partnerReceivedMap: Record<string, number> = {}
         const returnedMapTour: Record<string, number> = {}
+        const refundedOurTourMap: Record<string, number> = {}
         const auditMap: Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }> = {}
         if (reservationIds.length > 0) {
           const chunkSize = 100
@@ -1193,7 +1357,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
               }
               const st = row.payment_status || ''
               const sl = st.toLowerCase()
-              if (st.includes('Returned') || sl === 'returned') {
+              if (st.includes('Refunded') || sl === 'refunded') {
+                refundedOurTourMap[rid] = (refundedOurTourMap[rid] ?? 0) + amt
+              } else if (st.includes('Returned') || sl === 'returned') {
                 returnedMapTour[rid] = (returnedMapTour[rid] ?? 0) + amt
               }
             })
@@ -1213,8 +1379,27 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           }
           setPartnerReceivedByReservation(prev => ({ ...prev, ...partnerReceivedMap }))
           setReturnedAmountByReservation(prev => ({ ...prev, ...returnedMapTour }))
+          setRefundedOurByReservation(prev => ({ ...prev, ...refundedOurTourMap }))
           setReservationAudit(prev => ({ ...prev, ...auditMap }))
+
+          const optionsSumTourMap: Record<string, number> = {}
+          for (let i = 0; i < reservationIds.length; i += chunkSize) {
+            const chunk = reservationIds.slice(i, i + chunkSize)
+            const { data: optRows } = await supabase
+              .from('reservation_options')
+              .select('reservation_id, total_price, status')
+              .in('reservation_id', chunk)
+            optRows?.forEach((row: { reservation_id: string; total_price?: number | null; status?: string | null }) => {
+              const rid = row.reservation_id
+              const ost = String(row.status || '').toLowerCase()
+              if (ost === 'cancelled' || ost === 'refunded') return
+              optionsSumTourMap[rid] = (optionsSumTourMap[rid] ?? 0) + (Number(row.total_price) || 0)
+            })
+          }
+          setReservationOptionsSumByReservation(prev => ({ ...prev, ...optionsSumTourMap }))
         }
+
+        setReservationPricingData((prev) => ({ ...prev, ...pricingDataMap }))
 
         // 예약 아이템으로 변환
         const tourReservationItems: ReservationItem[] = tourDateFilteredReservations.map(reservation => {
@@ -1233,6 +1418,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             choicesTotal: 0,
             cardFee: 0,
             prepaymentTip: 0,
+            prepaymentCost: 0,
+            notIncludedPrice: 0,
+            onlinePaymentAmount: 0,
             channelSettlementStored: null,
             pricingCommissionPercent: null,
             commissionBasePrice: null,
@@ -1486,72 +1674,31 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                  const groupReservations = dedupeById(
                    group.channels.flatMap(ch => getReservationsByChannel(ch.id))
                  )
-                 const groupTotal = groupReservations.reduce((sum, r) => {
-                   const pricing = reservationPricingData[r.id] || {}
-                   const discountTotal = (pricing.couponDiscount || 0) + (pricing.additionalDiscount || 0)
-                   const grandTotal = (pricing.productPriceTotal || 0) - discountTotal + (pricing.additionalCost || 0)
-                   const totalPrice = grandTotal - (pricing.commissionAmount || 0)
-                   const netPrice = totalPrice + (pricing.optionTotal || 0)
-                   return sum + netPrice
-                 }, 0)
+                 const groupReservationIdSet = new Set(groupReservations.map((r) => r.id))
+                 const groupTotal = reservationItems
+                   .filter((i) => groupReservationIdSet.has(i.id))
+                   .reduce(
+                     (sum, item) =>
+                       sum +
+                       buildCompanyTotalRevenueForChannelRow(item, reservationRowPricingExtras(item.id), {
+                         returnedAmount: returnedAmountByReservation[item.id] ?? 0,
+                         partnerReceived: partnerReceivedByReservation[item.id] ?? 0,
+                         refundedOur: refundedOurByReservation[item.id] ?? 0,
+                         reservationOptionsSum: reservationOptionsSumByReservation[item.id] ?? 0,
+                         isOta: isOtaChannelId(item.channelId),
+                       }),
+                     0
+                   )
 
                  // 자체 채널은 바로 모든 예약을 합쳐서 표시
                  if (group.type === 'SELF') {
-                   // 자체 채널의 모든 예약 아이템 생성 및 정렬
-                   const allChannelItems = groupReservations.map(reservation => {
-                     const pricing = reservationPricingData[reservation.id] || {
-                       adultPrice: 0,
-                       productPriceTotal: 0,
-                       optionTotal: 0,
-                       subtotal: 0,
-                       commissionAmount: 0,
-                       couponDiscount: 0,
-                       additionalDiscount: 0,
-                       additionalCost: 0,
-                       tax: 0,
-                       depositAmount: 0,
-                       balanceAmount: 0,
-                       pricingAdults: null,
-                     }
-                     const pricingAdultsResolved =
-                       pricing.pricingAdults != null
-                         ? pricing.pricingAdults
-                         : Math.max(0, Math.floor(Number(reservation.adults ?? 0)))
-                     return {
-                       id: reservation.id,
-                       tourDate: reservation.tourDate,
-                       registrationDate: reservation.addedTime,
-                       customerId: reservation.customerId,
-                       customerName: getCustomerName(reservation.customerId, customers || []),
-                       productId: reservation.productId,
-                       productName: getProductName(reservation.productId, products || []),
-                       totalPeople: reservation.totalPeople,
-                       adults: reservation.adults || 0,
-                       child: reservation.child || 0,
-                       infant: reservation.infant || 0,
-                       pricingAdults: pricingAdultsResolved,
-                       status: reservation.status,
-                       channelRN: reservation.channelRN || '',
-                       channelId: reservation.channelId,
-                       channelName: getChannelName(reservation.channelId, channels || []),
-                       totalPrice: 0,
-                       adultPrice: pricing.adultPrice,
-                       productPriceTotal: pricing.productPriceTotal,
-                       optionTotal: pricing.optionTotal,
-                       subtotal: pricing.subtotal,
-                       commissionAmount: pricing.commissionAmount,
-                       couponDiscount: pricing.couponDiscount,
-                       additionalDiscount: pricing.additionalDiscount,
-                       additionalCost: pricing.additionalCost,
-                       tax: pricing.tax,
-                       depositAmount: pricing.depositAmount,
-                       balanceAmount: pricing.balanceAmount
-                     }
-                   }).sort((a, b) => {
-                     const dateA = new Date(a.registrationDate).getTime()
-                     const dateB = new Date(b.registrationDate).getTime()
-                     return reservationSortOrder === 'asc' ? dateA - dateB : dateB - dateA
-                   })
+                   const allChannelItems = reservationItems
+                     .filter((i) => groupReservationIdSet.has(i.id))
+                     .sort((a, b) => {
+                       const dateA = new Date(a.registrationDate).getTime()
+                       const dateB = new Date(b.registrationDate).getTime()
+                       return reservationSortOrder === 'asc' ? dateA - dateB : dateB - dateA
+                     })
 
                    return (
                      <div key={group.type} className="border-b border-gray-200">
@@ -1595,7 +1742,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24" title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식">총 매출</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1610,7 +1757,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                    const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
                                    const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                    const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                   const netPrice = totalPrice + (item.optionTotal || 0)
+                                   const companyRev = buildCompanyTotalRevenueForChannelRow(
+                                     item,
+                                     reservationRowPricingExtras(item.id),
+                                     {
+                                       returnedAmount: returnedAmountByReservation[item.id] ?? 0,
+                                       partnerReceived: partnerReceivedByReservation[item.id] ?? 0,
+                                       refundedOur: refundedOurByReservation[item.id] ?? 0,
+                                       reservationOptionsSum: reservationOptionsSumByReservation[item.id] ?? 0,
+                                       isOta: isOtaChannelId(item.channelId),
+                                     }
+                                   )
                                    return (
                                      <tr 
                                        key={`self-${item.id}-${idx}`} 
@@ -1670,7 +1827,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                          ${(item.optionTotal || 0).toLocaleString()}
                                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                         ${netPrice.toLocaleString()}
+                                         ${companyRev.toLocaleString()}
                                        </td>
                                      </tr>
                                    )
@@ -1774,6 +1931,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               choicesTotal: 0,
                               cardFee: 0,
                               prepaymentTip: 0,
+                              prepaymentCost: 0,
+                              notIncludedPrice: 0,
+                              onlinePaymentAmount: 0,
                               channelSettlementStored: null,
                               pricingCommissionPercent: null,
                               commissionBasePrice: null,
@@ -1799,6 +1959,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               pricingAdults: pricingAdultsResolved,
                               status: reservation.status,
                               channelRN: reservation.channelRN || '',
+                              channelId: channel.id,
+                              channelName: channel.name,
                               totalPrice: reservationPrices[reservation.id] || 0,
                               adultPrice: pricing.adultPrice,
                               productPriceTotal: pricing.productPriceTotal,
@@ -1811,12 +1973,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               tax: pricing.tax,
                               depositAmount: pricing.depositAmount,
                               balanceAmount: pricing.balanceAmount,
+                              cardFee: pricing.cardFee,
+                              prepaymentTip: pricing.prepaymentTip,
                               partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
                               channelSettlementAmount,
                               pricingCommissionPercent: pricing.pricingCommissionPercent ?? null,
                               amountAudited: reservationAudit[reservation.id]?.amount_audited ?? false,
                               amountAuditedAt: reservationAudit[reservation.id]?.amount_audited_at ?? null,
-                              amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null
+                              amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null,
+                              ...(pricing.commissionBasePrice != null
+                                ? { commissionBasePrice: pricing.commissionBasePrice }
+                                : {}),
                             }
                           }).sort((a, b) => {
                             const dateA = new Date(a.registrationDate).getTime()
@@ -1824,7 +1991,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                             return reservationSortOrder === 'asc' ? dateA - dateB : dateB - dateA
                           })
 
-                          const channelRowTotals = aggregateChannelPricingRows(channelItems)
+                          const displayChannelItems = enrichItemsWithCompanyTotalRevenue(channelItems)
+                          const channelRowTotals = aggregateChannelPricingRows(displayChannelItems)
 
                           return (
                             <div key={channel.id} className="border-t border-gray-200">
@@ -1855,9 +2023,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                       옵션: ${formatUsd2(channelRowTotals.optionTotal)}
                                     </span>
                                     <span className="font-medium text-purple-600">
-                                      Net: ${formatUsd2(channelRowTotals.netPrice)}
+                                      총 매출: ${formatUsd2(channelRowTotals.netPrice)}
                                     </span>
-                                    <span className="font-medium text-teal-600">
+                                    <span
+                                      className="font-medium text-teal-600"
+                                      title="순입금 = 파트너 수령 − Returned(파트너 환불)"
+                                    >
                                       입금내역: ${formatUsd2(channelRowTotals.partnerReceived)}
                                     </span>
                                     <span className="font-medium text-amber-600">
@@ -1887,8 +2058,18 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">입금내역 (Partner Received)</th>
+                                        <th
+                                          className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
+                                          title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식"
+                                        >
+                                          총 매출
+                                        </th>
+                                        <th
+                                          className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
+                                          title="순입금 = 파트너 수령 − Returned(파트너 환불). 행 툴팁에 수령·환불 금액이 표시됩니다."
+                                        >
+                                          입금내역 (Partner Received)
+                                        </th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
                                         <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                                       </tr>
@@ -1901,11 +2082,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                           </td>
                                         </tr>
                                       ) : (
-                                        channelItems.map((item, idx) => {
+                                        displayChannelItems.map((item, idx) => {
                                           const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                          const netPrice = totalPrice + (item.optionTotal || 0)
+                                          const companyRev = item.companyTotalRevenue ?? totalPrice + (item.optionTotal || 0)
+                                          const pr = partnerReceivedByReservation[item.id] ?? 0
+                                          const ret = returnedAmountByReservation[item.id] ?? 0
+                                          const partnerNet = item.partnerReceivedNet ?? Math.max(0, Math.round((pr - ret) * 100) / 100)
+                                          const partnerTitle = partnerReceivedNetTooltip(pr, ret)
                                           const effectiveAudited = reservationAudit[item.id]?.amount_audited ?? item.amountAudited
                                           const effectiveAuditedAt = reservationAudit[item.id]?.amount_audited_at ?? item.amountAuditedAt
                                           const effectiveAuditedBy = reservationAudit[item.id]?.amount_audited_by ?? item.amountAuditedBy
@@ -1970,10 +2155,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                                 ${(item.optionTotal || 0).toLocaleString()}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                                ${netPrice.toLocaleString()}
+                                                ${companyRev.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
-                                                ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
+                                              <td
+                                                className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24"
+                                                title={partnerTitle}
+                                              >
+                                                ${partnerNet.toLocaleString()}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
                                                 {formatTourChannelSettlementCell(item.channelSettlementAmount)}
@@ -2088,22 +2276,21 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                 const groupTourItems = dedupeById(
                   group.channels.flatMap(ch => getTourItemsByChannel(ch.id))
                 )
-                const groupTotal = groupTourItems.reduce((sum, item) => {
-                  const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                  const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                  const totalPrice = grandTotal - (item.commissionAmount || 0)
-                  const netPrice = totalPrice + (item.optionTotal || 0)
-                  return sum + netPrice
-                }, 0)
+                const groupTourEnriched = enrichItemsWithCompanyTotalRevenue(groupTourItems)
+                const groupTotal = groupTourEnriched.reduce(
+                  (sum, item) => sum + (item.companyTotalRevenue ?? 0),
+                  0
+                )
 
                 // 자체 채널은 바로 모든 예약을 합쳐서 표시
                 if (group.type === 'SELF') {
-                  // 자체 채널의 모든 투어 아이템 생성 및 정렬
-                  const allTourItems = groupTourItems.sort((a, b) => {
-                    const dateA = new Date(a.tourDate).getTime()
-                    const dateB = new Date(b.tourDate).getTime()
-                    return tourSortOrder === 'asc' ? dateA - dateB : dateB - dateA
-                  })
+                  const allTourItems = enrichItemsWithCompanyTotalRevenue(
+                    groupTourItems.slice().sort((a, b) => {
+                      const dateA = new Date(a.tourDate).getTime()
+                      const dateB = new Date(b.tourDate).getTime()
+                      return tourSortOrder === 'asc' ? dateA - dateB : dateB - dateA
+                    })
+                  )
 
                   return (
                     <div key={group.type} className="border-b border-gray-200">
@@ -2147,8 +2334,18 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">입금내역 (Partner Received)</th>
+                                <th
+                                  className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
+                                  title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식"
+                                >
+                                  총 매출
+                                </th>
+                                <th
+                                  className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
+                                  title="순입금 = 파트너 수령 − Returned(파트너 환불). 행 툴팁에 수령·환불 금액이 표시됩니다."
+                                >
+                                  입금내역 (Partner Received)
+                                </th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
                                 <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                     </tr>
@@ -2165,7 +2362,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                   const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
                                   const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                   const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                  const netPrice = totalPrice + (item.optionTotal || 0)
+                                  const companyRev =
+                                    item.companyTotalRevenue ?? totalPrice + (item.optionTotal || 0)
+                                  const pr = partnerReceivedByReservation[item.id] ?? 0
+                                  const ret = returnedAmountByReservation[item.id] ?? 0
+                                  const partnerNet =
+                                    item.partnerReceivedNet ?? Math.max(0, Math.round((pr - ret) * 100) / 100)
+                                  const partnerTitle = partnerReceivedNetTooltip(pr, ret)
                                   const effectiveAudited = reservationAudit[item.id]?.amount_audited ?? item.amountAudited
                                   const effectiveAuditedAt = reservationAudit[item.id]?.amount_audited_at ?? item.amountAuditedAt
                                   const effectiveAuditedBy = reservationAudit[item.id]?.amount_audited_by ?? item.amountAuditedBy
@@ -2243,10 +2446,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         ${(item.optionTotal || 0).toLocaleString()}
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                        ${netPrice.toLocaleString()}
+                                        ${companyRev.toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
-                                        ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
+                                      <td
+                                        className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24"
+                                        title={partnerTitle}
+                                      >
+                                        ${partnerNet.toLocaleString()}
                                       </td>
                                       <td
                                         className={`px-2 py-2 whitespace-nowrap text-xs text-right w-24 ${settlementPctVerify.mismatch ? 'text-red-600 font-semibold' : 'text-amber-600'}`}
@@ -2311,7 +2517,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                   ${groupTotal.toLocaleString()}
                                 </td>
                                 <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
-                                  ${allTourItems.reduce((sum, item) => sum + (item.partnerReceivedAmount ?? 0), 0).toLocaleString()}
+                                  $
+                                  {allTourItems
+                                    .reduce((sum, item) => sum + (item.partnerReceivedNet ?? 0), 0)
+                                    .toLocaleString()}
                                 </td>
                                 <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
                                   ${allTourItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
@@ -2356,13 +2565,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                           const isChannelExpanded = expandedChannels.has(channel.id)
                           
                           // 채널별 투어 아이템 정렬
-                          const sortedChannelItems = channelTourItems.sort((a, b) => {
+                          const sortedChannelItems = channelTourItems.slice().sort((a, b) => {
                             const dateA = new Date(a.tourDate).getTime()
                             const dateB = new Date(b.tourDate).getTime()
                             return tourSortOrder === 'asc' ? dateA - dateB : dateB - dateA
                           })
 
-                          const channelRowTotals = aggregateChannelPricingRows(sortedChannelItems)
+                          const displayTourChannelItems = enrichItemsWithCompanyTotalRevenue(sortedChannelItems)
+
+                          const channelRowTotals = aggregateChannelPricingRows(displayTourChannelItems)
 
                           const formatDateForInvoice = (d: string) => {
                             if (!d) return '-'
@@ -2462,9 +2673,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         옵션: ${formatUsd2(channelRowTotals.optionTotal)}
                                       </span>
                                       <span className="font-medium text-purple-600">
-                                        Net: ${formatUsd2(channelRowTotals.netPrice)}
+                                        총 매출: ${formatUsd2(channelRowTotals.netPrice)}
                                       </span>
-                                      <span className="font-medium text-teal-600">
+                                      <span
+                                        className="font-medium text-teal-600"
+                                        title="순입금 = 파트너 수령 − Returned(파트너 환불)"
+                                      >
                                         입금내역: ${formatUsd2(channelRowTotals.partnerReceived)}
                                       </span>
                                       <span className="font-medium text-amber-600">
@@ -2504,25 +2718,41 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">입금내역 (Partner Received)</th>
+                                        <th
+                                          className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
+                                          title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식"
+                                        >
+                                          총 매출
+                                        </th>
+                                        <th
+                                          className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
+                                          title="순입금 = 파트너 수령 − Returned(파트너 환불). 행 툴팁에 수령·환불 금액이 표시됩니다."
+                                        >
+                                          입금내역 (Partner Received)
+                                        </th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
                                         <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                      {sortedChannelItems.length === 0 ? (
+                                      {displayTourChannelItems.length === 0 ? (
                                         <tr>
                                           <td colSpan={18} className="px-2 py-3 text-center text-gray-500 text-xs">
                                             투어 진행 내역이 없습니다.
                                           </td>
                                         </tr>
                                       ) : (
-                                        sortedChannelItems.map((item, idx) => {
+                                        displayTourChannelItems.map((item, idx) => {
                                           const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                          const netPrice = totalPrice + (item.optionTotal || 0)
+                                          const companyRev =
+                                            item.companyTotalRevenue ?? totalPrice + (item.optionTotal || 0)
+                                          const pr = partnerReceivedByReservation[item.id] ?? 0
+                                          const ret = returnedAmountByReservation[item.id] ?? 0
+                                          const partnerNet =
+                                            item.partnerReceivedNet ?? Math.max(0, Math.round((pr - ret) * 100) / 100)
+                                          const partnerTitle = partnerReceivedNetTooltip(pr, ret)
                                           const effectiveAudited = reservationAudit[item.id]?.amount_audited ?? item.amountAudited
                                           const effectiveAuditedAt = reservationAudit[item.id]?.amount_audited_at ?? item.amountAuditedAt
                                           const effectiveAuditedBy = reservationAudit[item.id]?.amount_audited_by ?? item.amountAuditedBy
@@ -2597,10 +2827,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                                 ${(item.optionTotal || 0).toLocaleString()}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                                ${netPrice.toLocaleString()}
+                                                ${companyRev.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
-                                                ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
+                                              <td
+                                                className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24"
+                                                title={partnerTitle}
+                                              >
+                                                ${partnerNet.toLocaleString()}
                                               </td>
                                               <td
                                                 className={`px-2 py-2 whitespace-nowrap text-xs text-right w-24 ${settlementPctVerify.mismatch ? 'text-red-600 font-semibold' : 'text-amber-600'}`}

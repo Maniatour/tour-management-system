@@ -37,6 +37,10 @@ import { formatTimeWithAMPM, timeToHHmm } from '@/lib/utils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { toast } from 'sonner'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import {
+  isReservationCancelledStatus,
+  isReservationDeletedStatus,
+} from '@/utils/tourUtils'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -208,6 +212,8 @@ export default function GuideTourDetailPage() {
 
       // 예약 정보 가져오기 (투어에 배정된 예약만)
       // tours.reservation_ids에 있는 예약 ID들만 가져옴 (tour_id 기반 조회 제거)
+      /** 픽업·인원 등 가이드 화면에 표시할 예약 ID (취소·삭제 제외, 다른 투어에 속한 행 제외) */
+      let guideActiveReservationIds: string[] = []
       const allReservationIds: string[] = []
       if ((tourData as TourRow & { reservation_ids?: string[] | string }).reservation_ids) {
         const ids = Array.isArray((tourData as TourRow & { reservation_ids: string[] | string }).reservation_ids) 
@@ -227,24 +233,42 @@ export default function GuideTourDetailPage() {
       }
 
       if (allReservationIds.length > 0) {
-        // 연결된 예약을 투어 상태, 배정 상태와 상관없이 모두 가져옴
         const { data: reservationsData } = await supabase
           .from('reservations')
           .select('*, selected_options')
           .in('id', allReservationIds)
-          // 상태 필터링 없음 - 모든 상태의 예약 표시
 
-        const reservationsList = (reservationsData || []) as ReservationRow[]
-        
-        // 예약별 balance 정보 가져오기
-        const { data: pricingData } = await supabase
-          .from('reservation_pricing')
-          .select('reservation_id, balance_amount')
-          .in('reservation_id', allReservationIds)
-        
-        setReservationPricing(pricingData || [])
+        const reservationsListRaw = (reservationsData || []) as ReservationRow[]
+        // 관리자 투어 상세(배정 목록)와 동일: 취소·삭제 제외. reservation_ids만 갱신되고 tour_id가 남는 불일치 시 제외.
+        const reservationsList = reservationsListRaw.filter((r) => {
+          if (
+            isReservationCancelledStatus(r.status) ||
+            isReservationDeletedStatus(r.status)
+          ) {
+            return false
+          }
+          const tid = (r as ReservationRow & { tour_id?: string | null }).tour_id
+          if (
+            tid != null &&
+            String(tid).trim() !== '' &&
+            tid !== tourId
+          ) {
+            return false
+          }
+          return true
+        })
+        guideActiveReservationIds = reservationsList.map((r) => r.id)
 
-        // reservation_choices 테이블에서 초이스 정보 가져오기 (예약 페이지와 동일한 방식)
+        if (guideActiveReservationIds.length > 0) {
+          const { data: pricingData } = await supabase
+            .from('reservation_pricing')
+            .select('reservation_id, balance_amount')
+            .in('reservation_id', guideActiveReservationIds)
+          setReservationPricing(pricingData || [])
+        } else {
+          setReservationPricing([])
+        }
+
         const choicesMap = new Map<string, Array<{
           choice_id: string
           option_id: string
@@ -254,7 +278,7 @@ export default function GuideTourDetailPage() {
           choice_group_ko: string
         }>>()
 
-        for (const reservationId of allReservationIds) {
+        for (const reservationId of guideActiveReservationIds) {
           try {
             const { data: choicesData, error: choicesError } = await supabase
               .from('reservation_choices')
@@ -374,11 +398,11 @@ export default function GuideTourDetailPage() {
           nonResidentWithPass: 0,
           passCoveredCount: 0
         })
-      } else if (allReservationIds.length > 0) {
+      } else if (guideActiveReservationIds.length > 0) {
         const { data: reservationCustomers, error: rcError } = await supabase
           .from('reservation_customers')
           .select('resident_status, pass_covered_count')
-          .in('reservation_id', allReservationIds)
+          .in('reservation_id', guideActiveReservationIds)
         
         if (!rcError && reservationCustomers) {
           let usResidentCount = 0
@@ -405,7 +429,21 @@ export default function GuideTourDetailPage() {
             nonResidentWithPass: nonResidentWithPassCount,
             passCoveredCount: passCoveredCount
           })
+        } else {
+          setResidentStatusSummary({
+            usResident: 0,
+            nonResident: 0,
+            nonResidentWithPass: 0,
+            passCoveredCount: 0
+          })
         }
+      } else if (showResidentSummary) {
+        setResidentStatusSummary({
+          usResident: 0,
+          nonResident: 0,
+          nonResidentWithPass: 0,
+          passCoveredCount: 0
+        })
       }
 
     } catch (err) {

@@ -124,3 +124,76 @@ export function computeChannelSettlementAmount(inp: ChannelSettlementComputeInpu
   return Math.max(0, pay - effectiveCommission)
 }
 
+function roundUsd2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+/**
+ * PricingSection「4. 최종 매출 & 운영 이익」의 총 매출(Total Revenue)과 동일한 산식.
+ * - 기준: `channelSettlementBeforePartnerReturn`(저장된 channel_settlement_amount 또는 동일 로직 계산값)
+ * - OTA만 예약 옵션(reservation_options 합) 가산, 불포함·부가·우리측 Refunded 반영
+ */
+export type CompanyTotalRevenueInput = {
+  channelSettlementBase: number
+  isOTAChannel: boolean
+  isReservationCancelled: boolean
+  reservationOptionsTotalPrice: number
+  /** DB not_included_price×청구인원 근사 (폼의 notIncludedBreakdown.totalUsd 전량 반영은 불가) */
+  notIncludedTotalUsd: number
+  additionalDiscount: number
+  additionalCost: number
+  tax: number
+  cardFee: number
+  prepaymentCost: number
+  /** payment_records Refunded (우리 쪽 환불) */
+  refundedOurAmount: number
+}
+
+export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRevenueInput): number {
+  const {
+    channelSettlementBase,
+    isOTAChannel,
+    isReservationCancelled,
+    reservationOptionsTotalPrice,
+    notIncludedTotalUsd,
+    additionalDiscount,
+    additionalCost,
+    tax,
+    cardFee,
+    prepaymentCost,
+    refundedOurAmount,
+  } = inp
+
+  if (isReservationCancelled) {
+    if (isOTAChannel) return Math.max(0, roundUsd2(channelSettlementBase))
+    return 0
+  }
+
+  let totalRevenue = channelSettlementBase
+
+  if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
+    totalRevenue += reservationOptionsTotalPrice
+  }
+  if (notIncludedTotalUsd > 0) {
+    totalRevenue += notIncludedTotalUsd
+  }
+  if (additionalDiscount > 0) {
+    totalRevenue -= additionalDiscount
+  }
+  if (additionalCost > 0) {
+    totalRevenue += additionalCost
+  }
+  if (tax > 0) {
+    totalRevenue += tax
+  }
+  if (cardFee > 0) {
+    totalRevenue += cardFee
+  }
+  if (prepaymentCost > 0) {
+    totalRevenue += prepaymentCost
+  }
+  totalRevenue -= refundedOurAmount
+
+  return Math.max(0, roundUsd2(totalRevenue))
+}
+
