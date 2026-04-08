@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -367,10 +367,49 @@ export default function ScheduleView() {
   // 일괄 오프 스케줄 모달 상태
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
   const [batchOffGuides, setBatchOffGuides] = useState<string[]>([])
-  const [batchOffStartDate, setBatchOffStartDate] = useState('')
-  const [batchOffEndDate, setBatchOffEndDate] = useState('')
+  const [batchOffPeriods, setBatchOffPeriods] = useState<Array<{ id: string; startDate: string; endDate: string }>>(() => [
+    { id: crypto.randomUUID(), startDate: '', endDate: '' },
+  ])
   const [batchOffReason, setBatchOffReason] = useState('')
   const [batchOffSaving, setBatchOffSaving] = useState(false)
+
+  const resetBatchOffModalFields = useCallback(() => {
+    setBatchOffGuides([])
+    setBatchOffPeriods([{ id: crypto.randomUUID(), startDate: '', endDate: '' }])
+    setBatchOffReason('')
+  }, [])
+
+  /** 여러 기간을 합쳐 중복 없는 날짜 목록 */
+  const collectBatchOffDatesFromPeriods = useCallback((periods: Array<{ startDate: string; endDate: string }>) => {
+    const unique = new Set<string>()
+    for (const p of periods) {
+      if (!p.startDate || !p.endDate) continue
+      if (dayjs(p.endDate).isBefore(dayjs(p.startDate), 'day')) continue
+      let current = dayjs(p.startDate)
+      const end = dayjs(p.endDate)
+      while (current.isBefore(end) || current.isSame(end, 'day')) {
+        unique.add(current.format('YYYY-MM-DD'))
+        current = current.add(1, 'day')
+      }
+    }
+    return Array.from(unique)
+  }, [])
+
+  const batchOffPeriodsValid = useMemo(() => {
+    if (batchOffPeriods.length === 0) return false
+    return batchOffPeriods.every((p) => {
+      if (!p.startDate || !p.endDate) return false
+      return !dayjs(p.endDate).isBefore(dayjs(p.startDate), 'day')
+    })
+  }, [batchOffPeriods])
+
+  const batchOffUniqueDayCount = useMemo(
+    () =>
+      collectBatchOffDatesFromPeriods(
+        batchOffPeriods.map(({ startDate, endDate }) => ({ startDate, endDate }))
+      ).length,
+    [batchOffPeriods, collectBatchOffDatesFromPeriods]
+  )
 
   // 상품별 스케줄 셀 호버 툴팁 (국기 아이콘 표시용)
   const [scheduleCellTooltip, setScheduleCellTooltip] = useState<{ productId: string; dateString: string } | null>(null)
@@ -2404,12 +2443,15 @@ export default function ScheduleView() {
       showMessage('입력 필요', '가이드를 선택해주세요.', 'error')
       return
     }
-    if (!batchOffStartDate || !batchOffEndDate) {
-      showMessage('입력 필요', '시작일과 종료일을 선택해주세요.', 'error')
+    if (!batchOffPeriodsValid) {
+      showMessage('입력 필요', '모든 기간의 시작일·종료일을 선택해주세요. (종료일은 시작일 이후여야 합니다)', 'error')
       return
     }
-    if (dayjs(batchOffEndDate).isBefore(dayjs(batchOffStartDate))) {
-      showMessage('날짜 오류', '종료일이 시작일보다 앞설 수 없습니다.', 'error')
+    const dates = collectBatchOffDatesFromPeriods(
+      batchOffPeriods.map(({ startDate, endDate }) => ({ startDate, endDate }))
+    )
+    if (dates.length === 0) {
+      showMessage('입력 필요', '유효한 기간이 없습니다.', 'error')
       return
     }
     if (!batchOffReason.trim()) {
@@ -2419,15 +2461,6 @@ export default function ScheduleView() {
 
     setBatchOffSaving(true)
     try {
-      // 시작일~종료일 사이의 모든 날짜 생성
-      const dates: string[] = []
-      let current = dayjs(batchOffStartDate)
-      const end = dayjs(batchOffEndDate)
-      while (current.isBefore(end) || current.isSame(end, 'day')) {
-        dates.push(current.format('YYYY-MM-DD'))
-        current = current.add(1, 'day')
-      }
-
       // 각 가이드 x 각 날짜에 대해 오프 스케줄 생성
       const insertData = batchOffGuides.flatMap(guideEmail =>
         dates.map(date => ({
@@ -2473,10 +2506,7 @@ export default function ScheduleView() {
 
       await fetchData()
       setShowBatchOffModal(false)
-      setBatchOffGuides([])
-      setBatchOffStartDate('')
-      setBatchOffEndDate('')
-      setBatchOffReason('')
+      resetBatchOffModalFields()
       showMessage('일괄 생성 완료', msg, 'success')
     } catch (error) {
       console.error('Error creating batch off schedules:', error)
@@ -3255,8 +3285,8 @@ export default function ScheduleView() {
               {/* 일괄 오프 스케줄 버튼 */}
               <button
                 onClick={() => {
-                  setBatchOffStartDate(dayjs(currentDate).startOf('month').format('YYYY-MM-DD'))
-                  setBatchOffEndDate(dayjs(currentDate).startOf('month').format('YYYY-MM-DD'))
+                  const monthStart = dayjs(currentDate).startOf('month').format('YYYY-MM-DD')
+                  setBatchOffPeriods([{ id: crypto.randomUUID(), startDate: monthStart, endDate: monthStart }])
                   setShowBatchOffModal(true)
                 }}
                 className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
@@ -5795,10 +5825,7 @@ export default function ScheduleView() {
               <button
                 onClick={() => {
                   setShowBatchOffModal(false)
-                  setBatchOffGuides([])
-                  setBatchOffStartDate('')
-                  setBatchOffEndDate('')
-                  setBatchOffReason('')
+                  resetBatchOffModalFields()
                 }}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
@@ -5860,36 +5887,92 @@ export default function ScheduleView() {
               )}
             </div>
 
-            {/* 기간 선택 */}
+            {/* 기간 선택 (여러 구간) */}
             <div className="mb-5">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 기간 선택 <span className="text-red-500">*</span>
               </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={batchOffStartDate}
-                  onChange={(e) => {
-                    setBatchOffStartDate(e.target.value)
-                    if (!batchOffEndDate || dayjs(e.target.value).isAfter(dayjs(batchOffEndDate))) {
-                      setBatchOffEndDate(e.target.value)
-                    }
-                  }}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-                />
-                <span className="text-gray-500 text-sm font-medium">~</span>
-                <input
-                  type="date"
-                  value={batchOffEndDate}
-                  min={batchOffStartDate}
-                  onChange={(e) => setBatchOffEndDate(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-                />
+              <div className="space-y-2">
+                {batchOffPeriods.map((period, index) => {
+                  const isLast = index === batchOffPeriods.length - 1
+                  return (
+                    <div key={period.id} className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="date"
+                        value={period.startDate}
+                        onChange={(e) => {
+                          const start = e.target.value
+                          setBatchOffPeriods((prev) =>
+                            prev.map((p) =>
+                              p.id === period.id
+                                ? {
+                                    ...p,
+                                    startDate: start,
+                                    endDate:
+                                      !p.endDate || dayjs(start).isAfter(dayjs(p.endDate), 'day')
+                                        ? start
+                                        : p.endDate,
+                                  }
+                                : p
+                            )
+                          )
+                        }}
+                        className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                      />
+                      <span className="text-gray-500 text-sm font-medium shrink-0">~</span>
+                      <input
+                        type="date"
+                        value={period.endDate}
+                        min={period.startDate}
+                        onChange={(e) =>
+                          setBatchOffPeriods((prev) =>
+                            prev.map((p) => (p.id === period.id ? { ...p, endDate: e.target.value } : p))
+                          )
+                        }
+                        className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isLast ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setBatchOffPeriods((prev) => [
+                                ...prev,
+                                { id: crypto.randomUUID(), startDate: '', endDate: '' },
+                              ])
+                            }
+                            className="p-2 rounded-lg border border-orange-200 text-orange-600 hover:bg-orange-50 transition-colors"
+                            title="기간 추가"
+                          >
+                            <Plus className="w-4 h-4" aria-hidden />
+                          </button>
+                        ) : (
+                          <span className="w-[40px]" aria-hidden />
+                        )}
+                        {batchOffPeriods.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setBatchOffPeriods((prev) =>
+                                prev.length <= 1 ? prev : prev.filter((p) => p.id !== period.id)
+                              )
+                            }
+                            className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                            title="이 기간 삭제"
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-              {batchOffStartDate && batchOffEndDate && (
+              {batchOffPeriodsValid && (
                 <p className="mt-1 text-xs text-gray-500">
-                  {dayjs(batchOffEndDate).diff(dayjs(batchOffStartDate), 'day') + 1}일간
-                  ({dayjs(batchOffStartDate).format('MM/DD(ddd)')} ~ {dayjs(batchOffEndDate).format('MM/DD(ddd)')})
+                  중복 날짜는 한 번만 반영되어 총{' '}
+                  <span className="font-medium text-gray-700">{batchOffUniqueDayCount}일</span>이 적용됩니다.
+                  {batchOffPeriods.length > 1 && ' (여러 기간 합산)'}
                 </p>
               )}
             </div>
@@ -5924,14 +6007,17 @@ export default function ScheduleView() {
             </div>
 
             {/* 요약 */}
-            {batchOffGuides.length > 0 && batchOffStartDate && batchOffEndDate && batchOffReason && (
+            {batchOffGuides.length > 0 && batchOffPeriodsValid && batchOffReason && (
               <div className="mb-5 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                 <p className="text-sm text-orange-800">
                   <span className="font-medium">{batchOffGuides.length}명</span>의 가이드에 대해{' '}
-                  <span className="font-medium">{dayjs(batchOffEndDate).diff(dayjs(batchOffStartDate), 'day') + 1}일</span>간{' '}
-                  총 <span className="font-medium text-orange-600">
-                    {batchOffGuides.length * (dayjs(batchOffEndDate).diff(dayjs(batchOffStartDate), 'day') + 1)}건
-                  </span>의 오프 스케줄이 생성됩니다.
+                  <span className="font-medium">합산 {batchOffUniqueDayCount}일</span>간{' '}
+                  총{' '}
+                  <span className="font-medium text-orange-600">
+                    {batchOffGuides.length * batchOffUniqueDayCount}건
+                  </span>
+                  의 오프 스케줄이 생성됩니다.
+                  {batchOffPeriods.length > 1 && ' (중복 일자는 제외)'}
                 </p>
               </div>
             )}
@@ -5941,10 +6027,7 @@ export default function ScheduleView() {
               <button
                 onClick={() => {
                   setShowBatchOffModal(false)
-                  setBatchOffGuides([])
-                  setBatchOffStartDate('')
-                  setBatchOffEndDate('')
-                  setBatchOffReason('')
+                  resetBatchOffModalFields()
                 }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
               >
@@ -5952,7 +6035,12 @@ export default function ScheduleView() {
               </button>
               <button
                 onClick={handleBatchOffScheduleCreate}
-                disabled={batchOffSaving || batchOffGuides.length === 0 || !batchOffStartDate || !batchOffEndDate || !batchOffReason.trim()}
+                disabled={
+                  batchOffSaving ||
+                  batchOffGuides.length === 0 ||
+                  !batchOffPeriodsValid ||
+                  !batchOffReason.trim()
+                }
                 className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {batchOffSaving ? (

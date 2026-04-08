@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { DollarSign, Users, Calendar, ChevronDown, ChevronRight, X, Filter, FileText } from 'lucide-react'
+import { DollarSign, Users, Calendar, ChevronDown, ChevronRight, X, Filter, FileText, FileSpreadsheet } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -12,6 +12,7 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { type ChannelInvoiceItem } from '@/utils/pdfExport'
 import ChannelInvoicePreviewModal from '@/components/statistics/ChannelInvoicePreviewModal'
+import ChannelOtaReconciliationModal from '@/components/statistics/ChannelOtaReconciliationModal'
 import type { Reservation } from '@/types/reservation'
 import {
   computeChannelPaymentAfterReturn,
@@ -521,6 +522,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     dateRange: { start: string; end: string }
     items: ChannelInvoiceItem[]
   } | null>(null)
+  const [otaReconcileOpen, setOtaReconcileOpen] = useState(false)
 
   const isOtaChannelId = useCallback(
     (channelId?: string | null) => {
@@ -638,6 +640,37 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       console.error('handlePricingSaved:', e)
     }
   }, [])
+
+  const handleOtaReconcilePatched = useCallback(
+    async (reservationId: string) => {
+      await handlePricingSaved(reservationId)
+      try {
+        const { data } = await supabase
+          .from('reservations')
+          .select('id, amount_audited, amount_audited_at, amount_audited_by')
+          .eq('id', reservationId)
+          .maybeSingle()
+        if (data) {
+          const row = data as {
+            amount_audited?: boolean | null
+            amount_audited_at?: string | null
+            amount_audited_by?: string | null
+          }
+          setReservationAudit((prev) => ({
+            ...prev,
+            [reservationId]: {
+              amount_audited: !!row.amount_audited,
+              amount_audited_at: row.amount_audited_at ?? null,
+              amount_audited_by: row.amount_audited_by ?? null,
+            },
+          }))
+        }
+      } catch {
+        /* ignore */
+      }
+    },
+    [handlePricingSaved]
+  )
 
   const handleEditReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
     if (!editingReservation) return
@@ -1556,6 +1589,16 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
               초기화
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setOtaReconcileOpen(true)}
+            disabled={!channelFilter}
+            title={!channelFilter ? '채널을 하나 선택한 뒤 사용하세요' : 'OTA CSV/PDF와 채널 정산 금액 대사'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-45 disabled:cursor-not-allowed"
+          >
+            <FileSpreadsheet className="h-4 w-4 flex-shrink-0" />
+            OTA 정산 대사
+          </button>
         </div>
       </div>
 
@@ -2924,6 +2967,19 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           onClose={() => setChannelInvoicePreview(null)}
         />
       )}
+
+      <ChannelOtaReconciliationModal
+        open={otaReconcileOpen}
+        onClose={() => setOtaReconcileOpen(false)}
+        channelId={channelFilter}
+        channelName={selectedChannelName === '전체 채널' ? '' : selectedChannelName}
+        onPatched={handleOtaReconcilePatched}
+        canAudit={canAudit}
+        onOpenReservation={(id) => {
+          setOtaReconcileOpen(false)
+          openReservationEditModal(id)
+        }}
+      />
 
       {/* 채널 선택 모달 */}
       {isChannelModalOpen && (
