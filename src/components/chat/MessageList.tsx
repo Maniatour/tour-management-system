@@ -57,6 +57,8 @@ export default function MessageList({
         const hasTranslation = false
         
         // 내 메시지인지 확인 (자신이 보낸 메시지) - 먼저 정의
+        const isStaffBubble =
+          message.sender_type === 'guide' || message.sender_type === 'admin'
         const isMyMessage = (isPublicView && message.sender_type === 'customer' && message.sender_name === (customerName || '고객')) || 
                            (!isPublicView && message.sender_type === 'guide' && message.sender_email === (guideEmail || ''))
         
@@ -160,7 +162,7 @@ export default function MessageList({
                     {/* 이름 (다른 사람의 메시지일 때만 표시) */}
                     {!isMyMessage && (
                       <div className={`text-xs font-medium mb-1 px-1 ${
-                        message.sender_type === 'guide' 
+                        isStaffBubble
                           ? 'text-white' 
                           : 'text-gray-700'
                       }`}>
@@ -174,7 +176,7 @@ export default function MessageList({
                     ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
                     : isMyMessage
                     ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
-                    : message.sender_type === 'guide'
+                    : isStaffBubble
                     ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
                     : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 border-gray-200'
                 }`}

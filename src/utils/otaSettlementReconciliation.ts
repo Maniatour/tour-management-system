@@ -125,6 +125,58 @@ export type OtaFileRow = {
   rn: string
   amount: number | null
   rowIndex: number
+  /** 같은 RN(변형 포함)으로 합친 파일 행 수. 없으면 1 */
+  fileLineCount?: number
+  /** 합산에 참여한 파일 줄 번호(시트 행 등), 쉼표 구분 */
+  fileRowIndices?: string
+}
+
+/** 동일 예약 RN(브이에이터 BR-·숫자 변형 등) 묶음 키 */
+export function fileRnGroupKey(rn: string): string {
+  return [...expandChannelRnMatchVariants(rn.trim())]
+    .map((v) => v.toLowerCase())
+    .sort()
+    .join('\u0001')
+}
+
+/**
+ * 파일 내 같은 채널 RN(변형 동일)은 1건으로 합치고 금액을 합산.
+ * 취소 환불처럼 +행/-행이 갈라진 경우 net 정산에 맞춤.
+ */
+export function aggregateOtaFileRowsByRn(rows: OtaFileRow[]): OtaFileRow[] {
+  const buckets = new Map<string, OtaFileRow[]>()
+  for (const row of rows) {
+    if (!row.rn.trim()) continue
+    const k = fileRnGroupKey(row.rn)
+    const list = buckets.get(k) ?? []
+    list.push(row)
+    buckets.set(k, list)
+  }
+  const out: OtaFileRow[] = []
+  for (const [, group] of buckets) {
+    group.sort((a, b) => a.rowIndex - b.rowIndex)
+    const representativeRn = group[0].rn
+    let sumAmount: number | null = null
+    let anyNumeric = false
+    for (const g of group) {
+      if (g.amount == null || !Number.isFinite(g.amount)) continue
+      anyNumeric = true
+      sumAmount =
+        sumAmount == null ? g.amount : Math.round((sumAmount + g.amount) * 100) / 100
+    }
+    if (!anyNumeric) sumAmount = null
+    const indices = group.map((g) => String(g.rowIndex)).join(', ')
+    const n = group.length
+    out.push({
+      rn: representativeRn,
+      amount: sumAmount,
+      rowIndex: group[0].rowIndex,
+      fileLineCount: n,
+      fileRowIndices: n > 1 ? indices : undefined,
+    })
+  }
+  out.sort((a, b) => a.rowIndex - b.rowIndex)
+  return out
 }
 
 export type ReconcileRowStatus =
@@ -142,9 +194,15 @@ export type ReconcileResultRow = {
   otaAmount: number | null
   reservationId?: string
   systemRn?: string
+  /** DB reservations.status */
+  systemStatus?: string | null
   systemAmount: number | null
   status: ReconcileRowStatus
   diff: number | null
+  /** 파일에서 이 RN으로 합친 행 수 */
+  otaFileLineCount?: number
+  /** 합산 시 파일 줄 번호(쉼표 구분). 1행-only면 비울 수 있음 */
+  otaFileRowIndices?: string | null
 }
 
 function normalizeStatus(st: string): string {
@@ -201,19 +259,24 @@ export function extractOtaRowsFromLooseText(text: string): OtaFileRow[] {
   return out
 }
 
+function otaFileMergeMeta(orow: OtaFileRow): Pick<ReconcileResultRow, 'otaFileLineCount' | 'otaFileRowIndices'> {
+  const cnt = orow.fileLineCount ?? 1
+  return {
+    otaFileLineCount: cnt,
+    otaFileRowIndices: cnt > 1 ? (orow.fileRowIndices ?? String(orow.rowIndex)) : null,
+  }
+}
+
 export function reconcileOtaAgainstSystem(
   otaRows: OtaFileRow[],
   systemRows: SystemReservationForOta[]
 ): ReconcileResultRow[] {
   const usedSystemIds = new Set<string>()
   const results: ReconcileResultRow[] = []
-  const rnFirstSeen = new Map<string, number>()
 
   for (let i = 0; i < otaRows.length; i++) {
     const orow = otaRows[i]
-    const dupKey = orow.rn.trim().toLowerCase()
-    const duplicateOta = rnFirstSeen.has(dupKey)
-    if (!duplicateOta) rnFirstSeen.set(dupKey, i)
+    const mergeMeta = otaFileMergeMeta(orow)
 
     let matched: SystemReservationForOta | undefined
     for (const s of systemRows) {
@@ -225,24 +288,15 @@ export function reconcileOtaAgainstSystem(
       }
     }
 
-    if (duplicateOta) {
-      results.push({
-        key: `dup-${i}-${orow.rn}`,
-        otaRn: orow.rn,
-        otaAmount: orow.amount,
-        status: 'duplicate_ota',
-        diff: null,
-      })
-      continue
-    }
-
     if (!matched) {
       results.push({
-        key: `ota-only-${i}-${orow.rn}`,
+        key: `ota-only-${i}-${orow.rn}-${orow.rowIndex}`,
         otaRn: orow.rn,
         otaAmount: orow.amount,
         status: 'ota_only',
         diff: null,
+        systemAmount: null,
+        ...mergeMeta,
       })
       continue
     }
@@ -251,7 +305,6 @@ export function reconcileOtaAgainstSystem(
 
     const sysAmt = matched.channelSettlementAmount
     const sysAmtN = sysAmt != null && Number.isFinite(Number(sysAmt)) ? Number(sysAmt) : null
-    const st = normalizeStatus(matched.status)
 
     if (orow.amount == null) {
       results.push({
@@ -260,9 +313,11 @@ export function reconcileOtaAgainstSystem(
         otaAmount: null,
         reservationId: matched.id,
         systemRn: matched.channelRN,
+        systemStatus: matched.status ?? null,
         systemAmount: sysAmtN,
         status: 'no_amount',
         diff: null,
+        ...mergeMeta,
       })
       continue
     }
@@ -274,9 +329,11 @@ export function reconcileOtaAgainstSystem(
         otaAmount: orow.amount,
         reservationId: matched.id,
         systemRn: matched.channelRN,
+        systemStatus: matched.status ?? null,
         systemAmount: null,
         status: 'system_no_settlement',
         diff: orow.amount,
+        ...mergeMeta,
       })
       continue
     }
@@ -289,9 +346,11 @@ export function reconcileOtaAgainstSystem(
       otaAmount: orow.amount,
       reservationId: matched.id,
       systemRn: matched.channelRN,
+      systemStatus: matched.status ?? null,
       systemAmount: sysAmtN,
       status: isMatch ? 'match' : 'mismatch',
       diff: isMatch ? null : diff,
+      ...mergeMeta,
     })
   }
 
@@ -309,9 +368,12 @@ export function reconcileOtaAgainstSystem(
       otaAmount: null,
       reservationId: s.id,
       systemRn: s.channelRN,
+      systemStatus: s.status ?? null,
       systemAmount: sysAmtN,
       status: 'system_only',
       diff: null,
+      otaFileLineCount: 1,
+      otaFileRowIndices: null,
     })
   }
 

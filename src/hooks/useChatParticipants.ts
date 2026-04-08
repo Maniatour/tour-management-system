@@ -125,7 +125,11 @@ export function useChatParticipants({
                   updated.set(presence.userId, {
                     id: presence.userId,
                     name: userMessage.sender_name,
-                    type: userMessage.sender_type === 'system' ? 'guide' : userMessage.sender_type,
+                    type:
+                      userMessage.sender_type === 'system' ||
+                      userMessage.sender_type === 'admin'
+                        ? 'guide'
+                        : userMessage.sender_type,
                     email: userMessage.sender_email || undefined,
                     lastSeen: new Date()
                   })
@@ -160,7 +164,11 @@ export function useChatParticipants({
               updated.set(presence.userId, {
                 id: presence.userId,
                 name: userMessage?.sender_name || presence.userName || presence.userId,
-                type: userMessage?.sender_type === 'system' ? 'guide' : (userMessage?.sender_type || presence.userType || 'guide'),
+                type:
+                  userMessage?.sender_type === 'system' ||
+                  userMessage?.sender_type === 'admin'
+                    ? 'guide'
+                    : (userMessage?.sender_type || presence.userType || 'guide'),
                 email: userMessage?.sender_email || presence.userEmail || undefined,
                 lastSeen: new Date()
               })

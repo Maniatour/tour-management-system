@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import {
+  aggregateOtaFileRowsByRn,
   extractOtaRowsFromLooseText,
   extractOtaRowsFromTable,
   guessRnAndAmountColumnIndexes,
@@ -120,7 +121,7 @@ function statusRowClass(s: ReconcileRowStatus): string {
   }
 }
 
-type ResultFilter = 'all' | 'issue' | 'ota_only' | 'system_only'
+type ResultFilter = 'all' | 'issue' | 'ota_only'
 
 export default function ChannelOtaReconciliationModal({
   open,
@@ -355,12 +356,14 @@ export default function ChannelOtaReconciliationModal({
         toast.error(msg)
         return
       }
-      const rec = reconcileOtaAgainstSystem(otaRows, fullChannelReservations)
+      const rawFileLineCount = otaRows.length
+      const aggregatedByRn = aggregateOtaFileRowsByRn(otaRows)
+      const rec = reconcileOtaAgainstSystem(aggregatedByRn, fullChannelReservations)
       setResults(rec)
       const mism = rec.filter((r) => r.status === 'mismatch').length
       const otaOnly = rec.filter((r) => r.status === 'ota_only').length
-      const sysOnly = rec.filter((r) => r.status === 'system_only').length
-      const summary = `대사 완료 · 파일 ${otaRows.length}건 · 결과 ${rec.length}행 · 불일치 ${mism} · OTA만 ${otaOnly} · 시스템만 ${sysOnly} · 비교 대상 예약(채널 전체) ${fullChannelReservations.length}건`
+      const visibleRows = rec.filter((r) => r.status !== 'system_only').length
+      const summary = `대사 완료 · 파일 ${rawFileLineCount}행 → 동일 RN 합산 ${aggregatedByRn.length}건 · 표시 ${visibleRows}행 · 불일치 ${mism} · OTA만 ${otaOnly} · 비교 대상 예약(채널 전체) ${fullChannelReservations.length}건`
       setReconcileNotice(summary)
       toast.success(`대사 완료 · 불일치 ${mism}건 · OTA만 ${otaOnly}건`)
     } catch (e) {
@@ -487,22 +490,20 @@ export default function ChannelOtaReconciliationModal({
 
   const filteredResults = useMemo(() => {
     if (!results) return []
+    const rows = results.filter((r) => r.status !== 'system_only')
     switch (resultFilter) {
       case 'issue':
-        return results.filter(
+        return rows.filter(
           (r) =>
             r.status === 'mismatch' ||
             r.status === 'ota_only' ||
-            r.status === 'duplicate_ota' ||
             r.status === 'no_amount' ||
             r.status === 'system_no_settlement'
         )
       case 'ota_only':
-        return results.filter((r) => r.status === 'ota_only')
-      case 'system_only':
-        return results.filter((r) => r.status === 'system_only')
+        return rows.filter((r) => r.status === 'ota_only')
       default:
-        return results
+        return rows
     }
   }, [results, resultFilter])
 
@@ -518,7 +519,6 @@ export default function ChannelOtaReconciliationModal({
       (r) =>
         r.status === 'mismatch' ||
         r.status === 'ota_only' ||
-        r.status === 'duplicate_ota' ||
         r.status === 'no_amount' ||
         r.status === 'system_no_settlement'
     ).length ?? 0
@@ -569,9 +569,15 @@ export default function ChannelOtaReconciliationModal({
           )}
 
           {channelId && (
-            <div className="text-xs text-gray-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-              업로드 파일의 <span className="font-medium">모든 행</span>을, 화면의 날짜·상태 필터와 관계없이{' '}
-              <span className="font-medium">이 채널의 DB 예약 전체</span>와 채널 RN으로 비교합니다.
+            <div className="text-xs text-gray-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 space-y-1">
+              <p>
+                업로드 파일의 <span className="font-medium">모든 행</span>을, 화면의 날짜·상태 필터와 관계없이{' '}
+                <span className="font-medium">이 채널의 DB 예약 전체</span>와 채널 RN으로 비교합니다.
+              </p>
+              <p>
+                파일에 <span className="font-medium">같은 RN(표기 변형 포함)</span>이 여러 줄이면 금액을{' '}
+                <span className="font-medium">합산</span>해 한 건으로 대사합니다(취소·환급 ±행 등).
+              </p>
             </div>
           )}
 
@@ -685,12 +691,34 @@ export default function ChannelOtaReconciliationModal({
               </div>
               <div className="overflow-x-auto max-h-32 border border-gray-100 rounded text-xs">
                 <table className="min-w-full divide-y divide-gray-100">
+                  <thead>
+                    <tr className="bg-gray-100/80">
+                      <th className="px-2 py-1 text-left font-medium text-gray-600 w-10" title="파일 줄 번호">
+                        행
+                      </th>
+                      {Array.from({ length: colCount }, (_, ci) => (
+                        <th
+                          key={ci}
+                          className="px-2 py-1 text-center font-medium text-gray-600 border-l border-gray-200/80 min-w-[2.5rem]"
+                          title={`열 번호 ${ci}`}
+                        >
+                          {ci}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
                   <tbody className="divide-y divide-gray-50">
                     {parsedTable.slice(0, 4).map((r, ri) => (
                       <tr key={ri} className={ri === headerRowIndex ? 'bg-blue-50/60' : ''}>
-                        {r.map((c, ci) => (
-                          <td key={ci} className="px-2 py-1 whitespace-nowrap text-gray-700 max-w-[140px] truncate">
-                            {String(c)}
+                        <td className="px-2 py-1 text-gray-500 font-medium tabular-nums w-10" title="파일 상 줄 번호(1부터)">
+                          {ri + 1}
+                        </td>
+                        {Array.from({ length: colCount }, (_, ci) => (
+                          <td
+                            key={ci}
+                            className="px-2 py-1 whitespace-nowrap text-gray-700 max-w-[140px] truncate border-l border-gray-50"
+                          >
+                            {r[ci] != null && r[ci] !== '' ? String(r[ci]) : ''}
                           </td>
                         ))}
                       </tr>
@@ -752,7 +780,6 @@ export default function ChannelOtaReconciliationModal({
                     ['all', '전체'],
                     ['issue', `확인 필요 (${issueCount})`],
                     ['ota_only', 'OTA만'],
-                    ['system_only', '시스템만'],
                   ] as const
                 ).map(([k, label]) => (
                   <button
@@ -790,9 +817,13 @@ export default function ChannelOtaReconciliationModal({
                 <table className="min-w-full divide-y divide-gray-200 text-xs">
                   <thead className="bg-gray-50">
                     <tr>
+                      <th className="px-2 py-2 text-left font-medium text-gray-600 w-9 tabular-nums" title="표시 순번">
+                        #
+                      </th>
                       <th className="px-2 py-2 text-left font-medium text-gray-600">상태</th>
                       <th className="px-2 py-2 text-left font-medium text-gray-600">OTA RN</th>
                       <th className="px-2 py-2 text-left font-medium text-gray-600">시스템 RN</th>
+                      <th className="px-2 py-2 text-left font-medium text-gray-600">예약 상태</th>
                       <th className="px-2 py-2 text-right font-medium text-gray-600">OTA 정산</th>
                       <th className="px-2 py-2 text-right font-medium text-gray-600">시스템 정산</th>
                       <th className="px-2 py-2 text-right font-medium text-gray-600">차이</th>
@@ -800,14 +831,35 @@ export default function ChannelOtaReconciliationModal({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {filteredResults.map((row) => (
+                    {filteredResults.map((row, rowIdx) => (
                       <tr key={row.key} className={statusRowClass(row.status)}>
+                        <td className="px-2 py-2 text-gray-500 tabular-nums text-center w-9" title="표시 순번">
+                          {rowIdx + 1}
+                        </td>
                         <td className="px-2 py-2 whitespace-nowrap">{statusLabel(row.status)}</td>
-                        <td className="px-2 py-2 font-mono max-w-[120px] truncate" title={row.otaRn}>
-                          {row.otaRn}
+                        <td className="px-2 py-2 max-w-[140px]">
+                          <div className="font-mono truncate" title={row.otaRn}>
+                            {row.otaRn}
+                          </div>
+                          {(row.otaFileLineCount ?? 1) > 1 && (
+                            <div
+                              className="text-[10px] leading-tight text-indigo-800 mt-0.5"
+                              title={
+                                row.otaFileRowIndices
+                                  ? `파일에서 합산한 줄 번호: ${row.otaFileRowIndices}`
+                                  : undefined
+                              }
+                            >
+                              {row.otaFileLineCount}행 합산
+                              {row.otaFileRowIndices ? ` · 행 ${row.otaFileRowIndices}` : ''}
+                            </div>
+                          )}
                         </td>
                         <td className="px-2 py-2 font-mono max-w-[120px] truncate" title={row.systemRn}>
                           {row.systemRn ?? '—'}
+                        </td>
+                        <td className="px-2 py-2 text-gray-700 whitespace-nowrap max-w-[100px] truncate" title={row.systemStatus ?? ''}>
+                          {row.systemStatus ? String(row.systemStatus) : '—'}
                         </td>
                         <td className="px-2 py-2 text-right">{fmtUsd(row.otaAmount)}</td>
                         <td className="px-2 py-2 text-right">{fmtUsd(row.systemAmount)}</td>
@@ -820,7 +872,6 @@ export default function ChannelOtaReconciliationModal({
                                 className="text-blue-600 hover:underline"
                                 onClick={() => {
                                   onOpenReservation(row.reservationId!)
-                                  onClose()
                                 }}
                               >
                                 예약

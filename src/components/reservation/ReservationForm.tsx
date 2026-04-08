@@ -5166,7 +5166,7 @@ export default function ReservationForm({
   const isModal = layout !== 'page'
 
   return (
-    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}>
+    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}>
       <div className={isModal 
         ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
         : "bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden"}
@@ -5759,7 +5759,7 @@ export default function ReservationForm({
 
       {/* 상품 및 초이스 선택 모달 */}
       {showProductChoiceModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-base font-semibold text-gray-900">{t('form.openProductChoice')}</h3>
@@ -5804,7 +5804,7 @@ export default function ReservationForm({
 
       {/* 채널 선택 모달 */}
       {showChannelModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-base font-semibold text-gray-900">{t('form.openChannelSelect')}</h3>
@@ -5851,7 +5851,7 @@ export default function ReservationForm({
 
       {/* 중복 고객 확인 모달 */}
       {showDuplicateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110]">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold flex items-center space-x-2">

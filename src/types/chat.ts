@@ -2,7 +2,7 @@
 export interface ChatMessage {
   id: string
   room_id: string
-  sender_type: 'guide' | 'customer' | 'system'
+  sender_type: 'guide' | 'customer' | 'system' | 'admin'
   sender_name: string
   sender_email?: string
   sender_avatar?: string
