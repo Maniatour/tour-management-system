@@ -48,6 +48,7 @@ import { useTranslations } from 'next-intl'
 import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
 import AdminWeatherWidget from './AdminWeatherWidget'
+import AdminTourChatNotificationListener from './admin/AdminTourChatNotificationListener'
 
 /** 요청 중단(AbortError) 여부 확인 — 로그 생략용 */
 function isAbortError(err: unknown): boolean {
@@ -1100,6 +1101,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         isOpen={showCustomerSimulationModal}
         onClose={() => setShowCustomerSimulationModal(false)}
       />
+
+      <AdminTourChatNotificationListener locale={locale} />
     </>
   )
 }

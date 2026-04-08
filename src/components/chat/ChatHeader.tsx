@@ -32,6 +32,8 @@ interface ChatHeaderProps {
   onLanguageToggle: () => void
   onShowParticipants: () => void
   getLanguageFlag: () => string
+  /** 채팅방 전체 메시지 수 (DB 기준) */
+  totalMessageCount?: number
 }
 
 export default function ChatHeader({
@@ -59,18 +61,33 @@ export default function ChatHeader({
   onTogglePush,
   onLanguageToggle,
   onShowParticipants,
-  getLanguageFlag
+  getLanguageFlag,
+  totalMessageCount = 0
 }: ChatHeaderProps) {
+  const countLabel =
+    selectedLanguage === 'ko'
+      ? `총 ${totalMessageCount}개 메시지`
+      : `${totalMessageCount} messages total`
+
   return (
     <div className="flex-shrink-0 px-2 lg:px-3 py-2 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm relative">
-      {!isPublicView && (
-        <div className="mb-1">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 lg:space-x-3 flex-1 min-w-0">
-            </div>
-          </div>
+      <div className="mb-1.5 flex items-center gap-2 min-w-0 pr-1">
+        <div
+          className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0 leading-tight"
+          title={room.room_name}
+          role="heading"
+          aria-level={2}
+        >
+          {room.room_name || (selectedLanguage === 'ko' ? '채팅방' : 'Chat room')}
         </div>
-      )}
+        <span
+          className="flex-shrink-0 tabular-nums rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold shadow-sm"
+          title={countLabel}
+          aria-label={countLabel}
+        >
+          {totalMessageCount > 9999 ? '9999+' : totalMessageCount}
+        </span>
+      </div>
 
       {/* 버튼 영역 */}
       <div className={`mt-1 flex items-center gap-1 lg:gap-2 ${isMobileMenuOpen ? 'justify-between' : 'justify-center'} lg:justify-between`}>

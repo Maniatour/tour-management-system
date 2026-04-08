@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff } from 'lucide-react'
@@ -11,6 +11,10 @@ import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { PickupSchedule } from '@/components/tour/PickupSchedule'
 import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
+import {
+  ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY,
+  ADMIN_TOUR_CHAT_PENDING_ROOM_KEY
+} from '@/components/admin/AdminTourChatNotificationListener'
 
 /** DB에서 조회한 chat_rooms 행 (unread_count 등은 이후 매핑으로 추가) */
 type ChatRoomRow = {
@@ -281,6 +285,27 @@ export default function ChatManagementPage() {
   const [loadingTourInfo, setLoadingTourInfo] = useState(false)
   const [inactiveRoomsData, setInactiveRoomsData] = useState<ChatRoom[]>([])
   const [loadingInactiveRooms, setLoadingInactiveRooms] = useState(false)
+  const [roomMessageCounts, setRoomMessageCounts] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      if (selectedRoom) sessionStorage.setItem(ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY, selectedRoom.id)
+      else sessionStorage.removeItem(ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY)
+    } catch {
+      // ignore
+    }
+  }, [selectedRoom])
+
+  useEffect(() => {
+    return () => {
+      try {
+        sessionStorage.removeItem(ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY)
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -1777,11 +1802,70 @@ export default function ChatManagementPage() {
     })
   }
 
+  // 투어 채팅 알림에서 저장한 room_id로 방 자동 선택
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const pending = sessionStorage.getItem(ADMIN_TOUR_CHAT_PENDING_ROOM_KEY)
+    if (!pending) return
+
+    const lasVegasTodayStr = () => {
+      const now = new Date()
+      const lasVegasNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
+      return lasVegasNow.toISOString().split('T')[0]
+    }
+
+    const openPendingRoom = (room: ChatRoom) => {
+      try {
+        sessionStorage.removeItem(ADMIN_TOUR_CHAT_PENDING_ROOM_KEY)
+      } catch {
+        // ignore
+      }
+      if (room.is_active) {
+        const tourDateStr = room.tour?.tour_date
+        if (tourDateStr) {
+          const todayStr = lasVegasTodayStr()
+          if (tourDateStr < todayStr) setActiveTab('past')
+          else setActiveTab('upcoming')
+        }
+      } else {
+        setActiveTab('inactive')
+      }
+      selectRoom(room)
+    }
+
+    const fromActive = (chatRoomsData || []).find((r) => r.id === pending)
+    if (fromActive) {
+      openPendingRoom(fromActive)
+      return
+    }
+
+    if (activeTab === 'inactive' && !loadingInactiveRooms) {
+      const fromInactive = inactiveRoomsData.find((r) => r.id === pending)
+      if (fromInactive) {
+        openPendingRoom(fromInactive)
+        return
+      }
+    }
+
+    if (
+      !loading &&
+      chatRoomsData &&
+      !chatRoomsData.some((r) => r.id === pending) &&
+      activeTab !== 'inactive'
+    ) {
+      setActiveTab('inactive')
+    }
+    // selectRoom은 매 렌더 새 참조 — 데이터·탭·로딩 변화에만 반응
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectRoom 안정화 시 deps 정리
+  }, [chatRoomsData, inactiveRoomsData, loading, loadingInactiveRooms, activeTab])
+
   // 안전한 채팅방 데이터 (탭에 따라 다른 데이터 소스 사용)
   const chatRooms = activeTab === 'inactive' ? inactiveRoomsData : (chatRoomsData || [])
 
   // 탭별 필터링된 채팅방 목록
-  const filteredRooms = chatRooms
+  const filteredRooms = useMemo(
+    () =>
+      chatRooms
     .filter(room => {
       const matchesSearch = room.room_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko as string)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1843,7 +1927,50 @@ export default function ChatManagementPage() {
         // 진행 예정 투어는 가까운 날짜순
         return dateA.getTime() - dateB.getTime()
       }
-    })
+    }),
+    [chatRooms, searchTerm, activeTab]
+  )
+
+  const chatRoomIdsKey = useMemo(
+    () => [...filteredRooms.map((r) => r.id)].sort().join(','),
+    [filteredRooms]
+  )
+
+  useEffect(() => {
+    if (!chatRoomIdsKey) {
+      setRoomMessageCounts({})
+      return
+    }
+    const ids = chatRoomIdsKey.split(',').filter(Boolean)
+    let cancelled = false
+    const batchSize = 25
+
+    ;(async () => {
+      const next: Record<string, number> = {}
+      for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize)
+        const rows = await Promise.all(
+          batch.map(async (roomId) => {
+            const { count, error } = await supabase
+              .from('chat_messages')
+              .select('id', { count: 'exact', head: true })
+              .eq('room_id', roomId)
+            if (error) return { roomId, count: null as number | null }
+            return { roomId, count: count ?? 0 }
+          })
+        )
+        if (cancelled) return
+        for (const { roomId, count } of rows) {
+          if (count !== null) next[roomId] = count
+        }
+      }
+      if (!cancelled) setRoomMessageCounts(next)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [chatRoomIdsKey])
 
   // 실시간 메시지 구독
   useEffect(() => {
@@ -1862,6 +1989,10 @@ export default function ChatManagementPage() {
         (payload) => {
           const newMessage = payload.new as ChatMessage
           setMessages(prev => [...prev, newMessage])
+          setRoomMessageCounts((prev) => {
+            if (prev[selectedRoom.id] === undefined) return prev
+            return { ...prev, [selectedRoom.id]: prev[selectedRoom.id] + 1 }
+          })
         }
       )
       .subscribe()
@@ -2114,17 +2245,32 @@ export default function ChatManagementPage() {
                   onClick={() => selectRoom(room as unknown as ChatRoom)}
                 >
                   {/* 상품 이름과 상태 */}
-                  <div className="flex items-center justify-between mb-0.5">
-                    <h3 className={`text-xs truncate ${
-                      room.unread_count > 0 
-                        ? 'font-bold text-gray-900' 
-                        : 'font-medium text-gray-900'
-                    }`}>
-                      {String(((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko || ((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name || room.room_name)}
-                      {room.unread_count > 0 && ' • 새 메시지'}
-                    </h3>
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <h3 className={`text-xs truncate min-w-0 flex-1 ${
+                        room.unread_count > 0 
+                          ? 'font-bold text-gray-900' 
+                          : 'font-medium text-gray-900'
+                      }`}>
+                        {String(((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko || ((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name || room.room_name)}
+                        {room.unread_count > 0 && ' • 새 메시지'}
+                      </h3>
+                      {roomMessageCounts[room.id] !== undefined ? (
+                        <span
+                          className={`flex-shrink-0 tabular-nums rounded-full px-1.5 py-px text-[10px] font-semibold ${
+                            roomMessageCounts[room.id] === 0
+                              ? 'bg-gray-200 text-gray-600'
+                              : 'bg-blue-600 text-white shadow-sm'
+                          }`}
+                          title={`총 ${roomMessageCounts[room.id]}개 메시지`}
+                          aria-label={`총 ${roomMessageCounts[room.id]}개 메시지`}
+                        >
+                          {roomMessageCounts[room.id] > 9999 ? '9999+' : roomMessageCounts[room.id]}
+                        </span>
+                      ) : null}
+                    </div>
                     {(room.tour as Record<string, unknown>)?.status ? (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus((room.tour as Record<string, unknown>).status as string).color}`}>
+                      <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus((room.tour as Record<string, unknown>).status as string).color}`}>
                         {String((room.tour as Record<string, unknown>).status)}
                       </span>
                     ) : null}

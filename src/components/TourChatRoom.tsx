@@ -1570,6 +1570,49 @@ export default function TourChatRoom({
     }
   }, [room?.id, tourId, isPublicView])
 
+  const [totalChatMessageCount, setTotalChatMessageCount] = useState(0)
+
+  useEffect(() => {
+    if (!room?.id) {
+      setTotalChatMessageCount(0)
+      return
+    }
+
+    const fetchMessageCount = async () => {
+      const { count, error } = await supabase
+        .from('chat_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('room_id', room.id)
+      if (error) {
+        console.warn('[TourChatRoom] chat_messages count:', error)
+        return
+      }
+      setTotalChatMessageCount(count ?? 0)
+    }
+
+    fetchMessageCount()
+
+    const countChannel = supabase
+      .channel(`chat_header_msg_count_${room.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `room_id=eq.${room.id}`
+        },
+        () => {
+          fetchMessageCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(countChannel)
+    }
+  }, [room?.id])
+
   // 메시지 삭제 함수
   const deleteMessage = async (messageId: string) => {
     if (!room) return
@@ -2348,6 +2391,7 @@ export default function TourChatRoom({
           onLanguageToggle={handleLanguageToggle}
           onShowParticipants={() => setShowParticipantsList(!showParticipantsList)}
           getLanguageFlag={getLanguageFlag}
+          totalMessageCount={totalChatMessageCount}
         />
       )}
 

@@ -10,6 +10,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
 import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
+import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusLabel, tourStatusOptions } from '@/utils/tourStatusUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import ReactCountryFlag from 'react-country-flag'
 import DateNoteModal from './DateNoteModal'
@@ -304,6 +305,8 @@ export default function ScheduleView() {
   const [pickScheduleTicketBookingIds, setPickScheduleTicketBookingIds] = useState<string[] | null>(null)
   const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string; status: string }>>([])
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
+  const [updatingUnassignedTourStatusId, setUpdatingUnassignedTourStatusId] = useState<string | null>(null)
+  const [unassignedTourStatusModalTourId, setUnassignedTourStatusModalTourId] = useState<string | null>(null)
   const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
@@ -2871,6 +2874,44 @@ export default function ScheduleView() {
     return lines.join('\n')
   }
 
+  const isStatusExcludedFromUnassignedList = useCallback((status: string) => {
+    const s = (status || '').toLowerCase()
+    if (!s) return false
+    if (s.includes('canceled') || s.includes('cancelled')) return true
+    if (s === 'deleted') return true
+    if (s.includes('requested for delete')) return true
+    return false
+  }, [])
+
+  const updateUnassignedTourStatus = useCallback(
+    async (tourId: string, newStatus: string) => {
+      setUpdatingUnassignedTourStatusId(tourId)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('tours' as any)
+          .update({ tour_status: newStatus })
+          .eq('id', tourId)
+        if (error) throw error
+        setTours((prev) => prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t)))
+        setUnassignedTours((prev) => {
+          if (isStatusExcludedFromUnassignedList(newStatus)) {
+            return prev.filter((t) => t.id !== tourId)
+          }
+          return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t))
+        })
+        setUnassignedTourStatusModalTourId(null)
+      } catch (e) {
+        console.error(e)
+        alert(locale === 'ko' ? '투어 상태 업데이트에 실패했습니다.' : 'Failed to update tour status.')
+      } finally {
+        setUpdatingUnassignedTourStatusId(null)
+      }
+    },
+    [locale, isStatusExcludedFromUnassignedList]
+  )
+
   // 상품별 총계 계산
   const productTotals = useMemo(() => {
     const dailyTotals: { [date: string]: { totalPeople: number; tours: number } } = {}
@@ -3992,22 +4033,9 @@ export default function ScheduleView() {
                                         off.team_email === teamMember.email && off.off_date === dateString
                                       ) : null
                                       
-                                      // pending 변경사항 확인
-                                      const key = `${teamMember?.email}_${dateString}`
-                                      const pendingChange = pendingOffScheduleChanges[key]
-                                      
-                                      const isPending = offSchedule?.status === 'pending' || pendingChange?.action === 'approve'
-                                      const isApproved = offSchedule?.status === 'approved' && !pendingChange?.action
-                                      
                                       return (
                                         <div 
-                                          className={`${
-                                            isPending 
-                                              ? 'bg-gray-500 text-white hover:bg-gray-600' 
-                                              : isApproved 
-                                                ? 'bg-black text-white hover:bg-gray-800'
-                                                : 'bg-gray-500 text-white hover:bg-gray-600'
-                                          } rounded px-1 py-0 text-[10px] font-bold flex items-center justify-center h-full cursor-pointer transition-colors select-none`}
+                                          className="bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 py-0 text-[10px] font-bold flex items-center justify-center h-full cursor-pointer transition-colors select-none"
                                           onClick={() => {
                                             if (offSchedule) {
                                               openOffScheduleActionModal(offSchedule)
@@ -4386,22 +4414,9 @@ export default function ScheduleView() {
                                           off.team_email === teamMember.email && off.off_date === dateString
                                         ) : null
                                         
-                                        // pending 변경사항 확인
-                                        const key = `${teamMember?.email}_${dateString}`
-                                        const pendingChange = pendingOffScheduleChanges[key]
-                                        
-                                        const isPending = offSchedule?.status === 'pending' || pendingChange?.action === 'approve'
-                                        const isApproved = offSchedule?.status === 'approved' && !pendingChange?.action
-                                        
                                         return (
                                           <div 
-                                            className={`${
-                                              isPending 
-                                                ? 'bg-gray-500 text-white hover:bg-gray-600' 
-                                                : isApproved 
-                                                  ? 'bg-black text-white hover:bg-gray-800'
-                                                  : 'bg-gray-500 text-white hover:bg-gray-600'
-                                            } rounded px-1 py-0 text-[10px] font-bold cursor-pointer transition-colors select-none`}
+                                            className="bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 py-0 text-[10px] font-bold cursor-pointer transition-colors select-none"
                                             onClick={() => {
                                               if (offSchedule) {
                                                 openOffScheduleActionModal(offSchedule)
@@ -4922,7 +4937,9 @@ export default function ScheduleView() {
             {unassignedTourCards.map((card) => {
               // 단독투어 여부 확인
               const isPrivateTour = card.tour.is_private_tour === 'TRUE' || card.tour.is_private_tour === true
-              
+              const summary = getTourSummaryCore(card.tour)
+              const statusModalOpen = unassignedTourStatusModalTourId === card.tour.id
+
               return (
                 <div
                   key={card.id}
@@ -4937,37 +4954,50 @@ export default function ScheduleView() {
                   onDoubleClick={() => openTourDetailModal(card.tour.id)}
                   title={getTourSummary(card.tour)}
                 >
-                  <div className="flex items-center space-x-2">
-                    <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0" />
+                  <div className="flex items-start space-x-2">
+                    <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <div className={`text-sm font-medium mb-1 ${isPrivateTour ? 'text-purple-700' : 'text-gray-900'}`}>
                         {isPrivateTour ? '🔒 ' : ''}{card.title}
                       </div>
-                    <div className="flex items-center space-x-2 text-xs">
-                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
-                        card.role === 'guide' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-green-100 text-green-800'
-                      }`}>
-                        {card.role === 'guide' ? '가이드' : '어시스턴트'}
-                      </span>
-                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
-                        card.tour.tour_status === 'scheduled' ? 'bg-gray-100 text-gray-800' :
-                        card.tour.tour_status === 'inProgress' ? 'bg-yellow-100 text-yellow-800' :
-                        card.tour.tour_status === 'completed' ? 'bg-green-100 text-green-800' :
-                        card.tour.tour_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {card.tour.tour_status === 'scheduled' ? '예정' :
-                         card.tour.tour_status === 'inProgress' ? '진행중' :
-                         card.tour.tour_status === 'completed' ? '완료' :
-                         card.tour.tour_status === 'cancelled' ? '취소' :
-                         card.tour.tour_status}
-                      </span>
+                      <div className="text-xs text-gray-700 mb-1.5">
+                        <span className="font-medium text-gray-600">
+                          {locale === 'ko' ? '해당일 인원' : 'People (day)'}
+                        </span>
+                        : {summary.assignedPeople} / {summary.totalPeopleAll}
+                        <span className="text-gray-500 ml-1">
+                          ({locale === 'ko' ? '투어 배정' : 'on tour'} / {locale === 'ko' ? '상품·일 합계' : 'product total'})
+                        </span>
+                      </div>
+                      <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                          card.role === 'guide' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {card.role === 'guide' ? '가이드' : '어시스턴트'}
+                        </span>
+                        <button
+                          type="button"
+                          aria-expanded={statusModalOpen}
+                          aria-haspopup="dialog"
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium border-0 cursor-pointer hover:brightness-95 active:brightness-90 ring-offset-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${getTourStatusColor(card.tour.tour_status)}`}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setUnassignedTourStatusModalTourId(card.tour.id)
+                          }}
+                        >
+                          <span>
+                            {locale === 'ko' ? '투어 상태' : 'Status'}: {getTourStatusLabel(card.tour.tour_status, locale)}
+                          </span>
+                          <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-80" aria-hidden />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
               )
             })}
           </div>
@@ -4986,6 +5016,98 @@ export default function ScheduleView() {
           </div>
         )}
       </div>
+
+      <Dialog
+        open={!!unassignedTourStatusModalTourId}
+        onOpenChange={(open) => {
+          if (!open) setUnassignedTourStatusModalTourId(null)
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          {(() => {
+            const tid = unassignedTourStatusModalTourId
+            if (!tid) return null
+            const modalTour =
+              unassignedTours.find((t: Tour) => t.id === tid) ?? tours.find((t: Tour) => t.id === tid)
+            if (!modalTour) {
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="text-base">
+                      {locale === 'ko' ? '투어 상태 변경' : 'Change tour status'}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <p className="text-sm text-gray-600">
+                    {locale === 'ko' ? '투어를 찾을 수 없습니다.' : 'Tour not found.'}
+                  </p>
+                </>
+              )
+            }
+            const currentTourStatus = modalTour.tour_status || ''
+            const knownStatusValues = new Set(tourStatusOptions.map((o) => o.value))
+            const statusButtonOptions =
+              currentTourStatus && !knownStatusValues.has(currentTourStatus)
+                ? [
+                    {
+                      value: currentTourStatus,
+                      label: getTourStatusLabel(currentTourStatus, locale),
+                      color: getTourStatusColor(currentTourStatus)
+                    },
+                    ...tourStatusOptions
+                  ]
+                : tourStatusOptions
+            const productLabel =
+              modalTour.products?.name ||
+              products.find((p: Product) => p.id === modalTour.product_id)?.name ||
+              '—'
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-base">
+                    {locale === 'ko' ? '투어 상태 변경' : 'Change tour status'}
+                  </DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-gray-600 mb-3 -mt-1">
+                  <span className="font-medium text-gray-900">{modalTour.tour_date}</span>
+                  {' · '}
+                  <span>{productLabel}</span>
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {statusButtonOptions.map((option) => {
+                    const isCurrent = option.value === currentTourStatus
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={updatingUnassignedTourStatusId === modalTour.id}
+                        onClick={() => {
+                          if (option.value === currentTourStatus) {
+                            setUnassignedTourStatusModalTourId(null)
+                            return
+                          }
+                          void updateUnassignedTourStatus(modalTour.id, option.value)
+                        }}
+                        className={`px-2 py-2.5 rounded-lg text-xs font-medium text-center transition-colors border border-transparent ${
+                          isCurrent
+                            ? `${option.color} ring-2 ring-blue-500 ring-offset-1 shadow-sm`
+                            : 'bg-gray-50 hover:bg-gray-100 text-gray-900 border-gray-200'
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        <span className="line-clamp-3 leading-snug">{option.label}</span>
+                        {isCurrent && (
+                          <span className="block text-[10px] mt-1 text-blue-800 font-semibold">
+                            {locale === 'ko' ? '현재' : 'Current'}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* 상품 선택 모달 */}
       {showProductModal && (
