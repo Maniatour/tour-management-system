@@ -23,6 +23,8 @@ interface MessageListProps {
   isMobileMenuOpen: boolean
   translateMessage?: (messageId: string, messageText: string) => Promise<void>
   translating?: { [key: string]: boolean }
+  /** 직원(guide/admin) 등 발신자 표시명 커스터마이즈 */
+  getMessageSenderLabel?: (message: ChatMessage) => string
 }
 
 export default function MessageList({
@@ -42,7 +44,8 @@ export default function MessageList({
   showParticipantsList,
   isMobileMenuOpen,
   translateMessage,
-  translating = {}
+  translating = {},
+  getMessageSenderLabel
 }: MessageListProps) {
   return (
     <div 
@@ -61,6 +64,9 @@ export default function MessageList({
           message.sender_type === 'guide' || message.sender_type === 'admin'
         const isMyMessage = (isPublicView && message.sender_type === 'customer' && message.sender_name === (customerName || '고객')) || 
                            (!isPublicView && message.sender_type === 'guide' && message.sender_email === (guideEmail || ''))
+        const senderDisplayName = getMessageSenderLabel
+          ? getMessageSenderLabel(message)
+          : message.sender_name
         
         // 아바타 URL 가져오기 (메시지에 저장된 아바타 우선 사용)
         // 1. 메시지에 저장된 sender_avatar가 있으면 사용
@@ -83,7 +89,7 @@ export default function MessageList({
                   {avatarUrl ? (
                     <img
                       src={avatarUrl}
-                      alt={message.sender_name}
+                      alt={senderDisplayName}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         // 아바타 로드 실패 시 기본 아이콘 표시
@@ -166,7 +172,7 @@ export default function MessageList({
                           ? 'text-white' 
                           : 'text-gray-700'
                       }`}>
-                        {message.sender_name}
+                        {senderDisplayName}
                       </div>
                     )}
                     

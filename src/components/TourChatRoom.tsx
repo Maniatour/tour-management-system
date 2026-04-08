@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Phone, User, X } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useVoiceCall } from '@/hooks/useVoiceCall'
@@ -16,6 +16,7 @@ import TourPhotoGallery from './TourPhotoGallery'
 // import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { formatTimeWithAMPM } from '@/lib/utils'
+import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { useChatRoom } from '@/hooks/useChatRoom'
 import { useChatMessages } from '@/hooks/useChatMessages'
@@ -147,9 +148,77 @@ export default function TourChatRoom({
     guideEmail: guideEmail || undefined,
     selectedLanguage: selectedLanguage === 'ko' ? 'ko' : 'en'
   })
+
+  const [teamMembersDetail, setTeamMembersDetail] = useState<Map<string, {
+    name_ko?: string
+    name_en?: string
+    display_name?: string | null
+    position?: string
+    email?: string
+    languages?: string[]
+  }>>(new Map())
+  const [staffChatLabelsByEmail, setStaffChatLabelsByEmail] = useState<Record<string, string>>({})
+
+  const guideStaffChatLabel = useMemo(() => {
+    if (!guideEmail) return '가이드'
+    const k = guideEmail.toLowerCase()
+    if (staffChatLabelsByEmail[k]) return staffChatLabelsByEmail[k]
+    const member = teamMembersDetail.get(guideEmail)
+    return formatTourChatStaffDisplayName(
+      guideEmail,
+      member
+        ? {
+            display_name: member.display_name ?? null,
+            name_ko: member.name_ko ?? null
+          }
+        : null
+    )
+  }, [guideEmail, staffChatLabelsByEmail, teamMembersDetail])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const labels: Record<string, string> = {}
+      teamMembersDetail.forEach((info, email) => {
+        labels[email.toLowerCase()] = formatTourChatStaffDisplayName(email, {
+          display_name: info.display_name ?? null,
+          name_ko: info.name_ko ?? null
+        })
+      })
+      const needTeamLookup = new Set<string>()
+      for (const m of messages) {
+        if (
+          (m.sender_type === 'guide' || m.sender_type === 'admin') &&
+          m.sender_email
+        ) {
+          const k = m.sender_email.toLowerCase()
+          if (!labels[k]) needTeamLookup.add(m.sender_email)
+        }
+      }
+      if (needTeamLookup.size > 0) {
+        const arr = [...needTeamLookup]
+        const { data: rows } = await supabase
+          .from('team')
+          .select('email, display_name, name_ko')
+          .in('email', arr)
+        for (const row of rows || []) {
+          const r = row as { email: string; display_name: string | null; name_ko: string | null }
+          labels[r.email.toLowerCase()] = formatTourChatStaffDisplayName(r.email, r)
+        }
+        for (const e of arr) {
+          const k = e.toLowerCase()
+          if (!labels[k]) labels[k] = formatTourChatStaffDisplayName(e, null)
+        }
+      }
+      if (!cancelled) setStaffChatLabelsByEmail(labels)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [messages, teamMembersDetail])
   
   const userId = isPublicView ? (customerName || '고객') : (guideEmail || '')
-  const userName = isPublicView ? (customerName || '고객') : '가이드'
+  const userName = isPublicView ? (customerName || '고객') : guideStaffChatLabel
   
   const {
     onlineParticipants,
@@ -185,14 +254,6 @@ export default function TourChatRoom({
     driver?: { name?: string; phone?: string; email?: string; position?: string; languages?: string[] }
   }>({})
   
-  // 팀 멤버 상세 정보 (통화 선택용)
-  const [teamMembersDetail, setTeamMembersDetail] = useState<Map<string, {
-    name_ko?: string
-    name_en?: string
-    position?: string
-    email?: string
-    languages?: string[]
-  }>>(new Map())
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
   
   const [showParticipantsList, setShowParticipantsList] = useState(false)
@@ -1033,6 +1094,7 @@ export default function TourChatRoom({
       const membersDetailMap = new Map<string, {
         name_ko?: string
         name_en?: string
+        display_name?: string | null
         position?: string
         email?: string
         languages?: string[]
@@ -1042,9 +1104,9 @@ export default function TourChatRoom({
       if (tour.tour_guide_id) {
         const { data: guideData } = await supabase
           .from('team')
-          .select('name_ko, name_en, phone, position, languages')
+          .select('name_ko, name_en, display_name, phone, position, languages')
           .eq('email', tour.tour_guide_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; display_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (guideData) {
           const guide: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
@@ -1060,6 +1122,9 @@ export default function TourChatRoom({
           membersDetailMap.set(tour.tour_guide_id, {
             ...(guideData.name_ko ? { name_ko: guideData.name_ko } : {}),
             ...(guideData.name_en ? { name_en: guideData.name_en } : {}),
+            ...(guideData.display_name != null && guideData.display_name !== ''
+              ? { display_name: guideData.display_name }
+              : {}),
             ...(guideData.position ? { position: guideData.position } : {}),
             email: tour.tour_guide_id,
             ...(guideData.languages ? { languages: guideData.languages } : {})
@@ -1071,9 +1136,9 @@ export default function TourChatRoom({
       if (tour.assistant_id) {
         const { data: assistantData } = await supabase
           .from('team')
-          .select('name_ko, name_en, phone, position, languages')
+          .select('name_ko, name_en, display_name, phone, position, languages')
           .eq('email', tour.assistant_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; display_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (assistantData) {
           const assistant: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
@@ -1089,6 +1154,9 @@ export default function TourChatRoom({
           membersDetailMap.set(tour.assistant_id, {
             ...(assistantData.name_ko ? { name_ko: assistantData.name_ko } : {}),
             ...(assistantData.name_en ? { name_en: assistantData.name_en } : {}),
+            ...(assistantData.display_name != null && assistantData.display_name !== ''
+              ? { display_name: assistantData.display_name }
+              : {}),
             ...(assistantData.position ? { position: assistantData.position } : {}),
             email: tour.assistant_id,
             ...(assistantData.languages ? { languages: assistantData.languages } : {})
@@ -1591,7 +1659,7 @@ export default function TourChatRoom({
       id: `temp_${Date.now()}`,
       room_id: room.id,
       sender_type: isPublicView ? 'customer' : 'guide',
-      sender_name: isPublicView ? (customerName || '고객') : '가이드',
+      sender_name: isPublicView ? (customerName || '고객') : guideStaffChatLabel,
       sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: '',
@@ -1655,7 +1723,7 @@ export default function TourChatRoom({
           .insert({
             room_id: room.id,
             sender_type: 'guide',
-            sender_name: '가이드',
+            sender_name: guideStaffChatLabel,
             sender_email: guideEmail || null,
             message: '',
             message_type: 'image',
@@ -1703,7 +1771,7 @@ export default function TourChatRoom({
       id: `temp_${Date.now()}`,
       room_id: room.id,
       sender_type: isPublicView ? 'customer' : 'guide',
-      sender_name: isPublicView ? (customerName || '고객') : '가이드',
+      sender_name: isPublicView ? (customerName || '고객') : guideStaffChatLabel,
       sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: messageText,
@@ -1764,7 +1832,7 @@ export default function TourChatRoom({
           .insert({
             room_id: room.id,
             sender_type: 'guide',
-            sender_name: '가이드',
+            sender_name: guideStaffChatLabel,
             sender_email: guideEmail,
             message: messageText,
             message_type: 'text'
@@ -1795,7 +1863,7 @@ export default function TourChatRoom({
               body: JSON.stringify({
                 roomId: room.id,
                 message: messageText,
-                senderName: '가이드'
+                senderName: guideStaffChatLabel
               })
             })
           } catch (pushError) {
@@ -1840,7 +1908,7 @@ export default function TourChatRoom({
       id: `temp_${Date.now()}`,
       room_id: room.id,
       sender_type: isPublicView ? 'customer' : 'guide',
-      sender_name: isPublicView ? (customerName || '고객') : '가이드',
+      sender_name: isPublicView ? (customerName || '고객') : guideStaffChatLabel,
       sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: messageText,
@@ -1901,7 +1969,7 @@ export default function TourChatRoom({
           .insert({
             room_id: room.id,
             sender_type: 'guide',
-            sender_name: '가이드',
+            sender_name: guideStaffChatLabel,
             sender_email: guideEmail || null,
             message: messageText,
             message_type: 'text' // 위치 공유 메시지는 'text' 타입으로 저장
@@ -1932,7 +2000,7 @@ export default function TourChatRoom({
               body: JSON.stringify({
                 roomId: room.id,
                 message: messageText,
-                senderName: '가이드'
+                senderName: guideStaffChatLabel
               })
             })
           } catch (pushError) {
@@ -2312,6 +2380,26 @@ export default function TourChatRoom({
         isMobileMenuOpen={isMobileMenuOpen}
         {...(translateMessage ? { translateMessage } : {})}
         translating={translating}
+        getMessageSenderLabel={(m) => {
+          if (m.sender_type === 'customer' || m.sender_type === 'system') {
+            return m.sender_name
+          }
+          if (m.sender_email) {
+            const k = m.sender_email.toLowerCase()
+            if (staffChatLabelsByEmail[k]) return staffChatLabelsByEmail[k]
+            const mem = teamMembersDetail.get(m.sender_email)
+            return formatTourChatStaffDisplayName(
+              m.sender_email,
+              mem
+                ? {
+                    display_name: mem.display_name ?? null,
+                    name_ko: mem.name_ko ?? null
+                  }
+                : null
+            )
+          }
+          return m.sender_name
+        }}
       />
 
       {/* 메시지 입력 */}

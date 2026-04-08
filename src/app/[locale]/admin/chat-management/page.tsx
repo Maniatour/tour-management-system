@@ -10,6 +10,7 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { PickupSchedule } from '@/components/tour/PickupSchedule'
+import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
 
 /** DB에서 조회한 chat_rooms 행 (unread_count 등은 이후 매핑으로 추가) */
 type ChatRoomRow = {
@@ -84,6 +85,47 @@ const CHAT_MGMT_UI_DEFAULT = {
 /** PostgREST `id=in.(…)` 벌크 PATCH가 400(PGRST100 등)을 내는 경우가 있어 행 단위 `eq`로 나눔 */
 const CHAT_ROOM_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** 취소된 예약은 픽업 스케줄·인원 집계에서 제외 */
+function isReservationCancelledStatus(status: unknown): boolean {
+  if (status == null || typeof status !== 'string') return false
+  return status.trim().toLowerCase().includes('cancel')
+}
+
+/** 팀 구성용 차량 한 줄 (vehicle_type · 렌트/자사 — 투어 상세와 동일한 정보 우선) */
+function formatVehicleLineForTeamSection(v: {
+  vehicle_number: string
+  vehicle_category?: string | null
+  vehicle_type?: string | null
+  nick?: string | null
+  rental_start_date?: string | null
+  rental_end_date?: string | null
+}): string {
+  const numOrNick = (v.nick != null && String(v.nick).trim() !== '')
+    ? String(v.nick).trim()
+    : v.vehicle_number
+  const typeStr = v.vehicle_type != null && String(v.vehicle_type).trim() !== ''
+    ? String(v.vehicle_type).trim()
+    : ''
+  const cat = (v.vehicle_category || 'company').toLowerCase()
+  let line = typeStr ? `${numOrNick} · ${typeStr}` : numOrNick
+
+  if (cat === 'rental') {
+    const fmtShort = (raw: string | null | undefined) => {
+      const s = raw ? String(raw).slice(0, 10) : ''
+      const [, m, d] = s.split('-')
+      if (!m || !d) return ''
+      return `${Number(m)}/${Number(d)}`
+    }
+    const rs = fmtShort(v.rental_start_date)
+    const re = fmtShort(v.rental_end_date)
+    if (rs && re) line = `${line} (${rs}~${re})`
+    line = `${line} · 렌트`
+  } else {
+    line = `${line} · 자사`
+  }
+  return line
+}
 
 function dedupeValidChatRoomIds(ids: string[]): string[] {
   const seen = new Set<string>()
@@ -167,6 +209,10 @@ interface TourInfo {
     id: string
     vehicle_number: string
     vehicle_category: string
+    vehicle_type?: string
+    nick?: string | null
+    rental_start_date?: string | null
+    rental_end_date?: string | null
     driver_name?: string
     driver_phone?: string
   }
@@ -176,6 +222,35 @@ export default function ChatManagementPage() {
   const router = useRouter()
   const { openChat } = useFloatingChat()
   const { user } = useAuth()
+  const [myTeamProfile, setMyTeamProfile] = useState<{
+    display_name: string | null
+    name_ko: string | null
+  } | null>(null)
+  const [staffChatLabelsByEmail, setStaffChatLabelsByEmail] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!user?.email) {
+      setMyTeamProfile(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('team')
+        .select('display_name, name_ko')
+        .eq('email', user.email)
+        .maybeSingle()
+      if (!cancelled && data) {
+        setMyTeamProfile({
+          display_name: (data as { display_name?: string | null }).display_name ?? null,
+          name_ko: (data as { name_ko?: string | null }).name_ko ?? null
+        })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.email])
   
   // 페이지 스크롤 방지
   useEffect(() => {
@@ -206,6 +281,48 @@ export default function ChatManagementPage() {
   const [loadingTourInfo, setLoadingTourInfo] = useState(false)
   const [inactiveRoomsData, setInactiveRoomsData] = useState<ChatRoom[]>([])
   const [loadingInactiveRooms, setLoadingInactiveRooms] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const labels: Record<string, string> = {}
+      if (user?.email) {
+        labels[user.email.toLowerCase()] = formatTourChatStaffDisplayName(
+          user.email,
+          myTeamProfile
+        )
+      }
+      const needTeamLookup = new Set<string>()
+      for (const m of messages) {
+        if (
+          (m.sender_type === 'guide' || m.sender_type === 'admin') &&
+          m.sender_email
+        ) {
+          const k = m.sender_email.toLowerCase()
+          if (!labels[k]) needTeamLookup.add(m.sender_email)
+        }
+      }
+      if (needTeamLookup.size > 0) {
+        const arr = [...needTeamLookup]
+        const { data: rows } = await supabase
+          .from('team')
+          .select('email, display_name, name_ko')
+          .in('email', arr)
+        for (const row of rows || []) {
+          const r = row as { email: string; display_name: string | null; name_ko: string | null }
+          labels[r.email.toLowerCase()] = formatTourChatStaffDisplayName(r.email, r)
+        }
+        for (const e of arr) {
+          const k = e.toLowerCase()
+          if (!labels[k]) labels[k] = formatTourChatStaffDisplayName(e, null)
+        }
+      }
+      if (!cancelled) setStaffChatLabelsByEmail(labels)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [messages, user?.email, myTeamProfile])
 
   // 비활성화된 채팅방 로딩 함수
   const fetchInactiveRooms = useCallback(async () => {
@@ -445,7 +562,10 @@ export default function ChatManagementPage() {
             } : undefined
             }
           })
-          .filter((r): r is NonNullable<typeof r> => r != null)
+          .filter(
+            (r): r is NonNullable<typeof r> =>
+              r != null && !isReservationCancelledStatus(r.status)
+          )
 
         const totalPeople = reservations.reduce((sum, r) => sum + (r?.total_people || 0), 0)
 
@@ -861,7 +981,10 @@ export default function ChatManagementPage() {
             } : undefined
             }
           })
-          .filter((r): r is NonNullable<typeof r> => r != null)
+          .filter(
+            (r): r is NonNullable<typeof r> =>
+              r != null && !isReservationCancelledStatus(r.status)
+          )
 
         // 총 인원 계산 (배정된 예약의 total_people 합계)
         const totalPeople = reservations.reduce((sum: number, r: { total_people?: number }) => sum + (r.total_people || 0), 0)
@@ -1270,7 +1393,9 @@ export default function ChatManagementPage() {
         if (reservationsError) {
           console.warn('Error fetching assigned reservations:', reservationsError)
         } else {
-          reservationsData = (assignedReservations || []) as Array<Record<string, unknown>>
+          reservationsData = ((assignedReservations || []) as Array<Record<string, unknown>>).filter(
+            (r) => !isReservationCancelledStatus(r.status)
+          )
         }
         
         console.log('[ChatManagement] fetchTourInfo - 예약 데이터 조회:', {
@@ -1456,10 +1581,17 @@ export default function ChatManagementPage() {
         vehicle: vehicleData ? {
           id: (vehicleData as Record<string, unknown>).id as string,
           vehicle_number: (vehicleData as Record<string, unknown>).vehicle_number as string,
-          vehicle_category: (vehicleData as Record<string, unknown>).vehicle_category as string
-          // driver_name과 driver_phone은 optional이므로 생략 가능
+          vehicle_category: (vehicleData as Record<string, unknown>).vehicle_category as string,
+          vehicle_type: (vehicleData as Record<string, unknown>).vehicle_type as string | undefined,
+          nick: (vehicleData as Record<string, unknown>).nick as string | null | undefined,
+          rental_start_date: (vehicleData as Record<string, unknown>).rental_start_date as string | null | undefined,
+          rental_end_date: (vehicleData as Record<string, unknown>).rental_end_date as string | null | undefined
         } : undefined,
-        reservations: combinedReservations
+        reservations: combinedReservations,
+        total_people: combinedReservations.reduce(
+          (sum, r) => sum + (Number(r.total_people) || 0),
+          0
+        )
       } as TourInfo
 
       setTourInfo(combinedData)
@@ -1473,17 +1605,26 @@ export default function ChatManagementPage() {
   // 메시지 전송
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedRoom || sending) return
+    const staffEmail = user?.email?.trim()
+    if (!staffEmail) {
+      alert('로그인된 이메일이 없어 메시지를 보낼 수 없습니다.')
+      return
+    }
 
     const messageText = newMessage.trim()
     setSending(true)
+
+    const staffLabel =
+      staffChatLabelsByEmail[staffEmail.toLowerCase()] ??
+      formatTourChatStaffDisplayName(staffEmail, myTeamProfile)
     
     // 즉시 UI에 메시지 표시 (낙관적 업데이트)
     const tempMessage: ChatMessage = {
       id: `temp_${Date.now()}`,
       room_id: selectedRoom.id,
       sender_type: 'admin',
-      sender_name: '관리자',
-      sender_email: 'admin@kovegas.com',
+      sender_name: staffLabel,
+      sender_email: staffEmail,
       message: messageText,
       message_type: 'text',
       is_read: false,
@@ -1499,8 +1640,8 @@ export default function ChatManagementPage() {
         .insert({
           room_id: selectedRoom.id,
           sender_type: 'admin',
-          sender_name: '관리자',
-          sender_email: 'admin@kovegas.com',
+          sender_name: staffLabel,
+          sender_email: staffEmail,
           message: messageText,
           message_type: 'text'
         })
@@ -1738,6 +1879,18 @@ export default function ChatManagementPage() {
       resetState()
     }
   }, [resetState])
+
+  const resolveStaffChatLabel = (message: ChatMessage): string => {
+    if (message.sender_type === 'customer' || message.sender_type === 'system') {
+      return message.sender_name
+    }
+    if (message.sender_email) {
+      const k = message.sender_email.toLowerCase()
+      if (staffChatLabelsByEmail[k]) return staffChatLabelsByEmail[k]
+      return formatTourChatStaffDisplayName(message.sender_email, null)
+    }
+    return message.sender_name
+  }
 
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString('ko-KR', {
@@ -2169,7 +2322,7 @@ export default function ChatManagementPage() {
                     >
                       {message.sender_type !== 'system' && (
                         <div className="text-xs font-medium mb-1">
-                          {message.sender_name}
+                          {resolveStaffChatLabel(message)}
                         </div>
                       )}
                       
@@ -2311,7 +2464,9 @@ export default function ChatManagementPage() {
             {/* 픽업스케줄 - 투어 상세 페이지 컴포넌트 사용 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <PickupSchedule
-                assignedReservations={tourInfo.reservations?.map((res: any) => {
+                assignedReservations={(tourInfo.reservations ?? [])
+                  .filter((res: { status?: string }) => !isReservationCancelledStatus(res.status))
+                  .map((res: any) => {
                   // customer_id는 customer 객체에서 가져오거나 reservation의 customer_id 사용
                   const customerId = res.customer?.id || null
                   
@@ -2326,7 +2481,7 @@ export default function ChatManagementPage() {
                     tour_date: tourInfo.tour_date || null,
                     pickup_notification_sent: res.pickup_notification_sent || false
                   }
-                }) || []}
+                })}
                 pickupHotels={pickupHotels}
                 expandedSections={expandedSections}
                 connectionStatus={{ reservations: true }}
@@ -2381,8 +2536,10 @@ export default function ChatManagementPage() {
                 )}
                 <div className="flex justify-between">
                   <span className="text-gray-600">차량</span>
-                  <span className="text-gray-900">
-                    {tourInfo.vehicle?.vehicle_category} ({tourInfo.vehicle?.vehicle_number})
+                  <span className="text-gray-900 text-right max-w-[65%] break-words">
+                    {tourInfo.vehicle
+                      ? formatVehicleLineForTeamSection(tourInfo.vehicle)
+                      : '미배정'}
                   </span>
                 </div>
               </div>

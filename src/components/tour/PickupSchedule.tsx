@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, MapPin, Map, Users, Home, Plane, PlaneTakeoff, 
 import { FaEnvelope, FaEye, FaCheckCircle, FaExclamationCircle, FaTimesCircle, FaPaperPlane } from 'react-icons/fa'
 import { useTranslations, useLocale } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 // @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
 import ReactCountryFlag from 'react-country-flag'
 
@@ -72,6 +72,12 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   }>>({})
   const [showEmailStatusHelpModal, setShowEmailStatusHelpModal] = useState(false)
 
+  // 예약 ID 목록만 바뀔 때만 이펙트 실행 (부모가 매 렌더 새 배열을 넘겨도 동일 ID면 조회 생략)
+  const reservationIdsKey = assignedReservations
+    .map(r => r.id)
+    .sort()
+    .join(',')
+
   // 언어를 국가 코드로 변환하는 함수
   const getLanguageFlag = (language: string | null | undefined): string => {
     if (!language) return 'US'
@@ -101,15 +107,22 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
         setReservationResidentStatus({})
         return
       }
-      if (assignedReservations.length === 0) return
+      if (!reservationIdsKey) return
 
-      const reservationIds = assignedReservations.map(r => r.id)
+      const reservationIds = reservationIdsKey.split(',').filter(Boolean)
       const { data: reservationCustomers, error } = await supabase
         .from('reservation_customers')
         .select('reservation_id, resident_status')
         .in('reservation_id', reservationIds)
       
-      if (!error && reservationCustomers) {
+      if (error) {
+        if (!isAbortLikeError(error)) {
+          console.error('[PickupSchedule] 거주 상태 조회 오류:', error)
+        }
+        return
+      }
+
+      if (reservationCustomers) {
         const statusMap: Record<string, {
           usResident: number
           nonResident: number
@@ -139,14 +152,15 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     }
 
     fetchResidentStatus()
-  }, [assignedReservations, residentStatusIndicatorsEnabled])
+  }, [reservationIdsKey, residentStatusIndicatorsEnabled])
+
 
   // 예약별 이메일 발송 현황 가져오기
   useEffect(() => {
     const fetchEmailStatus = async () => {
-      if (assignedReservations.length === 0) return
+      if (!reservationIdsKey) return
 
-      const reservationIds = assignedReservations.map(r => r.id)
+      const reservationIds = reservationIdsKey.split(',').filter(Boolean)
       
       console.log(`[PickupSchedule] 이메일 로그 조회 시작 - 예약 ID 개수: ${reservationIds.length}`, reservationIds)
       
@@ -164,10 +178,15 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       })
 
       if (error) {
+        if (isAbortLikeError(error)) {
+          return
+        }
         console.error('[PickupSchedule] 이메일 로그 조회 오류:', error)
+        setEmailStatusMap({})
+        return
       }
 
-      if (!error && emailLogs && emailLogs.length > 0) {
+      if (emailLogs && emailLogs.length > 0) {
         // email_type이 'pickup'인 것만 필터링
         const pickupLogs = emailLogs.filter((log: any) => log.email_type === 'pickup')
         console.log(`[PickupSchedule] 픽업 이메일 로그 필터링 결과:`, {
@@ -229,19 +248,15 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
         console.log('[PickupSchedule] 이메일 상태 맵:', statusMap)
         setEmailStatusMap(statusMap)
       } else {
-        console.log('[PickupSchedule] 이메일 로그가 없거나 조회 실패:', {
-          hasError: !!error,
-          error,
-          hasLogs: !!emailLogs,
-          logCount: emailLogs?.length || 0
+        console.log('[PickupSchedule] 이메일 로그가 없음 (정상):', {
+          logCount: 0
         })
-        // 이메일 로그가 없어도 빈 맵으로 설정하여 재시도 방지
         setEmailStatusMap({})
       }
     }
 
     fetchEmailStatus()
-  }, [assignedReservations])
+  }, [reservationIdsKey])
 
   // 거주 상태 아이콘 가져오기
   const getResidentStatusIcon = (reservationId: string) => {
