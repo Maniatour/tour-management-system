@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -22,6 +22,11 @@ import {
 } from '@/components/ui/dialog'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
+  ssr: false,
+  loading: () => null,
+})
+
+const ScheduleTicketBookingForm = dynamic(() => import('@/components/booking/TicketBookingForm'), {
   ssr: false,
   loading: () => null,
 })
@@ -179,6 +184,83 @@ const COLOR_PRESETS: { id: string; groupLabel: string; name: string; bgHex: stri
   { id: 'preset_49', groupLabel: '끝판왕 조합', name: '실버그레이+딥블루', bgHex: '#BDBDBD', textHex: '#001F3F' }
 ]
 
+/** 스케줄 부킹 행: 시간 표시용 (HH:mm) */
+function normalizeBookingTimeForSchedule(time: string): { display: string; sort: string } {
+  const t = (time || '').trim()
+  if (!t) return { display: '—', sort: '99:99' }
+  const m = t.match(/(\d{1,2})\s*:\s*(\d{2})/)
+  if (m) {
+    const h = Math.min(23, Math.max(0, parseInt(m[1], 10)))
+    const min = m[2]
+    const display = `${String(h).padStart(2, '0')}:${min}`
+    return { display, sort: display }
+  }
+  return { display: t.length > 8 ? `${t.slice(0, 8)}…` : t, sort: t }
+}
+
+/** 입장권 공급사 등 짧은 태그 (첫 글자) */
+function ticketCompanyShortTag(company: string): string {
+  const c = (company || '').trim()
+  if (!c) return '?'
+  const normalized = c.replace(/\s+/g, ' ')
+  if (/^antelope\s+x(\s+canyon)?$/i.test(normalized) || /\bantelope\s+x\b/i.test(normalized)) {
+    return 'X'
+  }
+  const match = c.match(/[A-Za-z0-9가-힣]/)
+  if (!match) return '?'
+  const ch = match[0]
+  return /[a-zA-Z]/.test(ch) ? ch.toUpperCase() : ch
+}
+
+function aggregateTicketDetailsForScheduleDisplay(
+  details: Array<{ id: string; company: string; time: string; ea: number }>
+): Array<{ displayTime: string; tag: string; ea: number; bookingIds: string[] }> {
+  const map = new Map<string, { sort: string; displayTime: string; tag: string; ea: number; bookingIds: string[] }>()
+  for (const d of details) {
+    const { display, sort } = normalizeBookingTimeForSchedule(d.time || '')
+    const tag = ticketCompanyShortTag(d.company || '')
+    const mergeKey = `${sort}|${tag}`
+    const prev = map.get(mergeKey)
+    if (prev) {
+      prev.ea += d.ea
+      prev.bookingIds.push(d.id)
+    } else {
+      map.set(mergeKey, { sort, displayTime: display, tag, ea: d.ea, bookingIds: [d.id] })
+    }
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.sort !== b.sort) return a.sort.localeCompare(b.sort)
+    return a.tag.localeCompare(b.tag)
+  })
+}
+
+function scheduleBookingSupplierTagBadgeClass(tag: string): string {
+  const t = tag.trim()
+  const u = t.length === 1 && /[a-zA-Z]/.test(t) ? t.toUpperCase() : t
+  switch (u) {
+    case 'S':
+      return 'bg-slate-200 text-slate-900 ring-1 ring-slate-400/55'
+    case 'X':
+      return 'bg-amber-200 text-amber-950 ring-1 ring-amber-500/50'
+    case 'D':
+      return 'bg-emerald-200 text-emerald-950 ring-1 ring-emerald-500/45'
+    case 'K':
+      return 'bg-rose-200 text-rose-950 ring-1 ring-rose-400/55'
+    default:
+      return 'bg-violet-100 text-violet-900 ring-1 ring-violet-300/70'
+  }
+}
+
+type ScheduleBookingDetailRow =
+  | {
+      kind: 'ticket'
+      displayTime: string
+      tag: string
+      ea: number
+      bookingIds: string[]
+    }
+  | { kind: 'hotel'; line: string }
+
 export default function ScheduleView() {
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
@@ -215,6 +297,11 @@ export default function ScheduleView() {
   const [tourHotelBookings, setTourHotelBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; rooms: number | null; hotel?: string; check_in_date?: string }>>([])
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
   const [hoveredBookingDate, setHoveredBookingDate] = useState<string | null>(null)
+  const [bookingRowExpanded, setBookingRowExpanded] = useState(false)
+  const [scheduleTicketBookingFormOpen, setScheduleTicketBookingFormOpen] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [scheduleTicketBookingEdit, setScheduleTicketBookingEdit] = useState<any>(null)
+  const [pickScheduleTicketBookingIds, setPickScheduleTicketBookingIds] = useState<string[] | null>(null)
   const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string; status: string }>>([])
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
   const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
@@ -855,19 +942,19 @@ export default function ScheduleView() {
   }, [teamMembers, offSchedules, pendingOffScheduleChanges])
 
   // 상품 ID에 따른 멀티데이 투어 일수 계산
-  const getMultiDayTourDays = (productId: string): number => {
+  const getMultiDayTourDays = useCallback((productId: string): number => {
     const multiDayPatterns = {
       'MNGC1N': 2,  // 1박2일
       'MNM1': 2,    // 1박2일
       'MNGC2N': 3,  // 2박3일
       'MNGC3N': 4,  // 3박4일
     }
-    
+
     // 정확한 매치 확인
     if (multiDayPatterns[productId as keyof typeof multiDayPatterns]) {
       return multiDayPatterns[productId as keyof typeof multiDayPatterns]
     }
-    
+
     // 패턴 매치 확인 (MNGC1N, MNM1 등으로 시작하는 경우)
     if (productId.startsWith('MNGC1N') || productId.startsWith('MNM1')) {
       return 2
@@ -878,11 +965,25 @@ export default function ScheduleView() {
     if (productId.startsWith('MNGC3N')) {
       return 4
     }
-    
-    return 1 // 기본값: 1일 투어
-  }
 
-  
+    return 1 // 기본값: 1일 투어
+  }, [])
+
+  /** 차량 스케줄·일별 투어 건수 공통: 해당 일이 투어 진행일(시작~N일째)에 포함되는지 */
+  const tourCoversScheduleDate = useCallback(
+    (tour: Tour, dateString: string): boolean => {
+      if (tour.tour_date === dateString) return true
+      const days = getMultiDayTourDays(tour.product_id)
+      if (days <= 1) return false
+      const start = dayjs(tour.tour_date)
+      const end = start.add(days - 1, 'day')
+      const d = dayjs(dateString)
+      return !d.isBefore(start, 'day') && !d.isAfter(end, 'day')
+    },
+    [getMultiDayTourDays]
+  )
+
+
   // 월의 모든 날짜 생성
   const monthDays = useMemo(() => {
     const days = [] as { date: number; dateString: string; dayOfWeek: string }[]
@@ -938,6 +1039,44 @@ export default function ScheduleView() {
       console.error('Error fetching unassigned tours:', error)
     }
   }, [firstDayOfMonth, lastDayOfMonth])
+
+  const loadFullTicketBookingAndOpen = useCallback(
+    async (id: string) => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (supabase as any).from('ticket_bookings').select('*').eq('id', id).maybeSingle()
+        if (error) throw error
+        if (!data) {
+          alert(locale === 'ko' ? '부킹을 불러오지 못했습니다.' : 'Failed to load booking.')
+          return
+        }
+        setScheduleTicketBookingEdit(data)
+        setScheduleTicketBookingFormOpen(true)
+      } catch (e) {
+        console.error(e)
+        alert(locale === 'ko' ? '부킹을 불러오지 못했습니다.' : 'Failed to load booking.')
+      }
+    },
+    [locale]
+  )
+
+  const onScheduleTicketBookingRowClick = useCallback(
+    (bookingIds: string[]) => {
+      const unique = [...new Set(bookingIds)].filter(Boolean)
+      if (unique.length === 0) return
+      if (unique.length === 1) {
+        void loadFullTicketBookingAndOpen(unique[0])
+        return
+      }
+      setPickScheduleTicketBookingIds(unique)
+    },
+    [loadFullTicketBookingAndOpen]
+  )
+
+  const closeScheduleTicketBookingForm = useCallback(() => {
+    setScheduleTicketBookingFormOpen(false)
+    setScheduleTicketBookingEdit(null)
+  }, [])
 
   // 데이터 가져오기
   const fetchData = useCallback(async () => {
@@ -1193,6 +1332,11 @@ export default function ScheduleView() {
       setLoading(false)
     }
   }, [firstDayOfMonth, lastDayOfMonth, loadUserSettings, fetchUnassignedTours])
+
+  const handleScheduleTicketBookingSaved = useCallback(async () => {
+    closeScheduleTicketBookingForm()
+    await fetchData()
+  }, [closeScheduleTicketBookingForm, fetchData])
 
   useEffect(() => {
     fetchData()
@@ -2732,7 +2876,7 @@ export default function ScheduleView() {
       ticketCount: number; 
       hotelCount: number; 
       totalCount: number;
-      ticketDetails: Array<{ company: string; time: string; ea: number }>;
+      ticketDetails: Array<{ id: string; company: string; time: string; ea: number }>;
       hotelDetails: Array<{ hotel: string; rooms: number }>;
     } } = {}
     
@@ -2773,13 +2917,12 @@ export default function ScheduleView() {
       if (dateString && dailyTotals[dateString]) {
         dailyTotals[dateString].ticketCount += booking.ea || 0
         dailyTotals[dateString].totalCount += booking.ea || 0
-        if (booking.company && booking.time) {
-          dailyTotals[dateString].ticketDetails.push({
-            company: booking.company,
-            time: booking.time,
-            ea: booking.ea || 0
-          })
-        }
+        dailyTotals[dateString].ticketDetails.push({
+          id: booking.id,
+          company: booking.company || '',
+          time: booking.time || '',
+          ea: booking.ea || 0
+        })
       }
     })
 
@@ -2806,6 +2949,33 @@ export default function ScheduleView() {
 
     return dailyTotals
   }, [ticketBookings, tourHotelBookings, tours, monthDays])
+
+  const bookingDetailRowsByDate = useMemo(() => {
+    const out: Record<string, ScheduleBookingDetailRow[]> = {}
+    monthDays.forEach(({ dateString }) => {
+      const bd = bookingTotals[dateString]
+      const rows: ScheduleBookingDetailRow[] = []
+      if (bd) {
+        const agg = aggregateTicketDetailsForScheduleDisplay(bd.ticketDetails)
+        for (const row of agg) {
+          rows.push({
+            kind: 'ticket',
+            displayTime: row.displayTime,
+            tag: row.tag,
+            ea: row.ea,
+            bookingIds: row.bookingIds,
+          })
+        }
+        for (const h of bd.hotelDetails) {
+          const name = (h.hotel || '?').trim()
+          const short = name.length > 8 ? `${name.slice(0, 7)}…` : name
+          rows.push({ kind: 'hotel', line: `${short} ${h.rooms}실` })
+        }
+      }
+      out[dateString] = rows
+    })
+    return out
+  }, [bookingTotals, monthDays])
 
   // 가이드별 총계 계산
   const guideTotals = useMemo(() => {
@@ -2877,20 +3047,11 @@ export default function ScheduleView() {
       }>
       totalDays: number
     }> = {}
-    const tourCoversDate = (tour: Tour, dateString: string): boolean => {
-      if (tour.tour_date === dateString) return true
-      const days = getMultiDayTourDays(tour.product_id)
-      if (days <= 1) return false
-      const start = dayjs(tour.tour_date)
-      const end = start.add(days - 1, 'day')
-      const d = dayjs(dateString)
-      return !d.isBefore(start, 'day') && !d.isAfter(end, 'day')
-    }
     monthVehiclesWithColors.vehicleList.forEach(({ id }) => {
       result[id] = { daily: {}, totalDays: 0 }
       monthDays.forEach(({ dateString }) => {
         const dayTours = tours.filter(t =>
-          t.tour_car_id && String(t.tour_car_id).trim() === id && tourCoversDate(t, dateString)
+          t.tour_car_id && String(t.tour_car_id).trim() === id && tourCoversScheduleDate(t, dateString)
         )
         const guideNames = [...new Set(dayTours.map(t => {
           const guide = teamMembers.find(m => m.email === t.tour_guide_id)
@@ -2919,7 +3080,7 @@ export default function ScheduleView() {
       })
     })
     return result
-  }, [monthVehiclesWithColors.vehicleList, monthDays, tours, teamMembers, productColors, defaultPresetIds])
+  }, [monthVehiclesWithColors.vehicleList, monthDays, tours, teamMembers, productColors, defaultPresetIds, tourCoversScheduleDate])
 
   const vehicleScheduleMonthKey = useMemo(
     () =>
@@ -3030,16 +3191,18 @@ export default function ScheduleView() {
     return totals
   }, [vehicleScheduleData, monthDays])
 
-  // 날짜별 투어 갯수 (일별 합계에서 차량 합계와 비교용) - confirmed 상태만
+  // 날짜별 투어 갯수 (일별 합계에서 차량 합계와 비교용) - confirmed 만, 멀티데이는 매 진행일마다 1건씩
   const tourCountPerDate = useMemo(() => {
     const counts: Record<string, number> = {}
     monthDays.forEach(({ dateString }) => {
       counts[dateString] = tours.filter(
-        t => t.tour_date === dateString && (t.tour_status || '').toString().toLowerCase() === 'confirmed'
+        (t) =>
+          (t.tour_status || '').toString().toLowerCase() === 'confirmed' &&
+          tourCoversScheduleDate(t, dateString)
       ).length
     })
     return counts
-  }, [tours, monthDays])
+  }, [tours, monthDays, tourCoversScheduleDate])
 
   if (loading) {
     return (
@@ -4343,9 +4506,23 @@ export default function ScheduleView() {
             <div className="overflow-visible">
               <table className="w-full border-collapse" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
                 <tbody>
-                  <tr className="bg-purple-50">
-                    <td className="px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-b-2 border-gray-800" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
-                      부킹
+                  <tr
+                    className="bg-purple-50 cursor-pointer hover:bg-purple-100/90 transition-colors"
+                    onClick={() => setBookingRowExpanded(v => !v)}
+                    title={bookingRowExpanded ? '클릭하여 상세 접기' : '클릭하여 시간·업체별 상세 펼치기'}
+                  >
+                    <td
+                      className={`px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
+                      style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        {bookingRowExpanded ? (
+                          <ChevronDown className="w-3.5 h-3.5 shrink-0 text-gray-600" aria-hidden />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-600" aria-hidden />
+                        )}
+                        부킹
+                      </div>
                     </td>
                     {monthDays.map(({ dateString }) => {
                       const bookingData = bookingTotals[dateString]
@@ -4353,7 +4530,7 @@ export default function ScheduleView() {
                       return (
                         <td 
                           key={dateString} 
-                          className="p-0 text-center text-xs relative border-t-2 border-b-2 border-gray-800"
+                          className={`p-0 text-center text-xs relative border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
                           style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           onMouseEnter={() => setHoveredBookingDate(dateString)}
                           onMouseLeave={() => setHoveredBookingDate(null)}
@@ -4382,7 +4559,7 @@ export default function ScheduleView() {
                                   <div className="font-semibold text-yellow-400 mb-1">입장권 부킹</div>
                                   {bookingData.ticketDetails.map((detail, idx) => (
                                     <div key={idx} className="ml-2 mb-1">
-                                      {getCompanyDisplayName(detail.company)} - {detail.time} ({detail.ea}개)
+                                      {detail.company ? `${getCompanyDisplayName(detail.company)} - ` : ''}{detail.time || '—'} ({detail.ea}개)
                                     </div>
                                   ))}
                                 </div>
@@ -4403,10 +4580,76 @@ export default function ScheduleView() {
                         </td>
                       )
                     })}
-                    <td className="px-2 py-0.5 text-center text-xs font-medium border-t-2 border-b-2 border-gray-800" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                    <td
+                      className={`px-2 py-0.5 text-center text-xs font-medium border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
+                      style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}
+                    >
                       <div>{Object.values(bookingTotals).reduce((sum, day) => sum + day.totalCount, 0)}</div>
                     </td>
                   </tr>
+                  {bookingRowExpanded && (
+                    <tr className="bg-purple-50/80">
+                      <td className="px-2 py-0.5 text-[10px] text-gray-500 align-top border-b-2 border-gray-800" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
+                        상세
+                      </td>
+                      {monthDays.map(({ dateString }) => {
+                        const rows = bookingDetailRowsByDate[dateString] || []
+                        return (
+                          <td
+                            key={`${dateString}-detail`}
+                            className={`p-0 align-top text-[9px] leading-tight border-b-2 border-gray-800 ${isToday(dateString) ? 'bg-red-50/40' : ''}`}
+                            style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                          >
+                            <div className="px-0.5 py-1 text-left text-gray-800 space-y-0.5 break-words">
+                              {rows.length === 0 ? (
+                                <span className="text-gray-300">-</span>
+                              ) : (
+                                rows.map((row, idx) =>
+                                  row.kind === 'ticket' ? (
+                                    <div
+                                      key={idx}
+                                      role="button"
+                                      tabIndex={0}
+                                      title={locale === 'ko' ? '클릭하여 입장권 부킹 수정' : 'Click to edit ticket booking'}
+                                      className="cursor-pointer rounded-md px-0.5 py-0.5 -mx-0.5 hover:bg-purple-200/90 outline-none focus-visible:ring-1 focus-visible:ring-purple-500 flex flex-wrap items-center gap-0.5"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        onScheduleTicketBookingRowClick(row.bookingIds)
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault()
+                                          e.stopPropagation()
+                                          onScheduleTicketBookingRowClick(row.bookingIds)
+                                        }
+                                      }}
+                                    >
+                                      <span className="text-[9px] tabular-nums text-gray-700 shrink-0 font-medium">
+                                        {row.displayTime}
+                                      </span>
+                                      <span
+                                        className={`inline-flex min-w-[0.95rem] items-center justify-center rounded px-1 py-0.5 text-[8px] font-bold leading-none shadow-sm ${scheduleBookingSupplierTagBadgeClass(row.tag)}`}
+                                      >
+                                        {row.tag}
+                                      </span>
+                                      <span className="text-[9px] tabular-nums font-semibold text-gray-800 shrink-0">
+                                        {row.ea}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div key={idx} className="text-gray-600">
+                                      {row.line}
+                                    </div>
+                                  )
+                                )
+                              )}
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className="px-2 py-0.5 align-top border-b-2 border-gray-800" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}} />
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -5206,6 +5449,99 @@ export default function ScheduleView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 스케줄 부킹 상세: 같은 시간·업체로 합쳐진 경우 선택 */}
+      <Dialog
+        open={!!pickScheduleTicketBookingIds?.length}
+        onOpenChange={(open) => {
+          if (!open) setPickScheduleTicketBookingIds(null)
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {locale === 'ko' ? '편집할 부킹 선택' : 'Choose booking to edit'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-gray-500 -mt-2">
+            {locale === 'ko'
+              ? '같은 시간·표시 업체로 합쳐진 줄입니다. 수정할 건을 고르세요.'
+              : 'This line merges bookings with the same time and tag. Pick one to edit.'}
+          </p>
+          <div className="flex flex-col gap-1.5 max-h-[50vh] overflow-y-auto">
+            {pickScheduleTicketBookingIds?.map((id) => {
+              const b = ticketBookings.find((t) => t.id === id)
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className="text-left rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setPickScheduleTicketBookingIds(null)
+                    void loadFullTicketBookingAndOpen(id)
+                  }}
+                >
+                  {[b?.company || '—', b?.time || '—'].join(' · ')}
+                  <span className="tabular-nums">
+                    {' '}
+                    · {b?.ea ?? 0}
+                    {locale === 'ko' ? '매' : ' ea'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {scheduleTicketBookingFormOpen && scheduleTicketBookingEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto relative shadow-xl">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
+              <h3 className="text-xl font-semibold">
+                {locale === 'ko' ? '입장권 부킹 편집' : 'Edit ticket booking'}
+              </h3>
+              <button
+                type="button"
+                onClick={closeScheduleTicketBookingForm}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none"
+                aria-label={locale === 'ko' ? '닫기' : 'Close'}
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <ScheduleTicketBookingForm
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                booking={scheduleTicketBookingEdit as any}
+                onSave={() => {
+                  void handleScheduleTicketBookingSaved()
+                }}
+                onCancel={closeScheduleTicketBookingForm}
+                {...(isSuperAdmin
+                  ? {
+                      onDelete: (delId: string) => {
+                        void (async () => {
+                          try {
+                            const { error } = await supabase.from('ticket_bookings').delete().eq('id', delId)
+                            if (error) throw error
+                          } catch (err) {
+                            console.error(err)
+                            alert(locale === 'ko' ? '삭제 중 오류가 발생했습니다.' : 'Delete failed.')
+                            return
+                          }
+                          await handleScheduleTicketBookingSaved()
+                        })()
+                      },
+                    }
+                  : {})}
+                isSuper={isSuperAdmin}
+                tourId={scheduleTicketBookingEdit?.tour_id || undefined}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {loadingScheduleReservationEdit && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]" aria-hidden>

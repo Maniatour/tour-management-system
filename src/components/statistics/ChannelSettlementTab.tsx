@@ -74,6 +74,8 @@ interface ReservationItem {
   partnerReceivedAmount?: number
   /** DB `reservation_pricing.channel_settlement_amount`만 표시 (통계 화면에서 재계산 없음) */
   channelSettlementAmount?: number | null
+  /** DB `reservation_pricing.commission_percent` (0~100, 소수 저장 시 정규화). 없으면 채널 마스터 %로 검증 */
+  pricingCommissionPercent?: number | null
   amountAudited?: boolean
   amountAuditedAt?: string | null
   amountAuditedBy?: string | null
@@ -194,7 +196,17 @@ function commissionBasePriceFromRow(row: { commission_base_price?: unknown }): n
 
 /** 채널별 정산 탭 예약·투어 가격 조회/동기화 공통 */
 const CHANNEL_SETTLEMENT_PRICING_SELECT =
-  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, channel_settlement_amount, commission_base_price, pricing_adults'
+  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, channel_settlement_amount, commission_base_price, pricing_adults'
+
+/** DB 수수료율 → 표시·검증용 % (0.22 → 22) */
+function commissionPercentFromPricingRow(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return null
+  let p = n
+  if (p > 0 && p <= 1) p = p * 100
+  return Math.round(p * 100) / 100
+}
 
 function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
   return {
@@ -203,6 +215,7 @@ function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
     optionTotal: Number(p.option_total) || 0,
     subtotal: Number(p.subtotal) || 0,
     commissionAmount: Number(p.commission_amount) || 0,
+    pricingCommissionPercent: commissionPercentFromPricingRow(p.commission_percent),
     couponDiscount: Number(p.coupon_discount) || 0,
     additionalDiscount: Number(p.additional_discount) || 0,
     additionalCost: Number(p.additional_cost) || 0,
@@ -225,6 +238,91 @@ function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
 function formatTourChannelSettlementCell(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(Number(n))) return '—'
   return `$${Number(n).toLocaleString()}`
+}
+
+const CHANNEL_SETTLEMENT_PCT_VERIFY_EPS = 0.02
+
+type ChannelMasterLike = {
+  id: string
+  commission_percent?: number | null
+  commission_rate?: number | null
+  commission?: number | null
+}
+
+/** 예약에 저장된 %가 있으면 우선(>0). 없거나 0이면 채널 마스터 */
+function effectiveCommissionPercentForPctVerify(
+  item: ReservationItem,
+  channelsList: ChannelMasterLike[] | null | undefined
+): number {
+  const fromPricing = item.pricingCommissionPercent
+  if (fromPricing != null && Number.isFinite(fromPricing) && fromPricing > 0) {
+    return fromPricing
+  }
+  if (!item.channelId || !channelsList?.length) return 0
+  const ch = channelsList.find((c) => c.id === item.channelId)
+  return ch ? invoiceChannelCommissionPercent(ch) : 0
+}
+
+/** PricingSection·저장 로직과 동일한 채널 결제(표시) 금액 — OTA는 Partner Received 상한 적용 */
+function channelPaymentForPctVerify(
+  item: ReservationItem,
+  returnedAmount: number,
+  isOta: boolean,
+  partnerReceived: number
+): number {
+  const storedCb = Number(item.commissionBasePrice ?? 0)
+  const online = deriveCommissionGrossForSettlement(storedCb, {
+    returnedAmount,
+    depositAmount: item.depositAmount ?? 0,
+    productPriceTotal: item.productPriceTotal ?? 0,
+    isOTAChannel: isOta,
+  })
+  let pay = computeChannelPaymentAfterReturn({
+    depositAmount: item.depositAmount ?? 0,
+    onlinePaymentAmount: online,
+    productPriceTotal: item.productPriceTotal ?? 0,
+    couponDiscount: item.couponDiscount ?? 0,
+    additionalDiscount: item.additionalDiscount ?? 0,
+    optionTotalSum: item.optionTotal ?? 0,
+    additionalCost: item.additionalCost ?? 0,
+    tax: item.tax ?? 0,
+    cardFee: item.cardFee ?? 0,
+    prepaymentTip: item.prepaymentTip ?? 0,
+    onSiteBalanceAmount: item.balanceAmount ?? 0,
+    returnedAmount,
+    commissionAmount: item.commissionAmount ?? 0,
+    reservationStatus: item.status,
+    isOTAChannel: isOta,
+  })
+  const pr = Number(partnerReceived) || 0
+  if (isOta && pr > 0 && pay > pr + 0.005) {
+    pay = pr
+  }
+  return pay
+}
+
+/** DB `channel_settlement_amount`가 「채널 결제 − (채널 결제 × 수수료%)」와 다르면 true */
+function channelSettlementPctMismatch(
+  item: ReservationItem,
+  returnedAmount: number,
+  partnerReceived: number,
+  channelsList: ChannelMasterLike[] | null | undefined,
+  isOta: boolean
+): { mismatch: boolean; title?: string } {
+  const stored = item.channelSettlementAmount
+  if (stored == null || !Number.isFinite(Number(stored))) {
+    return { mismatch: false }
+  }
+  const pct = effectiveCommissionPercentForPctVerify(item, channelsList)
+  const pay = channelPaymentForPctVerify(item, returnedAmount, isOta, partnerReceived)
+  const feeUsd = Math.round(pay * (pct / 100) * 100) / 100
+  const expected = Math.max(0, Math.round((pay - feeUsd) * 100) / 100)
+  const mismatch = Math.abs(Number(stored) - expected) > CHANNEL_SETTLEMENT_PCT_VERIFY_EPS
+  if (!mismatch) return { mismatch: false }
+  return {
+    mismatch: true,
+    title: `DB 저장값과 % 산식 불일치 — 채널 결제 $${formatUsd2(pay)}, 수수료 ${pct}% ($${formatUsd2(feeUsd)}), %기대 정산 $${formatUsd2(expected)}`,
+  }
 }
 
 /** 인보이스 COMMISION %: 채널 마스터 비율 고정 (22 = 22%). DB에 소수(0.22)로 저장된 경우 변환 */
@@ -280,6 +378,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     cardFee: number
     prepaymentTip: number
     channelSettlementStored: number | null
+    pricingCommissionPercent: number | null
     commissionBasePrice: number | null
     pricingAdults: number | null
   }>>({})
@@ -357,6 +456,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             cardFee: mapped.cardFee,
             prepaymentTip: mapped.prepaymentTip,
             channelSettlementAmount: mapped.channelSettlementStored,
+            pricingCommissionPercent: mapped.pricingCommissionPercent,
             pricingAdults:
               mapped.pricingAdults != null
                 ? mapped.pricingAdults
@@ -808,6 +908,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           cardFee: number
           prepaymentTip: number
           channelSettlementStored: number | null
+          pricingCommissionPercent: number | null
           commissionBasePrice: number | null
           pricingAdults: number | null
         }> = {}
@@ -912,6 +1013,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         cardFee: 0,
         prepaymentTip: 0,
         channelSettlementStored: null,
+        pricingCommissionPercent: null,
         commissionBasePrice: null,
         pricingAdults: null,
       }
@@ -949,6 +1051,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         balanceAmount: pricing.balanceAmount,
         partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
         channelSettlementAmount,
+        pricingCommissionPercent: pricing.pricingCommissionPercent ?? null,
         amountAudited: reservationAudit[reservation.id]?.amount_audited ?? false,
         amountAuditedAt: reservationAudit[reservation.id]?.amount_audited_at ?? null,
         amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null
@@ -1041,6 +1144,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           cardFee: number
           prepaymentTip: number
           channelSettlementStored: number | null
+          pricingCommissionPercent: number | null
           commissionBasePrice: number | null
           pricingAdults: number | null
         }> = {}
@@ -1130,6 +1234,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             cardFee: 0,
             prepaymentTip: 0,
             channelSettlementStored: null,
+            pricingCommissionPercent: null,
             commissionBasePrice: null,
             pricingAdults: null,
           }
@@ -1172,6 +1277,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             prepaymentTip: pricing.prepaymentTip,
             partnerReceivedAmount: partnerReceivedMap[reservation.id] ?? 0,
             channelSettlementAmount,
+            pricingCommissionPercent: pricing.pricingCommissionPercent ?? null,
             amountAudited: auditMap[reservation.id]?.amount_audited ?? false,
             amountAuditedAt: auditMap[reservation.id]?.amount_audited_at ?? null,
             amountAuditedBy: auditMap[reservation.id]?.amount_audited_by ?? null
@@ -1669,6 +1775,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               cardFee: 0,
                               prepaymentTip: 0,
                               channelSettlementStored: null,
+                              pricingCommissionPercent: null,
                               commissionBasePrice: null,
                               pricingAdults: null,
                             }
@@ -1706,6 +1813,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               balanceAmount: pricing.balanceAmount,
                               partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
                               channelSettlementAmount,
+                              pricingCommissionPercent: pricing.pricingCommissionPercent ?? null,
                               amountAudited: reservationAudit[reservation.id]?.amount_audited ?? false,
                               amountAuditedAt: reservationAudit[reservation.id]?.amount_audited_at ?? null,
                               amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null
@@ -2066,6 +2174,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                     : effectiveAudited && (effectiveAuditedBy || effectiveAuditedAt)
                                       ? `Audit: ${effectiveAuditedBy ?? '-'} / ${effectiveAuditedAt ? new Date(effectiveAuditedAt).toLocaleString('ko-KR') : '-'}`
                                       : '금액 더블체크 완료 시 체크'
+                                  const settlementPctVerify = channelSettlementPctMismatch(
+                                    item,
+                                    returnedAmountByReservation[item.id] ?? 0,
+                                    partnerReceivedByReservation[item.id] ?? 0,
+                                    channels,
+                                    isOtaChannelId(item.channelId)
+                                  )
                                   return (
                                     <tr 
                                       key={`self-tour-${item.id}-${idx}`} 
@@ -2133,7 +2248,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
                                         ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
+                                      <td
+                                        className={`px-2 py-2 whitespace-nowrap text-xs text-right w-24 ${settlementPctVerify.mismatch ? 'text-red-600 font-semibold' : 'text-amber-600'}`}
+                                        title={settlementPctVerify.title}
+                                      >
                                         {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                       </td>
                                       <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
@@ -2413,6 +2531,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                             : effectiveAudited && (effectiveAuditedBy || effectiveAuditedAt)
                                               ? `Audit: ${effectiveAuditedBy ?? '-'} / ${effectiveAuditedAt ? new Date(effectiveAuditedAt).toLocaleString('ko-KR') : '-'}`
                                               : '금액 더블체크 완료 시 체크'
+                                          const settlementPctVerify = channelSettlementPctMismatch(
+                                            item,
+                                            returnedAmountByReservation[item.id] ?? 0,
+                                            partnerReceivedByReservation[item.id] ?? 0,
+                                            channels,
+                                            isOtaChannelId(item.channelId)
+                                          )
                                           return (
                                             <tr 
                                               key={`${channel.id}-tour-${item.id}-${idx}`} 
@@ -2477,7 +2602,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
                                                 ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
+                                              <td
+                                                className={`px-2 py-2 whitespace-nowrap text-xs text-right w-24 ${settlementPctVerify.mismatch ? 'text-red-600 font-semibold' : 'text-amber-600'}`}
+                                                title={settlementPctVerify.title}
+                                              >
                                                 {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                               </td>
                                               <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>

@@ -279,6 +279,8 @@ export default function TicketBookingList() {
   const [tourFilter, setTourFilter] = useState('all'); // 'all', 'connected', 'unconnected'
   const [futureEventFilter, setFutureEventFilter] = useState(false);
   const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
+  /** 테이블 뷰 전용: 확정이면서 티켓 EA ≠ 연결 투어 총 인원 */
+  const [needsReviewEaMismatch, setNeedsReviewEaMismatch] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [viewMode, setViewMode] = useRoutePersistedState<'card' | 'calendar' | 'table'>(
@@ -1652,6 +1654,15 @@ export default function TicketBookingList() {
     return bookingStatus === statusFilter.toLowerCase();
   };
 
+  /** 확정 + 투어 연결 + 티켓 수량과 투어 예약 총원 불일치 */
+  const isConfirmedEaHeadcountMismatch = (booking: TicketBooking): boolean => {
+    if (booking.status?.toLowerCase() !== 'confirmed') return false;
+    if (!booking.tour_id || !booking.tours) return false;
+    const tourTotal = booking.tours.total_people;
+    if (tourTotal == null || Number.isNaN(Number(tourTotal))) return false;
+    return Number(booking.ea) !== Number(tourTotal);
+  };
+
   // 제출일 필터
   const matchesDate = (booking: TicketBooking): boolean => {
     if (!dateFilter) return true;
@@ -1668,14 +1679,17 @@ export default function TicketBookingList() {
 
   // 모든 필터를 적용한 부킹 목록
   const filteredBookings = bookings.filter(booking => {
-    return (
+    const base =
       matchesSearch(booking) &&
-      matchesStatus(booking) &&
       matchesDate(booking) &&
       matchesTour(booking) &&
       matchesFutureEvent(booking) &&
-      matchesCancelDeadline(booking)
-    );
+      matchesCancelDeadline(booking);
+    if (!base) return false;
+    if (viewMode === 'table' && needsReviewEaMismatch) {
+      return isConfirmedEaHeadcountMismatch(booking);
+    }
+    return matchesStatus(booking);
   });
 
   // 정렬된 부킹 목록
@@ -1712,7 +1726,11 @@ export default function TicketBookingList() {
 
   useEffect(() => {
     setListPage(1);
-  }, [searchTerm, statusFilter, dateFilter, tourFilter, futureEventFilter, cancelDeadlineFilter]);
+  }, [searchTerm, statusFilter, dateFilter, tourFilter, futureEventFilter, cancelDeadlineFilter, needsReviewEaMismatch, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== 'table') setNeedsReviewEaMismatch(false);
+  }, [viewMode]);
 
   useEffect(() => {
     setListPage((p) => Math.min(Math.max(1, p), listTotalPages));
@@ -2025,7 +2043,15 @@ export default function TicketBookingList() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+              disabled={viewMode === 'table' && needsReviewEaMismatch}
+              title={
+                viewMode === 'table' && needsReviewEaMismatch
+                  ? locale === 'ko'
+                    ? '확인 필요 모드에서는 확정·인원 불일치 부킹만 표시됩니다.'
+                    : 'Needs review mode shows only confirmed bookings with headcount mismatch.'
+                  : undefined
+              }
+              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm disabled:bg-gray-100 disabled:text-gray-500"
             >
               <option value="all">{t('allStatus')}</option>
               <option value="pending">{t('pending')}</option>
@@ -2142,6 +2168,22 @@ export default function TicketBookingList() {
                   RN#별
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => setNeedsReviewEaMismatch((v) => !v)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                  needsReviewEaMismatch
+                    ? 'border-amber-500 bg-amber-100 text-amber-950 shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+                title={
+                  locale === 'ko'
+                    ? '확정 부킹 중 티켓 수량(EA)과 투어 총 인원이 다른 행만 표시합니다.'
+                    : 'Show only confirmed bookings where ticket quantity (EA) differs from tour total guests.'
+                }
+              >
+                {locale === 'ko' ? '확인 필요' : 'Needs review'}
+              </button>
             </div>
             {/* 상태 설명 - 모바일에서 접기 가능 */}
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
@@ -2209,7 +2251,7 @@ export default function TicketBookingList() {
               <div className="block sm:hidden space-y-3">
                 {sortedBookings.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">
-                    {searchTerm || statusFilter !== 'all' || dateFilter
+                    {searchTerm || statusFilter !== 'all' || dateFilter || needsReviewEaMismatch
                       ? '검색 조건에 맞는 부킹이 없습니다.'
                       : '등록된 입장권 부킹이 없습니다.'}
                   </div>
@@ -2672,13 +2714,12 @@ export default function TicketBookingList() {
             {sortedBookings.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <div className="text-lg font-medium mb-2">
-                  {searchTerm || statusFilter !== 'all' || dateFilter 
-                    ? '검색 조건에 맞는 부킹이 없습니다.' 
-                    : '등록된 입장권 부킹이 없습니다.'
-                  }
+                  {searchTerm || statusFilter !== 'all' || dateFilter || needsReviewEaMismatch
+                    ? '검색 조건에 맞는 부킹이 없습니다.'
+                    : '등록된 입장권 부킹이 없습니다.'}
                 </div>
                 <p className="text-sm text-gray-400">
-                  {!searchTerm && statusFilter === 'all' && !dateFilter && '새 부킹을 추가해보세요.'}
+                  {!searchTerm && statusFilter === 'all' && !dateFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
                 </p>
               </div>
             )}
@@ -3207,13 +3248,12 @@ export default function TicketBookingList() {
         {filteredBookings.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             <div className="text-lg font-medium mb-2">
-              {searchTerm || statusFilter !== 'all' || dateFilter 
-                ? '검색 조건에 맞는 부킹이 없습니다.' 
-                : '등록된 입장권 부킹이 없습니다.'
-              }
+              {searchTerm || statusFilter !== 'all' || dateFilter || needsReviewEaMismatch
+                ? '검색 조건에 맞는 부킹이 없습니다.'
+                : '등록된 입장권 부킹이 없습니다.'}
             </div>
             <p className="text-sm text-gray-400">
-              {!searchTerm && statusFilter === 'all' && !dateFilter && '새 부킹을 추가해보세요.'}
+              {!searchTerm && statusFilter === 'all' && !dateFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
             </p>
           </div>
         )}

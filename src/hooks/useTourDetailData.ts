@@ -10,6 +10,7 @@ import {
   isReservationDeletedStatus,
 } from '@/utils/tourUtils'
 import { useAuth } from '@/contexts/AuthContext'
+import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
 
 // 타입 정의
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -407,11 +408,11 @@ export function useTourDetailData() {
       // 전체 차량 목록 가져오기
       console.log('전체 차량 목록 가져오기 시작')
       try {
-        // 먼저 status 필터로 시도 (이용 가능한 차량만)
+        // 먼저 status 필터로 시도 (이용 가능 + 예약됨 — 팀 배정에서 예약 차량도 선택 가능)
         let { data: allVehicles, error: vehiclesError } = await supabase
           .from('vehicles')
           .select('*')
-          .eq('status', 'available')
+          .in('status', ['available', 'reserved'])
           .order('vehicle_type', { ascending: true })
           .order('vehicle_number', { ascending: true })
 
@@ -444,13 +445,15 @@ export function useTourDetailData() {
             setVehiclesError(vehiclesErrorFallback.message || '차량 목록을 불러올 수 없습니다.')
             setVehicles([]) // 빈 배열로 초기화
           } else {
-            console.log('차량 목록 가져오기 성공 (전체):', allVehiclesFallback?.length || 0)
-            setVehicles(allVehiclesFallback || [])
+            const rows = (allVehiclesFallback || []).filter((v) => !isInactiveVehicleStatus(v.status))
+            console.log('차량 목록 가져오기 성공 (전체):', rows.length)
+            setVehicles(rows)
             setVehiclesError('')
           }
         } else {
-          console.log('차량 목록 가져오기 성공 (활성만):', allVehicles?.length || 0)
-          setVehicles(allVehicles || [])
+          const rows = (allVehicles || []).filter((v) => !isInactiveVehicleStatus(v.status))
+          console.log('차량 목록 가져오기 성공 (available+reserved):', rows.length)
+          setVehicles(rows)
           setVehiclesError('')
         }
       } catch (error: unknown) {

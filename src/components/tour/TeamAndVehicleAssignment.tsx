@@ -3,6 +3,7 @@ import { User, Users, Car, Save, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import { isVehicleShownInTeamAssignmentDropdown } from '@/utils/tourUtils'
+import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
 
 interface TeamMember {
   id: string
@@ -224,9 +225,12 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   const t = useTranslations('tours.teamAndVehicle')
   const [isSaving, setIsSaving] = useState(false)
 
-  /** 회사·개인(비렌트)은 항상, 렌터카는 투어일이 렌트 구간(시작~종료+3일)에 들어갈 때만. 이미 배정된 차량은 목록에 없어도 옵션에 유지 */
+  /** 회사·개인(비렌트)은 항상, 렌터카는 투어일이 렌트 구간(시작~종료+3일)에 들어갈 때만. inactive 는 선택지 제외. 이미 배정된 차량은 목록에 없어도 옵션에 유지 */
   const vehiclesForSelect = useMemo(() => {
-    const filtered = vehicles.filter((v) => isVehicleShownInTeamAssignmentDropdown(v, tourDate))
+    const filtered = vehicles.filter(
+      (v) =>
+        !isInactiveVehicleStatus(v.status) && isVehicleShownInTeamAssignmentDropdown(v, tourDate)
+    )
     if (!selectedVehicleId) return filtered
     if (filtered.some((v) => v.id === selectedVehicleId)) return filtered
     const current = vehicles.find((v) => v.id === selectedVehicleId)

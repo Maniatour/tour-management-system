@@ -10,6 +10,11 @@ export const VEHICLE_STATUS_CODES = [
 
 export type VehicleStatusCode = (typeof VEHICLE_STATUS_CODES)[number]
 
+/** 팀·투어 배정 등 선택 목록에서 제외할 때 사용 */
+export function isInactiveVehicleStatus(status: string | null | undefined): boolean {
+  return (status ?? '').toString().trim().toLowerCase() === 'inactive'
+}
+
 const LABEL_KO: Record<VehicleStatusCode, string> = {
   returned: '반납 완료',
   cancelled: '취소됨',

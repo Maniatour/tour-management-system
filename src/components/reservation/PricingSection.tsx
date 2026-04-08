@@ -191,6 +191,8 @@ interface PricingSectionProps {
     [key: string]: unknown
   }>
   reservationId?: string
+  /** `reservation_pricing` 행이 있으면 할인/쿠폰은 DB 값 유지·드롭다운은 저장 쿠폰만 표시 */
+  reservationPricingId?: string | null
   expenseUpdateTrigger?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -239,6 +241,7 @@ export default function PricingSection({
   priceCalculationPending = false,
   onChannelSettlementEdited,
   reservationId,
+  reservationPricingId,
   expenseUpdateTrigger,
   channels = [],
   products = [],
@@ -305,6 +308,7 @@ export default function PricingSection({
   const channelsRef = useRef(channels)
   channelsRef.current = channels
   const calculateTotalCustomerPaymentRef = useRef<() => number>(() => 0)
+  const calculateTotalCustomerPaymentGrossRef = useRef<() => number>(() => 0)
   const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
   const [choiceNotIncludedBaseTotal, setChoiceNotIncludedBaseTotal] = useState(0)
 
@@ -624,8 +628,8 @@ export default function PricingSection({
     return undefined
   }, [expenseUpdateTrigger, fetchReservationExpenses])
 
-  // 고객 총 결제금액 계산 (화면 "고객 총 결제 금액" 표시와 동일한 식: 잔액 = 이 값 - 보증금 - 잔금 수령)
-  const calculateTotalCustomerPayment = useCallback(() => {
+  /** 상품·옵션·불포함·부가비용 기준 총액(Returned 차감 전) */
+  const calculateTotalCustomerPaymentGross = useCallback(() => {
     const cancelled =
       (formData as { status?: string }).status != null &&
       ['cancelled', 'canceled'].includes(String((formData as { status?: string }).status).toLowerCase().trim())
@@ -656,6 +660,15 @@ export default function PricingSection({
     notIncludedBreakdown.totalUsd,
     (formData as { status?: string }).status,
   ])
+
+  // 고객 총 결제금액: Returned(파트너 환불 조치)만큼 낮춤. 잔액 = 이 값 − 보증금 − 잔금 수령
+  const calculateTotalCustomerPayment = useCallback(() => {
+    const gross = calculateTotalCustomerPaymentGross()
+    const ret = Math.max(0, Number(returnedAmount) || 0)
+    return Math.max(0, roundUsd2(gross - ret))
+  }, [calculateTotalCustomerPaymentGross, returnedAmount])
+
+  calculateTotalCustomerPaymentGrossRef.current = calculateTotalCustomerPaymentGross
   calculateTotalCustomerPaymentRef.current = calculateTotalCustomerPayment
 
   /** 표시·포커스: DB/OTA가 0으로 남아 있어도 계산 잔액이 크면 계산값을 보여 줌 */
@@ -673,6 +686,7 @@ export default function PricingSection({
     return roundUsd2(Number(stored))
   }, [
     calculateTotalCustomerPayment,
+    returnedAmount,
     formData.depositAmount,
     formData.onSiteBalanceAmount,
     calculatedBalanceReceivedTotal,
@@ -774,8 +788,9 @@ export default function PricingSection({
       setReturnedAmount(returnedTotal)
       setPartnerReceivedForSettlement(partnerReceivedStrict)
 
-      // depositAmount와 balanceReceivedTotal을 기반으로 잔액 계산
-      const totalCustomerPayment = calculateTotalCustomerPaymentRef.current()
+      // depositAmount와 balanceReceivedTotal을 기반으로 잔액 계산 (Returned 반영 순액 = gross − 이번 조회 returnedTotal)
+      const grossDue = calculateTotalCustomerPaymentGrossRef.current()
+      const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedTotal))
       const totalPaid = depositTotalNet + balanceReceivedTotal
       const remainingBalance = Math.max(0, totalCustomerPayment - totalPaid)
 
@@ -814,6 +829,7 @@ export default function PricingSection({
             : 0
 
       if (paymentRecords.length > 0) {
+        // 입금 반영은 폼 상태만 갱신. reservation_pricing 저장은 사용자가「가격 정보 저장」또는 전체 예약 저장 시에만 수행.
         setFormData((prev: typeof formData) => ({
           ...prev,
           balanceReceivedTotal,
@@ -825,11 +841,6 @@ export default function PricingSection({
                 balanceAmount: remainingBalance
               })
         }))
-        if (reservationId) {
-          savePricingInfo(reservationId, { depositAmount: depositToSave, balanceAmount: remainingBalance }).catch((err) => {
-            console.error('PricingSection: 입금 내역 반영 저장 오류', err)
-          })
-        }
       } else {
         setFormData((prev: typeof formData) => ({
           ...prev,
@@ -839,7 +850,7 @@ export default function PricingSection({
     } catch (error) {
       console.error('PricingSection: 입금 내역 조회 중 오류', error)
     }
-  }, [reservationId, setFormData, savePricingInfo])
+  }, [reservationId, setFormData])
 
   // 입금 내역 조회 (reservationId가 변경될 때)
   useEffect(() => {
@@ -927,6 +938,7 @@ export default function PricingSection({
     prevBalanceDepsRef.current = currentDeps
   }, [
     calculateTotalCustomerPayment,
+    returnedAmount,
     formData.depositAmount,
     calculatedBalanceReceivedTotal,
     formData.not_included_price,
@@ -1123,6 +1135,59 @@ export default function PricingSection({
   ) : null
   const homepageChannelId = homepageChannel?.id ?? null
 
+  const hasDbReservationPricingRow = Boolean(reservationPricingId)
+
+  /** 채널·홈페이지 쿠폰 규칙으로 목록 구성 + 현재 선택 코드는 항상 포함(DB에만 있는 코드는 맨 위 placeholder) */
+  const couponsForSelectOptions = useMemo(() => {
+    const chName = (id: string | null | undefined) => {
+      if (!id || !Array.isArray(channels)) return ''
+      const row = channels.find((c) => c.id === id)
+      return String(row?.name || '').toLowerCase()
+    }
+    const selectedName = chName(formData.channelId)
+    const isGetYourGuideFamily = (n: string) =>
+      n.includes('getyourguide') || n.includes('get your guide')
+    const showAllGyCoupons = isGetYourGuideFamily(selectedName)
+
+    const filtered = coupons.filter((coupon) => {
+      const isCurrentCoupon =
+        formData.couponCode &&
+        coupon.coupon_code &&
+        String(coupon.coupon_code).trim().toLowerCase() === String(formData.couponCode).trim().toLowerCase()
+      if (isCurrentCoupon) return true
+      if (
+        showAllGyCoupons &&
+        coupon.channel_id &&
+        isGetYourGuideFamily(chName(coupon.channel_id))
+      ) {
+        return true
+      }
+      return (
+        !formData.channelId ||
+        !coupon.channel_id ||
+        coupon.channel_id === formData.channelId ||
+        (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
+      )
+    })
+    const code = String(formData.couponCode || '').trim()
+    if (!code) return filtered
+    const already = filtered.some(
+      (c) => c.coupon_code && String(c.coupon_code).trim().toLowerCase() === code.toLowerCase()
+    )
+    if (already) return filtered
+    return [
+      {
+        id: '__saved_coupon_not_in_master__',
+        coupon_code: code,
+        discount_type: 'fixed' as const,
+        percentage_value: null as number | null,
+        fixed_value: null as number | null,
+        channel_id: null as string | null,
+      },
+      ...filtered,
+    ]
+  }, [channels, coupons, formData.couponCode, formData.channelId, isOTAChannel, homepageChannelId])
+
   // 채널의 commission_percent 가져오기 (여러 필드명 지원)
   // channels 테이블에는 commission 컬럼이 있음 (commission_percent는 없을 수 있음)
   const channelCommissionPercent = selectedChannel
@@ -1173,18 +1238,27 @@ export default function PricingSection({
     isOTAChannel,
   ])
 
-  /** 「채널 결제 금액」표시: gross에서 Returned 차감(입력칸에 보이는 금액). */
-  const channelPaymentAmountAfterReturn = (() => {
-    if (formData.depositAmount > 0) {
-      const base = channelPaymentGrossDb || formData.depositAmount
-      return Math.max(0, base - returnedAmount)
+  /** 「채널 결제 금액」입력칸: 환불 조치 전 gross에서 Returned를 뺀 금액. 보증금이 이미 순액이면 이중 차감하지 않음. */
+  const channelPaymentAmountAfterReturn = useMemo(() => {
+    const ret = Math.max(0, Number(returnedAmount) || 0)
+    const dep = Number(formData.depositAmount) || 0
+    const cg = Number(channelPaymentGrossDb) || 0
+
+    if (cg > 0.005) {
+      return Math.max(0, roundUsd2(cg - ret))
+    }
+    if (dep > 0.005 && ret > 0.005) {
+      return Math.max(0, roundUsd2(dep))
+    }
+    if (dep > 0.005) {
+      return Math.max(0, roundUsd2(dep - ret))
     }
     if (isOTAChannel) {
       const base =
-        channelPaymentGrossDb ||
-        formData.depositAmount ||
+        cg ||
+        dep ||
         (otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : 0)
-      return Math.max(0, base - returnedAmount)
+      return Math.max(0, roundUsd2(base - ret))
     }
     const productSubtotal =
       (formData.productPriceTotal - formData.couponDiscount) +
@@ -1194,10 +1268,24 @@ export default function PricingSection({
       formData.cardFee +
       formData.prepaymentTip -
       (formData.onSiteBalanceAmount || 0)
-    const base =
-      channelPaymentGrossDb || (productSubtotal > 0 ? productSubtotal : 0)
-    return Math.max(0, base - returnedAmount)
-  })()
+    const base = cg || (productSubtotal > 0 ? productSubtotal : 0)
+    return Math.max(0, roundUsd2(base - ret))
+  }, [
+    channelPaymentGrossDb,
+    returnedAmount,
+    formData.depositAmount,
+    isOTAChannel,
+    otaChannelProductPaymentGross,
+    formData.productPriceTotal,
+    formData.couponDiscount,
+    reservationOptionsTotalPrice,
+    formData.additionalCost,
+    formData.additionalDiscount,
+    formData.tax,
+    formData.cardFee,
+    formData.prepaymentTip,
+    formData.onSiteBalanceAmount,
+  ])
 
   /** 폼에 `channelSettlementAmount`가 있으면 그 값(수동·DB 로드), 없으면 `computeChannelSettlementAmount`. */
   const channelSettlementBeforePartnerReturn = useMemo(() => {
@@ -1753,6 +1841,7 @@ export default function PricingSection({
 
   // 채널 변경 시 선택된 쿠폰이 해당 채널에 속하지 않으면 쿠폰 초기화 (ota가 아닐 때 Homepage 쿠폰은 유지)
   useEffect(() => {
+    if (hasDbReservationPricingRow) return
     if (formData.couponCode && formData.channelId) {
       const selectedCoupon = coupons.find(c => 
         c.coupon_code && 
@@ -1769,10 +1858,11 @@ export default function PricingSection({
         couponDiscount: 0
       }))
     }
-  }, [formData.channelId, formData.couponCode, coupons, homepageChannelId, isOTAChannel, setFormData])
+  }, [formData.channelId, formData.couponCode, coupons, homepageChannelId, isOTAChannel, hasDbReservationPricingRow, setFormData])
 
   // 인원 변경 시 쿠폰 할인 재계산 (percentage 타입 쿠폰만)
   useEffect(() => {
+    if (hasDbReservationPricingRow) return
     if (formData.couponCode) {
       const selectedCoupon = coupons.find(c => 
         c.coupon_code && 
@@ -1810,6 +1900,7 @@ export default function PricingSection({
     calculateCouponDiscount,
     coupons,
     formData.couponDiscount,
+    hasDbReservationPricingRow,
     setFormData,
     notIncludedBreakdown.totalUsd,
   ])
@@ -2525,8 +2616,13 @@ export default function PricingSection({
                     <button
                       type="button"
                       onClick={autoSelectCoupon}
-                      className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
-                      title="상품, 채널, 날짜에 맞는 쿠폰 자동 선택"
+                      disabled={hasDbReservationPricingRow}
+                      className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                      title={
+                        hasDbReservationPricingRow
+                          ? '예약에 저장된 가격(reservation_pricing)이 있을 때는 자동 선택을 사용할 수 없습니다'
+                          : '상품, 채널, 날짜에 맞는 쿠폰 자동 선택'
+                      }
                     >
                       자동 선택
                     </button>
@@ -2544,12 +2640,33 @@ export default function PricingSection({
                     const selectedCouponCode = e.target.value
                     const notIncludedPrice = notIncludedBreakdown.totalUsd
                     setFormData((prev: typeof formData) => {
-                      const filteredCoupons = coupons.filter(coupon => 
-                        !prev.channelId || 
-                        !coupon.channel_id || 
-                        coupon.channel_id === prev.channelId ||
-                        (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
-                      )
+                      const t = selectedCouponCode.trim()
+                      if (!t) {
+                        return { ...prev, couponCode: '', couponDiscount: 0 }
+                      }
+                      const chNameOn = (id: string | null | undefined) => {
+                        if (!id || !Array.isArray(channels)) return ''
+                        const row = channels.find((c) => c.id === id)
+                        return String(row?.name || '').toLowerCase()
+                      }
+                      const gyFam = (n: string) =>
+                        n.includes('getyourguide') || n.includes('get your guide')
+                      const showAllGyCouponsOn = gyFam(chNameOn(prev.channelId))
+                      const filteredCoupons = coupons.filter((coupon) => {
+                        if (
+                          showAllGyCouponsOn &&
+                          coupon.channel_id &&
+                          gyFam(chNameOn(coupon.channel_id))
+                        ) {
+                          return true
+                        }
+                        return (
+                          !prev.channelId ||
+                          !coupon.channel_id ||
+                          coupon.channel_id === prev.channelId ||
+                          (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
+                        )
+                      })
                       const selectedCoupon = filteredCoupons.find(coupon => 
                         coupon.coupon_code && 
                         coupon.coupon_code.trim().toLowerCase() === selectedCouponCode.trim().toLowerCase()
@@ -2557,6 +2674,13 @@ export default function PricingSection({
                       const subtotal = isOTAChannel 
                         ? prev.productPriceTotal - notIncludedPrice
                         : calculateProductPriceTotal() + calculateChoiceTotal() - notIncludedPrice
+                      // coupons 마스터에 없는 저장 코드만 재선택 시 금액 유지
+                      if (
+                        !selectedCoupon &&
+                        t.toLowerCase() === (prev.couponCode || '').trim().toLowerCase()
+                      ) {
+                        return prev
+                      }
                       const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
                       return {
                         ...prev,
@@ -2568,24 +2692,14 @@ export default function PricingSection({
                   className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">쿠폰 선택</option>
-                  {coupons
-                    .filter(coupon => {
-                      // 현재 선택/저장된 쿠폰은 항상 목록에 포함 (reservation_pricing에 저장된 값이 선택되어 보이도록)
-                      const isCurrentCoupon = formData.couponCode && coupon.coupon_code &&
-                        String(coupon.coupon_code).trim().toLowerCase() === String(formData.couponCode).trim().toLowerCase()
-                      if (isCurrentCoupon) return true
-                      // 채널 미선택 / 쿠폰 채널 없음 / 선택 채널과 일치 시 표시. 채널 type이 ota가 아니면 Homepage 연결 쿠폰도 표시
-                      return !formData.channelId ||
-                        !coupon.channel_id ||
-                        coupon.channel_id === formData.channelId ||
-                        (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
-                    })
-                    .map((coupon) => {
+                  {couponsForSelectOptions.map((coupon) => {
                       let discountText = '할인 정보 없음'
                       if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
                         discountText = `${coupon.percentage_value}%`
                       } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
                         discountText = `$${coupon.fixed_value}`
+                      } else if (coupon.id === '__saved_coupon_not_in_master__') {
+                        discountText = '저장된 코드'
                       }
                       
                       return (
@@ -2601,11 +2715,18 @@ export default function PricingSection({
                     c.coupon_code && 
                     c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
                   )
-                  return selectedCoupon ? (
-                    <div className="mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                      선택된 쿠폰: {selectedCoupon.coupon_code} (할인: ${formData.couponDiscount.toFixed(2)})
+                  if (selectedCoupon) {
+                    return (
+                      <div className="mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                        선택된 쿠폰: {selectedCoupon.coupon_code} (할인: ${formData.couponDiscount.toFixed(2)})
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="mt-1 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                      저장/입력 코드: {formData.couponCode} (할인: ${formData.couponDiscount.toFixed(2)}, 쿠폰 마스터에 없음)
                     </div>
-                  ) : null
+                  )
                 })()}
               </div>
 
@@ -2856,12 +2977,39 @@ export default function PricingSection({
                   <span className={`text-[10px] text-gray-700 ${priceTextClass('prepaymentTip')}`}>+${(formData.prepaymentTip || 0).toFixed(2)}</span>
                 </div>
               )}
+
+              {returnedAmount > 0.005 && (
+                <div className="flex justify-between items-center mb-1.5 rounded px-1.5 py-1 bg-amber-50 border border-amber-100">
+                  <span
+                    className="text-[10px] text-amber-900 cursor-help"
+                    title={
+                      isKorean
+                        ? '입금 내역 중 Returned(파트너 환불 조치) 합계입니다. 아래「고객 총 결제 금액」에서 차감되어 표시됩니다.'
+                        : 'Returned total from payment records. Subtracted in Total Customer Payment below.'
+                    }
+                  >
+                    {isKorean ? '− Returned (파트너 환불 조치)' : '− Returned (partner refund)'}
+                  </span>
+                  <span className="text-[10px] font-semibold text-amber-900">
+                    −${returnedAmount.toFixed(2)}
+                  </span>
+                </div>
+              )}
               
               <div className="border-t border-gray-200 my-1.5"></div>
               
-              {/* 고객 총 결제 금액 (취소 시 옵션·불포함 제외 = calculateTotalCustomerPayment와 동일) */}
+              {/* 고객 총 결제 금액 = 상품·옵션 등 합계 − Returned(있으면) */}
               <div className="flex justify-between items-center mb-1.5">
-                <span className="text-sm font-bold text-blue-800">{isKorean ? '고객 총 결제 금액' : 'Total Customer Payment'}</span>
+                <span
+                  className="text-sm font-bold text-blue-800 cursor-help"
+                  title={
+                    isKorean
+                      ? 'Returned가 있으면 파트너 환불 조치 금액을 뺀 순액입니다.'
+                      : 'If Returned exists, partner refund is subtracted from the package total.'
+                  }
+                >
+                  {isKorean ? '고객 총 결제 금액' : 'Total Customer Payment'}
+                </span>
                 <span className={`text-sm font-bold ${priceTextClass('totalPrice')}`}>
                   ${calculateTotalCustomerPayment().toFixed(2)}
                 </span>
@@ -2887,8 +3035,8 @@ export default function PricingSection({
                   className="text-xs font-semibold text-gray-900"
                   title={
                     isKorean
-                      ? '① 고객 총 결제 금액과 동일합니다. 잔액 = 이 금액 − (보증금 + 잔금 수령)'
-                      : 'Same as ① Total Customer Payment. Balance = this amount − (deposit + balance received)'
+                      ? '①과 동일(상품 합계에서 Returned 반영한 순액). 잔액 = 이 금액 − (보증금 + 잔금 수령)'
+                      : 'Same as ① (package total net of Returned). Balance = this − (deposit + balance received)'
                   }
                 >
                   {isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}
@@ -2977,8 +3125,8 @@ export default function PricingSection({
                   className="text-xs text-gray-700 cursor-help"
                   title={
                     isKorean
-                      ? '총 결제 예정 금액 − (고객 실제 지불액 보증금 + 잔금 수령). 투어 당일 등 남은 부담금'
-                      : 'Total payment due − (deposit + balance received). Typically due on tour day'
+                      ? '총 결제 예정 금액(①, Returned 반영 순액) − (보증금 + 잔금 수령). 투어 당일 등 남은 부담금'
+                      : 'Total due (①, net of Returned) − (deposit + balance received). Typically on-site'
                   }
                 >
                   {isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}

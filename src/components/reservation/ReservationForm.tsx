@@ -724,6 +724,11 @@ export default function ReservationForm({
   const [pricingLoadComplete, setPricingLoadComplete] = useState<boolean>(false)
   // reservation_pricing 행 id (상세/폼 가격 섹션 표시용)
   const [reservationPricingId, setReservationPricingId] = useState<string | null>(null)
+  /** 비동기 loadPricingInfo 중에도 최신 여부를 반영 — state보다 앞서 자동 쿠폰이 도는 것 방지 */
+  const reservationPricingIdRef = useRef<string | null>(null)
+  reservationPricingIdRef.current = reservationPricingId
+  /** loadPricingInfo가 마지막으로 대상으로 한 예약 id (같은 예약 재조회 시 reservation_pricing id를 null로 비우지 않음) */
+  const pricingLoadReservationKeyRef = useRef<string | undefined>(undefined)
   /** 이메일 가져오기: product_choices 로드·이메일 기반 초이스 매칭까지 끝난 productId (이 값이 맞을 때만 loadPricingInfo 실행) */
   const [importChoicesHydratedProductId, setImportChoicesHydratedProductId] = useState<string | null>(null)
   /** 채널 버튼/모달에 "Klook - All Inclusive" 형태로 보이기 위해 channel_products variant명 로드 */
@@ -2536,7 +2541,15 @@ export default function ReservationForm({
         currentSelectedChoices,
         (formData.productChoices || []) as any
       )
-      setReservationPricingId(null)
+      // 같은 예약에 대한 재조회(초이스/variant 변경 등)에서는 reservation_pricing id를 비우지 않음.
+      // 비우는 순간 자동 쿠폰(9%/10% 등)이 끼어들어 DB 쿠폰·정산을 덮어쓸 수 있음.
+      if (!pricingReservationId) {
+        setReservationPricingId(null)
+        pricingLoadReservationKeyRef.current = undefined
+      } else if (pricingReservationId !== pricingLoadReservationKeyRef.current) {
+        setReservationPricingId(null)
+        pricingLoadReservationKeyRef.current = pricingReservationId
+      }
       console.log('가격 정보 조회 시작:', { productId, tourDate, tourDateNormalized, channelId, reservationId: pricingReservationId, selectedChoices: currentSelectedChoices, pricingSelectedChoices })
 
       const DP_SELECT_FULL =
@@ -2666,6 +2679,7 @@ export default function ReservationForm({
 
         if (existingError) {
           console.log('기존 가격 정보 조회 오류:', existingError.message)
+          setReservationPricingId(null)
           // 오류가 발생해도 계속 진행 (dynamic_pricing 조회)
         } else if (existingPricing) {
           setReservationPricingId((existingPricing as { id?: string }).id ?? null)
@@ -2979,6 +2993,8 @@ export default function ReservationForm({
             return
           }
           notIncludedPriceFromReservationPricing = Number((existingPricing as any).not_included_price) || 0
+        } else {
+          setReservationPricingId(null)
         }
       }
 
@@ -3784,6 +3800,17 @@ export default function ReservationForm({
 
   // 쿠폰 자동 선택 함수 (이메일 금액 없을 때: 채널·상품·날짜에 맞는 쿠폰 중 고정 우선)
   const autoSelectCoupon = useCallback(() => {
+    if (reservationPricingIdRef.current) {
+      return
+    }
+    const savedResId = reservation?.id
+    if (
+      savedResId &&
+      !String(savedResId).startsWith('import-') &&
+      !pricingLoadComplete
+    ) {
+      return
+    }
     if (!formData.productId || !formData.tourDate || !formData.channelId) {
       return
     }
@@ -3842,7 +3869,17 @@ export default function ReservationForm({
         couponDiscount: 0
       }))
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, coupons, getCouponDiscountSubtotal, calculateCouponDiscount, setFormData])
+  }, [
+    reservation?.id,
+    pricingLoadComplete,
+    formData.productId,
+    formData.tourDate,
+    formData.channelId,
+    coupons,
+    getCouponDiscountSubtotal,
+    calculateCouponDiscount,
+    setFormData,
+  ])
 
   /** 예약 가져오기: 이메일 금액과 맞도록 쿠폰 선택 (product_id 없음 = 채널 공통 쿠폰 포함).
    *  Viator compareSettlementToNet: PricingSection·`computeChannelSettlementAmount`와 동일한 채널 정산 금액을 Net Rate와 비교.
@@ -3850,6 +3887,9 @@ export default function ReservationForm({
    *  `formDataRef`로 최신 상태를 읽고 콜백 의존성에서 couponDiscount를 빼서, 사용자가 쿠폰을 해제해도 effect만으로 재강제되지 않게 함. */
   const applyCouponToMatchEmailAmount = useCallback(
     (emailTarget: number, opts?: { compareSettlementToNet?: boolean }) => {
+      if (reservationPricingIdRef.current) {
+        return
+      }
       const fd = formDataRef.current
       if (!fd.productId || !fd.tourDate || !fd.channelId) return
       const compareSettlementToNet = opts?.compareSettlementToNet === true
@@ -4024,6 +4064,9 @@ export default function ReservationForm({
     isImportMode && parseMoneyFromImportString(initialViatorNetRateFromImport) != null
 
   const pricingSectionAutoSelectCoupon = useCallback(() => {
+    if (reservationPricingIdRef.current) {
+      return
+    }
     if (isImportViatorNetRateMode) {
       viatorImportCouponUserAdjustedRef.current = false
       emailCouponApplyRef.current = ''
@@ -4187,6 +4230,15 @@ export default function ReservationForm({
     if (!formData.productId || !formData.tourDate || !formData.channelId) return
     if (isImportMode) return
 
+    const savedResId = reservation?.id
+    if (
+      savedResId &&
+      !String(savedResId).startsWith('import-') &&
+      !pricingLoadComplete
+    ) {
+      return
+    }
+    if (reservationPricingId) return
     if (isExistingPricingLoaded) return
 
     const currentParams = {
@@ -4208,6 +4260,9 @@ export default function ReservationForm({
     formData.channelId,
     formData.productPriceTotal,
     formData.not_included_price,
+    reservation?.id,
+    pricingLoadComplete,
+    reservationPricingId,
     isExistingPricingLoaded,
     isImportMode,
     autoSelectCoupon,
@@ -5672,6 +5727,7 @@ export default function ReservationForm({
                   Boolean(formData.productId && formData.tourDate && formData.channelId) && !pricingLoadComplete
                 }
                 {...(effectiveReservationId ? { reservationId: effectiveReservationId } : {})}
+                reservationPricingId={reservationPricingId}
                 expenseUpdateTrigger={expenseUpdateTrigger}
                 channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
                 products={products}
