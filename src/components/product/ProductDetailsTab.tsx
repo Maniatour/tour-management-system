@@ -79,10 +79,18 @@ interface Channel {
   type: string
 }
 
+type ProductVariantRow = {
+  variant_key: string
+  variant_name_ko?: string | null
+  variant_name_en?: string | null
+}
+
 interface ChannelGroup {
   id: string
   displayLabel: string
   channels: Channel[]
+  /** 그룹에 속한 variant만 표시·선택. 없으면 해당 채널의 모든 variant(레거시·타입별 모드). */
+  variantKeysByChannel?: Record<string, string[]>
 }
 
 /** 예전 localStorage 키 — DB 로드 실패 시 1회 폴백 후 저장 성공 시 제거 */
@@ -90,10 +98,28 @@ const CHANNEL_GROUP_LAYOUT_LEGACY_LOCAL_KEY = 'tms-product-details-channel-group
 
 const SHARED_SETTINGS_KEY_PRODUCT_DETAILS_CHANNEL_GROUPS = 'product_details_channel_group_layout'
 
+const CHANNEL_VARIANT_PAIR_SEP = '\u0001'
+
+function pairKeyChannelVariant(channelId: string, variantKey: string): string {
+  return `${channelId}${CHANNEL_VARIANT_PAIR_SEP}${variantKey}`
+}
+
+function parsePairKeyChannelVariant(pk: string): { channelId: string; variantKey: string } {
+  const i = pk.indexOf(CHANNEL_VARIANT_PAIR_SEP)
+  if (i <= 0) return { channelId: pk, variantKey: 'default' }
+  return { channelId: pk.slice(0, i), variantKey: pk.slice(i + 1) }
+}
+
 type ChannelGroupLayout = {
   version: 1
   mode: 'by_type' | 'custom'
-  customGroups: Array<{ id: string; label: string; channelIds: string[] }>
+  customGroups: Array<{
+    id: string
+    label: string
+    channelIds: string[]
+    /** 명시적 채널·variant 쌍. 비어 있으면 channelIds만 사용(레거시). */
+    members?: Array<{ channelId: string; variantKey: string }>
+  }>
 }
 
 function defaultChannelGroupLayout(): ChannelGroupLayout {
@@ -111,6 +137,14 @@ function isValidChannelGroupLayout(x: unknown): x is ChannelGroupLayout {
     const g = item as Record<string, unknown>
     if (typeof g.id !== 'string' || typeof g.label !== 'string') return false
     if (!Array.isArray(g.channelIds) || !g.channelIds.every((id) => typeof id === 'string')) return false
+    if (g.members !== undefined) {
+      if (!Array.isArray(g.members)) return false
+      for (const m of g.members) {
+        if (!m || typeof m !== 'object') return false
+        const mem = m as Record<string, unknown>
+        if (typeof mem.channelId !== 'string' || typeof mem.variantKey !== 'string') return false
+      }
+    }
   }
   return true
 }
@@ -118,6 +152,92 @@ function isValidChannelGroupLayout(x: unknown): x is ChannelGroupLayout {
 function newCustomGroupId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `cg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function getVariantRowsForChannel(
+  variantsByChannel: Record<string, ProductVariantRow[]>,
+  channelId: string
+): ProductVariantRow[] {
+  const list = variantsByChannel[channelId]
+  if (list && list.length > 0) return list
+  return [{ variant_key: 'default' }]
+}
+
+function computePairToGroupMap(
+  customGroups: ChannelGroupLayout['customGroups'],
+  allChannels: Channel[],
+  variantsByChannel: Record<string, ProductVariantRow[]>
+): Map<string, string> {
+  const byChannelId = new Set(allChannels.map((c) => c.id))
+  const assigned = new Map<string, string>()
+  const hasAnyMembers = customGroups.some((g) => (g.members?.length ?? 0) > 0)
+
+  if (hasAnyMembers) {
+    for (const g of customGroups) {
+      for (const m of g.members || []) {
+        if (!byChannelId.has(m.channelId)) continue
+        const rows = getVariantRowsForChannel(variantsByChannel, m.channelId)
+        if (!rows.some((v) => v.variant_key === m.variantKey)) continue
+        assigned.set(pairKeyChannelVariant(m.channelId, m.variantKey), g.id)
+      }
+    }
+    for (const g of customGroups) {
+      for (const chId of g.channelIds) {
+        if (!byChannelId.has(chId)) continue
+        for (const v of getVariantRowsForChannel(variantsByChannel, chId)) {
+          const pk = pairKeyChannelVariant(chId, v.variant_key)
+          if (!assigned.has(pk)) assigned.set(pk, g.id)
+        }
+      }
+    }
+  } else {
+    for (const g of customGroups) {
+      for (const chId of g.channelIds) {
+        if (!byChannelId.has(chId)) continue
+        for (const v of getVariantRowsForChannel(variantsByChannel, chId)) {
+          assigned.set(pairKeyChannelVariant(chId, v.variant_key), g.id)
+        }
+      }
+    }
+  }
+  return assigned
+}
+
+function rebuildDraftFromPairAssignments(
+  draft: ChannelGroupLayout,
+  pairToGroup: Map<string, string>
+): ChannelGroupLayout {
+  const customGroups = draft.customGroups.map((g) => ({
+    ...g,
+    channelIds: [] as string[],
+    members: [] as Array<{ channelId: string; variantKey: string }>,
+  }))
+  const byId = new Map(customGroups.map((g) => [g.id, g]))
+  for (const [pk, gid] of pairToGroup) {
+    const g = byId.get(gid)
+    if (!g) continue
+    const { channelId, variantKey } = parsePairKeyChannelVariant(pk)
+    g.members.push({ channelId, variantKey })
+  }
+  return { ...draft, customGroups }
+}
+
+function variantsForChannelInGroup(
+  group: ChannelGroup,
+  channelId: string,
+  variantsByChannel: Record<string, ProductVariantRow[]>
+): ProductVariantRow[] {
+  const all = getVariantRowsForChannel(variantsByChannel, channelId)
+  const filt = group.variantKeysByChannel?.[channelId]
+  if (!filt) return all
+  return all.filter((v) => filt.includes(v.variant_key))
+}
+
+function groupVariantPairCount(
+  group: ChannelGroup,
+  variantsByChannel: Record<string, ProductVariantRow[]>
+): number {
+  return group.channels.reduce((acc, ch) => acc + variantsForChannelInGroup(group, ch.id, variantsByChannel).length, 0)
 }
 
 function buildGroupsByType(allChannels: Channel[], selfLabel: string): ChannelGroup[] {
@@ -140,36 +260,89 @@ function buildGroupsByType(allChannels: Channel[], selfLabel: string): ChannelGr
 function computeChannelGroupsFromLayout(
   allChannels: Channel[],
   layout: ChannelGroupLayout,
-  selfLabel: string
+  selfLabel: string,
+  variantsByChannel: Record<string, ProductVariantRow[]>
 ): ChannelGroup[] {
   if (layout.mode !== 'custom' || layout.customGroups.length === 0) {
     return buildGroupsByType(allChannels, selfLabel)
   }
   const byId = new Map(allChannels.map((c) => [c.id, c]))
-  const assigned = new Set<string>()
+  const pairToGroup = computePairToGroupMap(layout.customGroups, allChannels, variantsByChannel)
+
+  const groupPairBuckets = new Map<string, Map<string, Set<string>>>()
+  for (const g of layout.customGroups) {
+    groupPairBuckets.set(g.id, new Map())
+  }
+
+  for (const ch of allChannels) {
+    for (const v of getVariantRowsForChannel(variantsByChannel, ch.id)) {
+      const pk = pairKeyChannelVariant(ch.id, v.variant_key)
+      const gid = pairToGroup.get(pk)
+      if (!gid) continue
+      const bucket = groupPairBuckets.get(gid)
+      if (!bucket) continue
+      if (!bucket.has(ch.id)) bucket.set(ch.id, new Set())
+      bucket.get(ch.id)!.add(v.variant_key)
+    }
+  }
+
   const out: ChannelGroup[] = []
   for (const g of layout.customGroups) {
+    const bucket = groupPairBuckets.get(g.id)
+    const variantKeysByChannel: Record<string, string[]> = {}
     const chs: Channel[] = []
-    for (const id of g.channelIds) {
-      const ch = byId.get(id)
-      if (ch) {
-        chs.push(ch)
-        assigned.add(id)
+    if (bucket) {
+      for (const ch of allChannels) {
+        const set = bucket.get(ch.id)
+        if (set && set.size > 0) {
+          const chObj = byId.get(ch.id)
+          if (chObj) {
+            chs.push(chObj)
+            variantKeysByChannel[ch.id] = Array.from(set)
+          }
+        }
       }
     }
     out.push({
       id: g.id,
       displayLabel: g.label.trim() || '이름 없음',
       channels: chs,
+      variantKeysByChannel,
     })
   }
-  const unassigned = allChannels.filter((c) => !assigned.has(c.id))
-  if (unassigned.length > 0) {
-    out.push({
-      id: '__unassigned__',
-      displayLabel: '미배정 채널',
-      channels: unassigned,
-    })
+
+  const assignedPairs = new Set(pairToGroup.keys())
+  const unassignedBucket = new Map<string, Set<string>>()
+  for (const ch of allChannels) {
+    for (const v of getVariantRowsForChannel(variantsByChannel, ch.id)) {
+      const pk = pairKeyChannelVariant(ch.id, v.variant_key)
+      if (!assignedPairs.has(pk)) {
+        if (!unassignedBucket.has(ch.id)) unassignedBucket.set(ch.id, new Set())
+        unassignedBucket.get(ch.id)!.add(v.variant_key)
+      }
+    }
+  }
+  if (unassignedBucket.size > 0) {
+    const chs: Channel[] = []
+    const variantKeysByChannel: Record<string, string[]> = {}
+    for (const ch of allChannels) {
+      const set = unassignedBucket.get(ch.id)
+      if (set && set.size > 0) {
+        const chObj = byId.get(ch.id)
+        if (chObj) {
+          chs.push(chObj)
+          variantKeysByChannel[ch.id] = Array.from(set)
+        }
+      }
+    }
+    if (chs.length > 0) {
+      out.push({
+        id: '__unassigned__',
+        displayLabel: '미배정 채널',
+        channels: chs,
+        variantKeysByChannel,
+      })
+    }
   }
   return out
 }
@@ -185,14 +358,31 @@ function seedCustomGroupsFromByType(
   }))
 }
 
-function findDraftGroupIdForChannel(
-  draft: ChannelGroupLayout,
-  channelId: string
-): string | '__unassigned__' {
-  for (const g of draft.customGroups) {
-    if (g.channelIds.includes(channelId)) return g.id
+function cloneCustomGroupEntry(
+  g: ChannelGroupLayout['customGroups'][number]
+): ChannelGroupLayout['customGroups'][number] {
+  if (g.members) {
+    return {
+      ...g,
+      channelIds: [...g.channelIds],
+      members: g.members.map((m) => ({ ...m })),
+    }
   }
-  return '__unassigned__'
+  return {
+    ...g,
+    channelIds: [...g.channelIds],
+  }
+}
+
+function findDraftGroupIdForPair(
+  draft: ChannelGroupLayout,
+  channelId: string,
+  variantKey: string,
+  allChannels: Channel[],
+  variantsByChannel: Record<string, ProductVariantRow[]>
+): string | '__unassigned__' {
+  const map = computePairToGroupMap(draft.customGroups, allChannels, variantsByChannel)
+  return map.get(pairKeyChannelVariant(channelId, variantKey)) ?? '__unassigned__'
 }
 
 export default function ProductDetailsTab({
@@ -281,11 +471,7 @@ export default function ProductDetailsTab({
     Record<string, Partial<Record<keyof ProductDetailsFields, boolean>>>
   >({})
 
-  const [productVariantsByChannel, setProductVariantsByChannel] = useState<Record<string, Array<{
-    variant_key: string;
-    variant_name_ko?: string | null;
-    variant_name_en?: string | null;
-  }>>>({}) // channelId -> variants[]
+  const [productVariantsByChannel, setProductVariantsByChannel] = useState<Record<string, ProductVariantRow[]>>({})
 
   const supabase = createClientSupabase()
   const { user, loading: authLoading } = useAuth()
@@ -390,8 +576,8 @@ export default function ProductDetailsTab({
 
   const selfGroupLabelForLayout = t('selfGroupLabel')
   const channelGroups = useMemo(
-    () => computeChannelGroupsFromLayout(channels, groupLayout, selfGroupLabelForLayout),
-    [channels, groupLayout, selfGroupLabelForLayout]
+    () => computeChannelGroupsFromLayout(channels, groupLayout, selfGroupLabelForLayout, productVariantsByChannel),
+    [channels, groupLayout, selfGroupLabelForLayout, productVariantsByChannel]
   )
 
   useEffect(() => {
@@ -412,10 +598,7 @@ export default function ProductDetailsTab({
     const selfLabel = t('selfGroupLabel')
     let draft: ChannelGroupLayout = {
       ...groupLayout,
-      customGroups: groupLayout.customGroups.map((g) => ({
-        ...g,
-        channelIds: [...g.channelIds],
-      })),
+      customGroups: groupLayout.customGroups.map((g) => cloneCustomGroupEntry(g)),
     }
     if (draft.mode === 'custom' && draft.customGroups.length === 0 && channels.length > 0) {
       draft = {
@@ -427,29 +610,25 @@ export default function ProductDetailsTab({
     setChannelGroupEditorOpen(true)
   }, [channels, groupLayout, t])
 
-  const assignChannelInDraft = useCallback((channelId: string, targetGroupId: string | '__unassigned__') => {
-    setGroupLayoutDraft((prev) => {
-      if (prev.mode !== 'custom') return prev
-      const groups = prev.customGroups.map((cg) => ({
-        ...cg,
-        channelIds: cg.channelIds.filter((id) => id !== channelId),
-      }))
-      if (targetGroupId !== '__unassigned__') {
-        const gi = groups.findIndex((g) => g.id === targetGroupId)
-        if (gi >= 0) {
-          const g = groups[gi]
-          groups[gi] = { ...g, channelIds: [...g.channelIds, channelId] }
-        }
-      }
-      return { ...prev, customGroups: groups }
-    })
-  }, [])
+  const assignPairInDraft = useCallback(
+    (channelId: string, variantKey: string, targetGroupId: string | '__unassigned__') => {
+      setGroupLayoutDraft((prev) => {
+        if (prev.mode !== 'custom') return prev
+        const map = computePairToGroupMap(prev.customGroups, channels, productVariantsByChannel)
+        const pk = pairKeyChannelVariant(channelId, variantKey)
+        if (targetGroupId === '__unassigned__') map.delete(pk)
+        else map.set(pk, targetGroupId)
+        return rebuildDraftFromPairAssignments(prev, map)
+      })
+    },
+    [channels, productVariantsByChannel]
+  )
 
   /** 빈 그룹 한 줄 추가(사용자 정의 모드로 전환). 목록이 비어 있으면 타입별 시드 후 추가 */
   const addAnotherCustomGroup = useCallback(() => {
     const selfLabel = t('selfGroupLabel')
     setGroupLayoutDraft((d) => {
-      let cgs = d.customGroups.map((g) => ({ ...g, channelIds: [...g.channelIds] }))
+      let cgs = d.customGroups.map((g) => cloneCustomGroupEntry(g))
       if (cgs.length === 0 && channels.length > 0) {
         cgs = seedCustomGroupsFromByType(channels, selfLabel)
       }
@@ -1092,25 +1271,33 @@ export default function ProductDetailsTab({
     })
   }
 
-  // 그룹 전체: 각 채널의 모든 variant 선택 ↔ 전체 해제
+  // 그룹 전체: 이 그룹에 속한 채널·variant만 선택 ↔ 해제
   const toggleGroupSelection = (groupId: string) => {
     const group = channelGroups.find((g) => g.id === groupId)
     if (!group) return
 
     const allSelected = group.channels.every((channel) => {
-      const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
+      const variantsInGroup = variantsForChannelInGroup(group, channel.id, productVariantsByChannel)
       const sel = selectedChannelVariants[channel.id] || []
-      return variants.length > 0 && variants.every((v) => sel.includes(v.variant_key))
+      return (
+        variantsInGroup.length > 0 &&
+        variantsInGroup.every((v) => sel.includes(v.variant_key))
+      )
     })
 
     setSelectedChannelVariants((prev) => {
       const next = { ...prev }
       group.channels.forEach((channel) => {
+        const variantsInGroup = variantsForChannelInGroup(group, channel.id, productVariantsByChannel)
+        const keys = variantsInGroup.map((v) => v.variant_key)
         if (allSelected) {
-          delete next[channel.id]
+          const remaining = (next[channel.id] || []).filter((vk) => !keys.includes(vk))
+          if (remaining.length === 0) delete next[channel.id]
+          else next[channel.id] = remaining
         } else {
-          const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
-          next[channel.id] = variants.map((v) => v.variant_key)
+          const cur = new Set(next[channel.id] || [])
+          keys.forEach((k) => cur.add(k))
+          next[channel.id] = Array.from(cur).sort()
         }
       })
       return next
@@ -2910,13 +3097,20 @@ export default function ProductDetailsTab({
             <div className="space-y-2">
               {channelGroups.map((group) => {
                 const allSelected = group.channels.every((channel) => {
-                  const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
+                  const variantsInGroup = variantsForChannelInGroup(group, channel.id, productVariantsByChannel)
                   const sel = selectedChannelVariants[channel.id] || []
-                  return variants.length > 0 && variants.every((v) => sel.includes(v.variant_key))
+                  return (
+                    variantsInGroup.length > 0 &&
+                    variantsInGroup.every((v) => sel.includes(v.variant_key))
+                  )
                 })
                 const someSelected =
-                  group.channels.some((channel) => (selectedChannelVariants[channel.id]?.length ?? 0) > 0) &&
-                  !allSelected
+                  group.channels.some((channel) => {
+                    const variantsInGroup = variantsForChannelInGroup(group, channel.id, productVariantsByChannel)
+                    const sel = selectedChannelVariants[channel.id] || []
+                    return variantsInGroup.some((v) => sel.includes(v.variant_key))
+                  }) && !allSelected
+                const pairCnt = groupVariantPairCount(group, productVariantsByChannel)
                 return (
                   <div key={group.id} className="border border-gray-200 rounded-lg">
                     <div className="flex items-center justify-between p-2 bg-gray-50">
@@ -2927,7 +3121,7 @@ export default function ProductDetailsTab({
                       >
                         {expandedGroups[group.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         <span>{group.displayLabel}</span>
-                        <span className="text-xs text-gray-500">({group.channels.length})</span>
+                        <span className="text-xs text-gray-500">({pairCnt})</span>
                       </button>
                       <button
                         type="button"
@@ -2946,7 +3140,8 @@ export default function ProductDetailsTab({
                           if (completionFilter === 'incomplete' && percent === 100) return null
                           const sel = selectedChannelVariants[channel.id] || []
                           const hasAny = sel.length > 0
-                          const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
+                          const variants = variantsForChannelInGroup(group, channel.id, productVariantsByChannel)
+                          if (variants.length === 0) return null
                           return (
                             <div
                               key={channel.id}
@@ -3463,7 +3658,7 @@ export default function ProductDetailsTab({
                       mode: 'custom',
                       customGroups:
                         d.customGroups.length > 0
-                          ? d.customGroups.map((g) => ({ ...g, channelIds: [...g.channelIds] }))
+                          ? d.customGroups.map((g) => cloneCustomGroupEntry(g))
                           : channels.length > 0
                             ? seedCustomGroupsFromByType(channels, selfLabel)
                             : [],
@@ -3557,38 +3752,63 @@ export default function ProductDetailsTab({
                   </div>
 
                   <div>
-                    <p className="text-xs font-medium text-gray-700 mb-2">채널별 소속 그룹</p>
+                    <p className="text-xs font-medium text-gray-700 mb-2">채널·variant별 소속 그룹</p>
+                    <p className="text-[11px] text-gray-500 mb-2">
+                      현재 상품에 연결된 variant 기준으로 행이 나뉩니다. 한 채널의 variant를 서로 다른 그룹에 둘 수 있습니다.
+                    </p>
                     <div className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
-                        {channels.map((ch) => (
-                          <div
-                            key={ch.id}
-                            className="px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 bg-white"
-                          >
-                            <div className="flex-1 min-w-0 text-sm">
-                              <span className="font-medium text-gray-800">{ch.name}</span>
-                              <span className="text-gray-400 text-xs ml-1">({ch.type})</span>
-                            </div>
-                            <select
-                              className="text-xs border border-gray-300 rounded px-2 py-1.5 sm:w-44 w-full shrink-0"
-                              value={findDraftGroupIdForChannel(groupLayoutDraft, ch.id)}
-                              onChange={(e) =>
-                                assignChannelInDraft(ch.id, e.target.value as string | '__unassigned__')
-                              }
+                      <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
+                        {channels.flatMap((ch) => {
+                          const rows = productVariantsByChannel[ch.id]?.length
+                            ? productVariantsByChannel[ch.id]!
+                            : [{ variant_key: 'default' as const }]
+                          return rows.map((variant) => (
+                            <div
+                              key={`${ch.id}-${variant.variant_key}`}
+                              className="px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 bg-white"
                             >
-                              <option value="__unassigned__">미배정</option>
-                              {groupLayoutDraft.customGroups.map((cg) => (
-                                <option key={cg.id} value={cg.id}>
-                                  {cg.label.trim() || '이름 없음'}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ))}
+                              <div className="flex-1 min-w-0 text-sm">
+                                <span className="font-medium text-gray-800">{ch.name}</span>
+                                <span className="text-gray-400 text-xs ml-1">({ch.type})</span>
+                                <span className="block text-xs text-gray-600 mt-0.5">
+                                  {variant.variant_name_ko ||
+                                    variant.variant_name_en ||
+                                    variant.variant_key}
+                                  <span className="text-gray-400 ml-1">({variant.variant_key})</span>
+                                </span>
+                              </div>
+
+                              <select
+                                className="text-xs border border-gray-300 rounded px-2 py-1.5 sm:w-44 w-full shrink-0"
+                                value={findDraftGroupIdForPair(
+                                  groupLayoutDraft,
+                                  ch.id,
+                                  variant.variant_key,
+                                  channels,
+                                  productVariantsByChannel
+                                )}
+                                onChange={(e) =>
+                                  assignPairInDraft(
+                                    ch.id,
+                                    variant.variant_key,
+                                    e.target.value as string | '__unassigned__'
+                                  )
+                                }
+                              >
+                                <option value="__unassigned__">미배정</option>
+                                {groupLayoutDraft.customGroups.map((cg) => (
+                                  <option key={cg.id} value={cg.id}>
+                                    {cg.label.trim() || '이름 없음'}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))
+                        })}
                       </div>
                     </div>
                     <p className="text-[11px] text-gray-500 mt-1.5">
-                      미배정 채널은 편집기에서 &quot;미배정 채널&quot; 그룹으로 따로 표시됩니다.
+                      미배정 쌍은 편집기에서 &quot;미배정 채널&quot; 그룹으로 따로 표시됩니다.
                     </p>
                   </div>
                 </>
@@ -3712,7 +3932,8 @@ export default function ProductDetailsTab({
                       if (isSelected) return null
                       const variantMap = copyTargetSelections[channel.id]
                       if (!variantMap || Object.keys(variantMap).length === 0) return null
-                      const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
+                      const variants = variantsForChannelInGroup(group, channel.id, productVariantsByChannel)
+                      if (variants.length === 0) return null
                       return (
                         <div
                           key={channel.id}
