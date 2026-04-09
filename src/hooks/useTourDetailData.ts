@@ -1314,8 +1314,6 @@ export function useTourDetailData() {
         setAllReservations(reservationsList)
 
         // 예약 분류도 다시 계산 (픽업 스케줄 등에 반영되도록 항상 수행)
-        const assignedReservationIds = (tour.reservation_ids || []) as string[]
-
         if (!tour.product_id || !tour.tour_date) {
           console.error('투어 product_id 또는 tour_date가 없습니다.')
         } else {
@@ -1348,6 +1346,13 @@ export function useTourDetailData() {
               }
             })
           }
+
+          // setTour 직후 호출될 때 클로저의 tour.reservation_ids는 아직 이전 값일 수 있음 → DB에서 읽은 동일날 투어 행 사용
+          const currentTourRow = toursList.find((row) => row.id === tour.id) as TourRow | undefined
+          const rawAssignedIds = currentTourRow?.reservation_ids ?? tour.reservation_ids
+          const assignedReservationIds: string[] = Array.isArray(rawAssignedIds)
+            ? rawAssignedIds.map((id: unknown) => String(id).trim()).filter(Boolean)
+            : []
 
           let assignedReservations: ExtendedReservationRow[] = []
           if (assignedReservationIds.length > 0) {

@@ -1,12 +1,13 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
 import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
 import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
@@ -263,6 +264,7 @@ type ScheduleBookingDetailRow =
   | { kind: 'hotel'; line: string }
 
 export default function ScheduleView() {
+  const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
   const { user, userRole } = useAuth()
@@ -305,6 +307,8 @@ export default function ScheduleView() {
   const [pickScheduleTicketBookingIds, setPickScheduleTicketBookingIds] = useState<string[] | null>(null)
   const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string; status: string }>>([])
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
+  /** 미배정 투어 드래그 중: 화면 상·하단 근처에서 페이지 자동 스크롤 */
+  const unassignedDragAutoScrollCleanupRef = useRef<(() => void) | null>(null)
   const [updatingUnassignedTourStatusId, setUpdatingUnassignedTourStatusId] = useState<string | null>(null)
   const [unassignedTourStatusModalTourId, setUnassignedTourStatusModalTourId] = useState<string | null>(null)
   const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
@@ -326,6 +330,46 @@ export default function ScheduleView() {
   const [draggedVehicleRowId, setDraggedVehicleRowId] = useState<string | null>(null)
   const [dragOverVehicleRowId, setDragOverVehicleRowId] = useState<string | null>(null)
   const [shareTeamMembersSetting, setShareTeamMembersSetting] = useState(false)
+
+  /** 페이지(뷰포트) 세로 스크롤 시 날짜 행 sticky — 고정 상단 헤더 높이(px), 없으면 :root --header-height */
+  const [productScheduleStickyTopPx, setProductScheduleStickyTopPx] = useState(64)
+  useLayoutEffect(() => {
+    const readStickyTopPx = () => {
+      if (typeof window === 'undefined') return
+      const fixedHeader = document.querySelector<HTMLElement>('header.fixed')
+      if (fixedHeader) {
+        const h = fixedHeader.getBoundingClientRect().height
+        if (h > 0) {
+          setProductScheduleStickyTopPx(Math.round(h))
+          return
+        }
+      }
+      const raw = getComputedStyle(document.documentElement).getPropertyValue('--header-height').trim()
+      if (raw.endsWith('px')) {
+        const n = parseFloat(raw)
+        if (!Number.isNaN(n)) setProductScheduleStickyTopPx(Math.round(n))
+        return
+      }
+      if (raw.endsWith('rem')) {
+        const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+        const n = parseFloat(raw)
+        if (!Number.isNaN(n)) setProductScheduleStickyTopPx(Math.round(n * fs))
+      }
+    }
+    readStickyTopPx()
+    window.addEventListener('resize', readStickyTopPx)
+    const ro =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => readStickyTopPx())
+        : null
+    const headerEl = document.querySelector<HTMLElement>('header.fixed')
+    if (ro && headerEl) ro.observe(headerEl)
+    return () => {
+      window.removeEventListener('resize', readStickyTopPx)
+      ro?.disconnect()
+    }
+  }, [])
+
   
   // 날짜별 노트 상태
   const [dateNotes, setDateNotes] = useState<{ [date: string]: { note: string; created_by?: string } }>({})
@@ -375,6 +419,15 @@ export default function ScheduleView() {
   ])
   const [batchOffReason, setBatchOffReason] = useState('')
   const [batchOffSaving, setBatchOffSaving] = useState(false)
+
+  /** 드래그 배정 후: 서버에 바로 저장할지 묻는 모달 */
+  const [dragAssignSaveModalOpen, setDragAssignSaveModalOpen] = useState(false)
+  const [dragAssignSaveLoading, setDragAssignSaveLoading] = useState(false)
+  /** 켜면 드래그 배정 후 즉시 저장 모달 없음 · 다른 페이지로 이동 시 저장/폐기 선택 */
+  const [scheduleExplorationMode, setScheduleExplorationMode] = useState(false)
+  const [scheduleLeavePromptOpen, setScheduleLeavePromptOpen] = useState(false)
+  const [scheduleLeaveSaving, setScheduleLeaveSaving] = useState(false)
+  const pendingScheduleLeaveRef = useRef<(() => void) | null>(null)
 
   const resetBatchOffModalFields = useCallback(() => {
     setBatchOffGuides([])
@@ -1046,6 +1099,41 @@ export default function ScheduleView() {
   const fixedSideColumnsPx = 176 // 좌측 제목칸 96 + 우측 합계 80
   const dayColumnWidthCalc = useMemo(() => `calc((100% - ${fixedSideColumnsPx}px) / ${monthDays.length})`, [monthDays.length])
   const dynamicMinTableWidthPx = useMemo(() => fixedSideColumnsPx + monthDays.length * 40, [monthDays.length])
+
+  /** 상품 날짜 헤더 / 본문 가로 스크롤 동기화 (thead를 별도 sticky 래퍼에 두어 뷰포트 기준 sticky 유지) */
+  const productScheduleHeaderScrollRef = useRef<HTMLDivElement>(null)
+  const productScheduleBodyScrollRef = useRef<HTMLDivElement>(null)
+  const productScheduleScrollSyncRef = useRef<'header' | 'body' | null>(null)
+
+  const syncProductScheduleHorizontalScroll = useCallback((source: 'header' | 'body', scrollLeft: number) => {
+    if (productScheduleScrollSyncRef.current) return
+    productScheduleScrollSyncRef.current = source
+    const headerEl = productScheduleHeaderScrollRef.current
+    const bodyEl = productScheduleBodyScrollRef.current
+    if (headerEl && bodyEl) {
+      if (source === 'header') bodyEl.scrollLeft = scrollLeft
+      else headerEl.scrollLeft = scrollLeft
+    }
+    requestAnimationFrame(() => {
+      productScheduleScrollSyncRef.current = null
+    })
+  }, [])
+
+  const onProductScheduleHeaderScroll = useCallback(() => {
+    const el = productScheduleHeaderScrollRef.current
+    if (el) syncProductScheduleHorizontalScroll('header', el.scrollLeft)
+  }, [syncProductScheduleHorizontalScroll])
+
+  const onProductScheduleBodyScroll = useCallback(() => {
+    const el = productScheduleBodyScrollRef.current
+    if (el) syncProductScheduleHorizontalScroll('body', el.scrollLeft)
+  }, [syncProductScheduleHorizontalScroll])
+
+  useLayoutEffect(() => {
+    const headerEl = productScheduleHeaderScrollRef.current
+    const bodyEl = productScheduleBodyScrollRef.current
+    if (headerEl && bodyEl) bodyEl.scrollLeft = headerEl.scrollLeft
+  }, [dynamicMinTableWidthPx, monthDays.length])
 
   // 미 배정된 투어 가져오기
   const fetchUnassignedTours = useCallback(async () => {
@@ -1730,6 +1818,173 @@ export default function ScheduleView() {
   // 초기 로드 시 로컬 임시 저장 데이터 확인
   const [hasDraft, setHasDraft] = useState(false)
   const [draftInfo, setDraftInfo] = useState<{ savedAt: string; month: string; count: number } | null>(null)
+
+  /** 상단 저장 버튼과 동일: 투어 pending + 오프스케줄 pending 일괄 반영 */
+  const executeBatchSave = useCallback(async (): Promise<boolean> => {
+    try {
+      const tourEntries = Object.entries(pendingChanges)
+      for (const [tourId, updateData] of tourEntries) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('tours' as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .update(updateData as any)
+          .eq('id', tourId)
+        if (error) {
+          console.error('Batch save error:', error)
+          showMessage('저장 실패', '일부 변경사항 저장에 실패했습니다.', 'error')
+          return false
+        }
+      }
+
+      const offScheduleEntries = Object.entries(pendingOffScheduleChanges)
+      for (const [, change] of offScheduleEntries) {
+        if (change.action === 'approve') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error } = await (supabase as any)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .from('off_schedules' as any)
+            .update({ status: 'approved' })
+            .eq('team_email', change.team_email)
+            .eq('off_date', change.off_date)
+          if (error) {
+            console.error('Off schedule approve error:', error)
+            showMessage('저장 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
+            return false
+          }
+        } else if (change.action === 'reject') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error } = await (supabase as any)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .from('off_schedules' as any)
+            .update({ status: 'rejected' })
+            .eq('team_email', change.team_email)
+            .eq('off_date', change.off_date)
+          if (error) {
+            console.error('Off schedule reject error:', error)
+            showMessage('저장 실패', '오프 스케줄 거절에 실패했습니다.', 'error')
+            return false
+          }
+        } else if (change.action === 'delete') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error } = await (supabase as any)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .from('off_schedules' as any)
+            .delete()
+            .eq('team_email', change.team_email)
+            .eq('off_date', change.off_date)
+          if (error) {
+            console.error('Off schedule delete error:', error)
+            showMessage('저장 실패', '오프 스케줄 삭제에 실패했습니다.', 'error')
+            return false
+          }
+        }
+      }
+
+      setPendingChanges({})
+      setPendingOffScheduleChanges({})
+      clearDraftFromLocal()
+      setHasDraft(false)
+      setDraftInfo(null)
+      await fetchData()
+      await fetchUnassignedTours()
+      showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
+      return true
+    } catch (err) {
+      console.error('Batch save unexpected error:', err)
+      showMessage('오류', '변경사항 저장 중 오류가 발생했습니다.', 'error')
+      return false
+    }
+  }, [pendingChanges, pendingOffScheduleChanges, fetchData, fetchUnassignedTours, showMessage])
+
+  /** 상단 취소와 동일: 서버 기준으로 되돌림(미저장 변경 폐기) */
+  const discardPendingScheduleChanges = useCallback(async () => {
+    setPendingChanges({})
+    setPendingOffScheduleChanges({})
+    await fetchData()
+    await fetchUnassignedTours()
+  }, [fetchData, fetchUnassignedTours])
+
+  const requestSaveAfterDragAssignment = useCallback(() => {
+    if (scheduleExplorationMode) return
+    setTimeout(() => setDragAssignSaveModalOpen(true), 0)
+  }, [scheduleExplorationMode])
+
+  const confirmDragAssignSave = useCallback(async () => {
+    setDragAssignSaveLoading(true)
+    try {
+      const ok = await executeBatchSave()
+      if (ok) setDragAssignSaveModalOpen(false)
+    } finally {
+      setDragAssignSaveLoading(false)
+    }
+  }, [executeBatchSave])
+
+  const runPendingScheduleLeave = useCallback(() => {
+    const go = pendingScheduleLeaveRef.current
+    pendingScheduleLeaveRef.current = null
+    setScheduleLeavePromptOpen(false)
+    go?.()
+  }, [])
+
+  const handleScheduleLeaveSaveAndGo = useCallback(async () => {
+    setScheduleLeaveSaving(true)
+    try {
+      const ok = await executeBatchSave()
+      if (ok) runPendingScheduleLeave()
+    } finally {
+      setScheduleLeaveSaving(false)
+    }
+  }, [executeBatchSave, runPendingScheduleLeave])
+
+  const handleScheduleLeaveDiscardAndGo = useCallback(async () => {
+    setScheduleLeaveSaving(true)
+    try {
+      await discardPendingScheduleChanges()
+      runPendingScheduleLeave()
+    } finally {
+      setScheduleLeaveSaving(false)
+    }
+  }, [discardPendingScheduleChanges, runPendingScheduleLeave])
+
+  /** 스케줄링 모드 + 미저장 시 사이드바 등 내부 링크 클릭을 가로채 커스텀 확인 */
+  useEffect(() => {
+    if (!scheduleExplorationMode || pendingCount === 0) return
+
+    const onDocClickCapture = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0) return
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const el = (e.target as HTMLElement | null)?.closest?.('a[href]')
+      if (!el) return
+      const a = el as HTMLAnchorElement
+      if (a.target === '_blank' || a.hasAttribute('download')) return
+      const role = a.getAttribute('role')
+      if (role === 'button') return
+      const hrefAttr = a.getAttribute('href')
+      if (!hrefAttr || hrefAttr.startsWith('#') || hrefAttr.startsWith('mailto:') || hrefAttr.startsWith('tel:')) return
+      let url: URL
+      try {
+        url = new URL(a.href, window.location.href)
+      } catch {
+        return
+      }
+      if (url.origin !== window.location.origin) return
+      const cur = new URL(window.location.href)
+      if (url.pathname === cur.pathname && url.search === cur.search && url.hash === cur.hash) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      const dest = `${url.pathname}${url.search}${url.hash}`
+      pendingScheduleLeaveRef.current = () => {
+        router.push(dest)
+      }
+      setScheduleLeavePromptOpen(true)
+    }
+
+    document.addEventListener('click', onDocClickCapture, true)
+    return () => document.removeEventListener('click', onDocClickCapture, true)
+  }, [scheduleExplorationMode, pendingCount, router])
   
   useEffect(() => {
     try {
@@ -1827,6 +2082,8 @@ export default function ScheduleView() {
           [date: string]: {
             totalPeople: number
             waitingPeople: number
+            koWaitingPeople: number
+            enWaitingPeople: number
             canceledPeople: number
             tours: number
             koPeople: number
@@ -1851,6 +2108,8 @@ export default function ScheduleView() {
         [date: string]: {
           totalPeople: number
           waitingPeople: number
+          koWaitingPeople: number
+          enWaitingPeople: number
           canceledPeople: number
           tours: number
           koPeople: number
@@ -1874,9 +2133,19 @@ export default function ScheduleView() {
         const dayReservationsSameDate = reservations.filter(
           res => res.product_id === productId && res.tour_date === dateString
         )
-        const dayWaitingPeople = dayReservationsSameDate
-          .filter(res => (res.status ?? '').toString().toLowerCase() === 'pending')
-          .reduce((sum, res) => sum + (res.total_people || 0), 0)
+        const dayPendingReservations = dayReservationsSameDate.filter(
+          res => (res.status ?? '').toString().toLowerCase() === 'pending'
+        )
+        const dayWaitingPeople = dayPendingReservations.reduce(
+          (sum, res) => sum + (res.total_people || 0),
+          0
+        )
+        const dayKoWaitingPeople = dayPendingReservations.reduce((sum, res) => {
+          const cid = String(res.customer_id || '')
+          const isKo = idToIsKo.get(cid) === true
+          return sum + (isKo ? (res.total_people || 0) : 0)
+        }, 0)
+        const dayEnWaitingPeople = Math.max(dayWaitingPeople - dayKoWaitingPeople, 0)
         const dayCanceledPeople = dayReservationsSameDate
           .filter(res => isReservationCancelledStatus(res.status))
           .reduce((sum, res) => sum + (res.total_people || 0), 0)
@@ -1937,6 +2206,8 @@ export default function ScheduleView() {
           dailyData[dateString] = {
             totalPeople: 0,
             waitingPeople: 0,
+            koWaitingPeople: 0,
+            enWaitingPeople: 0,
             canceledPeople: 0,
             tours: 0,
             koPeople: 0,
@@ -1948,6 +2219,8 @@ export default function ScheduleView() {
         // 멀티데이든 1일 투어든, 해당 날짜(시작일)에만 합산
         dailyData[dateString].totalPeople += dayTotalPeople
         dailyData[dateString].waitingPeople += dayWaitingPeople
+        dailyData[dateString].koWaitingPeople += dayKoWaitingPeople
+        dailyData[dateString].enWaitingPeople += dayEnWaitingPeople
         dailyData[dateString].canceledPeople += dayCanceledPeople
         dailyData[dateString].koPeople += dayKoPeople
         dailyData[dateString].enPeople += dayEnPeople
@@ -2553,6 +2826,7 @@ export default function ScheduleView() {
 
       // tours 상태에 즉시 반영하여 화면에서 미리보기 가능하게 함
       setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, ...updateData } : t))
+      requestSaveAfterDragAssignment()
     } finally {
       setDraggedTour(null)
       setHighlightedDate(null)
@@ -2577,6 +2851,7 @@ export default function ScheduleView() {
       }
     }))
     setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, tour_car_id: targetVehicleId, vehicle_number: newLabel } : t))
+    requestSaveAfterDragAssignment()
     setDraggedTour(null)
     setHighlightedDate(null)
     setDraggedRole(null)
@@ -2609,6 +2884,7 @@ export default function ScheduleView() {
         const updatedTour = { ...draggedTour, tour_guide_id: null, assistant_id: null }
         return exists ? prev.map(t => t.id === draggedTour.id ? updatedTour : t) : [...prev, updatedTour]
       })
+      requestSaveAfterDragAssignment()
     } finally {
       setDraggedTour(null)
       setHighlightedDate(null)
@@ -2686,6 +2962,35 @@ export default function ScheduleView() {
     })
   }, [unassignedTours, products])
 
+  const detachUnassignedDragPageAutoScroll = useCallback(() => {
+    unassignedDragAutoScrollCleanupRef.current?.()
+  }, [])
+
+  const attachUnassignedDragPageAutoScroll = useCallback(() => {
+    detachUnassignedDragPageAutoScroll()
+    const margin = 100
+    const maxStep = 36
+    const onDragOver = (ev: DragEvent) => {
+      ev.preventDefault()
+      const y = ev.clientY
+      const h = window.innerHeight
+      if (y < margin) {
+        const k = Math.min(1, (margin - y) / margin)
+        window.scrollBy(0, -Math.max(2, Math.round(maxStep * k)))
+      } else if (y > h - margin) {
+        const k = Math.min(1, (y - (h - margin)) / margin)
+        window.scrollBy(0, Math.max(2, Math.round(maxStep * k)))
+      }
+    }
+    document.addEventListener('dragover', onDragOver)
+    unassignedDragAutoScrollCleanupRef.current = () => {
+      document.removeEventListener('dragover', onDragOver)
+      unassignedDragAutoScrollCleanupRef.current = null
+    }
+  }, [detachUnassignedDragPageAutoScroll])
+
+  useEffect(() => () => detachUnassignedDragPageAutoScroll(), [detachUnassignedDragPageAutoScroll])
+
   // 미 배정된 투어 카드 드래그 시작
   const handleUnassignedTourCardDragStart = (e: React.DragEvent, card: { tour: Tour; role: 'guide' | 'assistant' }) => {
     setDraggedUnassignedTour(card.tour)
@@ -2695,10 +3000,12 @@ export default function ScheduleView() {
       tourId: card.tour.id,
       role: card.role
     }))
+    attachUnassignedDragPageAutoScroll()
   }
 
   // 미 배정된 투어 드래그 종료
   const handleUnassignedTourDragEnd = () => {
+    detachUnassignedDragPageAutoScroll()
     setDraggedUnassignedTour(null)
     setDragOverCell(null)
     setHighlightedDate(null) // 하이라이트 제거
@@ -2746,7 +3053,9 @@ export default function ScheduleView() {
           })
           .filter(Boolean) as Tour[]
       })
+      requestSaveAfterDragAssignment()
     } finally {
+      detachUnassignedDragPageAutoScroll()
       setDraggedUnassignedTour(null)
       setDragOverCell(null)
       setHighlightedDate(null)
@@ -2914,10 +3223,10 @@ export default function ScheduleView() {
 
   // 상품별 총계 계산
   const productTotals = useMemo(() => {
-    const dailyTotals: { [date: string]: { totalPeople: number; tours: number } } = {}
+    const dailyTotals: { [date: string]: { totalPeople: number; waitingPeople: number; tours: number } } = {}
     
     monthDays.forEach(({ dateString }) => {
-      dailyTotals[dateString] = { totalPeople: 0, tours: 0 }
+      dailyTotals[dateString] = { totalPeople: 0, waitingPeople: 0, tours: 0 }
     })
 
     Object.values(productScheduleData).forEach(product => {
@@ -2925,6 +3234,7 @@ export default function ScheduleView() {
         const dayData = product.dailyData[dateString]
         if (dayData) {
           dailyTotals[dateString].totalPeople += dayData.totalPeople
+          dailyTotals[dateString].waitingPeople += dayData.waitingPeople ?? 0
           dailyTotals[dateString].tours += dayData.tours
         }
       })
@@ -3287,10 +3597,10 @@ export default function ScheduleView() {
     <div className="bg-white rounded-lg shadow-md border p-2">
       {/* 헤더 */}
       <div className="mb-2">
-        {/* 첫 번째 줄: 아이콘 버튼들 + 월 이동/오늘 */}
-        <div className="flex items-center justify-between gap-2 mb-2">
+        {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
+        <div className="relative flex items-center min-h-10 sm:min-h-11 mb-2">
           {/* 왼쪽: 선택 버튼들 */}
-          <div className="flex items-center gap-2">
+          <div className="relative z-10 flex shrink-0 items-center gap-2">
             <div className="flex gap-2">
               {/* 상품 선택 버튼 */}
               <button
@@ -3338,35 +3648,87 @@ export default function ScheduleView() {
             </div>
           </div>
 
-          {/* 오른쪽: 월 이동 + 오늘 */}
-          <div className="flex items-center gap-1 sm:gap-2">
-            <div className="flex items-center space-x-1 sm:space-x-4">
+          {/* 가운데: 월 이동 + 오늘 (카드/테이블 너비 기준 중앙) */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-24 sm:px-32">
+            <div className="pointer-events-auto flex items-center gap-1 sm:gap-2">
+              <div className="flex items-center space-x-1 sm:space-x-4">
+                <button
+                  type="button"
+                  onClick={goToPreviousMonth}
+                  className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+                <h3 className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">
+                  {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
+                </h3>
+                <button
+                  type="button"
+                  onClick={goToNextMonth}
+                  className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              </div>
               <button
-                onClick={goToPreviousMonth}
-                className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                type="button"
+                onClick={goToToday}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors whitespace-nowrap text-xs sm:text-sm"
               >
-                <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">
-                {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
-              </h3>
-              <button
-                onClick={goToNextMonth}
-                className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                오늘
               </button>
             </div>
-            <button
-              onClick={goToToday}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors whitespace-nowrap text-xs sm:text-sm"
+          </div>
+
+          {/* 오른쪽: 스케줄링 모드 토글 · 저장/취소 */}
+          <div className="relative z-10 ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+            <label
+              className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] sm:text-xs whitespace-nowrap select-none ${
+                scheduleExplorationMode
+                  ? 'border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100/90'
+                  : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
+              }`}
+              title="켜면 드래그 배정·배차 후 저장 확인 모달이 나오지 않고, 다른 페이지로 이동할 때 저장 또는 변경 취소를 선택할 수 있습니다."
             >
-              오늘
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 shrink-0 rounded border-gray-400 text-amber-600 focus:ring-amber-500"
+                checked={scheduleExplorationMode}
+                onChange={(e) => setScheduleExplorationMode(e.target.checked)}
+              />
+              <span>스케줄링</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                void executeBatchSave()
+              }}
+              disabled={pendingCount === 0}
+              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+            >
+              저장
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void discardPendingScheduleChanges()
+              }}
+              disabled={pendingCount === 0}
+              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
+            >
+              취소
             </button>
           </div>
         </div>
 
-        {/* 두 번째 줄: 저장/취소/임시저장 버튼들 */}
+        {scheduleExplorationMode && (
+          <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            스케줄링 모드입니다. 드래그로 배정한 뒤 곧바로 저장을 묻지 않습니다. 상단 저장/취소로 언제든 반영하거나 되돌릴 수 있고, 왼쪽 메뉴 등으로 이 페이지를 벗어날 때 저장·저장 안 함·머무르기를 고를 수 있습니다.
+          </div>
+        )}
+
+        {/* 두 번째 줄: 임시저장·복원 등 (저장/취소는 상단 월 행 오른쪽) */}
+        {((hasDraft && pendingCount === 0) || pendingCount > 0) && (
         <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-2 mb-2">
           {/* 로컬 임시 저장 복원 알림 */}
           {hasDraft && pendingCount === 0 && (
@@ -3411,156 +3773,65 @@ export default function ScheduleView() {
               </button>
             </div>
           )}
-          <button
-            onClick={async () => {
-              // 일괄 저장: pendingChanges와 pendingOffScheduleChanges를 순회하며 업데이트
-              try {
-                // 투어 변경사항 저장
-                const tourEntries = Object.entries(pendingChanges)
-                for (const [tourId, updateData] of tourEntries) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const { error } = await (supabase as any)
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    .from('tours' as any)
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    .update(updateData as any)
-                    .eq('id', tourId)
-                  if (error) {
-                    console.error('Batch save error:', error)
-                    showMessage('저장 실패', '일부 변경사항 저장에 실패했습니다.', 'error')
-                    return
-                  }
-                }
-
-                // 오프 스케줄 변경사항 저장
-                const offScheduleEntries = Object.entries(pendingOffScheduleChanges)
-                for (const [, change] of offScheduleEntries) {
-                  if (change.action === 'approve') {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const { error } = await (supabase as any)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      .from('off_schedules' as any)
-                      .update({ status: 'approved' })
-                      .eq('team_email', change.team_email)
-                      .eq('off_date', change.off_date)
-                    if (error) {
-                      console.error('Off schedule approve error:', error)
-                      showMessage('저장 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
-                      return
-                    }
-                  } else if (change.action === 'reject') {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const { error } = await (supabase as any)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      .from('off_schedules' as any)
-                      .update({ status: 'rejected' })
-                      .eq('team_email', change.team_email)
-                      .eq('off_date', change.off_date)
-                    if (error) {
-                      console.error('Off schedule reject error:', error)
-                      showMessage('저장 실패', '오프 스케줄 거절에 실패했습니다.', 'error')
-                      return
-                    }
-                  } else if (change.action === 'delete') {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const { error } = await (supabase as any)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      .from('off_schedules' as any)
-                      .delete()
-                      .eq('team_email', change.team_email)
-                      .eq('off_date', change.off_date)
-                    if (error) {
-                      console.error('Off schedule delete error:', error)
-                      showMessage('저장 실패', '오프 스케줄 삭제에 실패했습니다.', 'error')
-                      return
-                    }
-                  }
-                }
-
-                // 모든 변경사항 초기화 + 로컬 임시 저장 삭제
-                setPendingChanges({})
-                setPendingOffScheduleChanges({})
-                clearDraftFromLocal()
-                setHasDraft(false)
-                setDraftInfo(null)
-                await fetchData()
-                await fetchUnassignedTours()
-                showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
-              } catch (err) {
-                console.error('Batch save unexpected error:', err)
-                showMessage('오류', '변경사항 저장 중 오류가 발생했습니다.', 'error')
-              }
-            }}
-            disabled={pendingCount === 0}
-            className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-          >
-            저장
-          </button>
-          <button
-            onClick={async () => {
-              setPendingChanges({})
-              setPendingOffScheduleChanges({})
-              await fetchData()
-              await fetchUnassignedTours()
-            }}
-            disabled={pendingCount === 0}
-            className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
-          >
-            취소
-          </button>
         </div>
+        )}
       </div>
 
       {/* 통합 스케줄 테이블 컨테이너 */}
       <div className="mb-4">
         {/* 드래그 가능한 스크롤 컨테이너 */}
         <div 
-          className="relative overflow-x-auto scrollbar-hide border-2 border-dashed border-gray-300 rounded-lg p-2 bg-gray-50"
+          className="relative overflow-x-visible overflow-y-visible border-2 border-dashed border-gray-300 rounded-lg p-2 bg-gray-50"
           id="unified-schedule-scroll"
-          style={{ 
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            WebkitOverflowScrolling: 'touch'
-          }}
         >
-          {/* 드래그 안내 텍스트 제거 */}
-          
-          {/* 상품별 스케줄 테이블 */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center justify-between">
-              <div className="flex items-center">
-                <MapPin className="w-4 h-4 mr-1 text-blue-500" />
-                상품별 투어 인원
+          <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center justify-between gap-2 leading-tight">
+            <div className="flex items-center">
+              <MapPin className="w-4 h-4 mr-1 text-blue-500" />
+              상품별 투어 인원
+            </div>
+            <div className="flex items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-100 border border-yellow-300 rounded-full" title="한국어">
+                <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
               </div>
-              <div className="flex items-center gap-2 text-[11px]">
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-100 border border-yellow-300 rounded-full" title="한국어">
-                  <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-red-100 border border-red-300 rounded-full" title="영어">
-                  <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-100 border border-orange-300 rounded-full" title="한국어 & 영어">
-                  <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
-                  <span className="text-[10px] text-orange-400">&</span>
-                  <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
-                </div>
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-red-100 border border-red-300 rounded-full" title="영어">
+                <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
               </div>
-            </h3>
-            <div className="overflow-visible">
-          <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
-            <thead className="bg-blue-50">
-              <tr>
-                <th className="px-2 py-0.5 text-left text-xs font-medium text-gray-700" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
-                  상품명
-                </th>
-                {monthDays.map(({ date, dayOfWeek, dateString }) => {
-                  const hasNote = dateNotes[dateString]?.note
-                  return (
-                    <th 
-                      key={date} 
-                      className={"p-0 text-center text-xs font-medium text-gray-700 relative"}
-                      style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                    >
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-100 border border-orange-300 rounded-full" title="한국어 & 영어">
+                <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
+                <span className="text-[10px] text-orange-400">&</span>
+                <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
+              </div>
+            </div>
+          </h3>
+          {/* 날짜 행: 페이지 세로 스크롤에 붙는 sticky는 이 래퍼에 적용 (내부는 가로 스크롤만) */}
+          <div
+            ref={productScheduleHeaderScrollRef}
+            onScroll={onProductScheduleHeaderScroll}
+            className="sticky z-[1010] scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible bg-blue-50"
+            style={{
+              top: productScheduleStickyTopPx,
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
+            <table className="w-full border-separate border-spacing-0" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
+              <thead className="bg-blue-50">
+                <tr className="align-top">
+                  <th
+                    className="px-2 py-0.5 text-left text-xs font-medium text-gray-700 align-top sticky left-0 z-[1011] bg-blue-50 border-b border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
+                    style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
+                  >
+                    상품명
+                  </th>
+                  {monthDays.map(({ date, dayOfWeek, dateString }) => {
+                    const hasNote = dateNotes[dateString]?.note
+                    return (
+                      <th
+                        key={date}
+                        className="p-0 text-center text-xs font-medium text-gray-700 align-top bg-blue-50 border-b border-gray-200"
+                        style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                      >
                       <div 
                         className={`
                           px-1 py-0.5 cursor-pointer transition-colors relative
@@ -3598,11 +3869,24 @@ export default function ScheduleView() {
                     </th>
                   )
                 })}
-                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700 align-top bg-blue-50 border-b border-gray-200" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
                   합계
                 </th>
               </tr>
             </thead>
+            </table>
+          </div>
+          <div
+            ref={productScheduleBodyScrollRef}
+            onScroll={onProductScheduleBodyScroll}
+            className="scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible"
+            style={{
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
+            <table className="w-full border-separate border-spacing-0" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
             <tbody className="divide-y divide-gray-200">
               {/* 각 상품별 데이터 */}
               {Object.entries(productScheduleData).map(([productId, product], index) => {
@@ -3622,7 +3906,7 @@ export default function ScheduleView() {
                     onDrop={(e) => handleProductRowDrop(e, productId)}
                   >
                     <td 
-                      className={`px-2 py-0.5 text-xs font-medium cursor-grab active:cursor-grabbing select-none border border-gray-300 ${displayProps.className ?? ''}`.trim()}
+                      className={`px-2 py-0.5 text-xs font-medium cursor-grab active:cursor-grabbing select-none border border-gray-300 sticky left-0 z-[60] shadow-[1px_0_0_0_rgb(209,213,219)] ${displayProps.className ?? ''}`.trim()}
                       style={{ width: '96px', minWidth: '96px', maxWidth: '96px', ...displayProps.style }}
                       draggable
                       onDragStart={(e) => handleProductRowDragStart(e, productId)}
@@ -3643,11 +3927,11 @@ export default function ScheduleView() {
                         >
                           {(() => {
                             const langBgClass = dayData ? (() => {
-                              const hasKo = (dayData.koPeople || 0) > 0
-                              const hasEn = (dayData.enPeople || 0) > 0
-                              if (hasKo && hasEn) return 'bg-orange-100'
-                              if (hasKo) return 'bg-yellow-100'
-                              if (hasEn) return 'bg-red-100'
+                              const koAll = (dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)
+                              const enAll = (dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)
+                              if (koAll > 0 && enAll > 0) return 'bg-orange-100'
+                              if (koAll > 0) return 'bg-yellow-100'
+                              if (enAll > 0) return 'bg-red-100'
                               return 'bg-white'
                             })() : 'bg-white'
                             const todayWrapClass = isToday(dateString)
@@ -3687,13 +3971,21 @@ export default function ScheduleView() {
                               >
                                 {dayData ? (
                                   <div
-                                    className={`font-medium leading-tight whitespace-nowrap ${
-                                      dayData.totalPeople === 0
-                                        ? 'text-gray-300'
-                                        : dayData.totalPeople < 4
-                                          ? 'text-blue-600'
-                                          : 'text-red-600'
-                                    } ${isToday(dateString) ? 'text-red-700' : ''}`}
+                                    className={(() => {
+                                      const confirmed = dayData.totalPeople
+                                      const waiting = dayData.waitingPeople ?? 0
+                                      const onlyWaiting = confirmed === 0 && waiting > 0
+                                      if (onlyWaiting) {
+                                        return `font-medium leading-tight whitespace-nowrap ${isToday(dateString) ? 'text-blue-700' : 'text-blue-600'}`
+                                      }
+                                      return `font-medium leading-tight whitespace-nowrap ${
+                                        confirmed === 0
+                                          ? 'text-gray-300'
+                                          : confirmed < 4
+                                            ? 'text-blue-600'
+                                            : 'text-red-600'
+                                      } ${isToday(dateString) ? 'text-red-700' : ''}`
+                                    })()}
                                   >
                                     {formatProductScheduleCellPeople(
                                       dayData.totalPeople,
@@ -3709,12 +4001,12 @@ export default function ScheduleView() {
                                     <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
                                       <span className="inline-flex items-center gap-1 shrink-0">
                                         <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
-                                        <span>{dayData.koPeople || 0}</span>
+                                        <span>{(dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)}</span>
                                       </span>
                                       <span className="text-gray-400 shrink-0">/</span>
                                       <span className="inline-flex items-center gap-1 shrink-0">
                                         <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
-                                        <span>{dayData.enPeople || 0}</span>
+                                        <span>{(dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)}</span>
                                       </span>
                                     </div>
                                     {choiceLine && (
@@ -3731,13 +4023,21 @@ export default function ScheduleView() {
                       )
                     })}
                 <td className="px-2 py-0.5 text-center text-xs font-medium bg-white" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  <div className={`font-medium ${
-                    product.totalPeople === 0 
-                      ? 'text-gray-300' 
-                      : product.totalPeople < 4 
-                        ? 'text-blue-600' 
-                        : 'text-red-600'
-                  }`}>{product.totalPeople}</div>
+                  <div className={(() => {
+                    const rowWaiting = Object.values(product.dailyData).reduce(
+                      (s, d) => s + (d.waitingPeople ?? 0),
+                      0
+                    )
+                    const onlyWaitingTotal = product.totalPeople === 0 && rowWaiting > 0
+                    if (onlyWaitingTotal) return 'font-medium text-blue-600'
+                    return `font-medium ${
+                      product.totalPeople === 0
+                        ? 'text-gray-300'
+                        : product.totalPeople < 4
+                          ? 'text-blue-600'
+                          : 'text-red-600'
+                    }`
+                  })()}>{product.totalPeople}</div>
                 </td>
                   </tr>
                 )
@@ -3745,7 +4045,7 @@ export default function ScheduleView() {
 
               {/* 상품별 총계 행 - 가장 아래로 이동 */}
               <tr className="bg-blue-100 font-semibold">
-                <td className="px-2 py-0.5 text-xs text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <td className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-[60] bg-blue-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -3757,13 +4057,21 @@ export default function ScheduleView() {
                       style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                     >
                       <div className={`${isToday(dateString) ? 'border-2 border-red-500 bg-red-50' : ''} px-1 py-0.5`}>
-                        <div className={`font-medium ${
-                          dayTotal.totalPeople === 0 
-                            ? 'text-gray-300' 
-                            : dayTotal.totalPeople < 4 
-                              ? 'text-blue-600' 
-                              : 'text-red-600'
-                        } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayTotal.totalPeople}</div>
+                        <div className={(() => {
+                          const confirmed = dayTotal.totalPeople
+                          const waiting = dayTotal.waitingPeople ?? 0
+                          const onlyWaiting = confirmed === 0 && waiting > 0
+                          if (onlyWaiting) {
+                            return `font-medium ${isToday(dateString) ? 'text-blue-700' : 'text-blue-600'}`
+                          }
+                          return `font-medium ${
+                            confirmed === 0
+                              ? 'text-gray-300'
+                              : confirmed < 4
+                                ? 'text-blue-600'
+                                : 'text-red-600'
+                          } ${isToday(dateString) ? 'text-red-700' : ''}`
+                        })()}>{dayTotal.totalPeople}</div>
                       </div>
                     </td>
                   )
@@ -3774,8 +4082,6 @@ export default function ScheduleView() {
               </tr>
             </tbody>
           </table>
-            </div>
-          </div>
           {/* 가이드별 스케줄 테이블 */}
           <div>
             <div className="overflow-visible">
@@ -4916,6 +5222,7 @@ export default function ScheduleView() {
               </div>
             )}
           </div>
+          </div>
         </div>
       </div>
 
@@ -5111,7 +5418,7 @@ export default function ScheduleView() {
 
       {/* 상품 선택 모달 */}
       {showProductModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center">
@@ -5263,7 +5570,7 @@ export default function ScheduleView() {
 
       {/* 색상 프리셋 선택 모달 */}
       {colorPresetModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">
@@ -5329,7 +5636,7 @@ export default function ScheduleView() {
 
       {/* 팀원 선택 모달 */}
       {showTeamModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center">
@@ -5452,7 +5759,7 @@ export default function ScheduleView() {
 
       {/* 메시지 모달 */}
       {showMessageModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
@@ -5647,7 +5954,7 @@ export default function ScheduleView() {
       </Dialog>
 
       {scheduleTicketBookingFormOpen && scheduleTicketBookingEdit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto relative shadow-xl">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
               <h3 className="text-xl font-semibold">
@@ -5696,12 +6003,12 @@ export default function ScheduleView() {
       )}
 
       {loadingScheduleReservationEdit && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]" aria-hidden>
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[1100]" aria-hidden>
           <div className="text-white font-medium text-sm">{locale === 'ko' ? '불러오는 중…' : 'Loading…'}</div>
         </div>
       )}
       {scheduleEditingReservation && scheduleReservationFormData && (
-        <div className="fixed inset-0 z-[60]">
+        <div className="fixed inset-0 z-[1100]">
           <ReservationFormAny
             reservation={scheduleEditingReservation}
             customers={scheduleReservationFormData.customers}
@@ -5809,9 +6116,106 @@ export default function ScheduleView() {
         onDelete={deleteDateNote}
       />
 
+      {scheduleLeavePromptOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">저장되지 않은 스케줄 변경</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  if (scheduleLeaveSaving) return
+                  pendingScheduleLeaveRef.current = null
+                  setScheduleLeavePromptOpen(false)
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                disabled={scheduleLeaveSaving}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              이동하면 화면에만 반영된 배정 변경이 사라지거나 그대로 둘지 선택해 주세요. 저장 시 오프 스케줄 등 다른 대기 변경도 함께 서버에 반영됩니다.
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (scheduleLeaveSaving) return
+                  pendingScheduleLeaveRef.current = null
+                  setScheduleLeavePromptOpen(false)
+                }}
+                disabled={scheduleLeaveSaving}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+              >
+                머무르기
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleScheduleLeaveDiscardAndGo()}
+                disabled={scheduleLeaveSaving}
+                className="px-4 py-2 text-gray-800 bg-orange-100 rounded-lg hover:bg-orange-200 disabled:opacity-50"
+              >
+                저장 안 함
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleScheduleLeaveSaveAndGo()}
+                disabled={scheduleLeaveSaving}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {scheduleLeaveSaving ? '처리 중…' : '저장 후 이동'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dragAssignSaveModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">변경사항 저장</h3>
+              <button
+                type="button"
+                onClick={() => !dragAssignSaveLoading && setDragAssignSaveModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                disabled={dragAssignSaveLoading}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              드래그로 반영한 배정 변경을 서버에 지금 저장하시겠습니까?
+              <span className="block mt-2 text-xs text-gray-500">
+                저장 시 상단에 대기 중인 다른 변경사항(오프 스케줄 등)도 함께 저장됩니다.
+              </span>
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDragAssignSaveModalOpen(false)}
+                disabled={dragAssignSaveLoading}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+              >
+                나중에
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDragAssignSave()}
+                disabled={dragAssignSaveLoading}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {dragAssignSaveLoading ? '저장 중…' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 확인 모달 */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
@@ -5859,7 +6263,7 @@ export default function ScheduleView() {
 
       {/* 가이드 모달 */}
       {showGuideModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
@@ -5905,7 +6309,7 @@ export default function ScheduleView() {
       {/* 투어 상세 (스케줄 뷰에서 페이지 이동 없이 확인) */}
       <Dialog open={!!tourDetailModal} onOpenChange={(open) => { if (!open) setTourDetailModal(null) }}>
         <DialogContent
-          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[100] sm:rounded-lg"
+          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
@@ -5937,7 +6341,7 @@ export default function ScheduleView() {
 
       {/* 일괄 오프 스케줄 모달 */}
       {showBatchOffModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -6189,7 +6593,7 @@ export default function ScheduleView() {
         const isNewSchedule = !existingOffSchedule && (!selectedOffSchedule.reason || selectedOffSchedule.reason.trim() === '')
         
         return (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style={{ zIndex: showConfirmModal ? 40 : 50 }}>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
             <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -6353,7 +6757,7 @@ export default function ScheduleView() {
 
       {/* 차량 스케줄: 날짜 셀 클릭 시 투어 배정 모달 */}
       {showVehicleAssignModal && vehicleAssignTarget && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-4 max-w-lg w-full mx-4 max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900">
@@ -6447,6 +6851,7 @@ export default function ScheduleView() {
                           setTours(prev => prev.map(t => t.id === tour.id ? { ...t, tour_car_id: vehicleAssignTarget.vehicleId, vehicle_number: monthVehiclesWithColors.vehicleList.find(v => v.id === vehicleAssignTarget.vehicleId)?.label ?? null } : t))
                           setShowVehicleAssignModal(false)
                           setVehicleAssignTarget(null)
+                          requestSaveAfterDragAssignment()
                         }}
                         className={`ml-2 px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${isAlreadyThis ? 'bg-gray-300 text-gray-500 cursor-default' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                       >

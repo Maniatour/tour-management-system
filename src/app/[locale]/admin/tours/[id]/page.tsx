@@ -937,16 +937,44 @@ export default function TourDetailPage() {
 
   const handleAssignReservation = async (reservationId: string) => {
     if (!tourData.tour) return
-    const updatedReservationIds = await tourHandlers.handleAssignReservation({
-      ...tourData.tour
-    }, reservationId)
-    if (updatedReservationIds) {
-      const reservation = tourData.pendingReservations.find((r: any) => r.id === reservationId)
-      if (reservation) {
-        tourData.setAssignedReservations([...tourData.assignedReservations, reservation])
+
+    const pendingReservation = tourData.pendingReservations.find((r: any) => r.id === reservationId)
+    if (pendingReservation) {
+      const updatedReservationIds = await tourHandlers.handleAssignReservation(
+        { ...tourData.tour },
+        reservationId
+      )
+      if (updatedReservationIds) {
+        tourData.setAssignedReservations([...tourData.assignedReservations, pendingReservation])
         tourData.setPendingReservations(tourData.pendingReservations.filter((r: any) => r.id !== reservationId))
-        tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
-        // 예약 목록 새로고침
+        tourData.setTour((prev: TourRow | null) =>
+          prev ? { ...prev, reservation_ids: updatedReservationIds } : null
+        )
+        if (tourData.refreshReservations) {
+          await tourData.refreshReservations()
+        }
+      }
+      return
+    }
+
+    const otherTourReservation = tourData.otherToursAssignedReservations.find((r: any) => r.id === reservationId)
+    if (otherTourReservation) {
+      const fromTourId =
+        (otherTourReservation as { assigned_tour_id?: string | null }).assigned_tour_id ||
+        (otherTourReservation as { tour_id?: string | null }).tour_id
+      if (!fromTourId) {
+        alert('원본 투어 정보를 찾을 수 없습니다.')
+        return
+      }
+      const moved = await tourHandlers.handleMoveReservationBetweenTours(
+        reservationId,
+        fromTourId,
+        tourData.tour.id
+      )
+      if (moved) {
+        tourData.setTour((prev: TourRow | null) =>
+          prev ? { ...prev, reservation_ids: moved.newToIds } : null
+        )
         if (tourData.refreshReservations) {
           await tourData.refreshReservations()
         }
@@ -990,6 +1018,23 @@ export default function TourDetailPage() {
       tourData.setPendingReservations([...tourData.pendingReservations, ...tourData.assignedReservations])
       tourData.setAssignedReservations([])
       tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+    }
+  }
+
+  const handleMoveAssignedToOtherTour = async (reservationId: string, targetTourId: string) => {
+    if (!tourData.tour) return
+    const moved = await tourHandlers.handleMoveReservationBetweenTours(
+      reservationId,
+      tourData.tour.id,
+      targetTourId
+    )
+    if (moved) {
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, reservation_ids: moved.newFromIds } : null
+      )
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
     }
   }
 
@@ -1833,7 +1878,6 @@ export default function TourDetailPage() {
               onAssignReservation={handleAssignReservation}
               onUnassignReservation={handleUnassignReservation}
               onStatusChange={handleReservationStatusChange}
-              onReassignFromOtherTour={() => {}}
               onNavigateToTour={(tourId: string) => {
                 router.push(`/${locale}/admin/tours/${tourId}`)
               }}
@@ -1864,6 +1908,8 @@ export default function TourDetailPage() {
               safeJsonParse={safeJsonParse}
               pickupHotels={tourData.pickupHotels}
               hasMultipleToursOnSameDay={(tourData.sameDayTourIds?.length ?? 0) >= 2}
+              sameDayPeerTourIds={(tourData.sameDayTourIds || []).filter((id) => id !== tourData.tour?.id)}
+              onMoveAssignedReservationToTour={handleMoveAssignedToOtherTour}
               currentTourId={tourData.tour?.id ?? ''}
               productId={tourData.tour?.product_id ?? null}
               tourDate={tourData.tour?.tour_date ?? null}

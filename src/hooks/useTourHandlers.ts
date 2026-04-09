@@ -251,6 +251,72 @@ export function useTourHandlers() {
     }
   }, [])
 
+  /** 다른 투어 reservation_ids에서 제거 후 대상 투어에 추가 (같은 날/상품 내 재배정) */
+  const handleMoveReservationBetweenTours = useCallback(
+    async (reservationId: string, fromTourId: string, toTourId: string) => {
+      const rid = String(reservationId).trim()
+      if (!rid || fromTourId === toTourId) return null
+
+      try {
+        const { data: rows, error: fetchError } = await supabase
+          .from('tours')
+          .select('id, reservation_ids')
+          .in('id', [fromTourId, toTourId])
+
+        if (fetchError || !rows?.length) {
+          console.error('handleMoveReservationBetweenTours fetch:', fetchError)
+          return null
+        }
+
+        const fromRow = rows.find((r) => r.id === fromTourId) as { id: string; reservation_ids?: unknown } | undefined
+        const toRow = rows.find((r) => r.id === toTourId) as { id: string; reservation_ids?: unknown } | undefined
+        if (!fromRow || !toRow) return null
+
+        const normalizeIds = (raw: unknown): string[] => {
+          if (!raw || !Array.isArray(raw)) return []
+          return raw.map((x) => String(x).trim()).filter(Boolean)
+        }
+
+        const fromIds = normalizeIds(fromRow.reservation_ids)
+        const toIds = normalizeIds(toRow.reservation_ids)
+        const newFromIds = fromIds.filter((id) => id !== rid)
+        const newToIds = toIds.includes(rid) ? [...toIds] : [...toIds, rid]
+
+        const { error: e1 } = await supabase
+          .from('tours')
+          .update({ reservation_ids: newFromIds } as Database['public']['Tables']['tours']['Update'])
+          .eq('id', fromTourId)
+
+        if (e1) {
+          console.error('handleMoveReservationBetweenTours update from:', e1)
+          alert('기존 투어에서 예약을 빼는 중 오류가 발생했습니다.')
+          return null
+        }
+
+        const { error: e2 } = await supabase
+          .from('tours')
+          .update({ reservation_ids: newToIds } as Database['public']['Tables']['tours']['Update'])
+          .eq('id', toTourId)
+
+        if (e2) {
+          console.error('handleMoveReservationBetweenTours update to:', e2)
+          await supabase
+            .from('tours')
+            .update({ reservation_ids: fromIds } as Database['public']['Tables']['tours']['Update'])
+            .eq('id', fromTourId)
+          alert('새 투어에 예약을 넣는 중 오류가 발생했습니다.')
+          return null
+        }
+
+        return { newFromIds, newToIds }
+      } catch (error) {
+        console.error('handleMoveReservationBetweenTours:', error)
+        return null
+      }
+    },
+    []
+  )
+
   // 예약 배정 해제 함수
   const handleUnassignReservation = useCallback(async (tour: { id: string; reservation_ids?: string[] }, reservationId: string) => {
     if (!tour) return
@@ -441,6 +507,7 @@ export function useTourHandlers() {
     handleAssistantSelect,
     handleTourNoteChange,
     handleAssignReservation,
+    handleMoveReservationBetweenTours,
     handleUnassignReservation,
     handleAssignAllReservations,
     handleUnassignAllReservations,

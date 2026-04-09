@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare } from 'lucide-react'
+import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare, ArrowRightLeft, Import, Send } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -74,6 +74,12 @@ interface ReservationCardProps {
   onAssign?: (reservationId: string) => void
   onUnassign?: (reservationId: string) => void
   onReassign?: (reservationId: string, fromTourId: string) => void
+  /** 이 투어로 배정 버튼: 기본 체크 / 다른 투어에서 끌어올 때는 import 아이콘 */
+  assignIconVariant?: 'check' | 'import'
+  assignButtonTitle?: string
+  /** 현재 투어에서 다른 투어로 예약 이동(배정 관리 1번 섹션) */
+  onMoveToOtherTour?: (reservationId: string) => void
+  moveToOtherTourTitle?: string
   onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   getCustomerName: (customerId: string) => string
   getCustomerLanguage: (customerId: string) => string
@@ -96,6 +102,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   onAssign,
   onUnassign,
   onReassign,
+  assignIconVariant = 'check',
+  assignButtonTitle,
+  onMoveToOtherTour,
+  moveToOtherTourTitle,
   onStatusChange,
   getCustomerName,
   getCustomerLanguage,
@@ -1687,19 +1697,39 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               <>
                 {onAssign && (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       onAssign(reservation.id)
                     }}
-                    className="p-1 text-green-600 hover:bg-green-50 rounded"
-                    title="이 투어로 배정"
+                    className={
+                      assignIconVariant === 'import'
+                        ? 'p-1 text-teal-600 hover:bg-teal-50 rounded'
+                        : 'p-1 text-green-600 hover:bg-green-50 rounded'
+                    }
+                    title={assignButtonTitle ?? '이 투어로 배정'}
                   >
-                    <Check size={14} />
+                    {assignIconVariant === 'import' ? <Import size={14} /> : <Check size={14} />}
+                  </button>
+                )}
+
+                {onMoveToOtherTour && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onMoveToOtherTour(reservation.id)
+                    }}
+                    className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                    title={moveToOtherTourTitle ?? '다른 투어로 배정'}
+                  >
+                    <Send size={14} />
                   </button>
                 )}
                 
                 {onUnassign && (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       onUnassign(reservation.id)
@@ -1711,20 +1741,24 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   </button>
                 )}
                 
-                {onReassign && reservation.tour_id && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (reservation.tour_id) {
-                        onReassign(reservation.id, reservation.tour_id)
-                      }
-                    }}
-                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                    title="다른 투어로 재배정"
-                  >
-                    <Check size={14} />
-                  </button>
-                )}
+                {onReassign && (() => {
+                  const fromTourId =
+                    (reservation as { assigned_tour_id?: string | null }).assigned_tour_id || reservation.tour_id
+                  if (!fromTourId) return null
+                  return (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onReassign(reservation.id, fromTourId)
+                      }}
+                      className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                      title="다른 투어로 재배정"
+                    >
+                      <ArrowRightLeft size={14} />
+                    </button>
+                  )
+                })()}
               </>
             )}
           </div>

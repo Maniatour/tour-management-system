@@ -2553,7 +2553,15 @@
         "guide": "Guide",
         "assistant": "Assistant",
         "reservations": "reservations",
-        "unknown": "Unknown"
+        "unknown": "Unknown",
+        "assignToThisTourPullIn": "Assign to this tour",
+        "moveToOtherTour": "Move to another tour",
+        "moveToOtherTourModalTitle": "Move to another tour",
+        "moveToOtherTourModalHint": "Select the tour to move this reservation to.",
+        "moveToOtherTourConfirm": "Move",
+        "moveToOtherTourCancel": "Cancel",
+        "moveToOtherTourLoading": "Loading tours…",
+        "moveToOtherTourNoTargets": "No other tours on this date."
     },
     "tourSchedule": {
         "title": "Tour Schedule"

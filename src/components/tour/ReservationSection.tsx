@@ -31,6 +31,10 @@ interface ReservationSectionProps {
   onAssignReservation?: (reservationId: string) => void
   onUnassignReservation?: (reservationId: string) => void
   onReassignFromOtherTour?: (reservationId: string, fromTourId: string) => void
+  assignIconVariant?: 'check' | 'import'
+  assignButtonTitle?: string
+  onMoveReservationToOtherTour?: (reservationId: string) => void
+  moveToOtherTourButtonTitle?: string
   onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   onEditPickupTime?: (reservation: Reservation) => void
   onEditPickupHotel?: (reservation: Reservation) => void
@@ -55,6 +59,10 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   onAssignReservation,
   onUnassignReservation,
   onReassignFromOtherTour,
+  assignIconVariant,
+  assignButtonTitle,
+  onMoveReservationToOtherTour,
+  moveToOtherTourButtonTitle,
   onStatusChange,
   onEditPickupTime,
   onEditPickupHotel,
@@ -119,6 +127,10 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
               onAssign={onAssignReservation}
               onUnassign={onUnassignReservation}
               onReassign={onReassignFromOtherTour}
+              {...(assignIconVariant && { assignIconVariant })}
+              {...(assignButtonTitle && { assignButtonTitle })}
+              {...(onMoveReservationToOtherTour && { onMoveToOtherTour: onMoveReservationToOtherTour })}
+              {...(moveToOtherTourButtonTitle && { moveToOtherTourTitle: moveToOtherTourButtonTitle })}
               onStatusChange={onStatusChange}
               onEditPickupTime={onEditPickupTime}
               onEditPickupHotel={onEditPickupHotel}

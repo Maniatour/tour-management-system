@@ -34,6 +34,22 @@ type ReservationRow = {
   adults: number | null
   child?: number | null
   infant?: number | null
+  status: string | null
+  channel_id: string | null
+}
+
+type ChannelRow = { id: string; name?: string | null; name_ko?: string | null }
+
+function channelDisplayLabel(ch: ChannelRow): string {
+  const ko = ch.name_ko != null && String(ch.name_ko).trim() !== '' ? String(ch.name_ko).trim() : ''
+  const nm = ch.name != null && String(ch.name).trim() !== '' ? String(ch.name).trim() : ''
+  return ko || nm || String(ch.id).trim().slice(0, 8)
+}
+
+function normalizeChannelId(id: string | null | undefined): string | null {
+  if (id == null) return null
+  const t = String(id).trim()
+  return t || null
 }
 
 type Move = { reservationId: string; reservationLabel: string; fromTourId: string; toTourId: string }
@@ -64,6 +80,62 @@ const isKorean = (lang: string | null | undefined): boolean => {
   if (!lang) return false
   const l = String(lang).toLowerCase().trim()
   return l === 'ko' || l === 'kr' || l === '한국어' || l === 'korean' || l === 'kr'
+}
+
+/** 자동/수동 배정 대상에서 제외 (취소·삭제 등) */
+function isAssignableReservationStatus(status: string | null | undefined): boolean {
+  const s = (status || '').toLowerCase().trim()
+  if (!s) return true
+  return s !== 'cancelled' && s !== 'canceled' && s !== 'deleted'
+}
+
+/** DB/이전 데이터에 동일 id가 중복될 수 있어 순서 유지하며 한 번만 남김 */
+function dedupeReservationIds(ids: string[] | null | undefined): string[] | null {
+  if (!ids?.length) return ids?.length === 0 ? [] : null
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const id of ids) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+function reservationStatusLabel(status: string | null | undefined): string {
+  if (status == null || String(status).trim() === '') return '-'
+  const s = String(status).toLowerCase().trim()
+  const map: Record<string, string> = {
+    pending: '대기',
+    confirmed: '확정',
+    recruiting: '모집중',
+    completed: '완료',
+    cancelled: '취소',
+    canceled: '취소',
+    deleted: '삭제'
+  }
+  return map[s] || status
+}
+
+function reservationStatusBadgeClass(status: string | null | undefined): string {
+  const s = (status || '').toLowerCase().trim()
+  switch (s) {
+    case 'confirmed':
+      return 'bg-green-100 text-green-800 border border-green-200'
+    case 'recruiting':
+      return 'bg-blue-100 text-blue-800 border border-blue-200'
+    case 'cancelled':
+    case 'canceled':
+      return 'bg-red-100 text-red-800 border border-red-200'
+    case 'completed':
+      return 'bg-gray-100 text-gray-800 border border-gray-200'
+    case 'pending':
+      return 'bg-amber-100 text-amber-900 border border-amber-200'
+    case 'deleted':
+      return 'bg-slate-200 text-slate-700 border border-slate-300'
+    default:
+      return 'bg-gray-100 text-gray-800 border border-gray-200'
+  }
 }
 
 interface AutoAssignModalProps {
@@ -99,6 +171,7 @@ export default function AutoAssignModal({
   const [pickupHotels, setPickupHotels] = useState<PickupHotelRow[]>([])
   const [manualOverrides, setManualOverrides] = useState<Map<string, string>>(new Map())
   const [openMoveDropdownRid, setOpenMoveDropdownRid] = useState<string | null>(null)
+  const [channelNameById, setChannelNameById] = useState<Map<string, string>>(new Map())
   const initialToursSetRef = useRef(false)
 
   useEffect(() => {
@@ -319,7 +392,7 @@ export default function AutoAssignModal({
         if (toIdx >= 0) result[toIdx].reservation_ids = [...(result[toIdx].reservation_ids || []), rid]
       }
     })
-    return result
+    return result.map(t => ({ ...t, reservation_ids: dedupeReservationIds(t.reservation_ids) }))
   }, [proposedTours, manualOverrides])
 
   const setReservationToTour = useCallback((reservationId: string, toTourId: string) => {
@@ -333,6 +406,7 @@ export default function AutoAssignModal({
       setShowPriorityHelp(false)
       setManualOverrides(new Map())
       setOpenMoveDropdownRid(null)
+      setChannelNameById(new Map())
     }
   }, [isOpen])
 
@@ -343,19 +417,36 @@ export default function AutoAssignModal({
     const load = async () => {
       setLoading(true)
       try {
-        const [toursRes, teamRes, vehiclesRes, reservRes, pickupHotelsRes] = await Promise.all([
+        const [toursRes, teamRes, vehiclesRes, reservRes, pickupHotelsRes, channelsRes] = await Promise.all([
           supabase.from('tours').select('id, tour_guide_id, assistant_id, reservation_ids, tour_car_id').eq('product_id', productId).eq('tour_date', tourDate),
           supabase.from('team').select('email, languages, name_ko, nick_name'),
           supabase.from('vehicles').select('id, capacity, nick, vehicle_number, vehicle_type, vehicle_category, rental_company, rental_start_date, rental_end_date'),
-          supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant').eq('product_id', productId).eq('tour_date', tourDate),
-          supabase.from('pickup_hotels').select('id, hotel, pick_up_location')
+          supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id').eq('product_id', productId).eq('tour_date', tourDate),
+          supabase.from('pickup_hotels').select('id, hotel, pick_up_location'),
+          // name_ko만 지정하면 컬럼이 없는 DB에서 전체 조회가 실패할 수 있어 * 사용 (useTourDetailData와 동일)
+          supabase.from('channels').select('*').order('name')
         ])
 
-        // Tours
+        // Reservations (취소·삭제는 배정 로직·표시에서 제외)
+        const reservDataAll = (reservRes.data || []) as ReservationRow[]
+        const assignableIds = new Set(
+          reservDataAll.filter(r => isAssignableReservationStatus(r.status)).map(r => r.id)
+        )
+        const reservData = reservDataAll.filter(r => isAssignableReservationStatus(r.status))
+        setReservations(reservData)
+
+        // Tours — 투어에 남아 있는 취소 예약 id는 모달 기준 배정에서 제거
         const toursData = (toursRes.data || []) as TourRow[]
         if (!initialToursSetRef.current) {
           initialToursSetRef.current = true
-          setInitialTours(toursData.map(t => ({ ...t, reservation_ids: t.reservation_ids ? [...t.reservation_ids] : null })))
+          setInitialTours(
+            toursData.map(t => ({
+              ...t,
+              reservation_ids: dedupeReservationIds(
+                (t.reservation_ids || []).filter(id => assignableIds.has(id))
+              )
+            }))
+          )
         }
 
         // Team
@@ -365,9 +456,42 @@ export default function AutoAssignModal({
         setVehicles((vehiclesRes.data || []) as VehicleRow[])
         setPickupHotels((pickupHotelsRes.data || []) as PickupHotelRow[])
 
-        // Reservations
-        const reservData = (reservRes.data || []) as ReservationRow[]
-        setReservations(reservData)
+        const chMap = new Map<string, string>()
+        const ingestChannelRows = (rows: ChannelRow[]) => {
+          rows.forEach(ch => {
+            const id = normalizeChannelId(ch.id)
+            if (!id) return
+            chMap.set(id, channelDisplayLabel(ch))
+          })
+        }
+        if (channelsRes.error) {
+          console.error('AutoAssignModal: channels 목록 조회 실패', channelsRes.error)
+        }
+        ingestChannelRows(((channelsRes.data || []) as unknown as ChannelRow[]) || [])
+
+        const neededChannelIds = [
+          ...new Set(
+            reservData
+              .map(r => normalizeChannelId(r.channel_id))
+              .filter((id): id is string => Boolean(id))
+          )
+        ]
+        const missingIds = neededChannelIds.filter(id => !chMap.has(id))
+        if (missingIds.length > 0) {
+          let extra: ChannelRow[] | null = null
+          const trySelect = async (cols: string) => {
+            const { data, error } = await supabase.from('channels').select(cols).in('id', missingIds)
+            if (error) return null
+            return (data || []) as unknown as ChannelRow[]
+          }
+          extra = await trySelect('id, name, name_ko')
+          if (!extra?.length) {
+            extra = await trySelect('id, name')
+          }
+          if (extra?.length) ingestChannelRows(extra)
+        }
+
+        setChannelNameById(chMap)
 
         const customerIds = [...new Set(reservData.map(r => r.customer_id).filter(Boolean))] as string[]
         if (customerIds.length > 0) {
@@ -567,7 +691,7 @@ export default function AutoAssignModal({
                           <div className="flex items-center gap-1.5"><Car className="w-3.5 h-3.5" /> 차량: {vehicleName}</div>
                         </div>
                         <div className="space-y-1.5">
-                          {ids.map(rid => {
+                          {ids.map((rid, idx) => {
                             const res = reservations.find(r => r.id === rid)
                             const lang = res?.customer_id ? (customerLanguages.get(res.customer_id) ?? getCustomerLanguage(res.customer_id)) : ''
                             const name = res?.customer_id ? getCustomerName(res.customer_id) : rid.slice(0, 8)
@@ -575,8 +699,10 @@ export default function AutoAssignModal({
                             const choice = reservationChoiceMap.get(rid) || '_other'
                             const hotel = res?.pickup_hotel ? pickupHotelById(res.pickup_hotel) : null
                             const pickupText = hotel ? (hotel.pick_up_location ? `${hotel.hotel} (${hotel.pick_up_location})` : hotel.hotel) : (res?.pickup_hotel || '-')
+                            const resChannelId = normalizeChannelId(res?.channel_id)
+                            const channelLabel = resChannelId ? (channelNameById.get(resChannelId) ?? '-') : '-'
                             return (
-                              <div key={rid} className="rounded border bg-white p-2 text-xs">
+                              <div key={`${tour.id}-${idx}-${rid}`} className="rounded border bg-white p-2 text-xs">
                                 <div className="flex items-center flex-wrap gap-1.5">
                                   <ReactCountryFlag countryCode={getFlagCode(lang)} svg style={{ width: '16px', height: '12px' }} />
                                   <span className="font-medium text-gray-900">{name}</span>
@@ -589,6 +715,17 @@ export default function AutoAssignModal({
                                   </span>
                                 </div>
                                 <div className="mt-1 text-gray-500">{pickupText}</div>
+                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                  <span className="text-gray-500">
+                                    채널:{' '}
+                                    <span className="text-gray-800 font-medium">{channelLabel}</span>
+                                  </span>
+                                  <span
+                                    className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${reservationStatusBadgeClass(res?.status)}`}
+                                  >
+                                    {reservationStatusLabel(res?.status)}
+                                  </span>
+                                </div>
                               </div>
                             )
                           })}
@@ -623,7 +760,7 @@ export default function AutoAssignModal({
                           <div className="flex items-center gap-1.5"><Car className="w-3.5 h-3.5" /> 차량: {vehicleName}</div>
                         </div>
                         <div className="space-y-1.5">
-                          {ids.map(rid => {
+                          {ids.map((rid, idx) => {
                             const res = reservations.find(r => r.id === rid)
                             const lang = res?.customer_id ? (customerLanguages.get(res.customer_id) ?? getCustomerLanguage(res.customer_id)) : ''
                             const name = res?.customer_id ? getCustomerName(res.customer_id) : rid.slice(0, 8)
@@ -631,9 +768,11 @@ export default function AutoAssignModal({
                             const choice = reservationChoiceMap.get(rid) || '_other'
                             const hotel = res?.pickup_hotel ? pickupHotelById(res.pickup_hotel) : null
                             const pickupText = hotel ? (hotel.pick_up_location ? `${hotel.hotel} (${hotel.pick_up_location})` : hotel.hotel) : (res?.pickup_hotel || '-')
+                            const resChannelId = normalizeChannelId(res?.channel_id)
+                            const channelLabel = resChannelId ? (channelNameById.get(resChannelId) ?? '-') : '-'
                             const isDropdownOpen = openMoveDropdownRid === rid
                             return (
-                              <div key={rid} className="rounded border bg-white p-2 text-xs relative">
+                              <div key={`${tour.id}-${idx}-${rid}`} className="rounded border bg-white p-2 text-xs relative">
                                 <div className="flex items-center flex-wrap gap-1.5">
                                   <ReactCountryFlag countryCode={getFlagCode(lang)} svg style={{ width: '16px', height: '12px' }} />
                                   <span className="font-medium text-gray-900">{name}</span>
@@ -677,6 +816,17 @@ export default function AutoAssignModal({
                                   )}
                                 </div>
                                 <div className="mt-1 text-gray-500">{pickupText}</div>
+                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                  <span className="text-gray-500">
+                                    채널:{' '}
+                                    <span className="text-gray-800 font-medium">{channelLabel}</span>
+                                  </span>
+                                  <span
+                                    className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${reservationStatusBadgeClass(res?.status)}`}
+                                  >
+                                    {reservationStatusLabel(res?.status)}
+                                  </span>
+                                </div>
                               </div>
                             )
                           })}

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
-import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, Sparkles, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
@@ -54,7 +54,8 @@ interface AssignmentManagementProps {
   onEditReservationClick: (reservation: Reservation) => void
   onAssignReservation?: (reservationId: string) => void
   onUnassignReservation: (reservationId: string) => void
-  onReassignFromOtherTour: (reservationId: string, fromTourId: string) => void
+  /** 다른 투어로 옮기기(미구현 시 생략 가능) */
+  onReassignFromOtherTour?: (reservationId: string, fromTourId: string) => void
   onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   onNavigateToTour?: (tourId: string) => void
   onEditPickupTime?: (reservation: Reservation) => void
@@ -72,6 +73,9 @@ interface AssignmentManagementProps {
   onAutoAssignSuccess?: () => Promise<void>
   /** 예약 product_id → product_code (거주 상태 UI) */
   allProducts?: Array<{ id: string; product_code?: string | null }>
+  /** 같은 상품·날짜의 다른 투어 id (현재 투어 제외). 1개 이상이면 1번 섹션에서 다른 투어로 배정 가능 */
+  sameDayPeerTourIds?: string[]
+  onMoveAssignedReservationToTour?: (reservationId: string, targetTourId: string) => Promise<void>
 }
 
 export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
@@ -104,7 +108,9 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   productId = null,
   tourDate = null,
   onAutoAssignSuccess,
-  allProducts = []
+  allProducts = [],
+  sameDayPeerTourIds = [],
+  onMoveAssignedReservationToTour
 }) => {
   const getProductCodeForReservation = React.useCallback(
     (r: Reservation) => {
@@ -122,6 +128,92 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [showAutoAssignModal, setShowAutoAssignModal] = useState(false)
+
+  const [moveToTourModalReservationId, setMoveToTourModalReservationId] = useState<string | null>(null)
+  const [peerPickerRows, setPeerPickerRows] = useState<Array<{ id: string; label: string }>>([])
+  const [peerPickerLoading, setPeerPickerLoading] = useState(false)
+  const [selectedTargetTourId, setSelectedTargetTourId] = useState<string | null>(null)
+  const [moveSubmitting, setMoveSubmitting] = useState(false)
+
+  const peerIdsKey = React.useMemo(
+    () => [...sameDayPeerTourIds].sort().join('|'),
+    [sameDayPeerTourIds]
+  )
+
+  const openMoveToTourPicker = React.useCallback((reservationId: string) => {
+    setSelectedTargetTourId(null)
+    setMoveToTourModalReservationId(reservationId)
+  }, [])
+
+  useEffect(() => {
+    if (!moveToTourModalReservationId) {
+      setPeerPickerRows([])
+      setSelectedTargetTourId(null)
+      return
+    }
+    const ids = sameDayPeerTourIds
+    if (ids.length === 0) {
+      setPeerPickerRows([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setPeerPickerLoading(true)
+      try {
+        const { data: toursData, error } = await supabase
+          .from('tours')
+          .select('id, tour_guide_id, assistant_id')
+          .in('id', ids)
+        if (error) {
+          console.error('피어 투어 조회 오류:', error)
+          if (!cancelled) setPeerPickerRows([])
+          return
+        }
+        if (cancelled) return
+        const emails = new Set<string>()
+        ;(toursData || []).forEach((row: { tour_guide_id?: string | null; assistant_id?: string | null }) => {
+          if (row.tour_guide_id) emails.add(row.tour_guide_id)
+          if (row.assistant_id) emails.add(row.assistant_id)
+        })
+        const teamByEmail = new Map<string, string>()
+        if (emails.size > 0) {
+          const { data: teamData } = await supabase
+            .from('team')
+            .select('email, name_ko, name_en, nick_name')
+            .in('email', [...emails])
+          ;(teamData || []).forEach((m: TeamMember) => {
+            teamByEmail.set(m.email, m.nick_name || m.name_ko || m.name_en || m.email)
+          })
+        }
+        const rows = (toursData || [])
+          .map((row: { id: string; tour_guide_id?: string | null }) => ({
+            id: row.id,
+            label: `${row.tour_guide_id ? teamByEmail.get(row.tour_guide_id) || row.tour_guide_id : t('unassigned')} · ${row.id.slice(0, 8)}`
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label, locale))
+        if (!cancelled) {
+          setPeerPickerRows(rows)
+          setSelectedTargetTourId(rows.length === 1 ? rows[0].id : null)
+        }
+      } finally {
+        if (!cancelled) setPeerPickerLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [moveToTourModalReservationId, peerIdsKey, locale, t])
+
+  const handleConfirmMoveToTour = async () => {
+    if (!moveToTourModalReservationId || !selectedTargetTourId || !onMoveAssignedReservationToTour) return
+    setMoveSubmitting(true)
+    try {
+      await onMoveAssignedReservationToTour(moveToTourModalReservationId, selectedTargetTourId)
+      setMoveToTourModalReservationId(null)
+    } finally {
+      setMoveSubmitting(false)
+    }
+  }
 
   // 다른 투어에 배정된 예약의 투어 정보 가져오기
   useEffect(() => {
@@ -328,6 +420,11 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               emptyMessage={t('noAssignedReservations')}
               onEditReservation={onEditReservationClick}
               onUnassignReservation={onUnassignReservation}
+              {...(sameDayPeerTourIds.length > 0 &&
+                onMoveAssignedReservationToTour && {
+                  onMoveReservationToOtherTour: openMoveToTourPicker,
+                  moveToOtherTourButtonTitle: t('moveToOtherTour')
+                })}
               {...(onStatusChange && { onStatusChange })}
               {...(onEditPickupTime && { onEditPickupTime })}
               {...(onEditPickupHotel && { onEditPickupHotel })}
@@ -477,10 +574,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                            isStaff={isStaff}
                            showActions={true}
                            showStatus={true}
-                           showTourInfo={true}
                            emptyMessage=""
                            onEditReservation={onEditReservationClick}
-                           onReassignFromOtherTour={onReassignFromOtherTour}
+                           {...(onAssignReservation && { onAssignReservation })}
+                           assignIconVariant="import"
+                           assignButtonTitle={t('assignToThisTourPullIn')}
+                           {...(onReassignFromOtherTour && { onReassignFromOtherTour })}
                            {...(onStatusChange && { onStatusChange })}
                            {...(onEditPickupTime && { onEditPickupTime })}
                            {...(onEditPickupHotel && { onEditPickupHotel })}
@@ -534,6 +633,86 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
           getCustomerLanguage={getCustomerLanguage}
           onSuccess={onAutoAssignSuccess}
         />
+      )}
+
+      {moveToTourModalReservationId && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="move-to-tour-modal-title"
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <h2 id="move-to-tour-modal-title" className="text-base font-semibold text-gray-900">
+                {t('moveToOtherTourModalTitle')}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setMoveToTourModalReservationId(null)}
+                className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                aria-label={t('moveToOtherTourCancel')}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-4 py-3 overflow-y-auto flex-1">
+              <p className="text-sm text-gray-600 mb-3">{t('moveToOtherTourModalHint')}</p>
+              {peerPickerLoading ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-2">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+                  <span className="text-xs text-gray-500">{t('moveToOtherTourLoading')}</span>
+                </div>
+              ) : peerPickerRows.length === 0 ? (
+                <p className="text-sm text-gray-500 py-4 text-center">{t('moveToOtherTourNoTargets')}</p>
+              ) : (
+                <ul className="space-y-2">
+                  {peerPickerRows.map((row) => {
+                    const selected = selectedTargetTourId === row.id
+                    return (
+                      <li key={row.id}>
+                        <label
+                          className={`flex items-start gap-2 cursor-pointer rounded-lg border p-3 ${
+                            selected
+                              ? 'border-indigo-500 bg-indigo-50/50'
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="move-to-tour-target"
+                            value={row.id}
+                            checked={selected}
+                            onChange={() => setSelectedTargetTourId(row.id)}
+                            className="mt-1"
+                          />
+                          <span className="text-sm text-gray-900">{row.label}</span>
+                        </label>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t px-4 py-3 bg-gray-50 rounded-b-lg">
+              <button
+                type="button"
+                onClick={() => setMoveToTourModalReservationId(null)}
+                className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 rounded"
+              >
+                {t('moveToOtherTourCancel')}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedTargetTourId || moveSubmitting || peerPickerLoading || peerPickerRows.length === 0}
+                onClick={() => void handleConfirmMoveToTour()}
+                className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {moveSubmitting ? '…' : t('moveToOtherTourConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
