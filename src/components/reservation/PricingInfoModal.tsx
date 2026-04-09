@@ -297,14 +297,33 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
 
     setSaving(true)
     try {
-      const { error } = await supabase
-        .from('reservation_pricing')
-        .update(editData)
-        .eq('reservation_id', reservation.id)
+      // reservation_pricing에는 is_private_tour 컬럼이 없음(예약 테이블 전용)
+      const { is_private_tour: _omitPrivateTour, ...rowForDb } = editData
+      void _omitPrivateTour
 
-      if (error) throw error
+      const reservationId = String(reservation.id)
 
-      setPricingData(editData)
+      if (pricingData?.id) {
+        const { error } = await supabase
+          .from('reservation_pricing')
+          .update(rowForDb)
+          .eq('id', pricingData.id)
+
+        if (error) throw error
+        setPricingData(editData)
+      } else {
+        const newId = crypto.randomUUID()
+        const { error } = await supabase.from('reservation_pricing').insert({
+          ...rowForDb,
+          id: newId,
+          reservation_id: reservationId,
+        })
+
+        if (error) throw error
+        const merged = { ...editData, id: newId }
+        setPricingData(merged)
+        setEditData(merged)
+      }
     } catch (err) {
       console.error('가격 정보 저장 오류:', err)
       setError('가격 정보 저장 중 오류가 발생했습니다.')

@@ -2725,11 +2725,6 @@ export default function ReservationForm({
           const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
           const isSinglePrice = pricingType === 'single'
           
-          // 불포함 있음 채널 확인 (commission_base_price_only 또는 has_not_included_price)
-          const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false
-          const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false
-          const shouldLoadBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
-          
           // reservation_pricing에 저장된 상품 단가를 우선 사용 (DB가 문자열로 반환할 수 있으므로 toNum 적용)
           let adultPrice = toNum((existingPricing as any).adult_product_price)
           let childPrice = isSinglePrice ? adultPrice : toNum((existingPricing as any).child_product_price)
@@ -2803,9 +2798,9 @@ export default function ReservationForm({
             }
           }
           
-          // 불포함 있음 채널인 경우 balance_amount를 onSiteBalanceAmount에 설정
+          // DB에 저장된 잔액(가격 정보 모달 「잔액(투어 당일 지불)」 등)은 채널 종류와 관계없이 로드
           const balanceAmount = Number(existingPricing.balance_amount) || 0
-          const onSiteBalanceAmount = shouldLoadBalanceAmount && balanceAmount > 0 ? balanceAmount : 0
+          const onSiteBalanceAmount = balanceAmount > 0 ? balanceAmount : 0
           
           setFormData(prev => {
             const { channelSettlementAmount: _stripChSettle, ...prevWithoutChSettle } = prev
@@ -2904,10 +2899,9 @@ export default function ReservationForm({
             const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
             const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
             
-            // 불포함 있음 채널인 경우 onSiteBalanceAmount를 우선 사용, 없으면 계산된 balance 사용
-            const finalBalanceAmount = shouldLoadBalanceAmount && updated.onSiteBalanceAmount > 0 
-              ? updated.onSiteBalanceAmount 
-              : newBalance
+            // 명시 잔액(DB/당일 지불)이 있으면 항상 우선. 없으면 총액−보증금 계산값 사용
+            const finalBalanceAmount =
+              updated.onSiteBalanceAmount > 0 ? updated.onSiteBalanceAmount : newBalance
             
             // commission_amount가 데이터베이스에서 불러온 값이면 절대 덮어쓰지 않음
             const finalCommissionAmount = loadedCommissionAmount.current !== null && loadedCommissionAmount.current > 0

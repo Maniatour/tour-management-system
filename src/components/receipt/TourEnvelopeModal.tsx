@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
 
 // ---------------------------------------------------------------------------
 // 상수
@@ -217,29 +218,54 @@ export default function TourEnvelopeModal({
 
         const { data: sessionData } = await supabase.auth.getSession()
         const token = sessionData?.session?.access_token
-        const pricingByResId = new Map<string, { balance_amount: number; not_included_price: number; currency: string }>()
+        const pricingByResId = new Map<string, Record<string, unknown> | null>()
         if (token) {
           const res = await fetch(`/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`, {
             headers: { Authorization: `Bearer ${token}` },
           })
           if (res.ok) {
             const json = await res.json()
-            const items = json.items as Array<{ reservation_id: string; pricing: { balance_amount?: unknown; not_included_price?: unknown; currency?: string } | null }> | undefined
+            const items = json.items as
+              | Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
+              | undefined
             if (Array.isArray(items)) {
               items.forEach(({ reservation_id, pricing }) => {
-                const balanceAmount = pricing != null && (pricing.balance_amount !== null && pricing.balance_amount !== undefined)
-                  ? (typeof pricing.balance_amount === 'string' ? parseFloat(pricing.balance_amount) || 0 : Number(pricing.balance_amount) || 0)
-                  : 0
-                const notIncludedPrice = pricing != null && (pricing.not_included_price !== null && pricing.not_included_price !== undefined)
-                  ? (typeof pricing.not_included_price === 'string' ? parseFloat(pricing.not_included_price) || 0 : Number(pricing.not_included_price) || 0)
-                  : 0
-                pricingByResId.set(reservation_id, {
-                  balance_amount: balanceAmount,
-                  not_included_price: notIncludedPrice,
-                  currency: pricing?.currency ?? 'USD',
-                })
+                pricingByResId.set(
+                  reservation_id,
+                  pricing && typeof pricing === 'object' ? pricing : null
+                )
               })
             }
+          }
+        }
+
+        // 배정 카드와 동일: reservation_options 합계가 있으면 option_total 대신 사용
+        const { data: optRows } = await supabase
+          .from('reservation_options')
+          .select('reservation_id, total_price')
+          .in('reservation_id', ids)
+        const optLists = new Map<string, Array<{ total_price?: unknown }>>()
+        for (const r of optRows || []) {
+          const row = r as { reservation_id: string; total_price?: unknown }
+          const list = optLists.get(row.reservation_id) || []
+          list.push(row)
+          optLists.set(row.reservation_id, list)
+        }
+        const optionsTotalByResId = new Map<string, number | null>()
+        for (const id of ids) {
+          const list = optLists.get(id)
+          if (!list?.length) {
+            optionsTotalByResId.set(id, null)
+          } else {
+            const sum = list.reduce(
+              (s, o) =>
+                s +
+                (typeof o.total_price === 'number'
+                  ? o.total_price
+                  : parseFloat(String(o.total_price ?? 0)) || 0),
+              0
+            )
+            optionsTotalByResId.set(id, sum)
           }
         }
 
@@ -247,23 +273,23 @@ export default function TourEnvelopeModal({
           const rez = rezById.get(id)
           if (!rez) return { reservationId: id, customerName: '', customerLanguage: null, balanceAmount: 0, currency: 'USD' }
           const customer = rez.customer_id ? customerById.get(rez.customer_id) : null
-          const pricing = pricingByResId.get(id)
-          const totalPeople = (rez.total_people != null && rez.total_people > 0)
-            ? rez.total_people
-            : ((rez.adults ?? 0) + (rez.child ?? 0) + (rez.infant ?? 0)) || 1
-          const notIncludedTotal = (pricing?.not_included_price ?? 0) * totalPeople
-          const balanceAmount = (pricing?.balance_amount ?? 0) > 0
-            ? (pricing?.balance_amount ?? 0)
-            : notIncludedTotal > 0
-              ? notIncludedTotal
-              : 0
-          const currency = pricing?.currency ?? 'USD'
+          const pricing = pricingByResId.get(id) ?? null
+          const optionsSum = optionsTotalByResId.get(id) ?? null
+          const balanceAmount = getBalanceAmountForDisplay(pricing, optionsSum, {
+            adults: rez.adults ?? null,
+            child: rez.child ?? null,
+            infant: rez.infant ?? null,
+          })
+          const currency =
+            pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
+              ? ((pricing as { currency: string }).currency || 'USD')
+              : 'USD'
           return {
             reservationId: id,
             customerName: customer?.name ?? '',
             customerLanguage: customer?.language ?? null,
             balanceAmount,
-            currency,
+            currency: currency || 'USD',
           }
         })
         setRows(results)

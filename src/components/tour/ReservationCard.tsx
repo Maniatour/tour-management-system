@@ -7,6 +7,7 @@ import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
 
 interface Reservation {
   id: string
@@ -330,47 +331,40 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }, [getChannelInfo, reservation.channel_id])
 
-  // 예약 가격 정보 가져오기
+  // 예약 가격 정보 가져오기 (브라우저 Supabase 세션·RLS와 동일 — API anon 클라이언트 이슈 방지)
   const fetchReservationPricing = useCallback(async () => {
     if (!isStaff) return
-    
+
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('인증이 필요합니다.')
+      const { data, error } = await supabase
+        .from('reservation_pricing')
+        .select('*')
+        .eq('reservation_id', reservation.id)
+        .maybeSingle()
+
+      if (error) {
+        if (!isAbortError(error)) console.error('예약 가격 정보 조회 오류:', error)
+        return
       }
 
-      const response = await fetch(`/api/reservation-pricing?reservation_id=${reservation.id}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-
-      if (!response.ok) {
-        // 404 오류는 데이터가 없는 것으로 처리
-        if (response.status === 404) {
-          setReservationPricing(null)
-          return
-        }
-        throw new Error('예약 가격 정보를 불러올 수 없습니다.')
-      }
-
-      const data = await response.json()
-      if (data.pricing) {
-        // balance_amount를 숫자로 변환
+      if (data) {
         const pricing = {
-          ...data.pricing,
-          balance_amount: typeof data.pricing.balance_amount === 'string'
-            ? parseFloat(data.pricing.balance_amount) || 0
-            : (data.pricing.balance_amount || 0)
-        }
+          ...data,
+          balance_amount:
+            typeof data.balance_amount === 'string'
+              ? parseFloat(data.balance_amount) || 0
+              : (data.balance_amount || 0),
+        } as ReservationPricing
         setReservationPricing(pricing)
-        // 옵션 합계 조회 (Grand Total / Balance 계산 시 DB option_total 대신 사용)
         const { data: opts } = await supabase
           .from('reservation_options')
           .select('total_price')
           .eq('reservation_id', reservation.id)
-        const sum = (opts || []).reduce((s: number, o: { total_price?: number | string | null }) => s + (typeof o.total_price === 'number' ? o.total_price : parseFloat(String(o.total_price || 0)) || 0), 0)
+        const sum = (opts || []).reduce(
+          (s: number, o: { total_price?: number | string | null }) =>
+            s + (typeof o.total_price === 'number' ? o.total_price : parseFloat(String(o.total_price || 0)) || 0),
+          0
+        )
         setOptionsTotalFromOptions(opts?.length ? sum : null)
       } else {
         setReservationPricing(null)
@@ -1227,14 +1221,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     e.stopPropagation()
     
     if (!reservationPricing || !isStaff) return
-    
-    const toN = (v: number | string | null | undefined) => (v == null ? 0 : typeof v === 'string' ? parseFloat(v) || 0 : v)
-    const totalPeopleForReceive = (reservation.adults || 0) + ((reservation.children ?? (reservation as any).child) || 0) + ((reservation.infants ?? (reservation as any).infant) || 0) || 1
-    const notIncludedTotal = toN(reservationPricing.not_included_price) * totalPeopleForReceive
-    const effectiveOpts = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toN(reservationPricing.option_total)
-    const discounted = toN(reservationPricing.product_price_total) - toN(reservationPricing.coupon_discount) - toN(reservationPricing.additional_discount)
-    const customerTotal = discounted + effectiveOpts + toN(reservationPricing.choices_total) + notIncludedTotal + toN(reservationPricing.additional_cost) + toN(reservationPricing.tax) + toN(reservationPricing.card_fee) + toN(reservationPricing.prepayment_cost) + toN(reservationPricing.prepayment_tip)
-    const balanceAmount = Math.max(0, customerTotal - toN(reservationPricing.deposit_amount))
+
+    const balanceAmount = getBalanceAmountForDisplay(
+      reservationPricing,
+      optionsTotalFromOptions,
+      reservation
+    )
     
     if (balanceAmount <= 0) {
       alert('수령할 잔액이 없습니다.')
@@ -1638,9 +1630,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             
             {/* 잔액 뱃지 및 수령 버튼 - reservation_pricing.balance_amount 사용(실제 예약 잔금과 일치) */}
             {isStaff && (() => {
-              const toN = (v: number | string | null | undefined) => (v == null ? 0 : typeof v === 'string' ? parseFloat(v) || 0 : v)
-              const storedBalance = toN(reservationPricing?.balance_amount)
-              const displayBalanceBadge = Math.max(0, storedBalance)
+              const displayBalanceBadge = getBalanceAmountForDisplay(
+                reservationPricing,
+                optionsTotalFromOptions,
+                reservation
+              )
               if (displayBalanceBadge > 0) {
                 return (
                   <div className="flex items-center space-x-2">
