@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslations } from 'next-intl'
-import { Save, AlertCircle, Users, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
+import { Save, AlertCircle, Users, ChevronRight, ChevronDown, CheckSquare, Square, LayoutGrid, Plus } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { translateProductDetailsFields, type ProductDetailsTranslationFields } from '@/lib/translationService'
@@ -80,8 +80,119 @@ interface Channel {
 }
 
 interface ChannelGroup {
-  type: string
+  id: string
+  displayLabel: string
   channels: Channel[]
+}
+
+/** 예전 localStorage 키 — DB 로드 실패 시 1회 폴백 후 저장 성공 시 제거 */
+const CHANNEL_GROUP_LAYOUT_LEGACY_LOCAL_KEY = 'tms-product-details-channel-group-layout-v1'
+
+const SHARED_SETTINGS_KEY_PRODUCT_DETAILS_CHANNEL_GROUPS = 'product_details_channel_group_layout'
+
+type ChannelGroupLayout = {
+  version: 1
+  mode: 'by_type' | 'custom'
+  customGroups: Array<{ id: string; label: string; channelIds: string[] }>
+}
+
+function defaultChannelGroupLayout(): ChannelGroupLayout {
+  return { version: 1, mode: 'by_type', customGroups: [] }
+}
+
+function isValidChannelGroupLayout(x: unknown): x is ChannelGroupLayout {
+  if (x === null || typeof x !== 'object') return false
+  const o = x as Record<string, unknown>
+  if (o.version !== 1) return false
+  if (o.mode !== 'by_type' && o.mode !== 'custom') return false
+  if (!Array.isArray(o.customGroups)) return false
+  for (const item of o.customGroups) {
+    if (!item || typeof item !== 'object') return false
+    const g = item as Record<string, unknown>
+    if (typeof g.id !== 'string' || typeof g.label !== 'string') return false
+    if (!Array.isArray(g.channelIds) || !g.channelIds.every((id) => typeof id === 'string')) return false
+  }
+  return true
+}
+
+function newCustomGroupId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `cg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function buildGroupsByType(allChannels: Channel[], selfLabel: string): ChannelGroup[] {
+  const typeMap = new Map<string, Channel[]>()
+  allChannels.forEach((channel) => {
+    if (!typeMap.has(channel.type)) typeMap.set(channel.type, [])
+    typeMap.get(channel.type)!.push(channel)
+  })
+  const groups: ChannelGroup[] = []
+  typeMap.forEach((chs, type) => {
+    groups.push({
+      id: `type:${type}`,
+      displayLabel: type === 'self' || type === 'SELF' ? selfLabel : type,
+      channels: chs,
+    })
+  })
+  return groups
+}
+
+function computeChannelGroupsFromLayout(
+  allChannels: Channel[],
+  layout: ChannelGroupLayout,
+  selfLabel: string
+): ChannelGroup[] {
+  if (layout.mode !== 'custom' || layout.customGroups.length === 0) {
+    return buildGroupsByType(allChannels, selfLabel)
+  }
+  const byId = new Map(allChannels.map((c) => [c.id, c]))
+  const assigned = new Set<string>()
+  const out: ChannelGroup[] = []
+  for (const g of layout.customGroups) {
+    const chs: Channel[] = []
+    for (const id of g.channelIds) {
+      const ch = byId.get(id)
+      if (ch) {
+        chs.push(ch)
+        assigned.add(id)
+      }
+    }
+    out.push({
+      id: g.id,
+      displayLabel: g.label.trim() || '이름 없음',
+      channels: chs,
+    })
+  }
+  const unassigned = allChannels.filter((c) => !assigned.has(c.id))
+  if (unassigned.length > 0) {
+    out.push({
+      id: '__unassigned__',
+      displayLabel: '미배정 채널',
+      channels: unassigned,
+    })
+  }
+  return out
+}
+
+function seedCustomGroupsFromByType(
+  allChannels: Channel[],
+  selfLabel: string
+): ChannelGroupLayout['customGroups'] {
+  return buildGroupsByType(allChannels, selfLabel).map((g) => ({
+    id: newCustomGroupId(),
+    label: g.displayLabel,
+    channelIds: g.channels.map((c) => c.id),
+  }))
+}
+
+function findDraftGroupIdForChannel(
+  draft: ChannelGroupLayout,
+  channelId: string
+): string | '__unassigned__' {
+  for (const g of draft.customGroups) {
+    if (g.channelIds.includes(channelId)) return g.id
+  }
+  return '__unassigned__'
 }
 
 export default function ProductDetailsTab({
@@ -126,7 +237,10 @@ export default function ProductDetailsTab({
 
   // 채널 관련 상태
   const [channels, setChannels] = useState<Channel[]>([])
-  const [channelGroups, setChannelGroups] = useState<ChannelGroup[]>([])
+  const [groupLayout, setGroupLayout] = useState<ChannelGroupLayout>(defaultChannelGroupLayout)
+  const [channelGroupEditorOpen, setChannelGroupEditorOpen] = useState(false)
+  const [groupLayoutDraft, setGroupLayoutDraft] = useState<ChannelGroupLayout>(defaultChannelGroupLayout)
+  const [savingChannelGroupLayout, setSavingChannelGroupLayout] = useState(false)
   /** 채널별 선택된 variant_key 목록 (다중 선택 가능) */
   const [selectedChannelVariants, setSelectedChannelVariants] = useState<Record<string, string[]>>({})
   const selectedChannelVariantsRef = useRef<Record<string, string[]>>({})
@@ -150,7 +264,8 @@ export default function ProductDetailsTab({
   // 복사 모달 상태
   const [copyModalOpen, setCopyModalOpen] = useState(false)
   const [copyFieldName, setCopyFieldName] = useState<string | null>(null)
-  const [copyTargetChannels, setCopyTargetChannels] = useState<Record<string, boolean>>({})
+  /** 복사 모달: 채널(실제 id) → variant_key → 선택 여부 (편집 중인 채널은 모달에 안 뜸) */
+  const [copyTargetSelections, setCopyTargetSelections] = useState<Record<string, Record<string, boolean>>>({})
   const [copySourceLanguage, setCopySourceLanguage] = useState<string>('ko')
   const [previewEditModalOpen, setPreviewEditModalOpen] = useState(false)
   const [previewEditingField, setPreviewEditingField] = useState<keyof ProductDetailsFields | null>(null)
@@ -196,6 +311,159 @@ export default function ProductDetailsTab({
     if (arr && arr.length > 0) return arr[0]
     return 'default'
   }
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await (supabase as any)
+        .from('shared_settings')
+        .select('setting_value')
+        .eq('setting_key', SHARED_SETTINGS_KEY_PRODUCT_DETAILS_CHANNEL_GROUPS)
+        .maybeSingle()
+
+      if (cancelled) return
+
+      if (!error && data?.setting_value != null && isValidChannelGroupLayout(data.setting_value)) {
+        setGroupLayout(data.setting_value)
+        return
+      }
+
+      try {
+        const raw = localStorage.getItem(CHANNEL_GROUP_LAYOUT_LEGACY_LOCAL_KEY)
+        if (raw) {
+          const parsed: unknown = JSON.parse(raw)
+          if (isValidChannelGroupLayout(parsed)) setGroupLayout(parsed)
+        }
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [supabase])
+
+  const persistGroupLayout = useCallback(
+    async (layout: ChannelGroupLayout): Promise<boolean> => {
+      setSavingChannelGroupLayout(true)
+      try {
+        const payload: Record<string, unknown> = {
+          setting_key: SHARED_SETTINGS_KEY_PRODUCT_DETAILS_CHANNEL_GROUPS,
+          setting_value: layout,
+        }
+        if (user?.id) payload.updated_by = user.id
+
+        const { error } = await (supabase as any).from('shared_settings').upsert(payload, { onConflict: 'setting_key' })
+
+        if (error) {
+          const msg = error.message || ''
+          const denied =
+            msg.toLowerCase().includes('permission') ||
+            msg.toLowerCase().includes('policy') ||
+            (error as { code?: string }).code === '42501'
+          setSaveMessage(
+            denied
+              ? '채널 그룹 설정은 관리자(super/admin)만 저장할 수 있습니다.'
+              : `채널 그룹 설정 저장 실패: ${msg}`
+          )
+          setSaveMessageType('error')
+          setTimeout(() => {
+            setSaveMessage('')
+            setSaveMessageType(null)
+          }, 5000)
+          return false
+        }
+
+        setGroupLayout(layout)
+        try {
+          localStorage.removeItem(CHANNEL_GROUP_LAYOUT_LEGACY_LOCAL_KEY)
+        } catch {
+          /* */
+        }
+        return true
+      } finally {
+        setSavingChannelGroupLayout(false)
+      }
+    },
+    [supabase, user?.id]
+  )
+
+  const selfGroupLabelForLayout = t('selfGroupLabel')
+  const channelGroups = useMemo(
+    () => computeChannelGroupsFromLayout(channels, groupLayout, selfGroupLabelForLayout),
+    [channels, groupLayout, selfGroupLabelForLayout]
+  )
+
+  useEffect(() => {
+    setExpandedGroups((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const g of channelGroups) {
+        if (!(g.id in next)) {
+          next[g.id] = false
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [channelGroups])
+
+  const openChannelGroupEditor = useCallback(() => {
+    const selfLabel = t('selfGroupLabel')
+    let draft: ChannelGroupLayout = {
+      ...groupLayout,
+      customGroups: groupLayout.customGroups.map((g) => ({
+        ...g,
+        channelIds: [...g.channelIds],
+      })),
+    }
+    if (draft.mode === 'custom' && draft.customGroups.length === 0 && channels.length > 0) {
+      draft = {
+        ...draft,
+        customGroups: seedCustomGroupsFromByType(channels, selfLabel),
+      }
+    }
+    setGroupLayoutDraft(draft)
+    setChannelGroupEditorOpen(true)
+  }, [channels, groupLayout, t])
+
+  const assignChannelInDraft = useCallback((channelId: string, targetGroupId: string | '__unassigned__') => {
+    setGroupLayoutDraft((prev) => {
+      if (prev.mode !== 'custom') return prev
+      const groups = prev.customGroups.map((cg) => ({
+        ...cg,
+        channelIds: cg.channelIds.filter((id) => id !== channelId),
+      }))
+      if (targetGroupId !== '__unassigned__') {
+        const gi = groups.findIndex((g) => g.id === targetGroupId)
+        if (gi >= 0) {
+          const g = groups[gi]
+          groups[gi] = { ...g, channelIds: [...g.channelIds, channelId] }
+        }
+      }
+      return { ...prev, customGroups: groups }
+    })
+  }, [])
+
+  /** 빈 그룹 한 줄 추가(사용자 정의 모드로 전환). 목록이 비어 있으면 타입별 시드 후 추가 */
+  const addAnotherCustomGroup = useCallback(() => {
+    const selfLabel = t('selfGroupLabel')
+    setGroupLayoutDraft((d) => {
+      let cgs = d.customGroups.map((g) => ({ ...g, channelIds: [...g.channelIds] }))
+      if (cgs.length === 0 && channels.length > 0) {
+        cgs = seedCustomGroupsFromByType(channels, selfLabel)
+      }
+      const n = cgs.length + 1
+      return {
+        ...d,
+        mode: 'custom',
+        customGroups: [
+          ...cgs,
+          { id: newCustomGroupId(), label: `새 그룹 ${n}`, channelIds: [] },
+        ],
+      }
+    })
+  }, [channels, t])
 
   const decodeHtmlEntities = (value: string): string => {
     if (!value) return ''
@@ -347,30 +615,6 @@ export default function ProductDetailsTab({
       
       const deduplicatedChannels = Array.from(uniqueChannelsById.values())
       setChannels(deduplicatedChannels)
-      
-      // 채널을 타입별로 그룹화
-      const groups: ChannelGroup[] = []
-      const typeMap = new Map<string, Channel[]>()
-      
-      deduplicatedChannels.forEach(channel => {
-        if (!typeMap.has(channel.type)) {
-          typeMap.set(channel.type, [])
-        }
-        typeMap.get(channel.type)!.push(channel)
-      })
-      
-      typeMap.forEach((channels, type) => {
-        groups.push({ type, channels })
-      })
-      
-      setChannelGroups(groups)
-      
-      // 모든 그룹을 기본적으로 접힘
-      const expanded: Record<string, boolean> = {}
-      groups.forEach(group => {
-        expanded[group.type] = false
-      })
-      setExpandedGroups(expanded)
       
     } catch (error) {
       console.error('채널 목록 로드 오류:', error)
@@ -849,8 +1093,8 @@ export default function ProductDetailsTab({
   }
 
   // 그룹 전체: 각 채널의 모든 variant 선택 ↔ 전체 해제
-  const toggleGroupSelection = (groupType: string) => {
-    const group = channelGroups.find((g) => g.type === groupType)
+  const toggleGroupSelection = (groupId: string) => {
+    const group = channelGroups.find((g) => g.id === groupId)
     if (!group) return
 
     const allSelected = group.channels.every((channel) => {
@@ -874,16 +1118,19 @@ export default function ProductDetailsTab({
   }
 
   // 그룹 확장/축소 토글
-  const toggleGroupExpansion = (groupType: string) => {
-    setExpandedGroups(prev => ({
+  const toggleGroupExpansion = (groupId: string) => {
+    setExpandedGroups((prev) => ({
       ...prev,
-      [groupType]: !prev[groupType]
+      [groupId]: !prev[groupId],
     }))
   }
 
-  // 특정 필드만 복사하는 함수
-  const copyFieldToChannels = async (fieldName: string, toChannelIds: string[]) => {
-    if (!fieldName || toChannelIds.length === 0) return
+  // 특정 필드만 복사하는 함수 (대상은 실제 채널 id + variant_key, 저장 시 self는 SELF_GROUP으로 매핑)
+  const copyFieldToChannels = async (
+    fieldName: string,
+    targetPairs: { channelId: string; variantKey: string }[]
+  ) => {
+    if (!fieldName || targetPairs.length === 0) return
 
     try {
       const hasSelection = Object.values(selectedChannelVariants).some((arr) => (arr?.length ?? 0) > 0)
@@ -908,41 +1155,33 @@ export default function ProductDetailsTab({
         fieldsToCopy.push(fieldName)
       }
 
-      // 복사 대상 채널들을 그룹화
-      const toChannelsData = toChannelIds.map(id => {
-        const channel = channels.find(c => c.id === id)
-        return { id, type: channel?.type || 'unknown' }
-      })
-      const selfTargets = toChannelsData.filter(c => c.type === 'self' || c.type === 'SELF')
-      const otaTargets = toChannelsData.filter(c => c.type !== 'self' && c.type !== 'SELF')
-
-      const channelGroupsToSave: Array<{ channelIds: string[], channelId: string }> = []
-
-      if (selfTargets.length > 0) {
-        channelGroupsToSave.push({
-          channelIds: selfTargets.map(c => c.id),
-          channelId: 'SELF_GROUP'
+      const rawTargets: { storedChannelId: string; variantKey: string }[] = []
+      for (const { channelId, variantKey } of targetPairs) {
+        const channel = channels.find((c) => c.id === channelId)
+        if (!channel) continue
+        const isSelf = channel.type === 'self' || channel.type === 'SELF'
+        rawTargets.push({
+          storedChannelId: isSelf ? 'SELF_GROUP' : channelId,
+          variantKey
         })
       }
 
-      otaTargets.forEach(channel => {
-        channelGroupsToSave.push({
-          channelIds: [channel.id],
-          channelId: channel.id
-        })
+      const seen = new Set<string>()
+      const saveTargets = rawTargets.filter((t) => {
+        const k = `${t.storedChannelId}\t${t.variantKey}`
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
       })
 
-      const copyPromises = channelGroupsToSave.map(async (group) => {
-        const targetVariantKey = group.channelIds.length === 1
-          ? getPrimaryVariantForChannel(group.channelIds[0])
-          : 'default'
+      if (saveTargets.length === 0) return
 
-        // 기존 데이터 확인
+      const copyPromises = saveTargets.map(async ({ storedChannelId: groupChannelId, variantKey: targetVariantKey }) => {
         const existingResult = await supabase
           .from('product_details_multilingual')
           .select('id')
           .eq('product_id', productId)
-          .eq('channel_id', group.channelId)
+          .eq('channel_id', groupChannelId)
           .eq('language_code', copyLang)
           .eq('variant_key', targetVariantKey)
           .maybeSingle() as { data: { id: string } | null; error: { code?: string } | null }
@@ -953,17 +1192,16 @@ export default function ProductDetailsTab({
 
         const existingData = existingResult.data
 
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
           updated_at: new Date().toISOString()
         }
         
-        // 복사할 필드들 추가
-        fieldsToCopy.forEach(field => {
+        fieldsToCopy.forEach((field) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           updateData[field] = (currentDetails as any)[field]
         })
 
         if (existingData) {
-          // 업데이트
           const { error: updateError } = await supabase
             .from('product_details_multilingual')
             .update(updateData)
@@ -972,14 +1210,14 @@ export default function ProductDetailsTab({
 
           if (updateError) throw updateError
         } else {
-          // 새로 생성 (기본값으로)
-          const insertData: any = {
+          const insertData: Record<string, unknown> = {
             product_id: productId,
-            channel_id: group.channelId,
+            channel_id: groupChannelId,
             language_code: copyLang,
             variant_key: targetVariantKey
           }
-          fieldsToCopy.forEach(field => {
+          fieldsToCopy.forEach((field) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             insertData[field] = (currentDetails as any)[field]
           })
           const { error: insertError } = await (supabase as any)
@@ -992,11 +1230,11 @@ export default function ProductDetailsTab({
 
       await Promise.all(copyPromises)
       loadSelectedChannelData()
-      setSaveMessage(t('msgCopyToChannelsSuccess', { count: toChannelIds.length }))
+      setSaveMessage(t('msgCopyToChannelsSuccess', { count: saveTargets.length }))
       setSaveMessageType('success')
       setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
       setCopyModalOpen(false)
-      setCopyTargetChannels({})
+      setCopyTargetSelections({})
     } catch (error) {
       console.error('필드 복사 오류:', error)
       setSaveMessage(`${t('msgCopyError')}: ${error instanceof Error ? error.message : ''}`)
@@ -1009,15 +1247,19 @@ export default function ProductDetailsTab({
   const openCopyModal = (fieldName: string) => {
     setCopyFieldName(fieldName)
     setCopySourceLanguage(formData.currentLanguage || 'ko')
-    // 현재 variant가 하나도 선택되지 않은 채널만 복사 대상으로 초기화
     const allChannelIds = channels.map((c) => c.id)
-    const unselectedChannels: Record<string, boolean> = {}
+    const init: Record<string, Record<string, boolean>> = {}
     allChannelIds.forEach((id) => {
       if ((selectedChannelVariants[id]?.length ?? 0) === 0) {
-        unselectedChannels[id] = false
+        const variants = productVariantsByChannel[id] || [{ variant_key: 'default' }]
+        const perVariant: Record<string, boolean> = {}
+        variants.forEach((v) => {
+          perVariant[v.variant_key] = false
+        })
+        init[id] = perVariant
       }
     })
-    setCopyTargetChannels(unselectedChannels)
+    setCopyTargetSelections(init)
     setCopyModalOpen(true)
   }
 
@@ -2638,10 +2880,26 @@ export default function ProductDetailsTab({
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
           <div className="xl:col-span-3 border border-gray-200 rounded-lg p-3 space-y-4 max-h-[78vh] overflow-y-auto">
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h4 className="text-sm font-semibold text-gray-900">채널 선택</h4>
-                <span className="text-xs text-gray-500">{selectedPairCount}개 쌍 선택</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">{selectedPairCount}개 쌍 선택</span>
+                  <button
+                    type="button"
+                    onClick={openChannelGroupEditor}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    title="그룹 구성은 DB에 저장되어 모든 사용자에게 동일하게 보입니다"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                    채널 그룹 설정
+                  </button>
+                </div>
               </div>
+              {groupLayout.mode === 'custom' && (
+                <p className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-2 py-1">
+                  사용자 정의 그룹 적용 중 · DB(shared_settings)에 저장된 값이 모든 사용자에게 동일하게 표시됩니다
+                </p>
+              )}
               <div className="flex gap-1">
                 <button onClick={() => setCompletionFilter('all')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterAll')}</button>
                 <button onClick={() => setCompletionFilter('incomplete')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'incomplete' ? 'bg-yellow-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterIncomplete')}</button>
@@ -2651,7 +2909,6 @@ export default function ProductDetailsTab({
 
             <div className="space-y-2">
               {channelGroups.map((group) => {
-                const isSelfGroup = group.type === 'self' || group.type === 'SELF'
                 const allSelected = group.channels.every((channel) => {
                   const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
                   const sel = selectedChannelVariants[channel.id] || []
@@ -2661,26 +2918,26 @@ export default function ProductDetailsTab({
                   group.channels.some((channel) => (selectedChannelVariants[channel.id]?.length ?? 0) > 0) &&
                   !allSelected
                 return (
-                  <div key={group.type} className="border border-gray-200 rounded-lg">
+                  <div key={group.id} className="border border-gray-200 rounded-lg">
                     <div className="flex items-center justify-between p-2 bg-gray-50">
                       <button
                         type="button"
                         className="flex items-center gap-1 text-sm font-medium text-gray-800"
-                        onClick={() => toggleGroupExpansion(group.type)}
+                        onClick={() => toggleGroupExpansion(group.id)}
                       >
-                        {expandedGroups[group.type] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        <span>{isSelfGroup ? t('selfGroupLabel') : group.type}</span>
+                        {expandedGroups[group.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <span>{group.displayLabel}</span>
                         <span className="text-xs text-gray-500">({group.channels.length})</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => toggleGroupSelection(group.type)}
+                        onClick={() => toggleGroupSelection(group.id)}
                         className="p-1 rounded hover:bg-gray-200"
                       >
                         {allSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : someSelected ? <div className="h-4 w-4 rounded border-2 border-blue-600 bg-blue-100" /> : <Square className="h-4 w-4 text-gray-400" />}
                       </button>
                     </div>
-                    {expandedGroups[group.type] && (
+                    {expandedGroups[group.id] && (
                       <div className="p-2 space-y-2">
                         {group.channels.map((channel) => {
                           const completion = channelCompletionStats[channel.id]
@@ -3158,6 +3415,250 @@ export default function ProductDetailsTab({
         </div>
       )}
 
+      {channelGroupEditorOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[55] p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <h3 className="text-base font-semibold text-gray-900">채널 그룹 설정</h3>
+              <button
+                type="button"
+                onClick={() => setChannelGroupEditorOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+              <p className="text-xs text-gray-600 leading-relaxed">
+                그룹 이름과 어떤 채널을 묶을지 정한 뒤 저장하면, 고객 노출 편집기 왼쪽 목록·복사 모달에{' '}
+                <span className="font-medium text-gray-800">모든 사용자에게 동일하게</span> 반영됩니다. 값은 DB의{' '}
+                <code className="text-[11px] bg-gray-100 px-1 rounded">shared_settings</code> 테이블(
+                <code className="text-[11px] bg-gray-100 px-1 rounded">product_details_channel_group_layout</code>)에
+                저장됩니다. 저장은 <span className="font-medium text-gray-800">관리자(super/admin)</span>만 가능합니다.
+              </p>
+              <div className="flex rounded-lg border border-gray-200 p-1 bg-gray-50 gap-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setGroupLayoutDraft((d) => ({
+                      ...d,
+                      mode: 'by_type',
+                    }))
+                  }
+                  className={`flex-1 py-2 px-2 text-xs font-medium rounded-md transition-colors ${
+                    groupLayoutDraft.mode === 'by_type'
+                      ? 'bg-white text-blue-700 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  채널 타입별 (기본)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const selfLabel = t('selfGroupLabel')
+                    setGroupLayoutDraft((d) => ({
+                      ...d,
+                      mode: 'custom',
+                      customGroups:
+                        d.customGroups.length > 0
+                          ? d.customGroups.map((g) => ({ ...g, channelIds: [...g.channelIds] }))
+                          : channels.length > 0
+                            ? seedCustomGroupsFromByType(channels, selfLabel)
+                            : [],
+                    }))
+                  }}
+                  className={`flex-1 py-2 px-2 text-xs font-medium rounded-md transition-colors ${
+                    groupLayoutDraft.mode === 'custom'
+                      ? 'bg-white text-blue-700 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  사용자 정의 그룹
+                </button>
+              </div>
+
+              {groupLayoutDraft.mode === 'custom' && (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selfLabel = t('selfGroupLabel')
+                        setGroupLayoutDraft((d) => ({
+                          ...d,
+                          mode: 'custom',
+                          customGroups: seedCustomGroupsFromByType(channels, selfLabel),
+                        }))
+                      }}
+                      className="px-3 py-1.5 text-xs rounded-md border border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                    >
+                      DB 타입 기준으로 다시 채우기
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-gray-700">그룹 목록</p>
+                      <button
+                        type="button"
+                        onClick={addAnotherCustomGroup}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 shrink-0"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        그룹 추가
+                      </button>
+                    </div>
+                    {groupLayoutDraft.customGroups.map((g, idx) => (
+                      <div key={g.id} className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50/80">
+                        <span className="text-[11px] text-gray-400 w-5 shrink-0">{idx + 1}</span>
+                        <input
+                          type="text"
+                          value={g.label}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setGroupLayoutDraft((d) => ({
+                              ...d,
+                              customGroups: d.customGroups.map((cg) =>
+                                cg.id === g.id ? { ...cg, label: v } : cg
+                              ),
+                            }))
+                          }}
+                          className="flex-1 min-w-0 text-sm border border-gray-300 rounded px-2 py-1"
+                          placeholder="그룹 이름"
+                        />
+                        <button
+                          type="button"
+                          disabled={groupLayoutDraft.customGroups.length <= 1}
+                          onClick={() =>
+                            setGroupLayoutDraft((d) => {
+                              if (d.customGroups.length <= 1) return d
+                              return {
+                                ...d,
+                                customGroups: d.customGroups.filter((cg) => cg.id !== g.id),
+                              }
+                            })
+                          }
+                          className="shrink-0 text-xs text-red-600 hover:text-red-800 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addAnotherCustomGroup}
+                      className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-blue-700 border border-dashed border-blue-200 rounded-lg bg-blue-50/50 hover:bg-blue-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                      그룹 더 추가
+                    </button>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 mb-2">채널별 소속 그룹</p>
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+                        {channels.map((ch) => (
+                          <div
+                            key={ch.id}
+                            className="px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 bg-white"
+                          >
+                            <div className="flex-1 min-w-0 text-sm">
+                              <span className="font-medium text-gray-800">{ch.name}</span>
+                              <span className="text-gray-400 text-xs ml-1">({ch.type})</span>
+                            </div>
+                            <select
+                              className="text-xs border border-gray-300 rounded px-2 py-1.5 sm:w-44 w-full shrink-0"
+                              value={findDraftGroupIdForChannel(groupLayoutDraft, ch.id)}
+                              onChange={(e) =>
+                                assignChannelInDraft(ch.id, e.target.value as string | '__unassigned__')
+                              }
+                            >
+                              <option value="__unassigned__">미배정</option>
+                              {groupLayoutDraft.customGroups.map((cg) => (
+                                <option key={cg.id} value={cg.id}>
+                                  {cg.label.trim() || '이름 없음'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1.5">
+                      미배정 채널은 편집기에서 &quot;미배정 채널&quot; 그룹으로 따로 표시됩니다.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {groupLayoutDraft.mode === 'by_type' && (
+                <div className="space-y-2 text-xs text-gray-500 border border-dashed border-gray-200 rounded-lg px-3 py-3">
+                  <p>
+                    지금은 DB의 채널 타입(OTA, partner, self 등)으로만 묶어서 보여 줍니다. 그룹을 더 나누거나
+                    이름을 바꾸려면 아래에서 바로 그룹을 추가할 수 있습니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addAnotherCustomGroup}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    사용자 정의로 전환하고 그룹 추가
+                  </button>
+                  <p className="text-[11px] text-gray-400">
+                    (기존 타입별 구성을 먼저 불러온 뒤, 빈 그룹이 하나 더 생깁니다. 목록만 원하면 위 탭에서
+                    &quot;사용자 정의 그룹&quot;을 눌러도 됩니다.)
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setChannelGroupEditorOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={savingChannelGroupLayout}
+                onClick={() => {
+                  void (async () => {
+                    if (groupLayoutDraft.mode === 'custom') {
+                      if (groupLayoutDraft.customGroups.length === 0) {
+                        setSaveMessage('사용자 정의 모드에서는 그룹이 최소 1개 필요합니다.')
+                        setSaveMessageType('error')
+                        setTimeout(() => {
+                          setSaveMessage('')
+                          setSaveMessageType(null)
+                        }, 4000)
+                        return
+                      }
+                    }
+                    const ok = await persistGroupLayout({ ...groupLayoutDraft, version: 1 })
+                    if (!ok) return
+                    setChannelGroupEditorOpen(false)
+                    setSaveMessage('채널 그룹 설정을 저장했습니다.')
+                    setSaveMessageType('success')
+                    setTimeout(() => {
+                      setSaveMessage('')
+                      setSaveMessageType(null)
+                    }, 3000)
+                  })()
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingChannelGroupLayout ? '저장 중…' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 복사 모달 */}
       {copyModalOpen && copyFieldName && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3169,7 +3670,7 @@ export default function ProductDetailsTab({
               <button
                 onClick={() => {
                   setCopyModalOpen(false)
-                  setCopyTargetChannels({})
+                  setCopyTargetSelections({})
                   setCopyFieldName(null)
                 }}
                 className="text-gray-400 hover:text-gray-600"
@@ -3201,30 +3702,54 @@ export default function ProductDetailsTab({
 
             <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
               {channelGroups.map((group) => (
-                <div key={group.type} className="border border-gray-200 rounded-lg p-3">
+                <div key={group.id} className="border border-gray-200 rounded-lg p-3">
                   <div className="font-medium text-gray-900 mb-2">
-                    {group.type === 'self' || group.type === 'SELF' ? t('selfGroupLabel') : group.type}
+                    {group.displayLabel}
                   </div>
                   <div className="space-y-2">
                     {group.channels.map((channel) => {
                       const isSelected = (selectedChannelVariants[channel.id]?.length ?? 0) > 0
-                      if (isSelected) return null // 이미 variant를 고른 채널은 제외
-                      
+                      if (isSelected) return null
+                      const variantMap = copyTargetSelections[channel.id]
+                      if (!variantMap || Object.keys(variantMap).length === 0) return null
+                      const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
                       return (
-                        <label key={channel.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
-                          <input
-                            type="checkbox"
-                            checked={copyTargetChannels[channel.id] || false}
-                            onChange={(e) => {
-                              setCopyTargetChannels(prev => ({
-                                ...prev,
-                                [channel.id]: e.target.checked
-                              }))
-                            }}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="text-sm text-gray-700">{channel.name}</span>
-                        </label>
+                        <div
+                          key={channel.id}
+                          className="rounded border border-gray-100 bg-gray-50/50 p-2"
+                        >
+                          <div className="text-sm font-medium text-gray-800 mb-1.5">{channel.name}</div>
+                          <div className="space-y-1 pl-0.5">
+                            {variants.map((variant) => {
+                              const checked = variantMap[variant.variant_key] ?? false
+                              return (
+                                <label
+                                  key={`${channel.id}-${variant.variant_key}`}
+                                  className="flex items-center gap-2 cursor-pointer hover:bg-white/80 p-1 rounded text-xs text-gray-700"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      setCopyTargetSelections((prev) => ({
+                                        ...prev,
+                                        [channel.id]: {
+                                          ...(prev[channel.id] || {}),
+                                          [variant.variant_key]: e.target.checked
+                                        }
+                                      }))
+                                    }}
+                                    className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                  />
+                                  <span>
+                                    {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                                    <span className="text-gray-400 ml-1">({variant.variant_key})</span>
+                                  </span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
                       )
                     })}
                   </div>
@@ -3236,7 +3761,7 @@ export default function ProductDetailsTab({
               <button
                 onClick={() => {
                   setCopyModalOpen(false)
-                  setCopyTargetChannels({})
+                  setCopyTargetSelections({})
                   setCopyFieldName(null)
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
@@ -3245,14 +3770,19 @@ export default function ProductDetailsTab({
               </button>
               <button
                 onClick={() => {
-                  const selectedTargetIds = Object.keys(copyTargetChannels).filter(id => copyTargetChannels[id])
-                  if (selectedTargetIds.length === 0) {
+                  const pairs: { channelId: string; variantKey: string }[] = []
+                  for (const [channelId, variantMap] of Object.entries(copyTargetSelections)) {
+                    for (const [variantKey, on] of Object.entries(variantMap)) {
+                      if (on) pairs.push({ channelId, variantKey })
+                    }
+                  }
+                  if (pairs.length === 0) {
                     setSaveMessage(t('msgSelectChannelsToCopy'))
                     setSaveMessageType('error')
                     setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
                     return
                   }
-                  copyFieldToChannels(copyFieldName, selectedTargetIds)
+                  void copyFieldToChannels(copyFieldName, pairs)
                 }}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
               >
