@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
 import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
+import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
@@ -78,6 +79,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   
   // 초이스 옵션별 색상 매핑 함수 (옵션 이름 기준으로 색상 결정) - useCallback으로 메모이제이션
   const getGroupColorClasses = useCallback((groupId: string, groupName?: string, optionName?: string) => {
+    // 앤텔롭 캐년 초이스: 🏜️ L / 🏜️ X / 🏜️ U 고정 색상 (투어 예약 카드·자동 배정과 동일)
+    const opt = (optionName || '').trim()
+    if (opt === '🏜️ L') {
+      return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-300'
+    }
+    if (opt === '🏜️ X') {
+      return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800 border border-violet-300'
+    }
+    if (opt === '🏜️ U') {
+      return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200'
+    }
+
     // 풍부한 색상 팔레트 (각 옵션마다 다른 색상)
     const colorPalette = [
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200",
@@ -220,6 +233,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     loadingProgress,
     reservationsAggregateReady,
     refreshReservations,
+    refreshReservationPricingForIds,
     refreshCustomers
   } = useReservationData()
 
@@ -467,24 +481,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // reservation_pricing 데이터는 useReservationData 훅에서 가져옴
   // hookReservationPricingMap을 사용하되, 로컬 상태도 유지 (필터링/페이지네이션 대응)
-  const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, {
-    total_price: number
-    balance_amount: number
-    adult_product_price?: number
-    child_product_price?: number
-    infant_product_price?: number
-    product_price_total?: number
-    coupon_discount?: number
-    additional_discount?: number
-    additional_cost?: number
-    commission_percent?: number
-    commission_amount?: number
-    deposit_amount?: number
-    option_total?: number
-    choices_total?: number
-    not_included_price?: number
-    currency?: string
-  }>>(new Map())
+  const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, ReservationPricingMapValue>>(new Map())
 
   // hookReservationPricingMap이 업데이트되면 로컬 상태도 업데이트
   useEffect(() => {
@@ -504,7 +501,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const additionalCost = toN(pricing.additional_cost)
     const commissionAmount = toN(pricing.commission_amount)
     const optionTotal = toN(pricing.option_total)
-    const choicesTotal = toN(pricing.choices_total)
     const notIncludedPrice = toN(pricing.not_included_price)
     const totalPeople = Math.max(1, (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0))
     // product_price_total(상품 가격 합계)에는 이미 (판매가+불포함)×인원이 포함됨 → 불포함 중복 가산 금지
@@ -516,8 +512,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       subtotal = adultPrice * (reservation.adults || 0) + childPrice * (reservation.child || 0) + infantPrice * (reservation.infant || 0)
     }
     if (subtotal <= 0) return ''
-    // 고객 총 결제 금액 = 상품가격합계 - 할인 + 옵션 + 초이스 + 추가비용 (불포함은 이미 상품가격합계에 포함되므로 더하지 않음)
-    const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + optionTotal + choicesTotal + additionalCost
+    // 고객 총 결제 금액 = 상품가격합계 - 할인 + 옵션 + 추가비용 (choices_total 제외 — option_total 과 이중 방지, 불포함은 상품가격합계에 포함)
+    const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + optionTotal + additionalCost
     const totalRevenue = Math.max(0, customerTotalPayment - commissionAmount)
     const currency = pricing.currency || 'USD'
     const sym = currency === 'KRW' ? '₩' : '$'
@@ -800,6 +796,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // 예약 처리 필요 건수 (배지 표시용)
   const actionRequiredCount = useMemo(() => {
+    const isDeleted = (r: Reservation) => {
+      const s = (r.status as string)?.trim?.() ?? ''
+      return s.toLowerCase() === 'deleted'
+    }
+    const arReservations = reservations.filter((r) => !isDeleted(r))
     const todayStr = new Date().toISOString().split('T')[0]
     const d = new Date()
     d.setDate(d.getDate() + 7)
@@ -834,13 +835,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       if (!d) return false
       return d >= todayStr && d <= sevenDaysLaterStr
     }
-    const statusList = reservations.filter(r => tourDateWithin7Days(r) && statusPending(r))
-    const tourList = reservations.filter(r => statusConfirmed(r) && !hasTourAssigned(r))
-    const noPricing = reservations.filter(r => !hasPricing(r))
-    const pricingMismatch = reservations.filter(r => hasPricing(r) && !storedTotalMatchesDynamic(r))
-    const depositNoTour = reservations.filter(r => hasPayment(r) && !hasTourAssigned(r))
-    const confirmedNoDeposit = reservations.filter(r => statusConfirmed(r) && !hasPayment(r))
-    const balanceList = reservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
+    const statusList = arReservations.filter(r => tourDateWithin7Days(r) && statusPending(r))
+    const tourList = arReservations.filter(r => statusConfirmed(r) && !hasTourAssigned(r))
+    const noPricing = arReservations.filter(r => !hasPricing(r))
+    const pricingMismatch = arReservations.filter(r => hasPricing(r) && !storedTotalMatchesDynamic(r))
+    const depositNoTour = arReservations.filter(r => hasPayment(r) && !hasTourAssigned(r))
+    const confirmedNoDeposit = arReservations.filter(r => statusConfirmed(r) && !hasPayment(r))
+    const balanceList = arReservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
     const allIds = new Set<string>()
     statusList.forEach(r => allIds.add(r.id))
     tourList.forEach(r => allIds.add(r.id))
@@ -1776,7 +1777,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const handlePricingInfoClick = useCallback((reservation: Reservation) => {
     const pricing = reservationPricingMap.get(reservation.id)
     const reservationWithPricing = pricing
-      ? { ...reservation, pricing: pricing as { adult_product_price?: number; child_product_price?: number; infant_product_price?: number; [k: string]: unknown } }
+      ? {
+          ...reservation,
+          pricing: pricing as unknown as {
+            adult_product_price?: number
+            child_product_price?: number
+            infant_product_price?: number
+            [k: string]: unknown
+          }
+        }
       : reservation
     setPricingModalReservation(reservationWithPricing)
     setShowPricingModal(true)
@@ -2026,8 +2035,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [])
 
   const handleEditClick = useCallback((reservationId: string) => {
-    router.push(`/${locale}/admin/reservations/${reservationId}`)
-  }, [router, locale])
+    const originalReservation = reservations.find((r) => r.id === reservationId)
+    if (originalReservation) {
+      setShowAddForm(false)
+      setNewReservationId(null)
+      setEditingReservation(originalReservation)
+    } else {
+      router.push(`/${locale}/admin/reservations/${reservationId}`)
+    }
+  }, [router, locale, reservations])
 
   const handleCustomerClick = useCallback((customer: Customer) => {
     setEditingCustomer(customer)
@@ -2684,6 +2700,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         onEditClick={handleEditClick}
         onCustomerClick={handleCustomerClick}
         onRefreshReservations={refreshReservations}
+        onRefreshReservationPricing={refreshReservationPricingForIds}
         onStatusChange={handleStatusChange}
         generatePriceCalculation={generatePriceCalculation}
         getGroupColorClasses={getGroupColorClasses}

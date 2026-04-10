@@ -18,6 +18,7 @@ import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
+import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
@@ -724,48 +725,18 @@ export default function PricingSection({
       // 이 예약에 대한 입금 내역 유무 표시 (자동 업데이트 effect가 보증금을 덮어쓰지 않도록)
       hasPaymentRecordsRef.current = paymentRecords.length > 0
 
-      // payment_status에 따라 보증금과 잔금 분리
-      let depositTotal = 0 // 보증금 총합
-      let balanceReceivedTotal = 0 // 잔금 수령 총합
-      let refundedTotal = 0 // 우리 쪽 환불 (Refunded)
-      let returnedTotal = 0 // 파트너 환불 (Returned)
-      let partnerReceivedStrict = 0
-
-      paymentRecords.forEach((record: { payment_status: string; amount: number }) => {
-        const status = record.payment_status || ''
-        const statusLower = status.toLowerCase()
-        const amount = Number(record.amount) || 0
-
-        if (status === 'Partner Received') {
-          partnerReceivedStrict += amount
-        }
-
-        // 보증금 수령만 합산 (요청 금액 제외) - 고객 실제 지불액(보증금)에 반영
-        if (
-          statusLower.includes('partner received') ||
-          statusLower.includes('deposit received') ||
-          statusLower.includes("customer's cc charged")
-        ) {
-          depositTotal += amount
-        }
-        // 잔금 수령만 합산 (요청은 미수령)
-        else if (statusLower.includes('balance received')) {
-          balanceReceivedTotal += amount
-        }
-        // 환불 관련 처리 - 정확한 문자열 또는 포함 여부로 확인
-        else if (status.includes('Refunded') || statusLower === 'refunded') {
-          refundedTotal += amount
-        }
-        else if (status.includes('Returned') || statusLower === 'returned') {
-          returnedTotal += amount
-        }
-      })
-
-      /** 파트너 환불(Returned)은 파트너 수령(Partner Received) 구간에서만 보증금 합에서 차감: (Partner Received − Returned) + 기타 입금 */
-      const depositTotalNet =
-        depositTotal > 0
-          ? roundUsd2(depositTotal - Math.min(partnerReceivedStrict, returnedTotal))
-          : depositTotal
+      const normalized = paymentRecords.map((record: { payment_status: string; amount: number }) => ({
+        payment_status: record.payment_status || '',
+        amount: Number(record.amount) || 0,
+      }))
+      const {
+        depositTotalNet,
+        depositBucketGross: depositTotal,
+        balanceReceivedTotal,
+        returnedTotal,
+        refundedTotal,
+        partnerReceivedStrict,
+      } = summarizePaymentRecordsForBalance(normalized)
 
       if (process.env.NODE_ENV === 'development') {
         console.log('PricingSection: 입금 내역 계산 결과', {

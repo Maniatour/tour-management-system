@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin, createSupabaseClientWithToken } from '@/lib/supabase'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 // 입금 내역 업데이트
 export async function PUT(
@@ -78,6 +79,14 @@ export async function PUT(
       return NextResponse.json({ error: '입금 내역을 찾을 수 없습니다' }, { status: 404 })
     }
 
+    const rid = (updatedPaymentRecord as { reservation_id?: string }).reservation_id
+    if (rid) {
+      const sync = await syncReservationPricingAggregates(db, rid)
+      if (!sync.ok && sync.error) {
+        console.warn('[payment-records PUT] reservation_pricing 동기화 실패:', rid, sync.error)
+      }
+    }
+
     return NextResponse.json({ paymentRecord: updatedPaymentRecord })
   } catch (error) {
     console.error('입금 내역 업데이트 오류:', error)
@@ -110,6 +119,8 @@ export async function DELETE(
 
     const db = supabaseAdmin ?? createSupabaseClientWithToken(token)
 
+    const { data: beforeDel } = await db.from('payment_records').select('reservation_id').eq('id', id).maybeSingle()
+
     // 입금 내역 삭제
     const { error } = await db
       .from('payment_records')
@@ -119,6 +130,16 @@ export async function DELETE(
     if (error) {
       console.error('입금 내역 삭제 오류:', error)
       return NextResponse.json({ error: '입금 내역을 삭제할 수 없습니다' }, { status: 500 })
+    }
+
+    const rid = beforeDel && typeof beforeDel === 'object' && 'reservation_id' in beforeDel
+      ? String((beforeDel as { reservation_id: string }).reservation_id)
+      : ''
+    if (rid) {
+      const sync = await syncReservationPricingAggregates(db, rid)
+      if (!sync.ok && sync.error) {
+        console.warn('[payment-records DELETE] reservation_pricing 동기화 실패:', rid, sync.error)
+      }
     }
 
     return NextResponse.json({ success: true })

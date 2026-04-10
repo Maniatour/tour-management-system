@@ -194,7 +194,7 @@ export default function TourEnvelopeModal({
         }
         const { data: rezList, error: rezErr } = await supabase
           .from('reservations')
-          .select('id, customer_id, adults, child, infant, total_people')
+          .select('id, customer_id, adults, child, infant, total_people, status')
           .in('id', ids)
         if (rezErr || !rezList?.length) {
           setError('Reservation not found')
@@ -212,7 +212,15 @@ export default function TourEnvelopeModal({
             customerById.set(c.id, { name: c.name ?? '', language: c.language ?? null })
           })
         }
-        type RezRow = { id: string; customer_id?: string; adults?: number; child?: number; infant?: number; total_people?: number }
+        type RezRow = {
+          id: string
+          customer_id?: string
+          adults?: number
+          child?: number
+          infant?: number
+          total_people?: number
+          status?: string | null
+        }
         const rezById = new Map<string, RezRow>()
         rezList.forEach((r) => rezById.set((r as RezRow).id, r as RezRow))
 
@@ -298,7 +306,10 @@ export default function TourEnvelopeModal({
               child: rez.child ?? null,
               infant: rez.infant ?? null,
             },
-            { paymentRecords: paymentsByResId.get(id) ?? [] }
+            {
+              paymentRecords: paymentsByResId.get(id) ?? [],
+              reservationStatus: rez.status ?? null,
+            }
           )
           const currency =
             pricing && typeof (pricing as { currency?: unknown }).currency === 'string'

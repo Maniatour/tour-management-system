@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fiscal-settings'
 import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import CashLedgerReportEditModals, { type CashLedgerEditTarget } from '@/components/reports/CashLedgerReportEditModals'
 
 interface CashReportTabProps {
@@ -25,6 +26,101 @@ type CashDetailRow = {
   reservation_id?: string | null
   payment_method?: string | null
   balance: number
+  /** 히스토리 수정자 > cash created_by / payment submit_by / 회사·예약 지출 submit(submitted)_by → team.display_name */
+  last_modified_by_display: string | null
+}
+
+const HISTORY_ID_CHUNK = 150
+
+/** payment_records: 등록된 현금 수단 ID + 리터럴 cash(잔액 현금 수령 등) */
+const PAYMENT_RECORDS_CASH_METHODS = ['PAYM032', 'PAYM001', 'cash', 'Cash'] as const
+
+const CASH_PAYMENT_STATUSES = [
+  'Deposit Received',
+  'Balance Received',
+  'Partner Received',
+  "Customer's CC Charged",
+  'Commission Received !'
+] as const
+
+/** CashLedgerReportEditModals와 동일: DB에는 withdrawal + 설명으로 은행 Deposit 구분 */
+function isBankDepositCashRow(description: string | null | undefined): boolean {
+  const d = (description ?? '').trim()
+  return d === '은행 Deposit' || d.includes('은행 Deposit')
+}
+
+/**
+ * DB/폼의 카테고리 `기타 지출`만 카테고리별 현금 흐름·상세에서
+ * 입금 / 은행 Deposit / 그 외 출금 으로 나누어 표시. 저장 값은 그대로 `기타 지출` 유지.
+ */
+function displayCategoryForCashTransaction(
+  rawCategory: string | null | undefined,
+  transactionType: 'deposit' | 'withdrawal',
+  description?: string | null
+): string {
+  const c = (rawCategory ?? '').trim() || '기타'
+  if (c !== '기타 지출') return c
+
+  if (transactionType === 'deposit') return '기타 지출 · 입금'
+
+  if (transactionType === 'withdrawal' && isBankDepositCashRow(description)) {
+    return '기타 지출 · 은행 Deposit'
+  }
+  return '기타 지출 · 출금'
+}
+
+async function fetchTeamEmailToDisplayLabel(): Promise<Map<string, string>> {
+  const { data, error } = await supabase.from('team').select('email, display_name, name_ko')
+  if (error) {
+    console.error('team 조회 오류:', error)
+    return new Map()
+  }
+  const m = new Map<string, string>()
+  for (const row of data ?? []) {
+    const email = row.email as string
+    const dn = row.display_name != null ? String(row.display_name).trim() : ''
+    const ko = row.name_ko != null ? String(row.name_ko).trim() : ''
+    const label = dn || ko || email
+    m.set(email.toLowerCase(), label)
+  }
+  return m
+}
+
+async function fetchLatestHistoryModifiedByEmail(
+  rows: Array<{ source: CashDetailRow['source']; rowId: string }>
+): Promise<Map<string, string>> {
+  const bySource = new Map<CashDetailRow['source'], Set<string>>()
+  for (const r of rows) {
+    if (!bySource.has(r.source)) bySource.set(r.source, new Set())
+    bySource.get(r.source)!.add(r.rowId)
+  }
+  const latest = new Map<string, { modified_at: string; modified_by: string }>()
+  for (const [source, idSet] of bySource) {
+    const ids = [...idSet]
+    for (let i = 0; i < ids.length; i += HISTORY_ID_CHUNK) {
+      const chunk = ids.slice(i, i + HISTORY_ID_CHUNK)
+      const { data, error } = await supabase
+        .from('cash_transaction_history')
+        .select('transaction_id, modified_by, modified_at')
+        .eq('source_table', source)
+        .in('transaction_id', chunk)
+      if (error) {
+        console.error('cash_transaction_history 조회 오류:', error)
+        continue
+      }
+      for (const h of data ?? []) {
+        const k = `${source}:${h.transaction_id}`
+        const cur = latest.get(k)
+        const t = String(h.modified_at)
+        if (!cur || t > cur.modified_at) {
+          latest.set(k, { modified_at: t, modified_by: h.modified_by as string })
+        }
+      }
+    }
+  }
+  const out = new Map<string, string>()
+  for (const [k, v] of latest) out.set(k, v.modified_by)
+  return out
 }
 
 export default function CashReportTab({ dateRange, period }: CashReportTabProps) {
@@ -33,6 +129,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
   const [editTarget, setEditTarget] = useState<CashLedgerEditTarget | null>(null)
   const [addCashOpen, setAddCashOpen] = useState(false)
   const [ledgerBaseDate, setLedgerBaseDate] = useState<string>(getDefaultLedgerBaseDate())
+  const [categoryModalCategory, setCategoryModalCategory] = useState<string | null>(null)
 
   const dismissEdit = useCallback(() => setEditTarget(null), [])
 
@@ -88,7 +185,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         // 기간 내 현금 거래 조회
         supabase
           .from('cash_transactions')
-          .select('id, transaction_type, amount, transaction_date, category, description')
+          .select('id, transaction_type, amount, transaction_date, category, description, created_by')
           .gte('transaction_date', startISO)
           .lte('transaction_date', endISO)
           .order('transaction_date', { ascending: false }),
@@ -98,26 +195,26 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           .select('id, transaction_type, amount, transaction_date')
           .gte('transaction_date', baseDate + 'T00:00:00')
           .order('transaction_date', { ascending: true }),
-        // payment_records에서 현금 입금 조회 (PAYM032 + PAYM001)
+        // payment_records에서 현금 입금 조회 (PAYM032/PAYM001 + payment_method cash)
         supabase
           .from('payment_records')
-          .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note')
-          .in('payment_method', ['PAYM032', 'PAYM001'])
-          .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+          .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
+          .in('payment_method', [...PAYMENT_RECORDS_CASH_METHODS])
+          .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
         // 원장 기준일부터의 현금 입금 (잔액 계산용)
         supabase
           .from('payment_records')
           .select('id, amount, submit_on')
-          .in('payment_method', ['PAYM032', 'PAYM001'])
-          .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+          .in('payment_method', [...PAYMENT_RECORDS_CASH_METHODS])
+          .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', baseDate + 'T00:00:00')
           .order('submit_on', { ascending: true }),
         // 기간 내 company_expenses 현금 지출 (Cash, cash 모두 포함)
         supabase
           .from('company_expenses')
-          .select('id, amount, submit_on, description, notes, paid_for, paid_to')
+          .select('id, amount, submit_on, description, notes, paid_for, paid_to, submit_by')
           .in('payment_method', ['Cash', 'cash'])
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)
@@ -132,7 +229,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         // 기간 내 reservation_expenses 현금 지출
         supabase
           .from('reservation_expenses')
-          .select('id, amount, submit_on, note, paid_for, paid_to, reservation_id')
+          .select('id, amount, submit_on, note, paid_for, paid_to, reservation_id, submitted_by')
           .ilike('payment_method', 'Cash')
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)
@@ -264,7 +361,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       // 카테고리별 집계
       const categoryMap = new Map<string, { deposits: number; withdrawals: number }>()
       ;(periodTransactions || []).forEach(t => {
-        const category = t.category || '기타'
+        const category = displayCategoryForCashTransaction(
+          (t as { category?: string | null }).category,
+          t.transaction_type as 'deposit' | 'withdrawal',
+          (t as { description?: string | null }).description
+        )
         if (!categoryMap.has(category)) {
           categoryMap.set(category, { deposits: 0, withdrawals: 0 })
         }
@@ -274,6 +375,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         } else {
           cat.withdrawals += toNumber((t as any).amount)
         }
+      })
+      ;(cashPayments || []).forEach((p: any) => {
+        const category = '예약 현금 입금'
+        if (!categoryMap.has(category)) categoryMap.set(category, { deposits: 0, withdrawals: 0 })
+        categoryMap.get(category)!.deposits += toNumber(p.amount)
       })
       ;(periodCompanyExpenses || []).forEach((p: any) => {
         const category = p.paid_for || '회사 지출'
@@ -286,19 +392,24 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         categoryMap.get(category)!.withdrawals += toNumber(p.amount)
       })
 
-      const details: CashDetailRow[] = [
+      const detailsBase: CashDetailRow[] = [
         ...(periodTransactions || []).map((t: any) => ({
           source: 'cash_transactions' as const,
           rowId: String(t.id),
           occurred_at: t.transaction_date,
           transaction_type: t.transaction_type,
           amount: toNumber(t.amount),
-          category: t.category || '기타',
+          category: displayCategoryForCashTransaction(
+            t.category,
+            t.transaction_type as 'deposit' | 'withdrawal',
+            t.description
+          ),
           description: t.description || '',
           payment_status: null,
           reservation_id: null,
           payment_method: null,
-          balance: balanceAfterByKey.get(`cash_transactions:${t.id}`) ?? Number.NaN
+          balance: balanceAfterByKey.get(`cash_transactions:${t.id}`) ?? Number.NaN,
+          last_modified_by_display: null as string | null
         })),
         ...(cashPayments || []).map((p: any) => ({
           source: 'payment_records' as const,
@@ -311,7 +422,8 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           payment_status: p.payment_status || null,
           reservation_id: p.reservation_id || null,
           payment_method: p.payment_method || null,
-          balance: balanceAfterByKey.get(`payment_records:${p.id}`) ?? Number.NaN
+          balance: balanceAfterByKey.get(`payment_records:${p.id}`) ?? Number.NaN,
+          last_modified_by_display: null as string | null
         })),
         ...(periodCompanyExpenses || []).map((p: any) => ({
           source: 'company_expenses' as const,
@@ -324,7 +436,8 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           payment_status: null,
           reservation_id: null,
           payment_method: null,
-          balance: balanceAfterByKey.get(`company_expenses:${p.id}`) ?? Number.NaN
+          balance: balanceAfterByKey.get(`company_expenses:${p.id}`) ?? Number.NaN,
+          last_modified_by_display: null as string | null
         })),
         ...(periodReservationExpenses || []).map((p: any) => ({
           source: 'reservation_expenses' as const,
@@ -337,9 +450,52 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           payment_status: null,
           reservation_id: p.reservation_id || null,
           payment_method: null,
-          balance: balanceAfterByKey.get(`reservation_expenses:${p.id}`) ?? Number.NaN
+          balance: balanceAfterByKey.get(`reservation_expenses:${p.id}`) ?? Number.NaN,
+          last_modified_by_display: null as string | null
         }))
       ].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
+
+      const cashCreatedByById = new Map<string, string>()
+      for (const t of periodTransactions || []) {
+        const email = (t as { created_by?: string | null }).created_by
+        if (email) cashCreatedByById.set(String((t as { id: string }).id), String(email))
+      }
+
+      const paymentSubmitById = new Map<string, string>()
+      for (const p of cashPayments || []) {
+        const sb = (p as { submit_by?: string | null }).submit_by
+        if (sb) paymentSubmitById.set(String((p as { id: string }).id), String(sb))
+      }
+
+      const companySubmitById = new Map<string, string>()
+      for (const p of periodCompanyExpenses || []) {
+        const sb = (p as { submit_by?: string | null }).submit_by
+        if (sb) companySubmitById.set(String((p as { id: string }).id), String(sb))
+      }
+
+      const reservationSubmittedById = new Map<string, string>()
+      for (const p of periodReservationExpenses || []) {
+        const sb = (p as { submitted_by?: string | null }).submitted_by
+        if (sb) reservationSubmittedById.set(String((p as { id: string }).id), String(sb))
+      }
+
+      const [teamLabels, historyEmailByKey] = await Promise.all([
+        fetchTeamEmailToDisplayLabel(),
+        fetchLatestHistoryModifiedByEmail(detailsBase.map((d) => ({ source: d.source, rowId: d.rowId })))
+      ])
+
+      const details: CashDetailRow[] = detailsBase.map((row) => {
+        const key = `${row.source}:${row.rowId}`
+        let email = historyEmailByKey.get(key) ?? null
+        if (!email) {
+          if (row.source === 'cash_transactions') email = cashCreatedByById.get(row.rowId) ?? null
+          else if (row.source === 'payment_records') email = paymentSubmitById.get(row.rowId) ?? null
+          else if (row.source === 'company_expenses') email = companySubmitById.get(row.rowId) ?? null
+          else if (row.source === 'reservation_expenses') email = reservationSubmittedById.get(row.rowId) ?? null
+        }
+        const label = email ? teamLabels.get(email.toLowerCase()) ?? email : null
+        return { ...row, last_modified_by_display: label }
+      })
 
       setStats({
         period: {
@@ -371,6 +527,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
   useEffect(() => {
     loadCashStats()
   }, [loadCashStats])
+
+  const categoryModalRows = useMemo(() => {
+    if (!categoryModalCategory || !stats?.details) return [] as CashDetailRow[]
+    return (stats.details as CashDetailRow[]).filter((d) => d.category === categoryModalCategory)
+  }, [stats, categoryModalCategory])
 
   if (loading) {
     return (
@@ -488,7 +649,20 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
                 {stats.byCategory
                   .sort((a: any, b: any) => Math.abs(b.net) - Math.abs(a.net))
                   .map((item: any, idx: number) => (
-                    <tr key={idx}>
+                    <tr
+                      key={idx}
+                      role="button"
+                      tabIndex={0}
+                      className="cursor-pointer hover:bg-gray-50 transition-colors"
+                      title="클릭하여 이 카테고리 세부 내역 보기"
+                      onClick={() => setCategoryModalCategory(item.category)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setCategoryModalCategory(item.category)
+                        }
+                      }}
+                    >
                       <td className="px-4 py-3 text-sm font-medium">{item.category}</td>
                       <td className="px-4 py-3 text-sm text-green-600">
                         ${item.deposits.toLocaleString()}
@@ -536,7 +710,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           <AccountingTerm termKey="현금관리">현금 관리</AccountingTerm>(cash_transactions) 거래를 바로 추가할 수 있습니다.
         </p>
         <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
-          <table className="w-full min-w-[800px] text-xs sm:text-sm">
+          <table className="w-full min-w-[920px] text-xs sm:text-sm">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '11rem' }}>일시</th>
@@ -548,6 +722,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '7rem' }}>카테고리</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명/메모</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">출처</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '7rem' }}>최종 수정</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '10rem' }}>상태</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">예약</th>
               </tr>
@@ -555,7 +730,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
             <tbody className="divide-y divide-gray-200">
               {(stats.details || []).length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-sm text-gray-500" colSpan={9}>
+                  <td className="px-4 py-6 text-sm text-gray-500" colSpan={10}>
                     해당 기간에 거래 내역이 없습니다.
                   </td>
                 </tr>
@@ -616,6 +791,9 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                       {row.source === 'payment_records' ? '예약 결제' : row.source === 'company_expenses' ? '회사 지출' : row.source === 'reservation_expenses' ? '예약 지출' : '현금 관리'}
                     </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap max-w-[10rem] truncate" title={row.last_modified_by_display || undefined}>
+                      {row.last_modified_by_display || '—'}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{row.payment_status || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 min-w-0">{row.reservation_id || '-'}</td>
                   </tr>
@@ -625,6 +803,121 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           </table>
         </div>
       </div>
+
+      <Dialog
+        open={categoryModalCategory !== null}
+        onOpenChange={(open) => {
+          if (!open) setCategoryModalCategory(null)
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col gap-0 p-0 sm:p-6">
+          <DialogHeader className="px-4 pt-4 pb-2 sm:px-0 sm:pt-0 shrink-0 border-b border-gray-100 sm:border-0">
+            <DialogTitle className="text-left pr-8">
+              {categoryModalCategory ? `${categoryModalCategory} · 세부 내역` : '세부 내역'}
+            </DialogTitle>
+            <DialogDescription className="text-left text-sm text-gray-500">
+              선택한 카테고리에 포함된 기간 내 거래입니다. 행을 누르면 수정할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto overflow-x-auto flex-1 min-h-0 px-2 pb-4 sm:px-0">
+            {categoryModalRows.length === 0 ? (
+              <p className="text-sm text-gray-500 py-6 text-center">해당 카테고리에 표시할 거래가 없습니다.</p>
+            ) : (
+              <table className="w-full min-w-[720px] text-xs sm:text-sm">
+                <thead className="bg-gray-50 sticky top-0 z-[1]">
+                  <tr>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap">일시</th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap">구분</th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500">금액</th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap">
+                      <AccountingTerm termKey="잔액">잔액</AccountingTerm>
+                    </th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 min-w-0">설명</th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap">출처</th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap">최종 수정</th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap">상태</th>
+                    <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500">예약</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {categoryModalRows.map((row) => (
+                    <tr
+                      key={`${row.source}-${row.rowId}`}
+                      className="cursor-pointer hover:bg-gray-50 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      title="클릭하여 수정"
+                      onClick={() => {
+                        setCategoryModalCategory(null)
+                        setAddCashOpen(false)
+                        setEditTarget({ source: row.source, id: row.rowId })
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setCategoryModalCategory(null)
+                          setAddCashOpen(false)
+                          setEditTarget({ source: row.source, id: row.rowId })
+                        }
+                      }}
+                    >
+                      <td className="px-2 sm:px-3 py-2 whitespace-nowrap">
+                        {row.occurred_at ? new Date(row.occurred_at).toLocaleString() : '-'}
+                      </td>
+                      <td className="px-2 sm:px-3 py-2 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            row.transaction_type === 'deposit'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          {row.transaction_type === 'deposit' ? '입금' : '출금'}
+                        </span>
+                      </td>
+                      <td
+                        className={`px-2 sm:px-3 py-2 font-medium whitespace-nowrap ${
+                          row.transaction_type === 'deposit' ? 'text-green-600' : 'text-red-600'
+                        }`}
+                      >
+                        ${Number(row.amount || 0).toLocaleString()}
+                      </td>
+                      <td
+                        className={`px-2 sm:px-3 py-2 font-medium whitespace-nowrap ${
+                          Number.isFinite(row.balance)
+                            ? row.balance >= 0
+                              ? 'text-gray-900'
+                              : 'text-red-600'
+                            : 'text-gray-400'
+                        }`}
+                      >
+                        {Number.isFinite(row.balance) ? `$${row.balance.toLocaleString()}` : '—'}
+                      </td>
+                      <td className="px-2 sm:px-3 py-2 text-gray-700 min-w-0 max-w-[14rem] truncate" title={row.description || undefined}>
+                        {row.description || '-'}
+                      </td>
+                      <td className="px-2 sm:px-3 py-2 text-gray-600 whitespace-nowrap">
+                        {row.source === 'payment_records'
+                          ? '예약 결제'
+                          : row.source === 'company_expenses'
+                            ? '회사 지출'
+                            : row.source === 'reservation_expenses'
+                              ? '예약 지출'
+                              : '현금 관리'}
+                      </td>
+                      <td className="px-2 sm:px-3 py-2 text-gray-600 whitespace-nowrap max-w-[8rem] truncate" title={row.last_modified_by_display || undefined}>
+                        {row.last_modified_by_display || '—'}
+                      </td>
+                      <td className="px-2 sm:px-3 py-2 text-gray-600 whitespace-nowrap">{row.payment_status || '-'}</td>
+                      <td className="px-2 sm:px-3 py-2 text-gray-600 min-w-0 max-w-[10rem] truncate">{row.reservation_id || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <CashLedgerReportEditModals
         target={editTarget}

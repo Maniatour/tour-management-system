@@ -13,6 +13,7 @@ import {
   fetchTeamDisplayNameByEmail,
   fetchTeamDisplayNameMap,
 } from '@/utils/paymentRecordNoteDisplay'
+import { simplifyChoiceLabel } from '@/utils/choiceLabels'
 
 interface Reservation {
   id: string
@@ -1051,29 +1052,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     return selectedChoices
   }
 
-  // 앤텔롭 캐년 관련: 이모지 + L / X / U 로 간단 표시
-  const ANTLOPE_EMOJI = '🏜️'
-
-  const simplifyChoiceLabel = (label: string) => {
-    if (!label) return label
-    const labelLower = label.toLowerCase().trim()
-    const labelKo = label.trim()
-
-    // 엑스 앤텔롭 캐년 (Antelope X Canyon) → 🏜️ X
-    if (labelLower.includes('antelope x canyon') || /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo)) {
-      return `${ANTLOPE_EMOJI} X`
-    }
-    // 로어 앤텔롭 캐년 (Lower Antelope Canyon) → 🏜️ L
-    if (labelLower.includes('lower antelope canyon') || /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo)) {
-      return `${ANTLOPE_EMOJI} L`
-    }
-    // 어퍼 앤텔롭 (Upper Antelope Canyon) → 🏜️ U
-    if (labelLower.includes('upper antelope canyon') || /어퍼\s*앤텔롭|어퍼\s*앤틸롭|어퍼\s*엔텔롭/.test(labelKo)) {
-      return `${ANTLOPE_EMOJI} U`
-    }
-    return label
-  }
-
   const getPickupHotelName = () => {
     if (!reservation.pickup_hotel) return '미정'
     
@@ -1241,7 +1219,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       reservationPricing,
       optionsTotalFromOptions,
       reservation,
-      { paymentRecords }
+      { paymentRecords, reservationStatus: reservation.status ?? null }
     )
     
     if (balanceAmount <= 0) {
@@ -1588,7 +1566,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           const cardFee = toNumber(reservationPricing.card_fee)
           const prepaymentCost = toNumber(reservationPricing.prepayment_cost)
           const prepaymentTip = toNumber(reservationPricing.prepayment_tip)
-          const choicesTotal = toNumber(reservationPricing.choices_total)
           const effectiveOptionsTotal = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toNumber(reservationPricing.option_total)
           const adultPrice = toNumber(reservationPricing.adult_product_price)
           const childPrice = toNumber(reservationPricing.child_product_price)
@@ -1603,7 +1580,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           }
           if (subtotal <= 0) return null
           // 상품가격합계(product_price_total)에 이미 (판매가+불포함)×인원이 포함됨 → 불포함 중복 가산 금지
-          const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + effectiveOptionsTotal + choicesTotal + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
+          const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + effectiveOptionsTotal + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
           const totalRevenue = Math.max(0, customerTotalPayment - commissionAmount)
           const currency = reservationPricing.currency || 'USD'
           const currencySymbol = currency === 'KRW' ? '₩' : '$'
@@ -1643,7 +1620,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 reservationPricing,
                 optionsTotalFromOptions,
                 reservation,
-                { paymentRecords }
+                { paymentRecords, reservationStatus: reservation.status ?? null }
               )
               if (displayBalanceBadge > 0) {
                 return (

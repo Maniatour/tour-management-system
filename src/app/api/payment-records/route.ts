@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 // 입금 내역 조회
 export async function GET(request: NextRequest) {
@@ -105,6 +106,11 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('입금 내역 생성 오류:', error)
       return NextResponse.json({ error: '입금 내역을 생성할 수 없습니다' }, { status: 500 })
+    }
+
+    const sync = await syncReservationPricingAggregates(supabase, reservation_id)
+    if (!sync.ok && sync.error) {
+      console.warn('[payment-records POST] reservation_pricing 동기화 실패:', reservation_id, sync.error)
     }
 
     return NextResponse.json({ paymentRecord: newPaymentRecord })

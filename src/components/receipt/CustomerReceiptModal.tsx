@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 
 type ReceiptData = {
   reservation: {
@@ -385,30 +386,12 @@ export default function CustomerReceiptModal({
             .select('amount, payment_status')
             .eq('reservation_id', id)
           if (paymentRecords && paymentRecords.length > 0) {
-            let depositTotal = 0
-            let balanceReceivedTotal = 0
-            let partnerReceivedStrict = 0
-            let returnedTotal = 0
-            paymentRecords.forEach((r: { payment_status?: string; amount?: number }) => {
-              const raw = r.payment_status || ''
-              const status = raw.toLowerCase()
-              const amount = Number(r.amount) || 0
-              if (raw === 'Partner Received') {
-                partnerReceivedStrict += amount
-              }
-              if (raw.includes('Returned') || status === 'returned') {
-                returnedTotal += amount
-              }
-              if (status.includes('partner received') || status.includes('deposit received') || status.includes("customer's cc charged")) {
-                depositTotal += amount
-              } else if (status.includes('balance received')) {
-                balanceReceivedTotal += amount
-              }
-            })
-            const depositTotalNet =
-              depositTotal > 0
-                ? Math.round((depositTotal - Math.min(partnerReceivedStrict, returnedTotal)) * 100) / 100
-                : depositTotal
+            const { depositTotalNet, balanceReceivedTotal } = summarizePaymentRecordsForBalance(
+              paymentRecords.map((r: { payment_status?: string; amount?: number }) => ({
+                payment_status: r.payment_status || '',
+                amount: Number(r.amount) || 0,
+              }))
+            )
             paidAmountFromRecords = depositTotalNet + balanceReceivedTotal
           }
           // reservation_options (status 필터 없이 모두 조회) + option names

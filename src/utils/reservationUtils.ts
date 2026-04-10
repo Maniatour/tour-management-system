@@ -131,6 +131,25 @@ export const getChannelName = (channelId: string, channels: Array<{ id: string; 
   return channels?.find(c => c.id === channelId)?.name || 'Unknown'
 }
 
+/** reservations.variant_key / 클라이언트 variantKey */
+export function getReservationVariantKey(reservation: {
+  variantKey?: string | null
+  variant_key?: string | null
+}): string {
+  const v = reservation.variantKey ?? reservation.variant_key
+  const s = v != null ? String(v).trim() : ''
+  return s || 'default'
+}
+
+/** 표시: `채널명 - variant_key` */
+export function formatChannelDashVariant(
+  channelId: string,
+  channels: Array<{ id: string; name?: string | null }> | null,
+  reservation: { variantKey?: string | null; variant_key?: string | null }
+): string {
+  return `${getChannelName(channelId, channels)} - ${getReservationVariantKey(reservation)}`
+}
+
 // 채널 정보 가져오기 (이름과 파비콘)
 export const getChannelInfo = (channelId: string, channels: Channel[] | null) => {
   const channel = channels?.find(c => c.id === channelId)

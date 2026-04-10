@@ -15,7 +15,13 @@ interface AdminLayoutProps {
 
 export default async function AdminLayout({ children, params }: AdminLayoutProps) {
   const { locale } = await params
-  const messages = await getMessages({ locale })
+  let messages: Awaited<ReturnType<typeof getMessages>>
+  try {
+    messages = await getMessages({ locale })
+  } catch (error) {
+    console.error('AdminLayout: Failed to load messages:', error)
+    messages = {}
+  }
 
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>

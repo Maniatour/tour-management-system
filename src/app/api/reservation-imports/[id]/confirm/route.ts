@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 /** 선택된 초이스 (reservation_choices 저장용) */
 interface SelectedChoiceItem {
@@ -272,6 +273,11 @@ export async function POST(
     if (paymentError) {
       console.error('[reservation-imports/confirm] payment_records insert error:', paymentError)
     }
+  }
+
+  const sync = await syncReservationPricingAggregates(client, reservationId)
+  if (!sync.ok && sync.error) {
+    console.warn('[reservation-imports/confirm] reservation_pricing 동기화 실패:', reservationId, sync.error)
   }
 
   const { error: updateImportError } = await client

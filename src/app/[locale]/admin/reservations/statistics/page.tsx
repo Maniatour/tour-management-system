@@ -411,8 +411,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   }, [selectedChart, statisticsData])
 
   // 시간 범위 변경 핸들러
-  // 프리셋 적용 (일별: 어제/오늘, 월별: 이번달/지난달, 연간: 2025/2024/2023)
-  const applyPreset = useCallback((preset: 'daily_yesterday' | 'daily_today' | 'monthly_this' | 'monthly_last' | 'yearly_2025' | 'yearly_2024' | 'yearly_2023') => {
+  // 프리셋 적용 (일별: 어제/오늘, 월별: 이번달/지난달, 연간: 2026/2025/2024/2023)
+  const applyPreset = useCallback((preset: 'daily_yesterday' | 'daily_today' | 'monthly_this' | 'monthly_last' | 'yearly_2026' | 'yearly_2025' | 'yearly_2024' | 'yearly_2023') => {
     const today = new Date()
     const toYmd = (d: Date) => d.toISOString().split('T')[0]
     let range: TimeRange
@@ -437,6 +437,10 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       const lastDay = new Date(today.getFullYear(), today.getMonth(), 0)
       start = toYmd(lastMonth)
       end = toYmd(lastDay)
+    } else if (preset === 'yearly_2026') {
+      range = 'yearly'
+      start = '2026-01-01'
+      end = '2026-12-31'
     } else if (preset === 'yearly_2025') {
       range = 'yearly'
       start = '2025-01-01'
@@ -455,7 +459,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   }, [])
 
   // 현재 선택이 해당 프리셋과 일치하는지
-  const isPresetActive = useCallback((preset: 'daily_yesterday' | 'daily_today' | 'monthly_this' | 'monthly_last' | 'yearly_2025' | 'yearly_2024' | 'yearly_2023') => {
+  const isPresetActive = useCallback((preset: 'daily_yesterday' | 'daily_today' | 'monthly_this' | 'monthly_last' | 'yearly_2026' | 'yearly_2025' | 'yearly_2024' | 'yearly_2023') => {
     if (preset === 'daily_yesterday' || preset === 'daily_today') {
       if (timeRange !== 'daily') return false
       if (dateRange.start !== dateRange.end) return false
@@ -660,6 +664,14 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                   }`}
                 >
                   지난 달
+                </button>
+                <button
+                  onClick={() => applyPreset('yearly_2026')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('yearly_2026') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  2026
                 </button>
                 <button
                   onClick={() => applyPreset('yearly_2025')}

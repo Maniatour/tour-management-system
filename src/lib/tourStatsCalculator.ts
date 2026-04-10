@@ -52,13 +52,11 @@ export function calculateTotalCustomerPayment(pricing: ReservationPricingRow | n
   const additionalDiscount = pricing.additional_discount || 0
   const additionalCost = pricing.additional_cost || 0
   const optionTotal = pricing.option_total || 0
-  const choicesTotal = pricing.choices_total || 0
   const cardFee = pricing.card_fee || 0
   const prepaymentTip = pricing.prepayment_tip || 0
   return (
     (productPriceTotal - couponDiscount - additionalDiscount) +
     optionTotal +
-    choicesTotal +
     additionalCost +
     cardFee +
     prepaymentTip

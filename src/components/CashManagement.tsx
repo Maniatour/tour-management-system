@@ -16,6 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 
 interface CashTransaction {
   id: string
@@ -101,7 +102,7 @@ export default function CashManagement() {
   const [itemsPerPage, setItemsPerPage] = useState(50)
   
   const [formData, setFormData] = useState<CashTransactionFormData>({
-    transaction_date: new Date().toISOString().split('T')[0],
+    transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
     transaction_type: 'deposit',
     amount: '',
     description: '',
@@ -194,11 +195,11 @@ export default function CashManagement() {
       const { data: cashTransactions, error: cashError } = await cashTransactionsQuery
       if (cashError) throw cashError
 
-      // 2. payment_records 테이블에서 PAYM032 (현금) 데이터 가져오기
+      // 2. payment_records 테이블에서 현금 입금 (PAYM032/PAYM001 + payment_method cash)
       let paymentRecordsQuery = supabase
         .from('payment_records')
         .select('id, amount, submit_on, submit_by, note, reservation_id, payment_status')
-        .eq('payment_method', 'PAYM032')
+        .in('payment_method', ['PAYM032', 'PAYM001', 'cash', 'Cash'])
         .order('submit_on', { ascending: false })
 
       if (searchTerm) {
@@ -461,12 +462,8 @@ export default function CashManagement() {
 
         // 새 값 (bank_deposit은 withdrawal로 변환)
         const dbTransactionType = formData.transaction_type === 'bank_deposit' ? 'withdrawal' : formData.transaction_type
-        // 날짜 형식 변환: YYYY-MM-DD를 로컬 시간대의 00:00:00으로 설정 후 ISO 형식으로 변환
-        // 시간대 문제를 방지하기 위해 로컬 시간대의 날짜를 그대로 유지
-        const [year, month, day] = formData.transaction_date.split('-').map(Number)
-        const transactionDate = new Date(year, month - 1, day, 0, 0, 0, 0) // 로컬 시간대의 00:00:00
         const newValues = {
-          transaction_date: transactionDate.toISOString(),
+          transaction_date: parseDatetimeLocalInputToISOString(formData.transaction_date),
           transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
           description: formData.description || null,
@@ -538,12 +535,8 @@ export default function CashManagement() {
       } else {
         // 추가 (bank_deposit은 withdrawal로 변환)
         const dbTransactionType = formData.transaction_type === 'bank_deposit' ? 'withdrawal' : formData.transaction_type
-        // 날짜 형식 변환: YYYY-MM-DD를 로컬 시간대의 00:00:00으로 설정 후 ISO 형식으로 변환
-        // 시간대 문제를 방지하기 위해 로컬 시간대의 날짜를 그대로 유지
-        const [year, month, day] = formData.transaction_date.split('-').map(Number)
-        const transactionDate = new Date(year, month - 1, day, 0, 0, 0, 0) // 로컬 시간대의 00:00:00
         const newValues = {
-          transaction_date: transactionDate.toISOString(),
+          transaction_date: parseDatetimeLocalInputToISOString(formData.transaction_date),
           transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
           description: formData.description || null,
@@ -585,7 +578,7 @@ export default function CashManagement() {
       setIsDialogOpen(false)
       setEditingTransaction(null)
       setFormData({
-        transaction_date: new Date().toISOString().split('T')[0],
+        transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
         transaction_type: 'deposit',
         amount: '',
         description: '',
@@ -655,7 +648,7 @@ export default function CashManagement() {
       // description이 "은행 Deposit"인 경우 bank_deposit으로 설정
       const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
       setFormData({
-        transaction_date: new Date(transaction.transaction_date).toISOString().split('T')[0],
+        transaction_date: formatDateTimeForDatetimeLocalInput(transaction.transaction_date),
         transaction_type: isBankDeposit ? 'bank_deposit' : transaction.transaction_type,
         amount: transaction.amount.toString(),
         description: transaction.description || '',
@@ -745,7 +738,7 @@ export default function CashManagement() {
   const handleNewTransaction = () => {
     setEditingTransaction(null)
     setFormData({
-      transaction_date: new Date().toISOString().split('T')[0],
+      transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
       transaction_type: 'deposit',
       amount: '',
       description: '',
@@ -966,13 +959,15 @@ export default function CashManagement() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="transaction_date">거래일자 *</Label>
+                      <Label htmlFor="transaction_date">거래 일시 *</Label>
                       <Input
                         id="transaction_date"
-                        type="date"
+                        type="datetime-local"
+                        step={60}
                         value={formData.transaction_date}
                         onChange={(e) => setFormData({ ...formData, transaction_date: e.target.value })}
                         required
+                        className="min-w-0"
                       />
                     </div>
                     <div className="space-y-2">

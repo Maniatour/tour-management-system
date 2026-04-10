@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 // 서버에서는 RLS 우회용 admin 사용 (없으면 anon fallback)
 const db = supabaseAdmin ?? supabase
+
+async function syncPricingAfterOptionChange(reservationId: string) {
+  const r = await syncReservationPricingAggregates(db, reservationId)
+  if (!r.ok && r.error) {
+    console.warn('[reservation-options] reservation_pricing 동기화 실패:', reservationId, r.error)
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -116,6 +124,8 @@ export async function POST(
       return NextResponse.json({ error: message }, { status: 500 })
     }
 
+    await syncPricingAfterOptionChange(reservationId)
+
     return NextResponse.json({ reservationOption: data[0] })
   } catch (error) {
     console.error('Error in reservation options POST API:', error)
@@ -165,6 +175,8 @@ export async function PUT(
       return NextResponse.json({ error: message }, { status: 500 })
     }
 
+    await syncPricingAfterOptionChange(reservationId)
+
     return NextResponse.json({ reservationOption: data[0] })
   } catch (error) {
     console.error('Error in reservation options PUT API:', error)
@@ -197,6 +209,8 @@ export async function DELETE(
       const message = process.env.NODE_ENV === 'development' ? error.message : 'Failed to delete reservation option'
       return NextResponse.json({ error: message }, { status: 500 })
     }
+
+    await syncPricingAfterOptionChange(reservationId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

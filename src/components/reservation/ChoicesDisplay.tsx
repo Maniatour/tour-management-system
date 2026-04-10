@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import type { Reservation } from '@/types/reservation'
+import { simplifyChoiceLabel } from '@/utils/choiceLabels'
 
 interface ChoicesDisplayProps {
   reservation: Reservation
@@ -105,11 +106,12 @@ export const ChoicesDisplay = React.memo(function ChoicesDisplay({
       {selectedChoices.map((choice, index) => {
         const optionName = choice.choice_options?.option_name_ko || choice.choice_options?.option_name || 'Unknown'
         const groupName = choice.choice_options?.product_choices?.choice_group_ko || 'Unknown'
-        const badgeClass = getGroupColorClasses(choice.choice_id, groupName, optionName)
-        
+        const displayLabel = simplifyChoiceLabel(optionName)
+        const badgeClass = getGroupColorClasses(choice.choice_id, groupName, displayLabel)
+
         return (
           <span key={`${choice.choice_id}-${choice.option_id}-${index}`} className={badgeClass}>
-            ✓ {optionName}
+            {displayLabel}
           </span>
         )
       })}

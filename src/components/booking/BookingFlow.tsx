@@ -1862,6 +1862,16 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
         if (optionsError) {
           console.error('예약 추가 선택 상품 저장 오류:', optionsError)
+        } else {
+          try {
+            await fetch('/api/reservation-pricing/sync-aggregates', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reservation_id: reservationId }),
+            })
+          } catch (syncErr) {
+            console.warn('reservation_pricing option_total 동기화 호출 실패:', syncErr)
+          }
         }
       }
 

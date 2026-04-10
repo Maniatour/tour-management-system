@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 
 export type CashLedgerEditSource =
   | 'cash_transactions'
@@ -51,7 +52,7 @@ type CashFormData = {
 }
 
 const defaultCashForm = (): CashFormData => ({
-  transaction_date: new Date().toISOString().split('T')[0],
+  transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
   transaction_type: 'deposit',
   amount: '',
   description: '',
@@ -153,7 +154,7 @@ export default function CashLedgerReportEditModals({
           const isBankDeposit = desc.includes('은행 Deposit') || desc === '은행 Deposit'
           setCashRow(data as Record<string, unknown>)
           setCashForm({
-            transaction_date: new Date(data.transaction_date as string).toISOString().split('T')[0],
+            transaction_date: formatDateTimeForDatetimeLocalInput(data.transaction_date as string),
             transaction_type: isBankDeposit ? 'bank_deposit' : (data.transaction_type as 'deposit' | 'withdrawal'),
             amount: String(data.amount ?? ''),
             description: desc,
@@ -233,10 +234,8 @@ export default function CashLedgerReportEditModals({
       return
     }
     const dbTransactionType = cashForm.transaction_type === 'bank_deposit' ? 'withdrawal' : cashForm.transaction_type
-    const [year, month, day] = cashForm.transaction_date.split('-').map(Number)
-    const transactionDate = new Date(year, month - 1, day, 0, 0, 0, 0)
     const newValues = {
-      transaction_date: transactionDate.toISOString(),
+      transaction_date: parseDatetimeLocalInputToISOString(cashForm.transaction_date),
       transaction_type: dbTransactionType,
       amount: parseFloat(cashForm.amount),
       description: cashForm.description || null,
@@ -320,13 +319,15 @@ export default function CashLedgerReportEditModals({
             <form onSubmit={submitCash} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cr_transaction_date">거래일자 *</Label>
+                  <Label htmlFor="cr_transaction_date">거래 일시 *</Label>
                   <Input
                     id="cr_transaction_date"
-                    type="date"
+                    type="datetime-local"
+                    step={60}
                     value={cashForm.transaction_date}
                     onChange={(e) => setCashForm({ ...cashForm, transaction_date: e.target.value })}
                     required
+                    className="min-w-0"
                   />
                 </div>
                 <div className="space-y-2">

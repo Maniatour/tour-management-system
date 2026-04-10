@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+
+const dbSync = supabaseAdmin ?? supabase
 
 // 예약 생성
 export async function POST(request: NextRequest) {
@@ -102,6 +105,11 @@ export async function POST(request: NextRequest) {
       if (optionsError) {
         console.error('예약 옵션 저장 오류:', optionsError)
         // 옵션 저장 실패해도 예약은 성공으로 처리
+      } else {
+        const sync = await syncReservationPricingAggregates(dbSync, reservationId)
+        if (!sync.ok && sync.error) {
+          console.warn('[reservations POST] reservation_pricing 동기화 실패:', reservationId, sync.error)
+        }
       }
     }
 

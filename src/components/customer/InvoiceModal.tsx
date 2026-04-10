@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye, FileText, Search, ChevronDown } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye, FileText, Search, ChevronDown, Download } from 'lucide-react'
+import html2pdf from 'html2pdf.js'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ProductSelector, { Product as ProductSelectorProduct } from '@/components/common/ProductSelector'
@@ -52,6 +53,20 @@ interface InvoiceItem {
   selectedOptions?: string[]
   itemType?: 'product' | 'option'
   optionId?: string
+  /** false면 이 줄 금액은 할인에서 제외 (기본: 적용) */
+  discountApplies?: boolean
+  /** 상품 행에 매달리는 초이스 등 별도 청구 줄 — 본문은 아래에 들여 써 표시 */
+  parentItemId?: string
+}
+
+function hasInvoiceValidLines(items: InvoiceItem[]): boolean {
+  return items.some(item => {
+    if (item.itemType === 'option') return !!item.optionId
+    if (item.parentItemId) {
+      return !!(item.productId && (item.description?.trim() || item.unitPrice > 0))
+    }
+    return item.itemType === 'product' && !!item.productId
+  })
 }
 
 interface ProductOption {
@@ -67,6 +82,8 @@ interface ProductOption {
   is_multiple?: boolean
   is_default?: boolean
   product_id?: string
+  /** 동일 마스터 옵션을 상품별로 복제한 행 구분용 — 있으면 중복 제거 키로 사용 */
+  linked_option_id?: string | null
 }
 
 interface ProductChoice {
@@ -99,6 +116,102 @@ const formatKRW = (krw: number): string => {
 
 const convertToKRW = (usd: number, rate: number): number => {
   return usd * rate
+}
+
+function lineEligibleForDiscount(item: InvoiceItem): boolean {
+  return item.discountApplies !== false
+}
+
+/** 퍼센트/고정 할인 기준: 할인 적용 줄 소계 + 그 줄에 배분된 세금 */
+function getEligibleDiscountBase(
+  invoiceItems: InvoiceItem[],
+  applyTax: boolean,
+  taxPercent: number
+): number {
+  const fullSubtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0)
+  const eligibleSubtotal = invoiceItems.filter(lineEligibleForDiscount).reduce((s, i) => s + i.total, 0)
+  const calculatedTax = applyTax ? fullSubtotal * (taxPercent / 100) : 0
+  const taxEligible =
+    fullSubtotal > 0 && applyTax ? calculatedTax * (eligibleSubtotal / fullSubtotal) : 0
+  return eligibleSubtotal + taxEligible
+}
+
+function computeInvoiceDiscountAmount(
+  invoiceItems: InvoiceItem[],
+  applyTax: boolean,
+  taxPercent: number,
+  applyDiscount: boolean,
+  discountPercent: number,
+  discountAmountInput: number
+): number {
+  if (!applyDiscount) return 0
+  const base = getEligibleDiscountBase(invoiceItems, applyTax, taxPercent)
+
+  if (discountPercent > 0) {
+    return base * (discountPercent / 100)
+  }
+  if (discountAmountInput > 0) {
+    return Math.min(discountAmountInput, base)
+  }
+  return 0
+}
+
+/** 통합 옵션은 상품별로 동일 옵션이 여러 행일 수 있음 — 드롭다운에 동일 라벨이 반복되지 않도록 묶음 */
+function dedupeKeyForProductOption(opt: ProductOption): string {
+  if (opt.linked_option_id) {
+    return `linked:${opt.linked_option_id}`
+  }
+  return [
+    opt.name || '',
+    opt.choice_name || '',
+    Number(opt.adult_price_adjustment) || 0,
+    Number(opt.child_price_adjustment) || 0,
+    Number(opt.infant_price_adjustment) || 0,
+  ].join('|')
+}
+
+function pickBetterProductOptionForRow(
+  candidate: ProductOption,
+  current: ProductOption,
+  forProductId: string | undefined
+): ProductOption {
+  if (forProductId) {
+    const cScoped = candidate.product_id === forProductId
+    const curScoped = current.product_id === forProductId
+    if (cScoped && !curScoped) return candidate
+    if (curScoped && !cScoped) return current
+    const cGlobal = !candidate.product_id
+    const curGlobal = !current.product_id
+    if (cGlobal && !curGlobal) return candidate
+    if (curGlobal && !cGlobal) return current
+    return current
+  }
+  const cGlobal = !candidate.product_id
+  const curGlobal = !current.product_id
+  if (cGlobal && !curGlobal) return candidate
+  if (curGlobal && !cGlobal) return current
+  return current
+}
+
+function dedupeIntegratedProductOptions(
+  options: ProductOption[],
+  forProductId: string | undefined
+): ProductOption[] {
+  const seen = new Map<string, ProductOption>()
+  for (const opt of options) {
+    const key = dedupeKeyForProductOption(opt)
+    const existing = seen.get(key)
+    if (!existing) {
+      seen.set(key, opt)
+      continue
+    }
+    seen.set(key, pickBetterProductOptionForRow(opt, existing, forProductId))
+  }
+  return Array.from(seen.values()).sort((a, b) =>
+    (a.name || a.choice_name || '').localeCompare(b.name || b.choice_name || '', undefined, {
+      sensitivity: 'base',
+    })
+  )
 }
 
 export default function InvoiceModal({ customer, products, onClose, locale: initialLocale = 'ko', savedInvoiceId: initialSavedInvoiceId = null }: InvoiceModalProps) {
@@ -156,6 +269,10 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   const [showAddMenu, setShowAddMenu] = useState<string | null>(null)
   const [itemSearchQueries, setItemSearchQueries] = useState<Record<string, string>>({})
   const [itemDropdownOpen, setItemDropdownOpen] = useState<Record<string, boolean>>({})
+  /** 단가 입력 중에는 문자열을 유지 (number + toFixed + parseFloat||0 조합이 한 글자마다 0으로 리셋되는 것 방지) */
+  const [unitPriceDraftByItemId, setUnitPriceDraftByItemId] = useState<Record<string, string>>({})
+  const previewIframeRef = useRef<HTMLIFrameElement>(null)
+  const [pdfDownloading, setPdfDownloading] = useState(false)
 
   // 실시간 환율 가져오기
   useEffect(() => {
@@ -208,7 +325,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             is_required,
             is_multiple,
             is_default,
-            product_id
+            product_id,
+            linked_option_id
           `)
           .order('name', { ascending: true })
 
@@ -247,7 +365,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         editable: true,
         participantType: 'adult',
         itemType: 'product',
-        selectedChoices: {}
+        selectedChoices: {},
+        discountApplies: true,
       }
       setInvoiceItems([initialItem])
     }
@@ -268,23 +387,22 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       if (data) {
         // 기존 choiceId/choiceOptionId를 selectedChoices로 변환
         const items = (data.items || []).map((item: any) => {
-          // selectedChoices가 없고 기존 choiceId/choiceOptionId가 있으면 변환
+          let normalized: InvoiceItem = { ...item }
           if (!item.selectedChoices && item.choiceId && item.choiceOptionId) {
-            return {
-              ...item,
+            normalized = {
+              ...normalized,
               selectedChoices: {
                 [item.choiceId]: item.choiceOptionId
               }
             }
           }
-          // selectedChoices가 없으면 빈 객체로 초기화
-          if (!item.selectedChoices) {
-            return {
-              ...item,
-              selectedChoices: {}
-            }
+          if (!normalized.selectedChoices) {
+            normalized = { ...normalized, selectedChoices: {} }
           }
-          return item
+          if (normalized.discountApplies === undefined) {
+            normalized = { ...normalized, discountApplies: true }
+          }
+          return normalized
         })
         
         setInvoiceNumber(data.invoice_number)
@@ -314,6 +432,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           }
         })
         setItemSearchQueries(searchQueries)
+        setUnitPriceDraftByItemId({})
 
         // 상품 초이스 로드
         const productIds = [...new Set(items.filter((item: any) => item.productId).map((item: any) => item.productId))]
@@ -329,21 +448,31 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     }
   }
 
+  const computedDiscountAmount = useMemo(
+    () =>
+      computeInvoiceDiscountAmount(
+        invoiceItems,
+        applyTax,
+        taxPercent,
+        applyDiscount,
+        discountPercent,
+        discountAmount
+      ),
+    [invoiceItems, applyTax, taxPercent, applyDiscount, discountPercent, discountAmount]
+  )
+
   // 합계 계산
   useEffect(() => {
     const calculatedSubtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0)
     const calculatedTax = applyTax ? calculatedSubtotal * (taxPercent / 100) : 0
-    const calculatedDiscount = applyDiscount 
-      ? (discountAmount > 0 ? discountAmount : (calculatedSubtotal + calculatedTax) * (discountPercent / 100))
-      : 0
-    const amountAfterDiscount = calculatedSubtotal + calculatedTax - calculatedDiscount
+    const amountAfterDiscount = calculatedSubtotal + calculatedTax - computedDiscountAmount
     const calculatedProcessingFee = applyProcessingFee ? amountAfterDiscount * 0.05 : 0
     const calculatedTotal = amountAfterDiscount + calculatedProcessingFee
 
     setSubtotal(calculatedSubtotal)
     setTax(calculatedTax)
     setTotal(calculatedTotal)
-  }, [invoiceItems, applyTax, taxPercent, applyDiscount, discountPercent, discountAmount, applyProcessingFee])
+  }, [invoiceItems, applyTax, taxPercent, applyProcessingFee, computedDiscountAmount])
 
 
   // 외부 클릭 시 드롭다운 메뉴 닫기
@@ -431,9 +560,12 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     const channelId = defaultChannelId || customer.channel_id || ''
     const participantType = updates.participantType || item.participantType || 'adult'
     const date = updates.date || item.date
+
+    // 초이스 별도 청구 줄은 수동 금액만 — 동적 가격 재계산 안 함
+    const skipDynamicPricing = !!item.parentItemId
     
     // 참가자 유형이 변경된 경우 가격 다시 계산
-    if (updates.participantType && updates.participantType !== item.participantType && item.productId && channelId && date) {
+    if (!skipDynamicPricing && updates.participantType && updates.participantType !== item.participantType && item.productId && channelId && date) {
       const adults = participantType === 'adult' ? 1 : 0
       const children = participantType === 'child' ? 1 : 0
       const infants = participantType === 'infant' ? 1 : 0
@@ -490,7 +622,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     }
     
     // 날짜가 변경된 경우 동적 가격 다시 계산
-    if (updates.date && updates.date !== item.date && item.productId && channelId) {
+    if (!skipDynamicPricing && updates.date && updates.date !== item.date && item.productId && channelId) {
       const adults = participantType === 'adult' ? 1 : 0
       const children = participantType === 'child' ? 1 : 0
       const infants = participantType === 'infant' ? 1 : 0
@@ -515,6 +647,19 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           console.error('날짜 변경 시 동적 가격 조회 실패:', error)
         }
       }
+    }
+
+    const isOnlyManualUnitPriceCommit =
+      Object.keys(updates).length === 2 &&
+      'unitPrice' in updates &&
+      'total' in updates
+    if (!isOnlyManualUnitPriceCommit) {
+      setUnitPriceDraftByItemId(prev => {
+        if (!(itemId in prev)) return prev
+        const next = { ...prev }
+        delete next[itemId]
+        return next
+      })
     }
 
     setInvoiceItems(prev => prev.map(i => {
@@ -862,7 +1007,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       editable: true,
       participantType: 'adult',
       itemType: 'product',
-      selectedChoices: {}
+      selectedChoices: {},
+      discountApplies: true,
     }
     setInvoiceItems(prev => [...prev, newItem])
   }
@@ -882,7 +1028,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       participantType: productItem.participantType || 'adult',
       itemType: 'option',
       optionId: undefined,
-      selectedChoices: {}
+      selectedChoices: {},
+      discountApplies: true,
     }
     setInvoiceItems(prev => [...prev, newOptionItem])
   }
@@ -902,7 +1049,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       editable: true,
       participantType: lastItem?.participantType || 'adult',
       itemType: 'option',
-      optionId: undefined
+      optionId: undefined,
+      discountApplies: true,
     }
     setInvoiceItems(prev => [...prev, newOptionItem])
   }
@@ -922,18 +1070,76 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       editable: true,
       participantType: 'none',
       itemType: 'product',
-      selectedChoices: {}
+      selectedChoices: {},
+      discountApplies: true,
     }
     setInvoiceItems(prev => [...prev, newTextItem])
   }
 
-  // 항목 삭제
+  // 항목 삭제 (자식 별도 청구 줄도 함께 제거)
   const handleRemoveInvoiceItem = (itemId: string) => {
-    setInvoiceItems(prev => prev.filter(i => i.id !== itemId))
+    const collectDescendants = (id: string, items: InvoiceItem[]): string[] => {
+      const children = items.filter(i => i.parentItemId === id).map(i => i.id)
+      return children.flatMap(cid => [cid, ...collectDescendants(cid, items)])
+    }
+    setInvoiceItems(prev => {
+      const idsToRemove = new Set<string>([itemId, ...collectDescendants(itemId, prev)])
+      setUnitPriceDraftByItemId(draft => {
+        const next = { ...draft }
+        idsToRemove.forEach(id => {
+          delete next[id]
+        })
+        return next
+      })
+      return prev.filter(i => !idsToRemove.has(i.id))
+    })
+  }
+
+  /** 상품 행 전용: 초이스 등 별도 청구 줄 (할인 기본 비적용) */
+  const handleAddChoiceSurchargeRow = (parentId: string) => {
+    setInvoiceItems(prev => {
+      const parent = prev.find(i => i.id === parentId)
+      if (!parent || parent.itemType === 'option' || parent.parentItemId) return prev
+      const newItem: InvoiceItem = {
+        id: `item-${Date.now()}`,
+        parentItemId: parentId,
+        productId: parent.productId || '',
+        productName: parent.productName || '',
+        date: parent.date,
+        description: '',
+        quantity: 1,
+        unitPrice: 0,
+        total: 0,
+        editable: true,
+        participantType: 'none',
+        itemType: 'product',
+        selectedChoices: {},
+        discountApplies: false,
+      }
+      const idx = prev.findIndex(i => i.id === parentId)
+      if (idx === -1) return [...prev, newItem]
+      const next = [...prev]
+      next.splice(idx + 1, 0, newItem)
+      return next
+    })
   }
 
   // 인보이스 HTML 생성
   const generateInvoiceHTML = () => {
+    const invoiceCustomerName = locale === 'ko' ? `${customer.name}님` : customer.name
+    const emailForInvoice =
+      customer.email != null &&
+      String(customer.email).trim() !== '' &&
+      String(customer.email).toLowerCase() !== 'null'
+        ? String(customer.email)
+        : ''
+    const phoneForInvoice =
+      customer.phone != null &&
+      String(customer.phone).trim() !== '' &&
+      String(customer.phone).toLowerCase() !== 'null'
+        ? String(customer.phone)
+        : ''
+
     return `
       <!DOCTYPE html>
       <html>
@@ -954,6 +1160,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           th { background-color: #f5f5f5; font-weight: bold; }
           .text-right { text-align: right; }
           .total-row { font-weight: bold; background-color: #f0f0f0; }
+          .invoice-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 13px; color: #4b5563; letter-spacing: 0.02em; }
         </style>
       </head>
       <body>
@@ -971,8 +1178,9 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
               <p><strong>${locale === 'ko' ? '인보이스 번호' : 'Invoice Number'}:</strong> ${invoiceNumber}</p>
               <p><strong>${locale === 'ko' ? '작성일' : 'Issue Date'}:</strong> ${new Date(invoiceDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</p>
               ${dueDate ? `<p><strong>${locale === 'ko' ? '만기일' : 'Due Date'}:</strong> ${new Date(dueDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</p>` : ''}
-              <p><strong>${locale === 'ko' ? '고객' : 'Customer'}:</strong> ${customer.name}</p>
-              <p><strong>${locale === 'ko' ? '이메일' : 'Email'}:</strong> ${customer.email}</p>
+              <p><strong>${locale === 'ko' ? '고객' : 'Customer'}:</strong> ${invoiceCustomerName}</p>
+              <p><strong>${locale === 'ko' ? '이메일' : 'Email'}:</strong> ${emailForInvoice}</p>
+              <p><strong>${locale === 'ko' ? '연락처' : 'Phone'}:</strong> ${phoneForInvoice}</p>
             </div>
           </div>
         </div>
@@ -988,18 +1196,21 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             </tr>
           </thead>
           <tbody>
-            ${invoiceItems.map(item => `
+            ${invoiceItems.map(item => {
+              const isSurcharge = !!item.parentItemId
+              return `
               <tr>
-                <td>${new Date(item.date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</td>
-                <td>
-                  <div>${item.description}</div>
+                <td>${isSurcharge ? '' : new Date(item.date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</td>
+                <td style="${isSurcharge ? 'padding-left: 28px; border-left: 2px solid #fbbf24;' : ''}">
+                  <div>${item.description || ''}</div>
                   ${item.choiceInfo ? `<div style="margin-top: 4px;"><span style="font-size: 11px; background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px;">${item.choiceInfo}</span></div>` : ''}
                 </td>
                 <td class="text-right">${item.quantity}</td>
                 <td class="text-right">${formatUSD(item.unitPrice)}</td>
                 <td class="text-right">${formatUSD(item.total)}</td>
               </tr>
-            `).join('')}
+            `
+            }).join('')}
             <tr class="total-row">
               <td colspan="3"></td>
               <td class="text-right">${locale === 'ko' ? '소계' : 'Subtotal'}:</td>
@@ -1012,18 +1223,18 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
               <td class="text-right">${formatUSD(tax)}</td>
             </tr>
             ` : ''}
-            ${applyDiscount && (discountPercent > 0 || discountAmount > 0) ? `
+            ${applyDiscount && computedDiscountAmount > 0 ? `
             <tr>
               <td colspan="3"></td>
               <td class="text-right">${locale === 'ko' ? '할인' : 'Discount'}${discountPercent > 0 ? ` (${discountPercent}%)` : ''}${discountReason ? ` - ${discountReason}` : ''}:</td>
-              <td class="text-right" style="color: #dc2626;">-${formatUSD(discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100))}</td>
+              <td class="text-right" style="color: #dc2626;">-${formatUSD(computedDiscountAmount)}</td>
             </tr>
             ` : ''}
             ${applyProcessingFee ? `
             <tr>
               <td colspan="3"></td>
               <td class="text-right">${locale === 'ko' ? '신용카드 처리 수수료 (5%)' : 'Credit Card Processing Fee (5%)'}:</td>
-              <td class="text-right">${formatUSD((subtotal + tax - (applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0)) * 0.05)}</td>
+              <td class="text-right">${formatUSD((subtotal + tax - computedDiscountAmount) * 0.05)}</td>
             </tr>
             ` : ''}
             <tr class="total-row">
@@ -1031,12 +1242,68 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
               <td class="text-right">${locale === 'ko' ? '총액' : 'Total'}:</td>
               <td class="text-right">${formatUSD(total)}</td>
             </tr>
+            ${showKRW ? `
+            <tr>
+              <td colspan="3"></td>
+              <td class="text-right" style="font-size: 12px; color: #4b5563; font-weight: normal; vertical-align: top;">
+                ${locale === 'ko' ? '송금 환산' : 'Transfer equivalent'}<br/>
+                <span style="font-size: 11px;">(${locale === 'ko' ? '1 USD =' : '1 USD ='} ${Number(exchangeRate).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', { maximumFractionDigits: 2 })} KRW)</span>
+              </td>
+              <td class="text-right" style="font-size: 13px; color: #2563eb; font-weight: 600;">${formatKRW(convertToKRW(total, exchangeRate))}</td>
+            </tr>
+            ` : ''}
           </tbody>
         </table>
         ${notes ? `<div style="margin-top: 20px;"><strong>${locale === 'ko' ? '메모' : 'Notes'}:</strong> ${notes}</div>` : ''}
+        <div class="invoice-footer">
+          ${locale === 'ko' ? '라스베가스 매니아 투어를 선택해 주셔서 감사합니다.' : 'Thanks for choosing Las Vegas Mania Tour'}
+        </div>
       </body>
       </html>
     `
+  }
+
+  const handleDownloadInvoicePdf = async () => {
+    const getBody = () => previewIframeRef.current?.contentDocument?.body ?? null
+    let body = getBody()
+    if (!body) {
+      await new Promise(r => setTimeout(r, 100))
+      body = getBody()
+    }
+    if (!body) {
+      alert(locale === 'ko' ? '미리보기를 불러올 수 없습니다.' : 'Preview is not ready.')
+      return
+    }
+    setPdfDownloading(true)
+    try {
+      const safeName =
+        (invoiceNumber || 'invoice').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 80) || 'invoice'
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `${safeName}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.95 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          letterRendering: true,
+          allowTaint: false,
+        },
+        jsPDF: {
+          unit: 'mm' as const,
+          format: 'a4' as const,
+          orientation: 'portrait' as const,
+          compress: true,
+        },
+        pagebreak: { mode: 'avoid-all' as const },
+      }
+      await html2pdf().set(opt).from(body).save()
+    } catch (error) {
+      console.error('인보이스 PDF 저장 오류:', error)
+      alert(locale === 'ko' ? 'PDF 저장에 실패했습니다.' : 'Failed to save PDF.')
+    } finally {
+      setPdfDownloading(false)
+    }
   }
 
   // 인보이스 저장 (임시저장 / 다시 저장)
@@ -1052,11 +1319,12 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         tax,
         tax_percent: applyTax ? taxPercent : 0,
         apply_tax: applyTax,
-        discount: applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0,
+        discount: applyDiscount ? computedDiscountAmount : 0,
         discount_percent: applyDiscount ? discountPercent : 0,
         discount_reason: applyDiscount ? discountReason : '',
         apply_discount: applyDiscount,
-        processing_fee: applyProcessingFee ? (subtotal + tax - (applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0)) * 0.05 : 0,
+        discount_applies_to_options: true,
+        processing_fee: applyProcessingFee ? (subtotal + tax - computedDiscountAmount) * 0.05 : 0,
         apply_processing_fee: applyProcessingFee,
         total,
         exchange_rate: exchangeRate,
@@ -1105,10 +1373,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     }
 
     // 최소 하나의 항목이 선택되어 있는지 확인
-    const hasValidItems = invoiceItems.some(item => 
-      (item.itemType === 'product' && item.productId) || 
-      (item.itemType === 'option' && item.optionId)
-    )
+    const hasValidItems = hasInvoiceValidLines(invoiceItems)
     
     if (!hasValidItems) {
       alert(locale === 'ko' ? '최소 하나의 상품 또는 통합 옵션을 선택해주세요.' : 'Please select at least one product or integrated option.')
@@ -1149,11 +1414,12 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           tax,
           tax_percent: applyTax ? taxPercent : 0,
           apply_tax: applyTax,
-          discount: applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0,
+          discount: applyDiscount ? computedDiscountAmount : 0,
           discount_percent: applyDiscount ? discountPercent : 0,
           discount_reason: applyDiscount ? discountReason : '',
           apply_discount: applyDiscount,
-          processing_fee: applyProcessingFee ? (subtotal + tax - (applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0)) * 0.05 : 0,
+          discount_applies_to_options: true,
+          processing_fee: applyProcessingFee ? (subtotal + tax - computedDiscountAmount) * 0.05 : 0,
           apply_processing_fee: applyProcessingFee,
           total,
           exchange_rate: exchangeRate,
@@ -1195,10 +1461,12 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     }
   }
 
-  // 상품별 통합 옵션 가져오기
+  // 상품별 통합 옵션 가져오기 (상품 없음: 전체에서 논리적 중복 제거 / 상품 있음: 해당 상품 + 공통 옵션 후 중복 제거)
   const getProductOptions = (productId: string) => {
-    if (!productId) return allProductOptions
-    return allProductOptions.filter(opt => !opt.product_id || opt.product_id === productId)
+    const list = !productId
+      ? allProductOptions
+      : allProductOptions.filter(opt => !opt.product_id || opt.product_id === productId)
+    return dedupeIntegratedProductOptions(list, productId || undefined)
   }
 
   return (
@@ -1299,10 +1567,13 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '9%' }}>
                     {locale === 'ko' ? '수량' : 'Quantity'}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '13%' }}>
+                  <th className="px-2 py-3 text-center text-xs font-medium text-gray-700 uppercase" style={{ width: '8%' }}>
+                    {locale === 'ko' ? '할인' : 'Disc.'}
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '11%' }}>
                     {locale === 'ko' ? '단가' : 'Unit Price'}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '19%' }}>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '17%' }}>
                     {locale === 'ko' ? '합계' : 'Total'}
                   </th>
                 </tr>
@@ -1314,10 +1585,14 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                   const hasOptions = productOptions.length > 0
 
                   return (
-                    <tr key={item.id} className="border-b">
+                    <tr
+                      key={item.id}
+                      className={`border-b ${item.parentItemId ? 'bg-amber-50/50' : ''}`}
+                    >
                       {/* 추가/삭제 버튼 */}
                       <td className="px-1 py-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
+                          {!item.parentItemId && (
                           <div className="relative add-menu-container">
                             <button
                               onClick={() => setShowAddMenu(showAddMenu === item.id ? null : item.id)}
@@ -1327,7 +1602,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                               <Plus size={14} />
                             </button>
                             {showAddMenu === item.id && (
-                              <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px]">
+                              <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[200px]">
                                 <button
                                   onClick={() => {
                                     handleAddInvoiceItem()
@@ -1358,9 +1633,26 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                   <FileText size={14} className="text-blue-600" />
                                   <span>{locale === 'ko' ? '텍스트 추가' : 'Add Text'}</span>
                                 </button>
+                                {item.itemType === 'product' && (
+                                  <button
+                                    onClick={() => {
+                                      handleAddChoiceSurchargeRow(item.id)
+                                      setShowAddMenu(null)
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-800 transition-colors flex items-center space-x-2 border-t border-gray-100"
+                                  >
+                                    <DollarSign size={14} className="text-amber-700" />
+                                    <span>
+                                      {locale === 'ko'
+                                        ? '초이스 별도 청구 줄'
+                                        : 'Add choice surcharge line'}
+                                    </span>
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
+                          )}
                           {invoiceItems.length > 1 && (
                             <button
                               onClick={() => handleRemoveInvoiceItem(item.id)}
@@ -1468,6 +1760,25 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                 )
                               })}
                             </select>
+                          ) : item.parentItemId ? (
+                            <div className="pl-3 border-l-2 border-amber-400 space-y-2">
+                              <p className="text-xs font-medium text-amber-900">
+                                {locale === 'ko'
+                                  ? '위 상품 — 초이스 등 별도 청구'
+                                  : 'Additional charge — choice / surcharge'}
+                              </p>
+                              <textarea
+                                value={item.description || ''}
+                                onChange={(e) =>
+                                  handleUpdateInvoiceItem(item.id, { description: e.target.value })
+                                }
+                                placeholder={
+                                  locale === 'ko' ? '예: 미국 비거주자' : 'e.g. Non-US resident fee'
+                                }
+                                rows={2}
+                                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm resize-y"
+                              />
+                            </div>
                           ) : (
                             <>
                               <div className="space-y-2">
@@ -1620,7 +1931,9 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
                       {/* 참가자 유형 */}
                       <td className="px-4 py-3 text-sm text-center">
-                        {item.itemType === 'product' ? (
+                        {item.parentItemId ? (
+                          <span className="text-gray-400 text-xs">—</span>
+                        ) : item.itemType === 'product' ? (
                           <select
                             value={item.participantType || 'adult'}
                             onChange={async (e) => {
@@ -1658,21 +1971,69 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                         />
                       </td>
 
+                      {/* 줄별 할인 적용 */}
+                      <td className="px-1 py-3 text-center align-middle">
+                        <input
+                          type="checkbox"
+                          checked={item.discountApplies !== false}
+                          onChange={(e) =>
+                            handleUpdateInvoiceItem(item.id, { discountApplies: e.target.checked })
+                          }
+                          title={
+                            locale === 'ko'
+                              ? '이 줄 금액에 할인 적용'
+                              : 'Apply invoice discount to this line'
+                          }
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+
                       {/* 단가 */}
                       <td className="px-4 py-3 text-sm text-gray-900 text-right">
                         <div className="flex items-center justify-end">
                           <div className="relative">
                             <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">$</span>
                             <input
-                              type="number"
-                              value={item.unitPrice.toFixed(2)}
-                              onChange={(e) => handleUpdateInvoiceItem(item.id, {
-                                unitPrice: parseFloat(e.target.value) || 0,
-                                total: (parseFloat(e.target.value) || 0) * item.quantity
-                              })}
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              value={
+                                unitPriceDraftByItemId[item.id] !== undefined
+                                  ? unitPriceDraftByItemId[item.id]
+                                  : item.unitPrice.toFixed(2)
+                              }
+                              onFocus={() => {
+                                setUnitPriceDraftByItemId(prev => ({
+                                  ...prev,
+                                  [item.id]: item.unitPrice.toFixed(2),
+                                }))
+                              }}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                setUnitPriceDraftByItemId(prev => ({ ...prev, [item.id]: raw }))
+                                const n = parseFloat(raw.replace(/,/g, ''))
+                                if (Number.isFinite(n)) {
+                                  handleUpdateInvoiceItem(item.id, {
+                                    unitPrice: n,
+                                    total: n * item.quantity,
+                                  })
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim().replace(/,/g, '')
+                                const n = parseFloat(raw)
+                                const final = Number.isFinite(n) ? n : 0
+                                handleUpdateInvoiceItem(item.id, {
+                                  unitPrice: final,
+                                  total: final * item.quantity,
+                                })
+                                setUnitPriceDraftByItemId(prev => {
+                                  const next = { ...prev }
+                                  delete next[item.id]
+                                  return next
+                                })
+                              }}
                               className="w-24 pl-6 pr-2 py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-blue-500"
-                              min="0"
-                              step="0.01"
                             />
                           </div>
                         </div>
@@ -1688,7 +2049,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={6} className="px-4 py-3 text-sm font-medium text-gray-700 text-right">
+                  <td colSpan={7} className="px-4 py-3 text-sm font-medium text-gray-700 text-right">
                     {locale === 'ko' ? '소계' : 'Subtotal'}
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
@@ -1697,7 +2058,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                 </tr>
                 {/* 세금 */}
                 <tr>
-                  <td colSpan={3} className="px-4 py-3 text-sm text-gray-700">
+                  <td colSpan={5} className="px-4 py-3 text-sm text-gray-700">
                     <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
@@ -1782,12 +2143,9 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                           onChange={(e) => {
                             const newPercent = parseFloat(e.target.value) || 0
                             setDiscountPercent(newPercent)
-                            // 퍼센테이지 입력 시 할인 금액 자동 계산
                             if (newPercent > 0) {
-                              const calculatedSubtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0)
-                              const calculatedTax = applyTax ? calculatedSubtotal * (taxPercent / 100) : 0
-                              const calculatedDiscount = (calculatedSubtotal + calculatedTax) * (newPercent / 100)
-                              setDiscountAmount(calculatedDiscount)
+                              const base = getEligibleDiscountBase(invoiceItems, applyTax, taxPercent)
+                              setDiscountAmount(base * (newPercent / 100))
                             } else {
                               setDiscountAmount(0)
                             }
@@ -1808,17 +2166,13 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                             type="number"
                             min="0"
                             step="0.01"
-                            value={(() => {
-                              if (discountAmount > 0) {
-                                return discountAmount.toFixed(2)
-                              } else if (discountPercent > 0) {
-                                const calculatedSubtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0)
-                                const calculatedTax = applyTax ? calculatedSubtotal * (taxPercent / 100) : 0
-                                const calculatedDiscount = (calculatedSubtotal + calculatedTax) * (discountPercent / 100)
-                                return calculatedDiscount.toFixed(2)
-                              }
-                              return ''
-                            })()}
+                            value={
+                              discountPercent > 0
+                                ? computedDiscountAmount.toFixed(2)
+                                : discountAmount > 0
+                                  ? discountAmount.toFixed(2)
+                                  : ''
+                            }
                             onChange={(e) => {
                               const newAmount = parseFloat(e.target.value) || 0
                               setDiscountAmount(newAmount)
@@ -1835,7 +2189,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                 </tr>
                 {/* 신용카드 처리 수수료 */}
                 <tr>
-                  <td colSpan={3} className="px-4 py-3 text-sm text-gray-700">
+                  <td colSpan={5} className="px-4 py-3 text-sm text-gray-700">
                     <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
@@ -1851,12 +2205,12 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                   <td colSpan={2} className="px-4 py-3"></td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
                     {applyProcessingFee && (
-                      <span>{formatUSD(total - (subtotal + tax - (applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0)))}</span>
+                      <span>{formatUSD((subtotal + tax - computedDiscountAmount) * 0.05)}</span>
                     )}
                   </td>
                 </tr>
                 <tr className="bg-blue-50">
-                  <td colSpan={6} className="px-4 py-3 text-lg font-bold text-gray-900 text-right">
+                  <td colSpan={7} className="px-4 py-3 text-lg font-bold text-gray-900 text-right">
                     {locale === 'ko' ? '총액' : 'Total'}
                   </td>
                   <td className="px-4 py-3 text-lg font-bold text-blue-600 text-right">
@@ -1872,7 +2226,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                 </tr>
                 {/* 환율 추가 버튼 */}
                 <tr>
-                  <td colSpan={7} className="px-4 py-2 text-center">
+                  <td colSpan={8} className="px-4 py-2 text-center">
                     <button
                       onClick={() => setShowKRW(!showKRW)}
                       className="flex items-center justify-center space-x-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm transition-colors"
@@ -1953,10 +2307,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setShowPreview(true)}
-              disabled={!invoiceItems.some(item => 
-                (item.itemType === 'product' && item.productId) || 
-                (item.itemType === 'option' && item.optionId)
-              )}
+              disabled={!hasInvoiceValidLines(invoiceItems)}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Eye className="h-4 w-4" />
@@ -1981,10 +2332,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             </button>
             <button
               onClick={handleSendEmail}
-              disabled={sending || !invoiceItems.some(item => 
-                (item.itemType === 'product' && item.productId) || 
-                (item.itemType === 'option' && item.optionId)
-              )}
+              disabled={sending || !hasInvoiceValidLines(invoiceItems)}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Send className="h-4 w-4" />
@@ -2011,14 +2359,33 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             </div>
             <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
               <iframe
+                ref={previewIframeRef}
                 srcDoc={generateInvoiceHTML()}
                 className="w-full h-full min-h-[600px] border border-gray-300 rounded bg-white"
                 title={locale === 'ko' ? '인보이스 미리보기' : 'Invoice Preview'}
                 style={{ height: 'calc(90vh - 200px)' }}
               />
             </div>
-            <div className="flex items-center justify-end p-6 border-t bg-white">
+            <div className="flex items-center justify-end gap-3 p-6 border-t bg-white">
               <button
+                type="button"
+                onClick={handleDownloadInvoicePdf}
+                disabled={pdfDownloading}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                <Download className="h-4 w-4" />
+                <span>
+                  {pdfDownloading
+                    ? locale === 'ko'
+                      ? 'PDF 생성 중...'
+                      : 'Generating PDF...'
+                    : locale === 'ko'
+                      ? 'PDF로 저장'
+                      : 'Save as PDF'}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowPreview(false)}
                 className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
               >

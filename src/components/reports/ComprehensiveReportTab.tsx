@@ -416,7 +416,7 @@ export default function ComprehensiveReportTab({
         supabase
           .from('payment_records')
           .select('amount')
-          .in('payment_method', ['PAYM032', 'PAYM001'])
+          .in('payment_method', ['PAYM032', 'PAYM001', 'cash', 'Cash'])
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
           .gte('submit_on', baseDate + 'T00:00:00'),
         // 기간 내 현금 거래
@@ -429,7 +429,7 @@ export default function ComprehensiveReportTab({
         supabase
           .from('payment_records')
           .select('amount')
-          .in('payment_method', ['PAYM032', 'PAYM001'])
+          .in('payment_method', ['PAYM032', 'PAYM001', 'cash', 'Cash'])
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)

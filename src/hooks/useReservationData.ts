@@ -15,6 +15,7 @@ import type {
   PickupHotel, 
   Reservation 
 } from '@/types/reservation'
+import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 
 /** PostgREST or= 필터용: 큰 OFFSET 대신 (created_at DESC, id DESC) 키셋 페이지네이션 */
 function customersCreatedAtDescKeysetOr(created_at: string, id: string): string {
@@ -277,24 +278,7 @@ export function useReservationData() {
   /** 첫 배치만 반영된 채로 집계하지 않도록: fetchReservations 전체(백그라운드 페이지 포함) 완료 후 true */
   const [reservationsAggregateReady, setReservationsAggregateReady] = useState(false)
   const [loadingProgress, setLoadingProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
-  const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, {
-    total_price: number
-    balance_amount: number
-    adult_product_price?: number
-    child_product_price?: number
-    infant_product_price?: number
-    product_price_total?: number
-    coupon_discount?: number
-    additional_discount?: number
-    additional_cost?: number
-    commission_percent?: number
-    commission_amount?: number
-    deposit_amount?: number
-    option_total?: number
-    choices_total?: number
-    not_included_price?: number
-    currency?: string
-  }>>(new Map())
+  const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, ReservationPricingMapValue>>(new Map())
   type TourMapRow = {
     id: string
     tour_status: string | null
@@ -345,6 +329,7 @@ export function useReservationData() {
         infant: (item.infant as number) || 0,
         totalPeople: (item.total_people as number) || 0,
         channelId: (item.channel_id as string) || '',
+        variantKey: (item.variant_key as string) || 'default',
         channelRN: (item.channel_rn as string) || '',
         addedBy: (item.added_by as string) || '',
         addedTime: (item.created_at as string) || '',
@@ -363,48 +348,41 @@ export function useReservationData() {
     })
 
   const fetchPricingMap = async (reservationIds: string[]) => {
-    const map = new Map<string, {
-      total_price: number
-      balance_amount: number
-      adult_product_price?: number
-      child_product_price?: number
-      infant_product_price?: number
-      product_price_total?: number
-      coupon_discount?: number
-      additional_discount?: number
-      additional_cost?: number
-      commission_percent?: number
-      commission_amount?: number
-      deposit_amount?: number
-      option_total?: number
-      choices_total?: number
-      not_included_price?: number
-      currency?: string
-    }>()
+    const map = new Map<string, ReservationPricingMapValue>()
+    const PRICING_SELECT =
+      'reservation_id, id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, option_total, choices_total, not_included_price, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, deposit_amount'
     for (let i = 0; i < reservationIds.length; i += CHUNK_SIZE) {
       const chunk = reservationIds.slice(i, i + CHUNK_SIZE)
-      const { data } = await supabase
-        .from('reservation_pricing')
-        .select('reservation_id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, coupon_discount, additional_discount, additional_cost, commission_percent, commission_amount, deposit_amount, option_total, choices_total, not_included_price')
-        .in('reservation_id', chunk)
+      const { data } = await supabase.from('reservation_pricing').select(PRICING_SELECT).in('reservation_id', chunk)
       if (data) {
         data.forEach((p: Record<string, unknown>) => {
           map.set(p.reservation_id as string, {
+            id: p.id != null ? String(p.id) : undefined,
             total_price: toNumber(p.total_price),
             balance_amount: toNumber(p.balance_amount),
             adult_product_price: toNumber(p.adult_product_price),
             child_product_price: toNumber(p.child_product_price),
             infant_product_price: toNumber(p.infant_product_price),
             product_price_total: toNumber(p.product_price_total),
+            required_option_total: toNumber(p.required_option_total),
+            subtotal: toNumber(p.subtotal),
+            coupon_code: p.coupon_code != null ? String(p.coupon_code) : null,
             coupon_discount: toNumber(p.coupon_discount),
             additional_discount: toNumber(p.additional_discount),
             additional_cost: toNumber(p.additional_cost),
-            commission_percent: toNumber(p.commission_percent),
-            commission_amount: toNumber(p.commission_amount),
-            deposit_amount: toNumber(p.deposit_amount),
+            card_fee: toNumber(p.card_fee),
+            tax: toNumber(p.tax),
+            prepayment_cost: toNumber(p.prepayment_cost),
+            prepayment_tip: toNumber(p.prepayment_tip),
             option_total: toNumber(p.option_total),
             choices_total: toNumber(p.choices_total),
             not_included_price: toNumber(p.not_included_price),
+            private_tour_additional_cost: toNumber(p.private_tour_additional_cost),
+            commission_percent: toNumber(p.commission_percent),
+            commission_amount: toNumber(p.commission_amount),
+            commission_base_price: toNumber(p.commission_base_price),
+            channel_settlement_amount: toNumber(p.channel_settlement_amount),
+            deposit_amount: toNumber(p.deposit_amount),
             currency: 'USD'
           })
         })
@@ -619,6 +597,21 @@ export function useReservationData() {
     }
   }
 
+  /**
+   * reservation_pricing만 부분 갱신 — 전체 fetchReservations 없이 맵 병합.
+   * (예: 예약 처리 필요 모달에서 총액/보증금/잔액 반영 시 모달·탭 상태 유지)
+   */
+  const refreshReservationPricingForIds = async (reservationIds: string[]) => {
+    const unique = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+    if (unique.length === 0) return
+    const map = await fetchPricingMap(unique)
+    setReservationPricingMap((prev) => {
+      const next = new Map(prev)
+      map.forEach((v, k) => next.set(k, v))
+      return next
+    })
+  }
+
   // 예약 데이터만 별도로 로드
   useEffect(() => {
     fetchReservations()
@@ -643,6 +636,7 @@ export function useReservationData() {
     
     // 리프레시 함수들
     refreshReservations: fetchReservations,
+    refreshReservationPricingForIds,
     refreshCustomers: refetchCustomers,
     refreshProducts: refetchProducts,
     refreshChannels: refetchChannels,

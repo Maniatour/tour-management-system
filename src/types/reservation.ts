@@ -69,6 +69,8 @@ export interface Reservation {
   infant: number
   totalPeople: number
   channelId: string
+  /** reservations.variant_key (동적가격·채널 상품 variant) */
+  variantKey?: string
   channelRN: string
   addedBy: string
   addedTime: string

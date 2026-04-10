@@ -973,11 +973,9 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                         Number.isFinite(Number(editData.channel_settlement_amount))
                           ? Math.max(0, Number(editData.channel_settlement_amount))
                           : Math.max(0, (editData?.deposit_amount || 0) - (editData?.commission_amount || 0))
-                      const choicesTotal = editData?.choices_total ?? 0
                       const people = (reservation?.adults || 0) + (reservation?.child || 0) + (reservation?.infant || 0)
                       const notIncludedTotal = (editData?.not_included_price || 0) * people
                       let totalRevenue = channelSettlement
-                      if (choicesTotal > 0) totalRevenue += choicesTotal
                       if (notIncludedTotal > 0) totalRevenue += notIncludedTotal
                       if ((editData?.additional_discount || 0) > 0) totalRevenue -= editData.additional_discount
                       if ((editData?.additional_cost || 0) > 0) totalRevenue += editData.additional_cost
@@ -991,12 +989,6 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                             <span className="text-gray-700">채널 정산금액</span>
                             <span className="font-medium">${channelSettlement.toFixed(2)}</span>
                           </div>
-                          {choicesTotal > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">+ 초이스 총액</span>
-                              <span>+${choicesTotal.toFixed(2)}</span>
-                            </div>
-                          )}
                           {notIncludedTotal > 0 && (
                             <div className="flex justify-between">
                               <span className="text-gray-600">+ 불포함 가격</span>

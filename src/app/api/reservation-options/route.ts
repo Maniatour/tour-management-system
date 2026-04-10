@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+
+const db = supabaseAdmin ?? supabase
+
+async function syncPricingAfterOptionChange(reservationId: string) {
+  const r = await syncReservationPricingAggregates(db, reservationId)
+  if (!r.ok && r.error) {
+    console.warn('[reservation-options] reservation_pricing 동기화 실패:', reservationId, r.error)
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -87,7 +97,7 @@ export async function PUT(request: NextRequest) {
     if (price !== undefined) updateData.price = price
     if (status !== undefined) updateData.status = status
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('reservation_options')
       .update(updateData)
       .eq('id', id)
@@ -97,6 +107,10 @@ export async function PUT(request: NextRequest) {
     if (error) {
       console.error('Error updating reservation option:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (data?.reservation_id) {
+      await syncPricingAfterOptionChange(data.reservation_id)
     }
 
     return NextResponse.json({ data })
@@ -115,14 +129,17 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 })
     }
 
-    const { error } = await supabase
-      .from('reservation_options')
-      .delete()
-      .eq('id', id)
+    const { data: rowBefore } = await db.from('reservation_options').select('reservation_id').eq('id', id).maybeSingle()
+
+    const { error } = await db.from('reservation_options').delete().eq('id', id)
 
     if (error) {
       console.error('Error deleting reservation option:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (rowBefore?.reservation_id) {
+      await syncPricingAfterOptionChange(rowBefore.reservation_id)
     }
 
     return NextResponse.json({ message: 'Reservation option deleted successfully' })

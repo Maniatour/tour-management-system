@@ -567,10 +567,9 @@ export function generateEmailContent(
     const addDiscNum = Math.abs(Number(pricing.additional_discount) || 0)
     const totalPriceNum = Number(pricing.total_price)
 
-    const ct = Number(pricing.choices_total) || 0
     const ot = Number(pricing.option_total) || 0
     const rot = Number(pricing.required_option_total) || 0
-    const optionsPart = ct > 0 ? ct : Math.max(ot, rot)
+    const optionsPart = rot + ot
     const feeExtra =
       (Number(pricing.additional_cost) || 0) +
       (Number(pricing.card_fee) || 0) +

@@ -10,6 +10,7 @@ import {
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Product } from '@/types/reservation'
 import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 type ImportRow = {
   id: string
@@ -85,6 +86,11 @@ async function ensurePartnerRefundPaymentOnImportCancel(reservationId: string): 
     submit_by: submitBy,
   })
   if (error) throw error
+
+  const sync = await syncReservationPricingAggregates(supabase, reservationId)
+  if (!sync.ok && sync.error) {
+    console.warn('[import cancel] reservation_pricing 동기화 실패:', reservationId, sync.error)
+  }
 }
 
 type ReservationBaseRow = {
