@@ -5,6 +5,7 @@ import { Plus, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, Credi
 import { supabase } from '@/lib/supabase'
 import PaymentRecordForm from './PaymentRecordForm'
 import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
+import { displayPaymentRecordNote, fetchTeamDisplayNameMap } from '@/utils/paymentRecordNoteDisplay'
 
 interface PaymentRecord {
   id: string
@@ -46,6 +47,7 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
   const [editingRecord, setEditingRecord] = useState<PaymentRecord | null>(null)
   const [error, setError] = useState('')
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
+  const [teamDisplayByEmail, setTeamDisplayByEmail] = useState<Record<string, string>>({})
 
   // 결제 방법 정보 로드
   const loadPaymentMethods = async () => {
@@ -87,10 +89,19 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
       }
 
       const data = await response.json()
-      setPaymentRecords(data.paymentRecords || [])
+      const list = (data.paymentRecords || []) as PaymentRecord[]
+      setPaymentRecords(list)
+      const emails = [...new Set(list.map((r) => r.submit_by).filter(Boolean))] as string[]
+      if (emails.length > 0) {
+        const map = await fetchTeamDisplayNameMap(supabase, emails)
+        setTeamDisplayByEmail(map)
+      } else {
+        setTeamDisplayByEmail({})
+      }
     } catch (error) {
       console.error('입금 내역 조회 오류:', error)
       setError(error instanceof Error ? error.message : '입금 내역을 불러올 수 없습니다.')
+      setTeamDisplayByEmail({})
     } finally {
       setLoading(false)
     }
@@ -337,7 +348,9 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
                   </div>
 
                   {record.note && (
-                    <p className="text-xs text-gray-600 mt-1 truncate">{record.note}</p>
+                    <p className="text-xs text-gray-600 mt-1 truncate">
+                      {displayPaymentRecordNote(record.note, record.submit_by, teamDisplayByEmail)}
+                    </p>
                   )}
 
                   {record.image_file_url && (

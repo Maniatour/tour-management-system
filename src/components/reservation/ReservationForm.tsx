@@ -1561,9 +1561,22 @@ export default function ReservationForm({
   }, [customers, reservation?.id]) // formData.customerSearch 제거하여 무한 루프 방지
 
   // 새로운 reservation_choices 테이블에서 초이스 데이터 로드 (카드뷰와 동일한 로직)
-  const loadReservationChoicesFromNewTable = useCallback(async (reservationId: string, productId?: string) => {
+  const loadReservationChoicesFromNewTable = useCallback(
+    async (
+      reservationId: string,
+      productId?: string,
+      reservationChoicesJson?: unknown | null,
+      loadKeyForApplyGuard?: string | null,
+      partyForUsClassDefault?: {
+        adults?: number | null | undefined
+        child?: number | null | undefined
+        infant?: number | null | undefined
+        total_people?: number | null | undefined
+      } | null
+    ) => {
+    const capturedLoadKey = loadKeyForApplyGuard ?? null
     try {
-      console.log('ReservationForm: 초이스 데이터 로드 시작:', { reservationId, productId })
+      console.log('ReservationForm: 초이스 데이터 로드 시작:', { reservationId, productId, hasChoicesJson: !!reservationChoicesJson })
       
       // 1. productId가 있으면 모든 product_choices 먼저 로드 (안정적인 식별자 포함)
       // productId가 없으면 reservation_choices에서 product_id를 가져올 수 있음
@@ -1694,31 +1707,51 @@ export default function ReservationForm({
       if (!reservationChoicesData || reservationChoicesData.length === 0) {
         console.log('ReservationForm: reservation_choices에 데이터가 없음, reservations.choices 확인')
         
-        // reservations 테이블에서 choices JSONB 컬럼 확인
-        if (reservation && reservation.choices && typeof reservation.choices === 'object' && 'required' in reservation.choices) {
-          console.log('ReservationForm: reservations.choices에서 데이터 발견:', reservation.choices)
+        const rcj = reservationChoicesJson
+        if (rcj && typeof rcj === 'object' && 'required' in (rcj as object)) {
+          console.log('ReservationForm: reservations.choices에서 데이터 발견:', rcj)
           
-          // choices.required에서 선택된 옵션 찾기
-          if (reservation.choices.required && Array.isArray(reservation.choices.required)) {
-            reservation.choices.required.forEach((choice: any) => {
+          const required = (rcj as { required?: unknown }).required
+          if (required && Array.isArray(required)) {
+            const UNDECIDED_FALLBACK = '__undecided__'
+            ;(required as any[]).forEach((choice: any) => {
+              // 저장 시 형식: { choice_id, option_id, quantity, total_price } (미정은 option_id __undecided__)
+              if (choice.choice_id && choice.option_id) {
+                if (String(choice.option_id) === UNDECIDED_FALLBACK) {
+                  fallbackChoicesData.push({
+                    choice_id: choice.choice_id,
+                    option_id: UNDECIDED_FALLBACK,
+                    option_key: UNDECIDED_FALLBACK,
+                    option_name_ko: '미정',
+                    quantity: choice.quantity ?? 1,
+                    total_price: choice.total_price ?? 0
+                  })
+                } else {
+                  fallbackChoicesData.push({
+                    choice_id: choice.choice_id,
+                    option_id: choice.option_id,
+                    option_key: choice.option_key || '',
+                    option_name_ko: choice.option_name_ko || '',
+                    quantity: choice.quantity ?? 1,
+                    total_price: choice.total_price ?? 0
+                  })
+                }
+                return
+              }
               if (choice.options && Array.isArray(choice.options)) {
-                // is_default가 true인 옵션 찾기
                 const selectedOption = choice.options.find((option: any) => option.is_default === true || option.selected === true)
                 if (selectedOption) {
-                  // product_choices에서 choice_id 찾기
-                  const matchingChoice = allProductChoices.find((pc: any) => 
-                    pc.choice_group_ko === choice.name_ko || 
+                  const matchingChoice = allProductChoices.find((pc: any) =>
+                    pc.choice_group_ko === choice.name_ko ||
                     pc.choice_group === choice.name ||
                     pc.id === choice.id
                   )
-                  
                   if (matchingChoice) {
-                    const matchingOption = matchingChoice.options?.find((opt: any) => 
+                    const matchingOption = matchingChoice.options?.find((opt: any) =>
                       opt.id === selectedOption.id ||
                       opt.option_key === selectedOption.option_key ||
                       opt.option_name_ko === selectedOption.name_ko
                     )
-                    
                     if (matchingOption) {
                       fallbackChoicesData.push({
                         choice_id: matchingChoice.id,
@@ -1843,24 +1876,55 @@ export default function ReservationForm({
         })
       }
 
-      // 3-2. reservations.choices.required에 저장된 "미정"(__undecided__) 복원 (reservation_choices에는 FK로 저장되지 않음)
+      // 3-2. reservations.choices.required의 "미정"(__undecided__) — 호출 시점 JSON 사용(클로저 stale 방지). JSON이 우선이면 동일 choice_id 행을 덮어씀
       const UNDECIDED_OPTION_ID = '__undecided__'
-      if (reservation?.choices && typeof reservation.choices === 'object' && Array.isArray((reservation.choices as any).required)) {
-        const required = (reservation.choices as any).required as Array<{ choice_id: string; option_id: string; quantity?: number; total_price?: number }>
-        const existingChoiceIds = new Set(selectedChoices.map(c => c.choice_id))
+      if (reservationChoicesJson && typeof reservationChoicesJson === 'object' && Array.isArray((reservationChoicesJson as any).required)) {
+        const required = (reservationChoicesJson as any).required as Array<{ choice_id: string; option_id: string; quantity?: number; total_price?: number }>
         required.forEach((item: any) => {
-          if (item.option_id === UNDECIDED_OPTION_ID && item.choice_id && !existingChoiceIds.has(item.choice_id)) {
-            selectedChoices.push({
-              choice_id: item.choice_id,
-              option_id: UNDECIDED_OPTION_ID,
-              quantity: item.quantity ?? 1,
-              total_price: item.total_price ?? 0,
-              option_key: UNDECIDED_OPTION_ID,
-              option_name_ko: '미정'
-            } as any)
-            existingChoiceIds.add(item.choice_id)
-          }
+          if (item.option_id !== UNDECIDED_OPTION_ID || !item.choice_id) return
+          const row = {
+            choice_id: item.choice_id,
+            option_id: UNDECIDED_OPTION_ID,
+            quantity: item.quantity ?? 1,
+            total_price: item.total_price ?? 0,
+            option_key: UNDECIDED_OPTION_ID,
+            option_name_ko: '미정'
+          } as any
+          const idx = selectedChoices.findIndex((c) => c.choice_id === item.choice_id)
+          if (idx >= 0) selectedChoices[idx] = row
+          else selectedChoices.push(row)
         })
+      }
+
+      // 3-3. 미국 거주자 구분·기타 입장료(통합 그룹) 등: 구체 옵션(미정 제외)이 없으면 항상 미정으로 표시·저장 루프와 맞춤
+      const usClassChoice = findUsResidentClassificationChoice(allProductChoices)
+      if (usClassChoice) {
+        const rowsForGroup = selectedChoices.filter((s) => s.choice_id === usClassChoice.id)
+        const hasConcreteOption = rowsForGroup.some(
+          (s) => s.option_id && String(s.option_id) !== UNDECIDED_OPTION_ID
+        )
+        if (!hasConcreteOption) {
+          const p = partyForUsClassDefault
+          const sumPax =
+            (Number(p?.adults) || 0) + (Number(p?.child) || 0) + (Number(p?.infant) || 0)
+          const totalPeopleField = Number(p?.total_people) || 0
+          const totalPax = Math.max(1, sumPax > 0 ? sumPax : totalPeopleField > 0 ? totalPeopleField : 1)
+          const existingUndecided = rowsForGroup.find((s) => String(s.option_id) === UNDECIDED_OPTION_ID)
+          const qty =
+            existingUndecided != null
+              ? Math.max(1, Number(existingUndecided.quantity) || totalPax)
+              : totalPax
+          const rest = selectedChoices.filter((s) => s.choice_id !== usClassChoice.id)
+          selectedChoices.length = 0
+          selectedChoices.push(...rest, {
+            choice_id: usClassChoice.id,
+            option_id: UNDECIDED_OPTION_ID,
+            option_key: UNDECIDED_OPTION_ID,
+            option_name_ko: '미정',
+            quantity: qty,
+            total_price: existingUndecided != null ? Number(existingUndecided.total_price) || 0 : 0,
+          } as any)
+        }
       }
 
       const choicesTotal = selectedChoices.reduce((sum, choice) => sum + choice.total_price, 0)
@@ -1878,7 +1942,18 @@ export default function ReservationForm({
         productChoicesCount: allProductChoices.length,
         choicesTotal
       })
-      
+
+      if (
+        capturedLoadKey != null &&
+        loadedReservationChoicesRef.current !== capturedLoadKey
+      ) {
+        console.log('ReservationForm: 초이스 로드 결과 무시 (stale)', {
+          capturedLoadKey,
+          currentRef: loadedReservationChoicesRef.current
+        })
+        return
+      }
+
       setFormData(prev => {
         const updated = {
           ...prev,
@@ -1901,7 +1976,9 @@ export default function ReservationForm({
     } catch (error) {
       console.error('ReservationForm: 초이스 데이터 로드 중 예외:', error)
     }
-  }, [supabase, setFormData])
+    },
+    [supabase, setFormData]
+  )
 
   // 기존 products.choices에서 초이스 데이터 로드
   const loadProductChoicesFromOldTable = useCallback(async (productId: string) => {
@@ -2185,15 +2262,21 @@ export default function ReservationForm({
   useEffect(() => {
     if (!reservation?.id) {
       loadedReservationChoicesRef.current = null
-      return // 편집 모드가 아니면 실행하지 않음
-    }
-    
-    // 이미 로드된 reservation이면 스킵
-    if (loadedReservationChoicesRef.current === reservation.id) {
-      console.log('ReservationForm: 이미 로드된 reservation choices, 스킵:', reservation.id)
       return
     }
-    
+
+    let choicesKey = ''
+    try {
+      choicesKey = reservation.choices != null ? JSON.stringify(reservation.choices) : ''
+    } catch {
+      choicesKey = ''
+    }
+    const loadKey = `${reservation.id}|${choicesKey}`
+    if (loadedReservationChoicesRef.current === loadKey) {
+      console.log('ReservationForm: 이미 동일 예약·choices로 초이스 로드됨, 스킵:', reservation.id)
+      return
+    }
+
     console.log('ReservationForm: choices 복원 useEffect 실행:', {
       hasReservation: !!reservation,
       hasChoices: !!(reservation && reservation.choices),
@@ -2201,23 +2284,31 @@ export default function ReservationForm({
       choices: reservation?.choices,
       isEditMode: !!reservation?.id
     })
-    
-    // 편집 모드에서만 기존 예약 데이터 복원
-    if (reservation?.id) {
-      // 새로운 reservation_choices 테이블에서 데이터 로드
-      console.log('ReservationForm: 편집 모드 - 새로운 테이블에서 초이스 데이터 로드 시도:', reservation.id)
-      loadedReservationChoicesRef.current = reservation.id
-      loadReservationChoicesFromNewTable(reservation.id, reservation.productId)
+
+    loadedReservationChoicesRef.current = loadKey
+    const rezParty = reservation as unknown as {
+      adults?: number | null
+      child?: number | null
+      infant?: number | null
+      total_people?: number | null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reservation?.id]) // loadReservationChoicesFromNewTable은 dependency에서 제거 (내부에서 조건부 호출)
+    void loadReservationChoicesFromNewTable(reservation.id, reservation.productId, reservation.choices, loadKey, {
+      adults: rezParty.adults ?? null,
+      child: rezParty.child ?? null,
+      infant: rezParty.infant ?? null,
+      total_people: rezParty.total_people ?? null,
+    })
+  }, [reservation?.id, reservation?.choices, loadReservationChoicesFromNewTable])
   
   // 기존 choices JSONB 복원 (fallback, loadReservationChoicesFromNewTable이 실패한 경우)
   useEffect(() => {
     if (!reservation?.id) return
     
     // 이미 loadReservationChoicesFromNewTable에서 로드했으면 스킵
-    if (loadedReservationChoicesRef.current === reservation.id) {
+    if (
+      typeof loadedReservationChoicesRef.current === 'string' &&
+      loadedReservationChoicesRef.current.startsWith(`${reservation.id}|`)
+    ) {
       return
     }
     
@@ -2240,6 +2331,19 @@ export default function ReservationForm({
         
         reservation.choices.required.forEach((choice: any) => {
           console.log('ReservationForm: choice 처리 중:', choice)
+
+          if (choice.choice_id && choice.option_id) {
+            selectedChoices.push({
+              choice_id: choice.choice_id,
+              option_id: choice.option_id,
+              quantity: choice.quantity ?? 1,
+              total_price: choice.total_price ?? 0,
+              ...(String(choice.option_id) === '__undecided__'
+                ? { option_key: '__undecided__', option_name_ko: '미정' }
+                : {}),
+            } as any)
+            return
+          }
           
           // 수량 기반 다중 선택인 경우
           if (choice.type === 'multiple_quantity' && choice.selections) {

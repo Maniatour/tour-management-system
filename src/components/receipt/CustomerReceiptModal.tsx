@@ -401,7 +401,7 @@ export default function CustomerReceiptModal({
               }
               if (status.includes('partner received') || status.includes('deposit received') || status.includes("customer's cc charged")) {
                 depositTotal += amount
-              } else if (status.includes('balance received') || status.includes('balance requested')) {
+              } else if (status.includes('balance received')) {
                 balanceReceivedTotal += amount
               }
             })

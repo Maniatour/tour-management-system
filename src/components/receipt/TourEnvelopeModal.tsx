@@ -269,17 +269,37 @@ export default function TourEnvelopeModal({
           }
         }
 
+        const { data: payRows } = await supabase
+          .from('payment_records')
+          .select('reservation_id, amount, payment_status')
+          .in('reservation_id', ids)
+        const paymentsByResId = new Map<string, Array<{ payment_status: string; amount: number }>>()
+        for (const r of payRows || []) {
+          const row = r as { reservation_id: string; amount?: unknown; payment_status?: string | null }
+          const list = paymentsByResId.get(row.reservation_id) || []
+          list.push({
+            payment_status: row.payment_status || '',
+            amount: Number(row.amount) || 0,
+          })
+          paymentsByResId.set(row.reservation_id, list)
+        }
+
         const results: EnvelopeRow[] = ids.map((id) => {
           const rez = rezById.get(id)
           if (!rez) return { reservationId: id, customerName: '', customerLanguage: null, balanceAmount: 0, currency: 'USD' }
           const customer = rez.customer_id ? customerById.get(rez.customer_id) : null
           const pricing = pricingByResId.get(id) ?? null
           const optionsSum = optionsTotalByResId.get(id) ?? null
-          const balanceAmount = getBalanceAmountForDisplay(pricing, optionsSum, {
-            adults: rez.adults ?? null,
-            child: rez.child ?? null,
-            infant: rez.infant ?? null,
-          })
+          const balanceAmount = getBalanceAmountForDisplay(
+            pricing,
+            optionsSum,
+            {
+              adults: rez.adults ?? null,
+              child: rez.child ?? null,
+              infant: rez.infant ?? null,
+            },
+            { paymentRecords: paymentsByResId.get(id) ?? [] }
+          )
           const currency =
             pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
               ? ((pricing as { currency: string }).currency || 'USD')

@@ -748,11 +748,8 @@ export default function PricingSection({
         ) {
           depositTotal += amount
         }
-        // 잔금 관련 상태
-        else if (
-          statusLower.includes('balance received') ||
-          statusLower.includes('balance requested')
-        ) {
+        // 잔금 수령만 합산 (요청은 미수령)
+        else if (statusLower.includes('balance received')) {
           balanceReceivedTotal += amount
         }
         // 환불 관련 처리 - 정확한 문자열 또는 포함 여부로 확인

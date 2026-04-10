@@ -2,6 +2,7 @@
 
 export const US_RESIDENT_GROUP_LABELS = [
   '미국 거주자 구분',
+  '미국 비거주자 구분',
   '기타 입장료',
   '미국 거주자 구분 및 기타 입장료',
 ] as const
@@ -45,6 +46,10 @@ export function matchesUsResidentClassificationGroup(groupKo: string, groupEn: s
   const g = (groupKo || '').trim()
   const e = (groupEn || '').toLowerCase()
   if (!g && !e) return false
+  // 한글: 미국 + (거주/비거주) + 구분 — 상품명이 '미국 비거주자 구분' 등일 때도 거주 구분 초이스와 동일 UX
+  if (g.includes('미국') && g.includes('구분') && (g.includes('거주') || g.includes('비거주'))) {
+    return true
+  }
   if (e.includes('resident') || e.includes('entrance') || e.includes('fee')) {
     if (e.includes('resident') || e.includes('us ')) return true
   }

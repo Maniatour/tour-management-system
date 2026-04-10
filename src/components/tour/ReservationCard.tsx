@@ -8,6 +8,11 @@ import ReviewManagementSection from '@/components/reservation/ReviewManagementSe
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
+import {
+  displayPaymentRecordNote,
+  fetchTeamDisplayNameByEmail,
+  fetchTeamDisplayNameMap,
+} from '@/utils/paymentRecordNoteDisplay'
 
 interface Reservation {
   id: string
@@ -35,6 +40,7 @@ interface PaymentRecord {
   payment_method: string
   note?: string
   submit_on: string
+  submit_by: string
   amount_krw?: number
 }
 
@@ -128,6 +134,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const customerLanguage = getCustomerLanguage(reservation.customer_id || '')
   
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([])
+  const [teamDisplayByEmail, setTeamDisplayByEmail] = useState<Record<string, string>>({})
   const [showPaymentRecords, setShowPaymentRecords] = useState(false)
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
@@ -419,10 +426,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       }
 
       const data = await response.json()
-      setPaymentRecords(data.paymentRecords || [])
+      const list = (data.paymentRecords || []) as PaymentRecord[]
+      setPaymentRecords(list)
+      const emails = [...new Set(list.map((r) => r.submit_by).filter(Boolean))] as string[]
+      if (emails.length > 0) {
+        const map = await fetchTeamDisplayNameMap(supabase, emails)
+        setTeamDisplayByEmail(map)
+      } else {
+        setTeamDisplayByEmail({})
+      }
     } catch (error) {
       console.error('입금 내역 조회 오류:', error)
       setPaymentRecords([])
+      setTeamDisplayByEmail({})
     } finally {
       setLoadingPayments(false)
     }
@@ -726,8 +742,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     const timeoutId = setTimeout(() => {
       if (isStaff) {
         fetchReservationPricing()
-        // paymentRecords는 필요할 때만 로드하도록 변경 (이미 togglePaymentRecords에서 처리)
-        // fetchPaymentRecords()
+        fetchPaymentRecords()
       }
       fetchChannelInfo()
       fetchCustomerData()
@@ -735,7 +750,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }, delay)
 
     return () => clearTimeout(timeoutId)
-  }, [isStaff, reservation.id, reservation.customer_id, loadPaymentMethods, fetchReservationPricing, fetchChannelInfo, fetchCustomerData, fetchReservationChoices])
+  }, [isStaff, reservation.id, reservation.customer_id, loadPaymentMethods, fetchReservationPricing, fetchPaymentRecords, fetchChannelInfo, fetchCustomerData, fetchReservationChoices])
 
   // 입금 내역 표시 토글
   const togglePaymentRecords = () => {
@@ -1225,7 +1240,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     const balanceAmount = getBalanceAmountForDisplay(
       reservationPricing,
       optionsTotalFromOptions,
-      reservation
+      reservation,
+      { paymentRecords }
     )
     
     if (balanceAmount <= 0) {
@@ -1244,7 +1260,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         throw new Error('인증이 필요합니다.')
       }
 
-      // 1. 입금 내역 생성 (현금)
+      const userEmail = session.user.email ?? ''
+      const teamDisplay = (await fetchTeamDisplayNameByEmail(supabase, userEmail)) ?? (userEmail || '관리자')
+
+      // 1. 입금 내역 생성 (현금) — 비고에 team.display_name
       const paymentResponse = await fetch('/api/payment-records', {
         method: 'POST',
         headers: {
@@ -1256,7 +1275,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           payment_status: 'Balance Received',
           amount: balanceAmount,
           payment_method: 'cash',
-          note: 'Balance 수령 (관리자)'
+          note: `Balance 수령 (${teamDisplay})`
         })
       })
 
@@ -1265,34 +1284,25 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         throw new Error(errorData.error || '입금 내역 생성에 실패했습니다.')
       }
 
-      // 2. reservation_pricing의 deposit_amount와 balance_amount 업데이트
-      // 먼저 reservation_pricing 레코드 찾기
+      // 2. reservation_pricing: 보증금(deposit_amount)은 건드리지 않음. 잔금 수령은 payment_records만이 근거.
+      //    잔액(balance_amount)은 투어 당일 잔액 필드이므로 수령 완료 후 0으로 맞춤.
       const { data: existingPricing, error: pricingFetchError } = await supabase
         .from('reservation_pricing')
-        .select('id, deposit_amount')
+        .select('id')
         .eq('reservation_id', reservation.id)
-        .single() as { data: { id: string; deposit_amount?: number | string | null } | null; error: any }
+        .single() as { data: { id: string } | null; error: any }
 
       if (pricingFetchError && pricingFetchError.code !== 'PGRST116') {
         const msg = typeof pricingFetchError?.message === 'string' ? pricingFetchError.message : ''
         if (!msg.includes('AbortError') && !msg.includes('aborted')) {
           console.error('reservation_pricing 조회 오류:', pricingFetchError)
         }
-        // 에러가 발생해도 계속 진행 (레코드가 없을 수도 있음)
       }
 
       if (existingPricing) {
-        // 현재 deposit_amount 값 가져오기
-        const currentDepositAmount = typeof existingPricing.deposit_amount === 'string'
-          ? parseFloat(existingPricing.deposit_amount) || 0
-          : (existingPricing.deposit_amount || 0)
-        
-        // deposit_amount를 현재 값 + balanceAmount로 업데이트
-        // balance_amount를 0으로 업데이트
         const { error: updateError } = await (supabase as any)
           .from('reservation_pricing')
-          .update({ 
-            deposit_amount: currentDepositAmount + balanceAmount,
+          .update({
             balance_amount: 0,
             updated_at: new Date().toISOString()
           })
@@ -1300,7 +1310,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
         if (updateError) {
           console.error('가격 정보 업데이트 오류:', updateError)
-          // 업데이트 실패해도 입금 내역은 생성되었으므로 경고만 표시
           alert('입금 내역은 생성되었지만 가격 정보 업데이트에 실패했습니다. 페이지를 새로고침해주세요.')
         }
       }
@@ -1633,7 +1642,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               const displayBalanceBadge = getBalanceAmountForDisplay(
                 reservationPricing,
                 optionsTotalFromOptions,
-                reservation
+                reservation,
+                { paymentRecords }
               )
               if (displayBalanceBadge > 0) {
                 return (
@@ -1822,7 +1832,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   </div>
                   {record.note && (
                     <div className="text-xs text-gray-600 mt-1 truncate">
-                      {record.note}
+                      {displayPaymentRecordNote(record.note, record.submit_by, teamDisplayByEmail)}
                     </div>
                   )}
                 </div>
