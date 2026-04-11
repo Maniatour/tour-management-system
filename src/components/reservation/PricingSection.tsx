@@ -312,6 +312,24 @@ export default function PricingSection({
   formDataRef.current = formData
   const channelsRef = useRef(channels)
   channelsRef.current = channels
+  /** Sale price (adult/child/infant): skip deposit/balance auto-sync while typing; sync after all sale fields blur. */
+  const productSalePriceFocusDepthRef = useRef(0)
+  const [productSalePriceCommitTick, setProductSalePriceCommitTick] = useState(0)
+  const bumpProductSalePriceCommit = useCallback(() => {
+    setProductSalePriceCommitTick((t) => t + 1)
+  }, [])
+  const onProductSalePriceFocusIn = useCallback(() => {
+    productSalePriceFocusDepthRef.current += 1
+  }, [])
+  /** setTimeout(0): defer depth decrement so focus can move to another sale-price field without syncing mid-sequence. */
+  const onProductSalePriceFocusOut = useCallback(() => {
+    window.setTimeout(() => {
+      productSalePriceFocusDepthRef.current = Math.max(0, productSalePriceFocusDepthRef.current - 1)
+      if (productSalePriceFocusDepthRef.current === 0) {
+        bumpProductSalePriceCommit()
+      }
+    }, 0)
+  }, [bumpProductSalePriceCommit])
   const calculateTotalCustomerPaymentRef = useRef<() => number>(() => 0)
   const calculateTotalCustomerPaymentGrossRef = useRef<() => number>(() => 0)
   const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
@@ -878,6 +896,9 @@ export default function PricingSection({
   const prevBalanceDepsRef = useRef<BalanceDeps | null>(null)
 
   useEffect(() => {
+    if (productSalePriceFocusDepthRef.current > 0) {
+      return
+    }
     const totalCustomerPayment = calculateTotalCustomerPayment()
     const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
     const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
@@ -936,11 +957,15 @@ export default function PricingSection({
     formData.infant,
     notIncludedBreakdown.totalUsd,
     setFormData,
+    productSalePriceCommitTick,
   ])
 
   // depositAmount를 할인 후 상품가격으로 자동 업데이트 (상품 가격이나 쿠폰 변경 시)
   // OTA 채널의 경우 OTA 판매가를 depositAmount로 설정하고, 채널 결제 금액과 수수료도 함께 업데이트
   useEffect(() => {
+    if (productSalePriceFocusDepthRef.current > 0) {
+      return
+    }
     // OTA 채널 여부 확인
     const selectedChannel = channels.find((c: { id: string }) => c.id === formData.channelId)
     const isOTAChannel = selectedChannel && (
@@ -1112,7 +1137,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, setFormData, notIncludedBreakdown.totalUsd])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, setFormData, notIncludedBreakdown.totalUsd, productSalePriceCommitTick])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1661,7 +1686,10 @@ export default function PricingSection({
       }
 
       if (totalNotIncluded === 0 && defaultNotIncludedPrice > 0) {
-        totalNotIncluded = defaultNotIncludedPrice * (formData.pricingAdults + formData.child + formData.infant)
+        const hasGranularChoicePricing = Object.keys(choicesPricing).length > 0
+        if (!hasGranularChoicePricing) {
+          totalNotIncluded = defaultNotIncludedPrice * totalPax
+        }
       }
 
       const fieldFromForm = (formData.not_included_price || 0) * totalPax
@@ -2359,6 +2387,8 @@ export default function PricingSection({
                     <input
                       type="number"
                       value={formData.adultProductPrice || ''}
+                      onFocus={onProductSalePriceFocusIn}
+                      onBlur={onProductSalePriceFocusOut}
                       onChange={(e) => {
                         const salePrice = Number(e.target.value) || 0
                         // 상품 가격 총합 계산 (불포함 가격 제외)
@@ -2457,6 +2487,8 @@ export default function PricingSection({
                       <input
                         type="number"
                         value={formData.childProductPrice || ''}
+                        onFocus={onProductSalePriceFocusIn}
+                        onBlur={onProductSalePriceFocusOut}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
@@ -2487,6 +2519,8 @@ export default function PricingSection({
                       <input
                         type="number"
                         value={formData.infantProductPrice || ''}
+                        onFocus={onProductSalePriceFocusIn}
+                        onBlur={onProductSalePriceFocusOut}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)

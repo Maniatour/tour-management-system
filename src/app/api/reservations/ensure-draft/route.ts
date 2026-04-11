@@ -1,13 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseClientWithToken, supabase, supabaseAdmin } from '@/lib/supabase'
 
+/**
+ * Draft row creation must succeed for normal staff UX; RLS insert often fails if JWT/staff
+ * mapping is off in local dev. Prefer service role on the server when configured.
+ */
 function dbForRequest(request: NextRequest) {
+  if (supabaseAdmin) return supabaseAdmin
   const authHeader = request.headers.get('authorization')
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice('Bearer '.length).trim()
     if (token) return createSupabaseClientWithToken(token)
   }
-  return supabaseAdmin ?? supabase
+  return supabase
+}
+
+/** Parallel ensure-draft (e.g. React Strict Mode double effect) → second INSERT hits PK */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { code?: string; message?: string }
+  if (e.code === '23505') return true
+  const m = (e.message || '').toLowerCase()
+  return m.includes('duplicate key') || m.includes('unique constraint')
 }
 
 /**
@@ -33,7 +47,15 @@ export async function POST(request: NextRequest) {
 
     if (existingErr) {
       console.error('ensure-draft: lookup error', existingErr)
-      return NextResponse.json({ success: false, message: existingErr.message }, { status: 500 })
+      return NextResponse.json(
+        {
+          success: false,
+          message: existingErr.message,
+          code: (existingErr as { code?: string }).code,
+          details: (existingErr as { details?: string }).details,
+        },
+        { status: 500 }
+      )
     }
 
     if (existing) {
@@ -78,16 +100,27 @@ export async function POST(request: NextRequest) {
       status: 'pending',
       selected_options: {},
       selected_option_prices: {},
+      choices: {},
       is_private_tour: false,
       variant_key: 'default',
     }
 
     const { error: insertErr } = await db.from('reservations').insert(draftRow as never)
 
+    if (insertErr && isUniqueViolation(insertErr)) {
+      return NextResponse.json({ success: true, created: false, idempotent: true })
+    }
+
     if (insertErr) {
       console.error('ensure-draft: insert error', insertErr)
       return NextResponse.json(
-        { success: false, message: insertErr.message || 'Failed to create draft reservation' },
+        {
+          success: false,
+          message: insertErr.message || 'Failed to create draft reservation',
+          code: (insertErr as { code?: string }).code,
+          details: (insertErr as { details?: string }).details,
+          hint: (insertErr as { hint?: string }).hint,
+        },
         { status: 500 }
       )
     }
