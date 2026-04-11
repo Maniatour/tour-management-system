@@ -327,22 +327,12 @@ function pricingExtraFees(p: ReceiptData['pricing']): number {
   )
 }
 
-/** If not_included is missing/zero, infer from total_price minus options, extra fees, and post-discount selling. */
-function effectiveNotIncludedTotal(
-  pricing: ReceiptData['pricing'],
-  reservation: ReceiptData['reservation'],
-  sellingBeforeDiscount: number
-): number {
-  const fromDb = notIncludedTotalFromPricing(pricing, reservation)
-  if (fromDb > 0.009) return fromDb
-  const total = toNum(pricing.total_price)
-  if (total <= 0.009) return 0
-  const opt = optionsTotalFromPricing(pricing)
-  const extra = pricingExtraFees(pricing)
-  const c1 = discountAmount(pricing.coupon_discount)
-  const c2 = discountAmount(pricing.additional_discount)
-  const discountedSelling = Math.max(0, sellingBeforeDiscount - c1 - c2)
-  return Math.max(0, total - opt - extra - discountedSelling)
+/**
+ * Not-included amount comes only from DB `not_included_price` x party count.
+ * Do not infer from total_price — it can equal the discount gap and show a fake entrance-fee line.
+ */
+function effectiveNotIncludedTotal(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
+  return notIncludedTotalFromPricing(pricing, reservation)
 }
 
 function productSellingAmount(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
@@ -405,19 +395,23 @@ function getCustomerTotalPaymentFromDbPricing(pricing: ReceiptData['pricing'], r
   const couponMag = discountAmount(pricing.coupon_discount)
   const addMag = discountAmount(pricing.additional_discount)
   const selling = productSellingAmount(pricing, reservation)
-  const notIncludedTotal = effectiveNotIncludedTotal(pricing, reservation, selling)
+  const notIncludedTotal = effectiveNotIncludedTotal(pricing, reservation)
   const discountedProduct = Math.max(0, selling - couponMag - addMag)
   return discountedProduct + notIncludedTotal + optionsTotalFromPricing(pricing) + pricingExtraFees(pricing)
 }
 
+/**
+ * Grand Total, tips, balance: same as pricing customer total — discounted product + not-included + options + fees.
+ * Prefer the line-formula total so Grand Total matches the receipt rows; `total_price` can lag as pre-discount/gross.
+ */
 function resolveCustomerTotalPayment(d: ReceiptData): number {
   const computed = getCustomerTotalPaymentFromDbPricing(d.pricing, d.reservation)
-  const stored = toNum(d.pricing.total_price)
-  if (computed > 0.009 && stored > 0.009) {
-    return Math.round(Math.max(stored, computed) * 100) / 100
+  if (computed > 0.009) {
+    return Math.round(computed * 100) / 100
   }
+  const stored = toNum(d.pricing.total_price)
   if (stored > 0.009) return Math.round(stored * 100) / 100
-  return Math.round(computed * 100) / 100
+  return 0
 }
 
 interface CustomerReceiptModalProps {
@@ -851,13 +845,10 @@ export default function CustomerReceiptModal({
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
                 const notIncludedQty = billingPartyCount(d.reservation, d.pricing.pricing_adults)
                 const productRowAmount = productSellingAmount(d.pricing, d.reservation)
-                const notIncludedTotalEffective = effectiveNotIncludedTotal(d.pricing, d.reservation, productRowAmount)
-                const dbNiPer = toNum(d.pricing.not_included_price)
+                const notIncludedTotalEffective = effectiveNotIncludedTotal(d.pricing, d.reservation)
                 const notIncludedPerPersonDisplay =
                   notIncludedQty > 0 && notIncludedTotalEffective > 0.009
-                    ? dbNiPer > 0.009
-                      ? dbNiPer
-                      : notIncludedTotalEffective / notIncludedQty
+                    ? notIncludedTotalEffective / notIncludedQty
                     : 0
                 const productLineQty = sellingDisplayQty(d.reservation, d.pricing)
                 const productUnitPrice = sellingUnitPriceForDisplay(d.pricing, d.reservation, productRowAmount)
