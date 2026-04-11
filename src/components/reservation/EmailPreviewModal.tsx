@@ -69,6 +69,9 @@ export default function EmailPreviewModal({
   const stripAdminPreviewMarkupFromEmailHtml = (html: string): string => {
     try {
       const doc = new DOMParser().parseFromString(html, 'text/html')
+      doc.querySelectorAll('[data-email-preview-admin-only]').forEach((el) =>
+        el.remove()
+      )
       doc.querySelectorAll('button[data-pd-field]').forEach((el) => el.remove())
       doc.querySelectorAll('[data-pd-field]').forEach((el) => {
         el.removeAttribute('data-pd-field')
@@ -452,9 +455,19 @@ ${printHtml}
                     )}
                   </div>
                 </div>
+                <style>{`
+                  @media print {
+                    .email-preview-body-host [data-email-preview-admin-only] {
+                      display: none !important;
+                    }
+                    .email-preview-body-host button[data-pd-field] {
+                      display: none !important;
+                    }
+                  }
+                `}</style>
                 <div
                   ref={previewBodyRef}
-                  className="p-4"
+                  className="email-preview-body-host p-4"
                   dangerouslySetInnerHTML={{ __html: emailContent.html }}
                   style={{
                     maxWidth: '600px',

@@ -1,11 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  createSupabaseClientWithToken,
+  supabase,
+  supabaseAdmin,
+} from '@/lib/supabase'
+import { createServerSupabase } from '@/lib/supabase-server'
 import {
   isProductDetailEmailEditableField,
+  mergeCustomerPageVisibilityField,
   parseSectionTitlesMap,
   resolveProductDetailsChannelId,
+  sanitizeProductDetailHtmlForStorage,
   type ProductDetailEmailEditableField,
 } from '@/lib/fetchProductDetailsForEmail'
+
+/**
+ * service role → Bearer JWT → cookie session. Anon-only clients cannot UPDATE (RLS).
+ */
+async function supabaseForProductDetailsWrite(
+  request: NextRequest
+): Promise<{ db: SupabaseClient; canWrite: boolean }> {
+  if (supabaseAdmin) {
+    return { db: supabaseAdmin, canWrite: true }
+  }
+
+  const authHeader = request.headers.get('authorization')
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice('Bearer '.length).trim()
+    if (token) {
+      return { db: createSupabaseClientWithToken(token), canWrite: true }
+    }
+  }
+
+  const serverSb = await createServerSupabase()
+  const {
+    data: { session },
+  } = await serverSb.auth.getSession()
+  if (session?.access_token) {
+    return {
+      db: createSupabaseClientWithToken(session.access_token),
+      canWrite: true,
+    }
+  }
+
+  return { db: supabase, canWrite: false }
+}
 
 /**
  * PATCH /api/product-details/field
@@ -13,8 +53,16 @@ import {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    /** 서버 라우트에는 브라우저 세션이 없어 anon 클라이언트만 쓰면 RLS에 막힐 수 있음 */
-    const db = supabaseAdmin ?? supabase
+    const { db, canWrite } = await supabaseForProductDetailsWrite(request)
+    if (!canWrite) {
+      return NextResponse.json(
+        {
+          error:
+            '저장 권한이 없습니다. 로그인 후 다시 시도하거나 서버에 SUPABASE_SERVICE_ROLE_KEY를 설정하세요.',
+        },
+        { status: 401 }
+      )
+    }
 
     const body = await request.json()
     const {
@@ -60,8 +108,9 @@ export async function PATCH(request: NextRequest) {
 
     const resolvedChannelId = await resolveProductDetailsChannelId(db, channelId)
 
-    const strValue =
+    const strValue = sanitizeProductDetailHtmlForStorage(
       typeof value === 'string' ? value : value == null ? '' : String(value)
+    )
 
     const buildBaseQuery = (columns: string) => {
       let q = db
@@ -154,14 +203,11 @@ export async function PATCH(request: NextRequest) {
       'customerPageVisible' in body &&
       typeof customerPageVisible === 'boolean'
     ) {
-      const rawV = row.customer_page_visibility
-      const prevV: Record<string, boolean> =
-        rawV && typeof rawV === 'object' && !Array.isArray(rawV)
-          ? { ...(rawV as Record<string, boolean>) }
-          : {}
-      if (customerPageVisible) delete prevV[field]
-      else prevV[field] = false
-      patch.customer_page_visibility = prevV
+      patch.customer_page_visibility = mergeCustomerPageVisibilityField(
+        row.customer_page_visibility,
+        field as ProductDetailEmailEditableField,
+        customerPageVisible
+      )
     }
 
     const { error: updateError } = await db
@@ -183,7 +229,7 @@ export async function PATCH(request: NextRequest) {
       value: strValue,
       sectionTitles: (patch.section_titles as Record<string, string>) ?? undefined,
       customerPageVisibility:
-        (patch.customer_page_visibility as Record<string, boolean>) ?? undefined,
+        (patch.customer_page_visibility as Record<string, false>) ?? undefined,
     })
   } catch (error) {
     console.error('[product-details/field] 서버 오류:', error)

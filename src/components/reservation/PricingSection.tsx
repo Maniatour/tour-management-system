@@ -274,6 +274,9 @@ export default function PricingSection({
   const otaChannelPaymentUserEditedRef = useRef(false)
   /** OTA: 마지막 자동 수수료 $ 기준(수수료 산출 base × %) — 이 키가 바뀌면 $를 다시 계산 */
   const otaCommissionAutoFingerprintRef = useRef<string>('')
+  /** User edited deposit (including 0): skip product/discount auto-fill for deposit */
+  const depositAmountUserEditedRef = useRef(false)
+  const prevDepositAutoChannelIdRef = useRef<string | undefined>(undefined)
   // 채널 수수료 $ 입력 필드 로컬 상태 (입력 중 포맷팅 방지)
   const [commissionAmountInput, setCommissionAmountInput] = useState<string>('')
   const [isCommissionAmountFocused, setIsCommissionAmountFocused] = useState(false)
@@ -290,6 +293,7 @@ export default function PricingSection({
   useEffect(() => {
     otaCommissionAutoFingerprintRef.current = ''
     otaChannelPaymentUserEditedRef.current = false
+    depositAmountUserEditedRef.current = false
   }, [reservationId])
 
   /** 상품가·할인·인원이 바뀌면 OTA 채널 결제 자동 동기화를 다시 허용 */
@@ -841,6 +845,23 @@ export default function PricingSection({
 
   // 입금 내역이 있으면 보증금은 입금 내역 합으로 유지 (자동 업데이트 effect가 덮어쓰지 않도록)
   const hasPaymentRecordsRef = useRef(false)
+  useEffect(() => {
+    if (isExistingPricingLoaded) {
+      depositAmountUserEditedRef.current = false
+    }
+  }, [isExistingPricingLoaded])
+
+  useEffect(() => {
+    if (isExistingPricingLoaded) {
+      prevDepositAutoChannelIdRef.current = formData.channelId
+      return
+    }
+    if (prevDepositAutoChannelIdRef.current !== formData.channelId) {
+      depositAmountUserEditedRef.current = false
+      prevDepositAutoChannelIdRef.current = formData.channelId
+    }
+  }, [formData.channelId, isExistingPricingLoaded])
+
   // depositAmount → onlinePaymentAmount 효과에서 이미 적용한 값 (무한 루프 방지)
   const lastDepositSyncRef = useRef<{ depositAmount: number; online: number; commissionBase: number; commissionAmt: number } | null>(null)
 
@@ -1022,7 +1043,7 @@ export default function PricingSection({
                 commission_amount: nextCommissionAmount,
               }))
             }
-          } else if (currentDeposit === 0 || priceDifference > 0.01) {
+          } else if (!depositAmountUserEditedRef.current && (currentDeposit === 0 || priceDifference > 0.01)) {
             const channelPaymentBase = Math.max(0, salePriceTimesPax - returnedAmount)
             const commissionPercent = (formData.commission_percent != null && formData.commission_percent > 0)
               ? Number(formData.commission_percent)
@@ -1064,6 +1085,10 @@ export default function PricingSection({
             return
           }
           
+          if (depositAmountUserEditedRef.current) {
+            return
+          }
+
           // depositAmount가 0이거나, 현재 값이 할인 후 상품가와 차이가 0.01 이상이면 업데이트
           if (currentDeposit === 0 || priceDifference > 0.01) {
             // 잔액도 함께 계산하여 업데이트
@@ -3047,6 +3072,7 @@ export default function PricingSection({
                       type="number"
                       value={formData.depositAmount}
                       onChange={(e) => {
+                        depositAmountUserEditedRef.current = true
                         const newDepositAmount = Number(e.target.value) || 0
                         const totalCustomerPayment = calculateTotalCustomerPayment()
                         const totalPaid = newDepositAmount + calculatedBalanceReceivedTotal

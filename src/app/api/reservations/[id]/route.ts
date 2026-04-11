@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { fetchReservationOptionsLegacyByReservationId } from '@/lib/fetchReservationOptionsLegacy'
 
 // 특정 예약 조회, 수정, 삭제
 export async function GET(
@@ -41,20 +42,6 @@ export async function GET(
           departure_country,
           arrival_country
         ),
-        reservation_options:reservation_options(
-          choice_id,
-          option_id,
-          choice:choices(
-            choice_name,
-            choice_name_ko,
-            choice_type
-          ),
-          option:options(
-            option_name,
-            option_name_ko,
-            option_price
-          )
-        ),
         payment_records:payment_records(
           id,
           payment_status,
@@ -74,7 +61,14 @@ export async function GET(
       }, { status: 404 })
     }
 
-    return NextResponse.json({ reservation })
+    const reservation_options = await fetchReservationOptionsLegacyByReservationId(
+      supabase,
+      reservationId
+    )
+
+    return NextResponse.json({
+      reservation: { ...reservation, reservation_options },
+    })
 
   } catch (error) {
     console.error('예약 조회 오류:', error)

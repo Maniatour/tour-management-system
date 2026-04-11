@@ -116,6 +116,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const rid =
+      reservation_id != null && typeof reservation_id === 'string'
+        ? reservation_id.trim()
+        : ''
+    if (rid) {
+      const { data: rezRow, error: rezErr } = await db
+        .from('reservations')
+        .select('id')
+        .eq('id', rid)
+        .maybeSingle()
+      if (rezErr) {
+        console.error('Reservation FK check (POST reservation-expenses):', rezErr)
+        return NextResponse.json(
+          { success: false, message: '예약 정보를 확인하는 중 오류가 발생했습니다.' },
+          { status: 500 }
+        )
+      }
+      if (!rezRow) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              '예약이 아직 저장되지 않았습니다. 먼저 예약을 저장한 후 예약 지출을 등록해 주세요.',
+          },
+          { status: 400 }
+        )
+      }
+    }
+
     const { data, error } = await db
       .from('reservation_expenses')
       .insert({

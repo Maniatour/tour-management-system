@@ -6,6 +6,11 @@ import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Filter, User, Phone, Mail, ExternalLink, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  choiceOptionIdsForSupabaseIn,
+  UNDECIDED_OPTION_ID,
+  undecidedOptionDisplayNames,
+} from '@/utils/usResidentChoiceSync'
 
 interface Reservation {
   id: string
@@ -275,16 +280,21 @@ export default function CustomerReservations() {
                   // choice와 option 정보 매핑
                   const choiceIds = [...new Set(choicesData.map((c: { choice_id: string }) => c.choice_id))]
                   const optionIds = [...new Set(choicesData.map((c: { option_id: string }) => c.option_id))]
+                  const optionIdsForDb = choiceOptionIdsForSupabaseIn(optionIds)
+                  const undecidedNames = undecidedOptionDisplayNames()
                   
                   const { data: choicesData2 } = await supabase
                     .from('product_choices')
                     .select('id, choice_group, choice_group_ko')
                     .in('id', choiceIds)
                   
-                  const { data: optionsData } = await supabase
-                    .from('choice_options')
-                    .select('id, option_key, option_name, option_name_ko')
-                    .in('id', optionIds)
+                  const { data: optionsData } =
+                    optionIdsForDb.length > 0
+                      ? await supabase
+                          .from('choice_options')
+                          .select('id, option_key, option_name, option_name_ko')
+                          .in('id', optionIdsForDb)
+                      : { data: [] as { id: string; option_key?: string; option_name?: string; option_name_ko?: string }[] }
                   
                   if (choicesData2 && optionsData) {
                     reservationChoicesInfo = choicesData.map((choice: {
@@ -303,11 +313,19 @@ export default function CustomerReservations() {
                           name_ko: (choiceInfo as any).choice_group_ko,
                           name_en: (choiceInfo as any).choice_group
                         } : null,
-                        option: optionInfo ? {
-                          id: (optionInfo as any).id,
-                          name_ko: (optionInfo as any).option_name_ko,
-                          name_en: (optionInfo as any).option_name
-                        } : null
+                        option: optionInfo
+                          ? {
+                              id: (optionInfo as any).id,
+                              name_ko: (optionInfo as any).option_name_ko,
+                              name_en: (optionInfo as any).option_name
+                            }
+                          : choice.option_id === UNDECIDED_OPTION_ID
+                            ? {
+                                id: UNDECIDED_OPTION_ID,
+                                name_ko: undecidedNames.name_ko,
+                                name_en: undecidedNames.name_en
+                              }
+                            : null
                       }
                     })
                   }

@@ -5,6 +5,7 @@ import { MessageSquare, Plus, Send, User, Clock, History } from 'lucide-react'
 import { useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 
 export type FollowUpType = 'cancellation_reason' | 'contact'
 
@@ -359,8 +360,13 @@ export default function ReservationFollowUpSection({
       choiceIds.size > 0
         ? supabase.from('product_choices').select('id, choice_group_ko, choice_group').in('id', [...choiceIds])
         : Promise.resolve({ data: [] }),
-      optionIds.size > 0
-        ? supabase.from('choice_options').select('id, option_name_ko, option_name').in('id', [...optionIds])
+           optionIds.size > 0
+        ? (() => {
+            const ids = choiceOptionIdsForSupabaseIn(optionIds)
+            return ids.length > 0
+              ? supabase.from('choice_options').select('id, option_name_ko, option_name').in('id', ids)
+              : Promise.resolve({ data: [] })
+          })()
         : Promise.resolve({ data: [] })
     ]).then(([pickupRes, choiceRes, optionRes]) => {
       const byId: Record<string, { hotel?: string | null; pick_up_location?: string | null }> = {}

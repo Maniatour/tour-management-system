@@ -1,10 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { Resend } from 'resend'
 import {
   fetchProductDetailsForReservationEmail,
+  isProductDetailVisibleOnCustomerPage,
   parseSectionTitlesMap,
 } from '@/lib/fetchProductDetailsForEmail'
+import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import { getCachedSunriseSunsetData } from '@/lib/weatherApi'
+import {
+  buildGrandCanyonSunrisePickupEmailInfo,
+  isGoblinGrandCanyonSunriseTour,
+  type GrandCanyonSunrisePickupEmailInfo,
+} from '@/lib/goblinGrandCanyonSunrisePickup'
+import {
+  renderGrandCanyonSunriseDateHighlightRow,
+  renderGrandCanyonSunrisePickupNotice,
+} from '@/lib/grandCanyonSunriseEmailHtml'
+import {
+  sumResidentFeesFromStoredChoices,
+  type ProductChoiceRowForResidentFees,
+} from '@/utils/usResidentChoiceSync'
+import {
+  fetchReservationOptionLinesForEmail,
+  type ReservationOptionLineForEmail,
+} from '@/lib/reservationOptionsForEmail'
 
 /**
  * POST /api/send-email
@@ -22,7 +42,7 @@ import {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { reservationId, email, type = 'both', locale = 'ko', sentBy } = body
+    const { reservationId, email, type = 'both', locale: localeParam, sentBy } = body
 
     if (!reservationId || !email) {
       return NextResponse.json(
@@ -94,15 +114,20 @@ export async function POST(request: NextRequest) {
 
     // 상품 상세 정보 조회 (multilingual)
     const customerData = customer as any
-    const customerLanguage = customerData?.language?.toLowerCase() || 'ko'
-    const emailLocale = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어' ? 'en' : 'ko'
+    const isEnglishSend = resolveReservationEmailIsEnglish(
+      customerData?.language,
+      localeParam
+    )
+    const emailLocale = isEnglishSend ? 'en' : 'ko'
     const languageCode = emailLocale === 'en' ? 'en' : 'ko'
     
+    const channelsLookupClient = supabaseAdmin ?? supabase
     const productDetails = (await fetchProductDetailsForReservationEmail(supabase, {
       productId: reservationData.product_id,
       languageCode,
       channelId: reservationData.channel_id ?? null,
       variantKey: reservationData.variant_key ?? 'default',
+      channelsLookupClient,
     })) as Record<string, unknown> | null
 
     // 투어 스케줄 조회
@@ -220,6 +245,36 @@ export async function POST(request: NextRequest) {
 
     // 이메일 내용 생성
     const isDepartureConfirmation = type === 'voucher'
+    let grandCanyonSunrisePickup: GrandCanyonSunrisePickupEmailInfo | null = null
+    if (isDepartureConfirmation && product && isGoblinGrandCanyonSunriseTour(product)) {
+      const tourYmd = String(reservationData.tour_date ?? '').split('T')[0]
+      if (/^\d{4}-\d{2}-\d{2}$/.test(tourYmd)) {
+        let cachedSunrise: string | null = null
+        try {
+          const sunData = await getCachedSunriseSunsetData('Grand Canyon South Rim', tourYmd)
+          cachedSunrise = sunData?.sunrise ?? null
+        } catch {
+          cachedSunrise = null
+        }
+        grandCanyonSunrisePickup = buildGrandCanyonSunrisePickupEmailInfo(tourYmd, cachedSunrise)
+      }
+    }
+
+    let productChoicesForEmail: ProductChoiceRowForResidentFees[] | null = null
+    if (reservationData.product_id) {
+      const { data: pcRows } = await supabase
+        .from('product_choices')
+        .select('id, choice_group_ko, choice_group, options')
+        .eq('product_id', reservationData.product_id)
+      productChoicesForEmail = (pcRows as ProductChoiceRowForResidentFees[] | null) ?? null
+    }
+
+    const reservationOptionLines = await fetchReservationOptionLinesForEmail(
+      supabase,
+      reservationId,
+      isEnglish
+    )
+
     const emailContent = generateEmailContent(
       reservationData,
       customerData,
@@ -235,6 +290,9 @@ export async function POST(request: NextRequest) {
       {
         injectProductDetailEditMarkers: false,
         pickupHotel: pickupHotelForEmail,
+        grandCanyonSunrisePickup,
+        productChoices: productChoicesForEmail,
+        reservationOptionLines,
       }
     )
     
@@ -375,6 +433,11 @@ export type GenerateEmailContentOptions = {
     pick_up_location?: string | null
     address?: string | null
   } | null
+  grandCanyonSunrisePickup?: GrandCanyonSunrisePickupEmailInfo | null
+  /** 미국 거주자 구분용 product_choices 메타 — 없으면 비거주 비용 미표시 */
+  productChoices?: ProductChoiceRowForResidentFees[] | null
+  /** Same as receipt: each reservation_options row (e.g. non-resident fee). */
+  reservationOptionLines?: ReservationOptionLineForEmail[] | null
 }
 
 export function generateEmailContent(
@@ -393,6 +456,7 @@ export function generateEmailContent(
 ) {
   const injectProductDetailEditMarkers = options?.injectProductDetailEditMarkers === true
   const pickupHotelRow = options?.pickupHotel ?? null
+  const gcSunrise = options?.grandCanyonSunrisePickup ?? null
 
   const escapeEmailText = (s: string | null | undefined): string => {
     if (s == null || s === '') return ''
@@ -490,6 +554,11 @@ export function generateEmailContent(
     </div>
   ` : ''
 
+  const grandCanyonSunrisePickupNotice =
+    isDepartureConfirmation && gcSunrise
+      ? renderGrandCanyonSunrisePickupNotice(gcSunrise, isEnglish)
+      : ''
+
   // Recruiting 상태 안내
   const recruitingNotice = isRecruiting ? `
     <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 20px; margin-bottom: 30px; border-radius: 4px;">
@@ -569,7 +638,39 @@ export function generateEmailContent(
 
     const ot = Number(pricing.option_total) || 0
     const rot = Number(pricing.required_option_total) || 0
-    const optionsPart = rot + ot
+    const dbOptionsCombined = rot + ot
+    const rawOptionLines = options?.reservationOptionLines ?? []
+    const rawDetailSum = rawOptionLines.reduce(
+      (s, x) => s + (Number(x.lineTotal) || 0),
+      0
+    )
+    let displayOptionLines = rawOptionLines
+    if (
+      rawOptionLines.length > 0 &&
+      rawDetailSum > EPS &&
+      dbOptionsCombined > EPS &&
+      Math.abs(rawDetailSum - dbOptionsCombined) > EPS
+    ) {
+      const scale = dbOptionsCombined / rawDetailSum
+      displayOptionLines = rawOptionLines.map((x) => ({
+        label: x.label,
+        unitPrice: (Number(x.unitPrice) || 0) * scale,
+        quantity: x.quantity,
+        lineTotal: (Number(x.lineTotal) || 0) * scale,
+      }))
+    }
+    const scaledOptionSum = displayOptionLines.reduce(
+      (s, x) => s + (Number(x.lineTotal) || 0),
+      0
+    )
+    const showReservationOptionBreakdown =
+      displayOptionLines.length > 0 && scaledOptionSum > EPS
+
+    let optionsPart = dbOptionsCombined
+    if (showReservationOptionBreakdown && dbOptionsCombined < EPS && scaledOptionSum > EPS) {
+      optionsPart = scaledOptionSum
+    }
+
     const feeExtra =
       (Number(pricing.additional_cost) || 0) +
       (Number(pricing.card_fee) || 0) +
@@ -578,12 +679,18 @@ export function generateEmailContent(
       (Number(pricing.prepayment_tip) || 0) +
       (Number(pricing.private_tour_additional_cost) || 0)
 
+    const residentFeesFromChoices =
+      options?.productChoices && options.productChoices.length > 0
+        ? sumResidentFeesFromStoredChoices(options.productChoices, pricing?.choices)
+        : 0
+
     /** 고객 결제 기준 총액(이메일). DB total_price/subtotal은 채널 커미션·정산용 순액으로 들어 있는 경우가 있어 분해 합산을 우선한다. */
     const customerFacingGrand = Math.max(
       0,
       displayProductTotal +
         niTotal +
-        optionsPart -
+        optionsPart +
+        residentFeesFromChoices -
         couponNum -
         addDiscNum +
         feeExtra
@@ -600,8 +707,48 @@ export function generateEmailContent(
     const showGrandBlock =
       grandTotal > 0 ||
       subNum > 0 ||
-      (!Number.isNaN(totalPriceNum) && totalPriceNum > 0)
-    
+      (!Number.isNaN(totalPriceNum) && totalPriceNum > 0) ||
+      residentFeesFromChoices > 0 ||
+      scaledOptionSum > EPS
+
+    const reservationOptionRowsHtml = showReservationOptionBreakdown
+      ? displayOptionLines
+          .map((x) => {
+            const qty = Number(x.quantity) || 0
+            const unit = Number(x.unitPrice) || 0
+            const line = Number(x.lineTotal) || 0
+            const qtyHint =
+              qty > 0
+                ? ` <span style="color:#9ca3af;font-size:12px;">(${qty}×${currencySymbol}${unit.toFixed(2)})</span>`
+                : ''
+            return `
+          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
+            <span style="color: #6b7280; font-size: 14px;">${escapeEmailText(x.label)}${qtyHint}</span>
+            <span style="font-weight: 600; color: #111827;">${currencySymbol}${line.toFixed(2)}</span>
+          </div>`
+          })
+          .join('')
+      : ''
+
+    const aggregateOptionRowsHtml =
+      !showReservationOptionBreakdown && rot > 0
+        ? `
+          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
+            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Required options' : '필수 예약 옵션'}</span>
+            <span style="font-weight: 600; color: #111827;">${currencySymbol}${rot.toFixed(2)}</span>
+          </div>
+          `
+        : ''
+    const aggregateOptionalRowsHtml =
+      !showReservationOptionBreakdown && ot > 0
+        ? `
+          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
+            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Optional add-ons' : '선택 예약 ��션'}</span>
+            <span style="font-weight: 600; color: #111827;">${currencySymbol}${ot.toFixed(2)}</span>
+          </div>
+          `
+        : ''
+
     return `
       <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
         <div style="background: #f9fafb; padding: 15px; border-bottom: 1px solid #e5e7eb;">
@@ -640,10 +787,17 @@ export function generateEmailContent(
             <span style="font-weight: 600; color: #111827;">${currencySymbol}${niTotal.toFixed(2)}</span>
           </div>
           ` : ''}
+          ${showReservationOptionBreakdown ? reservationOptionRowsHtml : `${aggregateOptionRowsHtml}${aggregateOptionalRowsHtml}`}
           ${pricing.coupon_discount && pricing.coupon_discount !== 0 ? `
           <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
             <span style="color: #10b981; font-size: 14px;">${isEnglish ? 'Coupon Discount' : '쿠폰 할인'}</span>
             <span style="font-weight: 600; color: #10b981;">-${currencySymbol}${Math.abs(pricing.coupon_discount).toFixed(2)}</span>
+          </div>
+          ` : ''}
+          ${residentFeesFromChoices > 0 ? `
+          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
+            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Non-resident fees' : '비거주자 비용'}</span>
+            <span style="font-weight: 600; color: #111827;">${currencySymbol}${residentFeesFromChoices.toFixed(2)}</span>
           </div>
           ` : ''}
           ${showGrandBlock ? `
@@ -761,19 +915,54 @@ export function generateEmailContent(
         return `
             <h4 style="margin: 0 0 10px 0; font-size: 16px; font-weight: 700; color: #111827;">${titleHtml}</h4>`
       }
+      const hiddenOnCustomerPage = !isProductDetailVisibleOnCustomerPage(
+        pd.customer_page_visibility,
+        detail.field
+      )
+      const showRowHiddenBadge =
+        hiddenOnCustomerPage && detail.field !== 'slogan1'
+      const customerHiddenBadge = showRowHiddenBadge
+        ? `<span data-email-preview-admin-only="1" data-pd-field="${detail.field}" role="button" tabindex="0" style="font-size: 11px; font-weight: 600; color: #9a3412; background: #ffedd5; border: 1px solid #fdba74; border-radius: 9999px; padding: 2px 10px; cursor: pointer; white-space: nowrap;">${
+            isEnglish
+              ? 'Hidden on product page'
+              : '고객 상품 페이지 미표시'
+          }</span>`
+        : ''
       return `
             <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
               <h4 style="margin: 0; font-size: 16px; font-weight: 700; color: #111827; cursor: pointer;" data-pd-field="${detail.field}">${titleHtml}</h4>
-              <button type="button" data-pd-field="${detail.field}" style="font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 4px; padding: 2px 10px; cursor: pointer;">수정</button>
+              <button type="button" data-pd-field="${detail.field}" style="font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 4px; padding: 2px 10px; cursor: pointer;">수정</button>${customerHiddenBadge}
             </div>`
     }
+
+    const sloganHiddenOnCustomer =
+      injectProductDetailEditMarkers &&
+      !isProductDetailVisibleOnCustomerPage(
+        pd.customer_page_visibility,
+        'slogan1'
+      )
+    const sloganCardBadge = sloganHiddenOnCustomer
+      ? `<span data-email-preview-admin-only="1" data-pd-field="slogan1" role="button" tabindex="0" style="font-size: 12px; font-weight: 600; color: #1e40af; background: #dbeafe; border: 1px solid #93c5fd; border-radius: 9999px; padding: 3px 12px; cursor: pointer; white-space: nowrap;">${
+          isEnglish ? 'Slogan' : '\uC2AC\uB85C\uAC74'
+        }</span>`
+      : ''
+
+    const cardTitleInner = injectProductDetailEditMarkers
+      ? `
+          <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #111827;">
+              📋 ${isEnglish ? 'Product Details' : '상품 상세 정보'}
+            </h3>${sloganCardBadge}
+          </div>`
+      : `
+          <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #111827;">
+            📋 ${isEnglish ? 'Product Details' : '상품 상세 정보'}
+          </h3>`
 
     return `
       <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
         <div style="background: #f9fafb; padding: 15px; border-bottom: 1px solid #e5e7eb;">
-          <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #111827;">
-            📋 ${isEnglish ? 'Product Details' : '상품 상세 정보'}
-          </h3>
+          ${cardTitleInner}
         </div>
         <div style="padding: 20px; background: #f9fafb;" ${injectProductDetailEditMarkers ? 'class="email-preview-product-details"' : ''}>
           ${details.map(detail => `
@@ -955,6 +1144,7 @@ export function generateEmailContent(
           <div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Tour Date' : '투어 날짜'}</div>
             <div style="font-size: 16px; font-weight: 600; color: #111827;">${tourDate}</div>
+            ${gcSunrise && isDepartureConfirmation ? renderGrandCanyonSunriseDateHighlightRow(gcSunrise, isEnglish) : ''}
           </div>
           <div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Product' : '상품'}</div>
@@ -1028,6 +1218,7 @@ export function generateEmailContent(
       <div class="email-container">
         <div class="email-content">
           ${departureNotice}
+          ${grandCanyonSunrisePickupNotice}
           ${recruitingNotice}
           ${!isDepartureConfirmation ? confirmedNotice : ''}
           ${reservationInfoSection}

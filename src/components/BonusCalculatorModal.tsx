@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { X, Calculator, Calendar, User, DollarSign, Users, Link as LinkIcon, Save, CreditCard, Star, Eye, ChevronDown, ChevronRight, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import { useAuth } from '@/contexts/AuthContext'
 import Link from 'next/link'
 
@@ -80,7 +81,9 @@ async function getNonResidentChoiceOptionIds(reservationIds: string[]): Promise<
       .in('reservation_id', batch)
     if (data?.length) choicesData = choicesData.concat(data)
   }
-  const optionIds = [...new Set(choicesData.map((r: { option_id?: string | null }) => r.option_id).filter(Boolean))] as string[]
+  const optionIds = choiceOptionIdsForSupabaseIn(
+    choicesData.map((r: { option_id?: string | null }) => r.option_id)
+  )
   if (optionIds.length === 0) return new Set()
   let optData: any[] = []
   for (let i = 0; i < optionIds.length; i += BATCH_RESERVATION_IDS) {

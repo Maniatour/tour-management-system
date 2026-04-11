@@ -7,6 +7,11 @@ import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Filter, User, Phone, Mail, ExternalLink, X, Car, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  choiceOptionIdsForSupabaseIn,
+  UNDECIDED_OPTION_ID,
+  undecidedOptionDisplayNames,
+} from '@/utils/usResidentChoiceSync'
 
 interface Reservation {
   id: string
@@ -947,6 +952,8 @@ export default function CustomerReservations() {
                        // reservation_choices에서 choice_id와 option_id를 가져와서 새로운 테이블에서 정보 조회
                        const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string | null }) => c.choice_id ?? '').filter(Boolean))]
                        const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string | null }) => c.option_id ?? '').filter(Boolean))]
+                       const optionIdsForDb = choiceOptionIdsForSupabaseIn(optionIds)
+                       const undecidedNames = undecidedOptionDisplayNames()
                        
                        // product_choices 테이블에서 choice 정보 조회
                        const { data: choicesData, error: choicesError } = await supabase
@@ -955,10 +962,13 @@ export default function CustomerReservations() {
                          .in('id', choiceIds)
                        
                        // choice_options 테이블에서 option 정보 조회
-                       const { data: optionsData, error: optionsError } = await supabase
-                         .from('choice_options')
-                         .select('id, option_key, option_name, option_name_ko')
-                         .in('id', optionIds)
+                       const { data: optionsData, error: optionsError } =
+                         optionIdsForDb.length > 0
+                           ? await supabase
+                               .from('choice_options')
+                               .select('id, option_key, option_name, option_name_ko')
+                               .in('id', optionIdsForDb)
+                           : { data: [] as { id: string; option_key?: string; option_name: string; option_name_ko: string }[], error: null }
                        
                        if (!choicesError && !optionsError && choicesData && optionsData) {
                          // choice와 option 정보를 매핑
@@ -983,7 +993,11 @@ export default function CustomerReservations() {
                               id: optionInfo.id,
                               name_ko: optionInfo.option_name_ko,
                               name_en: optionInfo.option_name
-                            } : null
+                            } : (choice.option_id === UNDECIDED_OPTION_ID ? {
+                              id: UNDECIDED_OPTION_ID,
+                              name_ko: undecidedNames.name_ko,
+                              name_en: undecidedNames.name_en
+                            } : null)
                           }
                          })
                        }
@@ -1219,16 +1233,21 @@ export default function CustomerReservations() {
                   try {
                     const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string | null }) => c.choice_id ?? '').filter(Boolean))]
                     const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string | null }) => c.option_id ?? '').filter(Boolean))]
+                    const optionIdsForDb = choiceOptionIdsForSupabaseIn(optionIds)
+                    const undecidedNames = undecidedOptionDisplayNames()
                     
                     const { data: choicesData2 } = await supabase
                       .from('product_choices')
                       .select('id, choice_group, choice_group_ko')
                       .in('id', choiceIds)
                     
-                    const { data: optionsData2 } = await supabase
-                      .from('choice_options')
-                      .select('id, option_key, option_name, option_name_ko')
-                      .in('id', optionIds)
+                    const { data: optionsData2 } =
+                      optionIdsForDb.length > 0
+                        ? await supabase
+                            .from('choice_options')
+                            .select('id, option_key, option_name, option_name_ko')
+                            .in('id', optionIdsForDb)
+                        : { data: [] as { id: string; option_key?: string; option_name: string; option_name_ko: string }[] }
                     
                     if (choicesData2 && optionsData2) {
                       reservationChoicesInfo = reservationChoicesInfo.map((choice: {
@@ -1252,7 +1271,11 @@ export default function CustomerReservations() {
                             id: optionInfo.id,
                             name_ko: optionInfo.option_name_ko,
                             name_en: optionInfo.option_name
-                          } : null
+                          } : (choice.option_id === UNDECIDED_OPTION_ID ? {
+                            id: UNDECIDED_OPTION_ID,
+                            name_ko: undecidedNames.name_ko,
+                            name_en: undecidedNames.name_en
+                          } : null)
                         }
                       })
                     }
@@ -1595,6 +1618,8 @@ export default function CustomerReservations() {
                       // reservation_choices에서 choice_id와 option_id를 가져와서 새로운 테이블에서 정보 조회
                       const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string | null }) => c.choice_id ?? '').filter(Boolean))]
                       const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string | null }) => c.option_id ?? '').filter(Boolean))]
+                      const optionIdsForDb = choiceOptionIdsForSupabaseIn(optionIds)
+                      const undecidedNames = undecidedOptionDisplayNames()
                       
                       // product_choices 테이블에서 choice 정보 조회
                       const { data: choicesData, error: choicesError } = await supabase
@@ -1603,10 +1628,13 @@ export default function CustomerReservations() {
                         .in('id', choiceIds)
                       
                       // choice_options 테이블에서 option 정보 조회
-                      const { data: optionsData, error: optionsError } = await supabase
-                        .from('choice_options')
-                        .select('id, option_key, option_name, option_name_ko')
-                        .in('id', optionIds)
+                      const { data: optionsData, error: optionsError } =
+                        optionIdsForDb.length > 0
+                          ? await supabase
+                              .from('choice_options')
+                              .select('id, option_key, option_name, option_name_ko')
+                              .in('id', optionIdsForDb)
+                          : { data: [] as { id: string; option_key?: string; option_name: string; option_name_ko: string }[], error: null }
                       
                       if (!choicesError && !optionsError && choicesData && optionsData) {
                         // choice와 option 정보를 매핑
@@ -1631,7 +1659,11 @@ export default function CustomerReservations() {
                               id: optionInfo.id,
                               name_ko: optionInfo.option_name_ko,
                               name_en: optionInfo.option_name
-                            } : null
+                            } : (choice.option_id === UNDECIDED_OPTION_ID ? {
+                              id: UNDECIDED_OPTION_ID,
+                              name_ko: undecidedNames.name_ko,
+                              name_en: undecidedNames.name_en
+                            } : null)
                           }
                         })
                       }

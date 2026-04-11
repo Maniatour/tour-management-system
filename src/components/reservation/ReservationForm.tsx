@@ -349,10 +349,21 @@ export default function ReservationForm({
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
   const isImportMode = typeof (reservation as any)?.id === 'string' && (reservation as any).id.startsWith('import-')
   const effectiveReservationId = isImportMode ? undefined : reservation?.id
+  // id-only stub: ensure-draft API inserts minimal DB row so expenses FK works before full save.
+  const reservationKeyList = reservation
+    ? Object.keys(reservation as unknown as Record<string, unknown>)
+    : []
+  const isStubReservationOnlyId =
+    Boolean(reservation?.id) &&
+    !isImportMode &&
+    reservationKeyList.length === 1 &&
+    reservationKeyList[0] === 'id'
   const [, setChannelAccordionExpanded] = useState(layout === 'modal')
   const [, setProductAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   const [expenseUpdateTrigger, setExpenseUpdateTrigger] = useState(0)
+  const [reservationDraftReady, setReservationDraftReady] = useState(false)
+  const [reservationDraftError, setReservationDraftError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   /** 새 예약 시 저장 전에 추가한 옵션 목록. 예약 저장 시 함께 전달됨 */
   const [pendingReservationOptions, setPendingReservationOptions] = useState<Array<{ option_id: string; ea?: number; price?: number; total_price?: number; status?: string; note?: string }>>([])
@@ -362,6 +373,58 @@ export default function ReservationForm({
   const [similarCustomers, setSimilarCustomers] = useState<Customer[]>([])
   const [pendingCustomerData, setPendingCustomerData] = useState<any>(null)
   const resolvedCustomerIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!isStubReservationOnlyId) {
+      setReservationDraftReady(true)
+      setReservationDraftError(null)
+      return
+    }
+    const rid = reservation?.id
+    if (!rid) {
+      setReservationDraftReady(false)
+      setReservationDraftError(null)
+      return
+    }
+    setReservationDraftReady(false)
+    setReservationDraftError(null)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData?.session?.access_token
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (token) headers.Authorization = `Bearer ${token}`
+        const res = await fetch('/api/reservations/ensure-draft', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            id: rid,
+            added_by: sessionData?.session?.user?.email ?? null,
+          }),
+        })
+        const json = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string }
+        if (cancelled) return
+        if (res.ok && json.success !== false) {
+          setReservationDraftReady(true)
+          setReservationDraftError(null)
+        } else {
+          setReservationDraftReady(false)
+          setReservationDraftError(
+            typeof json.message === 'string' ? json.message : '예약 연결에 실패했습니다.'
+          )
+        }
+      } catch {
+        if (!cancelled) {
+          setReservationDraftReady(false)
+          setReservationDraftError('예약 연결에 실패했습니다.')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isStubReservationOnlyId, reservation?.id])
   
   const findSimilarCustomers = useCallback(
     (name: string, email?: string, phone?: string): Customer[] =>
@@ -5768,12 +5831,25 @@ export default function ReservationForm({
                   </div>
                   <div id="expense-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
                     <ReservationExpenseManager
+                      key={
+                        isStubReservationOnlyId
+                          ? `${effectiveReservationId}-${reservationDraftReady}`
+                          : (effectiveReservationId ?? 'expenses')
+                      }
                       reservationId={effectiveReservationId}
                       submittedBy={formData.addedBy}
                       userRole="admin"
                       onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
                       title="예약 지출"
                       itemVariant="line"
+                      isPersisted={!isStubReservationOnlyId || reservationDraftReady}
+                      {...(isStubReservationOnlyId &&
+                      (!reservationDraftReady || reservationDraftError != null)
+                        ? {
+                            persistHint:
+                              reservationDraftError ?? '예약과 연결하는 중입니다…',
+                          }
+                        : {})}
                     />
                   </div>
                   <div id="assigned-tour-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">

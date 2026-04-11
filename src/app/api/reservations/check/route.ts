@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { fetchReservationOptionsLegacyByReservationId } from '@/lib/fetchReservationOptionsLegacy'
 
 // 예약 확인 (고객용 - 인증 없이 이메일과 예약 ID로 확인)
 export async function POST(request: NextRequest) {
@@ -39,20 +40,6 @@ export async function POST(request: NextRequest) {
           phone,
           resident_status
         ),
-        reservation_options:reservation_options(
-          choice_id,
-          option_id,
-          choice:choices(
-            choice_name,
-            choice_name_ko,
-            choice_type
-          ),
-          option:options(
-            option_name,
-            option_name_ko,
-            option_price
-          )
-        ),
         payment_records:payment_records(
           id,
           payment_status,
@@ -72,7 +59,14 @@ export async function POST(request: NextRequest) {
       }, { status: 404 })
     }
 
-    return NextResponse.json({ reservation })
+    const reservation_options = await fetchReservationOptionsLegacyByReservationId(
+      supabase,
+      reservation_id
+    )
+
+    return NextResponse.json({
+      reservation: { ...reservation, reservation_options },
+    })
 
   } catch (error) {
     console.error('예약 확인 오류:', error)

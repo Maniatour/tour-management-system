@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import {
   generateEmailContent,
   type GenerateEmailContentOptions,
 } from '@/app/api/send-email/route'
+import type { ProductChoiceRowForResidentFees } from '@/utils/usResidentChoiceSync'
 import {
   fetchProductDetailsForReservationEmail,
+  parseCustomerPageVisibilityJson,
   parseSectionTitlesMap,
   pickProductDetailFieldValues,
 } from '@/lib/fetchProductDetailsForEmail'
+import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import { getCachedSunriseSunsetData } from '@/lib/weatherApi'
+import {
+  buildGrandCanyonSunrisePickupEmailInfo,
+  isGoblinGrandCanyonSunriseTour,
+} from '@/lib/goblinGrandCanyonSunrisePickup'
+import { fetchReservationOptionLinesForEmail } from '@/lib/reservationOptionsForEmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,9 +37,9 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[preview-email] 요청 수신')
     const body = await request.json()
-    const { reservationId, type = 'both', locale = 'ko' } = body
+    const { reservationId, type = 'both', locale: localeParam } = body
 
-    console.log('[preview-email] 요청 데이터:', { reservationId, type, locale })
+    console.log('[preview-email] 요청 데이터:', { reservationId, type, locale: localeParam })
 
     if (!reservationId) {
       console.error('[preview-email] 예약 ID 누락')
@@ -104,11 +113,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const customerLanguage = customer.language?.toLowerCase()
-    const isEnglish = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어'
+    const isEnglish = resolveReservationEmailIsEnglish(customer.language, localeParam)
     const languageCode = isEnglish ? 'en' : 'ko'
 
-    console.log('[preview-email] 이메일 내용 생성 중...', { customerLanguage, isEnglish, type })
+    console.log('[preview-email] generating email body', {
+      customerLanguage: customer.language,
+      isEnglish,
+      localeParam,
+      type,
+    })
     console.log('[preview-email] 예약 데이터:', JSON.stringify(reservation, null, 2))
     console.log('[preview-email] 상품 데이터:', JSON.stringify(product, null, 2))
 
@@ -137,11 +150,13 @@ export async function POST(request: NextRequest) {
     pricing = pricingData
 
     // 상품 상세 정보 (채널·언어·variant 일치 행 — 리뉴얼 필드 포함 전체 컬럼)
+    const channelsLookupClient = supabaseAdmin ?? supabase
     const productDetails = await fetchProductDetailsForReservationEmail(supabase, {
       productId: reservation.product_id,
       languageCode,
       channelId: reservation.channel_id ?? null,
       variantKey: (reservation as { variant_key?: string }).variant_key ?? 'default',
+      channelsLookupClient,
     })
 
     let channelName: string | null = null
@@ -196,12 +211,9 @@ export async function POST(request: NextRequest) {
             productDetails as Record<string, unknown>
           ),
           sectionTitles: sectionTitlesParsed,
-          customerPageVisibility:
-            rawCustomerPageVisibility &&
-            typeof rawCustomerPageVisibility === 'object' &&
-            !Array.isArray(rawCustomerPageVisibility)
-              ? (rawCustomerPageVisibility as Record<string, unknown>)
-              : null,
+          customerPageVisibility: parseCustomerPageVisibilityJson(
+            rawCustomerPageVisibility
+          ),
         }
       : null
 
@@ -315,6 +327,36 @@ export async function POST(request: NextRequest) {
 
     // 이메일 내용 생성
     const isDepartureConfirmation = type === 'voucher'
+    let grandCanyonSunrisePickup: GenerateEmailContentOptions['grandCanyonSunrisePickup'] = null
+    if (isDepartureConfirmation && product && isGoblinGrandCanyonSunriseTour(product as any)) {
+      const tourYmd = String(reservationForEmail.tour_date ?? '').split('T')[0]
+      if (/^\d{4}-\d{2}-\d{2}$/.test(tourYmd)) {
+        let cachedSunrise: string | null = null
+        try {
+          const sunData = await getCachedSunriseSunsetData('Grand Canyon South Rim', tourYmd)
+          cachedSunrise = sunData?.sunrise ?? null
+        } catch {
+          cachedSunrise = null
+        }
+        grandCanyonSunrisePickup = buildGrandCanyonSunrisePickupEmailInfo(tourYmd, cachedSunrise)
+      }
+    }
+
+    let productChoicesForEmail: ProductChoiceRowForResidentFees[] | null = null
+    if (reservation.product_id) {
+      const { data: pcRows } = await supabase
+        .from('product_choices')
+        .select('id, choice_group_ko, choice_group, options')
+        .eq('product_id', reservation.product_id)
+      productChoicesForEmail = (pcRows as ProductChoiceRowForResidentFees[] | null) ?? null
+    }
+
+    const reservationOptionLines = await fetchReservationOptionLinesForEmail(
+      supabase,
+      reservationId,
+      isEnglish
+    )
+
     let emailContent
     try {
       emailContent = generateEmailContent(
@@ -332,6 +374,9 @@ export async function POST(request: NextRequest) {
         {
           injectProductDetailEditMarkers: !!productDetails,
           pickupHotel: pickupHotelForEmail,
+          grandCanyonSunrisePickup,
+          productChoices: productChoicesForEmail,
+          reservationOptionLines,
         }
       )
       console.log('[preview-email] 이메일 내용 생성 완료')

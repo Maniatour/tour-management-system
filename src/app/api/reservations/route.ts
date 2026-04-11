@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+import { fetchReservationOptionsLegacyByReservationIds } from '@/lib/fetchReservationOptionsLegacy'
 
 const dbSync = supabaseAdmin ?? supabase
 
@@ -169,20 +170,6 @@ export async function GET(request: NextRequest) {
           email,
           phone,
           resident_status
-        ),
-        reservation_options:reservation_options(
-          choice_id,
-          option_id,
-          choice:choices(
-            choice_name,
-            choice_name_ko,
-            choice_type
-          ),
-          option:options(
-            option_name,
-            option_name_ko,
-            option_price
-          )
         )
       `)
 
@@ -215,6 +202,20 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
+    const reservationIds = (reservations || []).map((r) => String((r as { id: string }).id))
+    const optionsByReservation = await fetchReservationOptionsLegacyByReservationIds(
+      supabase,
+      reservationIds
+    )
+    const reservationsWithOptions = (reservations || []).map((r) => {
+      const row = r as { id: string }
+      const rid = String(row.id).trim()
+      return {
+        ...row,
+        reservation_options: optionsByReservation.get(rid) ?? [],
+      }
+    })
+
     // 총 개수 조회
     let countQuery = supabase
       .from('reservations')
@@ -234,7 +235,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      reservations: reservations || [],
+      reservations: reservationsWithOptions,
       pagination: {
         page,
         limit,

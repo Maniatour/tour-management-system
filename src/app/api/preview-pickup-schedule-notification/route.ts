@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { generatePickupScheduleEmailContent } from '@/app/api/send-pickup-schedule-notification/route'
 import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
 import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetailsForEmail'
+import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 
 /**
  * POST /api/preview-pickup-schedule-notification
@@ -21,9 +22,9 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[preview-pickup-schedule-notification] 요청 수신')
     const body = await request.json()
-    const { reservationId, pickupTime, tourDate, locale = 'ko', tourId, preparationInfo: preparationInfoFromBody } = body
+    const { reservationId, pickupTime, tourDate, locale: localeParam, tourId, preparationInfo: preparationInfoFromBody } = body
 
-    console.log('[preview-pickup-schedule-notification] 요청 데이터:', { reservationId, pickupTime, tourDate, locale, tourId, hasPreparationInfo: preparationInfoFromBody !== undefined })
+    console.log('[preview-pickup-schedule-notification] 요청 데이터:', { reservationId, pickupTime, tourDate, locale: localeParam, tourId, hasPreparationInfo: preparationInfoFromBody !== undefined })
 
     if (!reservationId || !pickupTime || !tourDate) {
       console.error('[preview-pickup-schedule-notification] 필수 파라미터 누락')
@@ -104,8 +105,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 고객 언어에 따라 locale 결정
-    const customerLanguage = customer.language?.toLowerCase()
-    const isEnglish = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어'
+    const isEnglish = resolveReservationEmailIsEnglish(customer.language, localeParam)
+
 
     // reservation_ids 배열 정규화 함수
     const normalizeIds = (value: unknown): string[] => {
@@ -602,11 +603,13 @@ export async function POST(request: NextRequest) {
         channel_id?: string | null
         variant_key?: string | null
       }
+      const channelsLookupClient = supabaseAdmin ?? supabase
       const row = await fetchProductDetailsForReservationEmail(supabase, {
         productId: reservation.product_id,
         languageCode,
         channelId: rez.channel_id ?? null,
         variantKey: rez.variant_key ?? 'default',
+        channelsLookupClient,
       })
       preparationInfo = (row?.preparation_info as string) ?? null
     }

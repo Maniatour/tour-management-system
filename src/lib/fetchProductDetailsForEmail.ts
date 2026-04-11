@@ -132,13 +132,15 @@ export function parseSectionTitlesMap(raw: unknown): Record<string, string> {
 /** product_details_multilingual.channel_id 조회·저장용 (자사 채널 UUID → SELF_GROUP) */
 export async function resolveProductDetailsChannelId(
   supabase: SupabaseClient,
-  channelId: string | null | undefined
+  channelId: string | null | undefined,
+  channelsLookupClient?: SupabaseClient
 ): Promise<string | null> {
   if (channelId == null || String(channelId).trim() === '') return null
   const u = String(channelId).trim()
   const upper = u.toUpperCase()
   if (upper === 'SELF' || upper === 'SELF_GROUP') return 'SELF_GROUP'
-  const { data: ch } = await supabase
+  const lookup = channelsLookupClient ?? supabase
+  const { data: ch } = await lookup
     .from('channels')
     .select('type')
     .eq('id', u)
@@ -150,19 +152,77 @@ export async function resolveProductDetailsChannelId(
 }
 
 /** customer_page_visibility JSON: 해당 필드가 명시적으로 false일 때만 고객 페이지에서 숨김 */
+export function parseCustomerPageVisibilityJson(
+  raw: unknown
+): Record<string, unknown> | null {
+  if (raw == null) return null
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    if (!t) return null
+    try {
+      const p = JSON.parse(t) as unknown
+      if (p && typeof p === 'object' && !Array.isArray(p)) {
+        return p as Record<string, unknown>
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>
+  }
+  return null
+}
+
+/** customer_page_visibility: field explicitly false (or "false") hides section on customer product page. */
 export function isProductDetailVisibleOnCustomerPage(
   visibility: unknown,
   field: string
 ): boolean {
-  if (
-    visibility == null ||
-    typeof visibility !== 'object' ||
-    Array.isArray(visibility)
-  ) {
-    return true
+  const obj = parseCustomerPageVisibilityJson(visibility)
+  if (!obj) return true
+  const v = obj[field]
+  if (v === false) return false
+  if (v === 'false' || v === 0) return false
+  return true
+}
+
+/**
+ * Merge visibility like ProductDetailsTab (only false keys). Avoids spreading
+ * odd-typed values from DB into JSON and keeps the payload PostgREST-safe.
+ */
+export function mergeCustomerPageVisibilityField(
+  raw: unknown,
+  field: ProductDetailEmailEditableField,
+  customerPageVisible: boolean
+): Record<string, false> {
+  const parsed = parseCustomerPageVisibilityJson(raw)
+  const out: Record<string, false> = {}
+  if (parsed) {
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k === '__proto__') continue
+      if (v === false || v === 'false' || v === 0) {
+        out[k] = false
+      }
+    }
   }
-  const v = (visibility as Record<string, unknown>)[field]
-  return v !== false
+  if (customerPageVisible) {
+    delete out[field]
+  } else {
+    out[field] = false
+  }
+  return out
+}
+
+/**
+ * Strip lone UTF-16 surrogates so PostgREST accepts the JSON body (PGRST102).
+ */
+export function sanitizeProductDetailHtmlForStorage(html: string): string {
+  return html.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    ''
+  )
 }
 
 export function pickProductDetailFieldValues(
@@ -187,14 +247,18 @@ export async function fetchProductDetailsForReservationEmail(
     languageCode: string
     channelId: string | null | undefined
     variantKey: string | null | undefined
+    /** For channels.type lookup; use supabaseAdmin when main client is anon. */
+    channelsLookupClient?: SupabaseClient
   }
 ): Promise<Record<string, unknown> | null> {
-  const { productId, languageCode, channelId, variantKey } = opts
+  const { productId, languageCode, channelId, variantKey, channelsLookupClient } =
+    opts
   const vkPrimary = (variantKey && String(variantKey).trim()) || 'default'
 
   const resolvedChannelId = await resolveProductDetailsChannelId(
     supabase,
-    channelId
+    channelId,
+    channelsLookupClient
   )
 
   const tryFetch = async (ch: string | null, vk: string) => {

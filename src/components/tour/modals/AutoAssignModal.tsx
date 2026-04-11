@@ -5,6 +5,7 @@ import { X, Users, User, Car, HelpCircle, ArrowRightCircle } from 'lucide-react'
 // @ts-expect-error - react-country-flag 타입 정의 없음
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
+import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 
 type TourRow = {
   id: string
@@ -544,7 +545,9 @@ export default function AutoAssignModal({
                 .from('reservation_choices')
                 .select('reservation_id, option_id, option_key')
                 .in('reservation_id', missingIds)
-              const optionIds = [...new Set((rcFallback || []).map((r: { option_id?: string | null }) => r.option_id).filter(Boolean))] as string[]
+              const optionIds = choiceOptionIdsForSupabaseIn(
+                (rcFallback || []).map((r: { option_id?: string | null }) => r.option_id)
+              )
               let optionInfoById = new Map<string, { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null }>()
               if (optionIds.length > 0) {
                 const { data: optData } = await supabase

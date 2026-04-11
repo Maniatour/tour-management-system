@@ -67,8 +67,18 @@ export async function POST(request: NextRequest) {
       amount_krw 
     } = body
 
-    // 필수 필드 검증
-    if (!reservation_id || !amount || !payment_method) {
+    const parsedAmount =
+      amount !== null && amount !== undefined && amount !== ''
+        ? parseFloat(String(amount))
+        : Number.NaN
+    // Required fields; amount must be finite and > 0
+    if (
+      !reservation_id ||
+      payment_method == null ||
+      String(payment_method).trim() === '' ||
+      !Number.isFinite(parsedAmount) ||
+      parsedAmount <= 0
+    ) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
     }
 
@@ -93,7 +103,7 @@ export async function POST(request: NextRequest) {
         id: `payment_${Date.now()}_${Math.random().toString(36).substring(2)}`,
         reservation_id,
         payment_status,
-        amount: parseFloat(amount),
+        amount: parsedAmount,
         payment_method,
         note: note || null,
         image_file_url: image_file_url || null,

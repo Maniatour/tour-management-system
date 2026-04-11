@@ -9,6 +9,23 @@ export const US_RESIDENT_GROUP_LABELS = [
 
 export const UNDECIDED_OPTION_ID = '__undecided__'
 
+/** DB `choice_options.id`(UUID) 조회용 — 미정 placeholder는 제외 */
+export function choiceOptionIdsForSupabaseIn(
+  optionIds: Iterable<string | null | undefined>
+): string[] {
+  const set = new Set<string>()
+  for (const raw of optionIds) {
+    const id = raw == null ? '' : String(raw).trim()
+    if (!id || id === UNDECIDED_OPTION_ID) continue
+    set.add(id)
+  }
+  return [...set]
+}
+
+export function undecidedOptionDisplayNames(): { name_ko: string; name_en: string } {
+  return { name_ko: '미정', name_en: 'Undecided' }
+}
+
 export type ResidentLineKey =
   | 'undecided'
   | 'us_resident'
@@ -336,4 +353,66 @@ export function residentLineStateEquals(a: ResidentLineState, b: ResidentLineSta
     if ((a.residentStatusAmounts[k] || 0) !== (b.residentStatusAmounts[k] || 0)) return false
   }
   return true
+}
+
+/** Parse stored rows from reservation_pricing.choices.required (email). */
+export function selectedChoiceRowsFromReservationPricingChoices(choicesJson: unknown): Array<{
+  choice_id: string
+  option_id: string
+  quantity?: number
+  total_price?: number
+}> {
+  if (!choicesJson || typeof choicesJson !== 'object') return []
+  const o = choicesJson as Record<string, unknown>
+  const req = o.required
+  if (!Array.isArray(req)) return []
+  const out: Array<{
+    choice_id: string
+    option_id: string
+    quantity?: number
+    total_price?: number
+  }> = []
+  for (const item of req) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const choiceId =
+      row.choice_id != null ? String(row.choice_id) : row.id != null ? String(row.id) : ''
+    const optionId = row.option_id != null ? String(row.option_id) : ''
+    if (!choiceId || !optionId) continue
+    out.push({
+      choice_id: choiceId,
+      option_id: optionId,
+      quantity: Number(row.quantity) || 0,
+      total_price: Number(row.total_price) || 0,
+    })
+  }
+  return out
+}
+
+export type ProductChoiceRowForResidentFees = {
+  id: string
+  choice_group_ko?: string | null
+  choice_group?: string | null
+  options?: Array<{
+    id: string
+    option_name_ko?: string | null
+    option_name?: string | null
+    option_key?: string | null
+  }>
+}
+
+/**
+ * 예약 시점의 `choices.required[].total_price`와 상품 `product_choices` 메타로
+ * Non-resident / pass on-site fees (USD) for customer email totals.
+ */
+export function sumResidentFeesFromStoredChoices(
+  productChoices: ProductChoiceRowForResidentFees[],
+  choicesJson: unknown
+): number {
+  if (!productChoices?.length) return 0
+  const rows = selectedChoiceRowsFromReservationPricingChoices(choicesJson)
+  if (!rows.length) return 0
+  const state = parseResidentLineStateFromSelections(productChoices, rows)
+  if (!state) return 0
+  return sumResidentFeeAmountsUsd(state.residentStatusAmounts)
 }

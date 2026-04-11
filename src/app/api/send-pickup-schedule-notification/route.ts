@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { Resend } from 'resend'
 import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
 import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetailsForEmail'
+import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 
 /**
  * POST /api/send-pickup-schedule-notification
@@ -20,7 +21,7 @@ import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetail
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { reservationId, pickupTime, tourDate, locale = 'ko', sentBy, preparationInfo: preparationInfoFromBody } = body
+    const { reservationId, pickupTime, tourDate, locale: localeParam, sentBy, preparationInfo: preparationInfoFromBody } = body
 
     if (!reservationId || !pickupTime || !tourDate) {
       return NextResponse.json(
@@ -132,8 +133,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 고객 언어에 따라 locale 결정
-    const customerLanguage = customer.language?.toLowerCase()
-    const isEnglish = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어'
+    const isEnglish = resolveReservationEmailIsEnglish(customer.language, localeParam)
+
 
     // reservation_ids 배열 정규화 함수
     const normalizeIds = (value: unknown): string[] => {
@@ -529,11 +530,13 @@ export async function POST(request: NextRequest) {
         channel_id?: string | null
         variant_key?: string | null
       }
+      const channelsLookupClient = supabaseAdmin ?? supabase
       const row = await fetchProductDetailsForReservationEmail(supabase, {
         productId: reservation.product_id,
         languageCode,
         channelId: rez.channel_id ?? null,
         variantKey: rez.variant_key ?? 'default',
+        channelsLookupClient,
       })
       preparationInfo = (row?.preparation_info as string) ?? null
     }

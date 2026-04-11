@@ -154,6 +154,16 @@ export default function ProductDetailFieldEditModal({
     setCopyOpen(true)
   }
 
+  /** Without service role, API needs Bearer JWT (session may live in localStorage only). */
+  const patchFieldHeaders = async (): Promise<HeadersInit> => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`
+    }
+    return headers
+  }
+
   const handleSave = async () => {
     if (!field) return
     setSaving(true)
@@ -168,7 +178,7 @@ export default function ProductDetailFieldEditModal({
           : null
       const res = await fetch('/api/product-details/field', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await patchFieldHeaders(),
         body: JSON.stringify({
           productId,
           languageCode,
@@ -267,7 +277,7 @@ export default function ProductDetailFieldEditModal({
         const stored = resolveStoredChannelId(ch, id)
         const res = await fetch('/api/product-details/field', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await patchFieldHeaders(),
           body: JSON.stringify({
             productId,
             languageCode,

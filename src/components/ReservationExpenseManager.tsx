@@ -56,6 +56,10 @@ interface ReservationExpenseManagerProps {
   hideTitle?: boolean
   title?: string
   itemVariant?: 'card' | 'line'
+  /** false: no reservation row yet (FK). New modal uses ensure-draft then true */
+  isPersisted?: boolean
+  /** Shown when !isPersisted (loading/error). Default copy if omitted */
+  persistHint?: string
 }
 
 function PaymentMethodAutocomplete({
@@ -215,7 +219,9 @@ export default function ReservationExpenseManager({
   onExpenseUpdated,
   hideTitle,
   title: titleProp,
-  itemVariant = 'card'
+  itemVariant = 'card',
+  isPersisted = true,
+  persistHint,
 }: ReservationExpenseManagerProps) {
   
   const t = useTranslations('reservationExpense')
@@ -417,6 +423,14 @@ export default function ReservationExpenseManager({
     // 수정 모드일 때는 수정 함수 호출
     if (editingExpense) {
       await handleUpdateExpense()
+      return
+    }
+
+    if (!isPersisted) {
+      alert(
+        persistHint ||
+          '예약이 아직 저장되지 않았습니다. 먼저 예약을 저장한 후 예약 지출을 등록해 주세요.'
+      )
       return
     }
     
@@ -725,6 +739,11 @@ export default function ReservationExpenseManager({
   const titleText = titleProp ?? t('expenseManagement')
   return (
     <div className="space-y-2 sm:space-y-3">
+      {!isPersisted && (
+        <p className="text-[11px] sm:text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+          {persistHint || '예약을 저장한 후에 예약 지출을 등록할 수 있습니다.'}
+        </p>
+      )}
       {/* 헤더: 제목 왼쪽, 총액·추가 버튼 오른쪽 끝 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -741,6 +760,8 @@ export default function ReservationExpenseManager({
           </div>
           <button
             type="button"
+            disabled={!isPersisted}
+            title={!isPersisted ? persistHint || '예약 저장 후 이용' : undefined}
             onClick={() => {
               setShowAddForm(true)
               setEditingExpense(null)
@@ -757,7 +778,7 @@ export default function ReservationExpenseManager({
                 uploaded_files: []
               })
             }}
-            className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:bg-blue-600"
           >
             <Plus size={12} />
             <span>{t('addExpense')}</span>
