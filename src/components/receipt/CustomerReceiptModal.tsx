@@ -26,6 +26,8 @@ type ReceiptData = {
   reservationOptions: Array<{ option_id: string; ea: number; price: number; total_price: number; option_name: string }>
   pricing: {
     adult_product_price: number
+    child_product_price: number
+    infant_product_price: number
     product_price_total: number
     subtotal: number
     total_price: number
@@ -37,15 +39,22 @@ type ReceiptData = {
     coupon_discount: number
     additional_discount: number
     option_total: number
+    /** reservation_pricing.required_option_total */
+    required_option_total: number
     choices_total: number
+    /** reservation_pricing.private_tour_additional_cost */
+    private_tour_additional_cost: number
     additional_cost: number
     tax: number
     card_fee: number
     prepayment_cost: number
     prepayment_tip: number
     currency?: string | null
+    /** reservation_pricing.pricing_adults (selling headcount for unit/qty). */
+    pricing_adults?: number | null
   }
 }
+
 
 const labels = {
   ko: {
@@ -79,8 +88,11 @@ const labels = {
     cardFee: '카드 수수료',
     prepaymentCost: '선결제 지출',
     prepaymentTip: '선결제 팁',
+    requiredOptions: '필수 옵션',
+    privateTourAdditional: '단독투어 추가 비용',
     productTotal: '상품 합계',
     notIncludedPrice: '불포함 가격',
+    notIncludedEntrance: '불포함 가격 (입장료)',
     grandTotal: '총 결제 금액',
     tipSuggest: '팁 안내',
     tipSectionTitle: '팁 안내',
@@ -137,8 +149,11 @@ const labels = {
     cardFee: 'Card fee',
     prepaymentCost: 'Prepayment',
     prepaymentTip: 'Prepayment tip',
+    requiredOptions: 'Required options',
+    privateTourAdditional: 'Private tour surcharge',
     productTotal: 'Product Total',
     notIncludedPrice: 'Not included price',
+    notIncludedEntrance: 'Not Included Price (Entrance fee)',
     grandTotal: 'Grand Total',
     tipSuggest: 'Tip guide',
     tipSectionTitle: 'Suggested Tips',
@@ -195,8 +210,11 @@ const labels = {
     cardFee: 'カード手数料',
     prepaymentCost: '前払い費用',
     prepaymentTip: '前払いチップ',
+    requiredOptions: '必須オプション',
+    privateTourAdditional: '貸切追加料金',
     productTotal: '商品合計',
     notIncludedPrice: '料金に含まれない項目',
+    notIncludedEntrance: '含まれない料金（入場料）',
     grandTotal: 'ご請求合計',
     tipSuggest: 'チップのご案内',
     tipSectionTitle: 'チップのご案内',
@@ -280,29 +298,126 @@ function formatMoney(amount: number, currency: string): string {
  * choices_total 은 더하지 않음 — 초이스 판매액이 불포함·상품가 등과 이중 계산될 수 있음(폼 주석과 동일).
  * 옵션 합계를 넘기면 pricing.option_total 대신 사용(영수증 표시 행과 일치).
  */
-function getCustomerTotalPayment(
+function billingPartyCount(reservation: ReceiptData['reservation'], pricingAdults: number | null | undefined): number {
+  const paRaw = pricingAdults
+  const pa =
+    paRaw != null && paRaw !== '' && Number.isFinite(Number(paRaw))
+      ? Math.max(0, Math.floor(Number(paRaw)))
+      : (reservation.adults ?? 0)
+  return Math.max(1, pa + (reservation.child ?? 0) + (reservation.infant ?? 0))
+}
+
+function notIncludedTotalFromPricing(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
+  return toNum(pricing.not_included_price) * billingPartyCount(reservation, pricing.pricing_adults)
+}
+
+/** Admin line formula: required_option_total + option_total */
+function optionsTotalFromPricing(p: ReceiptData['pricing']): number {
+  return toNum(p.option_total) + toNum(p.required_option_total)
+}
+
+function pricingExtraFees(p: ReceiptData['pricing']): number {
+  return (
+    toNum(p.additional_cost) +
+    toNum(p.tax) +
+    toNum(p.card_fee) +
+    toNum(p.prepayment_cost) +
+    toNum(p.prepayment_tip) +
+    toNum(p.private_tour_additional_cost)
+  )
+}
+
+/** If not_included is missing/zero, infer from total_price minus options, extra fees, and post-discount selling. */
+function effectiveNotIncludedTotal(
   pricing: ReceiptData['pricing'],
-  totalPeople: number,
-  optionsTotal?: number
+  reservation: ReceiptData['reservation'],
+  sellingBeforeDiscount: number
 ): number {
+  const fromDb = notIncludedTotalFromPricing(pricing, reservation)
+  if (fromDb > 0.009) return fromDb
+  const total = toNum(pricing.total_price)
+  if (total <= 0.009) return 0
+  const opt = optionsTotalFromPricing(pricing)
+  const extra = pricingExtraFees(pricing)
+  const c1 = discountAmount(pricing.coupon_discount)
+  const c2 = discountAmount(pricing.additional_discount)
+  const discountedSelling = Math.max(0, sellingBeforeDiscount - c1 - c2)
+  return Math.max(0, total - opt - extra - discountedSelling)
+}
+
+function productSellingAmount(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
+  const adults = reservation.adults ?? 0
+  const child = reservation.child ?? 0
+  const infant = reservation.infant ?? 0
+  const tierSum =
+    toNum(pricing.adult_product_price) * adults +
+    toNum(pricing.child_product_price) * child +
+    toNum(pricing.infant_product_price) * infant
+  if (tierSum > 0.009) return tierSum
+
+  const notInc = notIncludedTotalFromPricing(pricing, reservation)
+  const ppt = toNum(pricing.product_price_total)
+  if (ppt > 0 && notInc > 0.009) return Math.max(0, ppt - notInc)
+  if (ppt > 0) return ppt
+
+  const sub = toNum(pricing.subtotal)
+  if (sub > 0 && notInc > 0.009) return Math.max(0, sub - notInc)
+  if (sub > 0) return sub
+
+  const dep = toNum(pricing.deposit_amount)
+  if (dep > 0.009) return dep
+
+  const total = toNum(pricing.total_price)
+  const opt = optionsTotalFromPricing(pricing)
+  const extra = pricingExtraFees(pricing)
+  const disc = discountAmount(pricing.coupon_discount) + discountAmount(pricing.additional_discount)
+  if (total > 0.009) {
+    const inferred = total + disc - notInc - opt - extra
+    if (inferred > 0.009) return inferred
+  }
+  return 0
+}
+
+function sellingDisplayQty(reservation: ReceiptData['reservation'], pricing: ReceiptData['pricing']): number {
+  const paRaw = pricing.pricing_adults
+  if (paRaw != null && paRaw !== '' && Number.isFinite(Number(paRaw))) {
+    const pa = Math.max(0, Math.floor(Number(paRaw)))
+    if (pa > 0) return pa
+  }
+  const ad = reservation.adults ?? 0
+  if (ad > 0) return ad
+  return Math.max(1, reservation.total_people ?? 1)
+}
+
+function sellingUnitPriceForDisplay(
+  pricing: ReceiptData['pricing'],
+  reservation: ReceiptData['reservation'],
+  sellingAmount: number
+): number {
+  const ap = toNum(pricing.adult_product_price)
+  if (ap > 0.009) return ap
+  const qty = sellingDisplayQty(reservation, pricing)
+  if (sellingAmount > 0.009 && qty > 0) return sellingAmount / qty
+  return 0
+}
+
+function getCustomerTotalPaymentFromDbPricing(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
   const couponMag = discountAmount(pricing.coupon_discount)
   const addMag = discountAmount(pricing.additional_discount)
-  const people = Math.max(1, totalPeople)
-  const ppt = toNum(pricing.product_price_total)
-  const productBase = ppt > 0 ? ppt : toNum(pricing.adult_product_price) * people
-  const discounted = productBase - couponMag - addMag
-  const notIncluded = (pricing.not_included_price ?? 0) * totalPeople
-  const optionSum = optionsTotal !== undefined ? optionsTotal : (pricing.option_total ?? 0)
-  return (
-    discounted +
-    optionSum +
-    notIncluded +
-    (pricing.additional_cost ?? 0) +
-    (pricing.tax ?? 0) +
-    (pricing.card_fee ?? 0) +
-    (pricing.prepayment_cost ?? 0) +
-    (pricing.prepayment_tip ?? 0)
-  )
+  const selling = productSellingAmount(pricing, reservation)
+  const notIncludedTotal = effectiveNotIncludedTotal(pricing, reservation, selling)
+  const discountedProduct = Math.max(0, selling - couponMag - addMag)
+  return discountedProduct + notIncludedTotal + optionsTotalFromPricing(pricing) + pricingExtraFees(pricing)
+}
+
+function resolveCustomerTotalPayment(d: ReceiptData): number {
+  const computed = getCustomerTotalPaymentFromDbPricing(d.pricing, d.reservation)
+  const stored = toNum(d.pricing.total_price)
+  if (computed > 0.009 && stored > 0.009) {
+    return Math.round(Math.max(stored, computed) * 100) / 100
+  }
+  if (stored > 0.009) return Math.round(stored * 100) / 100
+  return Math.round(computed * 100) / 100
 }
 
 interface CustomerReceiptModalProps {
@@ -362,14 +477,9 @@ export default function CustomerReceiptModal({
           const productId = (rez as any).product_id
           const pickupHotelId = (rez as any).pickup_hotel
           const channelId = (rez as any).channel_id
-          const [{ data: customer }, { data: product }, { data: pricing }, { data: pickupHotel }, { data: channel }] = await Promise.all([
+          const [{ data: customer }, { data: product }, { data: pickupHotel }, { data: channel }] = await Promise.all([
             supabase.from('customers').select('name, language, email, phone').eq('id', customerId).single(),
             supabase.from('products').select('name_ko, name_en, customer_name_ko, customer_name_en').eq('id', productId).single(),
-            supabase
-              .from('reservation_pricing')
-              .select('adult_product_price, product_price_total, subtotal, total_price, not_included_price, balance_amount, deposit_amount, coupon_discount, additional_discount, option_total, choices_total, additional_cost, tax, card_fee, prepayment_cost, prepayment_tip')
-              .eq('reservation_id', id)
-              .maybeSingle(),
             pickupHotelId
               ? supabase.from('pickup_hotels').select('hotel').eq('id', pickupHotelId).single()
               : Promise.resolve({ data: null }),
@@ -377,6 +487,31 @@ export default function CustomerReceiptModal({
               ? supabase.from('channels').select('name').eq('id', channelId).single()
               : Promise.resolve({ data: null }),
           ])
+          let pricingRow: Record<string, unknown> | null = null
+          const pr = await supabase.from('reservation_pricing').select('*').eq('reservation_id', id).maybeSingle()
+          if (pr.error) {
+            console.warn('[CustomerReceiptModal] reservation_pricing:', pr.error.message, pr.error)
+          } else {
+            pricingRow = (pr.data as Record<string, unknown>) ?? null
+          }
+          if (!pricingRow) {
+            const { data: sessionData } = await supabase.auth.getSession()
+            const token = sessionData?.session?.access_token
+            if (token) {
+              try {
+                const res = await fetch(
+                  `/api/reservation-pricing?reservation_id=${encodeURIComponent(id)}`,
+                  { headers: { Authorization: `Bearer ${token}` } }
+                )
+                if (res.ok) {
+                  const j = (await res.json()) as { pricing?: Record<string, unknown> | null }
+                  pricingRow = j.pricing ?? null
+                }
+              } catch (e) {
+                console.warn('[CustomerReceiptModal] /api/reservation-pricing:', e)
+              }
+            }
+          }
           const pickupHotelName = pickupHotel?.hotel || ''
           const channelName = (channel as any)?.name || ''
           // 실제 입금액 = payment_records에서 보증금 수령 + 잔금 수령 합계
@@ -479,24 +614,32 @@ export default function CustomerReceiptModal({
             channelName,
             reservationOptions,
             pricing: {
-              adult_product_price: toNum((pricing as any)?.adult_product_price),
-              product_price_total: toNum(pricing?.product_price_total),
-              subtotal: toNum(pricing?.subtotal),
-              total_price: toNum(pricing?.total_price),
-              not_included_price: toNum(pricing?.not_included_price),
-              balance_amount: toNum(pricing?.balance_amount),
-              deposit_amount: toNum(pricing?.deposit_amount),
+              adult_product_price: toNum((pricingRow as any)?.adult_product_price),
+              child_product_price: toNum((pricingRow as any)?.child_product_price),
+              infant_product_price: toNum((pricingRow as any)?.infant_product_price),
+              product_price_total: toNum(pricingRow?.product_price_total),
+              subtotal: toNum(pricingRow?.subtotal),
+              total_price: toNum(pricingRow?.total_price),
+              not_included_price: toNum(pricingRow?.not_included_price),
+              balance_amount: toNum(pricingRow?.balance_amount),
+              deposit_amount: toNum(pricingRow?.deposit_amount),
               paid_amount_from_records: paidAmountFromRecords,
-              coupon_discount: discountAmount((pricing as any)?.coupon_discount),
-              additional_discount: discountAmount((pricing as any)?.additional_discount),
-              option_total: toNum((pricing as any)?.option_total),
-              choices_total: toNum((pricing as any)?.choices_total),
-              additional_cost: toNum((pricing as any)?.additional_cost),
-              tax: toNum((pricing as any)?.tax),
-              card_fee: toNum((pricing as any)?.card_fee),
-              prepayment_cost: toNum((pricing as any)?.prepayment_cost),
-              prepayment_tip: toNum((pricing as any)?.prepayment_tip),
-              currency: (pricing as any)?.currency || 'USD',
+              coupon_discount: discountAmount((pricingRow as any)?.coupon_discount),
+              additional_discount: discountAmount((pricingRow as any)?.additional_discount),
+              option_total: toNum((pricingRow as any)?.option_total),
+              required_option_total: toNum((pricingRow as any)?.required_option_total),
+              choices_total: toNum((pricingRow as any)?.choices_total),
+              private_tour_additional_cost: toNum((pricingRow as any)?.private_tour_additional_cost),
+              additional_cost: toNum((pricingRow as any)?.additional_cost),
+              tax: toNum((pricingRow as any)?.tax),
+              card_fee: toNum((pricingRow as any)?.card_fee),
+              prepayment_cost: toNum((pricingRow as any)?.prepayment_cost),
+              prepayment_tip: toNum((pricingRow as any)?.prepayment_tip),
+              currency: (pricingRow as any)?.currency || 'USD',
+              pricing_adults:
+                (pricingRow as any)?.pricing_adults != null && (pricingRow as any)?.pricing_adults !== ''
+                  ? Math.max(0, Math.floor(Number((pricingRow as any).pricing_adults)))
+                  : null,
             },
           })
         }
@@ -642,7 +785,7 @@ export default function CustomerReceiptModal({
   const headerLabel = modalLabels
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
       {/* Letter(216mm) 수용을 위해 모달 폭 확보, 가로 스크롤 없음 */}
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[min(95vw,216mm)] max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-6 border-b flex-shrink-0">
@@ -705,19 +848,48 @@ export default function CustomerReceiptModal({
                 const productName = isEn || isJa
                   ? (d.product.customer_name_en || d.product.name_en || d.product.customer_name_ko || d.product.name_ko || '')
                   : (d.product.customer_name_ko || d.product.name_ko || d.product.customer_name_en || d.product.name_en || '')
-                const optionsTotal = (d.reservationOptions || []).reduce((s, o) => s + o.total_price, 0)
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
-                const notIncludedPerPerson = d.pricing.not_included_price ?? 0
-                const notIncludedTotal = notIncludedPerPerson * totalPeople
-                // 할인은 reservation_pricing.product_price_total 기준(예약 폼과 동일). 성인단가×인원과 다를 수 있음(아동/유아 등)
-                const ppt = toNum(d.pricing.product_price_total)
-                const adultLine = toNum(d.pricing.adult_product_price) * totalPeople
-                const productRowAmount = ppt > 0 ? ppt : adultLine
-                const productUnitPrice = totalPeople > 0 ? productRowAmount / totalPeople : 0
-                const productRowTotal = productRowAmount + notIncludedTotal
+                const notIncludedQty = billingPartyCount(d.reservation, d.pricing.pricing_adults)
+                const productRowAmount = productSellingAmount(d.pricing, d.reservation)
+                const notIncludedTotalEffective = effectiveNotIncludedTotal(d.pricing, d.reservation, productRowAmount)
+                const dbNiPer = toNum(d.pricing.not_included_price)
+                const notIncludedPerPersonDisplay =
+                  notIncludedQty > 0 && notIncludedTotalEffective > 0.009
+                    ? dbNiPer > 0.009
+                      ? dbNiPer
+                      : notIncludedTotalEffective / notIncludedQty
+                    : 0
+                const productLineQty = sellingDisplayQty(d.reservation, d.pricing)
+                const productUnitPrice = sellingUnitPriceForDisplay(d.pricing, d.reservation, productRowAmount)
                 const couponMag = discountAmount(d.pricing.coupon_discount)
                 const addMag = discountAmount(d.pricing.additional_discount)
-                const customerTotalPayment = getCustomerTotalPayment(d.pricing, totalPeople, optionsTotal)
+                const productTotalBeforeOptions = productRowAmount - couponMag - addMag + notIncludedTotalEffective
+                const dbOptionsCombined = optionsTotalFromPricing(d.pricing)
+                const opts = d.reservationOptions || []
+                const rawOptsSum = opts.reduce((s, o) => s + toNum(o.total_price), 0)
+                const displayOptions =
+                  rawOptsSum > 0.009 && dbOptionsCombined > 0.009 && Math.abs(rawOptsSum - dbOptionsCombined) > 0.009
+                    ? opts.map((o) => {
+                        const scale = dbOptionsCombined / rawOptsSum
+                        return {
+                          ...o,
+                          price: toNum(o.price) * scale,
+                          total_price: toNum(o.total_price) * scale,
+                        }
+                      })
+                    : rawOptsSum <= 0.009 && dbOptionsCombined > 0.009
+                      ? [
+                          {
+                            option_id: '_option_total',
+                            ea: 1,
+                            price: dbOptionsCombined,
+                            total_price: dbOptionsCombined,
+                            option_name: isJa ? 'オプション' : isEn ? 'Options' : '\uC635\uC158',
+                          },
+                        ]
+                      : opts
+                const privateTourCost = toNum(d.pricing.private_tour_additional_cost)
+                const customerTotalPayment = resolveCustomerTotalPayment(d)
                 const paidAmountToShow = d.pricing.paid_amount_from_records ?? d.pricing.deposit_amount ?? 0
                 const balanceAmount = customerTotalPayment - paidAmountToShow
                 const tip10PerPerson = (customerTotalPayment * 0.10) / totalPeople
@@ -793,20 +965,9 @@ export default function CustomerReceiptModal({
                             <td className="px-1.5 py-1 text-gray-900 whitespace-nowrap min-w-[6rem] w-[6rem]">{d.reservation.tour_date}</td>
                             <td className="px-1.5 py-1 text-gray-900 break-words">{productName}</td>
                             <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(productUnitPrice, cur)}</td>
-                            <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{d.reservation.total_people}</td>
+                            <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{productLineQty}</td>
                             <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(productRowAmount, cur)}</td>
                           </tr>
-                          {/* 불포함 가격 (있을 때만 별도 행 표시) */}
-                          {notIncludedTotal > 0 && (
-                            <tr className="border-b border-gray-100">
-                              <td className="px-1.5 py-1" />
-                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.notIncludedPrice}</td>
-                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedPerPerson, cur)}</td>
-                              <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{d.reservation.total_people}</td>
-                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedTotal, cur)}</td>
-                            </tr>
-                          )}
-                          {/* 할인 (상품 바로 아래) */}
                           {(couponMag + addMag) > 0 && (
                             <tr className="border-b border-gray-100 bg-red-50/30">
                               <td className="px-1.5 py-1" />
@@ -816,17 +977,26 @@ export default function CustomerReceiptModal({
                               </td>
                             </tr>
                           )}
-                          {/* Product Total (상품+불포함 기준 합계 - 할인) */}
+                          {notIncludedTotalEffective > 0.009 && (
+                            <tr className="border-b border-gray-100">
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.notIncludedEntrance}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedPerPersonDisplay, cur)}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{notIncludedQty}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedTotalEffective, cur)}</td>
+                            </tr>
+                          )}
+                          {/* Product Total (selling - discount + entrance fee) */}
                           <tr className="border-b border-gray-100 bg-gray-50/50">
                             <td className="px-1.5 py-1" />
                             <td className="px-1.5 py-1 font-medium text-gray-900">{L.productTotal}</td>
                             <td className="px-1.5 py-1 text-right font-medium text-gray-900 whitespace-nowrap" colSpan={3}>
-                              {formatMoney(productRowTotal - couponMag - addMag, cur)}
+                              {formatMoney(productTotalBeforeOptions, cur)}
                             </td>
                           </tr>
                           {/* 옵션 */}
-                          {(d.reservationOptions || []).map((opt, idx) => (
-                            <tr key={idx} className="border-b border-gray-100">
+                          {displayOptions.map((opt, idx) => (
+                            <tr key={`${opt.option_id}-${idx}`} className="border-b border-gray-100">
                               <td className="px-1.5 py-1 text-gray-900 whitespace-nowrap min-w-[6rem] w-[6rem]">{d.reservation.tour_date}</td>
                               <td className="px-1.5 py-1 text-gray-900 break-words"><span className="text-gray-500">└ </span>{opt.option_name}</td>
                               <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(opt.price, cur)}</td>
@@ -877,6 +1047,15 @@ export default function CustomerReceiptModal({
                               <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.prepaymentTip}</td>
                               <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap" colSpan={3}>
                                 {formatMoney(d.pricing.prepayment_tip, cur)}
+                              </td>
+                            </tr>
+                          )}
+                          {privateTourCost > 0.009 && (
+                            <tr className="border-b border-gray-100">
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.privateTourAdditional}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap" colSpan={3}>
+                                {formatMoney(privateTourCost, cur)}
                               </td>
                             </tr>
                           )}

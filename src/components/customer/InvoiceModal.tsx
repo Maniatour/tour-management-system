@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye, FileText, Search, ChevronDown, Download } from 'lucide-react'
+import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye, FileText, Search, ChevronDown, Download, Loader2 } from 'lucide-react'
 import html2pdf from 'html2pdf.js'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -252,6 +252,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   const [dueDate, setDueDate] = useState(getDueDateFromIssueDate(initialIssueDate))
   const [notes, setNotes] = useState('')
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null)
+  const [loadingInvoice, setLoadingInvoice] = useState(false)
   const [allProductOptions, setAllProductOptions] = useState<ProductOption[]>([])
   const [defaultChannelId, setDefaultChannelId] = useState<string>('')
   const [applyTax, setApplyTax] = useState(false)
@@ -1124,7 +1125,14 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     })
   }
 
-  // 인보이스 HTML 생성
+  const escapeInvoiceHtml = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+
+  // 인보이스 HTML 생성 (미리보기·PDF 공통 — 스타일은 <body> 내부에 두어 PDF 캡처 시 유지)
   const generateInvoiceHTML = () => {
     const invoiceCustomerName = locale === 'ko' ? `${customer.name}님` : customer.name
     const emailForInvoice =
@@ -1145,26 +1153,94 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       <html>
       <head>
         <meta charset="UTF-8">
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          .invoice-container { display: flex; justify-content: space-between; margin-bottom: 20px; }
-          .company-info { flex: 1; }
-          .company-info h2 { margin: 0 0 10px 0; font-size: 20px; font-weight: bold; }
-          .company-info p { margin: 4px 0; font-size: 12px; line-height: 1.4; }
-          .invoice-header { flex: 1; text-align: right; }
-          .invoice-info { margin-bottom: 0; }
-          .invoice-info p { margin: 6px 0; text-align: right; }
-          .invoice-title { text-align: center; font-size: 32px; font-weight: bold; margin: 20px 0; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-          th { background-color: #f5f5f5; font-weight: bold; }
-          .text-right { text-align: right; }
-          .total-row { font-weight: bold; background-color: #f0f0f0; }
-          .invoice-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 13px; color: #4b5563; letter-spacing: 0.02em; }
-        </style>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
       </head>
       <body>
-        <div class="invoice-container">
+        <style>
+          html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            padding: 24px;
+            background: #ffffff;
+            color: #111827;
+            font-size: 13px;
+            line-height: 1.45;
+          }
+          .invoice-top {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+            margin-bottom: 20px;
+            border-collapse: separate;
+            border-spacing: 0 0;
+          }
+          .invoice-top .company-info,
+          .invoice-top .invoice-meta {
+            display: table-cell;
+            vertical-align: top;
+          }
+          .invoice-top .company-info { width: 52%; padding-right: 16px; }
+          .invoice-top .invoice-meta { width: 48%; text-align: right; }
+          .company-info h2 { margin: 0 0 10px 0; font-size: 20px; font-weight: 700; letter-spacing: 0.02em; }
+          .company-info p { margin: 4px 0; font-size: 12px; color: #374151; }
+          .invoice-meta .invoice-info p { margin: 6px 0; font-size: 12px; color: #111827; }
+          .invoice-title {
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+            margin: 8px 0 20px;
+            letter-spacing: 0.04em;
+            color: #111827;
+          }
+          table.invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            table-layout: fixed;
+          }
+          table.invoice-table th,
+          table.invoice-table td {
+            border: 1px solid #d1d5db;
+            padding: 10px 12px;
+            text-align: left;
+            vertical-align: top;
+            word-wrap: break-word;
+          }
+          table.invoice-table thead th {
+            background-color: #f3f4f6;
+            font-weight: 600;
+            font-size: 12px;
+            color: #374151;
+          }
+          table.invoice-table .text-right { text-align: right; }
+          table.invoice-table tbody tr:nth-child(even) td { background-color: #fafafa; }
+          table.invoice-table tr.total-row td {
+            font-weight: 700;
+            background-color: #f3f4f6 !important;
+          }
+          .item-desc { font-size: 13px; color: #111827; }
+          .choice-meta {
+            margin-top: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: #64748b;
+            padding: 8px 10px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+          }
+          .row-surcharge td.item-cell { border-left: 3px solid #f59e0b; padding-left: 24px; }
+          .invoice-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 13px;
+            color: #4b5563;
+          }
+        </style>
+        <div class="invoice-top">
           <div class="company-info">
             <h2>LAS VEGAS MANIA TOUR</h2>
             <p>3351 South Highland Drive</p>
@@ -1173,37 +1249,37 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             <p>info@maniatour.com</p>
             <p>+1 702-929-8025 / +1 702-444-5531</p>
           </div>
-          <div class="invoice-header">
+          <div class="invoice-meta">
             <div class="invoice-info">
-              <p><strong>${locale === 'ko' ? '인보이스 번호' : 'Invoice Number'}:</strong> ${invoiceNumber}</p>
+              <p><strong>${locale === 'ko' ? '인보이스 번호' : 'Invoice Number'}:</strong> ${escapeInvoiceHtml(String(invoiceNumber))}</p>
               <p><strong>${locale === 'ko' ? '작성일' : 'Issue Date'}:</strong> ${new Date(invoiceDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</p>
               ${dueDate ? `<p><strong>${locale === 'ko' ? '만기일' : 'Due Date'}:</strong> ${new Date(dueDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</p>` : ''}
-              <p><strong>${locale === 'ko' ? '고객' : 'Customer'}:</strong> ${invoiceCustomerName}</p>
-              <p><strong>${locale === 'ko' ? '이메일' : 'Email'}:</strong> ${emailForInvoice}</p>
-              <p><strong>${locale === 'ko' ? '연락처' : 'Phone'}:</strong> ${phoneForInvoice}</p>
+              <p><strong>${locale === 'ko' ? '고객' : 'Customer'}:</strong> ${escapeInvoiceHtml(invoiceCustomerName)}</p>
+              <p><strong>${locale === 'ko' ? '이메일' : 'Email'}:</strong> ${escapeInvoiceHtml(emailForInvoice)}</p>
+              <p><strong>${locale === 'ko' ? '연락처' : 'Phone'}:</strong> ${escapeInvoiceHtml(phoneForInvoice)}</p>
             </div>
           </div>
         </div>
         <h1 class="invoice-title">${locale === 'ko' ? '인보이스' : 'Invoice'}</h1>
-        <table>
+        <table class="invoice-table">
           <thead>
             <tr>
-              <th>${locale === 'ko' ? '날짜' : 'Date'}</th>
-              <th>${locale === 'ko' ? '항목' : 'Item'}</th>
-              <th class="text-right">${locale === 'ko' ? '수량' : 'Quantity'}</th>
-              <th class="text-right">${locale === 'ko' ? '단가' : 'Unit Price'}</th>
-              <th class="text-right">${locale === 'ko' ? '합계' : 'Total'}</th>
+              <th style="width:14%">${locale === 'ko' ? '날짜' : 'Date'}</th>
+              <th style="width:36%">${locale === 'ko' ? '항목' : 'Item'}</th>
+              <th class="text-right" style="width:10%">${locale === 'ko' ? '수량' : 'Quantity'}</th>
+              <th class="text-right" style="width:18%">${locale === 'ko' ? '단가' : 'Unit Price'}</th>
+              <th class="text-right" style="width:22%">${locale === 'ko' ? '합계' : 'Total'}</th>
             </tr>
           </thead>
           <tbody>
             ${invoiceItems.map(item => {
               const isSurcharge = !!item.parentItemId
               return `
-              <tr>
+              <tr class="${isSurcharge ? 'row-surcharge' : ''}">
                 <td>${isSurcharge ? '' : new Date(item.date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</td>
-                <td style="${isSurcharge ? 'padding-left: 28px; border-left: 2px solid #fbbf24;' : ''}">
-                  <div>${item.description || ''}</div>
-                  ${item.choiceInfo ? `<div style="margin-top: 4px;"><span style="font-size: 11px; background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px;">${item.choiceInfo}</span></div>` : ''}
+                <td class="item-cell">
+                  <div class="item-desc">${escapeInvoiceHtml(item.description || '')}</div>
+                  ${item.choiceInfo ? `<div class="choice-meta">${escapeInvoiceHtml(item.choiceInfo)}</div>` : ''}
                 </td>
                 <td class="text-right">${item.quantity}</td>
                 <td class="text-right">${formatUSD(item.unitPrice)}</td>
@@ -1226,7 +1302,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             ${applyDiscount && computedDiscountAmount > 0 ? `
             <tr>
               <td colspan="3"></td>
-              <td class="text-right">${locale === 'ko' ? '할인' : 'Discount'}${discountPercent > 0 ? ` (${discountPercent}%)` : ''}${discountReason ? ` - ${discountReason}` : ''}:</td>
+              <td class="text-right">${locale === 'ko' ? '할인' : 'Discount'}${discountPercent > 0 ? ` (${discountPercent}%)` : ''}${discountReason ? ` - ${escapeInvoiceHtml(discountReason)}` : ''}:</td>
               <td class="text-right" style="color: #dc2626;">-${formatUSD(computedDiscountAmount)}</td>
             </tr>
             ` : ''}
@@ -1254,7 +1330,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             ` : ''}
           </tbody>
         </table>
-        ${notes ? `<div style="margin-top: 20px;"><strong>${locale === 'ko' ? '메모' : 'Notes'}:</strong> ${notes}</div>` : ''}
+        ${notes ? `<div style="margin-top: 20px; padding: 12px 14px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;"><strong>${locale === 'ko' ? '메모' : 'Notes'}:</strong> ${escapeInvoiceHtml(notes)}</div>` : ''}
         <div class="invoice-footer">
           ${locale === 'ko' ? '라스베가스 매니아 투어를 선택해 주셔서 감사합니다.' : 'Thanks for choosing Las Vegas Mania Tour'}
         </div>
@@ -1264,30 +1340,72 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   }
 
   const handleDownloadInvoicePdf = async () => {
-    const getBody = () => previewIframeRef.current?.contentDocument?.body ?? null
-    let body = getBody()
-    if (!body) {
-      await new Promise(r => setTimeout(r, 100))
-      body = getBody()
+    /** html2canvas는 화면 밖(left:-9999px 등) 노드를 빈 이미지로 캡처하는 경우가 많아, 실제로 페인트된 미리보기 iframe을 우선 사용 */
+    const getPreviewBody = () => previewIframeRef.current?.contentDocument?.body ?? null
+
+    let bodyEl = getPreviewBody()
+    if (!bodyEl) {
+      await new Promise(r => setTimeout(r, 120))
+      bodyEl = getPreviewBody()
     }
-    if (!body) {
-      alert(locale === 'ko' ? '미리보기를 불러올 수 없습니다.' : 'Preview is not ready.')
-      return
+
+    let exportIframe: HTMLIFrameElement | null = null
+    if (!bodyEl) {
+      exportIframe = document.createElement('iframe')
+      exportIframe.setAttribute('title', 'invoice-pdf-export')
+      exportIframe.style.cssText = [
+        'position:fixed',
+        'left:0',
+        'top:0',
+        'width:794px',
+        'min-height:1200px',
+        'border:0',
+        'opacity:0.02',
+        'pointer-events:none',
+        'z-index:2147483646',
+      ].join(';')
+      document.body.appendChild(exportIframe)
+      const idoc = exportIframe.contentDocument!
+      idoc.open()
+      idoc.write(generateInvoiceHTML())
+      idoc.close()
+      await new Promise(r => setTimeout(r, 150))
+      bodyEl = idoc.body
     }
+
     setPdfDownloading(true)
     try {
+      await document.fonts.ready.catch(() => undefined)
+      await new Promise<void>(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
       const safeName =
         (invoiceNumber || 'invoice').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_').slice(0, 80) || 'invoice'
       const opt = {
-        margin: [10, 10, 10, 10],
+        margin: [8, 8, 8, 8],
         filename: `${safeName}.pdf`,
-        image: { type: 'jpeg' as const, quality: 0.95 },
+        image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: {
           scale: 2,
           useCORS: true,
           logging: false,
           letterRendering: true,
           allowTaint: false,
+          backgroundColor: '#ffffff',
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 794,
+          onclone: (clonedDoc: Document) => {
+            const b = clonedDoc.body
+            if (!b) return
+            b.style.opacity = '1'
+            b.style.visibility = 'visible'
+            b.style.position = 'relative'
+            b.style.left = '0'
+            b.style.top = '0'
+            b.style.width = '794px'
+            b.style.background = '#ffffff'
+          },
         },
         jsPDF: {
           unit: 'mm' as const,
@@ -1297,11 +1415,12 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         },
         pagebreak: { mode: 'avoid-all' as const },
       }
-      await html2pdf().set(opt).from(body).save()
+      await html2pdf().set(opt).from(bodyEl).save()
     } catch (error) {
       console.error('인보이스 PDF 저장 오류:', error)
       alert(locale === 'ko' ? 'PDF 저장에 실패했습니다.' : 'Failed to save PDF.')
     } finally {
+      exportIframe?.remove()
       setPdfDownloading(false)
     }
   }
@@ -1471,7 +1590,19 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+        {loadingInvoice && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-white/70"
+            aria-busy="true"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2 text-gray-700">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+              <span>{locale === 'ko' ? '인보이스 불러오는 중…' : 'Loading invoice…'}</span>
+            </div>
+          </div>
+        )}
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center space-x-4">
