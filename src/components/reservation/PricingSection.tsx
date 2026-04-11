@@ -1096,6 +1096,9 @@ export default function PricingSection({
     selectedChannel.type?.toLowerCase() === 'ota' || 
     selectedChannel.category === 'OTA'
   )
+  const selectedProductForPricing = products?.find((p) => p.id === formData.productId)
+  const isScenicProduct =
+    String(selectedProductForPricing?.sub_category ?? '').trim() === 'Scenic'
   // Homepage 채널 (채널 type이 ota가 아닐 때 쿠폰 선택에 함께 사용). id M00001 또는 이름에 Homepage/홈페이지 포함
   const homepageChannel = Array.isArray(channels) ? channels.find(ch =>
     ch.id === 'M00001' ||
@@ -1278,7 +1281,7 @@ export default function PricingSection({
       : (Number(formData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(formData.productPriceTotal) || 0) + notIncludedTotal
 
-    return computeChannelSettlementAmount({
+    const baseSettled = computeChannelSettlementAmount({
       depositAmount: Number(formData.depositAmount) || 0,
       onlinePaymentAmount: Number(formData.onlinePaymentAmount) || channelPaymentGrossDb,
       productPriceTotal: productTotalForSettlement,
@@ -1296,6 +1299,11 @@ export default function PricingSection({
       reservationStatus: formData.status ?? null,
       isOTAChannel: !!isOTAChannel,
     })
+    if (isScenicProduct && !isOTAChannel) {
+      const fee = Number(formData.commission_amount) || 0
+      return Math.max(0, roundUsd2(channelPaymentAmountAfterReturn - fee))
+    }
+    return baseSettled
   }, [
     formData.channelSettlementAmount,
     formData.depositAmount,
@@ -1322,6 +1330,8 @@ export default function PricingSection({
     formData.status,
     isOTAChannel,
     isReservationCancelled,
+    isScenicProduct,
+    channelPaymentAmountAfterReturn,
   ])
 
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
@@ -2037,6 +2047,7 @@ export default function PricingSection({
   // commission_base_price / commission_amount 자동 업데이트 (값이 실제로 다를 때만 set, 무한 루프 방지)
   useEffect(() => {
     if (isOTAChannel) return
+    if (isScenicProduct) return
     // DB에 commission이 있으면 계산하지 말고 그 값 유지
     if (hasDbCommissionRef.current || isExistingPricingLoaded) return
     if (isCardFeeManuallyEdited.current) return
@@ -2070,6 +2081,7 @@ export default function PricingSection({
     formData.additionalDiscount,
     isExistingPricingLoaded,
     isOTAChannel,
+    isScenicProduct,
     returnedAmount,
     setFormData
   ])
@@ -2094,6 +2106,7 @@ export default function PricingSection({
   useEffect(() => {
     if (isReservationCancelled) return
     if (isOTAChannel) return // OTA 채널은 제외
+    if (isScenicProduct) return
     if (isCardFeeManuallyEdited.current) return // 사용자가 수동으로 입력한 경우 자동 업데이트 안 함
     if (hasDbCommissionRef.current || isExistingPricingLoaded) return // DB에 값이 있으면 덮어쓰지 않음
     
@@ -2137,6 +2150,7 @@ export default function PricingSection({
     }
   }, [
     isOTAChannel,
+    isScenicProduct,
     formData.productPriceTotal,
     formData.couponDiscount,
     formData.additionalCost,
@@ -3424,49 +3438,55 @@ export default function PricingSection({
                 </div>
               ) : (
                 <>
-                  {/* 자체 채널: 카드 수수료 % */}
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-medium text-gray-700">
-                      {isKorean ? '카드 수수료 %' : 'Card Processing Fee %'}
-                    </span>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-500">x</span>
-                      <div className="flex items-center space-x-1">
-                        <input
-                          type="number"
-                          value={formData.commission_percent || 2.9}
-                          onChange={(e) => {
-                            isCardFeeManuallyEdited.current = true
-                            const newPercent = Number(e.target.value) || 0
-                            const basePrice = formData.commission_base_price !== undefined 
-                              ? formData.commission_base_price 
-                              : (formData.depositAmount || 0)
-                            const newAmount = Number((basePrice * (newPercent / 100) + 0.15).toFixed(2))
-                            setFormData({ 
-                              ...omitChannelSettlementAmount(formData), 
-                              commission_base_price: basePrice,
-                              commission_percent: newPercent,
-                              commission_amount: newAmount,
-                            })
-                          }}
-                          className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
-                          step="0.01"
-                          min="0"
-                          max="100"
-                          placeholder="2.9"
-                        />
-                        <span className="text-xs text-gray-500">%</span>
+                  {!isScenicProduct && (
+                    <>
+                      {/* 자체 채널: 카드 수수료 % */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-medium text-gray-700">
+                          {isKorean ? '카드 수수료 %' : 'Card Processing Fee %'}
+                        </span>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-gray-500">x</span>
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="number"
+                              value={formData.commission_percent || 2.9}
+                              onChange={(e) => {
+                                isCardFeeManuallyEdited.current = true
+                                const newPercent = Number(e.target.value) || 0
+                                const basePrice = formData.commission_base_price !== undefined 
+                                  ? formData.commission_base_price 
+                                  : (formData.depositAmount || 0)
+                                const newAmount = Number((basePrice * (newPercent / 100) + 0.15).toFixed(2))
+                                setFormData({ 
+                                  ...omitChannelSettlementAmount(formData), 
+                                  commission_base_price: basePrice,
+                                  commission_percent: newPercent,
+                                  commission_amount: newAmount,
+                                })
+                              }}
+                              className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              placeholder="2.9"
+                            />
+                            <span className="text-xs text-gray-500">%</span>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
                   
-                  {/* 구분선 */}
-                  <div className="border-t border-gray-200 my-2"></div>
+                      {/* 구분선 */}
+                      <div className="border-t border-gray-200 my-2"></div>
+                    </>
+                  )}
                   
                   {/* 자체 채널: 카드 수수료 $ */}
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-medium text-gray-700">
-                      {isKorean ? '카드 수수료 $' : 'Card Processing Fee $'}
+                      {isScenicProduct
+                        ? (isKorean ? 'Scenic 수수료' : 'Scenic fee')
+                        : (isKorean ? '카드 수수료 $' : 'Card Processing Fee $')}
                     </span>
                     <div className="flex items-center space-x-2">
                       <div className="relative">
@@ -3507,7 +3527,7 @@ export default function PricingSection({
                           placeholder="0"
                         />
                       </div>
-                      {(() => {
+                      {!isScenicProduct && (() => {
                         const basePrice = formData.commission_base_price !== undefined 
                           ? formData.commission_base_price 
                           : (formData.depositAmount || 0)

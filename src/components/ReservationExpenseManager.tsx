@@ -33,11 +33,6 @@ interface ReservationExpense {
   } | null
 }
 
-interface ExpenseCategory {
-  id: string
-  name: string
-}
-
 interface ExpenseVendor {
   id: string
   name: string
@@ -63,6 +58,157 @@ interface ReservationExpenseManagerProps {
   itemVariant?: 'card' | 'line'
 }
 
+function PaymentMethodAutocomplete({
+  options,
+  valueId,
+  onChange,
+  disabled,
+  pleaseSelectLabel,
+}: {
+  options: { id: string; name: string }[]
+  valueId: string
+  onChange: (id: string) => void
+  disabled?: boolean
+  pleaseSelectLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+
+  useEffect(() => {
+    if (!valueId) {
+      if (!open) setQ('')
+      return
+    }
+    const sel = options.find((o) => o.id === valueId)
+    if (sel && !open) setQ(sel.name)
+  }, [valueId, options, open])
+
+  const filtered = options.filter((o) => o.name.toLowerCase().includes(q.trim().toLowerCase()))
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        autoComplete="off"
+        disabled={disabled}
+        placeholder={pleaseSelectLabel}
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 120)
+          const exact = options.find((o) => o.name.toLowerCase() === q.trim().toLowerCase())
+          if (exact) onChange(exact.id)
+          else onChange('')
+        }}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg">
+          {filtered.map((pm) => (
+            <li key={pm.id}>
+              <button
+                type="button"
+                className="w-full px-3 py-1.5 text-left hover:bg-gray-100"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(pm.id)
+                  setQ(pm.name)
+                  setOpen(false)
+                }}
+              >
+                {pm.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function PaidForAutocomplete({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string
+  onChange: (v: string) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const fetchSuggestions = (query: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const r = await fetch(`/api/reservation-expenses/suggestions?q=${encodeURIComponent(query)}`)
+        const d = await r.json()
+        if (d.success && Array.isArray(d.values)) setSuggestions(d.values)
+      } catch {
+        setSuggestions([])
+      } finally {
+        setLoading(false)
+      }
+    }, 200)
+  }
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+  }, [])
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        autoComplete="off"
+        disabled={disabled}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value)
+          fetchSuggestions(e.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => {
+          fetchSuggestions(value)
+          setOpen(true)
+        }}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+      />
+      {open && (loading || suggestions.length > 0) && (
+        <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg">
+          {loading && suggestions.length === 0 && (
+            <li className="px-3 py-1.5 text-gray-500">…</li>
+          )}
+          {suggestions.map((s) => (
+            <li key={s}>
+              <button
+                type="button"
+                className="w-full px-3 py-1.5 text-left hover:bg-gray-100"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(s)
+                  setOpen(false)
+                }}
+              >
+                {s}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function ReservationExpenseManager({ 
   reservationId, 
   submittedBy, 
@@ -74,7 +220,6 @@ export default function ReservationExpenseManager({
   
   const t = useTranslations('reservationExpense')
   const [expenses, setExpenses] = useState<ReservationExpense[]>([])
-  const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [paidToOptions, setPaidToOptions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
@@ -86,7 +231,6 @@ export default function ReservationExpenseManager({
   const [editingExpense, setEditingExpense] = useState<ReservationExpense | null>(null)
   const [uploading, setUploading] = useState(false)
   const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
-  const [showCustomPaidFor, setShowCustomPaidFor] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -100,20 +244,17 @@ export default function ReservationExpenseManager({
     image_url: '',
     file_path: '',
     custom_paid_to: '',
-    custom_paid_for: '',
     reservation_id: reservationId || '',
-    event_id: '',
     uploaded_files: [] as File[]
   })
 
   // 데이터 로드
   useEffect(() => {
     loadExpenses()
-    loadCategories()
     loadVendors()
     loadTeamMembers()
-    loadReservations()
     loadPaymentMethods()
+    if (!reservationId) loadReservations()
   }, [reservationId])
 
   /** Keep form reservation_id in sync when opening the reservation edit modal (prop loads after mount). */
@@ -164,20 +305,6 @@ export default function ReservationExpenseManager({
       console.error('Error loading expenses:', error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const loadCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('expense_categories')
-        .select('*')
-        .order('name')
-
-      if (error) throw error
-      setCategories(data || [])
-    } catch (error) {
-      console.error('Error loading categories:', error)
     }
   }
 
@@ -324,7 +451,7 @@ export default function ReservationExpenseManager({
         alert('Please enter a valid amount greater than zero.')
         return
       }
-      const paidForVal = (formData.custom_paid_for || formData.paid_for || '').trim()
+      const paidForVal = (formData.paid_for || '').trim()
       if (!paidForVal) {
         alert('결제 내용을 입력하세요.')
         return
@@ -355,7 +482,7 @@ export default function ReservationExpenseManager({
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
           reservation_id: resLinkReservation,
-          event_id: (formData.event_id || '').trim() || null,
+          event_id: null,
           status: 'pending',
         }),
       })
@@ -377,12 +504,9 @@ export default function ReservationExpenseManager({
         image_url: '',
         file_path: '',
         custom_paid_to: '',
-        custom_paid_for: '',
         reservation_id: reservationId || '',
-        event_id: '',
         uploaded_files: []
       })
-      setShowCustomPaidFor(false)
       setShowCustomPaidTo(false)
       onExpenseUpdated?.()
       alert('예약 지출이 등록되었습니다.')
@@ -410,14 +534,14 @@ export default function ReservationExpenseManager({
         },
         body: JSON.stringify({
           paid_to: formData.custom_paid_to || formData.paid_to,
-          paid_for: formData.custom_paid_for || formData.paid_for,
+          paid_for: (formData.paid_for || '').trim(),
           amount: parseFloat(formData.amount),
           payment_method: formData.payment_method || null,
           note: formData.note || null,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
-          reservation_id: formData.reservation_id || null,
-          event_id: formData.event_id || null
+          reservation_id: (reservationId || formData.reservation_id || '').trim() || null,
+          event_id: null,
         })
       })
 
@@ -475,9 +599,7 @@ export default function ReservationExpenseManager({
       image_url: expense.image_url || '',
       file_path: expense.file_path || '',
       custom_paid_to: '',
-      custom_paid_for: '',
       reservation_id: expense.reservation_id || '',
-      event_id: expense.event_id || '',
       uploaded_files: []
     })
     setShowEditModal(true)
@@ -495,12 +617,9 @@ export default function ReservationExpenseManager({
       image_url: '',
       file_path: '',
       custom_paid_to: '',
-      custom_paid_for: '',
       reservation_id: reservationId || '',
-      event_id: '',
       uploaded_files: []
     })
-    setShowCustomPaidFor(false)
     setShowCustomPaidTo(false)
   }
 
@@ -634,9 +753,7 @@ export default function ReservationExpenseManager({
                 image_url: '',
                 file_path: '',
                 custom_paid_to: '',
-                custom_paid_for: '',
                 reservation_id: reservationId || '',
-                event_id: '',
                 uploaded_files: []
               })
             }}
@@ -668,9 +785,7 @@ export default function ReservationExpenseManager({
                   image_url: '',
                   file_path: '',
                   custom_paid_to: '',
-                  custom_paid_for: '',
                   reservation_id: reservationId || '',
-                  event_id: '',
                   uploaded_files: []
                 })
               }}
@@ -732,54 +847,19 @@ export default function ReservationExpenseManager({
                 )}
               </div>
 
-              {/* 결제내용 */}
+              {/* 결제내용: DB paid_for 제안 + 직접 입력 */}
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('paidFor')} <span className="text-red-500">*</span>
                 </label>
-                {!showCustomPaidFor ? (
-                  <div className="space-y-2">
-                    <select
-                      value={formData.paid_for || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, paid_for: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required
-                    >
-                      <option value="">{t('selectOptions.pleaseSelect')}</option>
-                      {categories.map(category => (
-                        <option key={category.id} value={category.name}>{category.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setShowCustomPaidFor(true)}
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      {t('directInput')}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={formData.custom_paid_for ?? ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
-                      placeholder={t('newPaidForPlaceholder')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowCustomPaidFor(false)
-                        setFormData(prev => ({ ...prev, custom_paid_for: '' }))
-                      }}
-                      className="text-sm text-gray-600 hover:text-gray-800"
-                    >
-                      {t('backToList')}
-                    </button>
-                  </div>
-                )}
+                <PaidForAutocomplete
+                  value={formData.paid_for}
+                  onChange={(v) => setFormData((prev) => ({ ...prev, paid_for: v }))}
+                  disabled={uploading}
+                />
+                <p className="mt-1 text-[10px] sm:text-xs text-gray-500">
+                  기존 예약 지출에서 검색해 선택하거나, 새 결제 내용을 입력할 수 있습니다.
+                </p>
               </div>
 
               {/* 금액 */}
@@ -799,55 +879,43 @@ export default function ReservationExpenseManager({
                 />
               </div>
 
-              {/* 결제방법 - payment_methods 테이블 기준 */}
+              {/* 결제방법 — typing으로 필터 */}
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('form.paymentMethod')}
                 </label>
-                <select
-                  value={formData.payment_method || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">{t('selectOptions.pleaseSelect')}</option>
-                  {paymentMethodOptions.map((pm) => (
-                    <option key={pm.id} value={pm.id}>{pm.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 예약 ID */}
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
-                  {t('form.reservationId')}
-                </label>
-                <select
-                  value={formData.reservation_id || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, reservation_id: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">{t('selectOptions.pleaseSelect')}</option>
-                  {reservations.map((reservation: Reservation) => (
-                    <option key={reservation.id} value={reservation.id}>
-                      {reservation.customers.name} ({reservation.product_id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 이벤트 ID */}
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
-                  {t('form.eventId')}
-                </label>
-                <input
-                  type="text"
-                  value={formData.event_id || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, event_id: e.target.value }))}
-                  placeholder={t('enterEventId')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                <PaymentMethodAutocomplete
+                  options={paymentMethodOptions}
+                  valueId={formData.payment_method || ''}
+                  onChange={(id) => setFormData((prev) => ({ ...prev, payment_method: id }))}
+                  disabled={uploading}
+                  pleaseSelectLabel={t('selectOptions.pleaseSelect')}
                 />
               </div>
+
+              {reservationId ? (
+                <div className="md:col-span-2 rounded-lg border border-dashed border-gray-200 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-600">
+                  이 지출은 현재 예약에만 연결되어 저장됩니다.
+                </div>
+              ) : (
+                <div className="md:col-span-2">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
+                    {t('form.reservationId')}
+                  </label>
+                  <select
+                    value={formData.reservation_id || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, reservation_id: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value="">{t('selectOptions.pleaseSelect')}</option>
+                    {reservations.map((reservation: Reservation) => (
+                      <option key={reservation.id} value={reservation.id}>
+                        {reservation.customers.name} ({reservation.product_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* 메모 */}
@@ -997,9 +1065,7 @@ export default function ReservationExpenseManager({
                     image_url: '',
                     file_path: '',
                     custom_paid_to: '',
-                    custom_paid_for: '',
                     reservation_id: reservationId || '',
-                    event_id: '',
                     uploaded_files: []
                   })
                 }}
@@ -1111,11 +1177,10 @@ export default function ReservationExpenseManager({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('paidFor')} <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={formData.custom_paid_for || formData.paid_for || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, paid_for: e.target.value, custom_paid_for: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  <PaidForAutocomplete
+                    value={formData.paid_for}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, paid_for: v }))}
+                    disabled={uploading}
                   />
                 </div>
                 <div>
@@ -1131,45 +1196,34 @@ export default function ReservationExpenseManager({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.paymentMethod')}</label>
+                  <PaymentMethodAutocomplete
+                    options={paymentMethodOptions}
+                    valueId={formData.payment_method || ''}
+                    onChange={(id) => setFormData((prev) => ({ ...prev, payment_method: id }))}
+                    disabled={uploading}
+                    pleaseSelectLabel={t('selectOptions.pleaseSelect')}
+                  />
+                </div>
+              </div>
+              {reservationId ? (
+                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-600">
+                  이 지출은 현재 예약에만 연결되어 저장됩니다.
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.reservationId')}</label>
                   <select
-                    value={formData.payment_method || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
+                    value={formData.reservation_id || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, reservation_id: e.target.value }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">{t('selectOptions.pleaseSelect')}</option>
-                    {paymentMethodOptions.map((pm) => (
-                      <option key={pm.id} value={pm.id}>{pm.name}</option>
+                    {reservations.map((reservation: Reservation) => (
+                      <option key={reservation.id} value={reservation.id}>
+                        {reservation.customers.name} ({reservation.product_id})
+                      </option>
                     ))}
                   </select>
-                </div>
-              </div>
-              {!reservationId && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.reservationId')}</label>
-                    <select
-                      value={formData.reservation_id || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reservation_id: e.target.value }))}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">{t('selectOptions.pleaseSelect')}</option>
-                      {reservations.map((reservation: Reservation) => (
-                        <option key={reservation.id} value={reservation.id}>
-                          {reservation.customers.name} ({reservation.product_id})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.eventId')}</label>
-                    <input
-                      type="text"
-                      value={formData.event_id || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, event_id: e.target.value }))}
-                      placeholder={t('enterEventId')}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
                 </div>
               )}
               <div>
