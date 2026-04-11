@@ -5776,6 +5776,9 @@ export default function ReservationForm({
                       itemVariant="line"
                     />
                   </div>
+                  <div id="assigned-tour-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                    <TourConnectionSection reservation={reservation} variant="assignedSummary" />
+                  </div>
                   {/* 후기 관리 - 3열 */}
                   {layout === 'page' && (
                     <div id="review-section" className="max-lg:order-8 max-lg:mt-4">

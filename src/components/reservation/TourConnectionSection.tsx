@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
@@ -43,10 +42,15 @@ interface Tour {
 interface TourConnectionSectionProps {
   reservation: Reservation
   onTourCreated?: () => void
+  /** full: 동일 날짜·상품의 모든 투어 및 배정 여부. assignedSummary: 이 예약에 배정된 투어 요약 */
+  variant?: 'full' | 'assignedSummary'
 }
 
-export default function TourConnectionSection({ reservation, onTourCreated }: TourConnectionSectionProps) {
-  const t = useTranslations('reservations')
+export default function TourConnectionSection({
+  reservation,
+  onTourCreated,
+  variant = 'full',
+}: TourConnectionSectionProps) {
   const [tours, setTours] = useState<Tour[]>([])
   const [loading, setLoading] = useState(true)
   const [creatingTour, setCreatingTour] = useState(false)
@@ -288,12 +292,19 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
     }
   }
 
+  const sectionTitle = variant === 'assignedSummary' ? '배정된 투어' : '연결된 투어'
+  const outerClass = variant === 'assignedSummary' ? '' : 'bg-white rounded-lg shadow p-4'
+  const displayTours =
+    variant === 'assignedSummary'
+      ? tours.filter((t) => t.reservation_ids?.includes(reservation.id))
+      : tours
+
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className={variant === 'assignedSummary' ? '' : 'bg-white rounded-lg shadow p-6'}>
         <h3 className="text-xs font-semibold text-gray-900 mb-4 flex items-center">
           <Calendar className="w-4 h-4 mr-1.5" />
-          연결된 투어
+          {sectionTitle}
         </h3>
         <div className="animate-pulse">
           <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
@@ -305,10 +316,10 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
 
   if (error) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className={variant === 'assignedSummary' ? '' : 'bg-white rounded-lg shadow p-6'}>
         <h3 className="text-xs font-semibold text-gray-900 mb-4 flex items-center">
           <Calendar className="w-4 h-4 mr-1.5" />
-          연결된 투어
+          {sectionTitle}
         </h3>
         <div className="text-center py-8 text-red-500">
           <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
@@ -330,14 +341,38 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
     )
   }
 
+  if (variant === 'assignedSummary' && displayTours.length === 0) {
+    return (
+      <div className={outerClass}>
+        <h3 className="text-xs font-semibold text-gray-900 mb-2 flex items-center">
+          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+          {sectionTitle}
+        </h3>
+        <div className="text-center py-5 text-gray-500 border border-dashed border-gray-200 rounded-lg bg-white/60">
+          <AlertCircle className="w-7 h-7 mx-auto mb-2 text-gray-400" />
+          <p className="text-xs font-medium">
+            {!reservation.productId || !reservation.tourDate
+              ? '상품과 투어 날짜를 먼저 선택해 주세요.'
+              : '이 예약은 아직 투어에 배정되지 않았습니다.'}
+          </p>
+          {!!reservation.productId && !!reservation.tourDate && (
+            <p className="text-[11px] mt-1 text-gray-400">
+              같은 날짜·상품 투어에 예약을 넣으면 여기에 표시됩니다.
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="bg-white rounded-lg shadow p-4">
+    <div className={outerClass || undefined}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold text-gray-900 flex items-center">
           <Calendar className="w-3.5 h-3.5 mr-1.5" />
-          연결된 투어
+          {sectionTitle}
         </h3>
-        {tours.length === 0 && (
+        {variant === 'full' && tours.length === 0 && (
           <button
             onClick={handleCreateTour}
             disabled={creatingTour}
@@ -353,7 +388,7 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
         )}
       </div>
 
-      {tours.length === 0 ? (
+      {variant === 'full' && tours.length === 0 ? (
         <div className="text-center py-6 text-gray-500">
           <AlertCircle className="w-8 h-8 mx-auto mb-3 text-gray-400" />
           <p className="text-sm font-medium mb-1">연결된 투어가 없습니다</p>
@@ -375,7 +410,7 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
         </div>
       ) : (
         <div className="space-y-3">
-          {tours.map((tour) => {
+          {displayTours.map((tour) => {
             const isAssignedToThisTour = tour.reservation_ids?.includes(reservation.id)
             
             return (
