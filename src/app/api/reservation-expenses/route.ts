@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
+
+const db = supabaseAdmin ?? supabase
 
 // GET: 예약 지출 목록 조회
 export async function GET(request: NextRequest) {
@@ -11,7 +13,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    let query = supabase
+    let query = db
       .from('reservation_expenses')
       .select(`
         *,
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest) {
     // 고객 정보 추가
     const expensesWithCustomers = await Promise.all((data || []).map(async (expense) => {
       if (expense.reservations && expense.reservations.customer_id) {
-        const { data: customerData } = await supabase
+        const { data: customerData } = await db
           .from('customers')
           .select('id, name, email')
           .eq('id', expense.reservations.customer_id)
@@ -114,7 +116,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('reservation_expenses')
       .insert({
         id,
@@ -136,7 +138,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Error creating reservation expense:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to create reservation expense' },
+        { success: false, message: error.message || 'Failed to create reservation expense' },
         { status: 500 }
       )
     }
@@ -176,7 +178,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('reservation_expenses')
       .update(updateData)
       .eq('id', id)
@@ -186,7 +188,7 @@ export async function PUT(request: NextRequest) {
     if (error) {
       console.error('Error updating reservation expense:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to update reservation expense' },
+        { success: false, message: error.message || 'Failed to update reservation expense' },
         { status: 500 }
       )
     }
@@ -218,7 +220,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from('reservation_expenses')
       .delete()
       .eq('id', id)
@@ -226,7 +228,7 @@ export async function DELETE(request: NextRequest) {
     if (error) {
       console.error('Error deleting reservation expense:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to delete reservation expense' },
+        { success: false, message: error.message || 'Failed to delete reservation expense' },
         { status: 500 }
       )
     }

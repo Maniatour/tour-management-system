@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
+
+const db = supabaseAdmin ?? supabase
 
 // GET: 특정 예약 지출 조회
 export async function GET(
@@ -9,7 +11,7 @@ export async function GET(
   try {
     const { id } = params
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('reservation_expenses')
       .select(`
         *,
@@ -40,7 +42,7 @@ export async function GET(
     // 고객 정보 추가
     let expenseWithCustomer = data
     if (data.reservations && data.reservations.customer_id) {
-      const { data: customerData } = await supabase
+      const { data: customerData } = await db
         .from('customers')
         .select('id, name, email')
         .eq('id', data.reservations.customer_id)
@@ -86,7 +88,7 @@ export async function PUT(
       )
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('reservation_expenses')
       .update(body)
       .eq('id', id)
@@ -96,7 +98,7 @@ export async function PUT(
     if (error) {
       console.error('Error updating reservation expense:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to update reservation expense' },
+        { success: false, message: error.message || 'Failed to update reservation expense' },
         { status: 500 }
       )
     }
@@ -130,7 +132,7 @@ export async function DELETE(
   try {
     const { id } = params
 
-    const { error } = await supabase
+    const { error } = await db
       .from('reservation_expenses')
       .delete()
       .eq('id', id)
@@ -138,7 +140,7 @@ export async function DELETE(
     if (error) {
       console.error('Error deleting reservation expense:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to delete reservation expense' },
+        { success: false, message: error.message || 'Failed to delete reservation expense' },
         { status: 500 }
       )
     }

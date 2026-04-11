@@ -116,6 +116,13 @@ export default function ReservationExpenseManager({
     loadPaymentMethods()
   }, [reservationId])
 
+  /** Keep form reservation_id in sync when opening the reservation edit modal (prop loads after mount). */
+  useEffect(() => {
+    if (reservationId) {
+      setFormData((prev) => ({ ...prev, reservation_id: reservationId }))
+    }
+  }, [reservationId])
+
   const loadPaymentMethods = async () => {
     try {
       const { data, error } = await supabase
@@ -312,26 +319,52 @@ export default function ReservationExpenseManager({
         }
       }
       
-      const { data, error } = await supabase
-        .from('reservation_expenses')
-        .insert({
+      const amountNum = parseFloat(formData.amount)
+      if (!Number.isFinite(amountNum) || amountNum <= 0) {
+        alert('Please enter a valid amount greater than zero.')
+        return
+      }
+      const paidForVal = (formData.custom_paid_for || formData.paid_for || '').trim()
+      if (!paidForVal) {
+        alert('결제 내용을 입력하세요.')
+        return
+      }
+      if (!String(finalPaidTo || '').trim()) {
+        alert('결제처를 선택하거나 입력하세요.')
+        return
+      }
+
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers.Authorization = `Bearer ${token}`
+
+      const resLinkReservation = (reservationId || formData.reservation_id || '').trim() || null
+
+      const res = await fetch('/api/reservation-expenses', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
           id,
-          submitted_by: submittedBy || 'unknown',
+          submitted_by: submittedBy || sessionData?.session?.user?.email || 'unknown',
           paid_to: finalPaidTo,
-          paid_for: formData.custom_paid_for || formData.paid_for,
-          amount: parseFloat(formData.amount),
+          paid_for: paidForVal,
+          amount: amountNum,
           payment_method: formData.payment_method || null,
           note: formData.note || null,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
-          reservation_id: formData.reservation_id || null,
-          event_id: formData.event_id || null,
-          status: 'pending'
-        } as any)
-        .select()
-        .single()
+          reservation_id: resLinkReservation,
+          event_id: (formData.event_id || '').trim() || null,
+          status: 'pending',
+        }),
+      })
 
-      if (error) throw error
+      const result = await res.json()
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to create expense')
+      }
+      const data = result.data as ReservationExpense
 
       setExpenses(prev => [data, ...prev])
       setShowAddForm(false)
@@ -355,7 +388,8 @@ export default function ReservationExpenseManager({
       alert('예약 지출이 등록되었습니다.')
     } catch (error) {
       console.error('Error adding expense:', error)
-      alert('예약 지출 등록에 실패했습니다.')
+      const msg = error instanceof Error ? error.message : ''
+      alert(msg ? `예약 지출 등록에 실패했습니다.\n${msg}` : '예약 지출 등록에 실패했습니다.')
     } finally {
       setUploading(false)
     }
