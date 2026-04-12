@@ -40,6 +40,7 @@ import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusS
 import {
   isReservationCancelledStatus,
   isReservationDeletedStatus,
+  normalizeReservationIds,
 } from '@/utils/tourUtils'
 
 // 타입 정의 (DB 스키마 기반)
@@ -212,13 +213,14 @@ export default function GuideTourDetailPage() {
 
       // 예약 정보 가져오기 (투어에 배정된 예약만)
       // tours.reservation_ids에 있는 예약 ID들만 가져옴 (tour_id 기반 조회 제거)
-      /** 픽업·인원 등 가이드 화면에 표시할 예약 ID (취소·삭제 제외, 다른 투어에 속한 행 제외) */
+      /** 픽업·인원 등 가이드 화면에 표시할 예약 ID (취소·삭제 제외). 배정은 tours.reservation_ids 기준 — 관리자 투어 상세와 동일 */
       let guideActiveReservationIds: string[] = []
       const allReservationIds: string[] = []
-      if ((tourData as TourRow & { reservation_ids?: string[] | string }).reservation_ids) {
-        const ids = Array.isArray((tourData as TourRow & { reservation_ids: string[] | string }).reservation_ids) 
-          ? (tourData as TourRow & { reservation_ids: string[] }).reservation_ids 
-          : String((tourData as TourRow & { reservation_ids: string }).reservation_ids).split(',').map(id => id.trim()).filter(id => id)
+      const normalizedTourReservationIds = normalizeReservationIds(
+        (tourData as TourRow & { reservation_ids?: unknown }).reservation_ids
+      )
+      if (normalizedTourReservationIds.length > 0) {
+        const ids = normalizedTourReservationIds
         
         // reservation_ids에 있는 ID들이 실제 reservations 테이블에 존재하는지만 확인
         if (ids.length > 0) {
@@ -239,19 +241,12 @@ export default function GuideTourDetailPage() {
           .in('id', allReservationIds)
 
         const reservationsListRaw = (reservationsData || []) as ReservationRow[]
-        // 관리자 투어 상세(배정 목록)와 동일: 취소·삭제 제외. reservation_ids만 갱신되고 tour_id가 남는 불일치 시 제외.
+        // 관리자 투어 상세(배정·픽업 스케줄)와 동일: reservation_ids에 포함된 예약만 표시, 취소·삭제만 제외.
+        // reservations.tour_id는 배정 과정에서 동기화가 어긋날 수 있어 필터에 쓰지 않음.
         const reservationsList = reservationsListRaw.filter((r) => {
           if (
             isReservationCancelledStatus(r.status) ||
             isReservationDeletedStatus(r.status)
-          ) {
-            return false
-          }
-          const tid = (r as ReservationRow & { tour_id?: string | null }).tour_id
-          if (
-            tid != null &&
-            String(tid).trim() !== '' &&
-            tid !== tourId
           ) {
             return false
           }

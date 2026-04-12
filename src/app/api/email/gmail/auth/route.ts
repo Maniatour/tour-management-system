@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+function gmailRedirectUri(request: NextRequest): string {
+  const explicit = process.env.GOOGLE_GMAIL_REDIRECT_URI?.trim()
+  if (explicit) return explicit
+  const origin = new URL(request.url).origin
+  return `${origin}/api/email/gmail/auth`
+}
+
 /**
  * GET /api/email/gmail/auth
  * Google OAuth 콜백: code로 토큰 교환 후 refresh_token 저장, 관리자 페이지로 리디렉트
@@ -34,7 +41,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${redirectTo}?error=server_config`)
   }
 
-  const redirectUri = `${origin}/api/email/gmail/auth`
+  const redirectUri = gmailRedirectUri(request)
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
