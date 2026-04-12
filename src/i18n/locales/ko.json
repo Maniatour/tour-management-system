@@ -1880,6 +1880,18 @@
       "registrationDates": "개 등록일로 그룹화됨",
       "filteredFromTotal": "개 중 필터링됨",
       "registeredOn": "등록",
+      "activityOn": "등록·상태변경",
+      "regBreakPending": "대기 {n}명",
+      "regBreakConfirmed": "확정 {n}명",
+      "regBreakCompleted": "완료 {n}명",
+      "regBreakCancelled": "취소 {n}명",
+      "regBreakOther": "기타 {n}명",
+      "summaryJoin": ", ",
+      "registrationInner": "{people}명: {detail}",
+      "registrationPeopleOnly": "{people}명",
+      "registrationLine": "{count} 예약등록 ({inner})",
+      "cancellationLine": "{count} 예약 취소 ({people}명)",
+      "fallbackCardStats": "{count}건 · {people}명",
       "lasVegasTime": "(라스베가스 시간)",
       "reservationsTotal": "개 예약 총",
       "people": "명"
@@ -1961,7 +1973,8 @@
       "pickupSummaryTimeLabel": "픽업 시간",
       "pickupSummaryHotelLabel": "픽업 호텔",
       "editPickupTimeButton": "픽업 시간 수정",
-      "editPickupHotelButton": "픽업 호텔 변경"
+      "editPickupHotelButton": "픽업 호텔 변경",
+      "registrationDateLabel": "등록일"
     },
     "paginationDisplay": "총 {total}개 예약 중 {start}-{end}개 표시",
     "viewCard": "카드",

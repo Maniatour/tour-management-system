@@ -62,6 +62,23 @@ function formatTourDateMmDdYyyy(tourDate: string | null | undefined): string {
   return raw
 }
 
+function formatRegistrationDateForCard(reservation: Reservation, locale: string): string {
+  const raw =
+    reservation.addedTime ||
+    (reservation as { created_at?: string | null }).created_at ||
+    ''
+  if (!raw?.trim()) return '-'
+  const parsed = Date.parse(raw)
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
+  return raw.trim()
+}
+
 interface ReservationCardItemProps {
   reservation: Reservation
   customers: Customer[]
@@ -433,7 +450,16 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
 
           {/* Row 2: date + product name (products.name) with choice badges inline */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-            <span className="shrink-0 text-sm font-medium text-gray-900">{formatTourDateMmDdYyyy(reservation.tourDate)}</span>
+            <span className="shrink-0 text-sm font-medium text-gray-900">
+              {hideAssignedTourUi ? (
+                <span className="inline-flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-1.5">
+                  <span className="text-xs font-medium text-gray-600">{t('card.registrationDateLabel')}</span>
+                  <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
+                </span>
+              ) : (
+                formatTourDateMmDdYyyy(reservation.tourDate)
+              )}
+            </span>
             <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-1 text-sm font-medium text-gray-900">
               <span className="min-w-0 max-w-full break-words line-clamp-2">
                 {getProductName(reservation.productId, products as any || [])}
@@ -451,7 +477,25 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
 
           {/* Row 3 */}
           {(() => {
-            const tourInfo = effectiveTourId && !hideAssignedTourUi ? tourInfoMap.get(effectiveTourId) : undefined
+            if (hideAssignedTourUi) {
+              return (
+                <div className="flex items-start justify-end gap-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSimpleActionsExpanded((x) => !x)
+                    }}
+                    className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100"
+                    title={t('card.simpleActionsToggle')}
+                    aria-expanded={simpleActionsExpanded}
+                  >
+                    <ChevronDown className={`h-4 w-4 transition-transform ${simpleActionsExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+              )
+            }
+            const tourInfo = effectiveTourId ? tourInfoMap.get(effectiveTourId) : undefined
             const tourStatusLabel = tourInfo?.status ?? '-'
             const tourStatusTone = (st: string) => {
               const x = st.toLowerCase()
@@ -469,10 +513,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-800 min-w-0 flex-1">
                   <button
                     type="button"
-                    disabled={!effectiveTourId || hideAssignedTourUi}
+                    disabled={!effectiveTourId}
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (!effectiveTourId || hideAssignedTourUi) return
+                      if (!effectiveTourId) return
                       if (onOpenTourDetailModal) onOpenTourDetailModal(effectiveTourId)
                       else router.push(`/${locale}/admin/tours/${effectiveTourId}`)
                     }}
@@ -1041,32 +1085,41 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           )}
         </div>
 
-        {/* Tour date (tour_date) / pickup date-time (pickup_date & pickup_time) */}
-        <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
-          <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
-          <span className="text-sm text-gray-900">{reservation.tourDate || '-'}</span>
-          <span className="text-gray-400">·</span>
-          <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-          {pickupTimeLine}
-        </div>
+        {hideAssignedTourUi ? (
+          <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+            <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-900">
+              <span className="text-gray-600 font-medium">{t('card.registrationDateLabel')}</span>{' '}
+              <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+              <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <span className="text-sm text-gray-900">{reservation.tourDate || '-'}</span>
+              <span className="text-gray-400">·</span>
+              <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              {pickupTimeLine}
+            </div>
 
-        {/* ?? ?? ?? */}
-        <div className="flex items-center space-x-2">
-          <MapPin className="h-4 w-4 text-gray-400" />
-          <span 
-            className={`text-sm hover:text-blue-600 hover:underline cursor-pointer ${
-              reservation.pickUpHotel 
-                ? 'text-gray-900' 
-                : 'text-gray-500 italic'
-            }`}
-            onClick={(e) => onPickupHotelClick(reservation, e)}
-          >
-            {reservation.pickUpHotel 
-              ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels as any || [])
-              : t('card.pickupHotelTbd')
-            }
-          </span>
-        </div>
+            <div className="flex items-center space-x-2">
+              <MapPin className="h-4 w-4 text-gray-400" />
+              <span
+                className={`text-sm hover:text-blue-600 hover:underline cursor-pointer ${
+                  reservation.pickUpHotel
+                    ? 'text-gray-900'
+                    : 'text-gray-500 italic'
+                }`}
+                onClick={(e) => onPickupHotelClick(reservation, e)}
+              >
+                {reservation.pickUpHotel
+                  ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels as any || [])
+                  : t('card.pickupHotelTbd')}
+              </span>
+            </div>
+          </>
+        )}
 
         {/* Net Price ??? ?? */}
         <div className="pt-2 border-t border-gray-100">

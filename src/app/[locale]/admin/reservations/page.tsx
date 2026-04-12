@@ -43,7 +43,8 @@ import {
   getChannelName, 
   calculateTotalPrice,
   getReservationPartySize,
-  normalizeTourDateKey
+  normalizeTourDateKey,
+  isoToLocalCalendarDateKey
 } from '@/utils/reservationUtils'
 import type { 
   Customer, 
@@ -1055,34 +1056,19 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
     
     filteredReservations.forEach((reservation) => {
-      // created_at ??????????? ??????????? YYYY-MM-DD ?????? ??
-      if (!reservation.addedTime) {
-        return // addedTime????????????
-      }
-      
-      const date = new Date(reservation.addedTime)
-      
-      // ???????????? ???
-      if (isNaN(date.getTime())) {
-        return // ??????? ???? ??????????
-      }
-      
-      // ?? ????? ?????? ??? ??? ?? (YYYY-MM-DD)
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      const createdDate = `${year}-${month}-${day}`
-      
-      // ??? ????????????? ??? (??????)
-      const isInRange = createdDate >= weekStartStr && createdDate <= weekEndStr
-      
-      
-      if (isInRange) {
-        if (!groups[createdDate]) {
-          groups[createdDate] = []
-        }
-        groups[createdDate].push(reservation)
-      }
+      const activityDates = new Set<string>()
+      const createdKey = isoToLocalCalendarDateKey(reservation.addedTime)
+      const updatedKey = isoToLocalCalendarDateKey(reservation.updated_at ?? null)
+      if (createdKey) activityDates.add(createdKey)
+      if (updatedKey) activityDates.add(updatedKey)
+      if (activityDates.size === 0) return
+
+      activityDates.forEach((ymd) => {
+        if (ymd < weekStartStr || ymd > weekEndStr) return
+        if (!groups[ymd]) groups[ymd] = []
+        const bucket = groups[ymd]
+        if (!bucket.some((r) => r.id === reservation.id)) bucket.push(reservation)
+      })
     })
     
     
@@ -1090,8 +1076,14 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const sortedGroups: { [key: string]: typeof filteredReservations } = {}
     Object.keys(groups)
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-      .forEach(date => {
-        sortedGroups[date] = groups[date]
+      .forEach((date) => {
+        const list = [...groups[date]].sort((a, b) => {
+          const ua = new Date(a.updated_at || a.addedTime || 0).getTime()
+          const ub = new Date(b.updated_at || b.addedTime || 0).getTime()
+          if (ub !== ua) return ub - ua
+          return new Date(b.addedTime || 0).getTime() - new Date(a.addedTime || 0).getTime()
+        })
+        sortedGroups[date] = list
       })
     
     return sortedGroups

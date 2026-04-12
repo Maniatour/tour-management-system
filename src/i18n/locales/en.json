@@ -1871,6 +1871,18 @@
       "registrationDates": "registration dates",
       "filteredFromTotal": "filtered from total",
       "registeredOn": "Registered on",
+      "activityOn": "Registrations and status changes",
+      "regBreakPending": "{n} pending",
+      "regBreakConfirmed": "{n} confirmed",
+      "regBreakCompleted": "{n} completed",
+      "regBreakCancelled": "{n} cancelled",
+      "regBreakOther": "{n} other",
+      "summaryJoin": ", ",
+      "registrationInner": "{people} people: {detail}",
+      "registrationPeopleOnly": "{people} people",
+      "registrationLine": "{count} new bookings ({inner})",
+      "cancellationLine": "{count} cancellations ({people} people)",
+      "fallbackCardStats": "{count} items · {people} people",
       "lasVegasTime": "(Las Vegas Time)",
       "reservationsTotal": "reservations, total",
       "people": "people"
@@ -1952,7 +1964,8 @@
       "pickupSummaryTimeLabel": "Pickup time",
       "pickupSummaryHotelLabel": "Pickup hotel",
       "editPickupTimeButton": "Edit pickup time",
-      "editPickupHotelButton": "Change pickup hotel"
+      "editPickupHotelButton": "Change pickup hotel",
+      "registrationDateLabel": "Registered"
     },
     "paginationDisplay": "Showing {start}-{end} of {total} reservations",
     "viewCard": "Card",
