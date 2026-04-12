@@ -176,14 +176,14 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
       role="dialog"
       aria-modal="true"
       aria-labelledby="office-meal-modal-title"
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-lg max-h-[min(92vh,640px)] flex flex-col border border-amber-100"
+        className="relative bg-white rounded-xl shadow-xl w-full sm:max-w-lg max-h-[min(85dvh,640px)] flex flex-col border border-amber-100"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 shrink-0">

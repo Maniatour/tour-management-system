@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
@@ -719,11 +719,16 @@ export default function AdminTours() {
             <button
               type="button"
               onClick={() => setShowDeletedToursModal(true)}
+              title={t('openDeletedToursModal')}
+              aria-label={t('openDeletedToursModal')}
               className="bg-gray-700 text-white px-3 py-1.5 rounded-md hover:bg-gray-800 flex items-center gap-1.5 text-sm font-medium"
             >
-              <span>{t('openDeletedToursModal')}</span>
+              <Trash2 size={18} className="shrink-0 sm:hidden" aria-hidden />
+              <span className="hidden sm:inline">{t('openDeletedToursModal')}</span>
               {deletedToursBin.length > 0 ? (
-                <span className="text-xs opacity-90">({deletedToursBin.length})</span>
+                <span className="text-xs opacity-90 tabular-nums sm:text-xs">
+                  ({deletedToursBin.length})
+                </span>
               ) : null}
             </button>
           </div>

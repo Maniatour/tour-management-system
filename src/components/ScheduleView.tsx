@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -311,6 +311,13 @@ export default function ScheduleView() {
   const unassignedDragAutoScrollCleanupRef = useRef<(() => void) | null>(null)
   const [updatingUnassignedTourStatusId, setUpdatingUnassignedTourStatusId] = useState<string | null>(null)
   const [unassignedTourStatusModalTourId, setUnassignedTourStatusModalTourId] = useState<string | null>(null)
+  /** 미배정 카드: 버튼으로 가이드/어시스턴트 배정 */
+  const [unassignedPersonAssignModal, setUnassignedPersonAssignModal] = useState<{
+    tour: Tour
+    role: 'guide' | 'assistant'
+  } | null>(null)
+  /** 미배정 카드: 버튼으로 차량 배정 */
+  const [unassignedVehicleAssignModalTourId, setUnassignedVehicleAssignModalTourId] = useState<string | null>(null)
   const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
@@ -470,7 +477,7 @@ export default function ScheduleView() {
   // 상품별 스케줄 셀 호버 툴팁 (국기 아이콘 표시용)
   const [scheduleCellTooltip, setScheduleCellTooltip] = useState<{ productId: string; dateString: string } | null>(null)
 
-  /** 상품별 투어 인원 셀 클릭 → 해당일·상품 예약 목록 */
+  /** 스케쥴뷰(상품별 인원) 셀 클릭 → 해당일·상품 예약 목록 */
   const [productCellReservationsModal, setProductCellReservationsModal] = useState<{
     productId: string
     dateString: string
@@ -2962,6 +2969,14 @@ export default function ScheduleView() {
     })
   }, [unassignedTours, products])
 
+  const teamMembersSortedForAssignModal = useMemo(() => {
+    return [...teamMembers].sort((a, b) => {
+      const na = ((a as { nick_name?: string }).nick_name || a.name_ko || a.email || '').toString()
+      const nb = ((b as { nick_name?: string }).nick_name || b.name_ko || b.email || '').toString()
+      return na.localeCompare(nb, locale === 'ko' ? 'ko' : 'en')
+    })
+  }, [teamMembers, locale])
+
   const detachUnassignedDragPageAutoScroll = useCallback(() => {
     unassignedDragAutoScrollCleanupRef.current?.()
   }, [])
@@ -3011,16 +3026,11 @@ export default function ScheduleView() {
     setHighlightedDate(null) // 하이라이트 제거
   }
 
-  // 가이드/어시스턴트 셀에 드롭
-  const handleGuideCellDrop = async (e: React.DragEvent, teamMemberId: string, dateString: string, role: 'guide' | 'assistant') => {
-    e.preventDefault()
-    
-    if (!draggedUnassignedTour) return
-    
-    try {
-      // 즉시 저장 대신 변경 누적
+  /** 미배정 투어에 가이드/어시스턴트 배정 (드래그 드롭 · 모달 공통) */
+  const applyUnassignedPersonToTour = useCallback(
+    (tour: Tour, teamMemberId: string, dateString: string, role: 'guide' | 'assistant') => {
       const updateData: Partial<Tour> = {
-        tour_date: dateString
+        tour_date: dateString,
       }
       if (role === 'guide') {
         updateData.tour_guide_id = teamMemberId
@@ -3028,24 +3038,22 @@ export default function ScheduleView() {
         updateData.assistant_id = teamMemberId
       }
 
-      setPendingChanges(prev => ({
+      setPendingChanges((prev) => ({
         ...prev,
-        [draggedUnassignedTour.id]: {
-          ...(prev[draggedUnassignedTour.id] || {}),
-          ...updateData
-        }
+        [tour.id]: {
+          ...(prev[tour.id] || {}),
+          ...updateData,
+        },
       }))
 
-      // tours 상태 업데이트
-      setTours(prev => prev.map(t => t.id === draggedUnassignedTour.id ? { ...t, ...updateData } : t))
+      setTours((prev) => prev.map((t) => (t.id === tour.id ? { ...t, ...updateData } : t)))
 
-      // 미배정 목록 업데이트 (투어 전체 제거 대신 역할별 필요 여부에 따라 유지)
-      setUnassignedTours(prev => {
-        const exists = prev.some(t => t.id === draggedUnassignedTour.id)
+      setUnassignedTours((prev) => {
+        const exists = prev.some((t) => t.id === tour.id)
         if (!exists) return prev
         return prev
-          .map(t => {
-            if (t.id !== draggedUnassignedTour.id) return t
+          .map((t) => {
+            if (t.id !== tour.id) return t
             const updated = { ...t, ...updateData }
             const needsGuide = !updated.tour_guide_id
             const needsAssistant = updated.team_type !== '1guide' && !updated.assistant_id
@@ -3054,6 +3062,18 @@ export default function ScheduleView() {
           .filter(Boolean) as Tour[]
       })
       requestSaveAfterDragAssignment()
+    },
+    [requestSaveAfterDragAssignment],
+  )
+
+  // 가이드/어시스턴트 셀에 드롭
+  const handleGuideCellDrop = async (e: React.DragEvent, teamMemberId: string, dateString: string, role: 'guide' | 'assistant') => {
+    e.preventDefault()
+
+    if (!draggedUnassignedTour) return
+
+    try {
+      applyUnassignedPersonToTour(draggedUnassignedTour, teamMemberId, dateString, role)
     } finally {
       detachUnassignedDragPageAutoScroll()
       setDraggedUnassignedTour(null)
@@ -3415,6 +3435,28 @@ export default function ScheduleView() {
     return { vehicleIdToColor, vehicleList: list }
   }, [scheduleVehicles])
 
+  /** 미배정 카드·모달에서 투어에 차량 배정 (pendingChanges + 로컬 상태) */
+  const assignVehicleToTourFromModal = useCallback(
+    (tour: Tour, vehicleId: string) => {
+      const newLabel = monthVehiclesWithColors.vehicleList.find((v) => v.id === vehicleId)?.label ?? null
+      setPendingChanges((prev) => ({
+        ...prev,
+        [tour.id]: {
+          ...(prev[tour.id] || {}),
+          tour_car_id: vehicleId,
+        },
+      }))
+      setTours((prev) =>
+        prev.map((t) => (t.id === tour.id ? { ...t, tour_car_id: vehicleId, vehicle_number: newLabel } : t)),
+      )
+      setUnassignedTours((prev) =>
+        prev.map((t) => (t.id === tour.id ? { ...t, tour_car_id: vehicleId, vehicle_number: newLabel } : t)),
+      )
+      requestSaveAfterDragAssignment()
+    },
+    [monthVehiclesWithColors.vehicleList, requestSaveAfterDragAssignment],
+  )
+
   // 차량별·날짜별 배차 수, 가이드/어시스턴트/드라이버 이름, 투어(상품) 색상 (차량 스케줄 테이블용)
   // 1박2일 등 멀티데이 투어는 투어 기간 내 모든 날짜에 표시 (가이드 스케줄과 동일)
   const vehicleScheduleData = useMemo(() => {
@@ -3598,7 +3640,7 @@ export default function ScheduleView() {
       {/* 헤더 */}
       <div className="mb-2">
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
-        <div className="relative flex items-center min-h-10 sm:min-h-11 mb-2">
+        <div className="relative flex flex-wrap items-center gap-y-2 min-h-10 sm:min-h-11 mb-2">
           {/* 왼쪽: 선택 버튼들 */}
           <div className="relative z-10 flex shrink-0 items-center gap-2">
             <div className="flex gap-2">
@@ -3648,9 +3690,9 @@ export default function ScheduleView() {
             </div>
           </div>
 
-          {/* 가운데: 월 이동 + 오늘 (카드/테이블 너비 기준 중앙) */}
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-24 sm:px-32">
-            <div className="pointer-events-auto flex items-center gap-1 sm:gap-2">
+          {/* 가운데: 모바일은 한 줄 전체(겹침 방지), sm+ 는 절대배치로 화면 중앙 */}
+          <div className="order-last flex w-full basis-full justify-center px-2 sm:pointer-events-none sm:absolute sm:inset-0 sm:order-none sm:w-auto sm:basis-auto sm:items-center sm:justify-center sm:px-24 md:px-32">
+            <div className="flex items-center gap-1 sm:gap-2 sm:pointer-events-auto">
               <div className="flex items-center space-x-1 sm:space-x-4">
                 <button
                   type="button"
@@ -3787,7 +3829,7 @@ export default function ScheduleView() {
           <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center justify-between gap-2 leading-tight">
             <div className="flex items-center">
               <MapPin className="w-4 h-4 mr-1 text-blue-500" />
-              상품별 투어 인원
+              스케쥴뷰
             </div>
             <div className="flex items-center gap-2 text-[11px]">
               <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-100 border border-yellow-300 rounded-full" title="한국어">
@@ -3906,7 +3948,7 @@ export default function ScheduleView() {
                     onDrop={(e) => handleProductRowDrop(e, productId)}
                   >
                     <td 
-                      className={`px-2 py-0.5 text-xs font-medium cursor-grab active:cursor-grabbing select-none border border-gray-300 sticky left-0 z-[60] shadow-[1px_0_0_0_rgb(209,213,219)] ${displayProps.className ?? ''}`.trim()}
+                      className={`px-2 py-0.5 text-xs font-medium cursor-grab active:cursor-grabbing select-none border border-gray-300 sticky left-0 z-40 shadow-[1px_0_0_0_rgb(209,213,219)] ${displayProps.className ?? ''}`.trim()}
                       style={{ width: '96px', minWidth: '96px', maxWidth: '96px', ...displayProps.style }}
                       draggable
                       onDragStart={(e) => handleProductRowDragStart(e, productId)}
@@ -4045,7 +4087,7 @@ export default function ScheduleView() {
 
               {/* 상품별 총계 행 - 가장 아래로 이동 */}
               <tr className="bg-blue-100 font-semibold">
-                <td className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-[60] bg-blue-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
+                <td className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-blue-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -5264,8 +5306,40 @@ export default function ScheduleView() {
                   <div className="flex items-start space-x-2">
                     <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <div className={`text-sm font-medium mb-1 ${isPrivateTour ? 'text-purple-700' : 'text-gray-900'}`}>
-                        {isPrivateTour ? '🔒 ' : ''}{card.title}
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className={`text-sm font-medium min-w-0 flex-1 leading-snug ${isPrivateTour ? 'text-purple-700' : 'text-gray-900'}`}>
+                          {isPrivateTour ? '🔒 ' : ''}{card.title}
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0 pt-0.5">
+                          <button
+                            type="button"
+                            aria-label={locale === 'ko' ? '투어 배정' : 'Assign staff'}
+                            title={locale === 'ko' ? '투어 배정' : 'Assign staff'}
+                            className="inline-flex items-center justify-center p-1 rounded-md border border-blue-300 text-blue-800 bg-white/90 hover:bg-blue-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setUnassignedPersonAssignModal({ tour: card.tour, role: card.role })
+                            }}
+                          >
+                            <UserPlus className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
+                            title={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
+                            className="inline-flex items-center justify-center p-1 rounded-md border border-amber-300 text-amber-950 bg-white/90 hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setUnassignedVehicleAssignModalTourId(card.tour.id)
+                            }}
+                          >
+                            <Car className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                          </button>
+                        </div>
                       </div>
                       <div className="text-xs text-gray-700 mb-1.5">
                         <span className="font-medium text-gray-600">
@@ -5409,6 +5483,190 @@ export default function ScheduleView() {
                       </button>
                     )
                   })}
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* 미배정 카드: 가이드/어시스턴트(드라이버) 배정 모달 */}
+      <Dialog
+        open={!!unassignedPersonAssignModal}
+        onOpenChange={(open) => {
+          if (!open) setUnassignedPersonAssignModal(null)
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          {unassignedPersonAssignModal && (() => {
+            const { tour: modalTour, role: assignRole } = unassignedPersonAssignModal
+            const productLabel =
+              modalTour.products?.name ||
+              products.find((p: Product) => p.id === modalTour.product_id)?.name ||
+              '—'
+            const roleLabelKo = assignRole === 'guide' ? '가이드' : '어시스턴트 / 드라이버'
+            const roleLabelEn = assignRole === 'guide' ? 'Guide' : 'Assistant / Driver'
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-base">
+                    {locale === 'ko' ? '투어 배정' : 'Assign staff'}
+                  </DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-gray-600 mb-2 -mt-1">
+                  <span className="font-medium text-gray-900">{modalTour.tour_date}</span>
+                  {' · '}
+                  <span>{productLabel}</span>
+                </p>
+                <p className="text-sm text-gray-700 mb-3">
+                  {locale === 'ko' ? (
+                    <>
+                      배정할 역할: <span className="font-semibold">{roleLabelKo}</span>
+                    </>
+                  ) : (
+                    <>
+                      Role: <span className="font-semibold">{roleLabelEn}</span>
+                    </>
+                  )}
+                </p>
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                  {teamMembersSortedForAssignModal.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      {locale === 'ko' ? '등록된 팀원이 없습니다.' : 'No team members.'}
+                    </p>
+                  ) : (
+                    teamMembersSortedForAssignModal.map((member) => {
+                      const displayName =
+                        (member as { nick_name?: string }).nick_name || member.name_ko || member.email || '—'
+                      const pos = (member.position || '').toString()
+                      return (
+                        <button
+                          key={member.email}
+                          type="button"
+                          className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-200 transition-colors"
+                          onClick={() => {
+                            applyUnassignedPersonToTour(modalTour, member.email, modalTour.tour_date, assignRole)
+                            setUnassignedPersonAssignModal(null)
+                          }}
+                        >
+                          <div className="font-medium text-gray-900">{displayName}</div>
+                          {pos ? <div className="text-xs text-gray-500 mt-0.5">{pos}</div> : null}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* 미배정 카드: 차량 배정 모달 */}
+      <Dialog
+        open={!!unassignedVehicleAssignModalTourId}
+        onOpenChange={(open) => {
+          if (!open) setUnassignedVehicleAssignModalTourId(null)
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          {(() => {
+            const tid = unassignedVehicleAssignModalTourId
+            if (!tid) return null
+            const modalTour =
+              unassignedTours.find((t: Tour) => t.id === tid) ?? tours.find((t: Tour) => t.id === tid)
+            if (!modalTour) {
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="text-base">
+                      {locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <p className="text-sm text-gray-600">
+                    {locale === 'ko' ? '투어를 찾을 수 없습니다.' : 'Tour not found.'}
+                  </p>
+                </>
+              )
+            }
+            const productLabel =
+              modalTour.products?.name ||
+              products.find((p: Product) => p.id === modalTour.product_id)?.name ||
+              '—'
+            const currentCarId = modalTour.tour_car_id && String(modalTour.tour_car_id).trim()
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-base">
+                    {locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
+                  </DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-gray-600 mb-2 -mt-1">
+                  <span className="font-medium text-gray-900">{modalTour.tour_date}</span>
+                  {' · '}
+                  <span>{productLabel}</span>
+                </p>
+                {currentCarId ? (
+                  <p className="text-sm text-gray-700 mb-3">
+                    {locale === 'ko' ? '현재 차량: ' : 'Current: '}
+                    <span className="font-medium">
+                      {monthVehiclesWithColors.vehicleList.find((v) => v.id === currentCarId)?.label || currentCarId}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-amber-800 mb-3">
+                    {locale === 'ko' ? '아직 차량이 배정되지 않았습니다.' : 'No vehicle assigned yet.'}
+                  </p>
+                )}
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                  {monthVehiclesWithColors.vehicleList.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      {locale === 'ko' ? '사용 가능한 차량이 없습니다.' : 'No vehicles available.'}
+                    </p>
+                  ) : (
+                    monthVehiclesWithColors.vehicleList.map((v) => {
+                      const isCurrent = currentCarId === v.id
+                      return (
+                        <div
+                          key={v.id}
+                          className={`flex items-center justify-between gap-2 p-3 rounded-lg border ${
+                            isCurrent ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-gray-900 truncate">{v.label}</div>
+                            {(v.vehicle_category || '').toString().toLowerCase() === 'rental' ? (
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                {locale === 'ko' ? '렌터카' : 'Rental'}
+                              </div>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isCurrent}
+                            onClick={() => {
+                              if (isCurrent) return
+                              assignVehicleToTourFromModal(modalTour, v.id)
+                              setUnassignedVehicleAssignModalTourId(null)
+                            }}
+                            className={`shrink-0 px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${
+                              isCurrent
+                                ? 'bg-gray-300 text-gray-500 cursor-default'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {isCurrent
+                              ? locale === 'ko'
+                                ? '현재 배정'
+                                : 'Current'
+                              : locale === 'ko'
+                                ? '이 차량에 배정'
+                                : 'Assign'}
+                          </button>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </>
             )
@@ -5815,7 +6073,7 @@ export default function ScheduleView() {
       )}
 
       {/* 날짜 노트 모달 */}
-      {/* 상품별 투어 인원 셀: 해당일·상품 예약 목록 → 행 클릭 시 예약 수정 */}
+      {/* 스케쥴뷰 셀: 해당일·상품 예약 목록 → 행 클릭 시 예약 수정 */}
       <Dialog
         open={!!productCellReservationsModal}
         onOpenChange={(open) => {
