@@ -448,17 +448,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             </div>
           </div>
 
-          {/* Row 2: date + product name (products.name) with choice badges inline */}
+          {/* Row 2: tour date + product name (products.name) with choice badges inline — 취소 예약도 동일 */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
             <span className="shrink-0 text-sm font-medium text-gray-900">
-              {hideAssignedTourUi ? (
-                <span className="inline-flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-1.5">
-                  <span className="text-xs font-medium text-gray-600">{t('card.registrationDateLabel')}</span>
-                  <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
-                </span>
-              ) : (
-                formatTourDateMmDdYyyy(reservation.tourDate)
-              )}
+              {formatTourDateMmDdYyyy(reservation.tourDate)}
             </span>
             <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-1 text-sm font-medium text-gray-900">
               <span className="min-w-0 max-w-full break-words line-clamp-2">
@@ -479,7 +472,11 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           {(() => {
             if (hideAssignedTourUi) {
               return (
-                <div className="flex items-start justify-end gap-1 min-w-0">
+                <div className="flex items-start gap-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-800 min-w-0 flex-1">
+                    <span className="text-xs font-medium text-gray-600 shrink-0">{t('card.registrationDateLabel')}</span>
+                    <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
+                  </div>
                   <button
                     type="button"
                     onClick={(e) => {
