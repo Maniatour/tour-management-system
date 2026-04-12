@@ -154,8 +154,8 @@ interface ReservationCardItemProps {
   /** Card density: full detail vs compact rows */
   cardLayout?: 'standard' | 'simple'
   onOpenTourDetailModal?: (tourId: string) => void
-  reservationOptionsPresenceByReservationId?: Record<string, boolean>
-  onReservationOptionsMutated?: () => void
+  reservationOptionsPresenceByReservationId?: Map<string, boolean>
+  onReservationOptionsMutated?: (reservationId: string) => void
   /** ?? ?? ? ?? ?? ?? ?? ? ??? ?? ? ? ??? nonce? ?? */
   reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
   onReshowPickupSummaryConsumed?: () => void
