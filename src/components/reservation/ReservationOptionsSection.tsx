@@ -24,6 +24,10 @@ interface ReservationOptionsSectionProps {
   isPersisted?: boolean
   /** 새 예약 시 옵션 목록을 부모에게 전달 (예약 저장 시 함께 저장용) */
   onPendingOptionsChange?: (options: CreateReservationOptionData[]) => void
+  /** DB에 반영된 추가·수정·삭제 직후 (카드 뷰 집계 갱신 등) */
+  onPersistedMutation?: () => void
+  /** 부모 모달 위에 옵션 추가 오버레이를 올릴 때 z-index 클래스 (예: z-[110]) */
+  addOptionModalZClass?: string
 }
 
 const defaultFormData: CreateReservationOptionData = {
@@ -38,7 +42,7 @@ const defaultFormData: CreateReservationOptionData = {
 /** 로컬 대기 옵션 (목록 key/삭제용 임시 id 포함) */
 type PendingOptionItem = CreateReservationOptionData & { _tempId?: string }
 
-export default function ReservationOptionsSection({ reservationId, onTotalPriceChange, hideTitle, title: titleProp, itemVariant = 'card', isPersisted = true, onPendingOptionsChange }: ReservationOptionsSectionProps) {
+export default function ReservationOptionsSection({ reservationId, onTotalPriceChange, hideTitle, title: titleProp, itemVariant = 'card', isPersisted = true, onPendingOptionsChange, onPersistedMutation, addOptionModalZClass }: ReservationOptionsSectionProps) {
   const t = useTranslations('reservations.reservationOptions')
   const tCommon = useTranslations('common')
   
@@ -149,6 +153,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
     try {
       await createReservationOption(newItem)
       handleCloseAddModal()
+      onPersistedMutation?.()
     } catch (error) {
       console.error('Error adding reservation option:', error)
       alert('옵션 추가 중 오류가 발생했습니다.')
@@ -175,6 +180,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
         note: option.note
       })
       setEditingOption(null)
+      onPersistedMutation?.()
     } catch (error) {
       console.error('Error updating reservation option:', error)
       alert('옵션 수정 중 오류가 발생했습니다.')
@@ -185,6 +191,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
     if (confirm(t('confirmDelete'))) {
       try {
         await deleteReservationOption(optionId)
+        onPersistedMutation?.()
       } catch (error) {
         console.error('Error deleting reservation option:', error)
         alert('옵션 삭제 중 오류가 발생했습니다.')
@@ -247,7 +254,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
 
       {/* 옵션 추가 모달 */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className={`fixed inset-0 flex items-center justify-center bg-black/50 p-4 ${addOptionModalZClass ?? 'z-50'}`}>
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-sm font-semibold text-gray-900">{t('addNewOption')}</h4>

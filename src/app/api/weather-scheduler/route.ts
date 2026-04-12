@@ -1,46 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
+import { collectDataForDate } from '@/lib/weatherCollectorService'
+import { getTourLocalNextNDates } from '@/lib/tourWeatherDates'
 
-// Generate dates for the next 7 days
-function generateNext7Days() {
-  const dates = []
-  const today = new Date()
-  
-  for (let i = 0; i < 7; i++) {
-    const date = new Date(today)
-    date.setDate(today.getDate() + i)
-    dates.push(date.toISOString().split('T')[0])
-  }
-  
-  return dates
-}
+export const maxDuration = 300
 
-// Collect weather data for upcoming tours
+// Collect weather data for upcoming tours (in-process; avoids broken self-HTTP to wrong APP_URL)
 export async function GET() {
   try {
-    const dates = generateNext7Days()
+    const dates = getTourLocalNextNDates(7)
     const results = []
-    
+
     for (const date of dates) {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-        const response = await fetch(`${baseUrl}/api/weather-collector`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ date })
-        })
-        
-        if (response.ok) {
-          results.push({ date, status: 'success' })
-        } else {
-          results.push({ date, status: 'error', error: await response.text() })
-        }
-        
-        // Add delay between requests
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        await collectDataForDate(date, false)
+        results.push({ date, status: 'success' })
+        await new Promise((resolve) => setTimeout(resolve, 2000))
       } catch (error) {
-        results.push({ date, status: 'error', error: error.message })
+        const message = error instanceof Error ? error.message : String(error)
+        results.push({ date, status: 'error', error: message })
       }
     }
     

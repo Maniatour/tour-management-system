@@ -4,6 +4,18 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
+import { useReservationOptions } from '@/hooks/useReservationOptions'
+import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
+import {
+  computePricingSectionCustomerPaymentGrossLike,
+  computePricingSectionCustomerPaymentNet,
+} from '@/utils/pricingSectionCustomerTotals'
+import {
+  computePricingSectionDisplayTotalRevenue,
+  computePricingSectionDisplayOperatingProfit,
+} from '@/utils/pricingSectionRevenueDisplay'
+import { computeChannelSettlementAmount } from '@/utils/channelSettlement'
+import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 
 interface PricingInfoModalProps {
   reservation: Reservation | null
@@ -41,6 +53,7 @@ interface PricingData {
   commission_amount?: number
   commission_percent?: number
   channel_settlement_amount?: number
+  pricing_adults?: number | null
 }
 
 interface Coupon {
@@ -66,6 +79,13 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [selectedCoupon, setSelectedCoupon] = useState<string>('')
   const [channelPricingType, setChannelPricingType] = useState<'separate' | 'single'>('separate')
+  const [returnedAmount, setReturnedAmount] = useState(0)
+  const [refundedAmount, setRefundedAmount] = useState(0)
+  const [partnerReceivedForSettlement, setPartnerReceivedForSettlement] = useState(0)
+  const [isOTAChannel, setIsOTAChannel] = useState(false)
+
+  const reservationOptionsHookId = isOpen && reservation?.id ? String(reservation.id) : ''
+  const { reservationOptions: reservationOptionsRows } = useReservationOptions(reservationOptionsHookId)
 
   useEffect(() => {
     if (isOpen && reservation) {
@@ -79,6 +99,44 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       loadCoupons()
     }
   }, [pricingData, reservation?.channelId])
+
+  useEffect(() => {
+    if (!isOpen || !reservation?.id) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!session?.access_token) return
+        const res = await fetch(`/api/payment-records?reservation_id=${reservation.id}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (!res.ok) return
+        const json = await res.json()
+        const records = json.paymentRecords || []
+        const normalized = records.map((r: { payment_status: string; amount: number }) => ({
+          payment_status: r.payment_status || '',
+          amount: Number(r.amount) || 0,
+        }))
+        const summary = summarizePaymentRecordsForBalance(normalized)
+        if (!cancelled) {
+          setReturnedAmount(summary.returnedTotal)
+          setRefundedAmount(summary.refundedTotal)
+          setPartnerReceivedForSettlement(summary.partnerReceivedStrict)
+        }
+      } catch {
+        if (!cancelled) {
+          setReturnedAmount(0)
+          setRefundedAmount(0)
+          setPartnerReceivedForSettlement(0)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, reservation?.id])
 
   const loadPricingData = async () => {
     if (!reservation) return
@@ -99,19 +157,25 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       if (reservation.channelId) {
         const { data: channelData } = await supabase
           .from('channels')
-          .select('pricing_type, has_not_included_price, not_included_type, not_included_price')
+          .select('pricing_type, has_not_included_price, not_included_type, not_included_price, type, category')
           .eq('id', reservation.channelId)
           .single()
         
         if (channelData?.pricing_type) {
           setChannelPricingType(channelData.pricing_type as 'separate' | 'single')
         }
+        if (channelData) {
+          const ota =
+            String((channelData as { type?: string }).type || '').toLowerCase() === 'ota' ||
+            (channelData as { category?: string }).category === 'OTA'
+          setIsOTAChannel(ota)
+        }
       }
       // reservation_id는 DB에서 문자열/UUID이므로 문자열로 통일해 조회. 상품 단가 컬럼 명시적으로 요청.
       const reservationId = String(reservation.id)
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, channel_settlement_amount')
+        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, channel_settlement_amount, pricing_adults')
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -192,6 +256,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
             0,
             (pricingInfo?.depositAmount || 0) - (Number(pricingInfo?.commission_amount) || 0)
           ),
+          pricing_adults: reservation.adults ?? 0,
         }
         setPricingData(defaultData)
         setEditData(defaultData)
@@ -233,6 +298,12 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           ? toNum(raw.channel_settlement_amount)
           : Math.max(0, dep - comm)
 
+      const paRaw = raw.pricing_adults
+      const pricingAdultsMerged =
+        paRaw != null && paRaw !== '' && Number.isFinite(Number(paRaw))
+          ? Math.max(0, Math.floor(Number(paRaw)))
+          : reservation.adults ?? 0
+
       const pricingDataWithDefaults: PricingData = {
         ...data,
         id: (data as { id?: string }).id,
@@ -245,6 +316,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         commission_amount: toNum(data.commission_amount),
         commission_percent: commissionPercentToUse,
         channel_settlement_amount: chSettleFromDb,
+        pricing_adults: pricingAdultsMerged,
       }
       
       setPricingData(pricingDataWithDefaults)
@@ -499,6 +571,142 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional)
     setEditData(updatedData)
   }
+
+
+  const pricingAdultsVal = useMemo(() => {
+    if (!editData || !reservation) return reservation?.adults ?? 0
+    const pa = editData.pricing_adults
+    if (pa != null && pa !== '' && Number.isFinite(Number(pa))) {
+      return Math.max(0, Math.floor(Number(pa)))
+    }
+    return reservation.adults ?? 0
+  }, [editData, reservation])
+
+  const notIncludedBreakdownModal = useMemo(() => {
+    if (!editData || !reservation) return { baseUsd: 0, residentFeesUsd: 0, totalUsd: 0 }
+    const ra = (reservation as { residentStatusAmounts?: Record<string, number> }).residentStatusAmounts
+    return splitNotIncludedForDisplay(
+      0,
+      0,
+      editData.not_included_price || 0,
+      pricingAdultsVal,
+      reservation.child ?? 0,
+      reservation.infant ?? 0,
+      ra
+    )
+  }, [editData, reservation, pricingAdultsVal])
+
+  const reservationOptionsTotalUsd = useMemo(
+    () => reservationOptionsRows.reduce((sum, o) => sum + (o.total_price || 0), 0),
+    [reservationOptionsRows]
+  )
+
+  const isReservationCancelled =
+    reservation?.status === 'cancelled' || reservation?.status === 'canceled'
+
+  const displayCustomerGross = useMemo(() => {
+    if (!editData || !reservation) return 0
+    return computePricingSectionCustomerPaymentGrossLike({
+      status: reservation.status,
+      productPriceTotal: editData.product_price_total || 0,
+      couponDiscount: Math.abs(editData.coupon_discount || 0),
+      additionalDiscount: editData.additional_discount || 0,
+      reservationOptionsTotalUsd,
+      notIncludedTotalUsd: notIncludedBreakdownModal.totalUsd,
+      additionalCost: editData.additional_cost || 0,
+      tax: editData.tax || 0,
+      cardFee: editData.card_fee || 0,
+      prepaymentCost: editData.prepayment_cost || 0,
+      prepaymentTip: editData.prepayment_tip || 0,
+    })
+  }, [editData, reservation, reservationOptionsTotalUsd, notIncludedBreakdownModal.totalUsd])
+
+  const displayCustomerNet = useMemo(
+    () => computePricingSectionCustomerPaymentNet(displayCustomerGross, returnedAmount),
+    [displayCustomerGross, returnedAmount]
+  )
+
+  const channelSettlementForDisplay = useMemo(() => {
+    if (!editData || !reservation) return 0
+    const fromForm = editData.channel_settlement_amount
+    if (
+      fromForm !== undefined &&
+      fromForm !== null &&
+      String(fromForm) !== '' &&
+      Number.isFinite(Number(fromForm))
+    ) {
+      return Math.max(0, Number(fromForm))
+    }
+    const pa = Math.max(0, Math.floor(Number(editData.pricing_adults ?? reservation.adults) || 0))
+    const billingPax = pa + (reservation.child || 0) + (reservation.infant || 0)
+    const cancelledOtaSettle = isReservationCancelled && isOTAChannel
+    const notIncludedTotal = cancelledOtaSettle ? 0 : (Number(editData.not_included_price) || 0) * (billingPax || 1)
+    const productTotalForSettlement = (Number(editData.product_price_total) || 0) + notIncludedTotal
+
+    return computeChannelSettlementAmount({
+      depositAmount: Number(editData.deposit_amount) || 0,
+      onlinePaymentAmount: Number((reservation as { onlinePaymentAmount?: number }).onlinePaymentAmount) || 0,
+      productPriceTotal: productTotalForSettlement,
+      couponDiscount: Math.abs(Number(editData.coupon_discount) || 0),
+      additionalDiscount: Number(editData.additional_discount) || 0,
+      optionTotalSum: cancelledOtaSettle ? 0 : Number(editData.option_total) || 0,
+      additionalCost: Number(editData.additional_cost) || 0,
+      tax: Number(editData.tax) || 0,
+      cardFee: Number(editData.card_fee) || 0,
+      prepaymentTip: Number(editData.prepayment_tip) || 0,
+      onSiteBalanceAmount: Number(editData.balance_amount) || 0,
+      returnedAmount,
+      partnerReceivedAmount: partnerReceivedForSettlement,
+      commissionAmount: Number(editData.commission_amount) || 0,
+      reservationStatus: reservation.status ?? null,
+      isOTAChannel,
+    })
+  }, [
+    editData,
+    reservation,
+    isReservationCancelled,
+    isOTAChannel,
+    returnedAmount,
+    partnerReceivedForSettlement,
+  ])
+
+  const revenueDisplayInput = useMemo(() => {
+    if (!editData || !reservation) return null
+    return {
+      isReservationCancelled,
+      isOTAChannel,
+      channelSettlementBeforePartnerReturn: channelSettlementForDisplay,
+      reservationOptionsTotalPrice: reservationOptionsTotalUsd,
+      notIncludedTotalUsd: notIncludedBreakdownModal.totalUsd,
+      additionalDiscount: editData.additional_discount || 0,
+      additionalCost: editData.additional_cost || 0,
+      tax: editData.tax || 0,
+      cardFee: editData.card_fee || 0,
+      prepaymentCost: editData.prepayment_cost || 0,
+      prepaymentTip: editData.prepayment_tip || 0,
+      refundedAmount,
+    }
+  }, [
+    editData,
+    reservation,
+    isReservationCancelled,
+    isOTAChannel,
+    channelSettlementForDisplay,
+    reservationOptionsTotalUsd,
+    notIncludedBreakdownModal.totalUsd,
+    refundedAmount,
+  ])
+
+  const totalRevenueDisplay = useMemo(() => {
+    if (!revenueDisplayInput) return 0
+    return computePricingSectionDisplayTotalRevenue(revenueDisplayInput)
+  }, [revenueDisplayInput])
+
+  const operatingProfitDisplay = useMemo(() => {
+    if (!revenueDisplayInput) return 0
+    return computePricingSectionDisplayOperatingProfit(revenueDisplayInput)
+  }, [revenueDisplayInput])
+
 
   if (!isOpen || !reservation) return null
 
@@ -781,14 +989,13 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
               </div>
               </div>
 
-              {/* 3. 가격계산 (1~4번 블록) */}
+                            {/* 3. Pricing calc - same formulas as PricingSection */}
               <div className="bg-white p-3 rounded border border-gray-200 overflow-y-auto max-h-[70vh]">
                 <h4 className="text-xs font-semibold text-gray-900 mb-2">가격 계산</h4>
                 <div className="space-y-3 text-xs">
-                  {/* 1️⃣ 고객 기준 결제 흐름 */}
                   <div className="pb-2 border-b border-gray-200">
                     <div className="flex items-center mb-1.5">
-                      <span className="text-base mr-1">1️⃣</span>
+                      <span className="text-base mr-1">1</span>
                       <span className="font-semibold text-gray-800">고객 기준 결제 흐름</span>
                     </div>
                     <div className="space-y-1">
@@ -806,9 +1013,35 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       <div className="flex justify-between">
                         <span className="text-gray-700">할인 후 상품가</span>
                         <span className="font-medium">
-                          ${((editData?.product_price_total || 0) - Math.abs(editData?.coupon_discount || 0) - (editData?.additional_discount || 0)).toFixed(2)}
+                          ${(
+                            (editData?.product_price_total || 0) -
+                            Math.abs(editData?.coupon_discount || 0) -
+                            (editData?.additional_discount || 0)
+                          ).toFixed(2)}
                         </span>
                       </div>
+                      {!isReservationCancelled && reservationOptionsTotalUsd > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">+ 예약 옵션</span>
+                          <span>+${reservationOptionsTotalUsd.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {!isReservationCancelled && notIncludedBreakdownModal.totalUsd > 0 && (
+                        <>
+                          {notIncludedBreakdownModal.baseUsd > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">+ 불포함 가격</span>
+                              <span>+${notIncludedBreakdownModal.baseUsd.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {notIncludedBreakdownModal.residentFeesUsd > 0 && (
+                            <div className="flex justify-between pl-2">
+                              <span className="text-gray-600">+ 비거주자 비용</span>
+                              <span>+${notIncludedBreakdownModal.residentFeesUsd.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
                       {(editData?.additional_discount || 0) > 0 && (
                         <div className="flex justify-between text-red-600">
                           <span>- 추가 할인</span>
@@ -851,21 +1084,30 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           <span>+${(editData?.private_tour_additional_cost || 0).toFixed(2)}</span>
                         </div>
                       )}
+                      {returnedAmount > 0.005 && (
+                        <div className="flex justify-between rounded px-1.5 py-1 bg-amber-50 border border-amber-100">
+                          <span className="text-amber-900">Returned</span>
+                          <span className="font-semibold text-amber-900">-${returnedAmount.toFixed(2)}</span>
+                        </div>
+                      )}
                       <div className="border-t border-gray-100 my-1" />
                       <div className="flex justify-between">
                         <span className="font-bold text-blue-800">고객 총 결제 금액</span>
-                        <span className="font-bold text-blue-600">${(editData?.total_price || 0).toFixed(2)}</span>
+                        <span className="font-bold text-blue-600">${displayCustomerNet.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* 2️⃣ 고객 실제 지불 내역 */}
                   <div className="pb-2 border-b border-gray-200">
                     <div className="flex items-center mb-1.5">
-                      <span className="text-base mr-1">2️⃣</span>
-                      <span className="font-semibold text-gray-800">고객 실제 지불 내역</span>
+                      <span className="text-base mr-1">2</span>
+                      <span className="font-semibold text-gray-800">고객 실제 지불 영역</span>
                     </div>
                     <div className="space-y-1">
+                      <div className="flex justify-between pb-2 border-b border-gray-100">
+                        <span className="font-semibold text-gray-900">총 결제 예정 금액</span>
+                        <span className="font-bold text-blue-700">${displayCustomerNet.toFixed(2)}</span>
+                      </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-700">고객 실제 지불액 (보증금)</span>
                         <div className="relative">
@@ -894,7 +1136,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       </div>
                       <div className="border-t border-gray-100 my-1" />
                       <div className="flex justify-between">
-                        <span className="font-semibold text-gray-900">총 결제 예정 금액</span>
+                        <span className="font-semibold text-gray-900">총 실제 지불 합</span>
                         <span className="font-bold text-blue-600">
                           ${((editData?.deposit_amount || 0) + (editData?.balance_amount || 0)).toFixed(2)}
                         </span>
@@ -902,10 +1144,9 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     </div>
                   </div>
 
-                  {/* 3️⃣ 채널 정산 기준 */}
                   <div className="pb-2 border-b border-gray-200">
                     <div className="flex items-center mb-1.5">
-                      <span className="text-base mr-1">3️⃣</span>
+                      <span className="text-base mr-1">3</span>
                       <span className="font-semibold text-gray-800">채널 정산 기준</span>
                     </div>
                     <div className="space-y-1">
@@ -961,97 +1202,47 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     </div>
                   </div>
 
-                  {/* 4️⃣ 최종 매출 & 운영 이익 */}
                   <div className="pb-1">
                     <div className="flex items-center mb-1.5">
-                      <span className="text-base mr-1">4️⃣</span>
+                      <span className="text-base mr-1">4</span>
                       <span className="font-semibold text-gray-800">최종 매출 & 운영 이익</span>
                     </div>
-                    {(() => {
-                      const channelSettlement =
-                        editData?.channel_settlement_amount != null &&
-                        Number.isFinite(Number(editData.channel_settlement_amount))
-                          ? Math.max(0, Number(editData.channel_settlement_amount))
-                          : Math.max(0, (editData?.deposit_amount || 0) - (editData?.commission_amount || 0))
-                      const people = (reservation?.adults || 0) + (reservation?.child || 0) + (reservation?.infant || 0)
-                      const notIncludedTotal = (editData?.not_included_price || 0) * people
-                      let totalRevenue = channelSettlement
-                      if (notIncludedTotal > 0) totalRevenue += notIncludedTotal
-                      if ((editData?.additional_discount || 0) > 0) totalRevenue -= editData.additional_discount
-                      if ((editData?.additional_cost || 0) > 0) totalRevenue += editData.additional_cost
-                      if ((editData?.tax || 0) > 0) totalRevenue += editData.tax
-                      if ((editData?.card_fee || 0) > 0) totalRevenue += editData.card_fee
-                      if ((editData?.prepayment_cost || 0) > 0) totalRevenue += editData.prepayment_cost
-                      const operatingProfit = totalRevenue - (editData?.prepayment_tip || 0)
-                      return (
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span className="text-gray-700">채널 정산금액</span>
-                            <span className="font-medium">${channelSettlement.toFixed(2)}</span>
-                          </div>
-                          {notIncludedTotal > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">+ 불포함 가격</span>
-                              <span>+${notIncludedTotal.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {(editData?.additional_discount || 0) > 0 && (
-                            <div className="flex justify-between text-red-600">
-                              <span className="text-gray-600">- 추가할인</span>
-                              <span>-${(editData?.additional_discount || 0).toFixed(2)}</span>
-                            </div>
-                          )}
-                          {(editData?.additional_cost || 0) > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">+ 추가비용</span>
-                              <span>+${(editData?.additional_cost || 0).toFixed(2)}</span>
-                            </div>
-                          )}
-                          {(editData?.tax || 0) > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">+ 세금</span>
-                              <span>+${(editData?.tax || 0).toFixed(2)}</span>
-                            </div>
-                          )}
-                          {(editData?.card_fee || 0) > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">+ 결제 수수료</span>
-                              <span>+${(editData?.card_fee || 0).toFixed(2)}</span>
-                            </div>
-                          )}
-                          {(editData?.prepayment_cost || 0) > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">+ 선결제 지출</span>
-                              <span>+${(editData?.prepayment_cost || 0).toFixed(2)}</span>
-                            </div>
-                          )}
-                          <div className="border-t border-gray-100 my-1" />
-                          <div className="flex justify-between">
-                            <span className="font-bold text-green-800">총 매출</span>
-                            <span className="font-bold text-green-600">${totalRevenue.toFixed(2)}</span>
-                          </div>
-                          {(editData?.prepayment_tip || 0) > 0 && (
-                            <>
-                              <div className="flex justify-between text-red-600">
-                                <span className="text-gray-600">- 선결제 팁 (수익 아님)</span>
-                                <span>-${(editData?.prepayment_tip || 0).toFixed(2)}</span>
-                              </div>
-                              <div className="border-t border-gray-100 my-1" />
-                            </>
-                          )}
-                          <div className="flex justify-between">
-                            <span className="font-bold text-purple-800">운영 이익</span>
-                            <span className="font-bold text-purple-600">${Math.max(0, operatingProfit).toFixed(2)}</span>
-                          </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">채널 정산금액 (표시 기준)</span>
+                        <span className="font-medium">${channelSettlementForDisplay.toFixed(2)}</span>
+                      </div>
+                      {refundedAmount > 0.005 && (
+                        <div className="flex justify-between text-red-600">
+                          <span className="text-gray-600">환불금 (우리)</span>
+                          <span>-${refundedAmount.toFixed(2)}</span>
                         </div>
-                      )
-                    })()}
+                      )}
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="flex justify-between">
+                        <span className="font-bold text-green-800">총 매출</span>
+                        <span className="font-bold text-green-600">${totalRevenueDisplay.toFixed(2)}</span>
+                      </div>
+                      {(editData?.prepayment_tip || 0) > 0 && (
+                        <>
+                          <div className="flex justify-between text-red-600">
+                            <span className="text-gray-600">선결제 팁 (수익 아님)</span>
+                            <span>-${(editData?.prepayment_tip || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="border-t border-gray-100 my-1" />
+                        </>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="font-bold text-purple-800">운영 이익</span>
+                        <span className="font-bold text-purple-600">${Math.max(0, operatingProfitDisplay).toFixed(2)}</span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="border-t border-gray-200 pt-2 mt-1">
                     <div className="flex justify-between pt-1">
-                      <span className="font-semibold text-gray-900">총 가격</span>
-                      <span className="font-bold text-gray-900">${(editData?.total_price || 0).toFixed(2)}</span>
+                      <span className="font-semibold text-gray-900">총 가격 (표시)</span>
+                      <span className="font-bold text-gray-900">${displayCustomerNet.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>

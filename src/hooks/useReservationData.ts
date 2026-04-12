@@ -16,6 +16,10 @@ import type {
   Reservation 
 } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
+import {
+  aggregateReservationOptionSumsByReservationId,
+  type ReservationOptionSumRow,
+} from '@/lib/syncReservationPricingAggregates'
 
 /** PostgREST or= 필터용: 큰 OFFSET 대신 (created_at DESC, id DESC) 키셋 페이지네이션 */
 function customersCreatedAtDescKeysetOr(created_at: string, id: string): string {
@@ -279,6 +283,8 @@ export function useReservationData() {
   const [reservationsAggregateReady, setReservationsAggregateReady] = useState(false)
   const [loadingProgress, setLoadingProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, ReservationPricingMapValue>>(new Map())
+  const [reservationOptionsPresenceByReservationId, setReservationOptionsPresenceByReservationId] =
+    useState<Map<string, boolean>>(new Map())
   type TourMapRow = {
     id: string
     tour_status: string | null
@@ -386,6 +392,42 @@ export function useReservationData() {
             currency: 'USD'
           })
         })
+      }
+      // reservation_options.reservation_id 기준 합계로 option_total 동기화 (sync API와 동일 규칙)
+      const { data: optionRows } = await supabase
+        .from('reservation_options')
+        .select('reservation_id, total_price, price, ea, status')
+        .in('reservation_id', chunk)
+      const sumsByRid = aggregateReservationOptionSumsByReservationId(
+        (optionRows || []) as ReservationOptionSumRow[]
+      )
+      for (const [rid, sum] of sumsByRid) {
+        const row = map.get(rid)
+        if (row) row.option_total = sum
+      }
+    }
+    return map
+  }
+
+  const fetchReservationOptionsPresenceMap = async (reservationIds: string[]) => {
+    const map = new Map<string, boolean>()
+    const unique = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+    for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+      const chunk = unique.slice(i, i + CHUNK_SIZE)
+      for (const id of chunk) map.set(id, false)
+      const { data, error } = await supabase
+        .from('reservation_options')
+        .select('reservation_id')
+        .in('reservation_id', chunk)
+      if (error) {
+        console.warn('Error fetching reservation_options presence:', error)
+        continue
+      }
+      const withRows = new Set(
+        (data || []).map((r: { reservation_id: string }) => r.reservation_id).filter(Boolean)
+      )
+      for (const id of chunk) {
+        map.set(id, withRows.has(id))
       }
     }
     return map
@@ -509,14 +551,16 @@ export function useReservationData() {
       const firstResIds = firstMapped.map(r => r.id)
       const firstTourIds = [...new Set(firstMapped.map(r => r.tourId).filter(id => id && id.trim() && id !== 'null' && id !== 'undefined'))]
 
-      const [firstPricingMap, firstToursById, firstToursByOverlap] = await Promise.all([
+      const [firstPricingMap, firstToursById, firstToursByOverlap, firstOptionsPresenceMap] = await Promise.all([
         fetchPricingMap(firstResIds),
         fetchToursMap(firstTourIds),
         fetchToursOverlappingReservationIds(firstResIds),
+        fetchReservationOptionsPresenceMap(firstResIds),
       ])
 
       setReservations(firstMapped)
       setReservationPricingMap(firstPricingMap)
+      setReservationOptionsPresenceByReservationId(firstOptionsPresenceMap)
       setToursMap(mergeTourMaps(firstToursById, firstToursByOverlap))
       setLoadingProgress({ current: firstMapped.length, total: firstMapped.length })
       setReservationsLoading(false)
@@ -573,10 +617,11 @@ export function useReservationData() {
       const restResIds = restMapped.map(r => r.id)
       const restTourIds = [...new Set(restMapped.map(r => r.tourId).filter(id => id && id.trim() && id !== 'null' && id !== 'undefined'))]
 
-      const [restPricingMap, restToursById, restToursByOverlap] = await Promise.all([
+      const [restPricingMap, restToursById, restToursByOverlap, restOptionsPresenceMap] = await Promise.all([
         fetchPricingMap(restResIds),
         fetchToursMap(restTourIds),
         fetchToursOverlappingReservationIds(restResIds),
+        fetchReservationOptionsPresenceMap(restResIds),
       ])
       const totalCount = firstMapped.length + restMapped.length
 
@@ -586,6 +631,9 @@ export function useReservationData() {
         return extra.length === 0 ? prev : [...prev, ...extra]
       })
       setReservationPricingMap(prev => new Map([...prev, ...restPricingMap]))
+      setReservationOptionsPresenceByReservationId(
+        (prev) => new Map([...prev, ...restOptionsPresenceMap])
+      )
       setToursMap(prev => mergeTourMaps(prev, restToursById, restToursByOverlap))
       setLoadingProgress({ current: totalCount, total: totalCount })
     } catch (error) {
@@ -612,6 +660,17 @@ export function useReservationData() {
     })
   }
 
+  const refreshReservationOptionsPresenceForIds = async (reservationIds: string[]) => {
+    const unique = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+    if (unique.length === 0) return
+    const map = await fetchReservationOptionsPresenceMap(unique)
+    setReservationOptionsPresenceByReservationId((prev) => {
+      const next = new Map(prev)
+      map.forEach((v, k) => next.set(k, v))
+      return next
+    })
+  }
+
   // 예약 데이터만 별도로 로드
   useEffect(() => {
     fetchReservations()
@@ -629,6 +688,7 @@ export function useReservationData() {
     pickupHotels,
     coupons,
     reservationPricingMap,
+    reservationOptionsPresenceByReservationId,
     toursMap,
     loading,
     loadingProgress,
@@ -637,6 +697,7 @@ export function useReservationData() {
     // 리프레시 함수들
     refreshReservations: fetchReservations,
     refreshReservationPricingForIds,
+    refreshReservationOptionsPresenceForIds,
     refreshCustomers: refetchCustomers,
     refreshProducts: refetchProducts,
     refreshChannels: refetchChannels,

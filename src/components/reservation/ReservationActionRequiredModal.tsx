@@ -71,8 +71,8 @@ export interface ReservationActionRequiredModalProps {
   locale: string
   onPricingInfoClick: (reservation: Reservation) => void
   onCreateTour: (reservation: Reservation) => void
-  onPickupTimeClick: (reservation: Reservation, e: React.MouseEvent) => void
-  onPickupHotelClick: (reservation: Reservation, e: React.MouseEvent) => void
+  onPickupTimeClick: (reservation: Reservation, e: React.MouseEvent, opts?: { resumePickupSummary?: boolean }) => void
+  onPickupHotelClick: (reservation: Reservation, e: React.MouseEvent, opts?: { resumePickupSummary?: boolean }) => void
   onPaymentClick: (reservation: Reservation) => void
   onDetailClick: (reservation: Reservation) => void
   onReviewClick: (reservation: Reservation) => void
@@ -103,6 +103,8 @@ export interface ReservationActionRequiredModalProps {
   sendingEmail: string | null
   /** tours.reservation_ids만으로 연결된 경우 투어 배정으로 간주 */
   tourIdByReservationId?: Map<string, string>
+  reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
+  onReshowPickupSummaryConsumed?: () => void
 }
 
 const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType }[] = [
@@ -152,7 +154,9 @@ export default function ReservationActionRequiredModal({
   choicesCacheRef,
   emailDropdownOpen,
   sendingEmail,
-  tourIdByReservationId
+  tourIdByReservationId,
+  reshowPickupSummaryRequest = null,
+  onReshowPickupSummaryConsumed
 }: ReservationActionRequiredModalProps) {
   const t = useTranslations('reservations')
   const [activeTab, setActiveTab] = useState<ActionRequiredTabId>('status')
@@ -170,6 +174,8 @@ export default function ReservationActionRequiredModal({
   const [reservationOptionSumByReservationId, setReservationOptionSumByReservationId] = useState<
     Map<string, number>
   >(() => new Map())
+  const [reservationOptionsPresenceByReservationId, setReservationOptionsPresenceByReservationId] =
+    useState<Map<string, boolean>>(() => new Map())
   const [loadingPayments, setLoadingPayments] = useState(false)
 
   // 탭 전환 시 1페이지로
@@ -208,6 +214,7 @@ export default function ReservationActionRequiredModal({
       setReservationIdsWithPayments(new Set())
       setPaymentRecordsByReservationId(new Map())
       setReservationOptionSumByReservationId(new Map())
+      setReservationOptionsPresenceByReservationId(new Map())
       return
     }
     const ids = reservations.map(r => r.id)
@@ -216,6 +223,8 @@ export default function ReservationActionRequiredModal({
       const set = new Set<string>()
       const byRes = new Map<string, PaymentRecordLike[]>()
       const mergedOptionSums = new Map<string, number>()
+      const mergedOptionsPresence = new Map<string, boolean>()
+      ids.forEach((id) => mergedOptionsPresence.set(id, false))
       const chunkSize = 200
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize)
@@ -245,14 +254,45 @@ export default function ReservationActionRequiredModal({
         for (const [rid, v] of chunkSums) {
           mergedOptionSums.set(rid, v)
         }
+        for (const row of optRows ?? []) {
+          const rid = (row as { reservation_id?: string }).reservation_id
+          if (rid) mergedOptionsPresence.set(rid, true)
+        }
       }
       setReservationIdsWithPayments(set)
       setPaymentRecordsByReservationId(byRes)
       setReservationOptionSumByReservationId(mergedOptionSums)
+      setReservationOptionsPresenceByReservationId(mergedOptionsPresence)
       setLoadingPayments(false)
     }
     load()
   }, [isOpen, reservations])
+
+  const handleReservationOptionsMutated = useCallback(
+    (reservationId: string) => {
+      void (async () => {
+        const { data: optRows } = await supabase
+          .from('reservation_options')
+          .select('reservation_id, total_price, price, ea, status')
+          .eq('reservation_id', reservationId)
+        const has = (optRows?.length ?? 0) > 0
+        setReservationOptionsPresenceByReservationId((prev) => {
+          const next = new Map(prev)
+          next.set(reservationId, has)
+          return next
+        })
+        const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
+        const sum = chunkSums.get(reservationId) ?? 0
+        setReservationOptionSumByReservationId((prev) => {
+          const next = new Map(prev)
+          next.set(reservationId, sum)
+          return next
+        })
+        await onRefreshReservationPricing?.([reservationId])
+      })()
+    },
+    [onRefreshReservationPricing]
+  )
 
   const hasTourAssigned = useCallback(
     (r: Reservation) => {
@@ -818,6 +858,10 @@ export default function ReservationActionRequiredModal({
                       getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
                       choicesCacheRef={choicesCacheRef}
                       linkedTourId={tourIdByReservationId?.get(reservation.id) ?? null}
+                      reservationOptionsPresenceByReservationId={reservationOptionsPresenceByReservationId}
+                      onReservationOptionsMutated={handleReservationOptionsMutated}
+                      reshowPickupSummaryRequest={reshowPickupSummaryRequest}
+                      onReshowPickupSummaryConsumed={onReshowPickupSummaryConsumed}
                     />
                   ))}
                 </div>

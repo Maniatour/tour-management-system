@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
@@ -9,6 +9,7 @@ import { generateReservationId } from '@/lib/entityIds'
 import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
+import { computeCustomerPaymentTotalLineFormula } from '@/utils/reservationPricingBalance'
 import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
@@ -56,6 +57,7 @@ import { DeletedReservationsTableModal } from '@/components/shared/DeletedReserv
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
   viewMode: 'card' as 'card' | 'calendar',
+  cardLayout: 'simple' as 'standard' | 'simple',
   selectedStatus: 'all',
   currentPage: 1,
   itemsPerPage: 20,
@@ -77,21 +79,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const { user, userPosition } = useAuth()
   const isSuper = userPosition === 'super'
   
-  // 초이스 옵션별 색상 매핑 함수 (옵션 이름 기준으로 색상 결정) - useCallback으로 메모이제이션
+  // ???????????? ?? ??? (??? ??? ?????? ??? ??) - useCallback??? ????????
   const getGroupColorClasses = useCallback((groupId: string, groupName?: string, optionName?: string) => {
-    // 앤텔롭 캐년 초이스: 🏜️ L / 🏜️ X / 🏜️ U 고정 색상 (투어 예약 카드·자동 배정과 동일)
+    // ??????? ???? ?????L / ?????X / ?????U ?? ??? (??? ??? ?????? ???????)
     const opt = (optionName || '').trim()
-    if (opt === '🏜️ L') {
+    if (opt === '??? L') {
       return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-300'
     }
-    if (opt === '🏜️ X') {
+    if (opt === '??? X') {
       return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800 border border-violet-300'
     }
-    if (opt === '🏜️ U') {
+    if (opt === '??? U') {
       return 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200'
     }
 
-    // 풍부한 색상 팔레트 (각 옵션마다 다른 색상)
+    // ????????? ?????(??????? ??? ???)
     const colorPalette = [
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200",
@@ -111,7 +113,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
     ]
     
-    // 옵션 이름을 기준으로 해시값 계산 (같은 옵션 이름은 항상 같은 색상)
+    // ??? ??????????? ??????? (??? ??? ????? ???? ??? ???)
     const hashSource = optionName || groupName || groupId
     let hash = 0
     for (let i = 0; i < hashSource.length; i++) {
@@ -121,7 +123,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return colorPalette[Math.abs(hash) % colorPalette.length]
   }, [])
 
-  // 새로운 초이스 시스템에서 선택된 옵션을 가져오는 함수
+  // ????????????????????????????????????
   const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string, isRetry = false) => {
     const run = async () => {
       const { data, error } = await supabase
@@ -148,24 +150,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     try {
       return await run()
     } catch (error) {
-      // AbortError 감지: Error 인스턴스 또는 Supabase가 반환하는 { message, code, details } 객체 모두 처리
+      // AbortError ???: Error ?????? ??? Supabase? ????? { message, code, details } ?? ?? ??
       const msg = typeof (error as { message?: string })?.message === 'string' ? (error as { message: string }).message : (error instanceof Error ? error.message : '')
       const isAbortError =
         (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('signal is aborted'))) ||
         (msg && (msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')))
 
       if (isAbortError && !isRetry) {
-        // 동시 다수 요청 시 발생하는 AbortError는 한 번만 재시도
+        // ??? ??? ??? ??????? AbortError?????? ?????
         await new Promise((r) => setTimeout(r, 100))
         return getSelectedChoicesFromNewSystem(reservationId, true)
       }
 
       if (isAbortError) {
-        // 재시도 후에도 AbortError면 로그 없이 빈 배열 반환 (동시 요청/모달 전환 등으로 인한 정상적 취소)
+        // ??????????AbortError???? ??? ???? ?? (??? ???/?? ??? ???????? ???????)
         return []
       }
 
-      // 의미 있는 에러 정보가 있을 때만 로그 (빈 객체 로그 방지)
+      // ???? ??? ??? ???? ??? ??? ?? (???? ?? ???)
       const err = error as { message?: string; code?: string; details?: string; hint?: string }
       const errMsg = (err?.message && err.message.trim()) || (error instanceof Error ? error.message : '')
       const code = err?.code?.trim?.()
@@ -182,7 +184,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [])
 
-  // ReservationCardItem용: null을 빈 값으로 정규화한 choices 반환
+  // ReservationCardItem?? null?????????????? choices ??
   const getSelectedChoicesNormalized = useCallback(async (reservationId: string) => {
     const rows = await getSelectedChoicesFromNewSystem(reservationId)
     return rows.map(r => ({
@@ -193,7 +195,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }))
   }, [getSelectedChoicesFromNewSystem])
 
-  // 초이스 데이터 캐시 (깜빡거림 방지)
+  // ??????????? (???? ???)
   const choicesCacheRef = useRef<Map<string, Array<{
     choice_id: string
     option_id: string
@@ -213,10 +215,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const locale = routeParams?.locale || 'ko'
   const searchParams = useSearchParams()
   
-  // URL에서 고객 ID 파라미터 가져오기
+  // URL??? ?? ID ????? ??????
   const customerIdFromUrl = searchParams.get('customer')
   
-  // 커스텀 훅으로 데이터 관리
+  // ???? ?????????????
   const {
     reservations,
     customers,
@@ -228,16 +230,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     pickupHotels,
     coupons,
     reservationPricingMap: hookReservationPricingMap,
+    reservationOptionsPresenceByReservationId: hookReservationOptionsPresenceByReservationId,
     toursMap: hookToursMap,
     loading,
     loadingProgress,
     reservationsAggregateReady,
     refreshReservations,
     refreshReservationPricingForIds,
+    refreshReservationOptionsPresenceForIds,
     refreshCustomers
   } = useReservationData()
 
-  /** DB tour_id 없이도 tours.reservation_ids에만 연결된 경우 카드/배지용 */
+  /** DB tour_id ?????tours.reservation_ids??? ??????? ??/?????*/
   const tourIdByReservationId = useMemo(() => {
     const m = new Map<string, string>()
     hookToursMap.forEach((tour, tourId) => {
@@ -249,7 +253,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return m
   }, [hookToursMap])
 
-  // 상태 관리 (목록 필터 — 새로고침 유지)
+  const handleReservationOptionsMutated = useCallback(
+    (reservationId: string) => {
+      void refreshReservationOptionsPresenceForIds([reservationId])
+      void refreshReservationPricingForIds([reservationId])
+    },
+    [refreshReservationOptionsPresenceForIds, refreshReservationPricingForIds]
+  )
+
+  // ??? ???(?? ??? ??????? ????)
   const [reservationListUi, setReservationListUi] = useRoutePersistedState(
     'reservations-list',
     RESERVATIONS_LIST_UI_DEFAULT
@@ -257,6 +269,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const {
     searchTerm,
     viewMode,
+    cardLayout,
     selectedStatus,
     currentPage,
     itemsPerPage,
@@ -274,6 +287,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
     }))
   const setViewMode = (m: 'card' | 'calendar') => setReservationListUi((u) => ({ ...u, viewMode: m }))
+const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => ({ ...u, cardLayout: l }))
   const setSelectedStatus = (s: string) => setReservationListUi((u) => ({ ...u, selectedStatus: s }))
   const setCurrentPage = (v: React.SetStateAction<number>) =>
     setReservationListUi((u) => ({
@@ -321,7 +335,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   
-  // 검색어 debounce (300ms)
+  // ???? debounce (300ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm)
@@ -331,14 +345,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [searchTerm])
   const [showAddForm, setShowAddForm] = useState(false)
   
-  // URL 파라미터 add=true일 때 모달 자동 열기
+  // URL ????? add=true?????? ??? ???
   useEffect(() => {
     const addParam = searchParams.get('add')
     if (addParam === 'true' && !showAddForm) {
       const newId = generateReservationId()
       setNewReservationId(newId)
       setShowAddForm(true)
-      // URL에서 add 파라미터 제거 (뒤로가기 시 모달이 다시 열리지 않도록)
+      // URL??? add ????? ??? (??????????????? ???? ?????
       const newSearchParams = new URLSearchParams(searchParams.toString())
       newSearchParams.delete('add')
       const newUrl = `${window.location.pathname}${newSearchParams.toString() ? '?' + newSearchParams.toString() : ''}`
@@ -354,17 +368,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [selectedReservationForReview, setSelectedReservationForReview] = useState<Reservation | null>(null)
   const [showReviewModal, setShowReviewModal] = useState(false)
 
-  const [isInitialLoad, setIsInitialLoad] = useState(true) // 초기 로딩 여부 추적
+  const [isInitialLoad, setIsInitialLoad] = useState(true) // ?? ?? ???? ??
   
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const [filterModalOpen, setFilterModalOpen] = useState(false) // 필터 모달 열림 상태
+  const [filterModalOpen, setFilterModalOpen] = useState(false) // ??? ?? ??? ???
   const [showDeletedReservationsModal, setShowDeletedReservationsModal] = useState(false)
   const [deletedReservationsModalRows, setDeletedReservationsModalRows] = useState<
     Array<{ id: string; customer_id?: string | null; tour_date?: string | null; status?: string | null; customer_name?: string | null }>
   >([])
   const [deletedReservationsModalLoading, setDeletedReservationsModalLoading] = useState(false)
 
-  // 그룹 접기/펼치기 함수 - useCallback으로 메모이제이션
+  // ?? ???/???????? - useCallback??? ????????
   const toggleGroupCollapse = useCallback((date: string) => {
     setCollapsedGroups(prev => {
       const newSet = new Set(prev)
@@ -377,20 +391,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     })
   }, [])
 
-  // 입금 내역 관련 상태
+  // ??? ??? ??????
   const [showPaymentRecords, setShowPaymentRecords] = useState(false)
   const [selectedReservationForPayment, setSelectedReservationForPayment] = useState<Reservation | null>(null)
 
-  // 예약 상세 모달 관련 상태
+  // ??? ??? ?? ??????
   const [showReservationDetailModal, setShowReservationDetailModal] = useState(false)
   const [selectedReservationForDetail, setSelectedReservationForDetail] = useState<Reservation | null>(null)
   const [receiptModalReservationId, setReceiptModalReservationId] = useState<string | null>(null)
 
-  // 예약 처리 필요 모달 및 입금 데이터(배지 카운트용)
+  // ??? ?? ??? ?? ????? ???????? ?????)
   const [showActionRequiredModal, setShowActionRequiredModal] = useState(false)
+  const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
 
-  // 이메일 발송 관련 상태
+  // ??????? ??????
   const [emailDropdownOpen, setEmailDropdownOpen] = useState<string | null>(null)
   const [sendingEmail, setSendingEmail] = useState<string | null>(null)
   const [showEmailPreview, setShowEmailPreview] = useState(false)
@@ -404,7 +419,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [showEmailLogs, setShowEmailLogs] = useState(false)
   const [selectedReservationForEmailLogs, setSelectedReservationForEmailLogs] = useState<string | null>(null)
 
-  // 이메일 드롭다운 외부 클릭 시 닫기
+  // ??????????? ???? ??? ?????
   useEffect(() => {
     if (!emailDropdownOpen) {
       return undefined
@@ -436,7 +451,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           .order('updated_at', { ascending: false })
           .limit(500)
         if (error || cancelled) {
-          if (error) console.error('삭제된 예약 목록 조회 오류:', error)
+          if (error) console.error('????????? ?? ?? ???:', error)
           return
         }
         const rows = data || []
@@ -462,7 +477,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [showDeletedReservationsModal])
 
-  // 투어 정보 상태
+  // ??? ??? ???
   const [tourInfoMap, setTourInfoMap] = useState<Map<string, {
     totalPeople: number
     otherReservationsTotalPeople: number
@@ -479,19 +494,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     productId: string | null
   }>>(new Map())
 
-  // reservation_pricing 데이터는 useReservationData 훅에서 가져옴
-  // hookReservationPricingMap을 사용하되, 로컬 상태도 유지 (필터링/페이지네이션 대응)
+  // reservation_pricing ?????? useReservationData ?????????
+  // hookReservationPricingMap????????, ?? ????????? (??????????????????
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, ReservationPricingMapValue>>(new Map())
 
-  // hookReservationPricingMap이 업데이트되면 로컬 상태도 업데이트
+  // hookReservationPricingMap??????????? ?? ???????????
   useEffect(() => {
     if (hookReservationPricingMap.size > 0) {
       setReservationPricingMap(hookReservationPricingMap)
     }
   }, [hookReservationPricingMap])
 
-  // 가격 계산식 생성 - 예약 상세/가격 정보 모달과 동일한 공식
-  // (판매가+불포함)×인원 = 상품가격합계 - 할인/추가비용 = 고객 총 결제 금액 - 채널 수수료 $ = 총매출 (Balance $x)
+  // ?????????? ??reservationPricingBalance.computeCustomerPaymentTotalLineFormula ?? ???
+  // (?????? + ?????????? ??? ??? = required_option_total + option_total, choices_total ???)
   const generatePriceCalculation = useCallback((reservation: any, pricing: any): string => {
     if (!pricing) return ''
     const toN = (v: number | undefined): number => (v == null || v === undefined ? 0 : Number(v) || 0)
@@ -501,9 +516,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const additionalCost = toN(pricing.additional_cost)
     const commissionAmount = toN(pricing.commission_amount)
     const optionTotal = toN(pricing.option_total)
+    const requiredOptionTotal = toN(pricing.required_option_total)
+    const optionsSubtotal = requiredOptionTotal + optionTotal
     const notIncludedPrice = toN(pricing.not_included_price)
     const totalPeople = Math.max(1, (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0))
-    // product_price_total(상품 가격 합계)에는 이미 (판매가+불포함)×인원이 포함됨 → 불포함 중복 가산 금지
+    const party = { adults: reservation.adults ?? 0, child: reservation.child ?? 0, infant: reservation.infant ?? 0 }
+    const tax = toN(pricing.tax)
+    const cardFee = toN(pricing.card_fee)
+    const prepaymentCost = toN(pricing.prepayment_cost)
+    const prepaymentTip = toN(pricing.prepayment_tip)
+    const privateTourAdditional = toN(pricing.private_tour_additional_cost)
+    const extrasSum =
+      additionalCost + tax + cardFee + prepaymentCost + prepaymentTip + privateTourAdditional
+    // product_price_total(??? ??????)??? ???? (????+??????????????????????? ??????
     const adultPrice = toN(pricing.adult_product_price)
     const childPrice = toN(pricing.child_product_price)
     const infantPrice = toN(pricing.infant_product_price)
@@ -512,21 +537,32 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       subtotal = adultPrice * (reservation.adults || 0) + childPrice * (reservation.child || 0) + infantPrice * (reservation.infant || 0)
     }
     if (subtotal <= 0) return ''
-    // 고객 총 결제 금액 = 상품가격합계 - 할인 + 옵션 + 추가비용 (choices_total 제외 — option_total 과 이중 방지, 불포함은 상품가격합계에 포함)
-    const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + optionTotal + additionalCost
-    const totalRevenue = Math.max(0, customerTotalPayment - commissionAmount)
+    const gross = computeCustomerPaymentTotalLineFormula(pricing, party)
+    const totalRevenue = Math.max(0, gross - commissionAmount)
     const currency = pricing.currency || 'USD'
-    const sym = currency === 'KRW' ? '₩' : '$'
-    // 표시: (판매가+불포함)=단가 × 인원 = 상품가격합계 또는 $945 × 3 = $945
+    const sym = currency === 'KRW' ? '?' : '$'
+    // ???: (????+????=???? ? ??? = ??????????? $945 ? 3 = $945
     const unitPrice = adultPrice + notIncludedPrice
     let s: string
     if (notIncludedPrice > 0 && adultPrice > 0 && totalPeople > 0) {
-      s = `(${sym}${adultPrice.toFixed(0)} + ${sym}${notIncludedPrice.toFixed(0)}) = ${sym}${unitPrice.toFixed(2)} × ${totalPeople} = ${sym}${subtotal.toFixed(2)}`
+      s = `(${sym}${adultPrice.toFixed(0)} + ${sym}${notIncludedPrice.toFixed(0)}) = ${sym}${unitPrice.toFixed(2)} ? ${totalPeople} = ${sym}${subtotal.toFixed(2)}`
     } else {
-      s = `${sym}${subtotal.toFixed(2)} × ${totalPeople} = ${sym}${subtotal.toFixed(2)}`
+      s = `${sym}${subtotal.toFixed(2)} ? ${totalPeople} = ${sym}${subtotal.toFixed(2)}`
     }
-    if (couponDiscount > 0 || additionalDiscount > 0) {
-      s += ` - ${sym}${(couponDiscount + additionalDiscount).toFixed(2)} = ${sym}${customerTotalPayment.toFixed(2)}`
+    const disc = couponDiscount + additionalDiscount
+    const hasAdjustmentsAfterProduct =
+      disc > 0.005 || optionsSubtotal > 0.005 || extrasSum > 0.005
+    if (hasAdjustmentsAfterProduct) {
+      if (disc > 0.005) {
+        s += ` - ${sym}${disc.toFixed(2)}`
+      }
+      if (optionsSubtotal > 0.005) {
+        s += ` + ${sym}${optionsSubtotal.toFixed(2)}`
+      }
+      if (extrasSum > 0.005) {
+        s += ` + ${sym}${extrasSum.toFixed(2)}`
+      }
+      s += ` = ${sym}${gross.toFixed(2)}`
     }
     if (commissionAmount > 0) {
       s += ` - ${sym}${commissionAmount.toFixed(2)} = ${sym}${totalRevenue.toFixed(2)}`
@@ -534,28 +570,33 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return s
   }, [])
 
-  // 픽업 시간 수정 모달 상태
+  // ??? ??? ??? ?? ???
   const [showPickupTimeModal, setShowPickupTimeModal] = useState(false)
   const [selectedReservationForPickupTime, setSelectedReservationForPickupTime] = useState<Reservation | null>(null)
   const [pickupTimeValue, setPickupTimeValue] = useState('')
+  const pendingReturnToPickupSummaryRef = useRef<string | null>(null)
+  const [pickupSummaryReshowRequest, setPickupSummaryReshowRequest] = useState<{
+    reservationId: string
+    nonce: number
+  } | null>(null)
 
-  // 픽업 호텔 수정 모달 상태
+  // ??? ??? ??? ?? ???
   const [showPickupHotelModal, setShowPickupHotelModal] = useState(false)
   const [selectedReservationForPickupHotel, setSelectedReservationForPickupHotel] = useState<Reservation | null>(null)
   const [hotelSearchTerm, setHotelSearchTerm] = useState('')
 
-  // 검색어에 따른 그룹화 상태 조정
+  // ????????? ??????? ??
   useEffect(() => {
     if (searchTerm.trim()) {
-      // 검색어가 있을 때는 그룹화 해제
+      // ????? ??? ??? ???????
       setGroupByDate(false)
     } else {
-      // 검색어가 없을 때는 그룹화 활성화
+      // ????? ??? ??? ?????????
       setGroupByDate(true)
     }
   }, [searchTerm])
 
-  // 투어 정보 가져오기 (hookToursMap 사용) — 예약 전량 로드 완료 후 한 번만 집계
+  // ??? ??? ??????(hookToursMap ???) ????? ??? ?? ??? ?????? ??
   useEffect(() => {
     if (!reservationsAggregateReady) {
       setTourInfoMap(new Map())
@@ -585,7 +626,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           productId: string | null
         }>()
 
-        // 모든 가이드 이메일과 어시스턴트 이메일 수집
+        // ?? ???? ?????? ????????????????
         const guideEmails = new Set<string>()
         const assistantEmails = new Set<string>()
         const vehicleIds = new Set<string>()
@@ -598,7 +639,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
         const chunkSize = 1000
 
-        // 가이드 정보 일괄 조회
+        // ???? ??? ??? ??
         const guideMap = new Map<string, string>()
         if (guideEmails.size > 0) {
           const guideEmailsArray = Array.from(guideEmails)
@@ -619,7 +660,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         }
 
-        // 어시스턴트 정보 일괄 조회
+        // ??????????? ??? ??
         const assistantMap = new Map<string, string>()
         if (assistantEmails.size > 0) {
           const assistantEmailsArray = Array.from(assistantEmails)
@@ -640,7 +681,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         }
 
-        // 차량 정보 일괄 조회
+        // ?? ??? ??? ??
         const vehicleMap = new Map<string, string>()
         if (vehicleIds.size > 0) {
           try {
@@ -649,23 +690,27 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               const chunk = vehicleIdsArray.slice(i, i + chunkSize)
               const { data: vehicles } = await supabase
                 .from('vehicles')
-                .select('id, vehicle_number, vehicle_type')
+                .select('id, nick, vehicle_number, vehicle_type')
                 .in('id', chunk)
               
               if (vehicles) {
-                vehicles.forEach((vehicle: { id: string; vehicle_number: string | null; vehicle_type: string | null }) => {
+                vehicles.forEach((vehicle: { id: string; nick?: string | null; vehicle_number: string | null; vehicle_type: string | null }) => {
                   if (vehicle.id) {
-                    vehicleMap.set(vehicle.id, vehicle.vehicle_number || vehicle.vehicle_type || '-')
+                    const nick = vehicle.nick?.trim()
+                    vehicleMap.set(
+                      vehicle.id,
+                      nick || vehicle.vehicle_number || vehicle.vehicle_type || '-'
+                    )
                   }
                 })
               }
             }
           } catch (error) {
-            console.error('차량 정보 조회 오류:', error)
+            console.error('?? ??? ?? ???:', error)
           }
         }
 
-        // 예약 데이터를 ID 기반 Map으로 미리 인덱싱 (O(1) 조회용)
+        // ??? ??????? ID ?? Map??? ?? ?????(O(1) ????
         const reservationById = new Map<string, Reservation>()
         const reservationByTourId = new Map<string, Reservation>()
         reservations.forEach(r => {
@@ -675,7 +720,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         })
 
-        // 투어 상세 TourHeader와 동일: 총 = 확정·모집(confirmed/recruiting) 인원, 괄호 = 전체 − 총 (대기·취소·완료 등)
+        // ??? ??? TourHeader?? ???: ??= ??????(confirmed/recruiting) ???, ?? = ??? ????(?????????????
         const isConfirmedOrRecruiting = (status: string | undefined) => {
           const s = (status || '').toString().toLowerCase().trim()
           return s === 'confirmed' || s === 'recruiting'
@@ -696,29 +741,29 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         })
 
-        // 각 투어에 대해 정보 매핑 (최적화된 O(1) 조회 사용)
+        // ?????????????? ?? (????? O(1) ?? ???)
         hookToursMap.forEach((tour, tourId) => {
           let guideName = '-'
           let assistantName = '-'
           let vehicleName = '-'
           let totalPeople = 0
 
-          // 가이드 정보
+          // ???? ???
           if (tour.tour_guide_id) {
             guideName = guideMap.get(tour.tour_guide_id) || '-'
           }
 
-          // 어시스턴트 정보
+          // ???????????
           if (tour.assistant_id) {
             assistantName = assistantMap.get(tour.assistant_id) || '-'
           }
 
-          // 차량 정보
+          // ?? ???
           if (tour.tour_car_id) {
             vehicleName = vehicleMap.get(tour.tour_car_id) || '-'
           }
 
-          // 배정된 투어 인원 계산: reservation_ids의 unique 값으로 예약들의 total_people 합산
+          // ??????? ??? ??: reservation_ids??unique ?????????? total_people ???
           if (tour.reservation_ids && tour.reservation_ids.length > 0) {
             const uniqueReservationIds = [...new Set(tour.reservation_ids)]
             totalPeople = uniqueReservationIds.reduce((sum: number, id: string) => {
@@ -728,7 +773,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             }, 0)
           }
 
-          // 집계 키: 투어 행의 product_id·tour_date 우선 (투어 상세 useTourDetailData와 동일)
+          // ?? ?? ??? ??? product_id?tour_date ??? (??? ??? useTourDetailData?? ???)
           const reservation = reservationByTourId.get(tourId)
           const productIdForKey = String(tour.product_id ?? reservation?.productId ?? '').trim()
           const tourDateForKey =
@@ -743,7 +788,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
           newTourInfoMap.set(tourId, {
             totalPeople,
-            otherReservationsTotalPeople: 0, // 성능상 0으로 설정
+            otherReservationsTotalPeople: 0, // ?????0??? ???
             allDateTotalPeople,
             allDateOtherStatusPeople,
             status: tour.tour_status || '-',
@@ -758,10 +803,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           })
         })
 
-        console.log('투어 정보 맵 생성 완료:', { mapSize: newTourInfoMap.size })
         setTourInfoMap(newTourInfoMap)
       } catch (error) {
-        console.error('투어 정보 맵 생성 중 오류:', error)
+        console.error('??? ??? ????? ?????:', error)
       }
     }
 
@@ -769,7 +813,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservations, hookToursMap, reservationsAggregateReady])
 
-  // 예약 처리 필요 배지용: 입금이 있는 예약 ID 수집
+  // ??? ?? ??? ????? ???????? ??? ID ???
   useEffect(() => {
     if (!reservations.length) {
       setReservationIdsWithPayments(new Set())
@@ -794,7 +838,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     load()
   }, [reservations])
 
-  // 예약 처리 필요 건수 (배지 표시용)
+  // ??? ?? ??? ?? (??? ?????
   const actionRequiredCount = useMemo(() => {
     const isDeleted = (r: Reservation) => {
       const s = (r.status as string)?.trim?.() ?? ''
@@ -860,13 +904,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     tourIdByReservationId,
   ])
 
-  // 필터링 및 정렬 로직 - useMemo로 최적화
+  // ?????????? ?? - useMemo??????
   const filteredAndSortedReservations = useMemo(() => {
     const filtered = reservations.filter(reservation => {
-      // 고객 ID 필터 (URL 파라미터에서)
+      // ?? ID ??? (URL ????????)
       const matchesCustomer = !customerIdFromUrl || reservation.customerId === customerIdFromUrl
       
-      // 검색 조건 - 검색어가 있을 때만 검색 수행
+      // ????? - ????? ??? ??? ??????
       const customer = customers?.find(c => c.id === reservation.customerId)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const customerSpecialRequests = (customer as any)?.special_requests || ''
@@ -883,22 +927,22 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       reservation.addedBy.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
       customerSpecialRequests.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
     
-      // 상태 필터 (기본 '전체'에서는 삭제된 예약 제외, 'deleted' 선택 시 삭제된 것만 표시)
+      // ??? ??? (?? '???'?????????????? ???, 'deleted' ??? ?????????? ???)
       const matchesStatus =
         selectedStatus === 'all'
           ? reservation.status !== 'deleted'
           : reservation.status === selectedStatus
       
-      // 채널 필터
+      // ?? ???
       const matchesChannel = selectedChannel === 'all' || reservation.channelId === selectedChannel
       
-      // 날짜 범위 필터 - 빈 날짜 범위일 때는 모든 데이터 표시
+      // ??? ?? ??? - ????? ??????? ?? ????????
       let matchesDateRange = true
       if (dateRange.start && dateRange.end) {
         const tourDate = new Date(reservation.tourDate)
         const startDate = new Date(dateRange.start)
         const endDate = new Date(dateRange.end)
-        // 날짜가 유효한 경우에만 필터링 적용
+        // ???? ?????????? ????????
         if (!isNaN(tourDate.getTime()) && !isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
           matchesDateRange = tourDate >= startDate && tourDate <= endDate
         }
@@ -907,7 +951,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       return matchesCustomer && matchesSearch && matchesStatus && matchesChannel && matchesDateRange
     })
     
-    // 정렬
+    // ???
     filtered.sort((a, b) => {
       let aValue: string | Date, bValue: string | Date
       
@@ -940,21 +984,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
     })
 
-    // 소스에 동일 예약 id가 중복되면 카드 key가 겹침 → id당 한 건만 유지 (정렬 순서상 나중 항목 유지)
+    // ???????? ??? id? ????? ?? key? ?? ??id?????? ???? (??? ???????? ???? ????)
     return [...new Map(filtered.map((r) => [r.id, r])).values()]
   }, [reservations, customers, products, channels, debouncedSearchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder, customerIdFromUrl])
   
   const filteredReservations = filteredAndSortedReservations
   
-  // 7일 단위 페이지네이션을 위한 유틸리티 함수들 (오늘 기준)
+  // 7????? ?????????? ??? ????? ?????(??? ???)
   const getWeekStartDate = useCallback((weekOffset: number) => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     
-    // weekOffset이 0이면 오늘부터 6일 전까지 (총 7일)
-    // weekOffset이 1이면 7일 전부터 13일 전까지
-    // weekOffset이 -1이면 7일 후부터 13일 후까지
-    const daysToSubtract = (weekOffset * 7) + 6 // 오늘 포함 7일이므로 6일 전부터 시작
+    // weekOffset??0??? ??????6?????? (??7??
+    // weekOffset??1??? 7????????13??????
+    // weekOffset??-1??? 7????????13??????
+    const daysToSubtract = (weekOffset * 7) + 6 // ??? ??? 7??????6???????????
     const weekStart = new Date(today)
     weekStart.setDate(today.getDate() - daysToSubtract)
     weekStart.setHours(0, 0, 0, 0)
@@ -965,9 +1009,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     
-    // weekOffset이 0이면 오늘까지
-    // weekOffset이 1이면 7일 전까지
-    // weekOffset이 -1이면 7일 후까지
+    // weekOffset??0??? ??????
+    // weekOffset??1??? 7??????
+    // weekOffset??-1??? 7??????
     const daysToAdd = weekOffset * 7
     const weekEnd = new Date(today)
     weekEnd.setDate(today.getDate() + daysToAdd)
@@ -979,7 +1023,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const weekStart = getWeekStartDate(weekOffset)
     const weekEnd = getWeekEndDate(weekOffset)
     
-    // 로컬 시간대 기준으로 YYYY-MM-DD 형식 변환
+    // ?? ????? ?????? YYYY-MM-DD ??? ???
     const formatDate = (date: Date) => {
       const year = date.getFullYear()
       const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -994,7 +1038,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [getWeekStartDate, getWeekEndDate])
 
-  // 날짜별 그룹화 로직 (created_at 기준) - 주간 페이지네이션 적용
+  // ??????????? (created_at ???) - ?? ????????????
   const groupedReservations = useMemo(() => {
     if (!groupByDate) {
       return { 'all': filteredReservations }
@@ -1002,34 +1046,34 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     const groups: { [key: string]: typeof filteredReservations } = {}
     
-    // 현재 주의 날짜 범위 계산 (로컬 시간대 기준)
+    // ??? ?? ??? ?? ?? (?? ????? ???)
     const weekStart = getWeekStartDate(currentWeek)
     const weekEnd = getWeekEndDate(currentWeek)
     
-    // 주간 범위를 YYYY-MM-DD 형식으로 변환 (로컬 시간대 기준)
+    // ?? ????YYYY-MM-DD ?????? ???(?? ????? ???)
     const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`
     const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
     
     filteredReservations.forEach((reservation) => {
-      // created_at 날짜를 변환 없이 그대로 사용하여 YYYY-MM-DD 형식으로 추출
+      // created_at ??????????? ??????????? YYYY-MM-DD ?????? ??
       if (!reservation.addedTime) {
-        return // addedTime이 없으면 건너뛰기
+        return // addedTime????????????
       }
       
       const date = new Date(reservation.addedTime)
       
-      // 유효한 날짜인지 확인
+      // ???????????? ???
       if (isNaN(date.getTime())) {
-        return // 유효하지 않은 날짜면 건너뛰기
+        return // ??????? ???? ??????????
       }
       
-      // 로컬 시간대 기준으로 날짜 부분만 추출 (YYYY-MM-DD)
+      // ?? ????? ?????? ??? ??? ?? (YYYY-MM-DD)
       const year = date.getFullYear()
       const month = String(date.getMonth() + 1).padStart(2, '0')
       const day = String(date.getDate()).padStart(2, '0')
       const createdDate = `${year}-${month}-${day}`
       
-      // 현재 주 범위에 포함되는지 확인 (문자열 비교)
+      // ??? ????????????? ??? (??????)
       const isInRange = createdDate >= weekStartStr && createdDate <= weekEndStr
       
       
@@ -1042,7 +1086,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     })
     
     
-    // 날짜별로 정렬 (최신 날짜부터)
+    // ????? ??? (?? ??????
     const sortedGroups: { [key: string]: typeof filteredReservations } = {}
     Object.keys(groups)
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
@@ -1053,17 +1097,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return sortedGroups
   }, [filteredReservations, groupByDate, currentWeek, getWeekStartDate, getWeekEndDate])
 
-  // 날짜별 그룹을 기본적으로 접힌 상태로 설정
+  // ??????????????????? ????????
   useEffect(() => {
     if (groupByDate && groupedReservations && Object.keys(groupedReservations).length > 0) {
       const allDates = Object.keys(groupedReservations)
       setCollapsedGroups(prev => {
-        // 이미 모든 날짜가 접힌 상태인지 확인
+        // ???? ?? ???? ??? ??????? ???
         const allCollapsed = allDates.every(date => prev.has(date))
         if (allCollapsed && prev.size === allDates.length) {
-          return prev // 이미 모든 날짜가 접힌 상태면 변경하지 않음
+          return prev // ???? ?? ???? ??? ????????? ???
         }
-        // 새로운 날짜를 포함하여 모든 날짜를 접힌 상태로 설정
+        // ???????????????? ?? ???????? ????????
         const newSet = new Set(prev)
         allDates.forEach(date => newSet.add(date))
         return newSet
@@ -1071,11 +1115,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [groupedReservations, groupByDate])
 
-  // 주간 통계 데이터 계산
+  // ?? ??? ???????
   const weeklyStats = useMemo(() => {
     const allReservations = Object.values(groupedReservations).flat()
     
-    // 상품별 인원 통계
+    // ???????? ???
     const productStats = allReservations.reduce((groups, reservation) => {
       const productName = getProductName(reservation.productId, products || [])
       if (!groups[productName]) {
@@ -1085,7 +1129,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       return groups
     }, {} as Record<string, number>)
 
-    // 채널별 인원 통계 (파비콘 정보 포함)
+    // ??????? ??? (???????? ???)
     const channelStats = allReservations.reduce((groups, reservation) => {
       const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
       const channelName = getChannelName(reservation.channelId, channels || [])
@@ -1104,7 +1148,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       return groups
     }, {} as Record<string, { name: string; count: number; favicon_url: string | null; channelId: string }>)
 
-    // 상태별 인원 통계
+    // ???????? ???
     const statusStats = allReservations.reduce((groups, reservation) => {
       const status = reservation.status
       if (!groups[status]) {
@@ -1123,17 +1167,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [groupedReservations, products, channels])
   
-  // 페이지네이션 계산 (그룹화되지 않은 경우에만)
+  // ??????????? (?????? ???? ?????)
   const totalPages = groupByDate ? 1 : Math.ceil(filteredReservations.length / itemsPerPage)
   const startIndex = groupByDate ? 0 : (currentPage - 1) * itemsPerPage
   const endIndex = groupByDate ? filteredReservations.length : startIndex + itemsPerPage
   const paginatedReservations = groupByDate ? filteredReservations : filteredReservations.slice(startIndex, endIndex)
 
-  // reservation_pricing 데이터는 useReservationData 훅에서 이미 로딩됨
-  // 페이지네이션된 reservation에 대해서만 필터링하여 사용
-  // (hookReservationPricingMap은 모든 reservation에 대한 데이터를 포함)
+  // reservation_pricing ?????? useReservationData ????????? ????
+  // ?????????? reservation???????????????????
+  // (hookReservationPricingMap?? ?? reservation????????????? ???)
 
-  // 달력뷰용 데이터 변환
+  // ????? ????????
   const calendarReservations = useMemo(() => {
     return filteredReservations.map(reservation => ({
       id: reservation.id,
@@ -1158,46 +1202,35 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const isAddingReservationRef = useRef(false)
   
   const handleAddReservation = useCallback(async (reservation: Omit<Reservation, 'id'> & { id?: string }) => {
-    // 중복 호출 방지
+    // ?? ??? ???
     if (isAddingReservationRef.current) {
-      console.log('handleAddReservation: 이미 처리 중입니다. 중복 호출 방지.')
       return
     }
     
     isAddingReservationRef.current = true
     
-    // 예약 ID 확인 (모달 오픈 시 생성된 ID 또는 reservation.id)
+    // ??? ID ??? (?? ??? ???????ID ??? reservation.id)
     const reservationId = (reservation as any).id || newReservationId
-    
-    console.log('handleAddReservation 호출됨:', {
-      reservationId,
-      hasChoices: !!reservation.choices,
-      choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
-      hasSelectedChoices: !!(reservation as any).selectedChoices,
-      selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
-      hasPricingInfo: !!(reservation as any).pricingInfo,
-      pricingInfo: (reservation as any).pricingInfo
-    })
-    
+
     if (!reservationId) {
-      console.error('예약 ID가 없습니다!')
+      console.error('??? ID? ??????!')
       alert(t('messages.noReservationId'))
       isAddingReservationRef.current = false
       return
     }
     
     try {
-      // Supabase에 저장할 데이터 준비
-      // tour_id는 먼저 null로 설정하고, 투어 생성 후 업데이트
+      // Supabase??????? ????????
+      // tour_id????? null????????, ??? ??? ????????
       const reservationData = {
-        id: reservationId, // 미리 생성된 ID 사용
+        id: reservationId, // ?? ?????ID ???
         customer_id: reservation.customerId,
         product_id: reservation.productId,
         tour_date: reservation.tourDate,
-        tour_time: reservation.tourTime || null, // 빈 문자열을 null로 변환
+        tour_time: reservation.tourTime || null, // ??????? null?????
         event_note: reservation.eventNote,
         pickup_hotel: reservation.pickUpHotel,
-        pickup_time: reservation.pickUpTime || null, // 빈 문자열을 null로 변환
+        pickup_time: reservation.pickUpTime || null, // ??????? null?????
         adults: reservation.adults,
         child: reservation.child,
         infant: reservation.infant,
@@ -1205,20 +1238,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         channel_id: reservation.channelId,
         channel_rn: reservation.channelRN,
         added_by: reservation.addedBy,
-        tour_id: null, // 먼저 null로 설정
+        tour_id: null, // ??? null?????
         status: reservation.status,
         selected_options: reservation.selectedOptions,
         selected_option_prices: reservation.selectedOptionPrices,
         is_private_tour: reservation.isPrivateTour || false,
         choices: reservation.choices,
-        variant_key: (reservation as any).variantKey || 'default' // variant_key 추가
+        variant_key: (reservation as any).variantKey || 'default' // variant_key ???
       }
 
-      // ID가 있으면 upsert 사용 (이미 존재하면 update, 없으면 insert)
+      // ID? ?????upsert ??? (???? ????? update, ?????insert)
       let newReservation
       let error
       
-      // 먼저 존재 여부 확인
+      // ??? ?? ???? ???
       const { data: existingReservation } = await supabase
         .from('reservations')
         .select('id')
@@ -1226,8 +1259,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         .maybeSingle()
       
       if (existingReservation) {
-        // 이미 존재하면 update
-        console.log('기존 예약 발견, 업데이트:', reservationId)
+        // ???? ????? update
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await (supabase as any)
           .from('reservations')
@@ -1239,8 +1271,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         newReservation = result.data
         error = result.error
       } else {
-        // 없으면 insert
-        console.log('새 예약 생성:', reservationId)
+        // ?????insert
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await (supabase as any)
           .from('reservations')
@@ -1258,32 +1289,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return
       }
 
-      console.log('Reservation saved with ID:', reservationId)
-      
-      console.log('Reservation upserted with ID:', reservationId)
-      console.log('Full reservation data:', newReservation)
-      console.log('Reservation payload received:', {
-        hasChoices: !!reservation.choices,
-        choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
-        hasSelectedChoices: !!(reservation as any).selectedChoices,
-        selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
-        hasPricingInfo: !!(reservation as any).pricingInfo
-      })
-
-      // reservation_customers 테이블에 거주 상태별 인원 수 저장
+      // reservation_customers ????? ?? ???????? ??????
       if (reservationId) {
         try {
-          // 기존 reservation_customers 데이터 삭제 (업데이트 시)
+          // ?? reservation_customers ????????? (?????? ??
           await supabase
             .from('reservation_customers')
             .delete()
             .eq('reservation_id', reservationId)
 
-          // 상태별 인원 수에 따라 reservation_customers 레코드 생성
+          // ???????? ??? ??? reservation_customers ????????
           const reservationCustomers: any[] = []
           let orderIndex = 0
 
-          // 미국 거주자
+          // ?? ????
           const usResidentCount = (reservation as any).usResidentCount || 0
           for (let i = 0; i < usResidentCount; i++) {
             reservationCustomers.push({
@@ -1295,7 +1314,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             })
           }
 
-          // 비거주자
+          // ????
           const nonResidentCount = (reservation as any).nonResidentCount || 0
           for (let i = 0; i < nonResidentCount; i++) {
             reservationCustomers.push({
@@ -1307,7 +1326,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             })
           }
 
-          // 비 거주자 (16세 이하)
+          // ??????(16?????)
           const nonResidentUnder16Count = (reservation as any).nonResidentUnder16Count || 0
           for (let i = 0; i < nonResidentUnder16Count; i++) {
             reservationCustomers.push({
@@ -1319,21 +1338,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             })
           }
 
-          // 비거주자 (패스 보유) - 패스 장수는 nonResidentWithPassCount와 같음
+          // ???? (??? ??) - ??? ?????nonResidentWithPassCount?? ??
           const nonResidentWithPassCount = (reservation as any).nonResidentWithPassCount || 0
           
-          // 비거주자 (패스 보유) - 패스 장수만큼 생성, 각 패스는 4인을 커버
+          // ???? (??? ??) - ??? ????? ???, ???????4??? ??
           for (let i = 0; i < nonResidentWithPassCount; i++) {
             reservationCustomers.push({
               reservation_id: reservationId,
               customer_id: reservation.customerId,
               resident_status: 'non_resident_with_pass',
-              pass_covered_count: 4, // 패스 1장당 4인 커버
+              pass_covered_count: 4, // ??? 1??? 4????
               order_index: orderIndex++
             })
           }
 
-          // 비거주자 (패스 구매)
+          // ???? (??? ??)
           const nonResidentPurchasePassCount = (reservation as any).nonResidentPurchasePassCount || 0
           for (let i = 0; i < nonResidentPurchasePassCount; i++) {
             reservationCustomers.push({
@@ -1345,7 +1364,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             })
           }
 
-          // reservation_customers 데이터 삽입
+          // reservation_customers ????????
           if (reservationCustomers.length > 0) {
             const { error: rcError } = await supabase
               .from('reservation_customers')
@@ -1353,8 +1372,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
             if (rcError) {
               console.error('Error saving reservation_customers:', rcError)
-            } else {
-              console.log('Reservation customers saved successfully')
             }
           }
         } catch (rcError) {
@@ -1362,7 +1379,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
 
-      // 새 예약 시 폼에서 추가한 예약 옵션(reservation_options) 함께 저장
+      // ????? ??????????????? ???(reservation_options) ??? ????
       const pendingOptions = (reservation as any).pendingReservationOptions as Array<{ option_id: string; ea?: number; price?: number; total_price?: number; status?: string; note?: string }> | undefined
       if (reservationId && Array.isArray(pendingOptions) && pendingOptions.length > 0) {
         try {
@@ -1390,7 +1407,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
 
-      // 투어 자동 생성 또는 업데이트
+      // ??? ??? ??? ??? ??????
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (newReservation && (newReservation as any).id) {
         try {
@@ -1402,9 +1419,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             reservation.isPrivateTour
           )
           
-          if (tourResult.success && tourResult.tourId) {
-            console.log('Tour created/updated successfully:', tourResult.tourId)
-          } else {
+          if (!tourResult.success || !tourResult.tourId) {
             console.warn('Tour creation failed:', tourResult.message)
           }
         } catch (tourError) {
@@ -1412,21 +1427,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
 
-      // 새로운 초이스 시스템: reservation_choices 테이블에 저장
-      // reservation.choices 또는 reservation.selectedChoices에서 초이스 데이터 가져오기
-      console.log('초이스 저장 시도:', {
-        reservationId,
-        hasChoices: !!reservation.choices,
-        choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
-        hasSelectedChoices: !!(reservation as any).selectedChoices,
-        selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
-        choices: reservation.choices,
-        selectedChoices: (reservation as any).selectedChoices
-      })
-      
+      // Save choices to reservation_choices from selectedChoices or choices.required
       if (reservationId) {
         try {
-          const UNDECIDED_OPTION_ID = '__undecided__' // "미정" 선택은 reservation_choices에 저장하지 않음
+          const UNDECIDED_OPTION_ID = '__undecided__' // "??" ????? reservation_choices???????? ???
           let choicesToSave: Array<{
             reservation_id: string
             choice_id: string
@@ -1435,18 +1439,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             total_price: number
           }> = []
           
-          // 1. reservation.selectedChoices에서 가져오기 (우선순위 1 - 배열 형태)
+          // 1. reservation.selectedChoices??? ??????(?????? 1 - ?? ???)
           if ((reservation as any).selectedChoices) {
             const selectedChoices = (reservation as any).selectedChoices
-            console.log('reservation.selectedChoices 확인:', {
-              isArray: Array.isArray(selectedChoices),
-              length: Array.isArray(selectedChoices) ? selectedChoices.length : 'not array',
-              type: typeof selectedChoices,
-              value: selectedChoices
-            })
-            
+
             if (Array.isArray(selectedChoices) && selectedChoices.length > 0) {
-              console.log('reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
               for (const choice of selectedChoices) {
                 if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
                   choicesToSave.push({
@@ -1457,17 +1454,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     total_price: choice.total_price || 0
                   })
                 } else if (choice.option_id === UNDECIDED_OPTION_ID) {
-                  // "미정" 선택은 reservation_choices에 저장하지 않음 (choice_options FK 제약)
+                  // "??" ????? reservation_choices???????? ??? (choice_options FK ???)
                 } else {
-                  console.warn('초이스 데이터에 choice_id 또는 option_id가 없습니다:', choice)
+                  console.warn('?????????? choice_id ??? option_id? ??????:', choice)
                 }
               }
             }
           }
           
-          // 2. reservation.choices.required에서 가져오기 (fallback)
+          // 2. reservation.choices.required??? ??????(fallback)
           if (choicesToSave.length === 0 && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
-            console.log('reservation.choices.required에서 초이스 데이터 발견:', reservation.choices.required.length, '개')
             for (const choice of reservation.choices.required) {
               if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
                 choicesToSave.push({
@@ -1481,32 +1477,28 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             }
           }
           
-          console.log('저장할 초이스 데이터:', choicesToSave.length, '개', choicesToSave)
           
           if (choicesToSave.length > 0) {
-            // option_id 검증을 건너뛰고 바로 저장 (검증이 너무 엄격해서 저장이 안 될 수 있음)
-            console.log('reservation_choices에 저장할 데이터:', choicesToSave)
+            // option_id ??? ????? ?? ????(??? ??? ?????? ????? ?????????)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: insertedChoices, error: choicesError } = await (supabase as any)
+            const { error: choicesError } = await (supabase as any)
               .from('reservation_choices')
               .insert(choicesToSave)
               .select()
 
             if (choicesError) {
-              console.error('초이스 저장 오류:', choicesError)
-              console.error('저장 시도한 데이터:', choicesToSave)
-              console.error('오류 상세:', {
+              console.error('???????????:', choicesError)
+              console.error('??????????????', choicesToSave)
+              console.error('??? ???:', {
                 message: choicesError.message,
                 details: choicesError.details,
                 hint: choicesError.hint,
                 code: choicesError.code
               })
               alert(t('messages.choicesSaveError') + choicesError.message)
-            } else {
-              console.log('초이스 저장 성공:', choicesToSave.length, '개', insertedChoices)
             }
           } else {
-            console.warn('저장할 초이스 데이터가 없습니다.', {
+            console.warn('????? ??????????? ??????.', {
               hasChoices: !!reservation.choices,
               choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
               hasSelectedChoices: !!(reservation as any).selectedChoices,
@@ -1516,31 +1508,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             })
           }
         } catch (choicesError) {
-          console.error('초이스 저장 중 예외:', choicesError)
-          // 초이스 저장 실패해도 예약은 성공으로 처리
+          console.error('?????????????:', choicesError)
+          // ?????????????? ????? ?????? ??
         }
       }
 
-      // selected_options는 reservations 테이블의 selected_options 컬럼에 저장됨
-      // 별도의 reservation_options 테이블 저장은 현재 비활성화
+      // selected_options??reservations ????? selected_options ?????????
+      // ????reservation_options ??????????? ??? ?????
 
-      // 가격 정보는 현재 reservations 테이블의 selected_option_prices 컬럼에 저장됨
-      // 별도의 reservation_pricing 테이블 저장은 현재 비활성화
+      // ??????????? reservations ????? selected_option_prices ?????????
+      // ????reservation_pricing ??????????? ??? ?????
 
-      // reservation_pricing 자동 생성
-      console.log('가격 정보 저장 시도:', {
-        reservationId,
-        hasPricingInfo: !!(reservation as any).pricingInfo,
-        pricingInfo: (reservation as any).pricingInfo,
-        pricingInfoKeys: (reservation as any).pricingInfo ? Object.keys((reservation as any).pricingInfo) : []
-      })
-      
+      // Auto-create reservation_pricing row
       if (reservationId) {
-        // pricingInfo가 없어도 기본값으로 생성
+        // pricingInfo? ??????????????
         const pricingInfo = (reservation as any).pricingInfo || {}
         try {
           const pricingId = crypto.randomUUID()
-          // 불포함 가격 합계(인원별) = 상품 가격 합계·subtotal·total_price에 포함하여 저장
+          // ??????????(????? = ??? ???????subtotal?total_price???????? ????
           const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
           const notIncludedTotal = (pricingInfo.not_included_price || 0) * (totalPeople || 1)
 
@@ -1586,44 +1571,41 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             ),
           }
 
-          console.log('reservation_pricing 저장 데이터:', pricingData)
 
-          const { data: insertedPricing, error: pricingError } = await supabase
+          const { error: pricingError } = await supabase
             .from('reservation_pricing')
             .insert(pricingData as any)
             .select()
             .single()
 
           if (pricingError) {
-            console.error('reservation_pricing 생성 오류:', pricingError)
-            console.error('저장 시도한 데이터:', pricingData)
-            console.error('오류 상세:', {
+            console.error('reservation_pricing ??? ???:', pricingError)
+            console.error('??????????????', pricingData)
+            console.error('??? ???:', {
               message: pricingError.message,
               details: pricingError.details,
               hint: pricingError.hint,
               code: pricingError.code
             })
             alert(t('messages.pricingSaveError') + pricingError.message)
-          } else {
-            console.log('reservation_pricing 생성 성공:', pricingId, insertedPricing)
           }
         } catch (pricingError) {
-          console.error('reservation_pricing 생성 중 예외:', pricingError)
-          console.error('예외 스택:', (pricingError as Error).stack)
+          console.error('reservation_pricing ??? ?????:', pricingError)
+          console.error('??? ???:', (pricingError as Error).stack)
           alert(t('messages.pricingSaveException') + (pricingError as Error).message)
         }
       } else {
-        console.warn('reservationId가 없어 reservation_pricing을 생성하지 않습니다.', {
+        console.warn('reservationId? ??? reservation_pricing????????? ??????.', {
           reservationId,
           hasPricingInfo: !!(reservation as any).pricingInfo
         })
       }
 
-      // payment_records 자동 생성 (사용자가 입력한 depositAmount로 Deposit Received)
+      // payment_records ??? ??? (??????? ?????depositAmount??Deposit Received)
       if (reservationId && (reservation as any).pricingInfo) {
         try {
           const pricingInfo = (reservation as any).pricingInfo
-          // 사용자가 입력한 depositAmount 사용
+          // ??????? ?????depositAmount ???
           const depositAmount = pricingInfo.depositAmount || 0
           
           if (depositAmount > 0) {
@@ -1645,27 +1627,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
               if (!response.ok) {
                 const errorData = await response.json()
-                console.error('payment_records 생성 오류:', errorData.error)
-              } else {
-                console.log('payment_records 생성 성공 (depositAmount:', depositAmount, ')')
+                console.error('payment_records ??? ???:', errorData.error)
               }
             }
           }
         } catch (paymentError) {
-          console.error('payment_records 생성 중 예외:', paymentError)
+          console.error('payment_records ??? ?????:', paymentError)
         }
       }
 
-      // 성공 시 모달 먼저 닫고(리셋된 수정 모달이 보이지 않도록), 그 다음 목록 새로고침 후 성공 메시지
-      console.log('handleAddReservation: 모든 저장 완료')
+      // ??? ???? ??? ???(??????? ??????? ?????, ????? ?? ????? ????? ???
       setShowAddForm(false)
       setNewReservationId(null)
       await refreshReservations()
-      console.log('handleAddReservation: 예약 목록 새로고침 완료')
       alert(t('messages.reservationAdded'))
     } catch (error) {
-      console.error('handleAddReservation: 예약 추가 중 오류:', error)
-      console.error('오류 스택:', (error as Error).stack)
+      console.error('handleAddReservation: ??? ??? ?????:', error)
+      console.error('??? ???:', (error as Error).stack)
       alert(t('messages.reservationAddErrorGeneric') + ((error as Error).message || ''))
     } finally {
       isAddingReservationRef.current = false
@@ -1704,7 +1682,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
 
 
-  // 투어 존재 여부 확인 함수
+  // ??? ?? ???? ??? ???
   const checkTourExists = async (productId: string, tourDate: string): Promise<boolean> => {
     try {
       const { data, error } = await supabase
@@ -1726,15 +1704,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }
 
-  // 투어 생성 함수 - useCallback으로 메모이제이션
+  // ??? ??? ??? - useCallback??? ????????
   const handleCreateTour = useCallback(async (reservation: Reservation) => {
     try {
-      // 먼저 투어가 실제로 존재하는지 다시 한번 확인
+      // ??? ???? ??????????? ??? ??? ???
       const tourExists = await checkTourExists(reservation.productId, reservation.tourDate)
       
       if (tourExists) {
         alert(t('messages.tourExists'))
-        // 예약 목록 새로고침하여 최신 상태 반영
+        // ??? ?? ???????? ?? ??? ??
         await refreshReservations()
         return
       }
@@ -1747,14 +1725,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       )
 
       if (result.success) {
-        // 투어 생성 성공 시 tour-photos 버켓도 생성
+        // ??? ??? ??? ??tour-photos ???????
         const bucketCreated = await createTourPhotosBucket()
         if (!bucketCreated) {
           console.warn('Failed to create tour-photos bucket, but tour creation succeeded')
         }
         
         alert(t('messages.tourCreated'))
-        // 예약 목록 새로고침
+        // ??? ?? ?????
         await refreshReservations()
       } else {
         alert(t('messages.tourCreationError') + result.message)
@@ -1765,7 +1743,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [refreshReservations, t])
 
-  // 달력뷰에서 예약 클릭 시 편집 모달 열기 - useCallback으로 메모이제이션
+  // ?????????? ??? ????? ?? ??? - useCallback??? ????????
   const handleCalendarReservationClick = useCallback((calendarReservation: { id: string }) => {
     const originalReservation = reservations.find(r => r.id === calendarReservation.id)
     if (originalReservation) {
@@ -1773,7 +1751,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [reservations])
 
-  // 가격 정보 모달 열기 - reservationPricingMap의 가격을 reservation에 병합하여 모달에서 바로 표시
+  // ?????? ?? ??? - reservationPricingMap????? reservation??????? ????? ?? ???
   const handlePricingInfoClick = useCallback((reservation: Reservation) => {
     const pricing = reservationPricingMap.get(reservation.id)
     const reservationWithPricing = pricing
@@ -1791,13 +1769,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setShowPricingModal(true)
   }, [reservationPricingMap])
 
-  // 가격 정보 모달 닫기 - useCallback으로 메모이제이션
+  // ?????? ?? ??? - useCallback??? ????????
   const handleClosePricingModal = useCallback(() => {
     setShowPricingModal(false)
     setPricingModalReservation(null)
   }, [])
+  const handleOpenTourDetailModal = useCallback((tourId: string) => {
+    setTourDetailModalTourId(tourId)
+  }, [])
 
-  // 이메일 미리보기 모달 열기 - useCallback으로 메모이제이션
+
+  // ????????? ?? ??? - useCallback??? ????????
   const handleOpenEmailPreview = useCallback((reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => {
     const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
     if (!customer?.email) {
@@ -1821,7 +1803,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setEmailDropdownOpen(null)
   }, [customers])
 
-  // 이메일 실제 발송 함수 - useCallback으로 메모이제이션
+  // ???????? ?? ??? - useCallback??? ????????
   const handleSendEmailFromPreview = useCallback(async () => {
     if (!emailPreviewData) return
 
@@ -1838,7 +1820,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       const locale = customerLanguage === 'en' || customerLanguage === 'english' ? 'en' : 'ko'
 
       if (emailPreviewData.emailType === 'confirmation') {
-        // 예약 확인 이메일
+        // ??? ??? ?????
         response = await fetch('/api/send-email', {
           method: 'POST',
           headers: {
@@ -1853,7 +1835,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           })
         })
       } else if (emailPreviewData.emailType === 'departure') {
-        // 투어 출발 확정 이메일
+        // ??? ?? ??? ?????
         response = await fetch('/api/send-email', {
           method: 'POST',
           headers: {
@@ -1868,9 +1850,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           })
         })
       } else {
-        // 픽업 notification 이메일
+        // ??? notification ?????
         if (!emailPreviewData.pickupTime || !emailPreviewData.tourDate) {
-          throw new Error('픽업 시간과 투어 날짜가 필요합니다.')
+          throw new Error('??? ???????? ???? ????????')
         }
 
         response = await fetch('/api/send-pickup-schedule-notification', {
@@ -1893,29 +1875,47 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || '이메일 발송에 실패했습니다.')
+        throw new Error(data.error || '??????????????????.')
       }
 
       alert(t('messages.emailSendSuccess'))
       setShowEmailPreview(false)
       setEmailPreviewData(null)
     } catch (error) {
-      console.error('이메일 발송 오류:', error)
+      console.error('??????? ???:', error)
       alert(error instanceof Error ? error.message : t('messages.emailSendError'))
     } finally {
       setSendingEmail(null)
     }
   }, [emailPreviewData, customers, reservations, user?.email])
 
-  // 픽업 시간 수정 모달 열기
-  const handlePickupTimeClick = useCallback((reservation: Reservation, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setSelectedReservationForPickupTime(reservation)
-    setPickupTimeValue(reservation.pickUpTime || '')
-    setShowPickupTimeModal(true)
+  const closePickupTimeModalAndMaybeReshowSummary = useCallback(() => {
+    const returnId = pendingReturnToPickupSummaryRef.current
+    pendingReturnToPickupSummaryRef.current = null
+    // 다음 틱에 닫아 같은 클릭이 픽업 요약 백드롭으로 떨어져 요약까지 닫히는 것을 방지
+    window.setTimeout(() => {
+      setShowPickupTimeModal(false)
+      setSelectedReservationForPickupTime(null)
+      setPickupTimeValue('')
+      if (returnId) {
+        setPickupSummaryReshowRequest({ reservationId: returnId, nonce: Date.now() })
+      }
+    }, 0)
   }, [])
 
-  // 픽업 시간 저장
+  // ??? ??? ??? ?? ???
+  const handlePickupTimeClick = useCallback(
+    (reservation: Reservation, e: React.MouseEvent, opts?: { resumePickupSummary?: boolean }) => {
+      e.stopPropagation()
+      pendingReturnToPickupSummaryRef.current = opts?.resumePickupSummary ? reservation.id : null
+      setSelectedReservationForPickupTime(reservation)
+      setPickupTimeValue(reservation.pickUpTime || '')
+      setShowPickupTimeModal(true)
+    },
+    []
+  )
+
+  // ??? ??? ????
   const handleSavePickupTime = useCallback(async () => {
     if (!selectedReservationForPickupTime) return
 
@@ -1926,31 +1926,51 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         .eq('id', selectedReservationForPickupTime.id)
 
       if (error) {
-        console.error('픽업 시간 업데이트 오류:', error)
+        console.error('??? ??? ?????? ???:', error)
         alert(t('messages.pickupTimeUpdateError'))
         return
       }
 
-      // 자동 알림 발송은 제거 (일괄 발송 버튼 사용)
+      // ??? ??? ???? ??? (??? ?? ?? ???)
 
       await refreshReservations()
-      setShowPickupTimeModal(false)
-      setSelectedReservationForPickupTime(null)
+      closePickupTimeModalAndMaybeReshowSummary()
     } catch (error) {
-      console.error('픽업 시간 저장 오류:', error)
+      console.error('??? ??? ???????:', error)
       alert(t('messages.pickupTimeSaveError'))
     }
-  }, [selectedReservationForPickupTime, pickupTimeValue, refreshReservations])
+  }, [selectedReservationForPickupTime, pickupTimeValue, refreshReservations, closePickupTimeModalAndMaybeReshowSummary])
 
-  // 픽업 호텔 수정 모달 열기
-  const handlePickupHotelClick = useCallback((reservation: Reservation, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setSelectedReservationForPickupHotel(reservation)
-    setHotelSearchTerm('')
-    setShowPickupHotelModal(true)
+  // ??? ??? ??? ?? ???
+  const handlePickupHotelClick = useCallback(
+    (reservation: Reservation, e: React.MouseEvent, opts?: { resumePickupSummary?: boolean }) => {
+      e.stopPropagation()
+      pendingReturnToPickupSummaryRef.current = opts?.resumePickupSummary ? reservation.id : null
+      setSelectedReservationForPickupHotel(reservation)
+      setHotelSearchTerm('')
+      setShowPickupHotelModal(true)
+    },
+    []
+  )
+
+  const closePickupHotelModalAndMaybeReshowSummary = useCallback(() => {
+    const returnId = pendingReturnToPickupSummaryRef.current
+    pendingReturnToPickupSummaryRef.current = null
+    window.setTimeout(() => {
+      setShowPickupHotelModal(false)
+      setSelectedReservationForPickupHotel(null)
+      setHotelSearchTerm('')
+      if (returnId) {
+        setPickupSummaryReshowRequest({ reservationId: returnId, nonce: Date.now() })
+      }
+    }, 0)
   }, [])
 
-  // 픽업 호텔 저장
+  const consumePickupSummaryReshowRequest = useCallback(() => {
+    setPickupSummaryReshowRequest(null)
+  }, [])
+
+  // ??? ??? ????
   const handleSavePickupHotel = useCallback(async (hotelId: string) => {
     if (!selectedReservationForPickupHotel) return
 
@@ -1961,22 +1981,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         .eq('id', selectedReservationForPickupHotel.id)
 
       if (error) {
-        console.error('픽업 호텔 업데이트 오류:', error)
+        console.error('??? ??? ?????? ???:', error)
         alert(t('messages.pickupHotelUpdateError'))
         return
       }
 
       await refreshReservations()
-      setShowPickupHotelModal(false)
-      setSelectedReservationForPickupHotel(null)
-      setHotelSearchTerm('')
+      closePickupHotelModalAndMaybeReshowSummary()
     } catch (error) {
-      console.error('픽업 호텔 저장 오류:', error)
+      console.error('??? ??? ???????:', error)
       alert(t('messages.pickupHotelSaveError'))
     }
-  }, [selectedReservationForPickupHotel, refreshReservations])
+  }, [selectedReservationForPickupHotel, refreshReservations, closePickupHotelModalAndMaybeReshowSummary])
 
-  // 필터된 호텔 목록
+  // ???????? ??
   const filteredHotels = useMemo(() => {
     if (!hotelSearchTerm) {
       return pickupHotels || []
@@ -1998,23 +2016,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     )
   }, [hotelSearchTerm, pickupHotels])
 
-  // 고객 언어 가져오기
+  // ?? ??? ??????
   const getCustomerLanguage = useCallback((customerId: string) => {
     const customer = (customers as Customer[]).find(c => c.id === customerId)
     return customer?.language || 'ko'
   }, [customers])
 
-  // 국가 코드 가져오기
+  // ??? ?? ??????
   const getCountryCode = useCallback((language: string) => {
     const lang = language.toLowerCase()
-    if (lang === 'kr' || lang === 'ko' || lang === '한국어') return 'KR'
-    if (lang === 'en' || lang === '영어') return 'US'
-    if (lang === 'jp' || lang === '일본어') return 'JP'
-    if (lang === 'cn' || lang === '중국어') return 'CN'
+    if (lang === 'kr' || lang === 'ko' || lang === '???') return 'KR'
+    if (lang === 'en' || lang === '??') return 'US'
+    if (lang === 'jp' || lang === '???') return 'JP'
+    if (lang === 'cn' || lang === '???') return 'CN'
     return 'US'
   }, [])
 
-  // 예약 관련 핸들러 함수들 - useCallback으로 메모이제이션
+  // ??? ?????????????- useCallback??? ????????
   const handlePaymentClick = useCallback((reservation: Reservation) => {
     setSelectedReservationForPayment(reservation)
     setShowPaymentRecords(true)
@@ -2068,7 +2086,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setEmailDropdownOpen(reservationId)
   }, [])
 
-  // 검색어 지우기 핸들러 - useCallback으로 메모이제이션
+  // ???? ???? ?????- useCallback??? ????????
   const handleClearSearch = useCallback(() => {
     setSearchTerm('')
     setDebouncedSearchTerm('')
@@ -2096,13 +2114,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [t, refreshReservations])
 
-  // 고객 추가 함수
+  // ?? ??? ???
   const handleAddCustomer = useCallback(async (customerData: Database['public']['Tables']['customers']['Insert']) => {
     try {
-      // 라스베가스 시간대의 오늘 날짜를 ISO 문자열로 생성
+      // ?????????????????? ?????ISO ????? ???
       const getLasVegasToday = () => {
         const now = new Date()
-        // 라스베가스 시간대의 현재 날짜를 가져옴
+        // ?????????????????? ?????????
         const lasVegasFormatter = new Intl.DateTimeFormat('en-US', {
           timeZone: 'America/Los_Angeles',
           year: 'numeric',
@@ -2115,12 +2133,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         const month = parseInt(parts.find(p => p.type === 'month')?.value || '0')
         const day = parseInt(parts.find(p => p.type === 'day')?.value || '0')
         
-        // 라스베가스 시간대의 오늘 날짜 자정(00:00:00)을 UTC로 변환
-        // 라스베가스 시간대의 특정 날짜/시간에 대한 UTC 오프셋을 계산하기 위해
-        // 먼저 임시로 UTC로 해석된 Date 객체를 만들고, 그 시각을 라스베가스 시간대로 포맷팅하여 오프셋 계산
-        const tempUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0)) // 정오를 사용하여 DST 문제 방지
+        // ?????????????????? ??? ???(00:00:00)??UTC?????
+        // ?????????????????? ???/?????????UTC ?????? ????? ???
+        // ??? ?????UTC???????Date ???????? ?????????????????????????????????????
+        const tempUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0)) // ??????????? DST ?? ???
         
-        // 그 UTC 시간을 라스베가스 시간대로 변환하여 오프셋 계산
+        // ??UTC ?????????????????????????????????
         const lasVegasFormatter2 = new Intl.DateTimeFormat('en-US', {
           timeZone: 'America/Los_Angeles',
           year: 'numeric',
@@ -2140,29 +2158,29 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         const lvMinute = parseInt(lasVegasParts.find(p => p.type === 'minute')?.value || '0')
         const lvSecond = parseInt(lasVegasParts.find(p => p.type === 'second')?.value || '0')
         
-        // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성 (로컬 시간대로 해석)
+        // ??????????????????/???????????? Date ?? ??? (?? ??????????)
         const lasVegasTime = new Date(lvYear, lvMonth - 1, lvDay, lvHour, lvMinute, lvSecond)
         
-        // 오프셋 계산 (밀리초 단위)
-        // tempUTC는 UTC 시간이고, lasVegasTime은 그 UTC 시간을 라스베가스 시간대로 변환한 것
-        // 따라서 오프셋은 tempUTC - lasVegasTime (라스베가스가 UTC보다 느리므로)
+        // ??????? (??? ???)
+        // tempUTC??UTC ??????, lasVegasTime?? ??UTC ???????????????????????? ??
+        // ???????????? tempUTC - lasVegasTime (?????????? UTC?? ??????
         const offsetMs = tempUTC.getTime() - lasVegasTime.getTime()
         
-        // 라스베가스 시간대의 오늘 날짜 자정(00:00:00)을 UTC로 변환
-        // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성
+        // ?????????????????? ??? ???(00:00:00)??UTC?????
+        // ??????????????????/???????????? Date ?? ???
         const lasVegasDateLocal = new Date(year, month - 1, day, 0, 0, 0)
         const utcDate = new Date(lasVegasDateLocal.getTime() + offsetMs)
         
         return utcDate.toISOString()
       }
       
-      // created_at을 라스베가스 시간대의 오늘 날짜로 설정
+      // created_at???????????????????? ????????
       const customerDataWithDate = {
         ...customerData,
         created_at: getLasVegasToday()
       }
       
-      // Supabase에 저장
+      // Supabase??????
       const { data, error } = await supabase
         .from('customers')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2175,12 +2193,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return
       }
 
-      // 성공 시 고객 목록 새로고침
+      // ??? ???? ?? ?????
       await refreshCustomers()
       setShowCustomerForm(false)
       alert(t('messages.customerAdded'))
       
-      // 새로 추가된 고객을 자동으로 선택 (예약 폼이 열려있는 경우)
+      // ??? ??????????????? ??? (??? ??? ?????? ??)
       if (showAddForm && data && data[0]) {
         const newCustomer = data[0]
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2192,14 +2210,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [showAddForm, refreshCustomers, t])
 
-  // 로딩 화면
+  // ?? ???
   if (loading) {
     return <ReservationsLoadingSpinner loadingProgress={loadingProgress} />
   }
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* 헤더 - 모바일 최적화 */}
+      {/* ??? - ????????*/}
       <ReservationsHeader
         customerIdFromUrl={customerIdFromUrl}
         customers={(customers as Customer[]) || []}
@@ -2208,21 +2226,22 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         searchTerm={searchTerm}
         onSearchChange={(term) => {
           setSearchTerm(term)
-          setCurrentPage(1) // 검색 시 첫 페이지로 이동
+          setCurrentPage(1) // ????????????????
         }}
         onAddReservation={() => {
-          // 새 예약 ID 생성
+          // ????? ID ???
           const newId = generateReservationId()
           setNewReservationId(newId)
           setShowAddForm(true)
-          console.log('새 예약 모달 오픈, 예약 ID 생성:', newId)
         }}
         onActionRequired={() => setShowActionRequiredModal(true)}
         actionRequiredCount={actionRequiredCount}
         onOpenFilter={() => setFilterModalOpen(true)}
+        cardLayout={cardLayout}
+        onCardLayoutChange={setCardLayout}
       />
 
-      {/* 모바일 전용: 검색창(넓게) + 필터 버튼(추가 버튼과 동일 크기) */}
+      {/* ???????: ????(???) + ??? ??(??? ??????? ???) */}
       <div className="md:hidden flex items-center gap-2">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
@@ -2243,7 +2262,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
         >
           <SlidersHorizontal className="w-4 h-4" />
-          <span>필터</span>
+          <span>???</span>
         </button>
         <button
           type="button"
@@ -2254,7 +2273,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         </button>
       </div>
 
-      {/* 필터 버튼(데스크톱) + 필터 모달 */}
+      {/* ??? ??(??????) + ??? ?? */}
       <ReservationsFilters
         filterModalOpen={filterModalOpen}
         onFilterModalOpenChange={setFilterModalOpen}
@@ -2292,13 +2311,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           setDateRange({start: '', end: ''})
           setSortBy('created_at')
           setSortOrder('desc')
-          setGroupByDate(true) // 그룹화 상태도 초기화
+          setGroupByDate(true) // ?????????????
           setCurrentPage(1)
-          setCurrentWeek(0) // 주간 페이지네이션도 현재 주로 초기화
+          setCurrentWeek(0) // ?? ?????????? ??? ?? ????
         }}
       />
 
-      {/* 주간 페이지네이션 및 통계 통합 패널 - 날짜별 그룹화가 활성화된 경우에만 표시 */}
+      {/* ?? ?????????????? ??? ??? - ??????????? ?????? ????? ??? */}
       {groupByDate && (
         <WeeklyStatsPanel
           currentWeek={currentWeek}
@@ -2313,7 +2332,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 결과 정보 */}
+      {/* ?? ??? */}
       <div className="text-sm text-gray-600">
         {groupByDate ? (
           <>
@@ -2336,24 +2355,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         )}
       </div>
 
-      {/* 예약 목록 */}
+      {/* ??? ?? */}
       {loading ? (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">데이터를 불러오는 중...</p>
+          <p className="mt-4 text-gray-600">??????? ????? ??..</p>
         </div>
       ) : viewMode === 'calendar' ? (
-        /* 달력뷰 */
+        /* ?????*/
         <ReservationCalendar 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           reservations={calendarReservations as any} 
           onReservationClick={handleCalendarReservationClick}
         />
       ) : (
-          /* 카드뷰 */
+          /* ????*/
           <>
             {filteredReservations.length === 0 ? (
-              /* 검색 결과가 없을 때 안내 메시지 */
+              /* ?????? ??? ????? ??? */
               <ReservationsEmptyState
                 hasSearchTerm={debouncedSearchTerm.trim().length > 0}
                 searchTerm={debouncedSearchTerm}
@@ -2364,10 +2383,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 variant="grid"
               />
             ) : groupByDate ? (
-          /* 날짜별 그룹화된 카드뷰 */
+          /* ?????????? ????*/
           <div className="space-y-8">
             {Object.keys(groupedReservations).length === 0 ? (
-              /* 예약이 없을 때 안내 메시지 */
+              /* ???????? ????? ??? */
               <ReservationsEmptyState
                 hasSearchTerm={false}
                 searchTerm=""
@@ -2381,7 +2400,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 const handleToggleCollapse = () => toggleGroupCollapse(date)
                 return (
                   <div key={date} className="space-y-4">
-                    {/* 등록일 헤더 */}
+                    {/* ???????? */}
                     <DateGroupHeader
                       date={date}
                       reservations={reservations as Reservation[]}
@@ -2392,7 +2411,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
                     />
                   
-                  {/* 해당 날짜의 예약 카드들 (항상 표시) */}
+                  {/* ??? ???????? ????(???? ???) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {reservations.map((reservation) => (
                       <ReservationCardItem
@@ -2429,6 +2448,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                         choicesCacheRef={choicesCacheRef}
                         linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+                        cardLayout={cardLayout}
+                        onOpenTourDetailModal={handleOpenTourDetailModal}
+                        reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
+                        onReservationOptionsMutated={handleReservationOptionsMutated}
+                        reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+                        onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
                       />
                     ))}
                   </div>
@@ -2439,9 +2464,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             }
           </div>
         ) : (
-          /* 일반 카드뷰 - 그룹화된 카드뷰와 동일한 구조 사용 */
+          /* ??? ????- ????? ????? ??????? ??? */
           paginatedReservations.length === 0 ? (
-            /* 예약이 없을 때 안내 메시지 */
+            /* ???????? ????? ??? */
             <ReservationsEmptyState
               hasSearchTerm={debouncedSearchTerm.trim().length > 0}
               searchTerm={debouncedSearchTerm}
@@ -2492,6 +2517,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                         choicesCacheRef={choicesCacheRef}
                         linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+                        cardLayout={cardLayout}
+                        onOpenTourDetailModal={handleOpenTourDetailModal}
+                        reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
+                        onReservationOptionsMutated={handleReservationOptionsMutated}
+                        reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+                        onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
                   />
                 ))}
               </div>
@@ -2503,7 +2534,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         )
       }
       
-      {/* 페이지네이션 - 카드뷰에서만 표시 (그룹화되지 않은 경우에만) */}
+      {/* ?????????- ??????? ??? (?????? ???? ?????) */}
       {!groupByDate && totalPages > 1 && (
         <ReservationsPagination
           currentPage={currentPage}
@@ -2513,7 +2544,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 예약 추가/편집 모달 */}
+      {/* ??? ???/??? ?? */}
       {(showAddForm || editingReservation) && (
         <ReservationForm
           reservation={editingReservation || (newReservationId ? { id: newReservationId } as Reservation : null)}
@@ -2542,7 +2573,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   type="button"
                   onClick={() => handleReceiptClick(editingReservation)}
                   className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-                  title={t('print') || '영수증 인쇄'}
+                  title={t('print') || '????????'}
                 >
                   <Printer className="w-5 h-5" />
                 </button>
@@ -2559,7 +2590,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 고객 추가 모달 */}
+      {/* ?? ??? ?? */}
       {showCustomerForm && (
         <CustomerForm
           customer={null}
@@ -2569,14 +2600,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 고객 수정 모달 */}
+      {/* ?? ??? ?? */}
       {editingCustomer && (
         <CustomerForm
           customer={editingCustomer}
           channels={channels || []}
           onSubmit={async (customerData) => {
             try {
-              // Supabase에 고객 정보 업데이트
+              // Supabase???? ??? ??????
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const { error } = await (supabase as any)
                 .from('customers')
@@ -2590,7 +2621,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 return
               }
 
-              // 성공 시 고객 목록 새로고침
+              // ??? ???? ?? ?????
               await refreshCustomers()
               setEditingCustomer(null)
               alert(t('messages.customerUpdated'))
@@ -2614,7 +2645,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   return
                 }
 
-                // 성공 시 고객 목록 새로고침
+                // ??? ???? ?? ?????
                 await refreshCustomers()
                 setEditingCustomer(null)
                 alert(t('messages.customerDeleted'))
@@ -2627,20 +2658,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 가격 정보 모달 */}
+      {/* ?????? ?? */}
       <PricingInfoModal
         reservation={pricingModalReservation}
         isOpen={showPricingModal}
         onClose={handleClosePricingModal}
       />
 
-      {/* 입금 내역 모달 */}
+      {/* ??? ??? ?? */}
       {showPaymentRecords && selectedReservationForPayment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">
-                입금 내역 관리 - {getCustomerName(selectedReservationForPayment.customerId, (customers as Customer[]) || [])}
+                ??? ??? ???- {getCustomerName(selectedReservationForPayment.customerId, (customers as Customer[]) || [])}
               </h2>
               <button
                 onClick={() => {
@@ -2664,7 +2695,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         </div>
       )}
 
-      {/* 영수증 인쇄 모달 (예약 카드에서 열기) */}
+      {/* ???????? ?? (??? ????? ???) */}
       {receiptModalReservationId && (
         <CustomerReceiptModal
           isOpen={!!receiptModalReservationId}
@@ -2673,7 +2704,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 예약 처리 필요 모달 */}
+      {/* ??? ?? ??? ?? */}
       <ReservationActionRequiredModal
         isOpen={showActionRequiredModal}
         onClose={() => setShowActionRequiredModal(false)}
@@ -2709,9 +2740,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         emailDropdownOpen={emailDropdownOpen}
         sendingEmail={sendingEmail}
         tourIdByReservationId={tourIdByReservationId}
+        reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+        onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
       />
 
-      {/* 픽업 시간 수정 모달 */}
+      {/* ??? ??? ??? ?? */}
       {showPickupTimeModal && selectedReservationForPickupTime && (
         <PickupTimeModal
           isOpen={showPickupTimeModal}
@@ -2724,11 +2757,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           pickupTimeValue={pickupTimeValue}
           onTimeChange={setPickupTimeValue}
           onSave={handleSavePickupTime}
-          onCancel={() => {
-            setShowPickupTimeModal(false)
-            setSelectedReservationForPickupTime(null)
-            setPickupTimeValue('')
-          }}
+          onCancel={closePickupTimeModalAndMaybeReshowSummary}
           getCustomerName={(customerId: string) => getCustomerName(customerId, (customers as Customer[]) || [])}
           getCustomerLanguage={getCustomerLanguage}
           getPickupHotelName={(hotelId: string) => getPickupHotelDisplay(hotelId, pickupHotels || [])}
@@ -2736,7 +2765,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 픽업 호텔 수정 모달 */}
+      {/* ??? ??? ??? ?? */}
       {showPickupHotelModal && selectedReservationForPickupHotel && (
         <PickupHotelModal
           isOpen={showPickupHotelModal}
@@ -2760,16 +2789,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }))}
           onSearchChange={setHotelSearchTerm}
           onHotelSelect={handleSavePickupHotel}
-          onCancel={() => {
-            setShowPickupHotelModal(false)
-            setSelectedReservationForPickupHotel(null)
-            setHotelSearchTerm('')
-          }}
+          onCancel={closePickupHotelModalAndMaybeReshowSummary}
           getCustomerName={(customerId: string) => getCustomerName(customerId, (customers as Customer[]) || [])}
         />
       )}
 
-      {/* 이메일 미리보기 모달 */}
+      {/* ????????? ?? */}
       {showEmailPreview && emailPreviewData && (
         <EmailPreviewModal
           isOpen={showEmailPreview}
@@ -2786,7 +2811,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 이메일 발송 내역 모달 */}
+      {/* ??????? ??? ?? */}
       {showEmailLogs && selectedReservationForEmailLogs && (
         <EmailLogsModal
           isOpen={showEmailLogs}
@@ -2798,14 +2823,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {/* 예약 상세 모달 (고객 보기) */}
+      {/* ??? ??? ?? (?? ??) */}
       {showReservationDetailModal && selectedReservationForDetail && (() => {
-        // 고객의 언어를 가져와서 locale로 변환
+        // ????????????????locale?????
         const customer = (customers as Customer[]).find(c => c.id === selectedReservationForDetail.customerId)
         const customerLanguage = customer?.language
-        // 고객 언어를 locale 형식으로 변환 ('EN' 또는 'en' -> 'en', 그 외 -> 'ko')
+        // ?? ?????locale ?????? ???('EN' ??? 'en' -> 'en', ????-> 'ko')
         const customerLocale = customerLanguage && 
-          (customerLanguage.toLowerCase() === 'en' || customerLanguage === 'EN' || customerLanguage === '영어') 
+          (customerLanguage.toLowerCase() === 'en' || customerLanguage === 'EN' || customerLanguage === '???') 
           ? 'en' 
           : 'ko'
         
@@ -2816,25 +2841,25 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               setShowReservationDetailModal(false)
               setSelectedReservationForDetail(null)
             }}
-            title={`고객 예약 상세 - ${getCustomerName(selectedReservationForDetail.customerId, (customers as Customer[]) || [])}`}
+            title={`?? ??? ??? - ${getCustomerName(selectedReservationForDetail.customerId, (customers as Customer[]) || [])}`}
             initialHeight={typeof window !== 'undefined' ? window.innerHeight * 0.9 : 600}
             onHeightChange={() => {}}
           >
             <iframe
               src={`/${customerLocale}/dashboard/reservations/${selectedReservationForDetail.customerId}/${selectedReservationForDetail.id}`}
               className="w-full h-full border-0"
-              title="예약 상세 정보"
+              title="??? ??? ???"
             />
           </ResizableModal>
         )
       })()}
 
-      {/* 후기 관리 모달 */}
+      {/* ??? ????? */}
       {showReviewModal && selectedReservationForReview && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
-              <h2 className="text-xl font-semibold text-gray-900">후기 관리</h2>
+              <h2 className="text-xl font-semibold text-gray-900">?? ??</h2>
               <button
                 onClick={() => {
                   setShowReviewModal(false)
@@ -2852,6 +2877,53 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         </div>
       )}
 
+      {tourDetailModalTourId ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reservations-tour-detail-modal-title"
+          onClick={() => setTourDetailModalTourId(null)}
+        >
+          <div
+            className="flex h-[min(92vh,900px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+              <h3 id="reservations-tour-detail-modal-title" className="text-lg font-semibold text-gray-900 truncate pr-2">
+                {t('card.tourDetailModalTitle')}
+              </h3>
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                >
+                  {t('card.openTourInNewTab')}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setTourDetailModalTourId(null)}
+                  className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                  aria-label={t('card.close')}
+                >
+                  <X className="h-5 w-5" aria-hidden />
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 bg-gray-50">
+              <iframe
+                key={tourDetailModalTourId}
+                title={t('card.tourDetailModalTitle')}
+                src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                className="h-full w-full min-h-[60vh] border-0"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <DeletedReservationsTableModal
         isOpen={showDeletedReservationsModal}
         onClose={() => setShowDeletedReservationsModal(false)}
@@ -2863,7 +2935,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         onPermanentDelete={async (reservationId) => {
           const { error } = await supabase.from('reservations').delete().eq('id', reservationId)
           if (error) {
-            alert(locale === 'ko' ? '영구 삭제 실패: ' + error.message : 'Purge failed: ' + error.message)
+            alert(locale === 'ko' ? '??? ???? ???: ' + error.message : 'Purge failed: ' + error.message)
             throw error
           }
           setDeletedReservationsModalRows((prev) => prev.filter((r) => r.id !== reservationId))

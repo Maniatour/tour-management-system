@@ -35,7 +35,8 @@ import {
   Wrench,
   Tag,
   Plus,
-  TrendingUp
+  TrendingUp,
+  Cloud
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -49,6 +50,7 @@ import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
 import AdminWeatherWidget from './AdminWeatherWidget'
 import AdminTourChatNotificationListener from './admin/AdminTourChatNotificationListener'
+import AdminWeatherReminderModal from './admin/AdminWeatherReminderModal'
 
 /** 요청 중단(AbortError) 여부 확인 — 로그 생략용 */
 function isAbortError(err: unknown): boolean {
@@ -489,6 +491,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: tSidebar('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
     { name: tSidebar('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
     { name: tSidebar('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
+    { name: tSidebar('weatherRecords'), href: `/${locale}/admin/weather-records`, icon: Cloud },
     { name: tSidebar('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: tSidebar('reservationImports'), href: `/${locale}/admin/reservation-imports`, icon: Mail },
     { name: tSidebar('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
@@ -1101,6 +1104,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         isOpen={showCustomerSimulationModal}
         onClose={() => setShowCustomerSimulationModal(false)}
       />
+
+      <AdminWeatherReminderModal locale={locale} />
 
       <AdminTourChatNotificationListener locale={locale} />
     </>

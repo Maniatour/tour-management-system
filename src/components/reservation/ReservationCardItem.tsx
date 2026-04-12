@@ -1,26 +1,66 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer } from 'lucide-react'
+import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
-// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - react-country-flag may lack types
 import ReactCountryFlag from 'react-country-flag'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
+  getProductName, 
   getProductNameForLocale, 
   getChannelName, 
   getStatusLabel, 
   getStatusColor, 
-  calculateTotalPrice 
+  calculateTotalPrice,
+  normalizeTourDateKey
 } from '@/utils/reservationUtils'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import type { Reservation, Customer } from '@/types/reservation'
+
+function getLanguageFlagCountryCode(language: string | undefined | null): string {
+  if (!language) return 'US'
+  const lang = language.toLowerCase().trim()
+  if (lang === 'kr' || lang === 'ko' || lang.startsWith('ko-') || lang === 'korean') return 'KR'
+  if (lang === 'en' || lang.startsWith('en-') || lang === 'english') return 'US'
+  if (lang === 'ja' || lang === 'jp' || lang.startsWith('ja-') || lang === 'japanese') return 'JP'
+  if (lang === 'zh' || lang === 'cn' || lang.startsWith('zh-') || lang === 'chinese') return 'CN'
+  if (lang === 'es' || lang.startsWith('es-') || lang === 'spanish') return 'ES'
+  if (lang === 'fr' || lang.startsWith('fr-') || lang === 'french') return 'FR'
+  if (lang === 'de' || lang.startsWith('de-') || lang === 'german') return 'DE'
+  if (lang === 'it' || lang.startsWith('it-') || lang === 'italian') return 'IT'
+  if (lang === 'pt' || lang.startsWith('pt-') || lang === 'portuguese') return 'PT'
+  if (lang === 'ru' || lang.startsWith('ru-') || lang === 'russian') return 'RU'
+  if (lang === 'th' || lang === 'thai') return 'TH'
+  if (lang === 'vi' || lang === 'vietnamese') return 'VN'
+  if (lang === 'id' || lang === 'indonesian') return 'ID'
+  if (lang === 'ms' || lang === 'malay') return 'MY'
+  if (lang === 'ph' || lang === 'filipino' || lang === 'tl') return 'PH'
+  return 'US'
+}
+
+function formatTourDateMmDdYyyy(tourDate: string | null | undefined): string {
+  if (!tourDate?.trim()) return '-'
+  const raw = tourDate.trim()
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`
+  const parsed = Date.parse(raw)
+  if (!Number.isNaN(parsed)) {
+    const d = new Date(parsed)
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${mm}/${dd}/${d.getFullYear()}`
+  }
+  return raw
+}
 
 interface ReservationCardItemProps {
   reservation: Reservation
@@ -68,8 +108,8 @@ interface ReservationCardItemProps {
   sendingEmail: string | null
   onPricingInfoClick: (reservation: Reservation) => void
   onCreateTour: (reservation: Reservation) => void
-  onPickupTimeClick: (reservation: Reservation, e: React.MouseEvent) => void
-  onPickupHotelClick: (reservation: Reservation, e: React.MouseEvent) => void
+  onPickupTimeClick: (reservation: Reservation, e: React.MouseEvent, opts?: { resumePickupSummary?: boolean }) => void
+  onPickupHotelClick: (reservation: Reservation, e: React.MouseEvent, opts?: { resumePickupSummary?: boolean }) => void
   onPaymentClick: (reservation: Reservation) => void
   onDetailClick: (reservation: Reservation) => void
   onReceiptClick?: (reservation: Reservation) => void
@@ -109,8 +149,34 @@ interface ReservationCardItemProps {
       }
     }
   }>>>
-  /** reservations.tour_id가 비어 있을 때 tours.reservation_ids 기준 투어 ID */
+  /** reservations.tour_id or tours.reservation_ids-derived tour ID */
   linkedTourId?: string | null
+  /** Card density: full detail vs compact rows */
+  cardLayout?: 'standard' | 'simple'
+  onOpenTourDetailModal?: (tourId: string) => void
+  reservationOptionsPresenceByReservationId?: Record<string, boolean>
+  onReservationOptionsMutated?: () => void
+  /** ?? ?? ? ?? ?? ?? ?? ? ??? ?? ? ? ??? nonce? ?? */
+  reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
+  onReshowPickupSummaryConsumed?: () => void
+}
+
+function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
+  const key = normalizeTourDateKey(tourDate)
+  const iso = key.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!iso) return 'border border-gray-200'
+  const y = Number(iso[1])
+  const mo = Number(iso[2])
+  const d = Number(iso[3])
+  const tour = new Date(y, mo - 1, d)
+  if (Number.isNaN(tour.getTime())) return 'border border-gray-200'
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const diffDays = Math.round((tour.getTime() - today.getTime()) / 86400000)
+  if (diffDays < 0) return 'border border-gray-200'
+  if (diffDays < 3) return 'border-2 border-red-500'
+  if (diffDays <= 7) return 'border-2 border-blue-500'
+  return 'border border-gray-200'
 }
 
 export const ReservationCardItem = React.memo(function ReservationCardItem({
@@ -145,7 +211,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   getGroupColorClasses,
   getSelectedChoicesFromNewSystem,
   choicesCacheRef,
-  linkedTourId = null
+  linkedTourId = null,
+  cardLayout = 'standard',
+  onOpenTourDetailModal,
+  reservationOptionsPresenceByReservationId: _reservationOptionsPresence,
+  onReservationOptionsMutated: _onReservationOptionsMutated,
+  reshowPickupSummaryRequest = null,
+  onReshowPickupSummaryConsumed
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -159,7 +231,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     if (!s || s === 'null' || s === 'undefined') return ''
     return s
   }
-  // tours.reservation_ids 배정을 DB tour_id보다 우선 (슬롯 기준이 진실 소스)
+  /** Effective tour id: linked from tours.reservation_ids, else reservation.tourId / tour_id. */
   const effectiveTourId =
     normalizeTourId(linkedTourId) ||
     normalizeTourId(reservation.tourId) ||
@@ -171,9 +243,24 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     reservationStatusLower === 'canceled' ||
     reservationStatusLower === 'deleted'
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
+  const [statusModalOpen, setStatusModalOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
+  const [simpleActionsExpanded, setSimpleActionsExpanded] = useState(false)
+  const [pickupSummaryModalOpen, setPickupSummaryModalOpen] = useState(false)
+  const [pickupSummaryPortalReady, setPickupSummaryPortalReady] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!reshowPickupSummaryRequest) return
+    if (reshowPickupSummaryRequest.reservationId !== reservation.id) return
+    setPickupSummaryModalOpen(true)
+    onReshowPickupSummaryConsumed?.()
+  }, [reshowPickupSummaryRequest, reservation.id, onReshowPickupSummaryConsumed])
+
+  useEffect(() => {
+    setPickupSummaryPortalReady(true)
+  }, [])
 
   useEffect(() => {
     if (!statusDropdownOpen) return
@@ -196,23 +283,540 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const handleStatusSelect = async (newStatus: string) => {
     if (!onStatusChange || newStatus === (reservation.status as string)?.toLowerCase?.()) {
       setStatusDropdownOpen(false)
+      setStatusModalOpen(false)
       return
     }
     setStatusUpdating(true)
     try {
       await onStatusChange(reservation.id, newStatus)
       setStatusDropdownOpen(false)
+      setStatusModalOpen(false)
     } finally {
       setStatusUpdating(false)
     }
   }
 
+  const tourDateBorderClass = tourDateProximityBorderClasses(reservation.tourDate)
+
+  const pickupTimeLine = (() => {
+    const pickupTime = reservation.pickUpTime || ''
+    if (!pickupTime) {
+      return <span className="text-sm text-gray-500 italic">{t('card.pickupTbd')}</span>
+    }
+    let pickupDate = reservation.tourDate || ''
+    const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
+    if (timeMatch && reservation.tourDate) {
+      const hour = parseInt(timeMatch[1], 10)
+      if (hour >= 21) {
+        const d = new Date(reservation.tourDate)
+        d.setDate(d.getDate() - 1)
+        pickupDate = d.toISOString().split('T')[0]
+      }
+    }
+    return (
+      <span
+        className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+        onClick={(e) => onPickupTimeClick(reservation, e)}
+      >
+        {pickupDate} {pickupTime}
+      </span>
+    )
+  })()
+
+  // Pickup summary (modal): same date/time rules as pickupTimeLine, without click handler.
+  const pickupSummaryTimeDisplay = (() => {
+    const pickupTime = reservation.pickUpTime || ''
+    if (!pickupTime) {
+      return <span className="text-sm text-gray-500 italic">{t('card.pickupTbd')}</span>
+    }
+    let pickupDate = reservation.tourDate || ''
+    const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
+    if (timeMatch && reservation.tourDate) {
+      const hour = parseInt(timeMatch[1], 10)
+      if (hour >= 21) {
+        const d = new Date(reservation.tourDate)
+        d.setDate(d.getDate() - 1)
+        pickupDate = d.toISOString().split('T')[0]
+      }
+    }
+    return (
+      <span className="text-sm text-gray-900">
+        {pickupDate} {pickupTime}
+      </span>
+    )
+  })()
+
   return (
     <div
       key={reservation.id}
-      className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 group"
+      className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group`}
     >
-      {/* 카드 헤더 - 상태 표시 */}
+      {cardLayout === 'simple' ? (
+        <div className="p-3 space-y-2">
+          {/* Row 1 */}
+          <div className="flex justify-between items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {onStatusChange ? (
+                <button
+                  type="button"
+                  onClick={() => setStatusModalOpen(true)}
+                  disabled={statusUpdating}
+                  className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
+                >
+                  {getStatusLabel(reservation.status, t)}
+                </button>
+              ) : (
+                <span className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${getStatusColor(reservation.status)}`}>
+                  {getStatusLabel(reservation.status, t)}
+                </span>
+              )}
+              {(() => {
+                const customer = customers.find((c) => c.id === reservation.customerId)
+                if (!customer?.language) return null
+                const code = getLanguageFlagCountryCode(customer.language)
+                return (
+                  <ReactCountryFlag
+                    countryCode={code}
+                    svg
+                    style={{ width: '14px', height: '11px', borderRadius: '2px', flexShrink: 0 }}
+                  />
+                )
+              })()}
+              <button
+                type="button"
+                className="min-w-0 truncate text-left text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const customer = customers.find((c) => c.id === reservation.customerId)
+                  if (customer) onCustomerClick(customer)
+                }}
+              >
+                {getCustomerName(reservation.customerId, customers || [])}
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {showResidentStatusUi && (
+                <ResidentStatusIcon
+                  reservationId={reservation.id}
+                  customerId={reservation.customerId}
+                  totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
+                  onUpdate={onRefreshReservations}
+                />
+              )}
+              {(() => {
+                const channel = channels?.find((c) => c.id === reservation.channelId)
+                const chName = getChannelName(reservation.channelId, channels || [])
+                return channel?.favicon_url ? (
+                  <Image
+                    src={channel.favicon_url}
+                    alt={chName || 'Channel'}
+                    width={16}
+                    height={16}
+                    className="rounded flex-shrink-0"
+                    style={{ width: 'auto', height: 'auto' }}
+                    title={chName}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement
+                      target.style.display = 'none'
+                    }}
+                  />
+                ) : (
+                  <span className="h-4 w-4 shrink-0 rounded bg-gray-100 block" title={chName || ''} aria-hidden />
+                )
+              })()}
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-gray-800 tabular-nums" title={t('peopleLabel')}>
+                <Users className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
+                {(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
+              </span>
+            </div>
+          </div>
+
+          {/* Row 2: date + product name (products.name) with choice badges inline */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+            <span className="shrink-0 text-sm font-medium text-gray-900">{formatTourDateMmDdYyyy(reservation.tourDate)}</span>
+            <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-1 text-sm font-medium text-gray-900">
+              <span className="min-w-0 max-w-full break-words line-clamp-2">
+                {getProductName(reservation.productId, products as any || [])}
+              </span>
+              <span className="inline-flex flex-wrap items-center gap-1 text-sm font-normal">
+                <ChoicesDisplay
+                  reservation={reservation}
+                  getGroupColorClasses={getGroupColorClasses}
+                  getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                  choicesCacheRef={choicesCacheRef}
+                />
+              </span>
+            </div>
+          </div>
+
+          {/* Row 3 */}
+          {(() => {
+            const tourInfo = effectiveTourId && !hideAssignedTourUi ? tourInfoMap.get(effectiveTourId) : undefined
+            const tourStatusLabel = tourInfo?.status ?? '-'
+            const tourStatusTone = (st: string) => {
+              const x = st.toLowerCase()
+              if (x === 'confirmed') return 'bg-green-100 text-green-800'
+              if (x === 'completed') return 'bg-blue-100 text-blue-800'
+              if (x === 'cancelled' || x === 'canceled') return 'bg-red-100 text-red-800'
+              return 'bg-gray-100 text-gray-800'
+            }
+            const g = tourInfo?.guideName && tourInfo.guideName !== '-' ? tourInfo.guideName : '-'
+            const a = tourInfo?.assistantName && tourInfo.assistantName !== '-' ? tourInfo.assistantName : '-'
+            const v = tourInfo?.vehicleName && tourInfo.vehicleName !== '-' ? tourInfo.vehicleName : '-'
+            const assignedN = tourInfo?.totalPeople ?? null
+            return (
+              <div className="flex items-start gap-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-800 min-w-0 flex-1">
+                  <button
+                    type="button"
+                    disabled={!effectiveTourId || hideAssignedTourUi}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!effectiveTourId || hideAssignedTourUi) return
+                      if (onOpenTourDetailModal) onOpenTourDetailModal(effectiveTourId)
+                      else router.push(`/${locale}/admin/tours/${effectiveTourId}`)
+                    }}
+                    className="shrink-0 rounded p-0.5 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
+                    title={t('card.tourDetailModalTitle')}
+                  >
+                    <Flag className="h-4 w-4" />
+                  </button>
+                  <span className="max-w-[4.5rem] truncate" title={g}>{g}</span>
+                  <span className="text-gray-300">·</span>
+                  <span className="max-w-[4.5rem] truncate" title={a}>{a}</span>
+                  <span className="text-gray-300">·</span>
+                  <span className="max-w-[5rem] truncate" title={v}>{v}</span>
+                  <span className="text-gray-300">·</span>
+                  <span className="inline-flex items-center gap-0.5 tabular-nums text-gray-700" title={t('card.assignedTourBasic')}>
+                    <Users className="h-3 w-3 shrink-0 text-gray-500" aria-hidden />
+                    {assignedN != null ? assignedN : '-'}
+                  </span>
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${tourStatusTone(tourStatusLabel)}`}>
+                    {tourStatusLabel}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSimpleActionsExpanded((x) => !x)
+                  }}
+                  className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100"
+                  title={t('card.simpleActionsToggle')}
+                  aria-expanded={simpleActionsExpanded}
+                >
+                  <ChevronDown className={`h-4 w-4 transition-transform ${simpleActionsExpanded ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Row 4: icons only */}
+          {simpleActionsExpanded && (
+          <div className="flex flex-wrap gap-1 border-t border-gray-100 pt-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onPricingInfoClick(reservation)
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100"
+              title={t('actions.price')}
+            >
+              <Receipt className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setPickupSummaryModalOpen(true)
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+              title={t('card.pickupHotelIconTitle')}
+            >
+              <Hotel className="h-4 w-4" />
+            </button>
+            {(() => {
+              const product = products?.find((p) => p.id === reservation.productId)
+              const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
+              if (isManiaTour && !reservation.hasExistingTour) {
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onCreateTour(reservation)
+                    }}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-green-200 bg-green-50 text-green-600 hover:bg-green-100"
+                    title={t('card.createTourTitle')}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                )
+              }
+              return null
+            })()}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onPaymentClick(reservation)
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100"
+              title={t('card.paymentHistoryTitle')}
+            >
+              <DollarSign className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDetailClick(reservation)
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-600 hover:bg-purple-100"
+              title={t('card.viewCustomerTitle')}
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+            {onReceiptClick && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onReceiptClick(reservation)
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                title={t('print')}
+              >
+                <Printer className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setFollowUpModalOpen(true)
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+              title="Follow up"
+            >
+              <FileText className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onReviewClick(reservation)
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-pink-200 bg-pink-50 text-pink-600 hover:bg-pink-100"
+              title={t('card.reviewManagementTitle')}
+            >
+              <MessageSquare className="h-4 w-4" />
+            </button>
+            <div className="relative inline-block">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEmailDropdownToggle(reservation.id)
+                }}
+                disabled={sendingEmail === reservation.id}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-green-200 bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50"
+                title={t('card.emailTitle')}
+              >
+                <Mail className="h-4 w-4" />
+              </button>
+              {emailDropdownOpen === reservation.id && (
+                <div
+                  className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onEmailPreview(reservation, 'confirmation')}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <Mail className="w-3 h-3" />
+                    {t('card.emailConfirmation')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onEmailPreview(reservation, 'departure')}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <Mail className="w-3 h-3" />
+                    {t('card.emailDeparture')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onEmailPreview(reservation, 'pickup')}
+                    disabled={!reservation.pickUpTime || !reservation.tourDate}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Mail className="w-3 h-3 inline mr-2" />
+                    {t('card.emailPickup')}
+                  </button>
+                  <div className="border-t border-gray-200 my-1" />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onEmailLogsClick(reservation.id)
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center gap-2"
+                  >
+                    <Clock className="w-3 h-3" />
+                    {t('card.emailLogs')}
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEditClick(reservation.id)
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100"
+              title={t('card.editReservationTitle')}
+            >
+              <Edit className="h-4 w-4" />
+            </button>
+          </div>
+          )}
+
+          {statusModalOpen && onStatusChange && (
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+              onClick={(e) => {
+                e.stopPropagation()
+                setStatusModalOpen(false)
+              }}
+            >
+              <div
+                className="w-full max-w-sm rounded-xl border border-gray-200 bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-gray-200 p-3">
+                  <h3 className="text-sm font-semibold text-gray-900">{t('card.changeStatusModalTitle')}</h3>
+                  <button
+                    type="button"
+                    onClick={() => setStatusModalOpen(false)}
+                    className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
+                    aria-label={t('card.close')}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="max-h-[60vh] space-y-1 overflow-y-auto p-2">
+                  {statusOptions.map((opt) => {
+                    const isCurrent = (reservation.status as string)?.toLowerCase?.() === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        disabled={statusUpdating}
+                        onClick={() => handleStatusSelect(opt.value)}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-gray-50 disabled:opacity-50 ${getStatusColor(opt.value)} ${isCurrent ? 'ring-2 ring-blue-300' : ''}`}
+                      >
+                        {t(opt.labelKey)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pickupSummaryModalOpen && pickupSummaryPortalReady &&
+            createPortal(
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (e.target !== e.currentTarget) return
+                setPickupSummaryModalOpen(false)
+              }}
+            >
+              <div
+                className="w-full max-w-sm rounded-xl border border-gray-200 bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-gray-200 p-3">
+                  <h3 className="text-sm font-semibold text-gray-900">{t('card.pickupSummaryModalTitle')}</h3>
+                  <button
+                    type="button"
+                    onClick={() => setPickupSummaryModalOpen(false)}
+                    className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
+                    aria-label={t('card.close')}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="space-y-2 p-3">
+                  <button
+                    type="button"
+                    className="w-full rounded-lg border border-transparent px-2 py-2 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onPickupTimeClick(reservation, e, { resumePickupSummary: true })
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                      <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      {t('card.pickupSummaryTimeLabel')}
+                    </div>
+                    <div className="mt-1">{pickupSummaryTimeDisplay}</div>
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded-lg border border-transparent px-2 py-2 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onPickupHotelClick(reservation, e, { resumePickupSummary: true })
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                      <Hotel className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      {t('card.pickupSummaryHotelLabel')}
+                    </div>
+                    <div className="mt-1 text-sm text-gray-900 break-words">
+                      {reservation.pickUpHotel
+                        ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels as any || [])
+                        : t('card.pickupHotelTbd')}
+                    </div>
+                  </button>
+                  <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onPickupTimeClick(reservation, e, { resumePickupSummary: true })
+                      }}
+                      className="w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                    >
+                      {t('card.editPickupTimeButton')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onPickupHotelClick(reservation, e, { resumePickupSummary: true })
+                      }}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-800 hover:bg-gray-50"
+                    >
+                      {t('card.editPickupHotelButton')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
+        </div>
+      ) : (
+      <>
+      {/* ?? ?? - ?? ?? */}
       <div className="p-4 border-b border-gray-100">
         <div className="flex justify-between items-start mb-3">
           <div className="relative" ref={statusDropdownRef}>
@@ -269,14 +873,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                         if (parent) {
                           const fallback = document.createElement('div')
                           fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
-                          fallback.innerHTML = '🌐'
+                          fallback.innerHTML = '??'
                           parent.appendChild(fallback)
                         }
                       }}
                     />
                   ) : (
                     <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-gray-400 text-xs">🌐</span>
+                      <span className="text-gray-400 text-xs">??</span>
                     </div>
                   )}
                   <span className="text-xs text-gray-600">{getChannelName(reservation.channelId, channels || [])}</span>
@@ -287,7 +891,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </div>
         </div>
         
-        {/* 고객 이름 */}
+        {/* ?? ?? */}
         <div className="mb-2">
           <div 
             className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
@@ -299,7 +903,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               }
             }}
           >
-            {/* 언어별 국기 아이콘 */}
+            {/* ??? ?? ??? */}
             {(() => {
               const customer = customers.find(c => c.id === reservation.customerId)
               if (!customer?.language) return null
@@ -307,21 +911,21 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               const getLanguageFlag = (language: string): string => {
                 if (!language) return 'US'
                 const lang = language.toLowerCase().trim()
-                if (lang === 'kr' || lang === 'ko' || lang.startsWith('ko-') || lang === '한국어' || lang === 'korean') return 'KR'
-                if (lang === 'en' || lang === '영어' || lang.startsWith('en-') || lang === 'english') return 'US'
-                if (lang === 'ja' || lang === 'jp' || lang.startsWith('ja-') || lang === '일본어' || lang === 'japanese') return 'JP'
-                if (lang === 'zh' || lang === 'cn' || lang.startsWith('zh-') || lang === '중국어' || lang === 'chinese') return 'CN'
-                if (lang === 'es' || lang.startsWith('es-') || lang === '스페인어' || lang === 'spanish') return 'ES'
-                if (lang === 'fr' || lang.startsWith('fr-') || lang === '프랑스어' || lang === 'french') return 'FR'
-                if (lang === 'de' || lang.startsWith('de-') || lang === '독일어' || lang === 'german') return 'DE'
-                if (lang === 'it' || lang.startsWith('it-') || lang === '이탈리아어' || lang === 'italian') return 'IT'
-                if (lang === 'pt' || lang.startsWith('pt-') || lang === '포르투갈어' || lang === 'portuguese') return 'PT'
-                if (lang === 'ru' || lang.startsWith('ru-') || lang === '러시아어' || lang === 'russian') return 'RU'
-                if (lang === 'th' || lang === '태국어' || lang === 'thai') return 'TH'
-                if (lang === 'vi' || lang === '베트남어' || lang === 'vietnamese') return 'VN'
-                if (lang === 'id' || lang === '인도네시아어' || lang === 'indonesian') return 'ID'
-                if (lang === 'ms' || lang === '말레이어' || lang === 'malay') return 'MY'
-                if (lang === 'ph' || lang === '필리핀어' || lang === 'filipino') return 'PH'
+                if (lang === 'kr' || lang === 'ko' || lang.startsWith('ko-') || lang === '???' || lang === 'korean') return 'KR'
+                if (lang === 'en' || lang === '??' || lang.startsWith('en-') || lang === 'english') return 'US'
+                if (lang === 'ja' || lang === 'jp' || lang.startsWith('ja-') || lang === '???' || lang === 'japanese') return 'JP'
+                if (lang === 'zh' || lang === 'cn' || lang.startsWith('zh-') || lang === '???' || lang === 'chinese') return 'CN'
+                if (lang === 'es' || lang.startsWith('es-') || lang === '????' || lang === 'spanish') return 'ES'
+                if (lang === 'fr' || lang.startsWith('fr-') || lang === '????' || lang === 'french') return 'FR'
+                if (lang === 'de' || lang.startsWith('de-') || lang === '???' || lang === 'german') return 'DE'
+                if (lang === 'it' || lang.startsWith('it-') || lang === '?????' || lang === 'italian') return 'IT'
+                if (lang === 'pt' || lang.startsWith('pt-') || lang === '?????' || lang === 'portuguese') return 'PT'
+                if (lang === 'ru' || lang.startsWith('ru-') || lang === '????' || lang === 'russian') return 'RU'
+                if (lang === 'th' || lang === '???' || lang === 'thai') return 'TH'
+                if (lang === 'vi' || lang === '????' || lang === 'vietnamese') return 'VN'
+                if (lang === 'id' || lang === '??????' || lang === 'indonesian') return 'ID'
+                if (lang === 'ms' || lang === '????' || lang === 'malay') return 'MY'
+                if (lang === 'ph' || lang === '????' || lang === 'filipino') return 'PH'
                 return 'US'
               }
               
@@ -340,7 +944,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               )
             })()}
             
-            {/* 거주 상태 아이콘 */}
+            {/* ?? ?? ??? */}
             {showResidentStatusUi && (
               <ResidentStatusIcon
                 reservationId={reservation.id}
@@ -351,7 +955,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             )}
             
             <span>{getCustomerName(reservation.customerId, customers || [])}</span>
-            {/* 인원 정보 */}
+            {/* ?? ?? */}
             {(() => {
               const hasChild = reservation.child > 0
               const hasInfant = reservation.infant > 0
@@ -376,7 +980,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           >
             {customers.find(c => c.id === reservation.customerId)?.email}
           </a>
-          {/* 전화번호와 등록일 - 같은 줄에 배치 */}
+          {/* ????? ??? - ?? ?? ?? */}
           <div className="flex items-center justify-between">
             <a 
               href={`tel:${customers.find(c => c.id === reservation.customerId)?.phone || ''}`}
@@ -398,14 +1002,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
         </div>
       </div>
 
-      {/* 카드 본문 */}
+      {/* ?? ?? */}
       <div className="p-4 space-y-3">
-        {/* 상품 정보 */}
+        {/* ?? ?? */}
         <div>
           <div className="flex items-center space-x-2 mb-2">
             <div className="text-sm font-medium text-gray-900">{getProductNameForLocale(reservation.productId, products as any || [], locale)}</div>
             
-            {/* 새로운 초이스 시스템 뱃지 표시 */}
+            {/* ??? ??? ??? ?? ?? */}
             <ChoicesDisplay 
               reservation={reservation}
               getGroupColorClasses={getGroupColorClasses}
@@ -414,7 +1018,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             />
           </div>
           
-          {/* 기존 selectedOptions 표시 (필요한 경우) */}
+          {/* ?? selectedOptions ?? (??? ??) */}
           {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
             <div className="mt-1 space-y-1">
               {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
@@ -424,7 +1028,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 
                 if (!option) return null
                 
-                // 필수 옵션만 표시 (is_required가 true인 옵션만)
+                // ?? ??? ?? (is_required? true? ???)
                 if (!option.is_required) return null
                 
                 return (
@@ -437,39 +1041,16 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           )}
         </div>
 
-        {/* 투어 날짜(tour_date) · 픽업 날짜&시간(pickup_date & pickup_time) - 같은 줄 */}
+        {/* Tour date (tour_date) / pickup date-time (pickup_date & pickup_time) */}
         <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
           <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
           <span className="text-sm text-gray-900">{reservation.tourDate || '-'}</span>
           <span className="text-gray-400">·</span>
           <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-          {(() => {
-            const pickupTime = reservation.pickUpTime || ''
-            if (!pickupTime) {
-              return <span className="text-sm text-gray-500 italic">{t('card.pickupTbd')}</span>
-            }
-            let pickupDate = reservation.tourDate || ''
-            const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
-            if (timeMatch && reservation.tourDate) {
-              const hour = parseInt(timeMatch[1], 10)
-              if (hour >= 21) {
-                const d = new Date(reservation.tourDate)
-                d.setDate(d.getDate() - 1)
-                pickupDate = d.toISOString().split('T')[0]
-              }
-            }
-            return (
-              <span 
-                className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
-                onClick={(e) => onPickupTimeClick(reservation, e)}
-              >
-                {pickupDate} {pickupTime}
-              </span>
-            )
-          })()}
+          {pickupTimeLine}
         </div>
 
-        {/* 픽업 호텔 정보 */}
+        {/* ?? ?? ?? */}
         <div className="flex items-center space-x-2">
           <MapPin className="h-4 w-4 text-gray-400" />
           <span 
@@ -487,7 +1068,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </span>
         </div>
 
-        {/* Net Price 계산식 표시 */}
+        {/* Net Price ??? ?? */}
         <div className="pt-2 border-t border-gray-100">
           {(() => {
             const pricing = reservationPricingMap.get(reservation.id)
@@ -504,7 +1085,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             
             const calculationString = generatePriceCalculation(reservation, pricing)
             const currency = pricing.currency || 'USD'
-            const currencySymbol = currency === 'KRW' ? '₩' : '$'
+            const currencySymbol = currency === 'KRW' ? '?' : '$'
             
             return (
               <div className="text-xs text-gray-700">
@@ -521,7 +1102,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           })()}
         </div>
 
-        {/* 연결된 투어 정보 — 취소·삭제 예약은 미배정으로 간주하여 표시하지 않음 */}
+        {/* Assigned tour summary (linked tour card) */}
         {(() => {
           if (!effectiveTourId || hideAssignedTourUi) {
             return null
@@ -607,7 +1188,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           )
         })()}
 
-        {/* 버튼들 - 가장 아래에 배치 */}
+        {/* ??? - ?? ??? ?? */}
         <div className="mt-3 pt-3 border-t border-gray-200">
           <div className="flex items-center flex-wrap gap-2">
             <button
@@ -623,7 +1204,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <span>{t('actions.price')}</span>
             </button>
             
-            {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
+            {/* ?? ?? ?? - Mania Tour/Service?? ??? ?? ?? ?? */}
             {(() => {
               const product = products?.find(p => p.id === reservation.productId)
               const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
@@ -646,7 +1227,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               return null
             })()}
 
-            {/* 입금 내역 버튼 */}
+            {/* ?? ?? ?? */}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -659,7 +1240,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <span>{t('actions.deposit')}</span>
             </button>
             
-            {/* 고객 보기 버튼 */}
+            {/* ?? ?? ?? */}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -672,7 +1253,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <span>{t('card.viewCustomer')}</span>
             </button>
 
-            {/* 영수증 인쇄 버튼 */}
+            {/* ??? ?? ?? */}
             {onReceiptClick && (
               <button
                 onClick={(e) => {
@@ -687,7 +1268,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               </button>
             )}
 
-            {/* Follow up 버튼 - 모든 상태에서 표시 */}
+            {/* Follow up ?? - ?? ???? ?? */}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -700,7 +1281,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <span>Follow up</span>
             </button>
 
-            {/* 후기 관리 버튼 */}
+            {/* ?? ?? ?? */}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -713,7 +1294,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <span>{t('card.reviews')}</span>
             </button>
 
-            {/* 이메일 발송 드롭다운 */}
+            {/* ??? ?? ???? */}
             <div className="relative">
               <button
                 onClick={(e) => {
@@ -771,7 +1352,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               )}
             </div>
 
-            {/* 수정 버튼 */}
+            {/* ?? ?? */}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -786,8 +1367,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </div>
         </div>
       </div>
+      </>
+      )}
 
-      {/* Follow up 모달 */}
+      {/* Follow up ?? */}
       {followUpModalOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
@@ -823,9 +1406,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     </div>
   )
 }, (prevProps, nextProps) => {
-  // 메모이제이션 비교: reservation.id와 주요 props만 비교하여 불필요한 리렌더링 방지
+  // ?????? ??: reservation.id? ?? props? ???? ???? ???? ??
   return (
     prevProps.reservation.id === nextProps.reservation.id &&
+    prevProps.cardLayout === nextProps.cardLayout &&
     prevProps.emailDropdownOpen === nextProps.emailDropdownOpen &&
     prevProps.sendingEmail === nextProps.sendingEmail &&
     prevProps.reservation.status === nextProps.reservation.status &&

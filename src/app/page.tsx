@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+// x
 import { useRouter } from 'next/navigation'
 
 export default function RootPage() {

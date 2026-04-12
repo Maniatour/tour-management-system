@@ -1,8 +1,8 @@
 'use client'
 
-import React from 'react'
+import React from "react"
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
 
@@ -18,6 +18,9 @@ interface ReservationsHeaderProps {
   actionRequiredCount?: number
   /** 데스크톱 제목줄에 필터 버튼 표시 (클릭 시 호출) */
   onOpenFilter?: () => void
+  /** 카드 뷰일 때만 사용: 상세 / 간단 카드 전환  */
+  cardLayout?: 'standard' | 'simple'
+  onCardLayoutChange?: (layout: 'standard' | 'simple') => void
 }
 
 export default function ReservationsHeader({
@@ -30,7 +33,9 @@ export default function ReservationsHeader({
   onAddReservation,
   onActionRequired,
   actionRequiredCount = 0,
-  onOpenFilter
+  onOpenFilter,
+  cardLayout = 'standard',
+  onCardLayoutChange
 }: ReservationsHeaderProps) {
   const t = useTranslations('reservations')
 
@@ -77,6 +82,34 @@ export default function ReservationsHeader({
               <CalendarDays className="w-3 h-3" />
               <span className="hidden sm:inline">{t('viewCalendar')}</span>
             </button>
+            {viewMode === 'card' && typeof onCardLayoutChange === 'function' && (
+              <div className="flex items-center space-x-1 border-l border-gray-200 pl-2 ml-1">
+                <button
+                  type="button"
+                  onClick={() => onCardLayoutChange('simple')}
+                  className={`flex items-center justify-center p-1.5 rounded-md transition-colors text-xs ${
+                    cardLayout === 'simple'
+                      ? 'bg-slate-700 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  title={t('viewCardSimple')}
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCardLayoutChange('standard')}
+                  className={`flex items-center justify-center p-1.5 rounded-md transition-colors text-xs ${
+                    cardLayout === 'standard'
+                      ? 'bg-slate-700 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  title={t('viewCardStandard')}
+                >
+                  <LayoutTemplate className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
         
