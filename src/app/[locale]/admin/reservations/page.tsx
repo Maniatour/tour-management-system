@@ -46,6 +46,7 @@ import {
   normalizeTourDateKey,
   isoToLocalCalendarDateKey
 } from '@/utils/reservationUtils'
+import { isTourDeletedStatus } from '@/utils/tourUtils'
 import type { 
   Customer, 
   Reservation,
@@ -242,14 +243,30 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     refreshCustomers
   } = useReservationData()
 
-  /** DB tour_id ?????tours.reservation_ids??? ??????? ??/?????*/
+  /**
+   * 예약 ID → 투어 ID: tours.reservation_ids에 실제로 포함된 투어만 반영.
+   * 동일 예약이 여러 투어에 남아 있으면 tour_status가 deleted인 투어는 뒤로 두고,
+   * 그중 첫 번째(비삭제 우선)를 대표 투어로 사용.
+   */
   const tourIdByReservationId = useMemo(() => {
-    const m = new Map<string, string>()
+    const byRes = new Map<string, { tourId: string; deletedRank: number }[]>()
     hookToursMap.forEach((tour, tourId) => {
+      const deletedRank = isTourDeletedStatus(tour.tour_status) ? 1 : 0
       for (const rid of tour.reservation_ids || []) {
         const id = String(rid ?? '').trim()
-        if (id && !m.has(id)) m.set(id, tourId)
+        if (!id) continue
+        const arr = byRes.get(id) ?? []
+        arr.push({ tourId, deletedRank })
+        byRes.set(id, arr)
       }
+    })
+    const m = new Map<string, string>()
+    byRes.forEach((candidates, reservationId) => {
+      const sorted = [...candidates].sort((a, b) => {
+        if (a.deletedRank !== b.deletedRank) return a.deletedRank - b.deletedRank
+        return a.tourId.localeCompare(b.tourId)
+      })
+      if (sorted[0]) m.set(reservationId, sorted[0].tourId)
     })
     return m
   }, [hookToursMap])
@@ -2871,14 +2888,14 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
       {tourDetailModalTourId ? (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 sm:p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 sm:p-3"
           role="dialog"
           aria-modal="true"
           aria-labelledby="reservations-tour-detail-modal-title"
           onClick={() => setTourDetailModalTourId(null)}
         >
           <div
-            className="flex h-[min(92vh,900px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
@@ -2909,7 +2926,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                 key={tourDetailModalTourId}
                 title={t('card.tourDetailModalTitle')}
                 src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                className="h-full w-full min-h-[60vh] border-0"
+                className="h-full w-full min-h-0 border-0"
               />
             </div>
           </div>

@@ -248,11 +248,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     if (!s || s === 'null' || s === 'undefined') return ''
     return s
   }
-  /** Effective tour id: linked from tours.reservation_ids, else reservation.tourId / tour_id. */
-  const effectiveTourId =
-    normalizeTourId(linkedTourId) ||
+  const reservationIdNorm = String(reservation.id ?? '').trim()
+  const tourIdFromReservationRow =
     normalizeTourId(reservation.tourId) ||
     normalizeTourId((reservation as { tour_id?: string }).tour_id)
+  const tourInfoForDbTour = tourIdFromReservationRow ? tourInfoMap.get(tourIdFromReservationRow) : undefined
+  const dbTourListsThisReservation =
+    !!tourInfoForDbTour?.reservationIds?.some((x) => String(x ?? '').trim() === reservationIdNorm)
+  /**
+   * 대표 투어: (1) tours.reservation_ids 기반 linkedTourId
+   * (2) 예약 row의 tour_id는 해당 투어의 reservation_ids에 이 예약이 있을 때만 사용 (오래된 tour_id 오표시 방지)
+   */
+  const effectiveTourId =
+    normalizeTourId(linkedTourId) || (dbTourListsThisReservation ? tourIdFromReservationRow : '')
 
   const reservationStatusLower = (reservation.status as string)?.toLowerCase?.() || ''
   const hideAssignedTourUi =

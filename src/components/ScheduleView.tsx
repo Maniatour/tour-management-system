@@ -22,6 +22,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useTourHandlers } from '@/hooks/useTourHandlers'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -267,7 +275,8 @@ export default function ScheduleView() {
   const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
-  const { user, userRole } = useAuth()
+  const { user, userRole, hasPermission } = useAuth()
+  const tourHandlers = useTourHandlers()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [products, setProducts] = useState<Product[]>([])
   const [teamMembers, setTeamMembers] = useState<Team[]>([])
@@ -288,6 +297,16 @@ export default function ScheduleView() {
     const teamMember = teamMembers.find(m => m.email === user.email)
     return teamMember?.position?.toLowerCase() === 'super' || userRole === 'admin'
   }, [user, userRole, teamMembers])
+
+  /** 투어 상세 모달·스케줄에서 상태 변경 (투어 상세 페이지 useTourDetailData와 동일 기준) */
+  const isScheduleStaff = useMemo(
+    () =>
+      hasPermission('canManageReservations') ||
+      hasPermission('canManageTours') ||
+      userRole === 'admin' ||
+      userRole === 'manager',
+    [hasPermission, userRole]
+  )
   const [loading, setLoading] = useState(true)
   const [showProductModal, setShowProductModal] = useState(false)
   const [showTeamModal, setShowTeamModal] = useState(false)
@@ -326,6 +345,8 @@ export default function ScheduleView() {
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
+  const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
+  const [updatingTourDetailModalStatusId, setUpdatingTourDetailModalStatusId] = useState<string | null>(null)
   
   // 행 드래그앤드롭 상태 (가이드/상품)
   const [draggedGuideRow, setDraggedGuideRow] = useState<string | null>(null)
@@ -3239,6 +3260,96 @@ export default function ScheduleView() {
       }
     },
     [locale, isStatusExcludedFromUnassignedList]
+  )
+
+  const tourDetailModalTour = useMemo(() => {
+    if (!tourDetailModal?.tourId) return null
+    return tours.find((t: Tour) => t.id === tourDetailModal.tourId) ?? null
+  }, [tourDetailModal?.tourId, tours])
+
+  const tourDetailModalStatusSelectOptions = useMemo(() => {
+    if (!tourDetailModal?.tourId) return tourStatusOptions
+    const current = tourDetailModalTour?.tour_status || ''
+    const known = new Set(tourStatusOptions.map((o) => o.value))
+    if (current && !known.has(current)) {
+      return [
+        {
+          value: current,
+          label: getTourStatusLabel(current, locale),
+          color: getTourStatusColor(current),
+        },
+        ...tourStatusOptions,
+      ]
+    }
+    return tourStatusOptions
+  }, [tourDetailModal?.tourId, tourDetailModalTour?.tour_status, locale])
+
+  const tourDetailModalStatusSelectValue = useMemo(() => {
+    const current = tourDetailModalTour?.tour_status || ''
+    if (!current) return ''
+    const exact = tourDetailModalStatusSelectOptions.find((o) => o.value === current)
+    if (exact) return exact.value
+    const ci = tourDetailModalStatusSelectOptions.find(
+      (o) => o.value.toLowerCase() === current.toLowerCase()
+    )
+    return ci?.value ?? current
+  }, [tourDetailModalTour?.tour_status, tourDetailModalStatusSelectOptions])
+
+  const guideModalTour = useMemo(() => {
+    if (!guideModalContent.tourId) return null
+    return tours.find((t: Tour) => t.id === guideModalContent.tourId) ?? null
+  }, [guideModalContent.tourId, tours])
+
+  const guideModalStatusSelectOptions = useMemo(() => {
+    if (!guideModalContent.tourId) return tourStatusOptions
+    const current = guideModalTour?.tour_status || ''
+    const known = new Set(tourStatusOptions.map((o) => o.value))
+    if (current && !known.has(current)) {
+      return [
+        {
+          value: current,
+          label: getTourStatusLabel(current, locale),
+          color: getTourStatusColor(current),
+        },
+        ...tourStatusOptions,
+      ]
+    }
+    return tourStatusOptions
+  }, [guideModalContent.tourId, guideModalTour?.tour_status, locale])
+
+  const guideModalStatusSelectValue = useMemo(() => {
+    const current = guideModalTour?.tour_status || ''
+    if (!current) return ''
+    const exact = guideModalStatusSelectOptions.find((o) => o.value === current)
+    if (exact) return exact.value
+    const ci = guideModalStatusSelectOptions.find(
+      (o) => o.value.toLowerCase() === current.toLowerCase()
+    )
+    return ci?.value ?? current
+  }, [guideModalTour?.tour_status, guideModalStatusSelectOptions])
+
+  const updateTourDetailModalTourStatus = useCallback(
+    async (tourId: string, newStatus: string) => {
+      const prevTour = tours.find((t: Tour) => t.id === tourId)
+      const prevStatus = (prevTour?.tour_status || '').toLowerCase().trim()
+      if (prevStatus === (newStatus || '').toLowerCase().trim()) return
+      setUpdatingTourDetailModalStatusId(tourId)
+      try {
+        const ok = await tourHandlers.updateTourStatus({ id: tourId }, newStatus, isScheduleStaff)
+        if (!ok) return
+        setTours((prev) => prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t)))
+        setUnassignedTours((prev) => {
+          if (isStatusExcludedFromUnassignedList(newStatus)) {
+            return prev.filter((t) => t.id !== tourId)
+          }
+          return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t))
+        })
+        setTourDetailIframeReloadNonce((n) => n + 1)
+      } finally {
+        setUpdatingTourDetailModalStatusId(null)
+      }
+    },
+    [tours, tourHandlers, isScheduleStaff, isStatusExcludedFromUnassignedList]
   )
 
   // 상품별 총계 계산
@@ -6537,6 +6648,37 @@ export default function ScheduleView() {
             <div className="text-sm text-gray-700 whitespace-pre-line">
               {guideModalContent.content}
             </div>
+            {guideModalContent.tourId && isScheduleStaff ? (
+              <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
+                <label className="block text-sm font-medium text-gray-800">
+                  {locale === 'ko' ? '투어 상태' : 'Tour status'}
+                </label>
+                <Select
+                  value={guideModalStatusSelectValue || undefined}
+                  onValueChange={(v) => {
+                    if (!guideModalContent.tourId) return
+                    void updateTourDetailModalTourStatus(guideModalContent.tourId, v)
+                  }}
+                  disabled={updatingTourDetailModalStatusId === guideModalContent.tourId}
+                >
+                  <SelectTrigger
+                    className="h-10 w-full text-sm bg-white"
+                    aria-label={locale === 'ko' ? '투어 상태 빠른 변경' : 'Quick change tour status'}
+                  >
+                    <SelectValue
+                      placeholder={locale === 'ko' ? '상태 선택' : 'Select status'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {guideModalStatusSelectOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {getTourStatusLabel(option.value, locale)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <div className="mt-6 flex justify-between">
               <button
                 onClick={() => {
@@ -6565,7 +6707,15 @@ export default function ScheduleView() {
       )}
 
       {/* 투어 상세 (스케줄 뷰에서 페이지 이동 없이 확인) */}
-      <Dialog open={!!tourDetailModal} onOpenChange={(open) => { if (!open) setTourDetailModal(null) }}>
+      <Dialog
+        open={!!tourDetailModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTourDetailModal(null)
+            setTourDetailIframeReloadNonce(0)
+          }
+        }}
+      >
         <DialogContent
           className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg"
           onOpenAutoFocus={(e) => e.preventDefault()}
@@ -6586,9 +6736,40 @@ export default function ScheduleView() {
               </a>
             ) : null}
           </DialogHeader>
+          {tourDetailModal?.tourId && isScheduleStaff ? (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                {locale === 'ko' ? '투어 상태' : 'Tour status'}
+              </span>
+              <Select
+                value={tourDetailModalStatusSelectValue || undefined}
+                onValueChange={(v) => {
+                  if (!tourDetailModal.tourId) return
+                  void updateTourDetailModalTourStatus(tourDetailModal.tourId, v)
+                }}
+                disabled={updatingTourDetailModalStatusId === tourDetailModal.tourId}
+              >
+                <SelectTrigger
+                  className="h-9 w-[min(100%,20rem)] text-sm bg-white"
+                  aria-label={locale === 'ko' ? '투어 상태 변경' : 'Change tour status'}
+                >
+                  <SelectValue
+                    placeholder={locale === 'ko' ? '상태 선택' : 'Select status'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {tourDetailModalStatusSelectOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {getTourStatusLabel(option.value, locale)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           {tourDetailModal?.tourId ? (
             <iframe
-              key={tourDetailModal.tourId}
+              key={`${tourDetailModal.tourId}-${tourDetailIframeReloadNonce}`}
               title={tourDetailModal.title ? `${tourDetailModal.title} 투어 상세` : '투어 상세'}
               src={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
               className="w-full flex-1 min-h-0 border-0 bg-white"
