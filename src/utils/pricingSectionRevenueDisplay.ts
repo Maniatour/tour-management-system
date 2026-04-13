@@ -10,7 +10,6 @@ export type PricingSectionRevenueDisplayInput = {
   additionalDiscount: number
   additionalCost: number
   tax: number
-  cardFee: number
   prepaymentCost: number
   prepaymentTip: number
   refundedAmount: number
@@ -31,7 +30,7 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
   if (inp.additionalDiscount > 0) totalRevenue -= inp.additionalDiscount
   if (inp.additionalCost > 0) totalRevenue += inp.additionalCost
   if (inp.tax > 0) totalRevenue += inp.tax
-  if (inp.cardFee > 0) totalRevenue += inp.cardFee
+  // card_fee: 채널 결제 금액·정산 산식에 이미 포함 — 이중 가산하지 않음
   if (inp.prepaymentCost > 0) totalRevenue += inp.prepaymentCost
   totalRevenue -= inp.refundedAmount
   return Math.max(0, roundUsd2(totalRevenue))

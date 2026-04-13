@@ -188,7 +188,6 @@ function buildCompanyTotalRevenueForChannelRow(
     additionalDiscount: item.additionalDiscount ?? 0,
     additionalCost: item.additionalCost ?? 0,
     tax: item.tax ?? 0,
-    cardFee: item.cardFee ?? 0,
     prepaymentCost: extras.prepaymentCost ?? 0,
     refundedOurAmount: ctx.refundedOur,
   })

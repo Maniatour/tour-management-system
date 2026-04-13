@@ -132,6 +132,7 @@ function roundUsd2(n: number): number {
  * PricingSection「4. 최종 매출 & 운영 이익」의 총 매출(Total Revenue)과 동일한 산식.
  * - 기준: `channelSettlementBeforePartnerReturn`(저장된 channel_settlement_amount 또는 동일 로직 계산값)
  * - OTA만 예약 옵션(reservation_options 합) 가산, 불포함·부가·우리측 Refunded 반영
+ * - card_fee(결제 수수료)는 채널 결제 금액 산식에 이미 포함되므로 여기서는 가산하지 않음
  */
 export type CompanyTotalRevenueInput = {
   channelSettlementBase: number
@@ -143,7 +144,6 @@ export type CompanyTotalRevenueInput = {
   additionalDiscount: number
   additionalCost: number
   tax: number
-  cardFee: number
   prepaymentCost: number
   /** payment_records Refunded (우리 쪽 환불) */
   refundedOurAmount: number
@@ -159,7 +159,6 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     additionalDiscount,
     additionalCost,
     tax,
-    cardFee,
     prepaymentCost,
     refundedOurAmount,
   } = inp
@@ -185,9 +184,6 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   }
   if (tax > 0) {
     totalRevenue += tax
-  }
-  if (cardFee > 0) {
-    totalRevenue += cardFee
   }
   if (prepaymentCost > 0) {
     totalRevenue += prepaymentCost

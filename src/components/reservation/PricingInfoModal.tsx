@@ -681,7 +681,6 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       additionalDiscount: editData.additional_discount || 0,
       additionalCost: editData.additional_cost || 0,
       tax: editData.tax || 0,
-      cardFee: editData.card_fee || 0,
       prepaymentCost: editData.prepayment_cost || 0,
       prepaymentTip: editData.prepayment_tip || 0,
       refundedAmount,

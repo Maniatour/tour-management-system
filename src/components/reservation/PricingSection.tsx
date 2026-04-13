@@ -2151,9 +2151,13 @@ export default function PricingSection({
       // 현재 값이 기본값과 같거나, commission_base_price가 설정되지 않았으면 자동 업데이트
       if (formData.commission_base_price === undefined || 
           Math.abs(currentBasePrice - customerPaymentAmount) < 0.01) {
-        const commissionPercent = formData.commission_percent > 0 ? formData.commission_percent : defaultCommissionPercent
-        // 15센트를 더한 최종 카드 수수료 계산
-        const calculatedCommissionAmount = Number((customerPaymentAmount * (commissionPercent / 100) + 0.15).toFixed(2))
+        const commissionPercent =
+          formData.commission_percent != null ? formData.commission_percent : defaultCommissionPercent
+        // 15센트를 더한 최종 카드 수수료 (0%는 금액 0 — 필요 시 $ 필드에서 직접 입력)
+        const calculatedCommissionAmount =
+          commissionPercent > 0
+            ? Number((customerPaymentAmount * (commissionPercent / 100) + 0.15).toFixed(2))
+            : 0
         setFormData((prev: typeof formData) => ({ 
           ...prev, 
           commission_base_price: customerPaymentAmount,
@@ -3471,14 +3475,17 @@ export default function PricingSection({
                           <div className="flex items-center space-x-1">
                             <input
                               type="number"
-                              value={formData.commission_percent || 2.9}
+                              value={formData.commission_percent ?? 2.9}
                               onChange={(e) => {
                                 isCardFeeManuallyEdited.current = true
                                 const newPercent = Number(e.target.value) || 0
                                 const basePrice = formData.commission_base_price !== undefined 
                                   ? formData.commission_base_price 
                                   : (formData.depositAmount || 0)
-                                const newAmount = Number((basePrice * (newPercent / 100) + 0.15).toFixed(2))
+                                const newAmount =
+                                  newPercent > 0
+                                    ? Number((basePrice * (newPercent / 100) + 0.15).toFixed(2))
+                                    : 0
                                 setFormData({ 
                                   ...omitChannelSettlementAmount(formData), 
                                   commission_base_price: basePrice,
@@ -3552,7 +3559,7 @@ export default function PricingSection({
                         const basePrice = formData.commission_base_price !== undefined 
                           ? formData.commission_base_price 
                           : (formData.depositAmount || 0)
-                        const commissionPercent = formData.commission_percent || 2.9
+                        const commissionPercent = formData.commission_percent ?? 2.9
                         const calculatedAmount = basePrice * (commissionPercent / 100)
                         const currentAmount = effectiveCommissionAmount
                         // 15센트가 포함되어 있는지 확인 (계산된 값 + 0.15와 현재 값이 거의 같으면)
@@ -3720,16 +3727,7 @@ export default function PricingSection({
                   </span>
                 </div>
               )}
-              
-              {/* 결제 수수료 */}
-              {(formData.cardFee || 0) > 0 && (
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-xs font-medium text-gray-700">+ {isKorean ? '결제 수수료' : 'Card Fee'}</span>
-                  <span className="text-xs font-medium text-gray-900">
-                    +${(formData.cardFee || 0).toFixed(2)}
-                  </span>
-                </div>
-              )}
+              {/* 결제 수수료(card_fee): ① 고객 흐름·채널 결제 금액 산식에 이미 포함 → 여기서는 이중 가산하지 않음 */}
               
               {/* 선결제 지출 */}
               {(formData.prepaymentCost || 0) > 0 && (
@@ -3797,11 +3795,7 @@ export default function PricingSection({
                     if ((formData.tax || 0) > 0) {
                       totalRevenue += formData.tax
                     }
-                    
-                    // 결제 수수료
-                    if ((formData.cardFee || 0) > 0) {
-                      totalRevenue += formData.cardFee
-                    }
+                    // card_fee: 채널 결제(표시) 금액·정산 기준에 이미 반영됨 — 총 매출에 재가산하지 않음
                     
                     // 선결제 지출
                     if ((formData.prepaymentCost || 0) > 0) {
@@ -3874,11 +3868,7 @@ export default function PricingSection({
                     if ((formData.tax || 0) > 0) {
                       totalRevenue += formData.tax
                     }
-                    
-                    // 결제 수수료
-                    if ((formData.cardFee || 0) > 0) {
-                      totalRevenue += formData.cardFee
-                    }
+                    // card_fee: 채널 결제 금액에 이미 포함 — 운영 이익 산정 시 재가산하지 않음
                     
                     // 선결제 지출
                     if ((formData.prepaymentCost || 0) > 0) {
