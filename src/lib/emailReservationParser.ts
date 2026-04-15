@@ -19,6 +19,8 @@ export type ChannelParserConfig = {
 const PLATFORM_FROM_PATTERNS: { pattern: RegExp | string; key: string }[] = [
   { pattern: /viator\.com/i, key: 'viator' },
   { pattern: /getyourguide/i, key: 'getyourguide' },
+  /** Trip.com 주문 알림: TNT_noreply@trip.com, 제목 [Trip.com …] (tripadvisor 와 구분) */
+  { pattern: /@trip\.com\b|\[trip\.com\b/i, key: 'tripcom' },
   { pattern: /tripadvisor/i, key: 'tripadvisor' },
   { pattern: /klook/i, key: 'klook' },
   { pattern: /kkday\.com|kkday/i, key: 'kkday' },
@@ -88,6 +90,10 @@ export function extractChannelRnForCancellationLookup(
   m = sub.match(/(?:예약\s*번호|booking\s*no\.?)\s*[：:]\s*([A-Za-z0-9][A-Za-z0-9-]{5,35})/i)
   if (m?.[1] && !invalidToken(m[1])) return m[1].trim()
 
+  // Trip.com 제목: …BookingNo.1128146150353935 또는 BookingNo,1128146150353935
+  m = sub.match(/bookingno\.?\s*,?\s*(\d{10,24})/i)
+  if (m?.[1]) return m[1].trim()
+
   // 제목 끝의 긴 코드 토큰
   m = sub.match(/[-–]\s*([A-Z0-9]{8,32})\s*$/i)
   if (m?.[1]) return m[1].trim()
@@ -114,13 +120,24 @@ export function isManiatourHomepageBookingEmail(
 }
 
 /**
+ * Viator URGENT 신규 접수 제목 (라스베가스 야경투어 등 브이에이터 알림).
+ * 예: URGENT Booking Request: Please Respond: Thu, Apr 16, 2026 (#BR-1385167147)
+ */
+export function isViatorUrgentBookingRequestEmailSubject(subject: string | null | undefined): boolean {
+  const t = (subject ?? '').trim()
+  return /urgent\s+booking\s+request\s*:\s*please\s+respond\s*:/i.test(t)
+}
+
+/**
  * Viator 신규 예약 알림 제목 (플랫폼이 viator일 때 is_booking_confirmed·목록 탭 분류에 사용)
  * - "Please Respond: New Booking Request: …"
  * - "New Booking for Thu, Jun 25,2026 (#BR-1381898811)" 등
+ * - "URGENT Booking Request: Please Respond: … (#BR-…)" (야경투어 등)
  */
 export function isViatorBookingRequestEmailSubject(subject: string | null | undefined): boolean {
   const t = (subject ?? '').trim()
   const lower = t.toLowerCase()
+  if (isViatorUrgentBookingRequestEmailSubject(subject)) return true
   if (lower.includes('please respond: new booking request:')) return true
   if (/^new booking\s+for\b/i.test(t)) return true
   return false
@@ -165,6 +182,42 @@ export function isGarbageImportedCustomerName(raw: string | null | undefined): b
     /^details$/i.test(s) ||
     /^s$/i.test(s)
   )
+}
+
+/**
+ * Trip.com 등: 본문이 한 덩어리일 때 Guest name 값 뒤에 "Guest request", "Pick-up", "Email:" 등이 붙는 경우 잘라냄.
+ */
+function trimOtaGuestNameCapture(value: string): string {
+  let s = value.trim().replace(/\s+/g, ' ')
+  if (!s) return s
+  const cutMarkers: RegExp[] = [
+    /\s+Guest\s+request\b/i,
+    /\s+Pick-up\b/i,
+    /\s+Pickup\b/i,
+    /\s+Guest\s+contact\b/i,
+    /\s+Contact\s+info\b/i,
+    /\s+Email\s*:/i,
+    /\s+Phone\s*:/i,
+    /\s+Mobile\s*:/i,
+    /\s+Preferred\s+language\b/i,
+    /\s+Language\s*:/i,
+    /\s+Select\s+a\s+button\b/i,
+    /\s+View\s+details\b/i,
+    /\s+VBK\s+system\b/i,
+    /\s+This\s+email\s+has\s+been\s+sent\b/i,
+    /\s+Trip\.com\b/i,
+  ]
+  for (const re of cutMarkers) {
+    const m = re.exec(s)
+    if (m && m.index !== undefined && m.index > 0) {
+      s = s.slice(0, m.index).trim()
+    }
+  }
+  const nameAgain = /\s+Name\s*:/i.exec(s)
+  if (nameAgain && nameAgain.index > 2) {
+    s = s.slice(0, nameAgain.index).trim()
+  }
+  return s.replace(/\s+/g, ' ').trim()
 }
 
 function detectPlatform(sourceEmail: string | null, subject: string): string | null {
@@ -618,6 +671,23 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
     out.total_people = a + c + i
   }
 
+  // Trip.com 등: "|13 travelers|" 는 조인투어 정원·상품 설명, "Booking Quantity 1" 이 실제 예약 인원 → 둘 다 있으면 수량 우선
+  const bookingQtyM = text.match(/\bBooking\s*Quantity\s*[:：\s\t]+\s*(\d+)/i)
+  const hasPipeTravelersRow = /\|\s*\d+\s*travelers?\s*\|/i.test(text)
+  if (bookingQtyM?.[1] && hasPipeTravelersRow) {
+    const n = parseInt(bookingQtyM[1], 10)
+    if (!Number.isNaN(n) && n > 0) {
+      out.adults = n
+      out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
+    }
+  } else if (out.adults === undefined && bookingQtyM?.[1]) {
+    const n = parseInt(bookingQtyM[1], 10)
+    if (!Number.isNaN(n) && n > 0) {
+      out.adults = n
+      out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
+    }
+  }
+
   // 예약 번호/참조
   // 주의: `ref(?:erence)?` 만 허용하면 "Booking Reference" 에서 "Ref" 만 잡혀 캡처가 "erence" 가 됨 → reference 전체·별도 패턴 사용
   let refMatch =
@@ -627,23 +697,55 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
     )
   if (refMatch) out.channel_rn = refMatch[1].trim()
 
-  // 이름 — 반드시 Name(단어) + 콜론 뒤 한 줄 (Clients details 오인 방지)
-  const nameLine = text.match(/(?:^|[\r\n])\s*\bName\s*:\s*([^\r\n]+)/im)
-  if (nameLine?.[1]) {
-    const n = nameLine[1].trim().replace(/\s+/g, ' ')
-    if (n.length >= 2 && !/^clients?\s*details$/i.test(n) && !/^s\s+details$/i.test(n)) out.customer_name = n
+  // 이름 — Guest/Customer name 을 먼저 (Trip.com: 단일 공백·탭·NBSP; "Tour Name:" 이 \bName 에 걸리는 오인 방지)
+  const textForNames = text.replace(/\u00a0/g, ' ')
+  if (!out.customer_name) {
+    const guestOrCustomer = textForNames.match(
+      /\b(?:Guest|Customer)\s*name\s*[:：\s\t]+\s*(.+?)(?=\s+Guest\s+request\b|\s+Pick-up\b|\s+Pickup\b|\s+Guest\s+contact\b|\s+Email\s*:|\s+Phone\s*:|$)/ims
+    )
+    if (guestOrCustomer?.[1]) {
+      const n = trimOtaGuestNameCapture(guestOrCustomer[1])
+      if (n.length >= 2 && !isGarbageImportedCustomerName(n)) out.customer_name = n
+    }
   }
   if (!out.customer_name) {
-    const nameMatch = text.match(
-      /(?:guest\s*name|customer\s*name|main\s*customer)\s*:?\s*([A-Za-z\u00C0-\u024F\s'.-]+?)(?=\s*(?:\r?\n|$)|,|\bemail\b|\bphone\b)/im
+    const mainCustomerLine = textForNames.match(
+      /\bMain\s*customer\s*[:：\s\t]+\s*(.+?)(?=\s+Guest\s+request\b|\s+Email\s*:|\s+Phone\s*:|$)/ims
+    )
+    if (mainCustomerLine?.[1]) {
+      const n = trimOtaGuestNameCapture(mainCustomerLine[1])
+      if (n.length >= 2 && !isGarbageImportedCustomerName(n)) out.customer_name = n
+    }
+  }
+  if (!out.customer_name) {
+    const nameMatch = textForNames.match(
+      /(?:guest\s*name|customer\s*name|main\s*customer)\s*:?\s*([A-Za-z\u00C0-\u024F0-9\s'.\/-]+?)(?=\s*(?:\r?\n|$)|,|\bemail\b|\bphone\b)/im
     )
     if (nameMatch) out.customer_name = nameMatch[1].trim().replace(/\s+/g, ' ')
-    if (!out.customer_name) {
-      const nameOnly = text.match(
-        /(?:^|[\r\n])\s*\bname\s*:\s*([A-Za-z\u00C0-\u024F\s'.-]+?)(?=\s*(?:\r?\n|$)|,|\bemail\b|\bphone\b)/im
-      )
-      if (nameOnly?.[1]) out.customer_name = nameOnly[1].trim().replace(/\s+/g, ' ')
+  }
+  // 단독 "Name:" (Tour Name / Product Name 제외)
+  if (!out.customer_name) {
+    const nameLine = textForNames.match(/(?:^|[\r\n])[^\S\r\n]*\bName\s*:\s*([^\r\n]+)/im)
+    if (nameLine?.[1]) {
+      const n = nameLine[1].trim().replace(/\s+/g, ' ')
+      const looksLikeProductLine =
+        /grand\s*canyon|las\s*vegas\s*[>＞:]|antelope|horseshoe|lake\s*powell|resource\s*info|^\d+\s*\/\s*las/i.test(
+          n
+        )
+      if (n.length >= 2 && !looksLikeProductLine && !/^clients?\s*details$/i.test(n) && !/^s\s+details$/i.test(n)) {
+        out.customer_name = n
+      }
     }
+  }
+  if (!out.customer_name) {
+    const nameOnly = textForNames.match(
+      /(?:^|[\r\n])\s*\bname\s*:\s*([A-Za-z\u00C0-\u024F\s'.-]+?)(?=\s*(?:\r?\n|$)|,|\bemail\b|\bphone\b)/im
+    )
+    if (nameOnly?.[1]) out.customer_name = nameOnly[1].trim().replace(/\s+/g, ' ')
+  }
+
+  if (out.customer_name) {
+    out.customer_name = trimOtaGuestNameCapture(out.customer_name)
   }
 
   // 결제 금액: 채널 전용 파서가 없거나 실패했을 때 "Price" / 줄바꿈 후 $ 금액
@@ -1773,6 +1875,145 @@ function extractMyrealtrip(text: string, subject: string): Partial<ExtractedRese
   return out
 }
 
+/**
+ * Trip.com 신규 주문 알림 제목
+ * 예: [Trip.com ANT] New order notification,BookingNo.1128146150353935
+ */
+export function isTripComNewOrderEmailSubject(subject: string | null | undefined): boolean {
+  const t = (subject ?? '').trim()
+  return /\[trip\.com[^\]]*]\s*new\s+order\s+notification/i.test(t)
+}
+
+/**
+ * Trip.com 본문의 Resource info 줄(파이프 구분)에서 예약·상품 추출.
+ * 일출+로어 앤텔롭 패턴은 GYG 본문의 MDGC1D 광역 정규식보다 먼저 판별해 MDGCSUNRISE로 고정.
+ */
+function extractTripCom(
+  text: string,
+  subject: string,
+  sourceEmail: string | null
+): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  if (!text || text.length < 10) return out
+
+  const fromTrip = /@trip\.com\b/i.test(sourceEmail || '')
+  if (fromTrip && isTripComNewOrderEmailSubject(subject)) {
+    out.is_booking_confirmed = true
+  }
+
+  const bookingNo = subject.match(/bookingno\.?\s*,?\s*(\d{10,24})/i)
+  if (bookingNo?.[1]) out.channel_rn = bookingNo[1].trim()
+
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ')
+  const guestOrCustomer = normalized.match(
+    /\b(?:Guest|Customer)\s*name\s*[:：\s\t]+\s*(.+?)(?=\s+Guest\s+request\b|\s+Pick-up\b|\s+Pickup\b|\s+Guest\s+contact\b|\s+Email\s*:|\s+Phone\s*:|$)/ims
+  )
+  if (guestOrCustomer?.[1]) {
+    const n = trimOtaGuestNameCapture(guestOrCustomer[1])
+    if (n.length >= 2 && !isGarbageImportedCustomerName(n)) out.customer_name = n
+  }
+  if (!out.customer_name) {
+    const mainCust = normalized.match(
+      /\bMain\s*customer\s*[:：\s\t]+\s*(.+?)(?=\s+Guest\s+request\b|\s+Email\s*:|\s+Phone\s*:|$)/ims
+    )
+    if (mainCust?.[1]) {
+      const n = trimOtaGuestNameCapture(mainCust[1])
+      if (n.length >= 2 && !isGarbageImportedCustomerName(n)) out.customer_name = n
+    }
+  }
+  let resourceLine = ''
+  const ri = normalized.match(
+    /\bresource\s+info\b\s*[:\s]*\s*([\s\S]*?)(?=\n\s*(?:contact|customer|passenger|order\s|payment|remark)\b|\n{3,}|$)/i
+  )
+  const block = (ri?.[1] ?? '').trim()
+  if (block) {
+    const lines = block.split(/\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+    resourceLine =
+      lines.find((l) => />\s*grand\s*canyon|Las\s+Vegas\s*>|^\d+\s*\/\s*Las\s+Vegas/i.test(l)) || lines[0] || ''
+  }
+  const pipeSource = resourceLine.replace(/\s+/g, ' ')
+  const fullSlice = normalized.slice(0, 12000).replace(/\s+/g, ' ')
+
+  const applySunriseLowerFromTripLine = (src: string) => {
+    const hasSunrise =
+      /Grand\s*Canyon\s*Sunrise/i.test(src) ||
+      /Las\s+Vegas\s*[>＞:]\s*[^\n|]{0,120}Grand\s*Canyon\s*Sunrise/i.test(src)
+    const hasLower = /lower\s*antelope/i.test(src)
+    if (hasSunrise && hasLower) {
+      out.product_id = 'MDGCSUNRISE'
+      out.product_name = '밤도깨비 그랜드캐년 일출 투어'
+      out.tour_time = '00:00'
+      out.import_choice_option_names = ['Lower Antelope Canyon']
+      return true
+    }
+    return false
+  }
+
+  if (pipeSource && applySunriseLowerFromTripLine(pipeSource)) {
+    // ok
+  } else if (applySunriseLowerFromTripLine(fullSlice)) {
+    // Resource info 레이블 없이 본문에만 한 줄 있는 경우
+  } else {
+    const tryMap = (src: string) => {
+      for (const { pattern, product_id } of GYG_BODY_PRODUCT_MAP) {
+        const match = typeof pattern === 'string' ? src.includes(pattern) : pattern.test(src)
+        if (match) {
+          out.product_id = product_id
+          if (product_id === 'MNGC1N') out.product_name = '그랜드서클 1박 2일 투어'
+          if (product_id === 'MDGCSUNRISE') {
+            out.product_name = '밤도깨비 그랜드캐년 일출 투어'
+            out.tour_time = '00:00'
+          }
+          if (product_id === 'MDGC1D') out.product_name = '그랜드서클 당일 투어'
+          return true
+        }
+      }
+      return false
+    }
+    if (pipeSource) tryMap(pipeSource)
+    if (!out.product_id) tryMap(fullSlice)
+    if (/lower\s*antelope/i.test(pipeSource) || /lower\s*antelope/i.test(fullSlice)) {
+      if (!out.import_choice_option_names?.length) {
+        out.import_choice_option_names = ['Lower Antelope Canyon']
+      }
+    }
+  }
+
+  /** 예약 건당 수량(실제 예약 인원) — Resource info 의 "|13 travelers|" 는 상품·조인투어 정원에 가깝고 예약 1건이면 1명이므로 Booking Quantity 우선 */
+  const bq = normalized.match(/\bBooking\s*Quantity\s*[:：\s\t]+\s*(\d+)/i)
+  if (bq?.[1]) {
+    const n = parseInt(bq[1], 10)
+    if (!Number.isNaN(n) && n > 0) {
+      out.adults = n
+      out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
+    }
+  }
+  if (out.adults == null) {
+    const travelersM =
+      pipeSource.match(/\|\s*(\d+)\s*travelers?\s*\|/i) ||
+      pipeSource.match(/\b(\d+)\s*travelers?\s*\|/i) ||
+      fullSlice.match(/\|\s*(\d+)\s*travelers?\s*\|/i)
+    if (travelersM?.[1]) {
+      const n = parseInt(travelersM[1], 10)
+      if (!Number.isNaN(n) && n > 0) {
+        out.adults = n
+        out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
+      }
+    }
+  }
+
+  const englishPipe = /\|\s*English\s*\|/i.test(pipeSource) || /\|\s*English\s*\|/i.test(fullSlice)
+  if (englishPipe) out.language = 'EN'
+
+  out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
+
+  if (out.customer_name) {
+    out.customer_name = trimOtaGuestNameCapture(out.customer_name)
+  }
+
+  return out
+}
+
 /** 채널별 파서 등록: 플랫폼 키 → 전처리 + 추출. 새 채널 추가 시 여기에 한 줄씩 등록. */
 const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
   getyourguide: {
@@ -1823,6 +2064,10 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
     preprocess: toPlainText,
     extract: (text, subject) => extractMyrealtrip(text, subject),
   },
+  tripcom: {
+    preprocess: toPlainText,
+    extract: (text, subject, sourceEmail) => extractTripCom(text, subject, sourceEmail),
+  },
 }
 
 /**
@@ -1866,6 +2111,14 @@ export function extractReservationFromEmail(options: {
     const channelData = parser.extract(plainText, subject, sourceEmail || null, rawHtml ?? html ?? null)
     merged = { ...merged, ...channelData }
   }
+  /** Trip.com 주문 메일은 이메일·전화가 마스킹(****)되어 있어 extracted_data 에 넣지 않음 */
+  if (platform_key === 'tripcom') {
+    delete merged.customer_email
+    delete merged.customer_phone
+  }
+  if (merged.customer_name) {
+    merged.customer_name = trimOtaGuestNameCapture(String(merged.customer_name))
+  }
   if (merged.customer_name && isGarbageImportedCustomerName(merged.customer_name)) {
     delete merged.customer_name
   }
@@ -1879,6 +2132,14 @@ export function extractReservationFromEmail(options: {
   if (platform_key === 'viator' && isViatorBookingRequestEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
+  /** Viator URGENT 제목은 라스베가스 야경투어 신규 접수 — 본문 Tour Name과 무관하게 상품 고정 */
+  if (platform_key === 'viator' && isViatorUrgentBookingRequestEmailSubject(subject)) {
+    merged = {
+      ...merged,
+      product_id: 'MDLVN',
+      product_name: '라스베가스 야경투어',
+    }
+  }
   // 홈페이지(maniatour): detectPlatform에서 vegasmaniatour@ + 제목 You got a new booking 일 때만 maniatour
   if (platform_key === 'maniatour') {
     merged.is_booking_confirmed = true
@@ -1887,6 +2148,9 @@ export function extractReservationFromEmail(options: {
     merged.is_booking_confirmed = true
   }
   if (platform_key === 'myrealtrip' && isMyrealtripNewBookingEmailSubject(subject)) {
+    merged.is_booking_confirmed = true
+  }
+  if (platform_key === 'tripcom' && isTripComNewOrderEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
 
@@ -1912,6 +2176,7 @@ export const SUPPORTED_EMAIL_CHANNELS = [
   'maniatour',
   'tidesquare',
   'myrealtrip',
+  'tripcom',
   'tripadvisor',
   'booking',
   'expedia',

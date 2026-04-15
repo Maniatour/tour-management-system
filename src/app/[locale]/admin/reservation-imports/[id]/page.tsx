@@ -109,6 +109,7 @@ export default function ReservationImportDetailPage() {
       ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
         ? 'kkday'
         : null) ||
+      (/@trip\.com\b/i.test(String(data.source_email || '')) ? 'tripcom' : null) ||
       (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null) ||
       (isTidesquareChannelEmailSubject(data.subject) ? 'tidesquare' : null) ||
       (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
@@ -138,7 +139,8 @@ export default function ReservationImportDetailPage() {
         viatorSunriseWasStoredAsDayTour ||
         (effectiveKey === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)) ||
         (effectiveKey === 'kkday' && (!ext.customer_name || ext.adults == null || !ext.tour_date || !ext.product_name)) ||
-        (effectiveKey === 'viator' && (!ext.customer_name || !ext.pickup_hotel))) ||
+        (effectiveKey === 'viator' && (!ext.customer_name || !ext.pickup_hotel)) ||
+        (effectiveKey === 'tripcom' && (!ext.customer_name || ext.adults == null))) ||
         (bodyHasWhatsApp && !ext.emergency_contact))
     if (looksIncomplete) {
       const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
@@ -154,6 +156,7 @@ export default function ReservationImportDetailPage() {
       ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
         ? 'kkday'
         : null) ||
+      (/@trip\.com\b/i.test(String(data.source_email || '')) ? 'tripcom' : null) ||
       (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null) ||
       (isTidesquareChannelEmailSubject(data.subject) ? 'tidesquare' : null) ||
       (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)

@@ -5,6 +5,8 @@
 export const PLATFORM_CHANNEL_MAP: Record<string, string> = {
   viator: 'viator',
   getyourguide: 'getyourguide',
+  /** Trip.com (Ctrip) — channels.id */
+  tripcom: 'fe2b29b3',
   tripadvisor: 'tripadvisor',
   klook: 'klook',
   kkday: 'kkday',

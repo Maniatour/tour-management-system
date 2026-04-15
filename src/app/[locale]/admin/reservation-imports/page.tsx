@@ -12,6 +12,7 @@ import {
   isTidesquareNewBookingEmailSubject,
   isMyrealtripNewBookingEmailSubject,
   isMyrealtripChannelFromEmail,
+  isTripComNewOrderEmailSubject,
 } from '@/lib/emailReservationParser'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { useReservationData } from '@/hooks/useReservationData'
@@ -232,12 +233,17 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     isMyrealtripChannelFromEmail(row.source_email) ||
     isMyrealtripNewBookingEmailSubject(row.subject)
 
+  /** Trip.com: platform_key 또는 @trip.com 발신 */
+  const isTripComRow = (row: ImportItem) =>
+    row.platform_key === 'tripcom' || /@trip\.com\b/i.test(row.source_email ?? '')
+
   /** 목록에 표시할 플랫폼 (KKday / maniatour 보정 포함). Klook은 variant까지 표시 */
   const displayPlatform = (row: ImportItem) => {
     if (isKKdayRow(row)) return 'kkday'
     if (isManiaTourRow(row)) return 'maniatour'
     if (isTidesquareRow(row)) return '타이드스퀘어'
     if (isMyrealtripRow(row)) return '마이리얼트립'
+    if (isTripComRow(row)) return 'Trip.com'
     const base = row.platform_key ?? '-'
     if (base === 'klook') {
       const label = (row.extracted_data?.channel_variant_label ?? '').trim()
@@ -251,6 +257,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const isGyGBookingRow = (row: ImportItem) =>
     (row.source_email || '').toLowerCase().includes('getyourguide') && isGyGReservationSubject(row.subject)
 
+  /** Trip.com 발신 + 신규 주문 제목 (옛 행 보정) */
+  const isTripComBookingRow = (row: ImportItem) =>
+    isTripComRow(row) && isTripComNewOrderEmailSubject(row.subject)
+
   /** 예약 접수 여부 (파서 자동 + 사용자 드래그 분류 + KKday/Viator/maniatour/GYG 제목 보정) */
   const isBookingConfirmed = (row: ImportItem) =>
     Boolean(row.extracted_data?.is_booking_confirmed === true) ||
@@ -259,7 +269,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     (isTidesquareRow(row) && isTidesquareNewBookingEmailSubject(row.subject)) ||
     (isMyrealtripRow(row) && isMyrealtripNewBookingEmailSubject(row.subject)) ||
     isManiatourHomepageBookingEmail(row.source_email, row.subject) ||
-    isGyGBookingRow(row)
+    isGyGBookingRow(row) ||
+    isTripComBookingRow(row)
 
   const filteredItems =
     activeTab === 'booking'
@@ -287,6 +298,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         if (!isTidesquareRow(row)) return false
       } else if (platformFilter === 'myrealtrip') {
         if (!isMyrealtripRow(row)) return false
+      } else if (platformFilter === 'tripcom') {
+        if (!isTripComRow(row)) return false
       } else if (platform !== platformFilter) {
         return false
       }
@@ -307,6 +320,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     { value: 'maniatour', label: 'Maniatour (홈페이지)' },
     { value: 'tidesquare', label: '타이드스퀘어' },
     { value: 'myrealtrip', label: '마이리얼트립' },
+    { value: 'tripcom', label: 'Trip.com' },
     { value: 'tripadvisor', label: 'Tripadvisor' },
     { value: 'booking', label: 'Booking' },
     { value: 'expedia', label: 'Expedia' },
