@@ -99,12 +99,49 @@ type Customer = Database['public']['Tables']['customers']['Row']
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ReservationFormAny = ReservationForm as any
 
-/** 상품 스케줄 셀: 확정(및 모집) + 대기(pending) + 취소 인원 */
-function formatProductScheduleCellPeople(confirmed: number, waiting: number, canceled: number): string {
-  let out = String(confirmed)
+const PRODUCT_SCHEDULE_KEYCAP_DIGITS = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'] as const
+
+/** 단독 투어 인원만 키캡 이모지로 표시. 동행모집(비단독) 인원이 같이 있으면 `4️⃣ 5` 형태 */
+function formatProductScheduleCellPeopleWithPrivateSplit(
+  privateTourPeople: number,
+  companionTourPeople: number,
+  waiting: number,
+  canceled: number
+): string {
+  const toKeycap = (n: number) =>
+    String(Math.max(0, Math.floor(n)))
+      .split('')
+      .map((ch) => {
+        const d = ch.charCodeAt(0) - 48
+        return d >= 0 && d <= 9 ? PRODUCT_SCHEDULE_KEYCAP_DIGITS[d] : ch
+      })
+      .join('')
+
+  let out: string
+  if (privateTourPeople > 0 && companionTourPeople > 0) {
+    out = `${toKeycap(privateTourPeople)} ${companionTourPeople}`
+  } else if (privateTourPeople > 0) {
+    out = toKeycap(privateTourPeople)
+  } else {
+    out = String(companionTourPeople)
+  }
   if (waiting > 0) out += ` +${waiting}`
   if (canceled > 0) out += ` (${canceled})`
   return out
+}
+
+function scheduleReservationPrivateBucket(res: Reservation, dayTours: Tour[]): 'private' | 'companion' {
+  const tourPrivate = (t: Tour) => t.is_private_tour === 'TRUE' || t.is_private_tour === true
+  const rid = String(res.id)
+  for (const tour of dayTours) {
+    const ids = (tour.reservation_ids && Array.isArray(tour.reservation_ids))
+      ? (tour.reservation_ids as string[])
+      : []
+    if (!ids.some((x) => String(x) === rid)) continue
+    return tourPrivate(tour) ? 'private' : 'companion'
+  }
+  const r = res.is_private_tour === true || res.is_private_tour === 'TRUE' || res.is_private_tour === 1
+  return r ? 'private' : 'companion'
 }
 
 interface DailyData {
@@ -2119,6 +2156,10 @@ export default function ScheduleView() {
             choiceCounts: Record<string, number>
             /** 투어별 초이스 집계(카드와 일치) — 해당 날짜에 투어가 1개면 이걸 툴팁에 사용 */
             toursChoiceCounts: Array<{ tourId: string; label: string; choiceCounts: Record<string, number> }>
+            /** 단독 투어(투어 플래그 또는 미배정+예약 단독)에 속한 확정·모집 인원 */
+            privateTourPeople: number
+            /** 비단독 투어·동행모집 쪽 확정·모집 인원 */
+            companionTourPeople: number
           }
         }
         totalPeople: number
@@ -2144,6 +2185,8 @@ export default function ScheduleView() {
           enPeople: number
           choiceCounts: Record<string, number>
           toursChoiceCounts: Array<{ tourId: string; label: string; choiceCounts: Record<string, number> }>
+          privateTourPeople: number
+          companionTourPeople: number
         }
       } = {}
       let totalPeople = 0
@@ -2178,7 +2221,14 @@ export default function ScheduleView() {
           .filter(res => isReservationCancelledStatus(res.status))
           .reduce((sum, res) => sum + (res.total_people || 0), 0)
 
-        const dayTotalPeople = dayReservations.reduce((sum, res) => sum + (res.total_people || 0), 0)
+        let dayPrivateTourPeople = 0
+        let dayCompanionTourPeople = 0
+        for (const res of dayReservations) {
+          const p = res.total_people || 0
+          if (scheduleReservationPrivateBucket(res, dayTours) === 'private') dayPrivateTourPeople += p
+          else dayCompanionTourPeople += p
+        }
+        const dayTotalPeople = dayPrivateTourPeople + dayCompanionTourPeople
         const dayKoPeople = dayReservations.reduce((sum, res) => {
           const cid = String(res.customer_id || '')
           const isKo = idToIsKo.get(cid) === true
@@ -2241,11 +2291,15 @@ export default function ScheduleView() {
             koPeople: 0,
             enPeople: 0,
             choiceCounts: {},
-            toursChoiceCounts: []
+            toursChoiceCounts: [],
+            privateTourPeople: 0,
+            companionTourPeople: 0
           }
         }
         // 멀티데이든 1일 투어든, 해당 날짜(시작일)에만 합산
         dailyData[dateString].totalPeople += dayTotalPeople
+        dailyData[dateString].privateTourPeople += dayPrivateTourPeople
+        dailyData[dateString].companionTourPeople += dayCompanionTourPeople
         dailyData[dateString].waitingPeople += dayWaitingPeople
         dailyData[dateString].koWaitingPeople += dayKoWaitingPeople
         dailyData[dateString].enWaitingPeople += dayEnWaitingPeople
@@ -4140,8 +4194,9 @@ export default function ScheduleView() {
                                       } ${isToday(dateString) ? 'text-red-700' : ''}`
                                     })()}
                                   >
-                                    {formatProductScheduleCellPeople(
-                                      dayData.totalPeople,
+                                    {formatProductScheduleCellPeopleWithPrivateSplit(
+                                      dayData.privateTourPeople ?? 0,
+                                      dayData.companionTourPeople ?? 0,
                                       dayData.waitingPeople ?? 0,
                                       dayData.canceledPeople ?? 0
                                     )}
