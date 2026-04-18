@@ -127,8 +127,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   /** 요청 중단(AbortError) 여부 — 컴포넌트 언마운트/의존성 변경 시 정상 취소이므로 로그 생략 */
   const isAbortError = useCallback((err: unknown): boolean => {
     if (err instanceof Error && err.name === 'AbortError') return true
-    const msg = typeof (err as any)?.message === 'string' ? (err as any).message : ''
-    return msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')
+    const o = err as { message?: unknown; details?: unknown } | null
+    const msg = typeof o?.message === 'string' ? o.message : ''
+    const details = typeof o?.details === 'string' ? o.details : ''
+    const s = `${msg} ${details}`
+    return s.includes('AbortError') || s.includes('aborted') || s.includes('signal is aborted')
   }, [])
 
   const customerName = getCustomerName(reservation.customer_id || '')
@@ -401,9 +404,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       })
       setPaymentMethodMap(methodMap)
     } catch (error) {
-      console.error('결제 방법 정보 로드 오류:', error)
+      if (!isAbortError(error)) {
+        console.error('결제 방법 정보 로드 오류:', error)
+      }
     }
-  }, [])
+  }, [isAbortError])
 
   // 입금 내역 가져오기
   const fetchPaymentRecords = useCallback(async () => {
