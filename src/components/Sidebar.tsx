@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
@@ -18,11 +18,21 @@ import {
   UserCheck
 } from 'lucide-react'
 
+const SIDEBAR_COLLAPSED_KEY = 'tms-sidebar-collapsed'
+
 const Sidebar = () => {
   const pathname = usePathname()
   const locale = useLocale()
   const t = useTranslations('common')
   const [isCollapsed, setIsCollapsed] = useState(false)
+
+  useEffect(() => {
+    try {
+      setIsCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
+    } catch {
+      /* ignore */
+    }
+  }, [])
   
   // Admin, Guide, Customer, Photos 페이지에서는 사이드바를 숨김
   if (pathname.startsWith(`/${locale}/admin`) || 
@@ -51,31 +61,48 @@ const Sidebar = () => {
   ]
 
   const toggleSidebar = () => {
-    setIsCollapsed(!isCollapsed)
+    setIsCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
   }
 
   return (
-    <div className={`bg-white shadow-lg border-r transition-all duration-300 ${
-      isCollapsed ? 'w-16' : 'w-64'
-    } hidden lg:block`}>
+    <div
+      className={`sticky top-[var(--header-height,4rem)] hidden h-[calc(100vh-var(--header-height,4rem))] shrink-0 flex-col border-r bg-white shadow-lg transition-[width] duration-300 lg:flex ${
+        isCollapsed ? 'w-16' : 'w-64'
+      }`}
+    >
       {/* 사이드바 헤더 */}
-      <div className="flex items-center justify-between p-4 border-b">
+      <div
+        className={`flex items-center border-b p-4 ${
+          isCollapsed ? 'justify-center' : 'justify-between gap-2'
+        }`}
+      >
         {!isCollapsed && (
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="truncate text-lg font-semibold text-gray-800">
             {t('menu')}
           </h2>
         )}
         <button
+          type="button"
           onClick={toggleSidebar}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="shrink-0 rounded-lg p-2 transition-colors hover:bg-gray-100"
+          aria-expanded={!isCollapsed}
           aria-label={isCollapsed ? t('expandMenu') : t('collapseMenu')}
+          title={isCollapsed ? t('expandMenu') : t('collapseMenu')}
         >
           {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </button>
       </div>
 
       {/* 메뉴 항목들 */}
-      <nav className="p-2">
+      <nav className="min-h-0 flex-1 overflow-y-auto p-2">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon
@@ -85,13 +112,16 @@ const Sidebar = () => {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
+                  title={isCollapsed ? item.label : undefined}
+                  className={`flex items-center rounded-lg px-3 py-2 transition-colors ${
+                    isCollapsed ? 'justify-center' : 'space-x-3'
+                  } ${
                     isActive
-                      ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                      ? 'border border-blue-200 bg-blue-100 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >
-                  <Icon size={20} />
+                  <Icon size={20} className="shrink-0" />
                   {!isCollapsed && (
                     <span className="font-medium">{item.label}</span>
                   )}
@@ -104,8 +134,8 @@ const Sidebar = () => {
 
       {/* 사이드바 푸터 */}
       {!isCollapsed && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-gray-50">
-          <div className="text-xs text-gray-500 text-center">
+        <div className="border-t bg-gray-50 p-4">
+          <div className="text-center text-xs text-gray-500">
             {t('sidebarFooter')}
           </div>
         </div>

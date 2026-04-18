@@ -1,8 +1,8 @@
 ﻿'use client'
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { X, Search, SlidersHorizontal, Printer } from 'lucide-react'
+import { X, Search, SlidersHorizontal, Printer, Archive } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
@@ -12,6 +12,7 @@ import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import { computeCustomerPaymentTotalLineFormula } from '@/utils/reservationPricingBalance'
 import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
+import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
@@ -44,17 +45,20 @@ import {
   calculateTotalPrice,
   getReservationPartySize,
   normalizeTourDateKey,
-  isoToLocalCalendarDateKey
+  isoToLocalCalendarDateKey,
+  getStatusLabel
 } from '@/utils/reservationUtils'
 import { isTourDeletedStatus } from '@/utils/tourUtils'
 import type { 
   Customer, 
   Reservation,
   Channel,
-  PickupHotel
+  PickupHotel,
+  Option
 } from '@/types/reservation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
+import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
 
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -70,6 +74,76 @@ const RESERVATIONS_LIST_UI_DEFAULT = {
   sortOrder: 'desc' as 'asc' | 'desc',
   groupByDate: true,
   isWeeklyStatsCollapsed: true,
+}
+
+/** 그룹 날짜 기준: 해당일 등록(addedTime) vs 다른 날 등록 후 해당일 수정(updated_at) */
+function splitReservationsByActivityForDate(date: string, reservations: Reservation[]) {
+  const registration: Reservation[] = []
+  const statusChange: Reservation[] = []
+  const seenReg = new Set<string>()
+  const seenStatus = new Set<string>()
+  for (const r of reservations) {
+    const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+    const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+    if (createdKey === date && !seenReg.has(r.id)) {
+      seenReg.add(r.id)
+      registration.push(r)
+    }
+    if (updatedKey === date && createdKey !== date && !seenStatus.has(r.id)) {
+      seenStatus.add(r.id)
+      statusChange.push(r)
+    }
+  }
+  return { registration, statusChange }
+}
+
+type ReservationStatusAuditRow = {
+  record_id: string
+  created_at: string
+  changed_fields: string[] | null
+  old_values: unknown
+  new_values: unknown
+}
+
+function statusFromReservationAuditJson(json: unknown): string | null {
+  if (!json || typeof json !== 'object') return null
+  const v = (json as Record<string, unknown>).status
+  return typeof v === 'string' && v.trim() ? v.trim() : null
+}
+
+function pickReservationStatusTransitionForDay(
+  rows: ReservationStatusAuditRow[],
+  dateKey: string
+): { from: string; to: string } | null {
+  const candidates = rows
+    .filter((r) => isoToLocalCalendarDateKey(r.created_at) === dateKey)
+    .filter((r) => Array.isArray(r.changed_fields) && r.changed_fields.includes('status'))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  for (const row of candidates) {
+    const to = statusFromReservationAuditJson(row.new_values)
+    const from = statusFromReservationAuditJson(row.old_values)
+    if (to && from && from !== to) return { from, to }
+  }
+  return null
+}
+
+const SIMPLE_CARD_STATUS_TRANSITION_ORDER = new Map<string, number>([
+  ['recruiting:confirmed', 10],
+  ['recruiting:cancelled', 20],
+  ['recruiting:canceled', 21],
+  ['pending:confirmed', 30],
+  ['pending:cancelled', 40],
+  ['pending:canceled', 41],
+  ['confirmed:cancelled', 50],
+  ['confirmed:canceled', 51],
+  ['confirmed:completed', 60],
+  ['pending:completed', 65],
+])
+
+function simpleCardStatusTransitionSortIndex(from: string, to: string) {
+  return (
+    SIMPLE_CARD_STATUS_TRANSITION_ORDER.get(`${from.toLowerCase()}:${to.toLowerCase()}`) ?? 1000
+  )
 }
 
 interface AdminReservationsProps {
@@ -228,7 +302,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     channels,
     productOptions,
     optionChoices,
-    options,
+    options: catalogOptions,
     pickupHotels,
     coupons,
     reservationPricingMap: hookReservationPricingMap,
@@ -237,11 +311,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     loading,
     loadingProgress,
     reservationsAggregateReady,
-    refreshReservations,
+    replaceReservationsFromQueryResult,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
     refreshCustomers
-  } = useReservationData()
+  } = useReservationData({ disableReservationsAutoLoad: true })
+
+  const [serverListLoading, setServerListLoading] = useState(false)
+  const [serverListTotal, setServerListTotal] = useState(0)
+  const reservationFilterLayoutResetSkipRef = useRef(true)
+  const replaceReservationsFromQueryResultRef = useRef(replaceReservationsFromQueryResult)
+  replaceReservationsFromQueryResultRef.current = replaceReservationsFromQueryResult
 
   /**
    * 예약 ID → 투어 ID: tours.reservation_ids에 실제로 포함된 투어만 반영.
@@ -389,11 +469,13 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   const [isInitialLoad, setIsInitialLoad] = useState(true) // ?? ?? ???? ??
   
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [simpleCardStatusTransitionMap, setSimpleCardStatusTransitionMap] = useState<
+    Record<string, { from: string; to: string }>
+  >({})
+  const [simpleCardStatusTransitionLoading, setSimpleCardStatusTransitionLoading] = useState(false)
   const [filterModalOpen, setFilterModalOpen] = useState(false) // ??? ?? ??? ???
   const [showDeletedReservationsModal, setShowDeletedReservationsModal] = useState(false)
-  const [deletedReservationsModalRows, setDeletedReservationsModalRows] = useState<
-    Array<{ id: string; customer_id?: string | null; tour_date?: string | null; status?: string | null; customer_name?: string | null }>
-  >([])
+  const [deletedModalReservations, setDeletedModalReservations] = useState<Reservation[]>([])
   const [deletedReservationsModalLoading, setDeletedReservationsModalLoading] = useState(false)
 
   // ?? ???/???????? - useCallback??? ????????
@@ -464,28 +546,63 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       try {
         const { data, error } = await supabase
           .from('reservations')
-          .select('id, customer_id, tour_date, status')
+          .select('*, choices')
           .eq('status', 'deleted')
           .order('updated_at', { ascending: false })
           .limit(500)
         if (error || cancelled) {
-          if (error) console.error('????????? ?? ?? ???:', error)
+          if (error) console.error('deleted reservations load:', error)
           return
         }
-        const rows = data || []
-        const custIds = [...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[])]
-        let nameById = new Map<string, string>()
-        if (custIds.length > 0) {
-          const { data: custs } = await supabase.from('customers').select('id, name').in('id', custIds)
-          nameById = new Map((custs || []).map((c: { id: string; name: string }) => [c.id, c.name]))
-        }
-        if (cancelled) return
-        setDeletedReservationsModalRows(
-          rows.map((r) => ({
-            ...r,
-            customer_name: r.customer_id ? nameById.get(r.customer_id) ?? null : null,
-          }))
+        const rows = (data || []) as Record<string, unknown>[]
+        const productIds = [...new Set(rows.map((r) => r.product_id as string).filter(Boolean))]
+        const tourDates = [...new Set(rows.map((r) => r.tour_date).filter(Boolean) as string[])]
+
+        const productSubMap = new Map<string, string>(
+          ((products as Array<{ id: string; sub_category?: string }>) || []).map((p) => [
+            p.id,
+            p.sub_category || '',
+          ])
         )
+        const missingProdIds = productIds.filter((id) => !productSubMap.has(id))
+        if (missingProdIds.length > 0) {
+          const { data: prows } = await supabase
+            .from('products')
+            .select('id, sub_category')
+            .in('id', missingProdIds)
+          for (const p of prows || []) {
+            const row = p as { id: string; sub_category?: string | null }
+            productSubMap.set(row.id, row.sub_category || '')
+          }
+        }
+
+        const maniaIds = productIds.filter((id) => {
+          const sc = productSubMap.get(id)
+          return sc === 'Mania Tour' || sc === 'Mania Service'
+        })
+        const tourExistence = new Map<string, boolean>()
+        if (maniaIds.length > 0 && tourDates.length > 0) {
+          const { data: tex } = await supabase
+            .from('tours')
+            .select('product_id, tour_date')
+            .in('product_id', maniaIds)
+            .in('tour_date', tourDates)
+          for (const t of tex || []) {
+            const row = t as { product_id: string; tour_date: string }
+            tourExistence.set(`${row.product_id}-${row.tour_date}`, true)
+          }
+        }
+
+        if (cancelled) return
+        const mapped = mapDbReservationRowsToReservations(rows, productSubMap, tourExistence)
+        setDeletedModalReservations(mapped)
+        const ids = mapped.map((r) => r.id)
+        if (ids.length > 0) {
+          await Promise.all([
+            refreshReservationPricingForIds(ids),
+            refreshReservationOptionsPresenceForIds(ids),
+          ])
+        }
       } finally {
         if (!cancelled) setDeletedReservationsModalLoading(false)
       }
@@ -493,7 +610,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     return () => {
       cancelled = true
     }
-  }, [showDeletedReservationsModal])
+  }, [
+    showDeletedReservationsModal,
+    products,
+    refreshReservationPricingForIds,
+    refreshReservationOptionsPresenceForIds,
+  ])
 
   // ??? ??? ???
   const [tourInfoMap, setTourInfoMap] = useState<Map<string, {
@@ -922,89 +1044,11 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     tourIdByReservationId,
   ])
 
-  // ?????????? ?? - useMemo??????
-  const filteredAndSortedReservations = useMemo(() => {
-    const filtered = reservations.filter(reservation => {
-      // ?? ID ??? (URL ????????)
-      const matchesCustomer = !customerIdFromUrl || reservation.customerId === customerIdFromUrl
-      
-      // ????? - ????? ??? ??? ??????
-      const customer = customers?.find(c => c.id === reservation.customerId)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const customerSpecialRequests = (customer as any)?.special_requests || ''
-      
-      const matchesSearch = !debouncedSearchTerm || 
-      reservation.id.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      reservation.channelRN.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      getCustomerName(reservation.customerId, (customers as Customer[]) || []).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      getProductName(reservation.productId, products || []).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      getChannelName(reservation.channelId, channels || []).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      reservation.tourDate.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      reservation.tourTime.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      reservation.pickUpHotel.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      reservation.addedBy.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-      customerSpecialRequests.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
-    
-      // ??? ??? (?? '???'?????????????? ???, 'deleted' ??? ?????????? ???)
-      const matchesStatus =
-        selectedStatus === 'all'
-          ? reservation.status !== 'deleted'
-          : reservation.status === selectedStatus
-      
-      // ?? ???
-      const matchesChannel = selectedChannel === 'all' || reservation.channelId === selectedChannel
-      
-      // ??? ?? ??? - ????? ??????? ?? ????????
-      let matchesDateRange = true
-      if (dateRange.start && dateRange.end) {
-        const tourDate = new Date(reservation.tourDate)
-        const startDate = new Date(dateRange.start)
-        const endDate = new Date(dateRange.end)
-        // ???? ?????????? ????????
-        if (!isNaN(tourDate.getTime()) && !isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-          matchesDateRange = tourDate >= startDate && tourDate <= endDate
-        }
-      }
-      
-      return matchesCustomer && matchesSearch && matchesStatus && matchesChannel && matchesDateRange
-    })
-    
-    // ???
-    filtered.sort((a, b) => {
-      let aValue: string | Date, bValue: string | Date
-      
-      switch (sortBy) {
-        case 'created_at':
-          aValue = new Date(a.addedTime)
-          bValue = new Date(b.addedTime)
-          break
-        case 'tour_date':
-          aValue = new Date(a.tourDate)
-          bValue = new Date(b.tourDate)
-          break
-        case 'customer_name':
-          aValue = getCustomerName(a.customerId, (customers as Customer[]) || [])
-          bValue = getCustomerName(b.customerId, (customers as Customer[]) || [])
-          break
-        case 'product_name':
-          aValue = getProductName(a.productId, products || [])
-          bValue = getProductName(b.productId, products || [])
-          break
-        default:
-          aValue = new Date(a.addedTime)
-          bValue = new Date(b.addedTime)
-      }
-      
-      if (sortOrder === 'asc') {
-        return aValue > bValue ? 1 : -1
-      } else {
-        return aValue < bValue ? 1 : -1
-      }
-    })
-
-    // ???????? ??? id? ????? ?? key? ?? ??id?????? ???? (??? ???????? ???? ????)
-    return [...new Map(filtered.map((r) => [r.id, r])).values()]
-  }, [reservations, customers, products, channels, debouncedSearchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder, customerIdFromUrl])
+  /** 서버에서 필터·검색·정렬·페이지 반영된 목록 */
+  const filteredAndSortedReservations = useMemo(
+    () => [...new Map(reservations.map((r) => [r.id, r])).values()],
+    [reservations]
+  )
   
   const filteredReservations = filteredAndSortedReservations
   
@@ -1055,6 +1099,132 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       display: `${weekStart.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}`
     }
   }, [getWeekStartDate, getWeekEndDate])
+
+  const loadAdminReservationList = useCallback(async () => {
+    setServerListLoading(true)
+    try {
+      const weekStart = getWeekStartDate(currentWeek)
+      const weekEnd = getWeekEndDate(currentWeek)
+      const rangeStartIso = new Date(
+        weekStart.getFullYear(),
+        weekStart.getMonth(),
+        weekStart.getDate(),
+        0,
+        0,
+        0,
+        0
+      ).toISOString()
+      const rangeEndIso = new Date(
+        weekEnd.getFullYear(),
+        weekEnd.getMonth(),
+        weekEnd.getDate(),
+        23,
+        59,
+        59,
+        999
+      ).toISOString()
+
+      if (viewMode === 'calendar') {
+        const calStart = new Date()
+        calStart.setMonth(calStart.getMonth() - 6)
+        calStart.setHours(0, 0, 0, 0)
+        const calEnd = new Date()
+        calEnd.setMonth(calEnd.getMonth() + 6)
+        calEnd.setHours(23, 59, 59, 999)
+        const fmt = (d: Date) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const { data, count, error } = await fetchAdminReservationList(supabase, {
+          mode: 'calendar',
+          page: 1,
+          pageSize: 20,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy,
+          sortOrder,
+          calendarTourDateStart: fmt(calStart),
+          calendarTourDateEnd: fmt(calEnd),
+          calendarCreatedStartIso: calStart.toISOString(),
+          calendarCreatedEndIso: calEnd.toISOString(),
+        })
+        if (error) throw error
+        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+        setServerListTotal(count ?? 0)
+        return
+      }
+
+      const cardArgs = {
+        mode: (groupByDate ? 'card-week' : 'card-flat') as 'card-week' | 'card-flat',
+        page: currentPage,
+        pageSize: itemsPerPage,
+        selectedStatus,
+        selectedChannel,
+        dateRange,
+        customerIdFromUrl,
+        debouncedSearchTerm,
+        sortBy,
+        sortOrder,
+        ...(groupByDate
+          ? { activityRangeStartIso: rangeStartIso, activityRangeEndIso: rangeEndIso }
+          : {}),
+      }
+      const { data, count, error } = await fetchAdminReservationList(supabase, cardArgs)
+      if (error) throw error
+      await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+      setServerListTotal(count ?? 0)
+    } catch (e) {
+      console.error('loadAdminReservationList:', e)
+      await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+      setServerListTotal(0)
+    } finally {
+      setServerListLoading(false)
+    }
+  }, [
+    getWeekStartDate,
+    getWeekEndDate,
+    currentWeek,
+    viewMode,
+    groupByDate,
+    currentPage,
+    itemsPerPage,
+    selectedStatus,
+    selectedChannel,
+    dateRange,
+    customerIdFromUrl,
+    debouncedSearchTerm,
+    sortBy,
+    sortOrder,
+  ])
+
+  const refreshReservations = useCallback(async () => {
+    await loadAdminReservationList()
+  }, [loadAdminReservationList])
+
+  useLayoutEffect(() => {
+    if (reservationFilterLayoutResetSkipRef.current) {
+      reservationFilterLayoutResetSkipRef.current = false
+      return
+    }
+    setCurrentPage(1)
+  }, [
+    debouncedSearchTerm,
+    selectedStatus,
+    selectedChannel,
+    dateRange.start,
+    dateRange.end,
+    groupByDate,
+    customerIdFromUrl,
+    viewMode,
+    sortBy,
+    sortOrder,
+    currentWeek,
+  ])
+
+  useEffect(() => {
+    void loadAdminReservationList()
+  }, [loadAdminReservationList, currentPage])
 
   // ??????????? (created_at ???) - ?? ????????????
   const groupedReservations = useMemo(() => {
@@ -1124,6 +1294,114 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
   }, [groupedReservations, groupByDate])
 
+  const simpleCardStatusChangeAuditRequest = useMemo(() => {
+    if (!groupByDate || cardLayout !== 'simple') return null
+    const weekStart = getWeekStartDate(currentWeek)
+    const weekEnd = getWeekEndDate(currentWeek)
+    const rangeStart = new Date(
+      weekStart.getFullYear(),
+      weekStart.getMonth(),
+      weekStart.getDate(),
+      0,
+      0,
+      0,
+      0
+    ).toISOString()
+    const rangeEnd = new Date(
+      weekEnd.getFullYear(),
+      weekEnd.getMonth(),
+      weekEnd.getDate(),
+      23,
+      59,
+      59,
+      999
+    ).toISOString()
+    const targets: { key: string; reservationId: string; dateKey: string }[] = []
+    for (const [dateKey, dayList] of Object.entries(groupedReservations)) {
+      const { statusChange } = splitReservationsByActivityForDate(dateKey, dayList)
+      for (const r of statusChange) {
+        targets.push({ key: `${r.id}|${dateKey}`, reservationId: r.id, dateKey })
+      }
+    }
+    const uniqueIds = [...new Set(targets.map((x) => x.reservationId))]
+    return { rangeStart, rangeEnd, targets, uniqueIds }
+  }, [groupByDate, cardLayout, currentWeek, groupedReservations, getWeekStartDate, getWeekEndDate])
+
+  useEffect(() => {
+    const req = simpleCardStatusChangeAuditRequest
+    if (!req) {
+      setSimpleCardStatusTransitionMap({})
+      setSimpleCardStatusTransitionLoading(false)
+      return
+    }
+    if (req.targets.length === 0) {
+      setSimpleCardStatusTransitionMap({})
+      setSimpleCardStatusTransitionLoading(false)
+      return
+    }
+    if (req.uniqueIds.length === 0) {
+      setSimpleCardStatusTransitionMap({})
+      setSimpleCardStatusTransitionLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setSimpleCardStatusTransitionLoading(true)
+
+    void (async () => {
+      const chunkSize = 80
+      const collected: ReservationStatusAuditRow[] = []
+      try {
+        for (let i = 0; i < req.uniqueIds.length; i += chunkSize) {
+          const chunk = req.uniqueIds.slice(i, i + chunkSize)
+          const { data, error } = await supabase
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- audit_logs 미생성 타입
+            .from('audit_logs' as any)
+            .select('record_id, old_values, new_values, changed_fields, created_at')
+            .eq('table_name', 'reservations')
+            .eq('action', 'UPDATE')
+            .gte('created_at', req.rangeStart)
+            .lte('created_at', req.rangeEnd)
+            .in('record_id', chunk)
+            .contains('changed_fields', ['status'])
+          if (cancelled) return
+          if (error) {
+            console.error('audit_logs (status transitions):', error)
+            break
+          }
+          for (const row of data || []) {
+            collected.push(row as ReservationStatusAuditRow)
+          }
+        }
+      } catch (e) {
+        if (!cancelled) console.error('audit_logs fetch failed:', e)
+      }
+
+      if (cancelled) return
+
+      const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+      for (const row of collected) {
+        const id = String(row.record_id ?? '').trim()
+        if (!id) continue
+        const arr = byRecord.get(id) ?? []
+        arr.push(row)
+        byRecord.set(id, arr)
+      }
+
+      const next: Record<string, { from: string; to: string }> = {}
+      for (const t of req.targets) {
+        const tr = pickReservationStatusTransitionForDay(byRecord.get(t.reservationId) ?? [], t.dateKey)
+        if (tr) next[t.key] = tr
+      }
+      setSimpleCardStatusTransitionMap(next)
+      setSimpleCardStatusTransitionLoading(false)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [simpleCardStatusChangeAuditRequest])
+
   // ?? ??? ???????
   const weeklyStats = useMemo(() => {
     const allReservations = Object.values(groupedReservations).flat()
@@ -1177,10 +1455,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   }, [groupedReservations, products, channels])
   
   // ??????????? (?????? ???? ?????)
-  const totalPages = groupByDate ? 1 : Math.ceil(filteredReservations.length / itemsPerPage)
+  const totalPages = groupByDate ? 1 : Math.max(1, Math.ceil(serverListTotal / itemsPerPage))
   const startIndex = groupByDate ? 0 : (currentPage - 1) * itemsPerPage
-  const endIndex = groupByDate ? filteredReservations.length : startIndex + itemsPerPage
-  const paginatedReservations = groupByDate ? filteredReservations : filteredReservations.slice(startIndex, endIndex)
+  const paginatedReservations = groupByDate ? filteredReservations : filteredReservations
 
   // reservation_pricing ?????? useReservationData ????????? ????
   // ?????????? reservation???????????????????
@@ -2219,6 +2496,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
   }, [showAddForm, refreshCustomers, t])
 
+  const reservationFormCatalogOptions: Option[] = (catalogOptions || []) as Option[]
+
   // ?? ???
   if (loading) {
     return <ReservationsLoadingSpinner loadingProgress={loadingProgress} />
@@ -2246,6 +2525,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         onActionRequired={() => setShowActionRequiredModal(true)}
         actionRequiredCount={actionRequiredCount}
         onOpenFilter={() => setFilterModalOpen(true)}
+        onOpenDeletedReservations={() => setShowDeletedReservationsModal(true)}
         cardLayout={cardLayout}
         onCardLayoutChange={setCardLayout}
       />
@@ -2278,7 +2558,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           onClick={() => setShowDeletedReservationsModal(true)}
           className="bg-gray-700 text-white px-3 py-1.5 rounded-md hover:bg-gray-800 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
         >
-          {t('openDeletedReservationsModal')}
+          <Archive className="w-4 h-4" />
+          <span className="truncate">{t('openDeletedReservationsModal')}</span>
         </button>
       </div>
 
@@ -2346,26 +2627,25 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         {groupByDate ? (
           <>
             {Object.values(groupedReservations).flat().length}{t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}{t('groupingLabels.registrationDates')}
-            {Object.values(groupedReservations).flat().length !== reservations.length && (
+            {Object.values(groupedReservations).flat().length !== serverListTotal && serverListTotal > 0 && (
               <span className="ml-2 text-blue-600">
-                ({t('groupingLabels.filteredFromTotal')} {reservations.length}{t('stats.more')})
+                ({t('groupingLabels.filteredFromTotal')} {serverListTotal}{t('stats.more')})
               </span>
             )}
           </>
         ) : (
           <>
-            {t('paginationDisplay', { total: filteredReservations.length, start: startIndex + 1, end: Math.min(endIndex, filteredReservations.length) })}
-            {filteredReservations.length !== reservations.length && (
-              <span className="ml-2 text-blue-600">
-                ({t('groupingLabels.filteredFromTotal')} {reservations.length} {t('stats.more')})
-              </span>
-            )}
+            {t('paginationDisplay', {
+              total: serverListTotal,
+              start: serverListTotal === 0 ? 0 : startIndex + 1,
+              end: serverListTotal === 0 ? 0 : Math.min(startIndex + filteredReservations.length, serverListTotal),
+            })}
           </>
         )}
       </div>
 
       {/* ??? ?? */}
-      {loading ? (
+      {serverListLoading ? (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">??????? ????? ??..</p>
@@ -2407,66 +2687,174 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             ) : (
               Object.entries(groupedReservations).map(([date, reservations]) => {
                 const handleToggleCollapse = () => toggleGroupCollapse(date)
+                const dayReservations = reservations as Reservation[]
+                const { registration: regList, statusChange: statusList } =
+                  cardLayout === 'simple'
+                    ? splitReservationsByActivityForDate(date, dayReservations)
+                    : { registration: dayReservations, statusChange: [] as Reservation[] }
+
+                const gridClass =
+                  'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'
+
+                const renderReservationCard = (reservation: Reservation) => (
+                  <ReservationCardItem
+                    key={reservation.id}
+                    reservation={reservation}
+                    customers={(customers as Customer[]) || []}
+                    products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
+                    channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+                    pickupHotels={
+                      (pickupHotels as Array<{
+                        id: string
+                        hotel?: string | null
+                        name?: string | null
+                        name_ko?: string | null
+                        pick_up_location?: string | null
+                      }>) || []
+                    }
+                    productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+                    optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
+                    tourInfoMap={tourInfoMap}
+                    reservationPricingMap={reservationPricingMap}
+                    locale={locale}
+                    emailDropdownOpen={emailDropdownOpen}
+                    sendingEmail={sendingEmail}
+                    onPricingInfoClick={handlePricingInfoClick}
+                    onCreateTour={handleCreateTour}
+                    onPickupTimeClick={handlePickupTimeClick}
+                    onPickupHotelClick={handlePickupHotelClick}
+                    onPaymentClick={handlePaymentClick}
+                    onDetailClick={handleDetailClick}
+                    onReceiptClick={handleReceiptClick}
+                    onReviewClick={handleReviewClick}
+                    onEmailPreview={handleOpenEmailPreview}
+                    onEmailLogsClick={handleEmailLogsClick}
+                    onEmailDropdownToggle={handleEmailDropdownToggle}
+                    onEditClick={handleEditClick}
+                    onCustomerClick={handleCustomerClick}
+                    onRefreshReservations={refreshReservations}
+                    onStatusChange={handleStatusChange}
+                    generatePriceCalculation={generatePriceCalculation}
+                    getGroupColorClasses={getGroupColorClasses}
+                    getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
+                    choicesCacheRef={choicesCacheRef}
+                    linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+                    cardLayout={cardLayout}
+                    onOpenTourDetailModal={handleOpenTourDetailModal}
+                    reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
+                    onReservationOptionsMutated={handleReservationOptionsMutated}
+                    reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+                    onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+                  />
+                )
+
+                const simpleCardStatusSubgroups =
+                  statusList.length > 0 && !simpleCardStatusTransitionLoading
+                    ? (() => {
+                        const buckets = new Map<string, Reservation[]>()
+                        for (const r of statusList) {
+                          const tr = simpleCardStatusTransitionMap[`${r.id}|${date}`]
+                          const bucketKey = tr ? `${tr.from}\u0000${tr.to}` : '__unknown__'
+                          const arr = buckets.get(bucketKey) ?? []
+                          arr.push(r)
+                          buckets.set(bucketKey, arr)
+                        }
+                        const rows: {
+                          bucketKey: string
+                          title: string
+                          items: Reservation[]
+                          sortIx: number
+                        }[] = []
+                        for (const [bucketKey, items] of buckets.entries()) {
+                          let title: string
+                          let sortIx: number
+                          if (bucketKey === '__unknown__') {
+                            title = t('groupingLabels.simpleCardStatusTransitionUnknown')
+                            sortIx = 10000
+                          } else {
+                            const sep = bucketKey.indexOf('\0')
+                            const from = bucketKey.slice(0, sep)
+                            const to = bucketKey.slice(sep + 1)
+                            title = `${getStatusLabel(from, (key) => t(key))} → ${getStatusLabel(to, (key) => t(key))}`
+                            sortIx = simpleCardStatusTransitionSortIndex(from, to)
+                          }
+                          rows.push({ bucketKey, title, items, sortIx })
+                        }
+                        rows.sort((a, b) => {
+                          if (a.sortIx !== b.sortIx) return a.sortIx - b.sortIx
+                          return a.title.localeCompare(b.title, 'ko')
+                        })
+                        return rows
+                      })()
+                    : null
+
                 return (
                   <div key={date} className="space-y-4">
-                    {/* ???????? */}
                     <DateGroupHeader
                       date={date}
-                      reservations={reservations as Reservation[]}
+                      reservations={dayReservations}
                       isCollapsed={collapsedGroups.has(date)}
                       onToggleCollapse={handleToggleCollapse}
                       customers={(customers as Array<{ id: string; name?: string }>) || []}
                       products={(products as Array<{ id: string; name: string }>) || []}
                       channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
                     />
-                  
-                  {/* ??? ???????? ????(???? ???) */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {reservations.map((reservation) => (
-                      <ReservationCardItem
-                        key={reservation.id}
-                        reservation={reservation}
-                        customers={(customers as Customer[]) || []}
-                        products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
-                        channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
-                        pickupHotels={(pickupHotels as Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>) || []}
-                        productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
-                        optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
-                        tourInfoMap={tourInfoMap}
-                        reservationPricingMap={reservationPricingMap}
-                        locale={locale}
-                        emailDropdownOpen={emailDropdownOpen}
-                        sendingEmail={sendingEmail}
-                        onPricingInfoClick={handlePricingInfoClick}
-                        onCreateTour={handleCreateTour}
-                        onPickupTimeClick={handlePickupTimeClick}
-                        onPickupHotelClick={handlePickupHotelClick}
-                        onPaymentClick={handlePaymentClick}
-                        onDetailClick={handleDetailClick}
-                        onReceiptClick={handleReceiptClick}
-                        onReviewClick={handleReviewClick}
-                        onEmailPreview={handleOpenEmailPreview}
-                        onEmailLogsClick={handleEmailLogsClick}
-                        onEmailDropdownToggle={handleEmailDropdownToggle}
-                        onEditClick={handleEditClick}
-                        onCustomerClick={handleCustomerClick}
-                        onRefreshReservations={refreshReservations}
-                        onStatusChange={handleStatusChange}
-                        generatePriceCalculation={generatePriceCalculation}
-                        getGroupColorClasses={getGroupColorClasses}
-                        getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
-                        choicesCacheRef={choicesCacheRef}
-                        linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-                        cardLayout={cardLayout}
-                        onOpenTourDetailModal={handleOpenTourDetailModal}
-                        reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
-                        onReservationOptionsMutated={handleReservationOptionsMutated}
-                        reshowPickupSummaryRequest={pickupSummaryReshowRequest}
-                        onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
-                      />
-                    ))}
+
+                    {cardLayout === 'simple' ? (
+                      <div className="space-y-8">
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-semibold text-gray-900 px-1 flex items-baseline gap-2">
+                            <span>{t('groupingLabels.simpleCardGroupRegistration')}</span>
+                            <span className="text-xs font-normal text-gray-500 tabular-nums">
+                              {regList.length}
+                            </span>
+                          </h4>
+                          {regList.length > 0 ? (
+                            <div className={gridClass}>{regList.map(renderReservationCard)}</div>
+                          ) : (
+                            <p className="text-xs text-gray-400 px-1 py-1">
+                              {t('groupingLabels.simpleCardGroupEmpty')}
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-semibold text-gray-900 px-1 flex items-baseline gap-2">
+                            <span>{t('groupingLabels.simpleCardGroupStatusChange')}</span>
+                            <span className="text-xs font-normal text-gray-500 tabular-nums">
+                              {statusList.length}
+                            </span>
+                          </h4>
+                          {statusList.length > 0 ? (
+                            simpleCardStatusTransitionLoading ? (
+                              <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
+                            ) : simpleCardStatusSubgroups ? (
+                              <div className="space-y-6">
+                                {simpleCardStatusSubgroups.map((g) => (
+                                  <div key={g.bucketKey} className="space-y-2">
+                                    <h5 className="text-xs font-semibold text-gray-700 px-1 flex items-baseline gap-2">
+                                      <span>{g.title}</span>
+                                      <span className="text-xs font-normal text-gray-500 tabular-nums">
+                                        {g.items.length}
+                                      </span>
+                                    </h5>
+                                    <div className={gridClass}>{g.items.map(renderReservationCard)}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
+                            )
+                          ) : (
+                            <p className="text-xs text-gray-400 px-1 py-1">
+                              {t('groupingLabels.simpleCardGroupEmpty')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={gridClass}>{dayReservations.map(renderReservationCard)}</div>
+                    )}
                   </div>
-                </div>
                 )
               })
             )
@@ -2548,7 +2936,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         <ReservationsPagination
           currentPage={currentPage}
           totalPages={totalPages}
-          totalItems={filteredReservations.length}
+          totalItems={serverListTotal}
           onPageChange={setCurrentPage}
         />
       )}
@@ -2561,7 +2949,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           products={products || []}
           channels={(channels || []) as Channel[]}
           productOptions={productOptions || []}
-          options={options || []}
+          options={reservationFormCatalogOptions}
           pickupHotels={(pickupHotels || []) as PickupHotel[]}
           coupons={(coupons || []) as { id: string; coupon_code: string; discount_type: 'percentage' | 'fixed'; [key: string]: unknown }[]}
           onSubmit={editingReservation ? handleEditReservation : handleAddReservation}
@@ -2937,19 +3325,73 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         isOpen={showDeletedReservationsModal}
         onClose={() => setShowDeletedReservationsModal(false)}
         title={t('deletedReservationsModalTitle')}
-        reservations={deletedReservationsModalRows}
+        reservations={deletedModalReservations}
         loading={deletedReservationsModalLoading}
         userEmail={user?.email ?? null}
         locale={locale}
         onPermanentDelete={async (reservationId) => {
           const { error } = await supabase.from('reservations').delete().eq('id', reservationId)
           if (error) {
-            alert(locale === 'ko' ? '??? ???? ???: ' + error.message : 'Purge failed: ' + error.message)
+            alert(
+              locale === 'ko'
+                ? '영구 삭제에 실패했습니다: ' + error.message
+                : 'Purge failed: ' + error.message
+            )
             throw error
           }
-          setDeletedReservationsModalRows((prev) => prev.filter((r) => r.id !== reservationId))
+          setDeletedModalReservations((prev) => prev.filter((r) => r.id !== reservationId))
           await refreshReservations()
         }}
+        renderReservationCard={(reservation) => (
+          <ReservationCardItem
+            reservation={reservation}
+            customers={(customers as Customer[]) || []}
+            products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
+            channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+            pickupHotels={
+              (pickupHotels as Array<{
+                id: string
+                hotel?: string | null
+                name?: string | null
+                name_ko?: string | null
+                pick_up_location?: string | null
+              }>) || []
+            }
+            productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+            optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
+            tourInfoMap={tourInfoMap}
+            reservationPricingMap={reservationPricingMap}
+            locale={locale}
+            emailDropdownOpen={emailDropdownOpen}
+            sendingEmail={sendingEmail}
+            onPricingInfoClick={handlePricingInfoClick}
+            onCreateTour={handleCreateTour}
+            onPickupTimeClick={handlePickupTimeClick}
+            onPickupHotelClick={handlePickupHotelClick}
+            onPaymentClick={handlePaymentClick}
+            onDetailClick={handleDetailClick}
+            onReceiptClick={handleReceiptClick}
+            onReviewClick={handleReviewClick}
+            onEmailPreview={handleOpenEmailPreview}
+            onEmailLogsClick={handleEmailLogsClick}
+            onEmailDropdownToggle={handleEmailDropdownToggle}
+            onEditClick={handleEditClick}
+            onCustomerClick={handleCustomerClick}
+            onRefreshReservations={refreshReservations}
+            onStatusChange={handleStatusChange}
+            generatePriceCalculation={generatePriceCalculation}
+            getGroupColorClasses={getGroupColorClasses}
+            getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
+            choicesCacheRef={choicesCacheRef}
+            linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+            cardLayout="simple"
+            onOpenTourDetailModal={handleOpenTourDetailModal}
+            reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
+            onReservationOptionsMutated={handleReservationOptionsMutated}
+            reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+            onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+          />
+        )}
       />
     </div>
   )

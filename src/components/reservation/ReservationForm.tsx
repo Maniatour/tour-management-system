@@ -794,6 +794,8 @@ export default function ReservationForm({
   const pricingLoadReservationKeyRef = useRef<string | undefined>(undefined)
   /** 이메일 가져오기: product_choices 로드·이메일 기반 초이스 매칭까지 끝난 productId (이 값이 맞을 때만 loadPricingInfo 실행) */
   const [importChoicesHydratedProductId, setImportChoicesHydratedProductId] = useState<string | null>(null)
+  /** 저장된 예약 수정: 초이스 하이드레이션 전에 loadPricingInfo가 빈 selectedChoices로 한 번 도는 것 방지 (가격·정산 오버레이 이중 표시) */
+  const [editPricingChoicesReady, setEditPricingChoicesReady] = useState(true)
   /** 채널 버튼/모달에 "Klook - All Inclusive" 형태로 보이기 위해 channel_products variant명 로드 */
   const [channelProductVariantsForDisplay, setChannelProductVariantsForDisplay] = useState<
     Array<{ variant_key: string; variant_name_ko?: string | null; variant_name_en?: string | null }>
@@ -1143,6 +1145,30 @@ export default function ReservationForm({
   }, [])
 
   const reservationId = reservation == null ? null : (reservation as any)?.id ?? (reservation as any)?.reservation_id ?? null
+  const needsEditChoicesHydration = useMemo(() => {
+    const r = reservation as any
+    if (!r) return false
+    const id = r.id ?? r.reservation_id ?? null
+    if (id == null || typeof id !== 'string' || id.startsWith('import-')) return false
+    const keys = Object.keys(r)
+    if (keys.length === 1 && keys[0] === 'id') return false
+    return !!(r.product_id || r.productId)
+  }, [
+    reservation,
+    (reservation as any)?.id,
+    (reservation as any)?.reservation_id,
+    (reservation as any)?.product_id,
+    (reservation as any)?.productId,
+  ])
+
+  useEffect(() => {
+    if (!needsEditChoicesHydration) {
+      setEditPricingChoicesReady(true)
+      return
+    }
+    setEditPricingChoicesReady(false)
+  }, [needsEditChoicesHydration, reservationId])
+
   useEffect(() => {
     let cancelled = false
     const getCurrentUser = async () => {
@@ -2038,9 +2064,17 @@ export default function ReservationForm({
 
     } catch (error) {
       console.error('ReservationForm: 초이스 데이터 로드 중 예외:', error)
+    } finally {
+      if (
+        reservationId &&
+        !String(reservationId).startsWith('import-') &&
+        (capturedLoadKey == null || loadedReservationChoicesRef.current === capturedLoadKey)
+      ) {
+        setEditPricingChoicesReady(true)
+      }
     }
     },
-    [supabase, setFormData]
+    [supabase, setFormData, setEditPricingChoicesReady]
   )
 
   // 기존 products.choices에서 초이스 데이터 로드
@@ -2337,6 +2371,7 @@ export default function ReservationForm({
     const loadKey = `${reservation.id}|${choicesKey}`
     if (loadedReservationChoicesRef.current === loadKey) {
       console.log('ReservationForm: 이미 동일 예약·choices로 초이스 로드됨, 스킵:', reservation.id)
+      setEditPricingChoicesReady(true)
       return
     }
 
@@ -4320,6 +4355,9 @@ export default function ReservationForm({
   useEffect(() => {
     const tourDateNorm = normalizeTourDateForDb(formData.tourDate) || formData.tourDate?.trim() || ''
     if (!formData.productId || !tourDateNorm || !formData.channelId) return
+    if (needsEditChoicesHydration && !editPricingChoicesReady) {
+      return
+    }
     if (
       isImportMode &&
       formData.productId &&
@@ -4348,7 +4386,7 @@ export default function ReservationForm({
       if (isRealReservationId) setIsExistingPricingLoaded(true)
       loadPricingInfo(formData.productId, tourDateNorm, formData.channelId, reservation?.id, selectedChoicesArray)
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, formData.variantKey, formData.selectedChoices, formData.productChoices, reservation?.id, loadPricingInfo, isImportMode, importChoicesHydratedProductId])
+  }, [formData.productId, formData.tourDate, formData.channelId, formData.variantKey, formData.selectedChoices, formData.productChoices, reservation?.id, loadPricingInfo, isImportMode, importChoicesHydratedProductId, needsEditChoicesHydration, editPricingChoicesReady])
 
   // 이메일에서 예약 가져오기: 상위에서 넘긴 reservation에 상품·날짜·채널이 있으면 새 예약 모달과 동일한 방식으로 loadPricingInfo 한 번 호출
   useEffect(() => {
@@ -5901,7 +5939,9 @@ export default function ReservationForm({
                   setPricingFieldsFromDb((prev) => ({ ...prev, channel_settlement_amount: false }))
                 }
                 priceCalculationPending={
-                  Boolean(formData.productId && formData.tourDate && formData.channelId) && !pricingLoadComplete
+                  Boolean(formData.productId && formData.tourDate && formData.channelId) &&
+                  !pricingLoadComplete &&
+                  !(needsEditChoicesHydration && !editPricingChoicesReady)
                 }
                 {...(effectiveReservationId ? { reservationId: effectiveReservationId } : {})}
                 reservationPricingId={reservationPricingId}

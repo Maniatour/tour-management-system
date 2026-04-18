@@ -1894,7 +1894,11 @@
       "fallbackCardStats": "{count}건 · {people}명",
       "lasVegasTime": "(라스베가스 시간)",
       "reservationsTotal": "개 예약 총",
-      "people": "명"
+      "people": "명",
+      "simpleCardGroupRegistration": "등록",
+      "simpleCardGroupStatusChange": "상태변경",
+      "simpleCardStatusTransitionUnknown": "상태 이력 없음 · 기타",
+      "simpleCardGroupEmpty": "해당 없음"
     },
     "messages": {
       "reservationUpdated": "예약이 성공적으로 수정되었습니다!",

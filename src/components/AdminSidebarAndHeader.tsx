@@ -36,7 +36,9 @@ import {
   Tag,
   Plus,
   TrendingUp,
-  Cloud
+  Cloud,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -87,6 +89,7 @@ interface AdminSidebarAndHeaderProps {
   children: React.ReactNode
 }
 
+const ADMIN_SIDEBAR_COLLAPSED_KEY = 'tms-admin-sidebar-collapsed'
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
@@ -97,6 +100,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const tAdmin = useTranslations('admin')
   const tSidebar = useTranslations('sidebar')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
@@ -421,6 +425,26 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     }, 60_000)
     return () => clearInterval(interval)
   }, [fetchTeamBoardCount, fetchExpiringDocumentsCount])
+
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(localStorage.getItem(ADMIN_SIDEBAR_COLLAPSED_KEY) === '1')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(ADMIN_SIDEBAR_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
 
   // AuthContext에서 자동으로 관리되므로 별도 useEffect 불필요
 
@@ -943,8 +967,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             {navigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
-              const isTeamChat = item.name === '팀 채팅'
-              const isDocuments = item.name === t('documents')
+              const isTeamChat = item.href.includes('/admin/team-chat')
+              const isDocuments = item.href.includes('/admin/documents')
               return (
                 <Link
                   key={item.name}
@@ -990,56 +1014,92 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       </div>
 
       {/* 데스크톱 사이드바 - 헤더 아래에 위치 */}
-      <div className="hidden lg:fixed lg:top-16 lg:left-0 lg:bottom-0 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex flex-col flex-grow bg-white shadow-lg overflow-hidden">
-          <nav className="flex-1 px-4 mt-4 overflow-y-auto overflow-x-hidden">
+      <div
+        className={`hidden lg:fixed lg:left-0 lg:bottom-0 lg:top-[var(--header-height,4rem)] lg:z-30 lg:flex lg:flex-col lg:transition-[width] lg:duration-300 ${
+          sidebarCollapsed ? 'lg:w-16' : 'lg:w-64'
+        }`}
+      >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-r border-gray-200 bg-white shadow-lg">
+          <nav
+            className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-2 ${
+              sidebarCollapsed ? 'px-1.5' : 'px-4'
+            }`}
+          >
             {navigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
-              const isTeamChat = item.name === '팀 채팅'
-              const isDocuments = item.name === t('documents')
+              const isTeamChat = item.href.includes('/admin/team-chat')
+              const isDocuments = item.href.includes('/admin/documents')
               return (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-lg mb-1 transition-colors ${
+                  title={sidebarCollapsed ? item.name : undefined}
+                  className={`relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
+                    sidebarCollapsed ? 'justify-center px-2 py-2' : 'w-full px-4 py-2'
+                  } ${
                     isActive
                       ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >
-                  <Icon size={20} className="mr-3" />
-                  {item.name}
-                  {isTeamChat && teamChatUnreadCount > 0 && (
-                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
-                      {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
+                  <Icon size={20} className={`shrink-0 ${sidebarCollapsed ? '' : 'mr-3'}`} />
+                  {!sidebarCollapsed && (
+                    <>
+                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                      {isTeamChat && teamChatUnreadCount > 0 && (
+                        <span className="ml-2 shrink-0 bg-red-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]">
+                          {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
+                        </span>
+                      )}
+                      {isDocuments && expiringDocumentsCount > 0 && (
+                        <span className="ml-2 shrink-0 bg-orange-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]">
+                          {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {sidebarCollapsed && isTeamChat && teamChatUnreadCount > 0 && (
+                    <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                      {teamChatUnreadCount > 9 ? '9+' : teamChatUnreadCount}
                     </span>
                   )}
-                  {isDocuments && expiringDocumentsCount > 0 && (
-                    <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
-                      {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
+                  {sidebarCollapsed && isDocuments && expiringDocumentsCount > 0 && (
+                    <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold leading-none text-white">
+                      {expiringDocumentsCount > 9 ? '9+' : expiringDocumentsCount}
                     </span>
                   )}
                 </Link>
               )
             })}
           </nav>
-          
-          {/* 데스크톱 로그아웃 버튼 */}
-          <div className="px-4 pb-2 border-t border-gray-200 bg-white flex-shrink-0">
+
+          {/* 데스크톱: 사이드바 접기 (로그아웃은 상단 사용자 메뉴) */}
+          <div
+            className={`flex flex-shrink-0 items-center border-t border-gray-200 bg-white py-2 ${
+              sidebarCollapsed ? 'justify-center px-1.5' : 'justify-end px-4'
+            }`}
+          >
             <button
-              onClick={handleLogout}
-              className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
+              type="button"
+              onClick={toggleSidebarCollapsed}
+              className="shrink-0 rounded-lg p-2 text-gray-600 transition-colors hover:bg-gray-100"
+              aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? t('expandMenu') : t('collapseMenu')}
+              title={sidebarCollapsed ? t('expandMenu') : t('collapseMenu')}
             >
-              <LogOut size={20} className="mr-3" />
-              {tAdmin('logout')}
+              {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
             </button>
           </div>
         </div>
       </div>
 
       {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
-      <div className="pt-[var(--header-height)] lg:pl-64">
+      <div
+        className={`pt-[var(--header-height)] transition-[padding] duration-300 ${
+          sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-64'
+        }`}
+      >
         {/* 페이지 콘텐츠 */}
         <main className="pt-2 sm:pt-4 lg:pt-6 main-safe-area">
           <div className="max-w-none mx-auto px-2 sm:px-2 lg:px-4">

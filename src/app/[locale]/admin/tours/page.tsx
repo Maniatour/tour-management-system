@@ -44,7 +44,7 @@ function toursDefaultGridMonthKey() {
 }
 
 const ADMIN_TOURS_UI_DEFAULT = {
-  viewMode: 'calendar' as 'list' | 'calendar' | 'schedule',
+  viewMode: 'schedule' as 'list' | 'calendar' | 'schedule',
   listViewDateFilter: 'month' as 'month' | 'all' | 'scheduled',
   gridMonthKey: toursDefaultGridMonthKey(),
   searchTerm: '',
@@ -94,7 +94,7 @@ export default function AdminTours() {
   const [showDeletedToursModal, setShowDeletedToursModal] = useState(false)
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
-  const [tourUi, setTourUi] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
+  const [tourUi, setTourUi, tourUiHydrated] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
   const { viewMode, listViewDateFilter, searchTerm, selectedStatuses } = tourUi
   const setViewMode = (m: 'list' | 'calendar' | 'schedule') => setTourUi((u) => ({ ...u, viewMode: m }))
   const setListViewDateFilter = (f: 'month' | 'all' | 'scheduled') => setTourUi((u) => ({ ...u, listViewDateFilter: f }))
@@ -119,7 +119,9 @@ export default function AdminTours() {
     }))
   const [statusOptions, setStatusOptions] = useState<string[]>([])
 
-  // 최적화된 데이터 로딩
+  const toursQueryEnabled = tourUiHydrated && viewMode !== 'schedule'
+
+  // 최적화된 데이터 로딩 (스케줄 뷰는 ScheduleView가 월 단위로 직접 조회 — 전체 투어 로드 생략)
   const { data: toursData, loading: toursLoading, refetch: refetchTours } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
@@ -131,7 +133,9 @@ export default function AdminTours() {
       return data || []
     },
     cacheKey: 'tours',
-    cacheTime: 2 * 60 * 1000 // 2분 캐시
+    cacheTime: 2 * 60 * 1000, // 2분 캐시
+    enabled: toursQueryEnabled,
+    dependencies: [toursQueryEnabled],
   })
 
   const { data: employeesData, loading: employeesLoading } = useOptimizedData({
@@ -169,8 +173,8 @@ export default function AdminTours() {
     cacheTime: 10 * 60 * 1000 // 10분 캐시
   })
 
-  // 통합 로딩 상태
-  const loading = toursLoading || employeesLoading || productsLoading
+  // 통합 로딩 상태 (스케줄 뷰 기본 시 전체 투어 스피너에 막히지 않음)
+  const loading = (toursQueryEnabled && toursLoading) || employeesLoading || productsLoading
 
   // 달력 뷰: processToursData가 끝나기 전에는 빈 달력이 깜빡이지 않도록, 데이터 준비됐을 때만 렌더
   const calendarDataReady = !loading && (

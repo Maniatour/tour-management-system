@@ -233,6 +233,8 @@ export default function PricingSection({
   const isCardFeeManuallyEdited = useRef(false)
   /** OTA 채널 결제 금액을 사용자가 직접 입력한 뒤에는 상품가 동기화 effect가 덮어쓰지 않음(블러 직후 리셋 방지) */
   const otaChannelPaymentUserEditedRef = useRef(false)
+  /** 홈페이지 등 비-OTA: 채널 결제 gross를 수동 입력한 뒤 상품가·보증금 effect가 덮어쓰지 않음 */
+  const nonOtaChannelPaymentUserEditedRef = useRef(false)
   /** OTA: 마지막 자동 수수료 $ 기준(수수료 산출 base × %) — 이 키가 바뀌면 $를 다시 계산 */
   const otaCommissionAutoFingerprintRef = useRef<string>('')
   /** User edited deposit (including 0): skip product/discount auto-fill for deposit */
@@ -254,6 +256,7 @@ export default function PricingSection({
   useEffect(() => {
     otaCommissionAutoFingerprintRef.current = ''
     otaChannelPaymentUserEditedRef.current = false
+    nonOtaChannelPaymentUserEditedRef.current = false
     depositAmountUserEditedRef.current = false
   }, [reservationId])
 
@@ -1786,21 +1789,27 @@ export default function PricingSection({
   const otaSalePrice = formData.onlinePaymentAmount ?? 0
   const currentCommissionBase = formData.commission_base_price ?? 0
 
-  // OTA는 쿠폰 시 할인 후 상품가, 그 외는 판매가×인원. 0이 아닐 때 onlinePaymentAmount 자동 설정.
-  // 취소 OTA·부분 정산은 수동 입력만 쓰므로 자동 덮어쓰기 안 함. 수동 입력 후 블러 시에도 사용자 값 유지.
+  // OTA는 쿠폰 시 할인 후 상품가, 비-OTA(홈페이지)는 할인 후 상품가. 0이 아닐 때 onlinePaymentAmount 자동 설정.
+  // 취소 OTA·부분 정산은 수동 입력만 쓰므로 자동 덮어쓰기 안 함. 수동 입력 후 사용자 값 최우선.
   useEffect(() => {
     if (channelPaymentLoadedFromDb) return
     if (isOTAChannel && isReservationCancelled) return
 
-    const targetOnline = isOTAChannel ? otaChannelProductPaymentGross : formData.productPriceTotal
+    const targetOnline = isOTAChannel
+      ? otaChannelProductPaymentGross
+      : Math.max(0, discountedProductPrice)
 
     if (targetOnline > 0) {
       setFormData((prev: typeof formData) => {
         const currentOnlinePaymentAmount = prev.onlinePaymentAmount || 0
         const priceDifference = Math.abs(currentOnlinePaymentAmount - targetOnline)
 
+        const userEditedChannelPayment = isOTAChannel
+          ? otaChannelPaymentUserEditedRef.current
+          : nonOtaChannelPaymentUserEditedRef.current
+
         const shouldSyncFromProduct =
-          !otaChannelPaymentUserEditedRef.current &&
+          !userEditedChannelPayment &&
           (currentOnlinePaymentAmount === 0 ||
             (priceDifference > 0.01 && !isChannelPaymentAmountFocused))
 
@@ -1816,19 +1825,14 @@ export default function PricingSection({
       })
     }
   }, [
-    formData.productPriceTotal,
-    formData.couponDiscount,
-    formData.additionalDiscount,
-    formData.not_included_price,
-    formData.pricingAdults,
-    formData.child,
-    formData.infant,
+    discountedProductPrice,
     isOTAChannel,
     isReservationCancelled,
     isChannelPaymentAmountFocused,
     returnedAmount,
     channelPaymentLoadedFromDb,
     setFormData,
+    otaChannelProductPaymentGross,
   ])
 
   // 채널 변경 시 선택된 쿠폰이 해당 채널에 속하지 않으면 쿠폰 초기화 (ota가 아닐 때 Homepage 쿠폰은 유지)
@@ -1902,6 +1906,7 @@ export default function PricingSection({
     if (isReservationCancelled) return
     if (channelPaymentLoadedFromDb) return
     if (isOTAChannel && otaChannelPaymentUserEditedRef.current) return
+    if (!isOTAChannel && nonOtaChannelPaymentUserEditedRef.current) return
     if (isChannelPaymentAmountFocused || formData.depositAmount <= 0) return
     const deposit = formData.depositAmount
     const currentOnlinePaymentAmount = formData.onlinePaymentAmount || 0
@@ -1990,6 +1995,7 @@ export default function PricingSection({
     }
     if (formData.channelId !== prevChannelIdRef.current) {
       prevChannelIdRef.current = formData.channelId
+      nonOtaChannelPaymentUserEditedRef.current = false
       loadedCommissionAmountRef.current = null
       isCardFeeManuallyEdited.current = false
       otaCommissionAutoFingerprintRef.current = ''
@@ -2062,6 +2068,7 @@ export default function PricingSection({
   useEffect(() => {
     if (isOTAChannel) return
     if (isScenicProduct) return
+    if (nonOtaChannelPaymentUserEditedRef.current) return
     // DB에 commission이 있으면 계산하지 말고 그 값 유지
     if (hasDbCommissionRef.current || isExistingPricingLoaded) return
     if (isCardFeeManuallyEdited.current) return
@@ -2121,6 +2128,7 @@ export default function PricingSection({
     if (isReservationCancelled) return
     if (isOTAChannel) return // OTA 채널은 제외
     if (isScenicProduct) return
+    if (nonOtaChannelPaymentUserEditedRef.current) return
     if (isCardFeeManuallyEdited.current) return // 사용자가 수동으로 입력한 경우 자동 업데이트 안 함
     if (hasDbCommissionRef.current || isExistingPricingLoaded) return // DB에 값이 있으면 덮어쓰지 않음
     
@@ -3233,6 +3241,7 @@ export default function PricingSection({
                             commission_amount: calculatedCommission,
                           }))
                         } else {
+                          if (inputValue !== '') nonOtaChannelPaymentUserEditedRef.current = true
                           setFormData({
                             ...omitChannelSettlementAmount(formData),
                             onlinePaymentAmount: actualAmount,
@@ -3275,6 +3284,7 @@ export default function PricingSection({
                             commission_amount: calculatedCommission,
                           }))
                         } else {
+                          nonOtaChannelPaymentUserEditedRef.current = true
                           setFormData({
                             ...omitChannelSettlementAmount(formData),
                             onlinePaymentAmount: actualAmount,

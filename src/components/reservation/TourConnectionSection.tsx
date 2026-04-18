@@ -6,6 +6,47 @@ import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { Plus, Calendar, Users, MapPin, Clock, CheckCircle, AlertCircle } from 'lucide-react'
 import type { Reservation } from '@/types/reservation'
+import { getReservationPartySize } from '@/utils/reservationUtils'
+
+/** tours.reservation_ids: UUID 배열·JSON 문자열·콤마 구분 등 정규화 */
+function normalizeTourReservationIds(raw: unknown): string[] {
+  if (raw == null) return []
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map((v) => String(v).trim()).filter((s) => s.length > 0))]
+  }
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    if (!t) return []
+    if (t.startsWith('[') && t.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(t) as unknown
+        return Array.isArray(parsed) ? normalizeTourReservationIds(parsed) : []
+      } catch {
+        return []
+      }
+    }
+    if (t.includes(',')) {
+      return [...new Set(t.split(',').map((s) => s.trim()).filter((s) => s.length > 0))]
+    }
+    return [t]
+  }
+  return []
+}
+
+function sumPartySizesOnTour(
+  reservationIdsRaw: unknown,
+  partyById: Map<string, number>
+): number {
+  const ids = normalizeTourReservationIds(reservationIdsRaw)
+  const seen = new Set<string>()
+  let sum = 0
+  for (const id of ids) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    sum += partyById.get(id) ?? 0
+  }
+  return sum
+}
 
 interface Tour {
   id: string
@@ -55,6 +96,8 @@ export default function TourConnectionSection({
   const [loading, setLoading] = useState(true)
   const [creatingTour, setCreatingTour] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 투어에 연결된 예약별 인원(성인+아동+유아 등) — 총인원 표시용 */
+  const [reservationPartyById, setReservationPartyById] = useState<Map<string, number>>(new Map())
 
   // 가이드 정보를 별도로 가져오는 함수 (email 기준 조회, 결과 없음은 에러로 로깅하지 않음)
   const fetchGuideInfo = async (guideIdOrEmail: string | null) => {
@@ -118,6 +161,8 @@ export default function TourConnectionSection({
   useEffect(() => {
     const fetchTours = async () => {
       if (!reservation.productId || !reservation.tourDate) {
+        setReservationPartyById(new Map())
+        setTours([])
         setLoading(false)
         setError(null)
         return
@@ -145,6 +190,7 @@ export default function TourConnectionSection({
             code: error.code
           })
           setError(`투어 정보를 가져오는 중 오류가 발생했습니다: ${error.message}`)
+          setReservationPartyById(new Map())
           setTours([])
           return
         }
@@ -167,14 +213,43 @@ export default function TourConnectionSection({
               }
             })
           )
-          
+
+          const idSet = new Set<string>()
+          for (const tour of toursWithGuides) {
+            normalizeTourReservationIds(tour.reservation_ids).forEach((id) => idSet.add(id))
+          }
+          const nextParty = new Map<string, number>()
+          if (idSet.size > 0) {
+            const idList = Array.from(idSet)
+            const chunkSize = 200
+            for (let i = 0; i < idList.length; i += chunkSize) {
+              const chunk = idList.slice(i, i + chunkSize)
+              const { data: rows, error: resErr } = await supabase
+                .from('reservations')
+                .select('id, adults, child, infant, total_people')
+                .in('id', chunk)
+              if (resErr) {
+                console.error('TourConnectionSection: 예약 인원 조회 실패', resErr)
+                continue
+              }
+              for (const row of rows || []) {
+                nextParty.set(
+                  String((row as { id: string }).id),
+                  getReservationPartySize(row as Record<string, unknown>)
+                )
+              }
+            }
+          }
+          setReservationPartyById(nextParty)
           setTours(toursWithGuides)
         } else {
+          setReservationPartyById(new Map())
           setTours([])
         }
       } catch (error) {
         console.error('Error fetching tours:', error)
         setError('투어 정보를 가져오는 중 오류가 발생했습니다.')
+        setReservationPartyById(new Map())
         setTours([])
       } finally {
         setLoading(false)
@@ -234,9 +309,35 @@ export default function TourConnectionSection({
                 }
               })
             )
-            
+            const idSet = new Set<string>()
+            for (const tour of toursWithGuides) {
+              normalizeTourReservationIds(tour.reservation_ids).forEach((id) => idSet.add(id))
+            }
+            const nextParty = new Map<string, number>()
+            if (idSet.size > 0) {
+              const idList = Array.from(idSet)
+              for (let i = 0; i < idList.length; i += 200) {
+                const chunk = idList.slice(i, i + 200)
+                const { data: rows, error: resErr } = await supabase
+                  .from('reservations')
+                  .select('id, adults, child, infant, total_people')
+                  .in('id', chunk)
+                if (resErr) {
+                  console.error('TourConnectionSection: 예약 인원 조회 실패', resErr)
+                  continue
+                }
+                for (const row of rows || []) {
+                  nextParty.set(
+                    String((row as { id: string }).id),
+                    getReservationPartySize(row as Record<string, unknown>)
+                  )
+                }
+              }
+            }
+            setReservationPartyById(nextParty)
             setTours(toursWithGuides)
           } else {
+            setReservationPartyById(new Map())
             setTours([])
           }
         } catch (refreshError) {
@@ -466,7 +567,9 @@ export default function TourConnectionSection({
                     <div className="flex items-center">
                       <Users className="w-3 h-3 mr-1 text-gray-400" />
                       <span className="font-medium">총인원:</span>
-                      <span className="ml-1">{tour.reservation_ids?.length || 0}명</span>
+                      <span className="ml-1">
+                        {sumPartySizesOnTour(tour.reservation_ids, reservationPartyById)}명
+                      </span>
                     </div>
 
                     {tour.guide && (

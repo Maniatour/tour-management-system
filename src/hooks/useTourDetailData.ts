@@ -40,13 +40,9 @@ type ExtendedReservationRow = ReservationRow & {
 }
 
 export function useTourDetailData() {
-  console.log('useTourDetailData 훅 시작')
-  
   const params = useParams()
   const locale = useLocale()
   const { hasPermission, userRole, user, loading } = useAuth()
-  
-  console.log('useTourDetailData - 기본 설정:', { params, locale, userRole, user, loading })
   
   // 기본 상태들
   const [tour, setTour] = useState<TourRow | null>(null)
@@ -138,6 +134,8 @@ export function useTourDetailData() {
 
   // 투어 데이터 가져오기
   useEffect(() => {
+    let cancelled = false
+
     const fetchTourData = async () => {
       if (!params.id || typeof params.id !== 'string') {
         console.log('투어 ID가 없음:', params.id)
@@ -248,89 +246,43 @@ export function useTourDetailData() {
         
         const reservationsData = await fetchReservations()
 
-        // 픽업 호텔 데이터 가져오기
-        const { data: pickupHotelsData, error: pickupHotelsError } = await supabase
-          .from('pickup_hotels')
-          .select('*')
-          .order('hotel')
+        const [pickupHotelsResult, productsResult, channelsResult, teamMembersResult] = await Promise.all([
+          supabase.from('pickup_hotels').select('*').order('hotel'),
+          supabase.from('products').select('*').order('name_ko'),
+          supabase.from('channels').select('*').order('name'),
+          supabase
+            .from('team')
+            .select('email, name_ko, name_en, display_name, nick_name, position, is_active')
+            .order('name_ko'),
+        ])
 
+        const { data: pickupHotelsData, error: pickupHotelsError } = pickupHotelsResult
         if (pickupHotelsError) {
           console.error('픽업 호텔 데이터 가져오기 오류:', pickupHotelsError)
         } else {
-          console.log('픽업 호텔 데이터 가져오기 성공:', pickupHotelsData?.length || 0)
           setPickupHotels(pickupHotelsData || [])
         }
 
-        // 전체 고객 데이터 가져오기 (폼에서 사용) - 페이지네이션 사용
-        console.log('전체 고객 데이터 가져오기 시작 (페이지네이션)')
-        let allCustomersData: CustomerRow[] = []
-        let hasMore = true
-        let page = 0
-        const pageSize = 1000
-
-        while (hasMore) {
-          const { data, error } = await supabase
-            .from('customers')
-            .select('*')
-            .order('name')
-            .range(page * pageSize, (page + 1) * pageSize - 1)
-
-          if (error) {
-            console.error('고객 데이터 가져오기 오류:', error)
-            break
-          }
-
-          if (data && data.length > 0) {
-            allCustomersData = [...allCustomersData, ...data]
-            page++
-            console.log(`고객 데이터 페이지 ${page} 로드됨: ${data.length}명`)
-          } else {
-            hasMore = false
-          }
-        }
-
-        console.log('전체 고객 데이터 가져오기 성공:', allCustomersData.length, '명')
-        setCustomers(allCustomersData)
-
-        // 상품 데이터 가져오기
-        const { data: productsData, error: productsError } = await supabase
-          .from('products')
-          .select('*')
-          .order('name_ko')
-
+        const { data: productsData, error: productsError } = productsResult
         if (productsError) {
           console.error('상품 데이터 가져오기 오류:', productsError)
         } else {
-          console.log('상품 데이터 가져오기 성공:', productsData?.length || 0)
           setAllProducts(productsData || [])
         }
 
-        // 채널 데이터 가져오기
-        const { data: channelsData, error: channelsError } = await supabase
-          .from('channels')
-          .select('*')
-          .order('name')
-
+        const { data: channelsData, error: channelsError } = channelsResult
         if (channelsError) {
           console.error('채널 데이터 가져오기 오류:', channelsError)
         } else {
-        console.log('채널 데이터 가져오기 성공:', channelsData?.length || 0)
-        setChannels(channelsData || [])
-      }
+          setChannels(channelsData || [])
+        }
 
-      // 전체 팀 멤버 목록 가져오기 (team 테이블의 name_ko, name_en 참조)
-      console.log('전체 팀 멤버 목록 가져오기 시작')
-      const { data: allTeamMembers, error: teamMembersError } = await supabase
-        .from('team')
-        .select('email, name_ko, name_en, display_name, nick_name, position, is_active')
-        .order('name_ko')
-
-      if (teamMembersError) {
-        console.error('팀 멤버 목록 가져오기 오류:', teamMembersError)
-      } else {
-        console.log('팀 멤버 목록 가져오기 성공:', allTeamMembers?.length || 0)
-        setTeamMembers((allTeamMembers || []) as TeamMember[])
-      }
+        const { data: allTeamMembers, error: teamMembersError } = teamMembersResult
+        if (teamMembersError) {
+          console.error('팀 멤버 목록 가져오기 오류:', teamMembersError)
+        } else {
+          setTeamMembers((allTeamMembers || []) as TeamMember[])
+        }
 
       // 팀 구성 정보 가져오기
       const tour = tourData as TourRow
@@ -342,64 +294,53 @@ export function useTourDetailData() {
       }
 
       if (tour.tour_guide_id || tour.assistant_id) {
-        console.log('팀 구성 정보 가져오기 시작')
-        
-        // 가이드 정보 가져오기 (tour_guide_id는 team 테이블의 email, name_ko, name_en 참조)
+        const guideQ = tour.tour_guide_id
+          ? supabase
+              .from('team')
+              .select('email, name_ko, name_en, display_name')
+              .eq('email', tour.tour_guide_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null as TeamMember | null, error: null })
+        const assistantQ = tour.assistant_id
+          ? supabase
+              .from('team')
+              .select('email, name_ko, name_en, display_name')
+              .eq('email', tour.assistant_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null as TeamMember | null, error: null })
+
+        const [guideRes, assistantRes] = await Promise.all([guideQ, assistantQ])
+
         if (tour.tour_guide_id) {
-          const { data: guideData, error: guideError } = await supabase
-            .from('team')
-            .select('email, name_ko, name_en, display_name')
-            .eq('email', tour.tour_guide_id)
-            .maybeSingle()
-          
-          if (guideError) {
-            // PGRST116 에러는 결과가 없을 때 발생하는 정상적인 경우
-            if (guideError.code !== 'PGRST116') {
-              console.error('가이드 정보 가져오기 오류:', {
-                message: guideError.message,
-                code: guideError.code,
-                details: guideError.details
-              })
-            }
-            // 가이드 정보를 찾을 수 없더라도 tour_guide_id 값은 유지
-            setSelectedGuide(tour.tour_guide_id || '')
-          } else if (guideData) {
-            console.log('가이드 정보 가져오기 성공:', guideData)
-            // email을 그대로 사용
+          const { data: guideData, error: guideError } = guideRes
+          if (guideError && guideError.code !== 'PGRST116') {
+            console.error('가이드 정보 가져오기 오류:', {
+              message: guideError.message,
+              code: guideError.code,
+              details: guideError.details,
+            })
+          }
+          if (guideData) {
             const guide = guideData as TeamMember
             setSelectedGuide(guide.email || tour.tour_guide_id || '')
           } else {
-            // 데이터가 없는 경우에도 tour_guide_id 값은 유지
             setSelectedGuide(tour.tour_guide_id || '')
           }
         }
-        
-        // 어시스턴트/드라이버 정보 가져오기 (assistant_id는 team 테이블의 email, name_ko, name_en 참조)
+
         if (tour.assistant_id) {
-          const { data: assistantData, error: assistantError } = await supabase
-            .from('team')
-            .select('email, name_ko, name_en, display_name')
-            .eq('email', tour.assistant_id)
-            .maybeSingle()
-          
-          if (assistantError) {
-            // PGRST116 에러는 결과가 없을 때 발생하는 정상적인 경우
-            if (assistantError.code !== 'PGRST116') {
-              console.error('어시스턴트 정보 가져오기 오류:', {
-                message: assistantError.message,
-                code: assistantError.code,
-                details: assistantError.details
-              })
-            }
-            // 어시스턴트 정보를 찾을 수 없더라도 assistant_id 값은 유지
-            setSelectedAssistant(tour.assistant_id || '')
-          } else if (assistantData) {
-            console.log('어시스턴트 정보 가져오기 성공:', assistantData)
-            // email을 그대로 사용
+          const { data: assistantData, error: assistantError } = assistantRes
+          if (assistantError && assistantError.code !== 'PGRST116') {
+            console.error('어시스턴트 정보 가져오기 오류:', {
+              message: assistantError.message,
+              code: assistantError.code,
+              details: assistantError.details,
+            })
+          }
+          if (assistantData) {
             const assistant = assistantData as TeamMember
             setSelectedAssistant(assistant.email || tour.assistant_id || '')
           } else {
-            // 데이터가 없는 경우에도 assistant_id 값은 유지
             setSelectedAssistant(tour.assistant_id || '')
           }
         }
@@ -481,14 +422,10 @@ export function useTourDetailData() {
           console.log('Supabase 쿼리 시작 - vehicles 테이블 조회 (단일 차량)')
           
           const tour = tourData as TourRow
-          // tour_car_id 유효성 검사
           if (!tour.tour_car_id || tour.tour_car_id.trim() === '') {
-            console.log('차량 ID가 비어있거나 유효하지 않음:', tour.tour_car_id)
             setSelectedVehicleId('')
             setAssignedVehicle(null)
-            return
-          }
-          
+          } else {
           const { data: vehicleData, error: vehicleError } = await supabase
             .from('vehicles')
             .select('*')
@@ -519,6 +456,7 @@ export function useTourDetailData() {
             setSelectedVehicleId('')
             setAssignedVehicle(null)
           }
+          }
         } catch (vehicleFetchError: unknown) {
           console.error('차량 정보 가져오기 중 예외 발생:', vehicleFetchError)
           const error = vehicleFetchError as Error
@@ -536,8 +474,8 @@ export function useTourDetailData() {
         console.log('차량 배정 정보 없음 - tour_car_id가 비어있음')
       }
 
-      // 예약 분류 계산 (고객 데이터 로딩 완료 후)
-        if (reservationsData && tourData && allCustomersData.length > 0) {
+      // 예약 분류 (전체 고객 목록과 무관 — 예약·고객 매핑은 구간별 조회로 처리)
+        if (reservationsData && tourData) {
           const tour = tourData as TourRow
           const assignedReservationIds = (tour.reservation_ids || []) as string[]
           
@@ -914,101 +852,49 @@ export function useTourDetailData() {
           setPendingReservations(pendingReservations)
           setOtherToursAssignedReservations(activeOtherToursAssignedReservations)
           setOtherStatusReservations(allOtherStatusReservations)
-        } else if (reservationsData && tourData) {
-          // 고객 데이터가 아직 로드되지 않은 경우 기본 예약 분류만 수행
-          console.log('⚠️ 고객 데이터가 아직 로드되지 않음, 기본 예약 분류만 수행')
-          const tour = tourData as TourRow
-          const assignedReservationIds = (tour.reservation_ids || []) as string[]
-          
-          // 같은 tour_date와 product_id를 가진 모든 투어들의 reservation_ids 수집
-          if (!tour.product_id || !tour.tour_date) {
-            console.error('투어 product_id 또는 tour_date가 없습니다.')
-            return
-          }
-          const { data: allSameDateProductTours } = await supabase
-            .from('tours')
-            .select('id, reservation_ids')
-            .eq('product_id', tour.product_id)
-            .eq('tour_date', tour.tour_date)
-
-          // 모든 투어의 reservation_ids를 수집
-          const allAssignedReservationIdsSet = new Set<string>()
-          const tours = (allSameDateProductTours || []) as Array<{ id: string; reservation_ids?: unknown }>
-          setSameDayTourIds(tours.map(t => t.id))
-          if (tours.length > 0) {
-            tours.forEach(t => {
-              const tourRow = t as TourRow
-              if (tourRow.reservation_ids && Array.isArray(tourRow.reservation_ids)) {
-                tourRow.reservation_ids.forEach((id: unknown) => {
-                  const reservationId = String(id).trim()
-                  if (reservationId) {
-                    allAssignedReservationIdsSet.add(reservationId)
-                  }
-                })
-              }
-            })
-          }
-
-          // 같은 tour_date와 product_id를 가진 모든 예약 조회
-          const { data: allSameDateProductReservations } = await supabase
-            .from('reservations')
-            .select('*')
-            .eq('product_id', tour.product_id)
-            .eq('tour_date', tour.tour_date)
-
-          const allSameDateProductReservationsList = (allSameDateProductReservations || []) as ReservationRow[]
-          
-          // cancelled 상태 확인 함수
-          const isCancelled = (status: string | null | undefined): boolean => {
-            if (!status) return false
-            const normalizedStatus = String(status).toLowerCase().trim()
-            return normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' || normalizedStatus.includes('cancel')
-          }
-          
-          // 1. 이 투어에 배정된 예약
-          const allAssignedReservations = allSameDateProductReservationsList.filter(r => 
-            assignedReservationIds.includes(r.id)
-          )
-          const activeAssignedReservations = allAssignedReservations.filter(
-            r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
-          )
-          
-          // 3. 배정 대기 중인 예약
-          const pendingReservations = allSameDateProductReservationsList.filter(r => {
-            const reservationId = String(r.id).trim()
-            const isInAnyTour = allAssignedReservationIdsSet.has(reservationId)
-            const status = r.status ? String(r.status).toLowerCase().trim() : ''
-            const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
-            
-            return !isInAnyTour && isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
-          })
-          
-          // 4. 다른 상태의 예약
-          // 같은 tour_date와 product_id를 가진 모든 예약 중에서
-          // status가 confirmed 또는 recruiting이 아닌 예약
-          // 투어의 상태와 상관없이, 배정 여부와 상관없이 모든 예약 포함
-          const otherStatusReservations = allSameDateProductReservationsList.filter(r => {
-            const status = r.status ? String(r.status).toLowerCase().trim() : ''
-            const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
-            
-            return !isConfirmedOrRecruiting && !isReservationDeletedStatus(r.status)
-          })
-          
-          setAssignedReservations(activeAssignedReservations as ExtendedReservationRow[])
-          setPendingReservations(pendingReservations as ExtendedReservationRow[])
-          setOtherToursAssignedReservations([])
-          setOtherStatusReservations(otherStatusReservations as ExtendedReservationRow[])
         }
+
+        // 예약 폼 등에 쓰는 전체 고객 목록은 수천 건일 수 있어, 화면 표시를 막지 않도록 백그라운드 로드
+        void (async () => {
+          try {
+            let allCustomersData: CustomerRow[] = []
+            let hasMore = true
+            let page = 0
+            const pageSize = 1000
+            while (hasMore && !cancelled) {
+              const { data, error } = await supabase
+                .from('customers')
+                .select('*')
+                .order('name')
+                .range(page * pageSize, (page + 1) * pageSize - 1)
+              if (error) {
+                console.error('고객 데이터 가져오기 오류:', error)
+                break
+              }
+              if (data && data.length > 0) {
+                allCustomersData = [...allCustomersData, ...data]
+                page++
+              } else {
+                hasMore = false
+              }
+            }
+            if (!cancelled) setCustomers(allCustomersData)
+          } catch (e) {
+            console.error('전체 고객 백그라운드 로드 오류:', e)
+          }
+        })()
 
       } catch (error) {
         console.error('투어 데이터 가져오기 중 오류:', error)
       } finally {
         setPageLoading(false)
-        console.log('투어 데이터 가져오기 완료')
       }
     }
 
     fetchTourData()
+    return () => {
+      cancelled = true
+    }
   }, [params.id])
 
   // 권한 체크는 AdminAuthGuard에서 처리하므로 여기서는 리다이렉트하지 않음
@@ -1034,45 +920,18 @@ export function useTourDetailData() {
 
   // 유틸리티 함수들
   const getCustomerName = (customerId: string) => {
-    console.log('🔍 getCustomerName called for customerId:', customerId)
-    console.log('📊 Total customers loaded:', customers.length)
-    
-    if (!customerId) {
-      console.log('❌ Customer ID is empty or null')
-      return '정보 없음'
-    }
-    
-    // 먼저 예약 데이터에서 직접 고객 이름 찾기
-    const reservation = allReservations.find((r) => r.customer_id === customerId) as ExtendedReservationRow | undefined
+    if (!customerId) return '정보 없음'
+
+    const reservation = allReservations.find((r) => r.customer_id === customerId) as
+      | ExtendedReservationRow
+      | undefined
     if (reservation && reservation.customer_name && reservation.customer_name !== '정보 없음') {
-      console.log('✅ Found customer name from reservation:', reservation.customer_name)
       return reservation.customer_name
     }
-    
-    // 예약 데이터에 없으면 customers 배열에서 찾기
+
     const customer = customers.find((c) => c.id === customerId)
-    if (customer) {
-      console.log('✅ Found customer from customers array:', customer.name)
-      
-      // customer.name은 NOT NULL이므로 항상 존재함
-      return customer.name
-    }
-    
-    // 고객을 찾지 못한 경우 디버깅 정보 출력
-    console.log('❌ Customer not found for ID:', customerId)
-    console.log('🔍 Available customer IDs (first 10):', customers.slice(0, 10).map(c => c.id))
-    console.log('🔍 Searching for similar IDs...')
-    
-    // 비슷한 ID가 있는지 확인
-    const similarCustomers = customers.filter(c => 
-      c.id.toLowerCase().includes(customerId.toLowerCase()) ||
-      customerId.toLowerCase().includes(c.id.toLowerCase())
-    )
-    
-    if (similarCustomers.length > 0) {
-      console.log('🔍 Similar customer IDs found:', similarCustomers.map(c => c.id))
-    }
-    
+    if (customer?.name) return customer.name
+
     return '정보 없음'
   }
 

@@ -2,7 +2,7 @@
 
 import React from "react"
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Archive } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
 
@@ -21,6 +21,8 @@ interface ReservationsHeaderProps {
   /** 카드 뷰일 때만 사용: 상세 / 간단 카드 전환  */
   cardLayout?: 'standard' | 'simple'
   onCardLayoutChange?: (layout: 'standard' | 'simple') => void
+  /** soft-delete(status=deleted) 예약 목록 모달 */
+  onOpenDeletedReservations?: () => void
 }
 
 export default function ReservationsHeader({
@@ -35,7 +37,8 @@ export default function ReservationsHeader({
   actionRequiredCount = 0,
   onOpenFilter,
   cardLayout = 'standard',
-  onCardLayoutChange
+  onCardLayoutChange,
+  onOpenDeletedReservations,
 }: ReservationsHeaderProps) {
   const t = useTranslations('reservations')
 
@@ -155,6 +158,17 @@ export default function ReservationsHeader({
             >
               <SlidersHorizontal size={16} />
               <span>{t('filter')}</span>
+            </button>
+          )}
+          {typeof onOpenDeletedReservations === 'function' && (
+            <button
+              type="button"
+              onClick={onOpenDeletedReservations}
+              className="hidden md:flex bg-gray-700 text-white px-3 py-1.5 rounded-md hover:bg-gray-800 items-center gap-1.5 text-sm font-medium flex-shrink-0"
+              title={t('openDeletedReservationsModal')}
+            >
+              <Archive size={16} />
+              <span>{t('openDeletedReservationsModal')}</span>
             </button>
           )}
           <button

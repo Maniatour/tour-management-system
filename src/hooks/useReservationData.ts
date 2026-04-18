@@ -27,7 +27,13 @@ function customersCreatedAtDescKeysetOr(created_at: string, id: string): string 
   return `created_at.lt."${q(created_at)}",and(created_at.eq."${q(created_at)}",id.lt."${q(id)}")`
 }
 
-export function useReservationData() {
+export type UseReservationDataOptions = {
+  /** true이면 예약 전량 자동 로드를 하지 않음(예약 관리 목록을 서버 페이지 쿼리로만 채울 때). */
+  disableReservationsAutoLoad?: boolean
+}
+
+export function useReservationData(hookOptions?: UseReservationDataOptions) {
+  const disableReservationsAutoLoad = hookOptions?.disableReservationsAutoLoad === true
   // 최적화된 데이터 로딩
   const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
     fetchFn: async () => {
@@ -278,9 +284,9 @@ export function useReservationData() {
   })
 
   const [reservations, setReservations] = useState<Reservation[]>([])
-  const [reservationsLoading, setReservationsLoading] = useState(true)
+  const [reservationsLoading, setReservationsLoading] = useState(!disableReservationsAutoLoad)
   /** 첫 배치만 반영된 채로 집계하지 않도록: fetchReservations 전체(백그라운드 페이지 포함) 완료 후 true */
-  const [reservationsAggregateReady, setReservationsAggregateReady] = useState(false)
+  const [reservationsAggregateReady, setReservationsAggregateReady] = useState(disableReservationsAutoLoad)
   const [loadingProgress, setLoadingProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, ReservationPricingMapValue>>(new Map())
   const [reservationOptionsPresenceByReservationId, setReservationOptionsPresenceByReservationId] =
@@ -671,10 +677,84 @@ export function useReservationData() {
     })
   }
 
+  /**
+   * 서버 목록 쿼리 결과만 반영(예약 관리 카드/캘린더).
+   * skipLoadingFlags: 예약 관리 페이지에서 자체 로딩 스피너를 쓸 때 true.
+   */
+  const replaceReservationsFromQueryResult = async (
+    raw: Record<string, unknown>[],
+    opts?: { skipLoadingFlags?: boolean }
+  ) => {
+    const quiet = opts?.skipLoadingFlags === true
+    if (!quiet) {
+      setReservationsLoading(true)
+      setReservationsAggregateReady(false)
+    }
+    try {
+      if (raw.length === 0) {
+        setReservations([])
+        setReservationPricingMap(new Map())
+        setReservationOptionsPresenceByReservationId(new Map())
+        setToursMap(new Map())
+        setLoadingProgress({ current: 0, total: 0 })
+        return
+      }
+      const productIds = [...new Set(raw.map((r) => r.product_id as string).filter(Boolean))]
+      const tourDates = raw.map((r) => r.tour_date).filter(Boolean) as string[]
+      const productsBatch =
+        productIds.length > 0
+          ? (await throttledSupabaseRequest(() =>
+              supabase.from('products').select('id, sub_category').in('id', productIds)
+            )).data || []
+          : []
+      const productMap = new Map((productsBatch as { id: string; sub_category?: string }[]).map((p) => [p.id, p.sub_category || '']))
+      const maniaIds = productIds.filter((id) => {
+        const sc = productMap.get(id)
+        return sc === 'Mania Tour' || sc === 'Mania Service'
+      })
+      const toursExistence =
+        maniaIds.length === 0 || tourDates.length === 0
+          ? []
+          : (await supabase
+              .from('tours')
+              .select('product_id, tour_date')
+              .in('product_id', maniaIds)
+              .in('tour_date', tourDates)).data || []
+      const tourMap = new Map(
+        (toursExistence as { product_id: string; tour_date: string }[]).map((t) => [`${t.product_id}-${t.tour_date}`, true])
+      )
+      const mapped = mapRawToReservation(raw, productMap, tourMap)
+      const resIds = mapped.map((r) => r.id)
+      const tourIds = [...new Set(mapped.map((r) => r.tourId).filter((id) => id && id.trim() && id !== 'null' && id !== 'undefined'))]
+
+      const [pricingMap, toursById, toursByOverlap, optionsPresenceMap] = await Promise.all([
+        fetchPricingMap(resIds),
+        fetchToursMap(tourIds),
+        fetchToursOverlappingReservationIds(resIds),
+        fetchReservationOptionsPresenceMap(resIds),
+      ])
+      setReservations(mapped)
+      setReservationPricingMap(pricingMap)
+      setReservationOptionsPresenceByReservationId(optionsPresenceMap)
+      setToursMap(mergeTourMaps(toursById, toursByOverlap))
+      setLoadingProgress({ current: mapped.length, total: mapped.length })
+    } catch (e) {
+      console.warn('replaceReservationsFromQueryResult:', e)
+      setReservations([])
+    } finally {
+      if (!quiet) {
+        setReservationsLoading(false)
+        setReservationsAggregateReady(true)
+      }
+    }
+  }
+
   // 예약 데이터만 별도로 로드
   useEffect(() => {
-    fetchReservations()
-  }, [])
+    if (!disableReservationsAutoLoad) {
+      fetchReservations()
+    }
+  }, [disableReservationsAutoLoad])
 
   return {
     // 데이터
@@ -696,6 +776,7 @@ export function useReservationData() {
     
     // 리프레시 함수들
     refreshReservations: fetchReservations,
+    replaceReservationsFromQueryResult,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
     refreshCustomers: refetchCustomers,
@@ -715,7 +796,9 @@ export function useReservationData() {
       refetchOptions()
       refetchPickupHotels()
       refetchCoupons()
-      fetchReservations()
+      if (!disableReservationsAutoLoad) {
+        fetchReservations()
+      }
     }
   }
 }

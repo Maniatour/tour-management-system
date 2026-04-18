@@ -1885,7 +1885,11 @@
       "fallbackCardStats": "{count} items · {people} people",
       "lasVegasTime": "(Las Vegas Time)",
       "reservationsTotal": "reservations, total",
-      "people": "people"
+      "people": "people",
+      "simpleCardGroupRegistration": "Registrations",
+      "simpleCardGroupStatusChange": "Status changes",
+      "simpleCardStatusTransitionUnknown": "No status history · other",
+      "simpleCardGroupEmpty": "None"
     },
     "messages": {
       "reservationUpdated": "Reservation has been successfully updated!",

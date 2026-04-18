@@ -30,6 +30,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
+import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
+import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -308,6 +310,11 @@ type ScheduleBookingDetailRow =
     }
   | { kind: 'hotel'; line: string }
 
+/** 드롭 존·행 재정렬 하이라이트는 classList만 갱신해 dragover마다 전체 트리 리렌더를 피함 */
+const SCHEDULE_GUIDE_DROP_ZONE_HIGHLIGHT = ['bg-blue-200', 'border-2', 'border-blue-400'] as const
+const SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT = ['ring-2', 'ring-blue-400', 'bg-blue-50'] as const
+const SCHEDULE_ROW_REORDER_HIGHLIGHT = ['border-t-2', 'border-blue-500'] as const
+
 export default function ScheduleView() {
   const router = useRouter()
   const locale = useLocale()
@@ -350,7 +357,6 @@ export default function ScheduleView() {
   const [productColors, setProductColors] = useState<{ [productId: string]: string }>({})
   // const [currentUserId] = useState('admin') // 실제로는 인증된 사용자 ID를 사용해야 함
   const [draggedTour, setDraggedTour] = useState<Tour | null>(null)
-  const [dragOverCell, setDragOverCell] = useState<string | null>(null)
   const [unassignedTours, setUnassignedTours] = useState<Tour[]>([])
   const [ticketBookings, setTicketBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; ea: number | null; company?: string; time?: string; check_in_date?: string }>>([])
   const [tourHotelBookings, setTourHotelBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; rooms: number | null; hotel?: string; check_in_date?: string }>>([])
@@ -365,6 +371,10 @@ export default function ScheduleView() {
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
   /** 미배정 투어 드래그 중: 화면 상·하단 근처에서 페이지 자동 스크롤 */
   const unassignedDragAutoScrollCleanupRef = useRef<(() => void) | null>(null)
+  const unassignedDragScrollRafRef = useRef<number | null>(null)
+  const unassignedDragPendingClientYRef = useRef<number | null>(null)
+  const scheduleDragHighlightElRef = useRef<HTMLElement | null>(null)
+  const scheduleDragHighlightClassesRef = useRef<readonly string[]>([])
   const [updatingUnassignedTourStatusId, setUpdatingUnassignedTourStatusId] = useState<string | null>(null)
   const [unassignedTourStatusModalTourId, setUnassignedTourStatusModalTourId] = useState<string | null>(null)
   /** 미배정 카드: 버튼으로 가이드/어시스턴트 배정 */
@@ -387,14 +397,41 @@ export default function ScheduleView() {
   
   // 행 드래그앤드롭 상태 (가이드/상품)
   const [draggedGuideRow, setDraggedGuideRow] = useState<string | null>(null)
-  const [dragOverGuideRow, setDragOverGuideRow] = useState<string | null>(null)
   const [hoveredGuideRow, setHoveredGuideRow] = useState<string | null>(null)
   const [draggedProductRow, setDraggedProductRow] = useState<string | null>(null)
-  const [dragOverProductRow, setDragOverProductRow] = useState<string | null>(null)
   const [vehicleRowOrderForMonth, setVehicleRowOrderForMonth] = useState<string[] | null>(null)
   const [draggedVehicleRowId, setDraggedVehicleRowId] = useState<string | null>(null)
-  const [dragOverVehicleRowId, setDragOverVehicleRowId] = useState<string | null>(null)
   const [shareTeamMembersSetting, setShareTeamMembersSetting] = useState(false)
+
+  const clearScheduleDragHighlight = useCallback(() => {
+    const el = scheduleDragHighlightElRef.current
+    if (el) {
+      scheduleDragHighlightClassesRef.current.forEach((c) => el.classList.remove(c))
+      scheduleDragHighlightElRef.current = null
+      scheduleDragHighlightClassesRef.current = []
+    }
+  }, [])
+
+  const applyScheduleDragHighlight = useCallback(
+    (el: HTMLElement, classes: readonly string[]) => {
+      // dragover는 같은 요소에 반복 호출됨. React 리렌더가 className을 덮어쓸 수 있어
+      // 동일 요소여도 매번 제거 후 다시 적용해야 시각 피드백이 유지됨.
+      clearScheduleDragHighlight()
+      for (const c of classes) el.classList.add(c)
+      scheduleDragHighlightElRef.current = el
+      scheduleDragHighlightClassesRef.current = classes
+    },
+    [clearScheduleDragHighlight]
+  )
+
+  /** 드래그 배정/행 순서 변경 중에는 호버 state 갱신으로 리렌더가 나지 않도록 함 */
+  const scheduleInteractionDragging = Boolean(
+    draggedTour ||
+      draggedUnassignedTour ||
+      draggedVehicleRowId ||
+      draggedGuideRow ||
+      draggedProductRow
+  )
 
   /** 페이지(뷰포트) 세로 스크롤 시 날짜 행 sticky — 고정 상단 헤더 높이(px), 없으면 :root --header-height */
   const [productScheduleStickyTopPx, setProductScheduleStickyTopPx] = useState(64)
@@ -1144,21 +1181,44 @@ export default function ScheduleView() {
   )
 
 
-  // 월의 모든 날짜 생성
+  // 월 컬럼: 전월 마지막 날 + 해당 월 전체 + 익월 첫날 (예: 5월 뷰 → 4/30 … 5/31 … 6/1)
   const monthDays = useMemo(() => {
-    const days = [] as { date: number; dateString: string; dayOfWeek: string }[]
-    const daysInMonth = dayjs(currentDate).daysInMonth()
+    const days = [] as { date: number; dateString: string; dayOfWeek: string; isEdgePadding: boolean }[]
     const dowMap = ['일', '월', '화', '수', '목', '금', '토']
+    const first = dayjs(currentDate).startOf('month')
+    const last = dayjs(currentDate).endOf('month')
+    const prev = first.subtract(1, 'day')
+    days.push({
+      date: prev.date(),
+      dateString: prev.format('YYYY-MM-DD'),
+      dayOfWeek: dowMap[prev.day()],
+      isEdgePadding: true,
+    })
+    const daysInMonth = dayjs(currentDate).daysInMonth()
     for (let i = 1; i <= daysInMonth; i++) {
       const d = dayjs(currentDate).date(i)
       days.push({
         date: i,
         dateString: d.format('YYYY-MM-DD'),
-        dayOfWeek: dowMap[d.day()]
+        dayOfWeek: dowMap[d.day()],
+        isEdgePadding: false,
       })
     }
+    const next = last.add(1, 'day')
+    days.push({
+      date: next.date(),
+      dateString: next.format('YYYY-MM-DD'),
+      dayOfWeek: dowMap[next.day()],
+      isEdgePadding: true,
+    })
     return days
   }, [currentDate])
+
+  /** 당월 날만 (전월 말·익월 첫날 패딩 컬럼 제외) — 우측 합계 열 집계용 */
+  const monthDaysCore = useMemo(
+    () => monthDays.filter((d) => !d.isEdgePadding),
+    [monthDays]
+  )
 
   // 날짜 컬럼 공통 스타일 계산: 최소 40px, 남는 공간은 균등 분배
   const fixedSideColumnsPx = 176 // 좌측 제목칸 96 + 우측 합계 80
@@ -1200,10 +1260,10 @@ export default function ScheduleView() {
     if (headerEl && bodyEl) bodyEl.scrollLeft = headerEl.scrollLeft
   }, [dynamicMinTableWidthPx, monthDays.length])
 
-  // 미 배정된 투어 가져오기
+  // 미 배정된 투어: 달력에 선택된 월의 tour_date만 (그리드 투어 조회는 ±3일 버퍼 사용, 미배정 카드는 이전 달이 섞이지 않게)
   const fetchUnassignedTours = useCallback(async () => {
     try {
-      const startDate = firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
+      const startDate = firstDayOfMonth.format('YYYY-MM-DD')
       const endDate = lastDayOfMonth.format('YYYY-MM-DD')
       
       // 가이드 또는 어시스턴트가 배정되지 않은 투어들 (특정 상태 제외)
@@ -1295,9 +1355,9 @@ export default function ScheduleView() {
         .eq('is_active', true)
         .order('name_ko')
 
-      // 투어 데이터 가져오기 (현재 월)
+      // 투어·예약: 멀티데이 이전 달 꼬리(최대 3일) + 그리드 끝(익월 1일 컬럼)까지
       const startDate = firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
-      const endDate = lastDayOfMonth.format('YYYY-MM-DD')
+      const endDate = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: toursData } = await (supabase as any)
@@ -1464,24 +1524,26 @@ export default function ScheduleView() {
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
 
-      // Off 스케줄 데이터 가져오기 (현재 월) - pending과 approved 모두
+      // Off 스케줄 (그리드에 보이는 전월 말일·익월 1일 포함)
+      const gridNoteStart = firstDayOfMonth.subtract(1, 'day').format('YYYY-MM-DD')
+      const gridNoteEnd = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: offSchedulesData } = await (supabase as any)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('off_schedules' as any)
         .select('team_email, off_date, reason, status')
         .in('status', ['pending', 'approved'])
-        .gte('off_date', firstDayOfMonth.format('YYYY-MM-DD'))
-        .lte('off_date', lastDayOfMonth.format('YYYY-MM-DD'))
+        .gte('off_date', gridNoteStart)
+        .lte('off_date', gridNoteEnd)
 
-      // 날짜별 노트 데이터 가져오기 (현재 월)
+      // 날짜별 노트 (전월 말·익월 1일 컬럼 포함)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: dateNotesData } = await (supabase as any)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('date_notes' as any)
         .select('note_date, note, created_by')
-        .gte('note_date', firstDayOfMonth.format('YYYY-MM-DD'))
-        .lte('note_date', lastDayOfMonth.format('YYYY-MM-DD'))
+        .gte('note_date', gridNoteStart)
+        .lte('note_date', gridNoteEnd)
 
       // 날짜별 노트를 객체로 변환
       const notesMap: { [date: string]: { note: string; created_by?: string } } = {}
@@ -1651,6 +1713,7 @@ export default function ScheduleView() {
   /** 상품별 인원 모달에서 상태만 빠르게 변경 */
   const productCellQuickStatusValues = ['pending', 'recruiting', 'confirmed', 'completed', 'cancelled', 'deleted'] as const
   const [productCellStatusSavingId, setProductCellStatusSavingId] = useState<string | null>(null)
+  const [productCellCreateTourLoading, setProductCellCreateTourLoading] = useState(false)
 
   const handleProductCellReservationStatusChange = useCallback(
     async (reservationId: string, newStatus: string) => {
@@ -1712,6 +1775,104 @@ export default function ScheduleView() {
         return cb.localeCompare(ca)
       })
   }, [productCellReservationsModal, reservations, customers, locale])
+
+  const checkScheduleTourExistsForProductDate = useCallback(async (productId: string, tourDate: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('tours')
+        .select('id')
+        .eq('product_id', productId)
+        .eq('tour_date', tourDate)
+        .limit(1)
+      if (error) {
+        console.error('Error checking tour existence:', error)
+        return false
+      }
+      return Boolean(data && data.length > 0)
+    } catch (e) {
+      console.error('Error checking tour existence:', e)
+      return false
+    }
+  }, [])
+
+  const handleProductCellModalCreateTour = useCallback(async () => {
+    if (!productCellReservationsModal) return
+    const { productId, dateString } = productCellReservationsModal
+    const eligible = productCellReservationList.filter((r) => {
+      const st = String(r.status ?? '').toLowerCase()
+      return st === 'confirmed' || st === 'recruiting'
+    })
+    if (eligible.length === 0) {
+      showMessage(
+        locale === 'ko' ? '안내' : 'Notice',
+        locale === 'ko'
+          ? '확정 또는 모집중인 예약이 있어야 투어를 생성할 수 있습니다.'
+          : 'You need at least one confirmed or recruiting reservation.',
+        'error'
+      )
+      return
+    }
+
+    setProductCellCreateTourLoading(true)
+    try {
+      const exists = await checkScheduleTourExistsForProductDate(productId, dateString)
+      if (exists) {
+        showMessage(
+          locale === 'ko' ? '안내' : 'Notice',
+          locale === 'ko'
+            ? '해당 날짜에 이미 투어가 있습니다.'
+            : 'A tour already exists for this product and date.',
+          'error'
+        )
+        await fetchData()
+        return
+      }
+
+      for (const r of eligible) {
+        const isPriv = r.is_private_tour === true || String(r.is_private_tour ?? '').toUpperCase() === 'TRUE'
+        const result = await autoCreateOrUpdateTour(productId, dateString, String(r.id), isPriv)
+        if (!result.success) {
+          showMessage(
+            locale === 'ko' ? '오류' : 'Error',
+            result.message || (locale === 'ko' ? '투어 생성에 실패했습니다.' : 'Failed to create tour.'),
+            'error'
+          )
+          await fetchData()
+          return
+        }
+        if (result.message?.includes('자동 투어 생성 대상이 아닙니다')) {
+          showMessage(locale === 'ko' ? '안내' : 'Notice', result.message, 'error')
+          return
+        }
+      }
+
+      try {
+        await createTourPhotosBucket()
+      } catch {
+        /* 버킷 생성 실패해도 투어 생성은 유지 */
+      }
+
+      showMessage(
+        locale === 'ko' ? '완료' : 'Done',
+        locale === 'ko' ? '투어가 생성되었습니다.' : 'Tour created.',
+        'success'
+      )
+      setProductCellReservationsModal(null)
+      await fetchData()
+    } catch (e) {
+      console.error('Schedule product cell create tour:', e)
+      showMessage(locale === 'ko' ? '오류' : 'Error', String(e), 'error')
+    } finally {
+      setProductCellCreateTourLoading(false)
+    }
+  }, [
+    productCellReservationsModal,
+    productCellReservationList,
+    locale,
+    showMessage,
+    fetchData,
+    checkScheduleTourExistsForProductDate,
+  ])
 
   const openVehicleEditFromSchedule = useCallback(
     async (vehicleId: string) => {
@@ -2192,8 +2353,8 @@ export default function ScheduleView() {
       let totalPeople = 0
       let totalTours = 0
 
-      // 각 날짜별로 데이터 계산
-      monthDays.forEach(({ dateString }) => {
+      // 각 날짜별로 데이터 계산 (우측 합계는 당월 컬럼만 포함)
+      monthDays.forEach(({ dateString, isEdgePadding }) => {
         const dayTours = productTours.filter(tour => tour.tour_date === dateString)
         const dayReservations = reservations.filter(res => 
           res.product_id === productId && 
@@ -2312,8 +2473,10 @@ export default function ScheduleView() {
         })
         dailyData[dateString].toursChoiceCounts = toursChoiceCounts
 
-        totalPeople += dayTotalPeople
-        totalTours += dayTours.length
+        if (!isEdgePadding) {
+          totalPeople += dayTotalPeople
+          totalTours += dayTours.length
+        }
       })
 
       data[productId] = {
@@ -2348,8 +2511,8 @@ export default function ScheduleView() {
       let totalAssignedPeople = 0
       let totalTours = 0
 
-      // 각 날짜별로 데이터 계산
-      monthDays.forEach(({ dateString }) => {
+      // 각 날짜별로 데이터 계산 (우측 합계는 당월 컬럼만 포함)
+      monthDays.forEach(({ dateString, isEdgePadding }) => {
         const dayTours = memberTours.filter(tour => tour.tour_date === dateString)
         const dayReservations = reservations.filter(res => 
           res.tour_date === dateString &&
@@ -2417,8 +2580,8 @@ export default function ScheduleView() {
             ;(dailyData[dateString] as DailyData).extendsToNextMonth = false
           }
           
-          // 멀티데이 투어의 경우 실제 투어 일수만큼 합계에 추가 (OFF 스케줄 제외)
-          if (!isOffDate(teamMemberId, dateString)) {
+          // 멀티데이 투어의 경우 실제 투어 일수만큼 합계에 추가 (OFF·패딩 컬럼 제외)
+          if (!isEdgePadding && !isOffDate(teamMemberId, dateString)) {
             // 멀티데이 투어의 경우 실제 투어 일수만큼 계산
             const actualTourDays = Math.min(multiDayDays, monthDays.length - monthDays.findIndex(d => d.dateString === dateString))
             totalPeople += dayTotalPeople * actualTourDays
@@ -2461,8 +2624,8 @@ export default function ScheduleView() {
               }
             })
             
-            // 1일 투어의 경우 OFF 스케줄이 아닌 날에만 합계에 추가
-            if (!isOffDate(teamMemberId, dateString)) {
+            // 1일 투어: OFF·패딩 컬럼이 아닐 때만 우측 합계에 반영
+            if (!isEdgePadding && !isOffDate(teamMemberId, dateString)) {
               totalPeople += dayTotalPeople
               totalAssignedPeople += dayAssignedPeople
               totalTours += singleDayTours.length
@@ -2593,21 +2756,23 @@ export default function ScheduleView() {
     }
   }
 
-  const handleGuideRowDragOver = (e: React.DragEvent, teamMemberId: string) => {
+  const handleGuideRowDragOver = (e: React.DragEvent<HTMLTableRowElement>, teamMemberId: string) => {
     e.preventDefault()
     if (draggedGuideRow && draggedGuideRow !== teamMemberId) {
       e.dataTransfer.dropEffect = 'move'
-      setDragOverGuideRow(teamMemberId)
+      applyScheduleDragHighlight(e.currentTarget, SCHEDULE_ROW_REORDER_HIGHLIGHT)
     }
   }
 
-  const handleGuideRowDragLeave = () => {
-    setDragOverGuideRow(null)
+  const handleGuideRowDragLeave = (e: React.DragEvent<HTMLTableRowElement>) => {
+    const next = e.relatedTarget
+    if (next instanceof Node && e.currentTarget.contains(next)) return
+    clearScheduleDragHighlight()
   }
 
   const handleGuideRowDrop = async (e: React.DragEvent, targetTeamMemberId: string) => {
     e.preventDefault()
-    setDragOverGuideRow(null)
+    clearScheduleDragHighlight()
     
     if (!draggedGuideRow || draggedGuideRow === targetTeamMemberId) {
       setDraggedGuideRow(null)
@@ -2626,7 +2791,7 @@ export default function ScheduleView() {
 
   const handleGuideRowDragEnd = () => {
     setDraggedGuideRow(null)
-    setDragOverGuideRow(null)
+    clearScheduleDragHighlight()
   }
 
   // 상품 행 드래그앤드롭 핸들러
@@ -2640,21 +2805,23 @@ export default function ScheduleView() {
     }
   }
 
-  const handleProductRowDragOver = (e: React.DragEvent, productId: string) => {
+  const handleProductRowDragOver = (e: React.DragEvent<HTMLTableRowElement>, productId: string) => {
     e.preventDefault()
     if (draggedProductRow && draggedProductRow !== productId) {
       e.dataTransfer.dropEffect = 'move'
-      setDragOverProductRow(productId)
+      applyScheduleDragHighlight(e.currentTarget, SCHEDULE_ROW_REORDER_HIGHLIGHT)
     }
   }
 
-  const handleProductRowDragLeave = () => {
-    setDragOverProductRow(null)
+  const handleProductRowDragLeave = (e: React.DragEvent<HTMLTableRowElement>) => {
+    const next = e.relatedTarget
+    if (next instanceof Node && e.currentTarget.contains(next)) return
+    clearScheduleDragHighlight()
   }
 
   const handleProductRowDrop = async (e: React.DragEvent, targetProductId: string) => {
     e.preventDefault()
-    setDragOverProductRow(null)
+    clearScheduleDragHighlight()
     
     if (!draggedProductRow || draggedProductRow === targetProductId) {
       setDraggedProductRow(null)
@@ -2673,7 +2840,7 @@ export default function ScheduleView() {
 
   const handleProductRowDragEnd = () => {
     setDraggedProductRow(null)
-    setDragOverProductRow(null)
+    clearScheduleDragHighlight()
   }
 
   // 드래그 시작
@@ -2690,16 +2857,25 @@ export default function ScheduleView() {
     }
   }
 
-  // 드래그 오버
-  const handleDragOver = (e: React.DragEvent, cellKey: string) => {
+  /** 가이드 표에서 투어 칩 드래그 취소 시 하이라이트·상태 정리 */
+  const handleAssignedTourDragEnd = useCallback(() => {
+    clearScheduleDragHighlight()
+    setDraggedTour(null)
+    setHighlightedDate(null)
+    setDraggedRole(null)
+  }, [clearScheduleDragHighlight])
+
+  // 가이드 스케줄 드롭 존: 하이라이트는 DOM만 갱신 (React state 없음)
+  const handleGuideScheduleDropZoneDragOver = (e: React.DragEvent<HTMLElement>) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setDragOverCell(cellKey)
+    applyScheduleDragHighlight(e.currentTarget, SCHEDULE_GUIDE_DROP_ZONE_HIGHLIGHT)
   }
 
-  // 드래그 리브
-  const handleDragLeave = () => {
-    setDragOverCell(null)
+  const handleGuideScheduleDropZoneDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    const next = e.relatedTarget
+    if (next instanceof Node && e.currentTarget.contains(next)) return
+    clearScheduleDragHighlight()
   }
 
 
@@ -2877,7 +3053,7 @@ export default function ScheduleView() {
   // 드롭 처리
   const handleDrop = async (e: React.DragEvent, teamMemberId: string, dateString: string, role: 'guide' | 'assistant') => {
     e.preventDefault()
-    setDragOverCell(null)
+    clearScheduleDragHighlight()
     
     if (!draggedTour) return
 
@@ -2919,7 +3095,7 @@ export default function ScheduleView() {
   // 차량 셀에 드롭 처리 (이미 배정된 투어를 다른 차량으로 재배정)
   const handleVehicleCellDrop = (e: React.DragEvent, targetVehicleId: string, dateString: string) => {
     e.preventDefault()
-    setDragOverCell(null)
+    clearScheduleDragHighlight()
     if (!draggedTour) return
     if (draggedTour.tour_date !== dateString) {
       return
@@ -2942,7 +3118,7 @@ export default function ScheduleView() {
   // 미배정 영역으로 드롭 처리 (배정 해제)
   const handleUnassignDrop = async (e: React.DragEvent) => {
     e.preventDefault()
-    setDragOverCell(null)
+    clearScheduleDragHighlight()
     
     if (!draggedTour) return
 
@@ -2994,6 +3170,8 @@ export default function ScheduleView() {
 
   // 미 배정된 투어들을 가이드/어시스턴트 배정 카드로 변환
   const unassignedTourCards = useMemo(() => {
+    const monthStartStr = firstDayOfMonth.format('YYYY-MM-DD')
+    const monthEndStr = lastDayOfMonth.format('YYYY-MM-DD')
     const cards: Array<{
       id: string
       tour: Tour
@@ -3003,6 +3181,8 @@ export default function ScheduleView() {
     }> = []
     
     unassignedTours.forEach(tour => {
+      const dateKey = String(tour.tour_date ?? '').slice(0, 10)
+      if (!dateKey || dateKey < monthStartStr || dateKey > monthEndStr) return
       const product = products.find(p => p.id === tour.product_id)
       const productName = product?.name || 'N/A'
       // tour_date를 그대로 사용 (변환하지 않음)
@@ -3042,7 +3222,7 @@ export default function ScheduleView() {
       const productB = products.find(p => p.id === b.tour.product_id)
       return (productA?.name || '').localeCompare(productB?.name || '')
     })
-  }, [unassignedTours, products])
+  }, [unassignedTours, products, firstDayOfMonth, lastDayOfMonth])
 
   const teamMembersSortedForAssignModal = useMemo(() => {
     return [...teamMembers].sort((a, b) => {
@@ -3062,19 +3242,30 @@ export default function ScheduleView() {
     const maxStep = 36
     const onDragOver = (ev: DragEvent) => {
       ev.preventDefault()
-      const y = ev.clientY
-      const h = window.innerHeight
-      if (y < margin) {
-        const k = Math.min(1, (margin - y) / margin)
-        window.scrollBy(0, -Math.max(2, Math.round(maxStep * k)))
-      } else if (y > h - margin) {
-        const k = Math.min(1, (y - (h - margin)) / margin)
-        window.scrollBy(0, Math.max(2, Math.round(maxStep * k)))
-      }
+      unassignedDragPendingClientYRef.current = ev.clientY
+      if (unassignedDragScrollRafRef.current != null) return
+      unassignedDragScrollRafRef.current = requestAnimationFrame(() => {
+        unassignedDragScrollRafRef.current = null
+        const y = unassignedDragPendingClientYRef.current
+        if (y == null) return
+        const h = window.innerHeight
+        if (y < margin) {
+          const k = Math.min(1, (margin - y) / margin)
+          window.scrollBy(0, -Math.max(2, Math.round(maxStep * k)))
+        } else if (y > h - margin) {
+          const k = Math.min(1, (y - (h - margin)) / margin)
+          window.scrollBy(0, Math.max(2, Math.round(maxStep * k)))
+        }
+      })
     }
     document.addEventListener('dragover', onDragOver)
     unassignedDragAutoScrollCleanupRef.current = () => {
       document.removeEventListener('dragover', onDragOver)
+      if (unassignedDragScrollRafRef.current != null) {
+        cancelAnimationFrame(unassignedDragScrollRafRef.current)
+        unassignedDragScrollRafRef.current = null
+      }
+      unassignedDragPendingClientYRef.current = null
       unassignedDragAutoScrollCleanupRef.current = null
     }
   }, [detachUnassignedDragPageAutoScroll])
@@ -3097,7 +3288,7 @@ export default function ScheduleView() {
   const handleUnassignedTourDragEnd = () => {
     detachUnassignedDragPageAutoScroll()
     setDraggedUnassignedTour(null)
-    setDragOverCell(null)
+    clearScheduleDragHighlight()
     setHighlightedDate(null) // 하이라이트 제거
   }
 
@@ -3152,7 +3343,7 @@ export default function ScheduleView() {
     } finally {
       detachUnassignedDragPageAutoScroll()
       setDraggedUnassignedTour(null)
-      setDragOverCell(null)
+      clearScheduleDragHighlight()
       setHighlightedDate(null)
     }
   }
@@ -3315,39 +3506,6 @@ export default function ScheduleView() {
     },
     [locale, isStatusExcludedFromUnassignedList]
   )
-
-  const tourDetailModalTour = useMemo(() => {
-    if (!tourDetailModal?.tourId) return null
-    return tours.find((t: Tour) => t.id === tourDetailModal.tourId) ?? null
-  }, [tourDetailModal?.tourId, tours])
-
-  const tourDetailModalStatusSelectOptions = useMemo(() => {
-    if (!tourDetailModal?.tourId) return tourStatusOptions
-    const current = tourDetailModalTour?.tour_status || ''
-    const known = new Set(tourStatusOptions.map((o) => o.value))
-    if (current && !known.has(current)) {
-      return [
-        {
-          value: current,
-          label: getTourStatusLabel(current, locale),
-          color: getTourStatusColor(current),
-        },
-        ...tourStatusOptions,
-      ]
-    }
-    return tourStatusOptions
-  }, [tourDetailModal?.tourId, tourDetailModalTour?.tour_status, locale])
-
-  const tourDetailModalStatusSelectValue = useMemo(() => {
-    const current = tourDetailModalTour?.tour_status || ''
-    if (!current) return ''
-    const exact = tourDetailModalStatusSelectOptions.find((o) => o.value === current)
-    if (exact) return exact.value
-    const ci = tourDetailModalStatusSelectOptions.find(
-      (o) => o.value.toLowerCase() === current.toLowerCase()
-    )
-    return ci?.value ?? current
-  }, [tourDetailModalTour?.tour_status, tourDetailModalStatusSelectOptions])
 
   const guideModalTour = useMemo(() => {
     if (!guideModalContent.tourId) return null
@@ -3633,11 +3791,14 @@ export default function ScheduleView() {
         driverNames: string[]
         productColorClass: string
       }>
+      /** 우측 합계: 당월 컬럼만 (패딩일 제외) */
       totalDays: number
+      /** 그리드 어딘가에 배차가 있으면 행 표시용 */
+      hasAnyDayAssignment: boolean
     }> = {}
     monthVehiclesWithColors.vehicleList.forEach(({ id }) => {
-      result[id] = { daily: {}, totalDays: 0 }
-      monthDays.forEach(({ dateString }) => {
+      result[id] = { daily: {}, totalDays: 0, hasAnyDayAssignment: false }
+      monthDays.forEach(({ dateString, isEdgePadding }) => {
         const dayTours = tours.filter(t =>
           t.tour_car_id && String(t.tour_car_id).trim() === id && tourCoversScheduleDate(t, dateString)
         )
@@ -3664,7 +3825,12 @@ export default function ScheduleView() {
           ? (productColors[dayTours[0].product_id] || defaultPresetIds[0])
           : defaultPresetIds[0]
         result[id].daily[dateString] = { count: dayTours.length, guideNames, assistantNames, driverNames, productColorClass }
-        result[id].totalDays += dayTours.length
+        if (dayTours.length > 0) {
+          result[id].hasAnyDayAssignment = true
+        }
+        if (!isEdgePadding) {
+          result[id].totalDays += dayTours.length
+        }
       })
     })
     return result
@@ -3694,7 +3860,7 @@ export default function ScheduleView() {
   const orderedVehiclesForScheduleTable = useMemo(() => {
     type Veh = (typeof monthVehiclesWithColors.vehicleList)[number]
     const assigned = monthVehiclesWithColors.vehicleList.filter(
-      (v) => (vehicleScheduleData[v.id]?.totalDays ?? 0) > 0
+      (v) => vehicleScheduleData[v.id]?.hasAnyDayAssignment === true
     )
     const assignedIds = assigned.map((v) => v.id)
     if (assignedIds.length === 0) return [] as Veh[]
@@ -3723,16 +3889,17 @@ export default function ScheduleView() {
       e.preventDefault()
       if (draggedVehicleRowId && draggedVehicleRowId !== vehicleId) {
         e.dataTransfer.dropEffect = 'move'
-        setDragOverVehicleRowId(vehicleId)
+        const tr = (e.currentTarget as HTMLElement).closest('tr')
+        if (tr) applyScheduleDragHighlight(tr, SCHEDULE_ROW_REORDER_HIGHLIGHT)
       }
     },
-    [draggedVehicleRowId]
+    [draggedVehicleRowId, applyScheduleDragHighlight]
   )
 
   const handleVehicleRowDrop = useCallback(
     (e: React.DragEvent, targetVehicleId: string) => {
       e.preventDefault()
-      setDragOverVehicleRowId(null)
+      clearScheduleDragHighlight()
       const sourceId = e.dataTransfer.getData('text/vehicle-row')
       if (!sourceId || sourceId === targetVehicleId) {
         setDraggedVehicleRowId(null)
@@ -3759,13 +3926,13 @@ export default function ScheduleView() {
       }
       setDraggedVehicleRowId(null)
     },
-    [orderedVehiclesForScheduleTable, vehicleScheduleMonthKey]
+    [orderedVehiclesForScheduleTable, vehicleScheduleMonthKey, clearScheduleDragHighlight]
   )
 
   const handleVehicleRowDragEnd = useCallback(() => {
     setDraggedVehicleRowId(null)
-    setDragOverVehicleRowId(null)
-  }, [])
+    clearScheduleDragHighlight()
+  }, [clearScheduleDragHighlight])
 
   // 날짜별 차량 배차 합계 (차량 스케줄 테이블 일별 합계 행용)
   const vehicleDailyTotals = useMemo(() => {
@@ -4031,12 +4198,12 @@ export default function ScheduleView() {
                   >
                     상품명
                   </th>
-                  {monthDays.map(({ date, dayOfWeek, dateString }) => {
+                  {monthDays.map(({ date, dayOfWeek, dateString, isEdgePadding }) => {
                     const hasNote = dateNotes[dateString]?.note
                     return (
                       <th
-                        key={date}
-                        className="p-0 text-center text-xs font-medium text-gray-700 align-top bg-blue-50 border-b border-gray-200"
+                        key={dateString}
+                        className={`p-0 text-center text-xs font-medium text-gray-700 align-top bg-blue-50 border-b border-gray-200 ${isEdgePadding ? 'bg-slate-100/90' : ''}`}
                         style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                       >
                       <div 
@@ -4051,12 +4218,18 @@ export default function ScheduleView() {
                           ${hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : 'hover:bg-blue-100'}
                         `}
                         onClick={() => openDateNoteModal(dateString)}
-                        onMouseEnter={() => setHoveredDate(dateString)}
-                        onMouseLeave={() => setHoveredDate(null)}
+                        onMouseEnter={() => {
+                          if (scheduleInteractionDragging) return
+                          setHoveredDate(dateString)
+                        }}
+                        onMouseLeave={() => {
+                          if (scheduleInteractionDragging) return
+                          setHoveredDate(null)
+                        }}
                         title={hasNote ? dateNotes[dateString].note : '클릭하여 날짜 노트 작성'}
                       >
-                        <div className={`flex items-center justify-center ${isToday(dateString) ? 'font-bold text-red-700' : hasNote ? 'font-semibold text-yellow-800' : ''}`}>
-                          <span>{date}일</span>
+                        <div className={`flex items-center justify-center ${isToday(dateString) ? 'font-bold text-red-700' : hasNote ? 'font-semibold text-yellow-800' : isEdgePadding ? 'text-slate-700' : ''}`}>
+                          <span>{isEdgePadding ? dayjs(dateString).format('M/D') : `${date}일`}</span>
                         </div>
                         <div className={`text-xs flex items-center justify-center gap-1 ${isToday(dateString) ? 'text-red-600' : hasNote ? 'text-yellow-700 font-medium' : 'text-gray-500'}`}>
                           {dayOfWeek}
@@ -4105,8 +4278,6 @@ export default function ScheduleView() {
                     key={productId} 
                     className={`hover:bg-gray-50 transition-colors ${
                       draggedProductRow === productId ? 'opacity-50 bg-blue-50' : ''
-                    } ${
-                      dragOverProductRow === productId ? 'border-t-2 border-blue-500' : ''
                     }`}
                     onDragOver={(e) => handleProductRowDragOver(e, productId)}
                     onDragLeave={handleProductRowDragLeave}
@@ -4232,8 +4403,8 @@ export default function ScheduleView() {
                     })}
                 <td className="px-2 py-0.5 text-center text-xs font-medium bg-white" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   <div className={(() => {
-                    const rowWaiting = Object.values(product.dailyData).reduce(
-                      (s, d) => s + (d.waitingPeople ?? 0),
+                    const rowWaiting = monthDaysCore.reduce(
+                      (s, d) => s + (product.dailyData[d.dateString]?.waitingPeople ?? 0),
                       0
                     )
                     const onlyWaitingTotal = product.totalPeople === 0 && rowWaiting > 0
@@ -4299,14 +4470,16 @@ export default function ScheduleView() {
                 <th className="px-2 py-0.5 text-left text-xs font-medium text-gray-700" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                   가이드명
                 </th>
-                {monthDays.map(({ date, dayOfWeek, dateString }) => (
+                {monthDays.map(({ date, dayOfWeek, dateString, isEdgePadding }) => (
                   <th 
-                    key={date} 
+                    key={dateString} 
                     className="p-0 text-center text-xs font-medium text-gray-700"
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
-                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} px-1 py-0.5`}>
-                      <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
+                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${isEdgePadding ? 'bg-slate-100/80' : ''} px-1 py-0.5`}>
+                      <div className={isToday(dateString) ? 'font-bold text-red-700' : isEdgePadding ? 'text-slate-700' : ''}>
+                        {isEdgePadding ? dayjs(dateString).format('M/D') : `${date}일`}
+                      </div>
                       <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
                     </div>
                   </th>
@@ -4440,14 +4613,18 @@ export default function ScheduleView() {
                     key={teamMemberId} 
                     className={`hover:bg-gray-50 transition-colors ${
                       draggedGuideRow === teamMemberId ? 'opacity-50 bg-blue-50' : ''
-                    } ${
-                      dragOverGuideRow === teamMemberId ? 'border-t-2 border-blue-500' : ''
                     }`}
                     onDragOver={(e) => handleGuideRowDragOver(e, teamMemberId)}
                     onDragLeave={handleGuideRowDragLeave}
                     onDrop={(e) => handleGuideRowDrop(e, teamMemberId)}
-                    onMouseEnter={() => setHoveredGuideRow(teamMemberId)}
-                    onMouseLeave={() => setHoveredGuideRow(null)}
+                    onMouseEnter={() => {
+                      if (scheduleInteractionDragging) return
+                      setHoveredGuideRow(teamMemberId)
+                    }}
+                    onMouseLeave={() => {
+                      if (scheduleInteractionDragging) return
+                      setHoveredGuideRow(null)
+                    }}
                   >
                     <td 
                       className="px-1 py-0 text-xs leading-tight cursor-grab active:cursor-grabbing select-none" 
@@ -4499,20 +4676,16 @@ export default function ScheduleView() {
                                 style={{ minWidth: '40px', boxSizing: 'border-box' }}
                               >
                                 <div
-                                  className={`relative h-[22px] ${
-                                    dragOverCell === `${teamMemberId}-${dateString}-guide` 
-                                      ? 'bg-blue-200 border-2 border-blue-400' 
-                                      : ''
-                                  }`}
+                                  className="relative h-[22px]"
                                   style={{ pointerEvents: 'auto' }}
                                   onDragOver={(e) => { 
                                     if (draggedTour && draggedTour.tour_date === dateString) {
-                                      handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                      handleGuideScheduleDropZoneDragOver(e)
                                     } else if (draggedUnassignedTour) {
-                                      handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                      handleGuideScheduleDropZoneDragOver(e)
                                     }
                                   }}
-                                  onDragLeave={handleDragLeave}
+                                  onDragLeave={handleGuideScheduleDropZoneDragLeave}
                                 onDrop={(e) => {
                                   try {
                                     const dragData = JSON.parse(e.dataTransfer.getData('text/plain'))
@@ -4585,11 +4758,7 @@ export default function ScheduleView() {
                               style={{ minWidth: '40px', boxSizing: 'border-box' }}
                             >
                               <div
-                                className={`relative h-[22px] ${
-                                  dragOverCell === `${teamMemberId}-${dateString}-guide` 
-                                    ? 'bg-blue-200 border-2 border-blue-400' 
-                                    : ''
-                                }`}
+                                className="relative h-[22px]"
                                 style={{ 
                                   pointerEvents: 'auto',
                                   overflow: 'visible',
@@ -4597,12 +4766,12 @@ export default function ScheduleView() {
                                 }}
                                 onDragOver={(e) => { 
                                   if (draggedTour && draggedTour.tour_date === dateString) {
-                                    handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                    handleGuideScheduleDropZoneDragOver(e)
                                   } else if (draggedUnassignedTour) {
-                                    handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                    handleGuideScheduleDropZoneDragOver(e)
                                   }
                                 }}
-                                onDragLeave={handleDragLeave}
+                                onDragLeave={handleGuideScheduleDropZoneDragLeave}
                                 onDrop={(e) => {
                                   try {
                                     const dragData = JSON.parse(e.dataTransfer.getData('text/plain'))
@@ -4699,6 +4868,7 @@ export default function ScheduleView() {
                                                 handleDragStart(e, guideTours[0])
                                               }
                                             }}
+                                            onDragEnd={handleAssignedTourDragEnd}
                                             onDoubleClick={() => {
                                               if (guideTours.length > 0) {
                                                 openTourDetailModal(guideTours[0].id)
@@ -4749,6 +4919,7 @@ export default function ScheduleView() {
                                               handleDragStart(e, guideTours[0])
                                             }
                                           }}
+                                          onDragEnd={handleAssignedTourDragEnd}
                                           onDoubleClick={() => {
                                             if (guideTours.length > 0) {
                                               openTourDetailModal(guideTours[0].id)
@@ -4837,6 +5008,7 @@ export default function ScheduleView() {
                                               handleDragStart(e, assistantTours[0])
                                             }
                                           }}
+                                          onDragEnd={handleAssignedTourDragEnd}
                                           onDoubleClick={() => {
                                             if (assistantTours.length > 0) {
                                               openTourDetailModal(assistantTours[0].id)
@@ -4887,6 +5059,7 @@ export default function ScheduleView() {
                                               handleDragStart(e, assistantTours[0])
                                             }
                                           }}
+                                          onDragEnd={handleAssignedTourDragEnd}
                                           onDoubleClick={() => {
                                             if (assistantTours.length > 0) {
                                               openTourDetailModal(assistantTours[0].id)
@@ -5013,6 +5186,7 @@ export default function ScheduleView() {
                                     handleDragStart(e, mdRowTours[0])
                                   }
                                 }}
+                                onDragEnd={handleAssignedTourDragEnd}
                                 onDoubleClick={() => {
                                   if (mdRowTours.length > 0) {
                                     openTourDetailModal(mdRowTours[0].id)
@@ -5091,8 +5265,14 @@ export default function ScheduleView() {
                           key={dateString} 
                           className={`p-0 text-center text-xs relative border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
                           style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                          onMouseEnter={() => setHoveredBookingDate(dateString)}
-                          onMouseLeave={() => setHoveredBookingDate(null)}
+                          onMouseEnter={() => {
+                            if (scheduleInteractionDragging) return
+                            setHoveredBookingDate(dateString)
+                          }}
+                          onMouseLeave={() => {
+                            if (scheduleInteractionDragging) return
+                            setHoveredBookingDate(null)
+                          }}
                         >
                           <div className={`px-1 py-0.5 ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}>
                             {hasBooking ? (
@@ -5143,7 +5323,12 @@ export default function ScheduleView() {
                       className={`px-2 py-0.5 text-center text-xs font-medium border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
                       style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}
                     >
-                      <div>{Object.values(bookingTotals).reduce((sum, day) => sum + day.totalCount, 0)}</div>
+                      <div>
+                        {monthDaysCore.reduce(
+                          (sum, d) => sum + (bookingTotals[d.dateString]?.totalCount ?? 0),
+                          0
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {bookingRowExpanded && (
@@ -5238,7 +5423,7 @@ export default function ScheduleView() {
                           key={id}
                           className={`hover:bg-gray-50/50 ${
                             draggedVehicleRowId === id ? 'opacity-50 bg-blue-50/80' : ''
-                          } ${dragOverVehicleRowId === id ? 'border-t-2 border-blue-500' : ''}`}
+                          }`}
                         >
                           <td
                             className="px-1 py-0.5 text-xs leading-tight text-gray-900 select-none"
@@ -5315,14 +5500,12 @@ export default function ScheduleView() {
                             const isInRentalPeriod = rental_start_date && rental_end_date &&
                               dateString >= (rental_start_date || '').toString().substring(0, 10) &&
                               dateString <= (rental_end_date || '').toString().substring(0, 10)
-                            const vehicleCellKey = `vehicle-${id}-${dateString}`
-                            const isDragOver = dragOverCell === vehicleCellKey
                             const baseTdClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''
                             const rentalBgClass = isInRentalPeriod ? 'bg-amber-200' : ''
                             return (
                               <td
                                 key={dateString}
-                                className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass} ${isDragOver ? 'ring-2 ring-blue-400 bg-blue-50' : ''}`}
+                                className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass}`}
                                 style={{ width: dayColumnWidthCalc, minWidth: '40px', boxSizing: 'border-box' }}
                                 title={count > 0 ? cellTooltip : (isInRentalPeriod ? `렌트 기간: ${(rental_start_date || '').toString().substring(0, 10)} ~ ${(rental_end_date || '').toString().substring(0, 10)}` : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동')}
                                 onClick={(e) => {
@@ -5337,9 +5520,9 @@ export default function ScheduleView() {
                                   }
                                   e.preventDefault()
                                   e.dataTransfer.dropEffect = 'move'
-                                  setDragOverCell(vehicleCellKey)
+                                  applyScheduleDragHighlight(e.currentTarget, SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT)
                                 }}
-                                onDragLeave={handleDragLeave}
+                                onDragLeave={handleGuideScheduleDropZoneDragLeave}
                                 onDrop={(e) => {
                                   if (e.dataTransfer.getData('text/vehicle-row')) {
                                     e.preventDefault()
@@ -5367,7 +5550,7 @@ export default function ScheduleView() {
                                       onDragEnd={() => {
                                         setDraggedTour(null)
                                         setHighlightedDate(null)
-                                        setDragOverCell(null)
+                                        clearScheduleDragHighlight()
                                       }}
                                     >
                                       <span className="truncate w-full text-center">
@@ -6259,7 +6442,24 @@ export default function ScheduleView() {
               ? '이름 영역을 누르면 수정 화면이 열립니다. 오른쪽에서 상태만 바로 변경할 수 있습니다.'
               : 'Click the name to open the edit form. Change status quickly from the menu on the right.'}
           </p>
-          <div className="overflow-y-auto flex-1 min-h-0 space-y-1.5 pr-1">
+          <div className="flex flex-wrap items-center justify-end gap-2 pb-2 border-b border-gray-100 shrink-0">
+            <button
+              type="button"
+              onClick={() => void handleProductCellModalCreateTour()}
+              disabled={productCellCreateTourLoading || productCellReservationList.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:pointer-events-none"
+            >
+              <Plus className="h-4 w-4 shrink-0" aria-hidden />
+              {productCellCreateTourLoading
+                ? locale === 'ko'
+                  ? '처리 중…'
+                  : 'Working…'
+                : locale === 'ko'
+                  ? '투어 생성'
+                  : 'Create tour'}
+            </button>
+          </div>
+          <div className="overflow-y-auto flex-1 min-h-0 space-y-1.5 pr-1 pt-2">
             {productCellReservationList.length === 0 ? (
               <p className="text-sm text-gray-500 py-6 text-center">
                 {locale === 'ko' ? '예약이 없습니다.' : 'No reservations.'}
@@ -6791,37 +6991,6 @@ export default function ScheduleView() {
               </a>
             ) : null}
           </DialogHeader>
-          {tourDetailModal?.tourId && isScheduleStaff ? (
-            <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                {locale === 'ko' ? '투어 상태' : 'Tour status'}
-              </span>
-              <Select
-                value={tourDetailModalStatusSelectValue || undefined}
-                onValueChange={(v) => {
-                  if (!tourDetailModal.tourId) return
-                  void updateTourDetailModalTourStatus(tourDetailModal.tourId, v)
-                }}
-                disabled={updatingTourDetailModalStatusId === tourDetailModal.tourId}
-              >
-                <SelectTrigger
-                  className="h-9 w-[min(100%,20rem)] text-sm bg-white"
-                  aria-label={locale === 'ko' ? '투어 상태 변경' : 'Change tour status'}
-                >
-                  <SelectValue
-                    placeholder={locale === 'ko' ? '상태 선택' : 'Select status'}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {tourDetailModalStatusSelectOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {getTourStatusLabel(option.value, locale)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
           {tourDetailModal?.tourId ? (
             <iframe
               key={`${tourDetailModal.tourId}-${tourDetailIframeReloadNonce}`}

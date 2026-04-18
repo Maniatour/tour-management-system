@@ -31,7 +31,12 @@ export function useOptimizedData<T>({
   const isMountedRef = useRef(true)
 
   const fetchData = useCallback(async () => {
-    if (!enabled) return
+    if (!enabled) {
+      if (isMountedRef.current) {
+        setLoading(false)
+      }
+      return
+    }
 
     // 캐시 확인
     if (cacheKey && cache.has(cacheKey)) {
