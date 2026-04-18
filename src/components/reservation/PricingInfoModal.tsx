@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
 import { useReservationOptions } from '@/hooks/useReservationOptions'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
@@ -360,7 +360,9 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         }
       }
     } catch (err) {
-      console.error('쿠폰 로드 오류:', err)
+      if (!isAbortLikeError(err)) {
+        console.error('쿠폰 로드 오류:', err)
+      }
     }
   }
 

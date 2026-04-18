@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import {
   calculateAssignedPeople,
@@ -157,7 +157,9 @@ export function useTourDetailData() {
           .maybeSingle()
 
         if (tourError) {
-          console.error('투어 데이터 가져오기 오류:', tourError)
+          if (!isAbortLikeError(tourError)) {
+            console.error('투어 데이터 가져오기 오류:', tourError)
+          }
           return
         }
 
@@ -885,7 +887,9 @@ export function useTourDetailData() {
         })()
 
       } catch (error) {
-        console.error('투어 데이터 가져오기 중 오류:', error)
+        if (!isAbortLikeError(error)) {
+          console.error('투어 데이터 가져오기 중 오류:', error)
+        }
       } finally {
         setPageLoading(false)
       }
