@@ -5141,7 +5141,8 @@ export default function ScheduleView() {
                           const monthStart = dayjs(firstDayOfMonth)
                           // 시작일이 이번 달 이전인 경우 보이는 시작 인덱스를 0으로 클램프
                           const diffFromMonthStart = start.diff(monthStart, 'day')
-                          const visibleStartIdx = Math.max(0, diffFromMonthStart)
+                          // monthDays[0]은 전월 말일 패딩이므로, 당월 1일은 인덱스 1 — diff만 쓰면 바가 하루 왼쪽으로 밀림
+                          const visibleStartIdx = diffFromMonthStart < 0 ? 0 : diffFromMonthStart + 1
                           // 이전 달에서 시작했다면 그 만큼을 잘라내고 남은 일수만 표시
                           const cutDays = diffFromMonthStart < 0 ? Math.min(tour.days, Math.abs(diffFromMonthStart)) : 0
                           const remainingDays = tour.days - cutDays

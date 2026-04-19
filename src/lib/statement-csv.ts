@@ -188,6 +188,20 @@ export function parseStatementCsvText(csvText: string): ParsedStatementRow[] {
   return rows
 }
 
+/** BOM·개행 정규화 후 SHA-256 — 동일 파일 재업로드 탐지용 */
+export async function hashStatementCsvContent(csvText: string): Promise<string> {
+  const normalized = csvText
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim()
+  const enc = new TextEncoder()
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(normalized))
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 export function makeDedupeKey(
   statementImportId: string,
   row: ParsedStatementRow,

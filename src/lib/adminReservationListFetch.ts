@@ -10,6 +10,36 @@ function ilikeQuoted(term: string): string {
   return `"${qIdent(p)}"`
 }
 
+function eqQuoted(val: string): string {
+  return `"${qIdent(val)}"`
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function isProbableUuid(s: string): boolean {
+  return UUID_RE.test(s.trim())
+}
+
+function isIsoDateOnly(s: string): boolean {
+  const t = s.trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return false
+  const [y, m, d] = t.split('-').map(Number)
+  const dt = new Date(y, m - 1, d)
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d
+}
+
+/** TIME 컬럼 eq용 (PostgREST는 ilike 불가) */
+function normalizeTimeForEq(s: string): string | null {
+  const t = s.trim()
+  const m = t.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/)
+  if (!m) return null
+  const hh = m[1].padStart(2, '0')
+  const mm = m[2]
+  const ss = m[3] ?? '00'
+  return `${hh}:${mm}:${ss}`
+}
+
 export type AdminReservationListSort = 'created_at' | 'tour_date' | 'customer_name' | 'product_name'
 
 export type FetchAdminReservationListArgs = {
@@ -40,14 +70,23 @@ async function buildSearchOrClause(
 
   const q = ilikeQuoted(t)
   const parts: string[] = [
-    `id.ilike.${q}`,
     `channel_rn.ilike.${q}`,
-    `tour_date.ilike.${q}`,
-    `tour_time.ilike.${q}`,
     `pickup_hotel.ilike.${q}`,
     `added_by.ilike.${q}`,
     `event_note.ilike.${q}`,
   ]
+
+  // DATE/TIME/UUID 컬럼은 PostgREST에서 ilike(~~*) 불가 — 정확 일치만 or에 추가
+  if (isProbableUuid(t)) {
+    parts.push(`id.eq.${eqQuoted(t.trim())}`)
+  }
+  if (isIsoDateOnly(t)) {
+    parts.push(`tour_date.eq.${eqQuoted(t.trim())}`)
+  }
+  const timeEq = normalizeTimeForEq(t)
+  if (timeEq) {
+    parts.push(`tour_time.eq.${eqQuoted(timeEq)}`)
+  }
 
   const likePat = `%${t.replace(/%/g, '\\%')}%`
   const [{ data: cust }, { data: prod }, { data: ch }] = await Promise.all([
