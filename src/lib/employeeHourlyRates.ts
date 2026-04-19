@@ -22,6 +22,29 @@ export function lasVegasDateFromCheckIn(checkInTime: string | null): string | nu
   return `${y}-${m}-${d}`
 }
 
+/** YYYY-MM-DD에 일 수를 더한 달력일 (DB `date` 조회 범위를 넓힐 때 사용) */
+export function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(y, m - 1, d + deltaDays)
+  const yy = dt.getFullYear()
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
+
+/** 현재 순간의 라스베가스 달력일 YYYY-MM-DD */
+export function lasVegasTodayYmd(): string {
+  return lasVegasDateFromCheckIn(new Date().toISOString()) || new Date().toISOString().slice(0, 10)
+}
+
+/**
+ * 근무가 귀속되는 달력일: LV 출근일 우선, 없으면 attendance_records.date
+ * (월별 통계·Office Tips 기간 합계와 동일 기준)
+ */
+export function workCalendarDateYmd(record: { check_in_time: string | null; date: string }): string {
+  return lasVegasDateFromCheckIn(record.check_in_time) || record.date.slice(0, 10)
+}
+
 /**
  * 해당 직원·일자에 유효한 시급 (구간: effective_from <= date <= effective_to 또는 effective_to IS NULL)
  */

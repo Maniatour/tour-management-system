@@ -38,7 +38,8 @@ import {
   TrendingUp,
   Cloud,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Landmark
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -90,6 +91,9 @@ interface AdminSidebarAndHeaderProps {
 }
 
 const ADMIN_SIDEBAR_COLLAPSED_KEY = 'tms-admin-sidebar-collapsed'
+
+/** AuthContext 슈퍼관리자와 동일 — team 직책 없이도 예약 통계 등 Super 전용 메뉴 표시 */
+const SUPER_ADMIN_EMAILS = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
@@ -365,14 +369,20 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     }
   }, [authUser?.email])
 
-  // Super 권한 체크
+  // Super 권한 체크 (슈퍼관리자 이메일 또는 team.position === 'super')
   useEffect(() => {
     const checkSuperPermission = async () => {
       if (!authUser?.email) {
         setIsSuper(false)
         return
       }
-      
+
+      const emailLower = authUser.email.toLowerCase().trim()
+      if (SUPER_ADMIN_EMAILS.some((e) => e.toLowerCase() === emailLower)) {
+        setIsSuper(true)
+        return
+      }
+
       try {
         // 재시도 로직이 포함된 쿼리 실행
         const executeQuery = async (retries = 3): Promise<{ data: any; error: any }> => {
@@ -507,7 +517,12 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: tSidebar('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: tSidebar('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     // 예약 통계는 Super 권한만 표시
-    ...(isSuper ? [{ name: tSidebar('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }] : []),
+    ...(isSuper
+      ? [
+          { name: tSidebar('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
+          { name: tSidebar('statementReconciliation'), href: `/${locale}/admin/statement-reconciliation`, icon: Landmark },
+        ]
+      : []),
     { name: tSidebar('expenseManagement'), href: `/${locale}/admin/expenses`, icon: DollarSign },
     // 파트너 자금 관리 (info@maniatour.com만 표시)
     ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: tSidebar('partnerFundManagement'), href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
@@ -1102,7 +1117,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       >
         {/* 페이지 콘텐츠 */}
         <main className="pt-2 sm:pt-4 lg:pt-6 main-safe-area">
-          <div className="max-w-none mx-auto px-2 sm:px-2 lg:px-4">
+          <div className="max-w-none mx-auto px-1.5 sm:px-2 lg:px-3">
             {children}
           </div>
         </main>

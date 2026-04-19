@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search, DollarSign } from 'lucide-react'
+import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search, DollarSign, PieChart } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
@@ -15,6 +15,8 @@ import TourStatisticsTab from '@/components/statistics/TourStatisticsTab'
 import ReservationSettlementTab from '@/components/statistics/ReservationSettlementTab'
 import ChannelSettlementTab from '@/components/statistics/ChannelSettlementTab'
 import CashReportTab from '@/components/reports/CashReportTab'
+import PnlUnifiedReportTab from '@/components/reports/PnlUnifiedReportTab'
+import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -24,7 +26,7 @@ interface AdminReservationStatisticsProps {
 
 type TimeRange = 'daily' | 'monthly' | 'yearly'
 type ChartType = 'channel' | 'product' | 'trend'
-type TabType = 'reservations' | 'tours' | 'settlement' | 'channelSettlement' | 'cash'
+type TabType = 'reservations' | 'tours' | 'settlement' | 'channelSettlement' | 'cash' | 'pnl'
 
 interface StatisticsData {
   totalReservations: number
@@ -65,7 +67,7 @@ const getDefaultDateRange = () => {
   return { start: thirtyDaysAgo.toISOString().split('T')[0], end: today.toISOString().split('T')[0] }
 }
 
-const VALID_TABS = ['reservations', 'tours', 'settlement', 'channelSettlement', 'cash'] as const
+const VALID_TABS = ['reservations', 'tours', 'settlement', 'channelSettlement', 'cash', 'pnl'] as const
 
 export default function AdminReservationStatistics({ }: AdminReservationStatisticsProps) {
   const t = useTranslations('reservations')
@@ -76,8 +78,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   const [isSuper, setIsSuper] = useState(false)
   const [isCheckingPermission, setIsCheckingPermission] = useState(true)
 
-  // team 테이블에 없거나 배포 환경 차이로 조회 실패 시에도 Super로 인정할 이메일 (소문자로 비교)
-  const SUPER_ADMIN_EMAILS = ['wooyong.shim09@gmail.com']
+  // AuthContext 슈퍼관리자와 동일 — team 직책/조회 실패와 무관하게 Super 접근
+  const SUPER_ADMIN_EMAILS = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
   
   // 권한 체크
   useEffect(() => {
@@ -119,18 +121,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     
     checkPermission()
   }, [authUser?.email])
-  
-  // 데이터 관리
-  const {
-    reservations,
-    customers,
-    products,
-    channels,
-    loading,
-    refreshReservations
-  } = useReservationData()
 
-  // 상태 관리 (URL 쿼리에서 복원해 새로고침 시 탭/검색/기간 유지)
+  // 상태 관리 (URL 쿼리에서 복원해 새로고침 시 탭/검색/기간 유지) — useReservationData보다 먼저 두어 탭별 예약 로드 생략 가능
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const t = searchParams.get('tab')
     return (t && VALID_TABS.includes(t as TabType)) ? t as TabType : 'reservations'
@@ -160,8 +152,26 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') ?? '')
   const endDateInputRef = useRef<HTMLInputElement>(null)
 
+  /** 현금·PNL은 부모의 예약 목록이 필요 없음 — 전량 로드·통계 순회로 UI 멈춤 방지 */
+  const skipParentReservationLoad = activeTab === 'cash' || activeTab === 'pnl'
+
+  const {
+    reservations,
+    customers,
+    products,
+    channels,
+    loading,
+    refreshReservations
+  } = useReservationData({ disableReservationsAutoLoad: skipParentReservationLoad })
+
   // 탭/검색/기간/채널/상태/추이단위(tr)/차트(chart) 변경 시 URL 동기화 (새로고침 시 복원용)
+  // 예전 북마크(?tab=reconciliation)는 아래 동기화보다 먼저 처리 — 쿼리가 덮어씌워지며 리다이렉트 실패하는 것 방지
   useEffect(() => {
+    if (searchParams.get('tab') === 'reconciliation') {
+      const loc = pathname.split('/')[1] || 'ko'
+      router.replace(`/${loc}/admin/statement-reconciliation`)
+      return
+    }
     const params = new URLSearchParams()
     params.set('tab', activeTab)
     params.set('start', dateRange.start)
@@ -173,10 +183,33 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     if (selectedStatuses.length > 0) params.set('statuses', selectedStatuses.join(','))
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
-  }, [activeTab, searchQuery, dateRange, selectedChannelId, selectedStatuses, timeRange, selectedChart, pathname, router])
+  }, [
+    searchParams,
+    activeTab,
+    searchQuery,
+    dateRange,
+    selectedChannelId,
+    selectedStatuses,
+    timeRange,
+    selectedChart,
+    pathname,
+    router
+  ])
 
-  // 통계 데이터 계산
+  // 통계 데이터 계산 (예약 통계 탭에서만 필요 — 다른 탭에서 대량 예약 순회 시 메인 스레드 정지 방지)
   const statisticsData = useMemo((): StatisticsData => {
+    if (activeTab !== 'reservations') {
+      return {
+        totalReservations: 0,
+        totalPeople: 0,
+        totalRevenue: 0,
+        channelStats: [],
+        productStats: [],
+        statusStats: [],
+        trendData: []
+      }
+    }
+
     console.log('통계 데이터 계산 시작:', {
       totalReservations: reservations.length,
       dateRange,
@@ -380,7 +413,18 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       statusStats,
       trendData
     }
-  }, [reservations, products, channels, customers, dateRange, timeRange, selectedChannelId, selectedStatuses, searchQuery])
+  }, [
+    activeTab,
+    reservations,
+    products,
+    channels,
+    customers,
+    dateRange,
+    timeRange,
+    selectedChannelId,
+    selectedStatuses,
+    searchQuery
+  ])
 
   // 차트 데이터 준비
   const chartData = useMemo(() => {
@@ -531,7 +575,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 { key: 'tours', label: '투어 통계', icon: TrendingUp },
                 { key: 'settlement', label: '예약 정산', icon: Receipt },
                 { key: 'channelSettlement', label: '채널별 정산', icon: Receipt },
-                { key: 'cash', label: '현금 관리', icon: DollarSign }
+                { key: 'cash', label: '현금 관리', icon: DollarSign },
+                { key: 'pnl', label: '통합 PNL', icon: PieChart }
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -543,7 +588,17 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                   }`}
                 >
                   <Icon size={16} className="sm:w-5 sm:h-5" />
-                  <span>{label}</span>
+                  <span>
+                    {key === 'pnl' ? (
+                      <>
+                        통합 <AccountingTerm termKey="PNL">PNL</AccountingTerm>
+                      </>
+                    ) : key === 'cash' ? (
+                      <AccountingTerm termKey="현금관리">{label}</AccountingTerm>
+                    ) : (
+                      label
+                    )}
+                  </span>
                 </button>
               ))}
             </nav>
@@ -576,7 +631,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
         <div className="flex flex-col gap-3 sm:gap-4">
           {/* 1. 채널 선택 */}
-          {activeTab !== 'channelSettlement' && activeTab !== 'cash' && (
+          {activeTab !== 'channelSettlement' && activeTab !== 'cash' && activeTab !== 'pnl' && (
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <label className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">채널 선택:</label>
               <select
@@ -595,6 +650,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           )}
 
           {/* 2. 상태 다중 선택 */}
+          {activeTab !== 'pnl' && (
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
             <label className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">상태 선택:</label>
             <div className="flex flex-wrap gap-1">
@@ -627,6 +683,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
               })}
             </div>
           </div>
+          )}
 
           {/* 3. 시간 범위 프리셋 + 기간 직접 선택 */}
           <div className="flex flex-col gap-2 border-t border-gray-100 pt-2 sm:border-t-0 sm:pt-0">
@@ -978,6 +1035,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           period={timeRange === 'yearly' ? 'yearly' : timeRange === 'monthly' ? 'monthly' : 'daily'}
         />
       )}
+
+      {activeTab === 'pnl' && <PnlUnifiedReportTab dateRange={dateRange} />}
     </div>
   )
 }

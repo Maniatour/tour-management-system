@@ -4,9 +4,19 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Save, Calendar, DollarSign, Users, Printer, CheckCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
+import { workCalendarDateYmd } from '@/lib/employeeHourlyRates'
+import { useTranslations, useLocale } from 'next-intl'
+import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
 
 const TIER_LIMITS = { low: 480, mid: 960 } as const
+
+function localDateToYmd(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function getTierPercent(totalHours: number): 0 | 50 | 100 {
   if (totalHours < TIER_LIMITS.low) return 0
   if (totalHours < TIER_LIMITS.mid) return 50
@@ -16,6 +26,7 @@ function getTierPercent(totalHours: number): 0 | 50 | 100 {
 interface TourOfficeTipRow {
   id: string
   tour_date: string
+  tour_status: string
   product_name: string
   guide_name: string | null
   assistant_name: string | null
@@ -33,8 +44,18 @@ interface OpMember {
 interface EmployeeShareRow {
   email: string
   name_ko: string | null
+  /** 누적 근무(기존 h 합산) — 식사 차감 전 */
+  totalGrossHoursAllTime: number
+  /** office_meal_log 전체 건수 */
+  totalMealCountAllTime: number
+  /** 누적 순 근무시간(팁 티어 기준) = totalGross − 0.5×식사횟수 */
   totalWorkHoursAllTime: number
   tierPercent: 0 | 50 | 100
+  /** 선택 기간 근무 합 — 식사 차감 전 */
+  hoursInPeriodGross: number
+  /** 선택 기간 office_meal_log 건수 */
+  mealCountInPeriod: number
+  /** 선택 기간 순 근무(팁 쉐어 비중 계산) */
   hoursInPeriod: number
   sharePercent: number
   shareAmount: number
@@ -47,6 +68,7 @@ interface OfficeTipsModalProps {
 
 export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProps) {
   const t = useTranslations('attendancePage')
+  const locale = useLocale()
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [selectedStaffEmails, setSelectedStaffEmails] = useState<string[]>([])
@@ -67,6 +89,43 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
       end: today.toISOString().split('T')[0]
     }
   }, [])
+
+  /**
+   * 지난 2주 (달력 상·하반기 기준)
+   * - 오늘이 1~15일: 전월 16일 ~ 전월 말일
+   * - 오늘이 16일~말일: 당월 1일 ~ 15일
+   */
+  const getPreviousFortnight = useCallback(() => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = today.getMonth()
+    const day = today.getDate()
+
+    if (day >= 1 && day <= 15) {
+      const prevMonth = month === 0 ? 11 : month - 1
+      const prevYear = month === 0 ? year - 1 : year
+      const lastDayOfPrev = new Date(prevYear, prevMonth + 1, 0).getDate()
+      const start = new Date(prevYear, prevMonth, 16)
+      const end = new Date(prevYear, prevMonth, lastDayOfPrev)
+      return { start: localDateToYmd(start), end: localDateToYmd(end) }
+    }
+
+    const start = new Date(year, month, 1)
+    const end = new Date(year, month, 15)
+    return { start: localDateToYmd(start), end: localDateToYmd(end) }
+  }, [])
+
+  const applyThisFortnight = useCallback(() => {
+    const { start, end } = getDefaultDates()
+    setStartDate(start)
+    setEndDate(end)
+  }, [getDefaultDates])
+
+  const applyLastFortnight = useCallback(() => {
+    const { start, end } = getPreviousFortnight()
+    setStartDate(start)
+    setEndDate(end)
+  }, [getPreviousFortnight])
 
   const fetchOpMembers = useCallback(async () => {
     try {
@@ -98,6 +157,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         .select(`
           id,
           tour_date,
+          tour_status,
           tour_guide_id,
           assistant_id,
           reservation_ids,
@@ -174,6 +234,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         rows.push({
           id: tour.id,
           tour_date: tour.tour_date,
+          tour_status: String((tour as { tour_status?: string | null }).tour_status ?? '').trim() || '—',
           product_name: (tour.products as { name_ko?: string })?.name_ko || '—',
           guide_name: guideName,
           assistant_name: assistantName,
@@ -202,7 +263,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
     try {
       const { data: allRecords, error } = await supabase
         .from('attendance_records')
-        .select('employee_email, date, work_hours')
+        .select('employee_email, date, check_in_time, work_hours')
         .in('employee_email', selectedStaffEmails)
         .not('check_out_time', 'is', null)
 
@@ -215,26 +276,65 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
       const records = allRecords || []
       const totalByEmail = new Map<string, number>()
       const periodByEmail = new Map<string, number>()
-      for (const r of records) {
-        const raw = Number(r.work_hours) || 0
-        const h = raw > 8 ? raw - 0.5 : raw
+      // 출퇴근 관리(상·하반기·월 통계)와 동일: 세션별 work_hours 그대로 합산, 출근일은 workCalendarDateYmd(LV).
+      // 예전 8시간 초과 시 0.5h 자동 차감은 여기서 적용하지 않음 — 식사는 office_meal_log만 반영.
+      for (const r of records as {
+        employee_email: string
+        date: string
+        check_in_time: string | null
+        work_hours: number | null
+      }[]) {
+        const h = Number(r.work_hours) || 0
         totalByEmail.set(r.employee_email, (totalByEmail.get(r.employee_email) || 0) + h)
-        if (startDate && endDate && r.date >= startDate && r.date <= endDate) {
+        const workYmd = workCalendarDateYmd({ check_in_time: r.check_in_time, date: r.date })
+        if (startDate && endDate && workYmd >= startDate && workYmd <= endDate) {
           periodByEmail.set(r.employee_email, (periodByEmail.get(r.employee_email) || 0) + h)
         }
       }
 
+      const { data: mealRows, error: mealErr } = await supabase
+        .from('office_meal_log')
+        .select('employee_email, meal_date')
+        .in('employee_email', selectedStaffEmails)
+
+      if (mealErr) {
+        console.error('office_meal_log 조회 오류:', mealErr)
+      }
+
+      const periodMealsByEmail = new Map<string, number>()
+      const allMealsByEmail = new Map<string, number>()
+      for (const row of mealRows || []) {
+        const em = (row as { employee_email: string }).employee_email
+        const mdRaw = (row as { meal_date: string }).meal_date
+        const md = typeof mdRaw === 'string' ? mdRaw.slice(0, 10) : String(mdRaw)
+        allMealsByEmail.set(em, (allMealsByEmail.get(em) || 0) + 1)
+        if (startDate && endDate && md >= startDate && md <= endDate) {
+          periodMealsByEmail.set(em, (periodMealsByEmail.get(em) || 0) + 1)
+        }
+      }
+
+      const round2 = (n: number) => Math.round(n * 100) / 100
+      const mealHours = (n: number) => round2(n * 0.5)
+
       const rows: EmployeeShareRow[] = selectedStaffEmails.map(email => {
-        const total = totalByEmail.get(email) || 0
-        const period = periodByEmail.get(email) || 0
-        const tier = getTierPercent(total)
+        const totalGross = totalByEmail.get(email) || 0
+        const periodGross = periodByEmail.get(email) || 0
+        const mealsAll = allMealsByEmail.get(email) || 0
+        const mealsPeriod = periodMealsByEmail.get(email) || 0
+        const totalNet = Math.max(0, round2(totalGross - mealHours(mealsAll)))
+        const periodNet = Math.max(0, round2(periodGross - mealHours(mealsPeriod)))
+        const tier = getTierPercent(totalNet)
         const member = opMembers.find(m => m.email === email)
         return {
           email,
           name_ko: member?.name_ko ?? null,
-          totalWorkHoursAllTime: total,
+          totalGrossHoursAllTime: totalGross,
+          totalMealCountAllTime: mealsAll,
+          totalWorkHoursAllTime: totalNet,
           tierPercent: tier,
-          hoursInPeriod: period,
+          hoursInPeriodGross: periodGross,
+          mealCountInPeriod: mealsPeriod,
+          hoursInPeriod: periodNet,
           sharePercent: 0,
           shareAmount: 0
         }
@@ -243,7 +343,6 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         (sum, r) => sum + r.hoursInPeriod * (r.tierPercent / 100),
         0
       ) || 0
-      const round2 = (n: number) => Math.round(n * 100) / 100
       const n = rows.length
       const equalShare = n > 0 ? round2(100 / n) : 0
       const withShare = rows.map((r, i) => ({
@@ -492,8 +591,8 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="min-w-0 sm:min-w-[11rem] sm:flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('officeTipsStartDate')}</label>
               <input
                 type="date"
@@ -502,7 +601,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
             </div>
-            <div>
+            <div className="min-w-0 sm:min-w-[11rem] sm:flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('officeTipsEndDate')}</label>
               <input
                 type="date"
@@ -510,6 +609,22 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                 onChange={e => setEndDate(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
+            </div>
+            <div className="flex flex-wrap gap-2 sm:pb-0.5">
+              <button
+                type="button"
+                onClick={applyLastFortnight}
+                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 whitespace-nowrap"
+              >
+                {t('officeTipsLastTwoWeeks')}
+              </button>
+              <button
+                type="button"
+                onClick={applyThisFortnight}
+                className="px-3 py-2 text-sm font-medium text-white bg-amber-600 border border-amber-700 rounded-lg hover:bg-amber-700 whitespace-nowrap"
+              >
+                {t('officeTipsThisTwoWeeks')}
+              </button>
             </div>
           </div>
 
@@ -571,6 +686,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsDate')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsProduct')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsGuide')}</th>
+                        <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsTourStatus')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsPerTour')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">Prepaid Tips</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsNote')}</th>
@@ -580,11 +696,25 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                     <tbody>
                       {tours.map(tour => {
                         const guideLabel = [tour.guide_name, tour.assistant_name].filter(Boolean).join(', ') || '—'
+                        const statusRaw = tour.tour_status && tour.tour_status !== '—' ? tour.tour_status : null
+                        const statusLabel = statusRaw ? getStatusText(statusRaw, locale) : '—'
                         return (
                           <tr key={tour.id} className="border-b border-gray-100 hover:bg-gray-50/50 last:border-b-0">
                             <td className="py-1 px-2 text-gray-900 whitespace-nowrap align-middle">{formatDateLabel(tour.tour_date)}</td>
                             <td className="py-1 px-2 text-gray-900 truncate align-middle" title={tour.product_name}>{tour.product_name}</td>
                             <td className="py-1 px-2 text-gray-600 truncate align-middle" title={guideLabel}>{guideLabel}</td>
+                            <td className="py-1 px-2 align-middle">
+                              {statusRaw ? (
+                                <span
+                                  className={`inline-flex max-w-[10rem] truncate px-1.5 py-0.5 rounded-full text-[11px] font-medium ${getStatusColor(statusRaw)}`}
+                                  title={statusRaw}
+                                >
+                                  {statusLabel}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
                             <td className="py-1 px-2 align-middle">
                               <span className="text-gray-500 mr-0.5">$</span>
                               <input
@@ -638,32 +768,47 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
             </div>
 
             <div className="border-l border-gray-200 pl-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                {t('totalWorkHoursSoFar')} / {t('tipSharePercent')}
+                {t('officeTipsWorkAndShareTitle')}
               </h3>
+              <p className="text-[11px] text-gray-500 leading-snug mb-2 max-w-md">
+                {t('officeTipsPeriodWorkDayRule')}
+              </p>
               {employeeStats.length === 0 ? (
                 <p className="text-sm text-gray-500">{t('officeTipsSelectStaff')}</p>
               ) : (
                 <ul className="space-y-3">
                   {employeeStats.map(emp => {
-                    const isAmy = (emp.name_ko || emp.email).toLowerCase().includes('amy')
+                    const mealDeductHours = (c: number) => Math.round(c * 0.5 * 100) / 100
                     return (
-                    <li key={emp.email} className="border border-gray-200 rounded-lg p-3 bg-white space-y-1">
+                    <li key={emp.email} className="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-gray-900">{emp.name_ko || emp.email}</span>
                         <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
                           {emp.tierPercent}%
                         </span>
-                        {isAmy && (
-                          <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                            476.8h
-                          </span>
-                        )}
                       </div>
-                      <div className="text-xs text-gray-600">
-                        {t('workHoursLabel')} ({startDate}~{endDate}): {emp.hoursInPeriod.toFixed(1)}h
+                      <div className="text-xs text-gray-600 space-y-0.5 rounded-md bg-amber-50/50 p-2 border border-amber-100/80">
+                        <div className="font-medium text-gray-800">{t('officeTipsPeriodWork')}</div>
+                        <div>
+                          {t('officeTipsPeriodGross', {
+                            start: startDate,
+                            end: endDate,
+                            gross: emp.hoursInPeriodGross.toFixed(1),
+                          })}
+                        </div>
+                        <div>
+                          {t('officeTipsMealDeductLine', {
+                            count: emp.mealCountInPeriod,
+                            deduct: mealDeductHours(emp.mealCountInPeriod).toFixed(1),
+                          })}
+                        </div>
+                        <div className="font-medium text-gray-900">
+                          {t('officeTipsNetHoursLine', { net: emp.hoursInPeriod.toFixed(1) })}
+                        </div>
                       </div>
+                      <div className="text-[11px] text-amber-800/90">{t('officeTipsShareUsesNet')}</div>
                       <div className="flex items-center gap-2 mt-2">
                         <span className="text-xs text-gray-600">{t('tipSharePercent')}</span>
                         <input

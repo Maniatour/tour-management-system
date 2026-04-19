@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
-  lasVegasDateFromCheckIn,
   getHourlyRateForEmployeeOnDate,
   employeeHasHourlyPeriods,
+  workCalendarDateYmd,
   type EmployeeRatePeriod,
 } from '@/lib/employeeHourlyRates'
 
@@ -37,7 +37,8 @@ export type AttendanceRecordLike = {
 }
 
 export function calendarDateFromAttendanceRecord(record: AttendanceRecordLike): string | null {
-  return lasVegasDateFromCheckIn(record.check_in_time) || (record.date ? record.date.slice(0, 10) : null)
+  if (!record.date) return null
+  return workCalendarDateYmd({ check_in_time: record.check_in_time ?? null, date: record.date })
 }
 
 /** 기존 규칙: 세션당 8시간 초과 시 30분 차감 */

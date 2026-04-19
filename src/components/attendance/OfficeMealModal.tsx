@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { UtensilsCrossed, Loader2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -14,11 +14,20 @@ import {
 
 type TeamRow = { email: string; name_ko: string | null; display_name: string | null }
 
+const SELECTABLE_EMAIL_ORDER = OFFICE_MEAL_SELECTABLE_EMAILS.map((e) => e.toLowerCase())
+
 function sortTeamBySelectableOrder(rows: TeamRow[]): TeamRow[] {
-  const order = OFFICE_MEAL_SELECTABLE_EMAILS.map((e) => e.toLowerCase())
   return [...rows].sort((a, b) => {
-    const ia = order.indexOf(a.email.trim().toLowerCase())
-    const ib = order.indexOf(b.email.trim().toLowerCase())
+    const ia = SELECTABLE_EMAIL_ORDER.indexOf(a.email.trim().toLowerCase())
+    const ib = SELECTABLE_EMAIL_ORDER.indexOf(b.email.trim().toLowerCase())
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
+  })
+}
+
+function sortEmailsBySelectableOrder(emails: string[]): string[] {
+  return [...new Set(emails)].sort((a, b) => {
+    const ia = SELECTABLE_EMAIL_ORDER.indexOf(a.trim().toLowerCase())
+    const ib = SELECTABLE_EMAIL_ORDER.indexOf(b.trim().toLowerCase())
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
   })
 }
@@ -38,9 +47,18 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
   const [savingEmail, setSavingEmail] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const summaryEnd = lasVegasTodayYmd()
-  const summaryStart = useMemo(() => addCalendarDaysYmd(summaryEnd, -13), [summaryEnd])
+  const [rangeStart, setRangeStart] = useState(() => addCalendarDaysYmd(lasVegasTodayYmd(), -13))
+  const [rangeEnd, setRangeEnd] = useState(() => lasVegasTodayYmd())
   const [mealCounts, setMealCounts] = useState<Record<string, number>>({})
+  const [mealsByDateRows, setMealsByDateRows] = useState<{ date: string; emails: string[] }[]>([])
+  const [rangeLoading, setRangeLoading] = useState(false)
+
+  const rangeQuery = useMemo(() => {
+    const a = rangeStart.trim()
+    const b = rangeEnd.trim()
+    if (!a || !b) return { from: a, to: b }
+    return a <= b ? { from: a, to: b } : { from: b, to: a }
+  }, [rangeStart, rangeEnd])
 
   const loadTeam = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -79,24 +97,45 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     [t]
   )
 
-  const loadSummary = useCallback(async () => {
-    const { data, error: err } = await supabase
-      .from('office_meal_log')
-      .select('employee_email')
-      .gte('meal_date', summaryStart)
-      .lte('meal_date', summaryEnd)
-    if (err) {
-      console.error(err)
-      return
+  const loadRangeSummary = useCallback(async () => {
+    const { from, to } = rangeQuery
+    if (!from || !to) return
+    setRangeLoading(true)
+    try {
+      const { data, error: err } = await supabase
+        .from('office_meal_log')
+        .select('meal_date, employee_email')
+        .gte('meal_date', from)
+        .lte('meal_date', to)
+        .order('meal_date', { ascending: false })
+      if (err) {
+        console.error(err)
+        return
+      }
+      const counts: Record<string, number> = {}
+      const byDate = new Map<string, string[]>()
+      for (const row of data || []) {
+        const r = row as { meal_date: string; employee_email: string }
+        const em = r.employee_email
+        if (!isOfficeMealSelectableEmail(em)) continue
+        const d = typeof r.meal_date === 'string' ? r.meal_date.slice(0, 10) : String(r.meal_date)
+        counts[em] = (counts[em] || 0) + 1
+        const list = byDate.get(d)
+        if (list) list.push(em)
+        else byDate.set(d, [em])
+      }
+      const dates = [...byDate.keys()].sort((x, y) => y.localeCompare(x))
+      setMealsByDateRows(
+        dates.map((date) => ({
+          date,
+          emails: sortEmailsBySelectableOrder(byDate.get(date) || []),
+        }))
+      )
+      setMealCounts(counts)
+    } finally {
+      setRangeLoading(false)
     }
-    const counts: Record<string, number> = {}
-    for (const row of data || []) {
-      const em = (row as { employee_email: string }).employee_email
-      if (!isOfficeMealSelectableEmail(em)) continue
-      counts[em] = (counts[em] || 0) + 1
-    }
-    setMealCounts(counts)
-  }, [summaryStart, summaryEnd])
+  }, [rangeQuery])
 
   useEffect(() => {
     if (!isOpen) return
@@ -116,17 +155,32 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
     let cancelled = false
     ;(async () => {
       setMealsLoading(true)
-      await Promise.all([loadMealsForDate(mealDate), loadSummary()])
+      await loadMealsForDate(mealDate)
       if (!cancelled) setMealsLoading(false)
     })()
     return () => {
       cancelled = true
     }
-  }, [isOpen, mealDate, loadMealsForDate, loadSummary])
+  }, [isOpen, mealDate, loadMealsForDate])
 
   useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    ;(async () => {
+      await loadRangeSummary()
+      if (cancelled) return
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, loadRangeSummary])
+
+  useLayoutEffect(() => {
     if (isOpen) {
-      setMealDate(lasVegasTodayYmd())
+      const end = lasVegasTodayYmd()
+      setMealDate(end)
+      setRangeEnd(end)
+      setRangeStart(addCalendarDaysYmd(end, -13))
     }
   }, [isOpen])
 
@@ -156,13 +210,25 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
           return n
         })
       }
-      await loadSummary()
+      await loadRangeSummary()
     } catch (e) {
       console.error(e)
       setError(t('officeMealSaveError'))
     } finally {
       setSavingEmail(null)
     }
+  }
+
+  const emailToMember = useMemo(() => {
+    const m = new Map<string, TeamRow>()
+    for (const row of team) m.set(row.email.trim().toLowerCase(), row)
+    return m
+  }, [team])
+
+  const nameForEmail = (email: string) => {
+    const row = emailToMember.get(email.trim().toLowerCase())
+    if (row) return displayName(row)
+    return email.split('@')[0]
   }
 
   const sortedSummary = useMemo(() => {
@@ -183,7 +249,7 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-xl shadow-xl w-full sm:max-w-lg max-h-[min(85dvh,640px)] flex flex-col border border-amber-100"
+        className="relative bg-white rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[min(88dvh,720px)] flex flex-col border border-amber-100"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 shrink-0">
@@ -259,24 +325,94 @@ export default function OfficeMealModal({ isOpen, onClose }: OfficeMealModalProp
             </div>
           )}
 
-          <div className="mt-5 pt-4 border-t border-amber-200/80">
-            <h3 className="text-sm font-semibold text-gray-900 mb-2">
-              {t('officeMealTwoWeekTitle', { start: summaryStart, end: summaryEnd })}
-            </h3>
-            {sortedSummary.length === 0 ? (
-              <p className="text-xs text-gray-500">{t('officeMealTwoWeekEmpty')}</p>
-            ) : (
-              <ul className="text-sm space-y-1 max-h-36 overflow-y-auto">
-                {sortedSummary.map((m) => (
-                  <li key={m.email} className="flex justify-between gap-2 text-gray-800">
-                    <span className="truncate">{displayName(m)}</span>
-                    <span className="shrink-0 font-medium tabular-nums">
-                      {t('officeMealCountTimes', { n: m.count })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div className="mt-5 pt-4 border-t border-amber-200/80 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                {t('officeMealHistoryTitle', { start: rangeQuery.from, end: rangeQuery.to })}
+              </h3>
+              <div className="flex flex-wrap items-end gap-3 mb-3">
+                <label className="text-sm text-gray-700">
+                  {t('officeMealRangeStart')}
+                  <input
+                    type="date"
+                    value={rangeStart}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                    className="ml-2 px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white"
+                  />
+                </label>
+                <label className="text-sm text-gray-700">
+                  {t('officeMealRangeEnd')}
+                  <input
+                    type="date"
+                    value={rangeEnd}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                    className="ml-2 px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white"
+                  />
+                </label>
+              </div>
+              <div className="relative rounded-md border border-amber-100 overflow-hidden">
+                {rangeLoading && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70">
+                    <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
+                  </div>
+                )}
+                <div className="max-h-48 overflow-y-auto">
+                  {mealsByDateRows.length === 0 && !rangeLoading ? (
+                    <p className="text-xs text-gray-500 p-3">{t('officeMealRangeEmpty')}</p>
+                  ) : (
+                    <table className="w-full text-xs sm:text-sm text-left">
+                      <thead className="bg-amber-50/80 text-gray-700 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold border-b border-amber-100 w-[7.5rem] sm:w-32">
+                            {t('officeMealDateColumn')}
+                          </th>
+                          <th className="px-3 py-2 font-semibold border-b border-amber-100">
+                            {t('officeMealPeopleColumn')}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mealsByDateRows.map((row) => (
+                          <tr key={row.date} className="border-b border-amber-50 last:border-0">
+                            <td className="px-3 py-2 align-top text-gray-800 whitespace-nowrap tabular-nums">
+                              {row.date}
+                            </td>
+                            <td className="px-3 py-2 text-gray-800">
+                              {row.emails.map((em) => nameForEmail(em)).join(', ')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-amber-100">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                {t('officeMealPerPersonTitle', { start: rangeQuery.from, end: rangeQuery.to })}
+              </h3>
+              {rangeLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-600 py-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                  {t('loading')}
+                </div>
+              ) : sortedSummary.length === 0 ? (
+                <p className="text-xs text-gray-500">{t('officeMealRangeEmpty')}</p>
+              ) : (
+                <ul className="text-sm space-y-1 max-h-36 overflow-y-auto">
+                  {sortedSummary.map((m) => (
+                    <li key={m.email} className="flex justify-between gap-2 text-gray-800">
+                      <span className="truncate">{displayName(m)}</span>
+                      <span className="shrink-0 font-medium tabular-nums">
+                        {t('officeMealCountTimes', { n: m.count })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         </div>
       </div>

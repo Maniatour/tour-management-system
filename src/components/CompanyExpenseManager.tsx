@@ -17,6 +17,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Plus, Search, Filter, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react'
+import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
+import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
 import { toast } from 'sonner'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
@@ -74,7 +76,9 @@ export default function CompanyExpenseManager() {
     payment_method: string[]
   } | null>(null)
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
-  
+  /** reconciliation_matches에 연결된 회사 지출 id */
+  const [reconciledExpenseIds, setReconciledExpenseIds] = useState<Set<string>>(() => new Set())
+
   const [formData, setFormData] = useState<CompanyExpenseFormData>({
     id: '',
     paid_to: '',
@@ -130,6 +134,21 @@ export default function CompanyExpenseManager() {
       setLoading(false)
     }
   }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, page])
+
+  useEffect(() => {
+    const ids = expenses.map((e) => e.id)
+    if (ids.length === 0) {
+      setReconciledExpenseIds(new Set())
+      return
+    }
+    let cancelled = false
+    void fetchReconciledSourceIds(supabase, 'company_expenses', ids).then((set) => {
+      if (!cancelled) setReconciledExpenseIds(set)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [expenses])
 
   const loadVehicles = useCallback(async () => {
     try {
@@ -1056,7 +1075,10 @@ export default function CompanyExpenseManager() {
                     className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm cursor-pointer hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
-                      <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
+                      <p className="font-semibold text-gray-900 text-sm truncate flex-1 flex items-center gap-1.5 min-w-0">
+                        <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
+                        {expense.paid_for}
+                      </p>
                       <p className="text-lg font-bold text-green-600 whitespace-nowrap">
                         ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
                       </p>
@@ -1093,6 +1115,9 @@ export default function CompanyExpenseManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="py-2 w-10 text-center" title="명세 대조">
+                      명세
+                    </TableHead>
                     <TableHead className="py-2">제출일</TableHead>
                     <TableHead className="py-2">결제처</TableHead>
                     <TableHead className="py-2">결제내용</TableHead>
@@ -1112,6 +1137,9 @@ export default function CompanyExpenseManager() {
                       onClick={() => handleEdit(expense)}
                       className="cursor-pointer hover:bg-gray-50"
                     >
+                      <TableCell className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                        <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
+                      </TableCell>
                       <TableCell className="py-2">
                         {expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}
                       </TableCell>

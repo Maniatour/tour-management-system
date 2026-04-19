@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { X, Save, Edit2, Check, XCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
+import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 
 interface ExpenseItem {
   id: string
@@ -35,6 +37,7 @@ export default function ExpenseDetailModal({
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
   const [standardCategories, setStandardCategories] = useState<{ id: string; name: string; name_ko: string }[]>([])
+  const [reconciledKeys, setReconciledKeys] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     if (isOpen) {
@@ -163,6 +166,37 @@ export default function ExpenseDetailModal({
       setLoading(false)
     }
   }, [dateRange, category, normalizeCategory])
+
+  useEffect(() => {
+    if (!expenses.length) {
+      setReconciledKeys(new Set())
+      return
+    }
+    const byTable = new Map<string, string[]>()
+    for (const e of expenses) {
+      const arr = byTable.get(e.source_table) || []
+      arr.push(e.id)
+      byTable.set(e.source_table, arr)
+    }
+    let cancelled = false
+    void Promise.all(
+      [...byTable.entries()].map(([table, ids]) =>
+        fetchReconciledSourceIds(supabase, table, ids).then((set) => ({ table, set }))
+      )
+    ).then((results) => {
+      if (cancelled) return
+      const next = new Set<string>()
+      for (const { table, set } of results) {
+        for (const id of set) {
+          next.add(`${table}:${id}`)
+        }
+      }
+      setReconciledKeys(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [expenses])
 
   const handleEdit = (expense: ExpenseItem) => {
     setEditingId(expense.id)
@@ -339,6 +373,9 @@ export default function ExpenseDetailModal({
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
+                  <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase w-10" title="명세 대조">
+                    명세
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">날짜</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">소스</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명</th>
@@ -351,6 +388,11 @@ export default function ExpenseDetailModal({
               <tbody className="divide-y">
                 {expenses.map((expense) => (
                   <tr key={`${expense.source_table}-${expense.id}`} className="hover:bg-gray-50">
+                    <td className="px-2 py-3 text-center">
+                      <StatementReconciledBadge
+                        matched={reconciledKeys.has(`${expense.source_table}:${expense.id}`)}
+                      />
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {formatDate(expense.submit_on)}
                     </td>

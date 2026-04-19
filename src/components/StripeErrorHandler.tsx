@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { isAbortLikeError } from '@/lib/supabase'
 
 /**
  * Stripe 관련 오류 핸들러 컴포넌트
@@ -28,8 +29,12 @@ export default function StripeErrorHandler() {
 
     // 콘솔 경고 필터링 (Stripe.js 관련 경고, AbortError 무시)
     const originalWarn = console.warn
-    console.warn = (...args: any[]) => {
-      const message = args.join(' ')
+    console.warn = (...args: unknown[]) => {
+      // 객체 인자는 join 시 [object Object]가 되어 메시지 검사로는 잡히지 않음 — Supabase 등
+      if (args.some((a) => isAbortLikeError(a))) return
+      const message = args
+        .map((a) => (typeof a === 'string' ? a : ''))
+        .join(' ')
       // Stripe.js HTTP 경고 무시
       if (
         message.includes('You may test your Stripe.js integration over HTTP') ||
@@ -44,7 +49,7 @@ export default function StripeErrorHandler() {
       if (message.includes('AbortError') || message.includes('signal is aborted')) {
         return
       }
-      originalWarn.apply(console, args)
+      originalWarn(...(args as []))
     }
 
     // 일반 에러 핸들러

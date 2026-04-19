@@ -13,7 +13,7 @@ import {
   ResponsiveContainer
 } from 'recharts'
 import { useAuth } from '@/contexts/AuthContext'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
@@ -28,6 +28,11 @@ import BonusCalculatorModal from '@/components/BonusCalculatorModal'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import {
+  addCalendarDaysYmd,
+  lasVegasTodayYmd,
+  workCalendarDateYmd,
+} from '@/lib/employeeHourlyRates'
 
 const ReservationFormAny = ReservationForm as React.ComponentType<any>
 
@@ -42,19 +47,6 @@ interface AttendanceRecord {
   notes: string | null
   session_number: number
   employee_name: string
-}
-
-interface MonthlyStats {
-  employee_email: string
-  employee_name: string
-  month: string
-  total_days: number
-  present_days: number
-  complete_days: number
-  total_work_hours: number
-  avg_work_hours_per_day: number
-  first_half_hours: number
-  second_half_hours: number
 }
 
 const ATTENDANCE_UI_DEFAULT = {
@@ -73,7 +65,6 @@ export default function AttendancePage() {
   const locale = params.locale as string
   const t = useTranslations('attendancePage')
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
-  const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([])
   const [loading, setLoading] = useState(true)
   const [attendanceUi, setAttendanceUi] = useRoutePersistedState('attendance', ATTENDANCE_UI_DEFAULT)
   const { selectedMonth, selectedEmployee } = attendanceUi
@@ -115,7 +106,12 @@ export default function AttendancePage() {
     coupons: any[]
   } | null>(null)
   const [loadingReservationForEdit, setLoadingReservationForEdit] = useState(false)
-  
+  /** 선택 월 상·하반기(1~15일 / 16~말일) 사무실 식사 횟수 (meal_date 기준) */
+  const [halfMonthMealCounts, setHalfMonthMealCounts] = useState<{ first: number; second: number }>({
+    first: 0,
+    second: 0,
+  })
+
   // 어드민 권한 체크
   const checkAdminPermission = async () => {
     if (!authUser?.email) return
@@ -128,7 +124,16 @@ export default function AttendancePage() {
         .eq('is_active', true)
         .maybeSingle()
       
-      if (error || !teamData) {
+      if (error) {
+        if (isAbortLikeError(error)) return
+        setIsAdmin(false)
+        setCanEditAttendance(false)
+        setCanViewTipsShare(false)
+        setCanViewOfficeTips(false)
+        setCanManageOfficeMeal(false)
+        return
+      }
+      if (!teamData) {
         setIsAdmin(false)
         setCanEditAttendance(false)
         setCanViewTipsShare(false)
@@ -151,6 +156,7 @@ export default function AttendancePage() {
       setCanViewOfficeTips(isAdminUser || isManager || isOpOrOm)
       setCanManageOfficeMeal(isAdminUser || isOfficeManagerOnly)
     } catch (error) {
+      if (isAbortLikeError(error)) return
       console.error('권한 체크 오류:', error)
       setIsAdmin(false)
       setCanEditAttendance(false)
@@ -171,7 +177,7 @@ export default function AttendancePage() {
         .order('name_ko')
       
       if (error) {
-        console.error('팀 멤버 조회 오류:', error)
+        if (!isAbortLikeError(error)) console.error('팀 멤버 조회 오류:', error)
         return
       }
       
@@ -187,7 +193,7 @@ export default function AttendancePage() {
         }
       }
     } catch (error) {
-      console.error('팀 멤버 조회 중 오류:', error)
+      if (!isAbortLikeError(error)) console.error('팀 멤버 조회 중 오류:', error)
     }
   }
   
@@ -268,7 +274,7 @@ export default function AttendancePage() {
         })
         setEditingReservation(convertReservationToFormType(reservation))
       } catch (e) {
-        console.error('예약/폼 데이터 로드 오류:', e)
+        if (!isAbortLikeError(e)) console.error('예약/폼 데이터 로드 오류:', e)
       } finally {
         if (!cancelled) setLoadingReservationForEdit(false)
         setReservationIdForEdit(null)
@@ -299,7 +305,13 @@ export default function AttendancePage() {
         .eq('is_active', true)
         .maybeSingle()
 
-      if (employeeError || !employeeData) {
+      if (employeeError) {
+        if (isAbortLikeError(employeeError)) return
+        setTodayRecords([])
+        setCurrentSessionForSelectedEmployee(null)
+        return
+      }
+      if (!employeeData) {
         setTodayRecords([])
         setCurrentSessionForSelectedEmployee(null)
         return
@@ -308,20 +320,18 @@ export default function AttendancePage() {
       // 최근 7일간의 미체크아웃 기록 조회
       const sevenDaysAgo = new Date()
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-      const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0]
-      
+
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', (employeeData as any).email)
         .is('check_out_time', null)
-        .gte('date', sevenDaysAgoStr)
-        .order('date', { ascending: false })
+        .gte('check_in_time', sevenDaysAgo.toISOString())
         .order('check_in_time', { ascending: false })
         .order('session_number', { ascending: true })
 
       if (error) {
-        console.log('오늘 기록 조회 오류:', error)
+        if (!isAbortLikeError(error)) console.log('오늘 기록 조회 오류:', error)
         setTodayRecords([])
         setCurrentSessionForSelectedEmployee(null)
         return
@@ -339,21 +349,27 @@ export default function AttendancePage() {
         (record.check_out_time === null || record.check_out_time === '')
       )
       
-      // 오늘의 모든 출퇴근 기록 조회 (완료된 것도 포함)
-      const today = new Date().toISOString().split('T')[0]
+      // 라스베가스 "오늘"에 출근으로 잡힌 모든 세션 (완료·진행 중)
+      const todayLv = lasVegasTodayYmd()
+      const todayQueryFrom = addCalendarDaysYmd(todayLv, -3)
+      const todayQueryTo = addCalendarDaysYmd(todayLv, 3)
       const { data: todayData, error: todayError } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', (employeeData as any).email)
-        .eq('date', today)
+        .gte('date', todayQueryFrom)
+        .lte('date', todayQueryTo)
         .order('session_number', { ascending: true })
 
       if (!todayError && todayData) {
-        const todayRecords = todayData.map((record: any) => ({
+        const mapped = todayData.map((record: any) => ({
           ...record,
           employee_name: (employeeData as any).name_ko,
           employee_email: (employeeData as any).email
         }))
+        const todayRecords = mapped.filter(
+          (record: AttendanceRecord) => workCalendarDateYmd(record) === todayLv
+        )
         setTodayRecords(todayRecords)
       } else {
         setTodayRecords([])
@@ -361,8 +377,36 @@ export default function AttendancePage() {
       
       setCurrentSessionForSelectedEmployee(activeSession || null)
     } catch (error) {
-      console.error('오늘 기록 조회 중 오류:', error)
+      if (!isAbortLikeError(error)) console.error('오늘 기록 조회 중 오류:', error)
     }
+  }
+
+  const fetchOfficeMealHalfCounts = async (employeeEmail: string, monthYyyyMm: string) => {
+    const monthStart = monthYyyyMm + '-01'
+    const [y, m] = monthYyyyMm.split('-').map(Number)
+    const monthEnd = `${monthYyyyMm}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+    const { data, error } = await supabase
+      .from('office_meal_log')
+      .select('meal_date')
+      .eq('employee_email', employeeEmail)
+      .gte('meal_date', monthStart)
+      .lte('meal_date', monthEnd)
+    if (error) {
+      if (!isAbortLikeError(error)) console.error('office_meal_log 조회 오류:', error)
+      setHalfMonthMealCounts({ first: 0, second: 0 })
+      return
+    }
+    let first = 0
+    let second = 0
+    for (const row of data || []) {
+      const md = (row as { meal_date: string }).meal_date
+      const d = typeof md === 'string' ? md.slice(0, 10) : String(md)
+      const day = parseInt(d.slice(8, 10), 10)
+      if (Number.isNaN(day)) continue
+      if (day <= 15) first += 1
+      else second += 1
+    }
+    setHalfMonthMealCounts({ first, second })
   }
 
   // 출퇴근 기록 조회
@@ -371,6 +415,7 @@ export default function AttendancePage() {
     
     if (!selectedEmployee) {
       console.log('selectedEmployee가 없습니다')
+      setHalfMonthMealCounts({ first: 0, second: 0 })
       return
     }
 
@@ -384,39 +429,50 @@ export default function AttendancePage() {
         .eq('is_active', true)
         .maybeSingle()
 
+      if (employeeError && isAbortLikeError(employeeError)) return
+
       console.log('직원 정보 조회 결과:', { employeeData, employeeError })
 
       if (employeeError) {
-        console.error('직원 정보 조회 오류:', employeeError)
+        const e = employeeError as { message?: string; code?: string; details?: string }
+        console.error(
+          '직원 정보 조회 오류:',
+          [e.message, e.code, e.details].filter(Boolean).join(' | ') || employeeError
+        )
         setEmployeeNotFound(true)
+        setHalfMonthMealCounts({ first: 0, second: 0 })
         return
       }
 
       if (!employeeData) {
         console.log('직원 정보를 찾을 수 없습니다.')
         setEmployeeNotFound(true)
+        setHalfMonthMealCounts({ first: 0, second: 0 })
         return
       }
 
+      const empEmail = (employeeData as { email: string }).email
+
       // 출퇴근 기록 조회 (테이블이 없을 수도 있으므로 에러 무시)
       const monthStart = selectedMonth + '-01'
-      // 해당 월의 마지막 날 계산 수정
       const year = parseInt(selectedMonth.split('-')[0])
-      const month = parseInt(selectedMonth.split('-')[1]) - 1 // JavaScript 월은 0부터 시작
+      const month = parseInt(selectedMonth.split('-')[1]) - 1
       const monthEnd = new Date(year, month + 1, 0).toISOString().split('T')[0]
-      
-      console.log('출퇴근 기록 조회 시작...', { monthStart, monthEnd, employeeEmail: (employeeData as any).email })
-      
+      const queryStart = addCalendarDaysYmd(monthStart, -3)
+      const queryEnd = addCalendarDaysYmd(monthEnd, 3)
+
+      console.log('출퇴근 기록 조회 시작...', { monthStart, monthEnd, queryStart, queryEnd, employeeEmail: (employeeData as any).email })
+
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', (employeeData as any).email)
-        .gte('date', monthStart)
-        .lte('date', monthEnd)
+        .gte('date', queryStart)
+        .lte('date', queryEnd)
         .order('date', { ascending: false })
         .order('check_in_time', { ascending: true })
         .order('session_number', { ascending: true })
-        .limit(10000) // 충분히 큰 제한값 설정
+        .limit(10000)
 
       console.log('출퇴근 기록 조회 결과:', { 
         data: data, 
@@ -430,15 +486,30 @@ export default function AttendancePage() {
       if (error) {
         console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
         setAttendanceRecords([])
+        await fetchOfficeMealHalfCounts(empEmail, selectedMonth)
         return
       }
 
-      const records = data?.map((record: any) => ({
+      const mapped = data?.map((record: any) => ({
         ...record,
         employee_name: (employeeData as any).name_ko,
         employee_email: (employeeData as any).email
       })) || []
-      
+
+      const records = mapped
+        .filter((record: AttendanceRecord) => {
+          const d = workCalendarDateYmd(record)
+          return d >= monthStart && d <= monthEnd
+        })
+        .sort((a: AttendanceRecord, b: AttendanceRecord) => {
+          const da = workCalendarDateYmd(a)
+          const db = workCalendarDateYmd(b)
+          if (da !== db) return db.localeCompare(da)
+          const ta = a.check_in_time ? new Date(a.check_in_time).getTime() : 0
+          const tb = b.check_in_time ? new Date(b.check_in_time).getTime() : 0
+          return ta - tb
+        })
+
       console.log('처리된 출퇴근 기록:', {
         totalRecords: records.length,
         records: records,
@@ -448,63 +519,9 @@ export default function AttendancePage() {
         } : null
       })
       setAttendanceRecords(records)
+      await fetchOfficeMealHalfCounts(empEmail, selectedMonth)
     } catch (error) {
-      console.error('출퇴근 기록 조회 중 오류:', error)
-    }
-  }
-
-  // 월별 통계 조회
-  const fetchMonthlyStats = async () => {
-    if (!selectedEmployee) return
-
-    try {
-      // 선택된 직원의 정보 조회
-      const { data: employeeData, error: employeeError } = await supabase
-        .from('team')
-        .select('name_ko, email')
-        .eq('email', selectedEmployee)
-        .eq('is_active', true)
-        .maybeSingle()
-
-      if (employeeError) {
-        console.error('직원 정보 조회 오류:', employeeError)
-        setEmployeeNotFound(true)
-        return
-      }
-
-      if (!employeeData) {
-        console.log('직원 정보를 찾을 수 없습니다.')
-        setEmployeeNotFound(true)
-        return
-      }
-
-      console.log('월별 통계 조회 시작...', { employeeEmail: (employeeData as any).email, selectedMonth })
-
-      // 월별 통계 조회 (테이블이 없을 수도 있으므로 에러 무시)
-      const { data, error } = await supabase
-        .from('monthly_attendance_stats')
-        .select('*')
-        .eq('employee_email', (employeeData as any).email)
-        .eq('month', selectedMonth + '-01')
-        .maybeSingle()
-
-      console.log('월별 통계 조회 결과:', { data, error })
-
-      if (error && error.code !== 'PGRST116') {
-        console.log('월별 통계 조회 오류:', error)
-        setMonthlyStats([])
-        return
-      }
-
-      if (data) {
-        console.log('월별 통계 데이터:', data)
-        setMonthlyStats([data])
-      } else {
-        console.log('월별 통계 데이터가 없습니다.')
-        setMonthlyStats([])
-      }
-    } catch (error) {
-      console.error('월별 통계 조회 중 오류:', error)
+      if (!isAbortLikeError(error)) console.error('출퇴근 기록 조회 중 오류:', error)
     }
   }
 
@@ -512,21 +529,13 @@ export default function AttendancePage() {
   const handleCheckInExecute = async () => {
     await handleCheckIn()
     // 모든 데이터 새로고침
-    await Promise.all([
-      fetchTodayRecords(),
-      fetchAttendanceRecords(),
-      fetchMonthlyStats()
-    ])
+    await Promise.all([fetchTodayRecords(), fetchAttendanceRecords()])
   }
 
   const handleCheckOutExecute = async () => {
     await handleCheckOut()
     // 모든 데이터 새로고침
-    await Promise.all([
-      fetchTodayRecords(),
-      fetchAttendanceRecords(),
-      fetchMonthlyStats()
-    ])
+    await Promise.all([fetchTodayRecords(), fetchAttendanceRecords()])
   }
 
   // 수정 모달 열기
@@ -543,22 +552,14 @@ export default function AttendancePage() {
 
   // 수정 완료 후 데이터 새로고침
   const handleUpdateComplete = async () => {
-    await Promise.all([
-      fetchTodayRecords(),
-      fetchAttendanceRecords(),
-      fetchMonthlyStats()
-    ])
+    await Promise.all([fetchTodayRecords(), fetchAttendanceRecords()])
   }
 
   // 데이터 새로고침
   const refreshData = async () => {
     console.log('refreshData 시작')
     setLoading(true)
-    await Promise.all([
-      fetchTodayRecords(),
-      fetchAttendanceRecords(),
-      fetchMonthlyStats()
-    ])
+    await Promise.all([fetchTodayRecords(), fetchAttendanceRecords()])
     setLoading(false)
     console.log('refreshData 완료')
   }
@@ -631,18 +632,22 @@ export default function AttendancePage() {
     return `${h}시간 ${m}분`
   }
 
-  // 출근 시각 기준 날짜(라스베가스) YYYY-MM-DD
-  const getCheckInDate = useCallback((r: AttendanceRecord): string => {
-    if (r.check_in_time) {
-      const utc = new Date(r.check_in_time)
-      const lv = new Date(utc.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
-      const y = lv.getFullYear()
-      const m = String(lv.getMonth() + 1).padStart(2, '0')
-      const d = String(lv.getDate()).padStart(2, '0')
-      return `${y}-${m}-${d}`
-    }
-    return r.date
-  }, [])
+  /** 사무실 식사 1회당 30분(0.5h) 차감 합계 표시 */
+  const formatMealDeductHours = (mealCount: number) => {
+    const hours = mealCount * 0.5
+    if (hours <= 0) return '0시간 0분'
+    return formatWorkHours(hours)
+  }
+
+  const mealDeductHoursDecimal = (mealCount: number) =>
+    Math.round(mealCount * 0.5 * 10) / 10
+
+  const netHoursAfterMeals = (grossHours: number, mealCount: number) => {
+    const d = mealCount * 0.5
+    return Math.round((grossHours - d) * 100) / 100
+  }
+
+  const getCheckInDate = useCallback((r: AttendanceRecord): string => workCalendarDateYmd(r), [])
 
   // 월별 그래프용: 해당 월 전체 날짜(1일~말일) + 출근 날짜 기준 근무시간(해당 일자 출근한 세션의 전체 시간만 그 날에 합산)
   const monthlyChartData = useMemo(() => {
@@ -688,6 +693,28 @@ export default function AttendancePage() {
     const avgHoursPerDay = presentDays > 0 ? Math.round((totalWorkHours / presentDays) * 100) / 100 : 0
     return { presentDays, totalWorkHours, avgHoursPerDay }
   }, [attendanceRecords, selectedMonth, getCheckInDate])
+
+  /** 출근 LV 일자 기준 상·하반기 근무시간 (monthly_attendance_stats와 동일 정의) */
+  const firstSecondHalfHoursByCheckIn = useMemo(() => {
+    const monthStart = selectedMonth + '-01'
+    const [y, m] = selectedMonth.split('-').map(Number)
+    const monthEnd = `${selectedMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+    let first = 0
+    let second = 0
+    for (const r of attendanceRecords) {
+      if (!r.check_out_time) continue
+      const d = workCalendarDateYmd(r)
+      if (d < monthStart || d > monthEnd) continue
+      const wh = Number(r.work_hours) || 0
+      const day = parseInt(d.slice(8, 10), 10)
+      if (day <= 15) first += wh
+      else second += wh
+    }
+    return {
+      first: Math.round(first * 100) / 100,
+      second: Math.round(second * 100) / 100,
+    }
+  }, [attendanceRecords, selectedMonth])
 
   // 날짜별 배경 색상 결정 함수
   const getDateBackgroundColor = (date: string) => {
@@ -1002,7 +1029,7 @@ export default function AttendancePage() {
           <span className="truncate">{isAdmin ? t('monthlyStatsAdmin', { name: teamMembers.find(m => m.email === selectedEmployee)?.name_ko || t('selectedEmployeeLabel'), month: selectedMonth }) : t('monthlyStatsUser', { month: selectedMonth })}</span>
         </h2>
         
-        {(monthlyStats.length > 0 || monthlyStatsByCheckIn.presentDays > 0) ? (
+        {attendanceRecords.length > 0 ? (
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
             <div className="text-center p-3 sm:p-4 bg-blue-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-blue-600">
@@ -1023,16 +1050,34 @@ export default function AttendancePage() {
               <div className="text-xs sm:text-sm text-teal-800">{t('avgHoursPerDay')}</div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-purple-50 rounded-lg min-w-0">
-              <div className="text-lg sm:text-2xl font-bold text-purple-600">
-                {monthlyStats[0]?.first_half_hours?.toFixed(1) ?? 0}{t('hoursUnit')}
+              <div className="text-xs sm:text-sm text-purple-800 mb-2">{t('firstHalf')}</div>
+              <div className="text-sm sm:text-lg font-bold text-purple-600 leading-snug tabular-nums">
+                {firstSecondHalfHoursByCheckIn.first.toFixed(1)}
+                {t('hoursUnit')} − {mealDeductHoursDecimal(halfMonthMealCounts.first).toFixed(1)}
+                {t('hoursUnit')} = {netHoursAfterMeals(firstSecondHalfHoursByCheckIn.first, halfMonthMealCounts.first).toFixed(1)}
+                {t('hoursUnit')}
               </div>
-              <div className="text-xs sm:text-sm text-purple-800">{t('firstHalf')}</div>
+              <div className="mt-2 pt-2 border-t border-purple-200/80 text-[11px] sm:text-xs text-purple-900/90 leading-snug">
+                {t('halfMealSummary', {
+                  count: halfMonthMealCounts.first,
+                  time: formatMealDeductHours(halfMonthMealCounts.first),
+                })}
+              </div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-orange-50 rounded-lg min-w-0">
-              <div className="text-lg sm:text-2xl font-bold text-orange-600">
-                {monthlyStats[0]?.second_half_hours?.toFixed(1) ?? 0}{t('hoursUnit')}
+              <div className="text-xs sm:text-sm text-orange-800 mb-2">{t('secondHalf')}</div>
+              <div className="text-sm sm:text-lg font-bold text-orange-600 leading-snug tabular-nums">
+                {firstSecondHalfHoursByCheckIn.second.toFixed(1)}
+                {t('hoursUnit')} − {mealDeductHoursDecimal(halfMonthMealCounts.second).toFixed(1)}
+                {t('hoursUnit')} = {netHoursAfterMeals(firstSecondHalfHoursByCheckIn.second, halfMonthMealCounts.second).toFixed(1)}
+                {t('hoursUnit')}
               </div>
-              <div className="text-xs sm:text-sm text-orange-800">{t('secondHalf')}</div>
+              <div className="mt-2 pt-2 border-t border-orange-200/80 text-[11px] sm:text-xs text-orange-900/90 leading-snug">
+                {t('halfMealSummary', {
+                  count: halfMonthMealCounts.second,
+                  time: formatMealDeductHours(halfMonthMealCounts.second),
+                })}
+              </div>
             </div>
           </div>
         ) : (
@@ -1123,7 +1168,7 @@ export default function AttendancePage() {
               {attendanceRecords.map((record) => (
                 <div
                   key={record.id}
-                  className={`rounded-lg border p-3 sm:p-4 ${getDateBackgroundColor(record.date)} transition-colors`}
+                  className={`rounded-lg border p-3 sm:p-4 ${getDateBackgroundColor(workCalendarDateYmd(record))} transition-colors`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <span className="text-sm font-medium text-gray-900">
@@ -1199,7 +1244,7 @@ export default function AttendancePage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {attendanceRecords.map((record) => (
-                    <tr key={record.id} className={`${getDateBackgroundColor(record.date)} transition-colors`}>
+                    <tr key={record.id} className={`${getDateBackgroundColor(workCalendarDateYmd(record))} transition-colors`}>
                       {isAdmin && (
                         <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                           {record.id}

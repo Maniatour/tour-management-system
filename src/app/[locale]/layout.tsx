@@ -13,6 +13,7 @@ import { headers, cookies } from 'next/headers';
 // duplicate import removed
 import { createServerSupabase } from '@/lib/supabase-server';
 import CartProviderWrapper from '@/components/CartProviderWrapper';
+import { AuthProviderBoundary } from '@/contexts/AuthContext';
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -100,53 +101,59 @@ export default async function LocaleLayout({
   // Admin, Embed, Photos: 기본 레이아웃만 (사이드바/네비 없음)
   if (isAdminPage || isEmbedPage || isPhotosPage) {
     return (
-      <NextIntlClientProvider messages={messages} locale={locale}>
-        <FloatingChatProvider>
-          <StripeErrorHandler />
-          <div className="min-h-screen bg-gray-50">
-            {children}
-            <FloatingChatContainer />
-          </div>
-        </FloatingChatProvider>
-      </NextIntlClientProvider>
+      <AuthProviderBoundary>
+        <NextIntlClientProvider messages={messages} locale={locale}>
+          <FloatingChatProvider>
+            <StripeErrorHandler />
+            <div className="min-h-screen bg-gray-50">
+              {children}
+              <FloatingChatContainer />
+            </div>
+          </FloatingChatProvider>
+        </NextIntlClientProvider>
+      </AuthProviderBoundary>
     );
   }
 
   // 가이드: Navigation은 여기서만 렌더 → guide/layout과 이중 헤더 방지 (x-pathname 누락 시 x-is-guide-route로 분기)
   if (isGuidePage) {
     return (
-      <NextIntlClientProvider messages={messages} locale={locale}>
-        <FloatingChatProvider>
-          <StripeErrorHandler />
-          <div className="min-h-screen bg-gray-50">
-            <Navigation />
-            {children}
-            <FloatingChatContainer />
-          </div>
-        </FloatingChatProvider>
-      </NextIntlClientProvider>
+      <AuthProviderBoundary>
+        <NextIntlClientProvider messages={messages} locale={locale}>
+          <FloatingChatProvider>
+            <StripeErrorHandler />
+            <div className="min-h-screen bg-gray-50">
+              <Navigation />
+              {children}
+              <FloatingChatContainer />
+            </div>
+          </FloatingChatProvider>
+        </NextIntlClientProvider>
+      </AuthProviderBoundary>
     );
   }
 
   // 일반 페이지인 경우 기존 레이아웃 사용
   return (
-    <NextIntlClientProvider messages={messages} locale={locale}>
-      <FloatingChatProvider>
-        <StripeErrorHandler />
-        <CartProviderWrapper>
-          <div className="min-h-screen bg-gray-50">
-            <Navigation />
-            <div className="flex flex-col lg:flex-row">
-              <Sidebar />
-              <main className="flex-1 px-2 pt-4 lg:px-6 lg:pt-6 main-safe-area">
-                {children}
-              </main>
+    <AuthProviderBoundary>
+      <NextIntlClientProvider messages={messages} locale={locale}>
+        <FloatingChatProvider>
+          <StripeErrorHandler />
+          <CartProviderWrapper>
+            <div className="min-h-screen bg-gray-50">
+              <Navigation />
+              <div className="flex flex-col lg:flex-row">
+                <Sidebar />
+                <main className="flex-1 px-2 pt-4 lg:px-6 lg:pt-6 main-safe-area">
+                  {children}
+                </main>
+              </div>
+              <UserFooter locale={locale} />
+              <FloatingChatContainer />
             </div>
-            <UserFooter locale={locale} />
-            <FloatingChatContainer />
-          </div>
-        </CartProviderWrapper>
-      </FloatingChatProvider>
-          </NextIntlClientProvider>
+          </CartProviderWrapper>
+        </FloatingChatProvider>
+      </NextIntlClientProvider>
+    </AuthProviderBoundary>
   );
 }

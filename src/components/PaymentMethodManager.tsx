@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { 
   CreditCard, 
   Plus, 
@@ -17,7 +17,9 @@ import {
   Filter,
   Search,
   Download,
-  Upload
+  Upload,
+  LayoutGrid,
+  Table2
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -67,6 +69,24 @@ interface PaymentMethodManagerProps {
   onMethodUpdated?: () => void
 }
 
+/** 팀 멤버 목록(결제 방법 폼·벌크 사용자 선택 등) */
+interface TeamMemberWithStatus {
+  email: string
+  name_ko: string
+  name_en: string | null
+  nick_name: string | null
+  is_active: boolean
+}
+
+function teamMemberMatchesSearchQuery(member: TeamMemberWithStatus, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase()
+  if (!q) return true
+  const parts: string[] = [member.email, member.name_ko]
+  if (member.name_en) parts.push(member.name_en)
+  if (member.nick_name) parts.push(member.nick_name)
+  return parts.some((p) => p.toLowerCase().includes(q))
+}
+
 export default function PaymentMethodManager({ 
   userEmail, 
   userRole = 'team_member',
@@ -76,11 +96,33 @@ export default function PaymentMethodManager({
   const t = useTranslations('paymentMethod')
   const [methods, setMethods] = useState<PaymentMethod[]>([])
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
-  const [teamMembersWithStatus, setTeamMembersWithStatus] = useState<Array<{email: string, name_ko: string, is_active: boolean}>>([])
+  const [teamMembersWithStatus, setTeamMembersWithStatus] = useState<TeamMemberWithStatus[]>([])
   const [showAllUsers, setShowAllUsers] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [showBulkForm, setShowBulkForm] = useState(false)
+  const [showBulkEditForm, setShowBulkEditForm] = useState(false)
+  const [listViewMode, setListViewMode] = useState<'cards' | 'table'>('cards')
+  const [selectedMethodIds, setSelectedMethodIds] = useState<string[]>([])
+  const [bulkEditRows, setBulkEditRows] = useState<Array<{
+    id: string
+    method: string
+    method_type: string
+    user_email: string
+    status: string
+    notes: string
+  }>>([{
+    id: '',
+    method: '',
+    method_type: 'card',
+    user_email: '',
+    status: 'active',
+    notes: ''
+  }])
+  const [bulkEditUserSelectIndex, setBulkEditUserSelectIndex] = useState<number | null>(null)
+  const [bulkEditUserMemberSearch, setBulkEditUserMemberSearch] = useState('')
+  /** 일괄 수정 모달: 전체 목록 API 로딩 */
+  const [bulkEditLoading, setBulkEditLoading] = useState(false)
   const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null)
   const [bulkRows, setBulkRows] = useState<Array<{
     id: string
@@ -98,6 +140,8 @@ export default function PaymentMethodManager({
     notes: ''
   }])
   const [bulkUserSelectIndex, setBulkUserSelectIndex] = useState<number | null>(null)
+  const [bulkUserMemberSearch, setBulkUserMemberSearch] = useState('')
+  const [formTeamMemberSearch, setFormTeamMemberSearch] = useState('')
   const [filters, setFilters] = useState({
     status: '',
     method_type: '',
@@ -147,6 +191,72 @@ export default function PaymentMethodManager({
     loadTeamMembers()
   }, [userEmail])
 
+  useEffect(() => {
+    if (bulkUserSelectIndex === null) {
+      setBulkUserMemberSearch('')
+    }
+  }, [bulkUserSelectIndex])
+
+  useEffect(() => {
+    if (bulkEditUserSelectIndex === null) {
+      setBulkEditUserMemberSearch('')
+    }
+  }, [bulkEditUserSelectIndex])
+
+  const bulkUserSelectActiveMembers = useMemo(
+    () =>
+      teamMembersWithStatus.filter(
+        (m) => m.is_active && teamMemberMatchesSearchQuery(m, bulkUserMemberSearch)
+      ),
+    [teamMembersWithStatus, bulkUserMemberSearch]
+  )
+
+  const bulkUserSelectInactiveMembers = useMemo(
+    () =>
+      teamMembersWithStatus.filter(
+        (m) => !m.is_active && teamMemberMatchesSearchQuery(m, bulkUserMemberSearch)
+      ),
+    [teamMembersWithStatus, bulkUserMemberSearch]
+  )
+
+  const formActiveTeamMembers = useMemo(
+    () =>
+      teamMembersWithStatus.filter(
+        (m) => m.is_active && teamMemberMatchesSearchQuery(m, formTeamMemberSearch)
+      ),
+    [teamMembersWithStatus, formTeamMemberSearch]
+  )
+
+  const formInactiveTeamMembers = useMemo(
+    () =>
+      teamMembersWithStatus.filter(
+        (m) => !m.is_active && teamMemberMatchesSearchQuery(m, formTeamMemberSearch)
+      ),
+    [teamMembersWithStatus, formTeamMemberSearch]
+  )
+
+  const bulkEditUserSelectActiveMembers = useMemo(
+    () =>
+      teamMembersWithStatus.filter(
+        (m) => m.is_active && teamMemberMatchesSearchQuery(m, bulkEditUserMemberSearch)
+      ),
+    [teamMembersWithStatus, bulkEditUserMemberSearch]
+  )
+
+  const bulkEditUserSelectInactiveMembers = useMemo(
+    () =>
+      teamMembersWithStatus.filter(
+        (m) => !m.is_active && teamMemberMatchesSearchQuery(m, bulkEditUserMemberSearch)
+      ),
+    [teamMembersWithStatus, bulkEditUserMemberSearch]
+  )
+
+  useEffect(() => {
+    if (!showAddForm) {
+      setFormTeamMemberSearch('')
+    }
+  }, [showAddForm])
+
   const loadMethods = async () => {
     try {
       setLoading(true)
@@ -183,20 +293,22 @@ export default function PaymentMethodManager({
     try {
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, is_active')
+        .select('email, name_ko, name_en, nick_name, is_active')
         .order('is_active', { ascending: false })
         .order('name_ko', { ascending: true })
 
       if (error) throw error
       
       const membersMap: Record<string, string> = {}
-      const membersWithStatus: Array<{email: string, name_ko: string, is_active: boolean}> = []
+      const membersWithStatus: TeamMemberWithStatus[] = []
       
-      data?.forEach(member => {
+      data?.forEach((member) => {
         membersMap[member.email] = member.name_ko
         membersWithStatus.push({
           email: member.email,
           name_ko: member.name_ko,
+          name_en: member.name_en ?? null,
+          nick_name: member.nick_name ?? null,
           is_active: member.is_active ?? true
         })
       })
@@ -653,12 +765,13 @@ export default function PaymentMethodManager({
   const toggleBulkUserSelection = (rowIndex: number, email: string) => {
     setBulkRows(prev => prev.map((row, i) => {
       if (i === rowIndex) {
-        const isSelected = row.user_emails.includes(email)
+        const emails = row.user_emails ?? []
+        const isSelected = emails.includes(email)
         return {
           ...row,
           user_emails: isSelected
-            ? row.user_emails.filter(e => e !== email)
-            : [...row.user_emails, email]
+            ? emails.filter(e => e !== email)
+            : [...emails, email]
         }
       }
       return row
@@ -773,6 +886,236 @@ export default function PaymentMethodManager({
     }
   }
 
+  const emptyBulkEditRow = () => ({
+    id: '',
+    method: '',
+    method_type: 'card',
+    user_email: '',
+    status: 'active',
+    notes: ''
+  })
+
+  const paymentMethodsToBulkEditRows = (list: PaymentMethod[]) =>
+    list.map((m) => ({
+      id: m.id,
+      method: m.method,
+      method_type: m.method_type,
+      user_email: m.user_email || '',
+      status: m.status,
+      notes: m.notes || ''
+    }))
+
+  /** 상태/유형/검색 필터 없이 전부 로드 (페이지네이션). 관리자 단일 사용자 뷰(userEmail)는 유지 */
+  const fetchAllPaymentMethodsForBulkEdit = async (): Promise<PaymentMethod[]> => {
+    const pageSize = 500
+    const all: PaymentMethod[] = []
+    let offset = 0
+    for (;;) {
+      const params = new URLSearchParams()
+      if (userEmail) params.append('user_email', userEmail)
+      params.append('limit', String(pageSize))
+      params.append('offset', String(offset))
+
+      const response = await fetch(`/api/payment-methods?${params}`)
+      const result = await response.json()
+
+      if (!result.success || !Array.isArray(result.data)) {
+        throw new Error(result.message || '결제 방법 목록을 불러오지 못했습니다.')
+      }
+
+      const chunk = result.data as PaymentMethod[]
+      all.push(...chunk)
+      if (chunk.length < pageSize) break
+      offset += pageSize
+      if (offset > 200000) break
+    }
+    return all
+  }
+
+  const openBulkEditWithAllMethods = async () => {
+    setShowBulkEditForm(true)
+    setBulkEditUserSelectIndex(null)
+    setBulkEditRows([])
+    setBulkEditLoading(true)
+    try {
+      const fetched = await fetchAllPaymentMethodsForBulkEdit()
+      setBulkEditRows(
+        fetched.length > 0 ? paymentMethodsToBulkEditRows(fetched) : [emptyBulkEditRow()]
+      )
+    } catch (error) {
+      console.error('openBulkEditWithAllMethods:', error)
+      alert(
+        `전체 목록을 불러오지 못했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+      )
+      setShowBulkEditForm(false)
+    } finally {
+      setBulkEditLoading(false)
+    }
+  }
+
+  const resetBulkEditRows = () => {
+    setBulkEditRows([emptyBulkEditRow()])
+    setBulkEditUserSelectIndex(null)
+    setBulkEditLoading(false)
+  }
+
+  const addBulkEditRow = () => {
+    setBulkEditRows(prev => [...prev, emptyBulkEditRow()])
+  }
+
+  const removeBulkEditRow = (index: number) => {
+    setBulkEditRows(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const updateBulkEditRow = (index: number, field: string, value: string) => {
+    setBulkEditRows(prev => prev.map((row, i) =>
+      i === index ? { ...row, [field]: value } : row
+    ))
+  }
+
+  const toggleBulkEditUserSelection = (rowIndex: number, email: string) => {
+    setBulkEditRows(prev => prev.map((row, i) => {
+      if (i !== rowIndex) return row
+      return {
+        ...row,
+        user_email: row.user_email === email ? '' : email
+      }
+    }))
+  }
+
+  const handleBulkEditSubmit = async () => {
+    try {
+      setLoading(true)
+
+      const invalidRows: number[] = []
+      bulkEditRows.forEach((row, index) => {
+        if (!row.id.trim() || !row.method.trim()) {
+          invalidRows.push(index + 1)
+        }
+      })
+
+      if (invalidRows.length > 0) {
+        alert(`다음 행에 ID와 방법명이 필요합니다: ${invalidRows.join(', ')}`)
+        setLoading(false)
+        return
+      }
+
+      const results = {
+        success: 0,
+        failed: 0,
+        errors: [] as string[]
+      }
+
+      for (let i = 0; i < bulkEditRows.length; i++) {
+        const row = bulkEditRows[i]
+        const id = row.id.trim()
+        try {
+          const response = await fetch(`/api/payment-methods/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              method: row.method.trim(),
+              method_type: row.method_type,
+              user_email: row.user_email.trim() || null,
+              status: row.status,
+              notes: row.notes.trim() || null,
+              updated_by: userEmail || null
+            })
+          })
+
+          const result = await response.json()
+
+          if (result.success) {
+            results.success++
+          } else {
+            results.failed++
+            results.errors.push(`행 ${i + 1} (${id}): ${result.message || result.error || '알 수 없는 오류'}`)
+          }
+        } catch (error) {
+          results.failed++
+          results.errors.push(`행 ${i + 1} (${id}): ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+        }
+      }
+
+      await loadMethods()
+      onMethodUpdated?.()
+
+      let message = `수정 완료: 성공 ${results.success}개, 실패 ${results.failed}개`
+      if (results.errors.length > 0) {
+        message += `\n\n오류 상세:\n${results.errors.slice(0, 10).join('\n')}`
+        if (results.errors.length > 10) {
+          message += `\n... 외 ${results.errors.length - 10}개 오류`
+        }
+      }
+      alert(message)
+
+      if (results.success > 0) {
+        setShowBulkEditForm(false)
+        resetBulkEditRows()
+        setSelectedMethodIds([])
+      }
+    } catch (error) {
+      console.error('Error in bulk edit:', error)
+      alert(`일괄 수정에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openBulkEditFromSelection = async () => {
+    if (selectedMethodIds.length === 0) {
+      alert('테이블에서 수정할 결제 방법을 선택해주세요.')
+      return
+    }
+
+    setShowBulkEditForm(true)
+    setBulkEditUserSelectIndex(null)
+    setBulkEditRows([])
+    setBulkEditLoading(true)
+    try {
+      const all = await fetchAllPaymentMethodsForBulkEdit()
+      const idSet = new Set(selectedMethodIds)
+      const picked = all.filter((m) => idSet.has(m.id))
+      const rows = paymentMethodsToBulkEditRows(picked)
+
+      if (rows.length === 0) {
+        alert('선택한 항목을 전체 목록에서 찾을 수 없습니다.')
+        setShowBulkEditForm(false)
+        return
+      }
+
+      setBulkEditRows(rows)
+    } catch (error) {
+      console.error('openBulkEditFromSelection:', error)
+      alert(
+        `목록을 불러오지 못했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+      )
+      setShowBulkEditForm(false)
+    } finally {
+      setBulkEditLoading(false)
+    }
+  }
+
+  const toggleMethodSelected = (id: string) => {
+    setSelectedMethodIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
+
+  const allVisibleSelected =
+    methods.length > 0 && methods.every((m) => selectedMethodIds.includes(m.id))
+
+  const toggleSelectAllVisible = () => {
+    const visibleIds = methods.map((m) => m.id)
+    if (allVisibleSelected) {
+      setSelectedMethodIds((prev) => prev.filter((id) => !visibleIds.includes(id)))
+    } else {
+      setSelectedMethodIds((prev) => [...new Set([...prev, ...visibleIds])])
+    }
+  }
+
   // 상태별 색상
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -832,6 +1175,12 @@ export default function PaymentMethodManager({
     loadMethods()
   }, [filters.status, filters.method_type, filters.search])
 
+  useEffect(() => {
+    if (listViewMode !== 'table') {
+      setSelectedMethodIds([])
+    }
+  }, [listViewMode])
+
   return (
     <div className="space-y-3 sm:space-y-4">
       {/* 헤더 - 모바일 컴팩트 */}
@@ -840,7 +1189,35 @@ export default function PaymentMethodManager({
           <CreditCard className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 flex-shrink-0" />
           <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">결제 방법 관리</h3>
         </div>
-        <div className="flex gap-2 flex-shrink-0">
+        <div className="flex flex-wrap gap-2 flex-shrink-0 justify-end">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setListViewMode('cards')}
+                className={`flex items-center gap-1 px-2.5 py-2 sm:px-3 text-sm transition-colors ${
+                  listViewMode === 'cards'
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+                title="카드 보기"
+              >
+                <LayoutGrid size={14} className="sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">카드</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setListViewMode('table')}
+                className={`flex items-center gap-1 px-2.5 py-2 sm:px-3 text-sm border-l border-gray-200 transition-colors ${
+                  listViewMode === 'table'
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+                title="테이블 보기"
+              >
+                <Table2 size={14} className="sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">테이블</span>
+              </button>
+            </div>
             <button
               onClick={() => {
                 setShowAddForm(true)
@@ -860,16 +1237,8 @@ export default function PaymentMethodManager({
                   id: '',
                   method: '',
                   method_type: 'card',
-                  user_email: '',
+                  user_emails: [],
                   status: 'active',
-                  limit_amount: '',
-                  card_number_last4: '',
-                  card_type: '',
-                  card_holder_name: '',
-                  expiry_month: '',
-                  expiry_year: '',
-                  monthly_limit: '',
-                  daily_limit: '',
                   notes: ''
                 }])
               }}
@@ -878,6 +1247,32 @@ export default function PaymentMethodManager({
               <Upload size={14} className="sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">벌크 업로드</span>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                void openBulkEditWithAllMethods()
+              }}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+              disabled={bulkEditLoading}
+            >
+              <Edit size={14} className="sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">일괄 수정</span>
+            </button>
+            {listViewMode === 'table' && (
+              <button
+                type="button"
+                disabled={selectedMethodIds.length === 0 || bulkEditLoading}
+                onClick={() => {
+                  void openBulkEditFromSelection()
+                }}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <Edit size={14} className="sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">
+                  선택 수정{selectedMethodIds.length > 0 ? ` (${selectedMethodIds.length})` : ''}
+                </span>
+              </button>
+            )}
         </div>
       </div>
 
@@ -1021,36 +1416,56 @@ export default function PaymentMethodManager({
                     </span>
                   )}
                 </label>
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden />
+                  <input
+                    type="search"
+                    value={formTeamMemberSearch}
+                    onChange={(e) => setFormTeamMemberSearch(e.target.value)}
+                    placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
+                    autoComplete="off"
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
                 <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
                   {teamMembersWithStatus.length === 0 ? (
                     <p className="text-sm text-gray-500">팀 멤버를 불러오는 중...</p>
+                  ) : formTeamMemberSearch.trim() &&
+                    formActiveTeamMembers.length === 0 &&
+                    formInactiveTeamMembers.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">검색 결과가 없습니다.</p>
                   ) : (
                     <div className="space-y-2">
                       {/* 활성 사용자 먼저 표시 */}
-                      {teamMembersWithStatus
-                        .filter(member => member.is_active)
-                        .map(({ email, name_ko }) => {
-                          const isSelected = formData.user_emails.includes(email)
-                          return (
-                            <label
-                              key={email}
-                              className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleUserSelection(email)}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                              />
-                              <span className="text-sm text-gray-700">
-                                {name_ko} ({email})
-                              </span>
-                            </label>
-                          )
-                        })}
-                      
+                      {formActiveTeamMembers.map(({ email, name_ko, name_en, nick_name }) => {
+                        const isSelected = formData.user_emails.includes(email)
+                        return (
+                          <label
+                            key={email}
+                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleUserSelection(email)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                              <span className="font-medium">{name_ko}</span>
+                              {(nick_name || name_en) && (
+                                <span className="text-gray-500">
+                                  {' · '}
+                                  {[nick_name, name_en].filter(Boolean).join(' · ')}
+                                </span>
+                              )}
+                              <span className="text-gray-500"> ({email})</span>
+                            </span>
+                          </label>
+                        )
+                      })}
+
                       {/* 비활성 사용자 (더보기 버튼으로 표시) */}
-                      {teamMembersWithStatus.filter(member => !member.is_active).length > 0 && (
+                      {formInactiveTeamMembers.length > 0 && (
                         <>
                           {!showAllUsers && (
                             <button
@@ -1058,33 +1473,38 @@ export default function PaymentMethodManager({
                               onClick={() => setShowAllUsers(true)}
                               className="w-full text-left text-sm text-blue-600 hover:text-blue-800 py-2 px-2 rounded hover:bg-blue-50 transition-colors"
                             >
-                              더보기 ({teamMembersWithStatus.filter(member => !member.is_active).length}명)
+                              더보기 ({formInactiveTeamMembers.length}명)
                             </button>
                           )}
-                          
+
                           {showAllUsers && (
                             <>
-                              {teamMembersWithStatus
-                                .filter(member => !member.is_active)
-                                .map(({ email, name_ko }) => {
-                                  const isSelected = formData.user_emails.includes(email)
-                                  return (
-                                    <label
-                                      key={email}
-                                      className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded opacity-75"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isSelected}
-                                        onChange={() => toggleUserSelection(email)}
-                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                      />
-                                      <span className="text-sm text-gray-600">
-                                        {name_ko} ({email})
-                                      </span>
-                                    </label>
-                                  )
-                                })}
+                              {formInactiveTeamMembers.map(({ email, name_ko, name_en, nick_name }) => {
+                                const isSelected = formData.user_emails.includes(email)
+                                return (
+                                  <label
+                                    key={email}
+                                    className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded opacity-75"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleUserSelection(email)}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-600">
+                                      <span className="font-medium">{name_ko}</span>
+                                      {(nick_name || name_en) && (
+                                        <span className="text-gray-500">
+                                          {' · '}
+                                          {[nick_name, name_en].filter(Boolean).join(' · ')}
+                                        </span>
+                                      )}
+                                      <span className="text-gray-500"> ({email})</span>
+                                    </span>
+                                  </label>
+                                )
+                              })}
                               <button
                                 type="button"
                                 onClick={() => setShowAllUsers(false)}
@@ -1478,6 +1898,178 @@ export default function PaymentMethodManager({
         </DialogContent>
       </Dialog>
 
+      {/* 일괄 수정 모달 */}
+      <Dialog open={showBulkEditForm} onOpenChange={(open) => {
+        if (!open) {
+          setShowBulkEditForm(false)
+          resetBulkEditRows()
+        }
+      }}>
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>일괄 수정 - 결제 방법 테이블 편집</DialogTitle>
+            <DialogDescription>
+              열면 서버에서 결제 방법 전체 목록을 불러와 표에 채웁니다(목록 화면의 상태·유형·검색 필터와 무관). ID는 기존 레코드를 가리키며, 저장 시 반영됩니다. 행 추가로 신규 행을 넣을 수도 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="overflow-y-auto flex-1 pr-2" onClick={() => setBulkEditUserSelectIndex(null)}>
+            <div className="mb-4 flex justify-between items-center gap-2 flex-wrap">
+              <p className="text-sm text-gray-600">
+                테이블 뷰에서 &quot;선택 수정&quot;을 쓰면 전체 목록 중 선택한 행만 이 모달에 불러옵니다.
+              </p>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  addBulkEditRow()
+                }}
+                disabled={bulkEditLoading}
+                className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <Plus size={16} />
+                <span>행 추가</span>
+              </button>
+            </div>
+
+            {bulkEditLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 text-gray-600">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mb-3" />
+                <p className="text-sm">전체 결제 방법 목록을 불러오는 중입니다…</p>
+              </div>
+            ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse border border-gray-300 text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">삭제</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">
+                      ID <span className="text-red-500">*</span>
+                    </th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">
+                      방법명 <span className="text-red-500">*</span>
+                    </th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">
+                      유형 <span className="text-red-500">*</span>
+                    </th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">사용자</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">상태</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">메모</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkEditRows.map((row, index) => (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="border border-gray-300 px-2 py-1">
+                        <button
+                          type="button"
+                          onClick={() => removeBulkEditRow(index)}
+                          className="text-red-600 hover:text-red-800"
+                          disabled={bulkEditRows.length === 1}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                      <td className="border border-gray-300 px-2 py-1">
+                        <input
+                          type="text"
+                          value={row.id}
+                          onChange={(e) => updateBulkEditRow(index, 'id', e.target.value)}
+                          placeholder="기존 ID"
+                          className="w-full min-w-[120px] px-2 py-1 border border-gray-300 rounded text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-300 px-2 py-1">
+                        <input
+                          type="text"
+                          value={row.method}
+                          onChange={(e) => updateBulkEditRow(index, 'method', e.target.value)}
+                          placeholder="CC 4052"
+                          className="w-full min-w-[100px] px-2 py-1 border border-gray-300 rounded text-xs"
+                        />
+                      </td>
+                      <td className="border border-gray-300 px-2 py-1">
+                        <select
+                          value={row.method_type}
+                          onChange={(e) => updateBulkEditRow(index, 'method_type', e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                        >
+                          <option value="card">카드</option>
+                          <option value="cash">현금</option>
+                          <option value="transfer">계좌이체</option>
+                          <option value="mobile">모바일</option>
+                          <option value="other">기타</option>
+                        </select>
+                      </td>
+                      <td className="border border-gray-300 px-2 py-1">
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setBulkEditUserSelectIndex(index)
+                          }}
+                          className="w-full min-w-[120px] px-2 py-1 border border-gray-300 rounded text-xs cursor-pointer bg-white hover:bg-gray-50 min-h-[28px] flex items-center"
+                        >
+                          {row.user_email ? (
+                            <span className="text-xs text-gray-700 truncate" title={row.user_email}>
+                              {teamMembers[row.user_email] || row.user_email}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">클릭하여 1명 선택</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="border border-gray-300 px-2 py-1">
+                        <select
+                          value={row.status}
+                          onChange={(e) => updateBulkEditRow(index, 'status', e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                        >
+                          <option value="active">활성</option>
+                          <option value="inactive">비활성</option>
+                          <option value="suspended">정지</option>
+                          <option value="expired">만료</option>
+                        </select>
+                      </td>
+                      <td className="border border-gray-300 px-2 py-1">
+                        <input
+                          type="text"
+                          value={row.notes}
+                          onChange={(e) => updateBulkEditRow(index, 'notes', e.target.value)}
+                          placeholder="메모"
+                          className="w-full min-w-[100px] px-2 py-1 border border-gray-300 rounded text-xs"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setShowBulkEditForm(false)
+                resetBulkEditRows()
+              }}
+              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkEditSubmit}
+              disabled={bulkEditLoading || bulkEditRows.length === 0}
+              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            >
+              일괄 저장 ({bulkEditRows.length}개)
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 벌크 업로드 사용자 선택 모달 */}
       <Dialog open={bulkUserSelectIndex !== null} onOpenChange={(open) => {
         if (!open) {
@@ -1487,6 +2079,9 @@ export default function PaymentMethodManager({
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>사용자 선택</DialogTitle>
+            <DialogDescription className="sr-only">
+              이름, 영문명, 닉네임, 이메일로 검색한 뒤 사용자를 선택할 수 있습니다.
+            </DialogDescription>
           </DialogHeader>
           
           <div className="overflow-y-auto flex-1 pr-2">
@@ -1496,74 +2091,105 @@ export default function PaymentMethodManager({
                   <p className="text-sm text-gray-500 text-center py-8">팀 멤버를 불러오는 중...</p>
                 ) : (
                   <div className="space-y-4">
-                    {/* 활성 사용자 */}
-                    {teamMembersWithStatus.filter(member => member.is_active).length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-700 mb-2">활성 사용자</h3>
-                        <div className="border border-gray-200 rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto">
-                          {teamMembersWithStatus
-                            .filter(member => member.is_active)
-                            .map(({ email, name_ko }) => {
-                              const row = bulkRows[bulkUserSelectIndex]
-                              const isSelected = (row?.user_emails || []).includes(email)
-                              return (
-                                <label
-                                  key={email}
-                                  className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => {
-                                      if (bulkUserSelectIndex !== null) {
-                                        toggleBulkUserSelection(bulkUserSelectIndex, email)
-                                      }
-                                    }}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                  />
-                                  <span className="text-sm text-gray-700">
-                                    {name_ko} ({email})
-                                  </span>
-                                </label>
-                              )
-                            })}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* 비활성 사용자 */}
-                    {teamMembersWithStatus.filter(member => !member.is_active).length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-700 mb-2">비활성 사용자</h3>
-                        <div className="border border-gray-200 rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto">
-                          {teamMembersWithStatus
-                            .filter(member => !member.is_active)
-                            .map(({ email, name_ko }) => {
-                              const row = bulkRows[bulkUserSelectIndex]
-                              const isSelected = (row?.user_emails || []).includes(email)
-                              return (
-                                <label
-                                  key={email}
-                                  className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded opacity-75"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => {
-                                      if (bulkUserSelectIndex !== null) {
-                                        toggleBulkUserSelection(bulkUserSelectIndex, email)
-                                      }
-                                    }}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                  />
-                                  <span className="text-sm text-gray-600">
-                                    {name_ko} ({email})
-                                  </span>
-                                </label>
-                              )
-                            })}
-                        </div>
-                      </div>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden />
+                      <input
+                        type="search"
+                        value={bulkUserMemberSearch}
+                        onChange={(e) => setBulkUserMemberSearch(e.target.value)}
+                        placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
+                        autoComplete="off"
+                        autoFocus
+                        className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    {bulkUserMemberSearch.trim() &&
+                    bulkUserSelectActiveMembers.length === 0 &&
+                    bulkUserSelectInactiveMembers.length === 0 ? (
+                      <p className="text-sm text-gray-500 text-center py-6">검색 결과가 없습니다.</p>
+                    ) : (
+                      <>
+                        {/* 활성 사용자 */}
+                        {bulkUserSelectActiveMembers.length > 0 && (
+                          <div>
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">활성 사용자</h3>
+                            <div className="border border-gray-200 rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto">
+                              {bulkUserSelectActiveMembers.map(({ email, name_ko, name_en, nick_name }) => {
+                                const row = bulkRows[bulkUserSelectIndex]
+                                const isSelected = (row?.user_emails || []).includes(email)
+                                return (
+                                  <label
+                                    key={email}
+                                    className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        if (bulkUserSelectIndex !== null) {
+                                          toggleBulkUserSelection(bulkUserSelectIndex, email)
+                                        }
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-700">
+                                      <span className="font-medium">{name_ko}</span>
+                                      {(nick_name || name_en) && (
+                                        <span className="text-gray-500">
+                                          {' · '}
+                                          {[nick_name, name_en].filter(Boolean).join(' · ')}
+                                        </span>
+                                      )}
+                                      <span className="text-gray-500"> ({email})</span>
+                                    </span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 비활성 사용자 */}
+                        {bulkUserSelectInactiveMembers.length > 0 && (
+                          <div>
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">비활성 사용자</h3>
+                            <div className="border border-gray-200 rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto">
+                              {bulkUserSelectInactiveMembers.map(({ email, name_ko, name_en, nick_name }) => {
+                                const row = bulkRows[bulkUserSelectIndex]
+                                const isSelected = (row?.user_emails || []).includes(email)
+                                return (
+                                  <label
+                                    key={email}
+                                    className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded opacity-75"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        if (bulkUserSelectIndex !== null) {
+                                          toggleBulkUserSelection(bulkUserSelectIndex, email)
+                                        }
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-600">
+                                      <span className="font-medium">{name_ko}</span>
+                                      {(nick_name || name_en) && (
+                                        <span className="text-gray-500">
+                                          {' · '}
+                                          {[nick_name, name_en].filter(Boolean).join(' · ')}
+                                        </span>
+                                      )}
+                                      <span className="text-gray-500"> ({email})</span>
+                                    </span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -1583,6 +2209,143 @@ export default function PaymentMethodManager({
         </DialogContent>
       </Dialog>
 
+      {/* 일괄 수정 사용자 선택 모달 (행당 1명) */}
+      <Dialog open={bulkEditUserSelectIndex !== null} onOpenChange={(open) => {
+        if (!open) {
+          setBulkEditUserSelectIndex(null)
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>사용자 선택 (1명)</DialogTitle>
+            <DialogDescription className="sr-only">
+              한 행당 한 명만 지정됩니다. 다시 클릭하면 선택이 해제됩니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="overflow-y-auto flex-1 pr-2">
+            {bulkEditUserSelectIndex !== null && (
+              <div className="space-y-4">
+                {!teamMembersWithStatus || teamMembersWithStatus.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-8">팀 멤버를 불러오는 중...</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden />
+                      <input
+                        type="search"
+                        value={bulkEditUserMemberSearch}
+                        onChange={(e) => setBulkEditUserMemberSearch(e.target.value)}
+                        placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
+                        autoComplete="off"
+                        autoFocus
+                        className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    {bulkEditUserMemberSearch.trim() &&
+                    bulkEditUserSelectActiveMembers.length === 0 &&
+                    bulkEditUserSelectInactiveMembers.length === 0 ? (
+                      <p className="text-sm text-gray-500 text-center py-6">검색 결과가 없습니다.</p>
+                    ) : (
+                      <>
+                        {bulkEditUserSelectActiveMembers.length > 0 && (
+                          <div>
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">활성 사용자</h3>
+                            <div className="border border-gray-200 rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto">
+                              {bulkEditUserSelectActiveMembers.map(({ email, name_ko, name_en, nick_name }) => {
+                                const row = bulkEditRows[bulkEditUserSelectIndex]
+                                const isSelected = row?.user_email === email
+                                return (
+                                  <label
+                                    key={email}
+                                    className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        if (bulkEditUserSelectIndex !== null) {
+                                          toggleBulkEditUserSelection(bulkEditUserSelectIndex, email)
+                                        }
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-700">
+                                      <span className="font-medium">{name_ko}</span>
+                                      {(nick_name || name_en) && (
+                                        <span className="text-gray-500">
+                                          {' · '}
+                                          {[nick_name, name_en].filter(Boolean).join(' · ')}
+                                        </span>
+                                      )}
+                                      <span className="text-gray-500"> ({email})</span>
+                                    </span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {bulkEditUserSelectInactiveMembers.length > 0 && (
+                          <div>
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">비활성 사용자</h3>
+                            <div className="border border-gray-200 rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto">
+                              {bulkEditUserSelectInactiveMembers.map(({ email, name_ko, name_en, nick_name }) => {
+                                const row = bulkEditRows[bulkEditUserSelectIndex]
+                                const isSelected = row?.user_email === email
+                                return (
+                                  <label
+                                    key={email}
+                                    className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded opacity-75"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        if (bulkEditUserSelectIndex !== null) {
+                                          toggleBulkEditUserSelection(bulkEditUserSelectIndex, email)
+                                        }
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-600">
+                                      <span className="font-medium">{name_ko}</span>
+                                      {(nick_name || name_en) && (
+                                        <span className="text-gray-500">
+                                          {' · '}
+                                          {[nick_name, name_en].filter(Boolean).join(' · ')}
+                                        </span>
+                                      )}
+                                      <span className="text-gray-500"> ({email})</span>
+                                    </span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-4">
+            <button
+              type="button"
+              onClick={() => setBulkEditUserSelectIndex(null)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              확인
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 결제 방법 목록 - 모바일 컴팩트 */}
       {loading ? (
         <div className="text-center py-6 sm:py-8">
@@ -1590,6 +2353,99 @@ export default function PaymentMethodManager({
           <p className="text-gray-500 mt-2 text-sm">로딩중...</p>
         </div>
       ) : methods.length > 0 ? (
+        listViewMode === 'table' ? (
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="px-3 py-2 sm:px-4 sm:py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAllVisible}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>현재 목록 전체 선택 ({methods.length}개)</span>
+              </label>
+              <span className="text-xs text-gray-500">
+                선택됨 {selectedMethodIds.length}개 · &quot;선택 수정&quot;으로 일괄 수정 모달에 불러오기
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[720px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-left text-gray-700">
+                    <th className="w-10 px-2 py-2 sm:px-3"></th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">ID</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">방법명</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">유형</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">사용자</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">상태</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap text-right">한도</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap text-right">액션</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {methods.map((method) => (
+                    <tr
+                      key={method.id}
+                      className="border-b border-gray-100 hover:bg-gray-50/80"
+                    >
+                      <td className="px-2 py-2 sm:px-3 align-middle">
+                        <input
+                          type="checkbox"
+                          checked={selectedMethodIds.includes(method.id)}
+                          onChange={() => toggleMethodSelected(method.id)}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          aria-label={`선택 ${method.id}`}
+                        />
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 align-middle font-mono text-xs text-gray-600 max-w-[140px] truncate" title={method.id}>
+                        {method.id}
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 align-middle font-medium text-gray-900 max-w-[160px] truncate" title={method.method}>
+                        {method.method}
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 align-middle capitalize text-gray-700 whitespace-nowrap">
+                        {method.method_type}
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 align-middle text-gray-700 max-w-[180px] truncate" title={method.user_email || ''}>
+                        {teamMembers[method.user_email] || method.user_email || '미할당'}
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 align-middle whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${getStatusColor(method.status)}`}>
+                          {getStatusIcon(method.status)}
+                          <span>{getStatusText(method.status)}</span>
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 align-middle text-right text-gray-700 whitespace-nowrap">
+                        {method.limit_amount != null ? formatCurrency(method.limit_amount) : '—'}
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 align-middle text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleEditMethod(method)}
+                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="수정"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMethod(method.id)}
+                            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            title="삭제"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
           {methods.map((method) => (
             <div key={method.id} className="bg-white border border-gray-200 rounded-xl p-3 sm:p-3 hover:shadow-md transition-shadow relative shadow-sm">
@@ -1708,6 +2564,7 @@ export default function PaymentMethodManager({
             </div>
           ))}
         </div>
+        )
       ) : (
         <div className="text-center py-6 sm:py-8 text-gray-500 text-sm">
           <CreditCard className="h-10 w-10 sm:h-12 sm:w-12 text-gray-300 mx-auto mb-2" />

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface AttendanceRecord {
@@ -35,40 +35,15 @@ export function useAttendanceSync() {
       console.log('직원 정보 조회 시작...')
       console.log('Supabase client available:', !!supabase)
       console.log('Access token available:', !!localStorage.getItem('sb-access-token'))
-      
-      // 타임아웃과 함께 직원 정보 조회 (5초 타임아웃)
-      const queryPromise = supabase
+
+      const { data: employeeData, error: employeeError } = await supabase
         .from('team')
         .select('name_ko, email, position, is_active')
         .eq('email', authUser.email)
         .eq('is_active', true)
         .maybeSingle()
-      
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Employee query timeout')), 5000)
-      )
-      
-      let employeeData = null
-      let employeeError = null
-      
-      try {
-        const result = await Promise.race([
-          queryPromise,
-          timeoutPromise
-        ]) as { data: {
-          name_ko: string | null
-          email: string
-          position: string | null
-          is_active: boolean
-        } | null; error: { message?: string; code?: string } | null }
-        
-        employeeData = result.data
-        employeeError = result.error
-      } catch {
-        console.warn('useAttendanceSync: Employee query timed out, skipping attendance sync')
-        setEmployeeNotFound(true)
-        return
-      }
+
+      if (employeeError && isAbortLikeError(employeeError)) return
 
       console.log('직원 정보 조회 결과:', { 
         hasData: !!employeeData, 
@@ -82,7 +57,11 @@ export function useAttendanceSync() {
       })
 
       if (employeeError && employeeError.code !== 'PGRST116') {
-        console.error('직원 정보 조회 오류:', employeeError)
+        const e = employeeError as { message?: string; code?: string; details?: string }
+        console.error(
+          '직원 정보 조회 오류:',
+          [e.message, e.code, e.details].filter(Boolean).join(' | ') || employeeError
+        )
         setEmployeeNotFound(true)
         return
       }
@@ -150,6 +129,9 @@ export function useAttendanceSync() {
         setCurrentSession(null)
       }
     } catch (error) {
+      if (isAbortLikeError(error)) {
+        return
+      }
       console.error('오늘 기록 조회 중 오류:', error)
       console.error('에러 타입:', typeof error)
       console.error('에러 메시지:', error instanceof Error ? error.message : 'Unknown error')
@@ -178,7 +160,15 @@ export function useAttendanceSync() {
         .single() as { data: { name_ko: string | null; email: string } | null; error: { message?: string; code?: string } | null }
 
       if (employeeError) {
-        console.error('직원 정보 조회 오류:', employeeError)
+        if (isAbortLikeError(employeeError)) {
+          alert('요청이 취소되었습니다. 잠시 후 다시 시도해 주세요.')
+          return
+        }
+        const e = employeeError as { message?: string; code?: string; details?: string }
+        console.error(
+          '직원 정보 조회 오류:',
+          [e.message, e.code, e.details].filter(Boolean).join(' | ') || employeeError
+        )
         alert('직원 정보를 찾을 수 없습니다.')
         return
       }

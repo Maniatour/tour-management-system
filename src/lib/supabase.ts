@@ -57,17 +57,17 @@ const fetchWithRetry = async (
   const retryDelay = 1000
   let lastError: Error | null = null
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    // 호출자의 signal이 이미 abort된 경우 즉시 중단 (컴포넌트 언마운트 등)
-    if (options.signal?.aborted) {
-      throw new DOMException('The operation was aborted.', 'AbortError')
-    }
+  // Supabase가 넘기는 AbortSignal은 세션 갱신·내부 요청 정리 등으로 조기 abort되어
+  // 정상적인 REST 조회도 전부 AbortError로 끝나는 경우가 있다. fetch에는 사용하지 않고
+  // 여기서만 타임아웃(AbortController)을 건다.
+  const { signal: _supabaseSignal, ...restOptions } = options
 
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-      const headers = new Headers(options.headers)
+      const headers = new Headers(restOptions.headers)
       
       if (!headers.has('Connection')) {
         headers.set('Connection', 'keep-alive')
@@ -78,8 +78,8 @@ const fetchWithRetry = async (
       }
 
       const response = await fetch(url, {
-        ...options,
-        signal: options.signal || controller.signal,
+        ...restOptions,
+        signal: controller.signal,
         headers: headers
       })
 
@@ -96,11 +96,6 @@ const fetchWithRetry = async (
       return response
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
-
-      // 호출자의 signal이 abort된 경우 재시도 없이 즉시 중단
-      if (options.signal?.aborted) {
-        throw lastError
-      }
 
       const isRetryableError = 
         error instanceof Error && (

@@ -122,52 +122,67 @@ async function getCachedWeatherData(locationName: string, date: string) {
   }
 }
 
-// Fallback: Get sunrise/sunset data from API (only if cache miss)
+// Fallback: Get sunrise/sunset data from API (only if cache miss). Retries on 429/503 (rate limit / overload).
 async function getSunriseSunsetDataFromAPI(lat: number, lng: number, date: string) {
-  try {
+  const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&date=${date}&formatted=0`
+  const maxAttempts = 4
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10초 타임아웃
-    
-    const response = await fetch(
-      `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&date=${date}&formatted=0`,
-      {
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
+    try {
+      const response = await fetch(url, {
         signal: controller.signal,
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
+        },
+      })
+
+      if (response.status === 429 || response.status === 503) {
+        clearTimeout(timeoutId)
+        if (attempt < maxAttempts) {
+          const waitMs = 900 * 2 ** (attempt - 1)
+          console.warn(`Sunrise/sunset API status ${response.status}, retrying in ${waitMs}ms`)
+          await new Promise((r) => setTimeout(r, waitMs))
+          continue
+        }
+        console.warn(`Sunrise/sunset API responded with status ${response.status}`)
+        return null
+      }
+
+      if (!response.ok) {
+        clearTimeout(timeoutId)
+        console.warn(`Sunrise/sunset API responded with status ${response.status}`)
+        return null
+      }
+
+      clearTimeout(timeoutId)
+
+      const data = await response.json()
+
+      if (data.status === 'OK' && data.results) {
+        const sunriseUTC = data.results.sunrise.split('T')[1].split('+')[0]
+        const sunsetUTC = data.results.sunset.split('T')[1].split('+')[0]
+
+        return {
+          sunrise: convertToArizonaTime(sunriseUTC),
+          sunset: convertToArizonaTime(sunsetUTC),
         }
       }
-    )
-    
-    clearTimeout(timeoutId)
-    
-    if (!response.ok) {
-      console.warn(`Sunrise/sunset API responded with status ${response.status}`)
+      return null
+    } catch (error: any) {
+      clearTimeout(timeoutId)
+      if (error.name === 'AbortError') {
+        console.warn('Sunrise/sunset API request timed out')
+      } else if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+        console.warn('Sunrise/sunset API request failed (network error)')
+      } else {
+        console.error('Error fetching sunrise/sunset data from API:', error)
+      }
       return null
     }
-    
-    const data = await response.json()
-    
-    if (data.status === 'OK' && data.results) {
-      const sunriseUTC = data.results.sunrise.split('T')[1].split('+')[0]
-      const sunsetUTC = data.results.sunset.split('T')[1].split('+')[0]
-      
-      return {
-        sunrise: convertToArizonaTime(sunriseUTC),
-        sunset: convertToArizonaTime(sunsetUTC)
-      }
-    }
-    return null
-  } catch (error: any) {
-    // 네트워크 오류는 조용히 처리 (fallback 사용)
-    if (error.name === 'AbortError') {
-      console.warn('Sunrise/sunset API request timed out')
-    } else if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-      console.warn('Sunrise/sunset API request failed (network error)')
-    } else {
-      console.error('Error fetching sunrise/sunset data from API:', error)
-    }
-    return null
   }
+  return null
 }
 
 // 요청한 날짜를 YYYY-MM-DD로 통일 (캐시/API 일치용). 투어 상세·이메일 미리보기 동일 데이터 보장.
@@ -387,6 +402,10 @@ export async function get7DayWeatherForecast(locationName: string): Promise<Loca
             return hour >= 12 && hour <= 14
           }) || dayForecasts[Math.floor(dayForecasts.length / 2)]
           
+          // 연속 일출/일몰 API 호출로 429가 나기 쉬워 날짜마다 짧게 간격을 둠
+          if (i > 0) {
+            await new Promise((r) => setTimeout(r, 400))
+          }
           // Get sunrise/sunset data
           const sunriseSunsetData = await getSunriseSunsetData(locationName, dateString)
           

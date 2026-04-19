@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus, Upload, X, Check, Eye, DollarSign, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Search, Calendar, Filter, Download } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
@@ -75,6 +75,7 @@ export default function AllTourExpensesManager() {
       })
       setTeamMembers(memberMap)
     } catch (error) {
+      if (isAbortLikeError(error)) return
       console.error('Error loading team members:', error)
     }
   }
@@ -180,6 +181,7 @@ export default function AllTourExpensesManager() {
       
       setExpenses(processedExpenses)
     } catch (error) {
+      if (isAbortLikeError(error)) return
       console.error('Error loading expenses:', error)
     } finally {
       setLoading(false)

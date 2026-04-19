@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { logSupabaseStatus } from '@/lib/supabaseHealthCheck'
 import { throttledSupabaseRequest } from '@/lib/requestThrottle'
 import { getCachedOrFetch, cacheKeys } from '@/lib/dataCache'
@@ -58,7 +58,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         const { data, error } = await q
 
         if (error) {
-          console.warn('Error fetching customers:', error)
+          if (!isAbortLikeError(error)) console.warn('Error fetching customers:', error)
           break
         }
 
@@ -91,7 +91,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         const { data, error } = await q
 
         if (error) {
-          console.warn('Error fetching customers (null created_at batch):', error)
+          if (!isAbortLikeError(error)) console.warn('Error fetching customers (null created_at batch):', error)
           break
         }
 
@@ -125,7 +125,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
           .range(from, from + pageSize - 1)
 
         if (error) {
-          console.warn('Error fetching products:', error)
+          if (!isAbortLikeError(error)) console.warn('Error fetching products:', error)
           break
         }
 
@@ -152,7 +152,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .order('name', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching channels:', error)
+        if (!isAbortLikeError(error)) console.warn('Error fetching channels:', error)
         return []
       }
 
@@ -175,7 +175,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .order('name', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching product options:', error)
+        if (!isAbortLikeError(error)) console.warn('Error fetching product options:', error)
         return []
       }
 
@@ -204,7 +204,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .order('name', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching option choices:', error)
+        if (!isAbortLikeError(error)) console.warn('Error fetching option choices:', error)
         return []
       }
       
@@ -235,7 +235,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .order('name', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching options:', error)
+        if (!isAbortLikeError(error)) console.warn('Error fetching options:', error)
         return []
       }
 
@@ -254,7 +254,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .order('hotel', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching pickup hotels:', error)
+        if (!isAbortLikeError(error)) console.warn('Error fetching pickup hotels:', error)
         return []
       }
 
@@ -273,7 +273,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .order('coupon_code', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching coupons:', error)
+        if (!isAbortLikeError(error)) console.warn('Error fetching coupons:', error)
         return []
       }
 
@@ -426,7 +426,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .select('reservation_id')
         .in('reservation_id', chunk)
       if (error) {
-        console.warn('Error fetching reservation_options presence:', error)
+        if (!isAbortLikeError(error)) console.warn('Error fetching reservation_options presence:', error)
         continue
       }
       const withRows = new Set(
@@ -518,6 +518,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         .range(0, FIRST_BATCH_SIZE - 1)
 
       if (firstError) {
+        if (isAbortLikeError(firstError)) return
         console.warn('Error fetching reservations:', firstError)
         setReservations([])
         return
@@ -643,6 +644,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       setToursMap(prev => mergeTourMaps(prev, restToursById, restToursByOverlap))
       setLoadingProgress({ current: totalCount, total: totalCount })
     } catch (error) {
+      if (isAbortLikeError(error)) return
       console.warn('Error fetching reservations:', error)
       setReservations([])
     } finally {

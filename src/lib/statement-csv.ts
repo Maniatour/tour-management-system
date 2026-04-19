@@ -46,10 +46,17 @@ function parseDateCell(s: string): string | null {
 }
 
 export function parseStatementCsvText(csvText: string): ParsedStatementRow[] {
-  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0)
+  const text = csvText.replace(/^\uFEFF/, '').trim()
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
   if (lines.length < 2) return []
 
-  const delimiter = lines[0].includes('\t') && !lines[0].includes(',') ? '\t' : ','
+  const firstLine = lines[0]
+  let delimiter = ','
+  if (firstLine.includes('\t') && !firstLine.includes(',')) {
+    delimiter = '\t'
+  } else if (firstLine.includes(';') && firstLine.split(';').length > firstLine.split(',').length) {
+    delimiter = ';'
+  }
   const splitLine = (line: string) => {
     const out: string[] = []
     let cur = ''
@@ -71,15 +78,31 @@ export function parseStatementCsvText(csvText: string): ParsedStatementRow[] {
 
   const headers = splitLine(lines[0]).map(normalizeHeader)
   const dateIdx = headers.findIndex((h) =>
-    ['date', 'transaction_date', 'posted_date', 'posting_date', 'trans_date'].includes(h)
+    [
+      'date',
+      'transaction_date',
+      'posted_date',
+      'posting_date',
+      'trans_date',
+      'value_date',
+      'booking_date',
+      '거래일자',
+      '거래일',
+      '승인일자',
+      '매입일자'
+    ].includes(h)
   )
   const amountIdx = headers.findIndex((h) =>
-    ['amount', 'transaction_amount', 'amt'].includes(h)
+    ['amount', 'transaction_amount', 'amt', '거래금액', '금액', '청구금액'].includes(h)
   )
-  const debitIdx = headers.findIndex((h) => ['debit', 'withdrawals', 'withdrawal'].includes(h))
-  const creditIdx = headers.findIndex((h) => ['credit', 'deposits', 'deposit'].includes(h))
+  const debitIdx = headers.findIndex((h) =>
+    ['debit', 'withdrawals', 'withdrawal', '출금', '출금금액'].includes(h)
+  )
+  const creditIdx = headers.findIndex((h) =>
+    ['credit', 'deposits', 'deposit', '입금', '입금금액'].includes(h)
+  )
   const descIdx = headers.findIndex((h) =>
-    ['description', 'memo', 'details', 'narrative', 'name'].includes(h)
+    ['description', 'memo', 'details', 'narrative', 'name', '적요', '내용', '상세', '가맹점명'].includes(h)
   )
   const merchantIdx = headers.findIndex((h) => ['merchant', 'payee'].includes(h))
   const refIdx = headers.findIndex((h) =>
@@ -125,6 +148,20 @@ export function parseStatementCsvText(csvText: string): ParsedStatementRow[] {
         amount = d
         direction = 'outflow'
       } else if (c > 0) {
+        amount = c
+        direction = 'inflow'
+      }
+    }
+    if (amount == null && debitIdx >= 0 && creditIdx < 0) {
+      const d = parseMoney(cells[debitIdx] ?? '')
+      if (d != null && d > 0) {
+        amount = d
+        direction = 'outflow'
+      }
+    }
+    if (amount == null && creditIdx >= 0 && debitIdx < 0) {
+      const c = parseMoney(cells[creditIdx] ?? '')
+      if (c != null && c > 0) {
         amount = c
         direction = 'inflow'
       }

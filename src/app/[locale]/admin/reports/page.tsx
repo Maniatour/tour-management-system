@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock, Search, Landmark, PieChart } from 'lucide-react'
+import { Calendar, BarChart3, TrendingUp, Users, Package, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock, Search, PieChart } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,7 +13,6 @@ import ExpenseReportTab from '@/components/reports/ExpenseReportTab'
 import DepositReportTab from '@/components/reports/DepositReportTab'
 import SettlementReportTab from '@/components/reports/SettlementReportTab'
 import CashReportTab from '@/components/reports/CashReportTab'
-import StatementReconciliationTab from '@/components/reports/StatementReconciliationTab'
 import PnlUnifiedReportTab from '@/components/reports/PnlUnifiedReportTab'
 import EmailScheduleModal from '@/components/reports/EmailScheduleModal'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -32,7 +31,6 @@ type ReportTab =
   | 'deposits'
   | 'settlement'
   | 'cash'
-  | 'reconciliation'
   | 'pnl'
 
 export default function AdminReports({ }: AdminReportsProps) {
@@ -98,11 +96,19 @@ export default function AdminReports({ }: AdminReportsProps) {
   } = useReservationData()
 
   // 상태 관리 (탭·기간 — 새로고침 유지)
-  const [reportNav, setReportNav] = useRoutePersistedState(
+  const [reportNav, setReportNav, reportNavHydrated] = useRoutePersistedState(
     'report-nav',
     { activeTab: 'comprehensive' as ReportTab, reportPeriod: 'daily' as ReportPeriod }
   )
   const { activeTab, reportPeriod } = reportNav
+
+  /** 명세 대조는 전용 페이지로 분리됨 — 예전에 저장된 탭 값 복구 */
+  useEffect(() => {
+    if (!reportNavHydrated) return
+    if ((reportNav.activeTab as string) === 'reconciliation') {
+      setReportNav((n) => ({ ...n, activeTab: 'comprehensive' }))
+    }
+  }, [reportNavHydrated, reportNav.activeTab, setReportNav])
   const setActiveTab = (tab: ReportTab) => setReportNav((n) => ({ ...n, activeTab: tab }))
   const setReportPeriod = (period: ReportPeriod) => setReportNav((n) => ({ ...n, reportPeriod: period }))
   
@@ -433,7 +439,6 @@ export default function AdminReports({ }: AdminReportsProps) {
               { key: 'deposits', label: '입금 통계', icon: CreditCard },
               { key: 'settlement', label: '정산 통계', icon: Receipt },
               { key: 'cash', label: '현금 관리', icon: DollarSign },
-              { key: 'reconciliation', label: '명세 대조', icon: Landmark },
               { key: 'pnl', label: '통합 PNL', icon: PieChart }
             ].map(({ key, label, icon: Icon }) => (
               <button
@@ -452,8 +457,6 @@ export default function AdminReports({ }: AdminReportsProps) {
                     <>
                       통합 <AccountingTerm termKey="PNL">PNL</AccountingTerm>
                     </>
-                  ) : key === 'reconciliation' ? (
-                    <AccountingTerm termKey="명세대조">{label}</AccountingTerm>
                   ) : key === 'cash' ? (
                     <AccountingTerm termKey="현금관리">{label}</AccountingTerm>
                   ) : (
@@ -518,7 +521,6 @@ export default function AdminReports({ }: AdminReportsProps) {
             period={reportPeriod}
           />
         )}
-        {activeTab === 'reconciliation' && <StatementReconciliationTab />}
         {activeTab === 'pnl' && <PnlUnifiedReportTab dateRange={dateRange} />}
       </div>
 
