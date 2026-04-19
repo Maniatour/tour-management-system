@@ -7,8 +7,36 @@ import { supabase } from '@/lib/supabase'
 import { workCalendarDateYmd } from '@/lib/employeeHourlyRates'
 import { useTranslations, useLocale } from 'next-intl'
 import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
+import { calculateAssignedPeople, normalizeReservationIds } from '@/utils/tourUtils'
 
 const TIER_LIMITS = { low: 480, mid: 960 } as const
+
+const OFFICE_TIPS_DATE_RANGE_KEY = 'office-tips-date-range-v1'
+
+function readPersistedOfficeTipsDates(): { start: string; end: string } | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(OFFICE_TIPS_DATE_RANGE_KEY)
+    if (!raw) return null
+    const o = JSON.parse(raw) as { start?: unknown; end?: unknown }
+    const start = typeof o.start === 'string' ? o.start.trim() : ''
+    const end = typeof o.end === 'string' ? o.end.trim() : ''
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return null
+    if (start > end) return null
+    return { start, end }
+  } catch {
+    return null
+  }
+}
+
+function writePersistedOfficeTipsDates(start: string, end: string) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(OFFICE_TIPS_DATE_RANGE_KEY, JSON.stringify({ start, end }))
+  } catch {
+    /* quota / private mode */
+  }
+}
 
 function localDateToYmd(d: Date): string {
   const y = d.getFullYear()
@@ -28,6 +56,8 @@ interface TourOfficeTipRow {
   tour_date: string
   tour_status: string
   product_name: string
+  /** reservation_ids 배정 예약 인원 합(취소·삭제 제외, 투어 상세와 동일) */
+  total_participants: number
   guide_name: string | null
   assistant_name: string | null
   office_tip_amount: number
@@ -194,6 +224,16 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         .filter((id, i, arr) => arr.indexOf(id) === i)
 
       let pricingByReservation = new Map<string, number>()
+      let reservationsBatch: Array<{
+        id: string
+        total_people?: number | null
+        status?: string | null
+        adults?: number | null
+        child?: number | null
+        children?: number | null
+        infant?: number | null
+        infants?: number | null
+      }> = []
       if (allReservationIds.length > 0) {
         const { data: pricingData } = await supabase
           .from('reservation_pricing')
@@ -202,12 +242,16 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         pricingData?.forEach((p: { reservation_id: string; prepayment_tip?: number | null }) => {
           pricingByReservation.set(p.reservation_id, Number(p.prepayment_tip) || 0)
         })
+        const { data: resRows } = await supabase
+          .from('reservations')
+          .select('id, total_people, status, adults, child, infant')
+          .in('id', allReservationIds)
+        reservationsBatch = (resRows || []) as typeof reservationsBatch
       }
 
       const getPrepaidTipsOfficeShare = (tour: { reservation_ids?: string[] | unknown }) => {
-        const ids = tour.reservation_ids
-        if (!ids || (Array.isArray(ids) && ids.length === 0)) return 0
-        const list = Array.isArray(ids) ? ids as string[] : typeof ids === 'string' ? (ids as string).split(',').map((id: string) => id.trim()).filter(Boolean) : []
+        const list = normalizeReservationIds(tour.reservation_ids)
+        if (list.length === 0) return 0
         let sum = 0
         for (const rid of list) {
           const tip = pricingByReservation.get(rid) ?? 0
@@ -236,6 +280,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
           tour_date: tour.tour_date,
           tour_status: String((tour as { tour_status?: string | null }).tour_status ?? '').trim() || '—',
           product_name: (tour.products as { name_ko?: string })?.name_ko || '—',
+          total_participants: calculateAssignedPeople(tour, reservationsBatch),
           guide_name: guideName,
           assistant_name: assistantName,
           office_tip_amount: tip.amount,
@@ -359,13 +404,25 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   }, [selectedStaffEmails, startDate, endDate, opMembers])
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return
+    const persisted = readPersistedOfficeTipsDates()
+    if (persisted) {
+      setStartDate(persisted.start)
+      setEndDate(persisted.end)
+    } else {
       const { start, end } = getDefaultDates()
       setStartDate(start)
       setEndDate(end)
-      fetchOpMembers()
     }
+    fetchOpMembers()
   }, [isOpen, getDefaultDates, fetchOpMembers])
+
+  /** 선택 기간을 새로고침 후에도 유지 */
+  useEffect(() => {
+    if (!isOpen) return
+    if (!startDate || !endDate) return
+    writePersistedOfficeTipsDates(startDate, endDate)
+  }, [isOpen, startDate, endDate])
 
   useEffect(() => {
     if (!isOpen || opMembers.length === 0) return
@@ -685,6 +742,9 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                       <tr className="bg-gray-100 border-b border-gray-200">
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsDate')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsProduct')}</th>
+                        <th className="text-right py-1 px-2 font-medium text-gray-700 whitespace-nowrap w-[3.5rem]">
+                          {t('officeTipsTourHeadcount')}
+                        </th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsGuide')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsTourStatus')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsPerTour')}</th>
@@ -702,6 +762,9 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                           <tr key={tour.id} className="border-b border-gray-100 hover:bg-gray-50/50 last:border-b-0">
                             <td className="py-1 px-2 text-gray-900 whitespace-nowrap align-middle">{formatDateLabel(tour.tour_date)}</td>
                             <td className="py-1 px-2 text-gray-900 truncate align-middle" title={tour.product_name}>{tour.product_name}</td>
+                            <td className="py-1 px-2 text-gray-900 text-right tabular-nums align-middle whitespace-nowrap">
+                              {tour.total_participants > 0 ? tour.total_participants : '—'}
+                            </td>
                             <td className="py-1 px-2 text-gray-600 truncate align-middle" title={guideLabel}>{guideLabel}</td>
                             <td className="py-1 px-2 align-middle">
                               {statusRaw ? (
@@ -788,6 +851,14 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                         <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
                           {emp.tierPercent}%
                         </span>
+                        {emp.tierPercent !== 100 && (
+                          <span
+                            className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 tabular-nums"
+                            title={t('officeTipsCumulativeNetHoursBadgeTitle')}
+                          >
+                            {emp.totalWorkHoursAllTime.toFixed(1)}h
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-gray-600 space-y-0.5 rounded-md bg-amber-50/50 p-2 border border-amber-100/80">
                         <div className="font-medium text-gray-800">{t('officeTipsPeriodWork')}</div>
