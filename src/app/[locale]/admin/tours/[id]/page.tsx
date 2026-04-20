@@ -1967,6 +1967,7 @@ export default function TourDetailPage() {
                  tour={tourData.tour}
                  connectionStatus={{ bookings: tourData.connectionStatus.bookings }}
                  userRole="admin"
+                 userEmail={authUser?.email ?? null}
                  onExpenseUpdated={() => {
                    console.log('Expenses updated')
                  }}

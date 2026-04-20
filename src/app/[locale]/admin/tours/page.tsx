@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
+import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2, Receipt } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
@@ -14,6 +14,8 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
 import { isReservationCancelledStatus, isReservationDeletedStatus, isTourDeletedStatus } from '@/utils/tourUtils'
 import { DeletedToursTableModal } from '@/components/shared/DeletedToursTableModal'
+import { ToursNeedCheckModal } from '@/components/shared/ToursMissingReceiptModal'
+import { fetchToursNeedCheckData } from '@/lib/toursNeedCheckStats'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -92,10 +94,37 @@ export default function AdminTours() {
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [deletedToursBin, setDeletedToursBin] = useState<ExtendedTour[]>([])
   const [showDeletedToursModal, setShowDeletedToursModal] = useState(false)
+  const [showNeedCheckModal, setShowNeedCheckModal] = useState(false)
+  const [needCheckStats, setNeedCheckStats] = useState({ union: 0 })
+  const [needCheckStatsLoading, setNeedCheckStatsLoading] = useState(false)
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
   const [tourUi, setTourUi, tourUiHydrated] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
   const { viewMode, listViewDateFilter, searchTerm, selectedStatuses } = tourUi
+
+  const refreshNeedCheckStats = useCallback(async () => {
+    setNeedCheckStatsLoading(true)
+    try {
+      const d = await fetchToursNeedCheckData(supabase)
+      setNeedCheckStats({ union: d.unionCount })
+    } catch (e) {
+      console.error('refreshNeedCheckStats', e)
+    } finally {
+      setNeedCheckStatsLoading(false)
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    if (!tourUiHydrated) return
+    void refreshNeedCheckStats()
+  }, [tourUiHydrated, refreshNeedCheckStats])
+
+  const handleNeedCheckDataLoaded = useCallback(
+    (p: { unionCount: number; noReceiptCount: number; balanceCount: number }) => {
+      setNeedCheckStats({ union: p.unionCount })
+    },
+    []
+  )
   const setViewMode = (m: 'list' | 'calendar' | 'schedule') => setTourUi((u) => ({ ...u, viewMode: m }))
   const setListViewDateFilter = (f: 'month' | 'all' | 'scheduled') => setTourUi((u) => ({ ...u, listViewDateFilter: f }))
   const setSearchTerm = (v: SetStateAction<string>) =>
@@ -722,6 +751,21 @@ export default function AdminTours() {
             </button>
             <button
               type="button"
+              onClick={() => setShowNeedCheckModal(true)}
+              title={t('needToCheckButton')}
+              aria-label={t('needToCheckButton')}
+              className="bg-amber-600 text-white px-3 py-1.5 rounded-md hover:bg-amber-700 flex items-center gap-1.5 text-sm font-medium"
+            >
+              <Receipt size={16} className="shrink-0" aria-hidden />
+              <span className="hidden sm:inline">{t('needToCheckButton')}</span>
+              {!needCheckStatsLoading ? (
+                <span className="text-xs opacity-90 tabular-nums sm:text-xs">({needCheckStats.union})</span>
+              ) : (
+                <span className="text-xs opacity-80 tabular-nums sm:text-xs">(…)</span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setShowDeletedToursModal(true)}
               title={t('openDeletedToursModal')}
               aria-label={t('openDeletedToursModal')}
@@ -1027,6 +1071,25 @@ export default function AdminTours() {
           </div>
         </>
       )}
+
+      <ToursNeedCheckModal
+        isOpen={showNeedCheckModal}
+        onClose={() => {
+          setShowNeedCheckModal(false)
+          void refreshNeedCheckStats()
+        }}
+        title={t('needCheckModalTitle')}
+        subtitle={t('needCheckModalSubtitle')}
+        tabNoReceiptLabel={t('needCheckTabNoReceipt')}
+        tabBalanceLabel={t('needCheckTabBalance')}
+        locale={locale}
+        onDataLoaded={handleNeedCheckDataLoaded}
+        onTourClick={(tourId) => {
+          setShowNeedCheckModal(false)
+          setNavigatingToTour(tourId)
+          router.push(`/${locale}/admin/tours/${tourId}`)
+        }}
+      />
 
       <DeletedToursTableModal
         isOpen={showDeletedToursModal}

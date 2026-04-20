@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare, ArrowRightLeft, Import, Send } from 'lucide-react'
+import { useTranslations } from 'next-intl'
+import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare, ArrowRightLeft, Import, Send, HandCoins } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -123,6 +124,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   onRefresh,
   productCode = null
 }) => {
+  const tCard = useTranslations('reservations.card')
   const showResidentStatusUi = productShowsResidentStatusSectionByCode(productCode)
   /** 요청 중단(AbortError) 여부 — 컴포넌트 언마운트/의존성 변경 시 정상 취소이므로 로그 생략 */
   const isAbortError = useCallback((err: unknown): boolean => {
@@ -1646,6 +1648,33 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               }
               return null
             })()}
+
+            {/* 선불 팁(Prepaid tip) — reservation_pricing.prepayment_tip */}
+            {isStaff &&
+              reservationPricing &&
+              (() => {
+                const raw = reservationPricing.prepayment_tip
+                const tip =
+                  raw === null || raw === undefined
+                    ? 0
+                    : typeof raw === 'string'
+                      ? parseFloat(raw) || 0
+                      : raw
+                if (tip <= 0) return null
+                const cur = reservationPricing.currency || 'USD'
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0"
+                    title={tCard('prepaidTipBadgeTitle')}
+                    aria-label={`${tCard('prepaidTipBadgeTitle')}: ${formatCurrency(tip, cur)}`}
+                  >
+                    <HandCoins className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                    <span>{formatCurrency(tip, cur)}</span>
+                  </button>
+                )
+              })()}
           </div>
           
           {/* 오른쪽 액션 버튼들 */}

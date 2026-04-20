@@ -13,6 +13,8 @@ interface TourFinanceProps {
   tour: any
   connectionStatus: { bookings: boolean }
   userRole: string
+  /** 지출 등록·검수 시 DB `submitted_by` / `checked_by`에 저장할 실제 로그인 이메일 */
+  userEmail?: string | null
   onExpenseUpdated: () => void
   /** 결제 기록에서 예약 클릭 시 예약 수정 모달 열기 (투어 상세 페이지에서 전달) */
   onReservationClick?: (reservationId: string) => void
@@ -22,6 +24,7 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
   tour,
   connectionStatus,
   userRole,
+  userEmail,
   onExpenseUpdated,
   onReservationClick
 }) => {
@@ -92,7 +95,10 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
           tourId={tour.id}
           tourDate={tour.tour_date}
           productId={tour.product_id}
-          submittedBy={userRole === 'admin' ? 'admin@tour.com' : 'guide@tour.com'}
+          submittedBy={
+            (userEmail && userEmail.trim()) ||
+            (userRole === 'admin' ? 'admin@tour.com' : 'guide@tour.com')
+          }
           reservationIds={tour.reservation_ids || []}
           userRole={userRole}
           onExpenseUpdated={onExpenseUpdated}

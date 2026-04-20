@@ -63,6 +63,48 @@ type TeamMember = {
 const GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY = '__guide_pickup_hotel_unassigned__'
 const REPORT_REMINDER_START_DATE = '2026-04-01'
 
+/** 투어 업무 기준일(라스베이거스) 오늘 날짜 YYYY-MM-DD */
+function getTodayLasVegasYyyyMmDd(): string {
+  const now = new Date()
+  const las = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
+  const y = las.getFullYear()
+  const m = String(las.getMonth() + 1).padStart(2, '0')
+  const d = String(las.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/**
+ * 픽업 스케줄 헤더와 동일: 21:00 이후 픽업은 달력상 전날(야간 픽업).
+ * DB의 tour_date만 쓰면 전날 밤 픽업이 “내일 투어”로 남아 선불 팁이 숨겨지는 문제가 있음.
+ */
+function getGuidePickupCalendarYyyyMmDd(
+  tourDate: string | null | undefined,
+  pickupTime: string | null | undefined
+): string | null {
+  if (!tourDate) return null
+  let displayDate = String(tourDate).slice(0, 10)
+  if (pickupTime && pickupTime.length >= 5) {
+    const time = pickupTime.substring(0, 5)
+    const timeHour = parseInt(time.split(':')[0], 10)
+    if (!Number.isNaN(timeHour) && timeHour >= 21) {
+      const date = new Date(tourDate)
+      date.setDate(date.getDate() - 1)
+      displayDate = date.toISOString().split('T')[0]
+    }
+  }
+  return displayDate
+}
+
+/** 선불 팁: 픽업 달력일이 라스베이거스 “오늘” 이전·당일일 때만(미래 일정 숨김) */
+function isGuidePrepaidTipAllowedByPickupCalendar(
+  tourDate: string | null | undefined,
+  pickupTime: string | null | undefined
+): boolean {
+  const cal = getGuidePickupCalendarYyyyMmDd(tourDate, pickupTime)
+  if (!cal) return false
+  return cal <= getTodayLasVegasYyyyMmDd()
+}
+
 /** 티켓 부킹 회사 표시명 (관리 화면과 동일 규칙) */
 function normalizeTicketCompanyName(company: string | null | undefined): string {
   const c = company || 'Unknown'
@@ -110,6 +152,8 @@ export default function GuideTourDetailPage() {
   const [reservationPricing, setReservationPricing] = useState<Array<{
     reservation_id: string
     balance_amount: number
+    prepayment_tip: number
+    currency: string
   }>>([])
   const [reservationChoicesMap, setReservationChoicesMap] = useState<Map<string, Array<{
     choice_id: string
@@ -145,6 +189,16 @@ export default function GuideTourDetailPage() {
   const getReservationBalance = (reservationId: string) => {
     const pricing = reservationPricing.find(p => p.reservation_id === reservationId)
     return pricing?.balance_amount || 0
+  }
+
+  const getReservationPrepaidTip = (reservationId: string) => {
+    const pricing = reservationPricing.find(p => p.reservation_id === reservationId)
+    return pricing?.prepayment_tip ?? 0
+  }
+
+  const formatGuidePricingAmount = (amount: number, currency: string) => {
+    if (currency === 'KRW') return `₩${amount.toLocaleString()}`
+    return `$${amount.toLocaleString()}`
   }
 
   // 총 balance 계산 함수
@@ -257,9 +311,35 @@ export default function GuideTourDetailPage() {
         if (guideActiveReservationIds.length > 0) {
           const { data: pricingData } = await supabase
             .from('reservation_pricing')
-            .select('reservation_id, balance_amount')
+            // currency 컬럼은 스키마에 없을 수 있음 — select에 넣으면 PostgREST 400
+            .select('reservation_id, balance_amount, prepayment_tip')
             .in('reservation_id', guideActiveReservationIds)
-          setReservationPricing(pricingData || [])
+          const normalized = (pricingData || []).map((row: {
+            reservation_id: string
+            balance_amount?: number | string | null
+            prepayment_tip?: number | string | null
+          }) => {
+            const bal =
+              row.balance_amount === null || row.balance_amount === undefined
+                ? 0
+                : typeof row.balance_amount === 'string'
+                  ? parseFloat(row.balance_amount) || 0
+                  : row.balance_amount
+            const tipRaw = row.prepayment_tip
+            const tip =
+              tipRaw === null || tipRaw === undefined
+                ? 0
+                : typeof tipRaw === 'string'
+                  ? parseFloat(tipRaw) || 0
+                  : Number(tipRaw) || 0
+            return {
+              reservation_id: row.reservation_id,
+              balance_amount: bal,
+              prepayment_tip: tip,
+              currency: 'USD',
+            }
+          })
+          setReservationPricing(normalized)
         } else {
           setReservationPricing([])
         }
@@ -1414,55 +1494,81 @@ export default function GuideTourDetailPage() {
                           return (
                             <div key={reservation.id}>
                               <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-                                {/* 상단: 언어 아이콘, 채널 아이콘, 이름, 인원 */}
-                                <div className="flex items-center space-x-2 mb-2">
-                                  {/* 언어별 국기 아이콘 */}
-                                  {customer?.language && (
-                                    <ReactCountryFlag
-                                      countryCode={getLanguageFlag(customer.language)}
-                                      svg
-                                      style={{
-                                        width: '16px',
-                                        height: '12px',
-                                        borderRadius: '2px'
-                                      }}
-                                    />
-                                  )}
-                                  
-                                  {/* 채널 아이콘 */}
-                                  {reservation.channel_id && (() => {
-                                    const channel = channels.find(c => c.id === reservation.channel_id)
-                                    return channel?.favicon_url ? (
-                                      <img 
-                                        src={channel.favicon_url} 
-                                        alt={`${channel.name} favicon`} 
-                                        className="h-4 w-4 rounded flex-shrink-0"
-                                        onError={(e) => {
-                                          const target = e.target as HTMLImageElement
-                                          target.style.display = 'none'
-                                          const parent = target.parentElement
-                                          if (parent) {
-                                            const fallback = document.createElement('div')
-                                            fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
-                                            fallback.innerHTML = '🌐'
-                                            parent.appendChild(fallback)
-                                          }
+                                {/* 상단: 언어·채널·이름·인원(왼쪽) / 선불 팁(오른쪽, 픽업 달력일 기준 당일·과거만) */}
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <div className="flex items-center space-x-2 min-w-0">
+                                    {/* 언어별 국기 아이콘 */}
+                                    {customer?.language && (
+                                      <ReactCountryFlag
+                                        countryCode={getLanguageFlag(customer.language)}
+                                        svg
+                                        style={{
+                                          width: '16px',
+                                          height: '12px',
+                                          borderRadius: '2px'
                                         }}
                                       />
-                                    ) : (
-                                      <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
-                                        🌐
-                                      </div>
-                                    )
-                                  })()}
-                                  
-                                  <div className="font-medium text-gray-900">
-                                    {formatCustomerNameEnhanced(customer as any, locale)}
+                                    )}
+
+                                    {/* 채널 아이콘 */}
+                                    {reservation.channel_id && (() => {
+                                      const channel = channels.find(c => c.id === reservation.channel_id)
+                                      return channel?.favicon_url ? (
+                                        <img
+                                          src={channel.favicon_url}
+                                          alt={`${channel.name} favicon`}
+                                          className="h-4 w-4 rounded flex-shrink-0"
+                                          onError={(e) => {
+                                            const target = e.target as HTMLImageElement
+                                            target.style.display = 'none'
+                                            const parent = target.parentElement
+                                            if (parent) {
+                                              const fallback = document.createElement('div')
+                                              fallback.className =
+                                                'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                                              fallback.innerHTML = '🌐'
+                                              parent.appendChild(fallback)
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                                          🌐
+                                        </div>
+                                      )
+                                    })()}
+
+                                    <div className="font-medium text-gray-900 truncate">
+                                      {formatCustomerNameEnhanced(customer as any, locale)}
+                                    </div>
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 shrink-0">
+                                      <Users className="w-3 h-3 mr-1" />
+                                      {reservation.total_people || 0}
+                                    </span>
                                   </div>
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    <Users className="w-3 h-3 mr-1" />
-                                    {reservation.total_people || 0}
-                                  </span>
+                                  {tour &&
+                                    isGuidePrepaidTipAllowedByPickupCalendar(
+                                      tour.tour_date,
+                                      reservation.pickup_time
+                                    ) &&
+                                    (() => {
+                                      const tip = getReservationPrepaidTip(reservation.id)
+                                      if (tip <= 0) return null
+                                      const row = reservationPricing.find(
+                                        (p) => p.reservation_id === reservation.id
+                                      )
+                                      const cur = row?.currency || 'USD'
+                                      return (
+                                        <div className="text-right shrink-0">
+                                          <div className="text-[10px] text-gray-500 leading-tight">
+                                            {t('prepaidTipShort')}
+                                          </div>
+                                          <div className="text-sm font-semibold text-amber-800 tabular-nums">
+                                            {formatGuidePricingAmount(tip, cur)}
+                                          </div>
+                                        </div>
+                                      )
+                                    })()}
                                 </div>
 
                                 {/* 중단: 초이스와 연락처 아이콘 */}

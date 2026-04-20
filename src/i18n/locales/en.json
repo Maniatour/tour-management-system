@@ -2010,7 +2010,8 @@
       "pickupSummaryHotelLabel": "Pickup hotel",
       "editPickupTimeButton": "Edit pickup time",
       "editPickupHotelButton": "Change pickup hotel",
-      "registrationDateLabel": "Registered"
+      "registrationDateLabel": "Registered",
+      "prepaidTipBadgeTitle": "Prepaid tip — tip amount included in reservation pricing"
     },
     "paginationDisplay": "Showing {start}-{end} of {total} reservations",
     "viewCard": "Card",
@@ -2427,6 +2428,11 @@
   "tours": {
     "title": "Tour Management",
     "openDeletedToursModal": "View deleted tours",
+    "needToCheckButton": "Need to check",
+    "needCheckModalTitle": "Need to check",
+    "needCheckModalSubtitle": "Tour date is today or earlier, and either no row exists in tour_expenses for that tour and date, or an assigned reservation still has a positive balance. Cancelled tours are excluded.",
+    "needCheckTabNoReceipt": "No tour expenses",
+    "needCheckTabBalance": "Balance remaining",
     "deletedToursModalTitle": "Deleted tours (hidden from list and calendar)",
     "addTour": "Add Tour",
     "guideTours": {
@@ -3606,7 +3612,8 @@
     "reportContentPlaceholder": "Enter report content",
     "saveReport": "Save Report",
     "noOptions": "No options",
-    "noOptionsSelected": "No options selected"
+    "noOptionsSelected": "No options selected",
+    "prepaidTipShort": "Prepaid tip"
   },
   "paymentMethod": {
     "title": "Payment Method Management",
@@ -3677,7 +3684,10 @@
     "referenceCount": "Refs",
     "referenceCountShort": "Refs",
     "referenceCountUnit": " rows",
-    "referenceCountHint": "Rows referencing this payment method ID (trimmed match) across payment records, expenses, and bookings.",
+    "referenceCountBand0": "0",
+    "referenceCountBandLow": "1–10",
+    "referenceCountBandHigh": "10+",
+    "referenceCountHint": "Rows whose stored payment_method (trim) matches this row’s id, method label, or display name across payment records, expenses, and bookings. Shown as bands: 0 / 1–10 / 10+.",
     "referenceCountUnavailable": "N/A (no server key)"
   },
   "vehicleMaintenance": {

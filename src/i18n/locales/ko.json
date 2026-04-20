@@ -2019,7 +2019,8 @@
       "pickupSummaryHotelLabel": "픽업 호텔",
       "editPickupTimeButton": "픽업 시간 수정",
       "editPickupHotelButton": "픽업 호텔 변경",
-      "registrationDateLabel": "등록일"
+      "registrationDateLabel": "등록일",
+      "prepaidTipBadgeTitle": "선불 팁(Prepaid tip) — 예약 가격에 반영된 팁 선결제 금액"
     },
     "paginationDisplay": "총 {total}개 예약 중 {start}-{end}개 표시",
     "viewCard": "카드",
@@ -2425,6 +2426,11 @@
   "tours": {
     "title": "투어 관리",
     "openDeletedToursModal": "삭제된 투어 보기",
+    "needToCheckButton": "Need to check",
+    "needCheckModalTitle": "Need to check",
+    "needCheckModalSubtitle": "투어일이 오늘 이하인 투어 중, 해당 투어일에 tour_expenses 지출이 한 건도 없거나, 배정 예약의 밸런스가 남아 있는 경우입니다. 취소된 투어는 제외합니다.",
+    "needCheckTabNoReceipt": "투어 지출 없음",
+    "needCheckTabBalance": "발란스 남음",
     "deletedToursModalTitle": "삭제된 투어 (목록·달력에 표시되지 않음)",
     "addTour": "투어 추가",
     "guideTours": {
@@ -3632,7 +3638,8 @@
     "reportContentPlaceholder": "리포트 내용을 입력하세요",
     "saveReport": "리포트 저장",
     "noOptions": "선택사항 없음",
-    "noOptionsSelected": "선택사항 없음"
+    "noOptionsSelected": "선택사항 없음",
+    "prepaidTipShort": "선불 팁"
   },
   "team": {
     "title": "팀 관리",
@@ -3716,7 +3723,10 @@
     "referenceCount": "참조",
     "referenceCountShort": "참조",
     "referenceCountUnit": "건",
-    "referenceCountHint": "결제 기록·회사/예약/투어 지출·티켓·호텔 부킹에서 이 결제수단 ID(trim 일치)로 저장된 행 수입니다.",
+    "referenceCountBand0": "0",
+    "referenceCountBandLow": "1~10",
+    "referenceCountBandHigh": "10+",
+    "referenceCountHint": "결제 기록·회사/예약/투어 지출·티켓·호텔 부킹에 저장된 문자열(ID·방법명·표시명과 trim 일치)을 합친 건수입니다. 표에는 0·1~10·10+ 구간만 표시합니다.",
     "referenceCountUnavailable": "집계 불가(서버 키 없음)"
   },
   "vehicleMaintenance": {

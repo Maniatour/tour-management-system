@@ -54,6 +54,18 @@ function paymentMethodFinancialLabel(m: PaymentMethod): string {
   return '—'
 }
 
+/** API 참조 건수 → 표시는 구간(0 / 1~10 / 10+). 정렬은 raw number 유지 */
+function formatPaymentMethodReferenceBand(count: number, t: (k: string) => string): string {
+  if (count === 0) return t('referenceCountBand0')
+  if (count <= 10) return t('referenceCountBandLow')
+  return t('referenceCountBandHigh')
+}
+
+function paymentMethodReferenceBandClass(count: number): string {
+  if (count === 0) return 'text-amber-700 font-medium'
+  return ''
+}
+
 /** 결제 방법 통합 모달 — 방법/ID · 가이드 · 사용자 · 금융 · 메모 열 (체크·라디오 열은 부모에서) */
 function MergeMethodDetailCells({
   method,
@@ -2910,13 +2922,9 @@ export default function PaymentMethodManager({
                       >
                         {method.reference_count != null ? (
                           <span
-                            className={
-                              method.reference_count === 0
-                                ? 'text-amber-700 font-medium'
-                                : ''
-                            }
+                            className={paymentMethodReferenceBandClass(method.reference_count)}
                           >
-                            {method.reference_count.toLocaleString(locale)}
+                            {formatPaymentMethodReferenceBand(method.reference_count, t)}
                           </span>
                         ) : (
                           <span className="text-gray-400">—</span>
@@ -3085,12 +3093,13 @@ export default function PaymentMethodManager({
                     {t('referenceCountShort')}{' '}
                     <span
                       className={
-                        method.reference_count === 0 ? 'text-amber-700 font-medium' : 'font-medium text-gray-800'
+                        method.reference_count === 0
+                          ? 'text-amber-700 font-medium'
+                          : 'font-medium text-gray-800'
                       }
                     >
-                      {method.reference_count.toLocaleString(locale)}
+                      {formatPaymentMethodReferenceBand(method.reference_count, t)}
                     </span>
-                    {t('referenceCountUnit')}
                   </>
                 ) : (
                   <span className="text-gray-400">{t('referenceCountUnavailable')}</span>

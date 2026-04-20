@@ -38,8 +38,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    /** payment_method 컬럼을 가진 테이블 전체에서 trim(ID) 일치 행 수 (service_role RPC) */
-    let referenceCountById = new Map<string, number>()
+    /** 각 테이블의 payment_method 문자열(trim)별 건수 — 키는 ID·표시명 등과 동일한 문자열일 수 있음 */
+    let referenceCountByKey = new Map<string, number>()
     if (supabaseAdmin) {
       const { data: countRows, error: countError } = await supabaseAdmin.rpc(
         'payment_method_reference_counts'
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
           const k = row.payment_method != null ? String(row.payment_method).trim() : ''
           if (!k) continue
           const n = Number(row.reference_count)
-          referenceCountById.set(k, Number.isFinite(n) ? n : 0)
+          referenceCountByKey.set(k, Number.isFinite(n) ? n : 0)
         }
       }
     }
@@ -95,12 +95,27 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // team · 금융 계정 · 참조 건수
+    const referenceCountForRow = (pm: {
+      id?: string | null
+      method?: string | null
+      display_name?: string | null
+    }): number => {
+      const keys = new Set<string>()
+      for (const v of [pm.id, pm.method, pm.display_name]) {
+        if (v == null) continue
+        const k = String(v).trim()
+        if (k) keys.add(k)
+      }
+      let sum = 0
+      for (const k of keys) {
+        sum += referenceCountByKey.get(k) ?? 0
+      }
+      return sum
+    }
+
+    // team · 금융 계정 · 참조 건수 (저장값이 구 ID·방법명·표시명 중 무엇이든 합산)
     const paymentMethodsWithTeam = paymentMethods.map((pm: any) => {
-      const idKey = pm.id != null ? String(pm.id).trim() : ''
-      const reference_count = supabaseAdmin
-        ? referenceCountById.get(idKey) ?? 0
-        : null
+      const reference_count = supabaseAdmin ? referenceCountForRow(pm) : null
       return {
         ...pm,
         team: pm.user_email ? teamMap[String(pm.user_email).toLowerCase()] || null : null,

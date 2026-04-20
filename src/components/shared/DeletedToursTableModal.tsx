@@ -59,7 +59,7 @@ export function DeletedToursTableModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50">
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[85vh] flex flex-col">
         <div className="flex items-start justify-between gap-3 p-4 border-b border-gray-200">
           <div>
