@@ -14,7 +14,12 @@ import {
   computePricingSectionDisplayTotalRevenue,
   computePricingSectionDisplayOperatingProfit,
 } from '@/utils/pricingSectionRevenueDisplay'
-import { computeChannelSettlementAmount } from '@/utils/channelSettlement'
+import {
+  computeChannelSettlementAmount,
+  deriveCommissionGrossForSettlement,
+  shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
+} from '@/utils/channelSettlement'
+import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 
 interface PricingInfoModalProps {
@@ -52,6 +57,7 @@ interface PricingData {
   not_included_price?: number
   commission_amount?: number
   commission_percent?: number
+  commission_base_price?: number
   channel_settlement_amount?: number
   pricing_adults?: number | null
 }
@@ -83,6 +89,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const [refundedAmount, setRefundedAmount] = useState(0)
   const [partnerReceivedForSettlement, setPartnerReceivedForSettlement] = useState(0)
   const [isOTAChannel, setIsOTAChannel] = useState(false)
+  /** 홈페이지 채널 판별용 — `channels` 목록 없이 현재 예약 채널명만으로 검사 */
+  const [channelDisplayName, setChannelDisplayName] = useState<string | null>(null)
 
   const reservationOptionsHookId = isOpen && reservation?.id ? String(reservation.id) : ''
   const { reservationOptions: reservationOptionsRows } = useReservationOptions(reservationOptionsHookId)
@@ -143,6 +151,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
 
     setLoading(true)
     setError(null)
+    setChannelDisplayName(null)
 
     // 숫자 정규화 (Supabase/Postgres가 numeric을 문자열로 반환할 수 있음)
     const toNum = (v: unknown): number => {
@@ -157,7 +166,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       if (reservation.channelId) {
         const { data: channelData } = await supabase
           .from('channels')
-          .select('pricing_type, has_not_included_price, not_included_type, not_included_price, type, category')
+          .select('pricing_type, has_not_included_price, not_included_type, not_included_price, type, category, name')
           .eq('id', reservation.channelId)
           .single()
         
@@ -169,13 +178,22 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
             String((channelData as { type?: string }).type || '').toLowerCase() === 'ota' ||
             (channelData as { category?: string }).category === 'OTA'
           setIsOTAChannel(ota)
+          setChannelDisplayName(
+            channelData.name != null && String(channelData.name).trim() !== ''
+              ? String(channelData.name)
+              : null
+          )
+        } else {
+          setChannelDisplayName(null)
         }
+      } else {
+        setChannelDisplayName(null)
       }
       // reservation_id는 DB에서 문자열/UUID이므로 문자열로 통일해 조회. 상품 단가 컬럼 명시적으로 요청.
       const reservationId = String(reservation.id)
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, channel_settlement_amount, pricing_adults')
+        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, commission_base_price, channel_settlement_amount, pricing_adults')
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -252,6 +270,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           not_included_price: pricingInfo?.not_included_price || 0,
           commission_amount: 0,
           commission_percent: pricingInfo?.commission_percent || 0,
+          commission_base_price: 0,
           channel_settlement_amount: Math.max(
             0,
             (pricingInfo?.depositAmount || 0) - (Number(pricingInfo?.commission_amount) || 0)
@@ -315,6 +334,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         not_included_price: toNum(data.not_included_price),
         commission_amount: toNum(data.commission_amount),
         commission_percent: commissionPercentToUse,
+        commission_base_price: toNum(raw.commission_base_price),
         channel_settlement_amount: chSettleFromDb,
         pricing_adults: pricingAdultsMerged,
       }
@@ -672,6 +692,55 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     partnerReceivedForSettlement,
   ])
 
+  const channelPaymentGrossDbLikeModal = useMemo(() => {
+    if (!editData || !reservation) return 0
+    const online = Number((reservation as { onlinePaymentAmount?: number }).onlinePaymentAmount) || 0
+    if (Number.isFinite(online) && online !== 0) return online
+    const rawCb = editData.commission_base_price
+    const stored =
+      rawCb !== undefined && rawCb !== null && Number.isFinite(Number(rawCb)) ? Number(rawCb) : 0
+    if (!stored) return 0
+    const pa = Math.max(0, Math.floor(Number(editData.pricing_adults ?? reservation.adults) || 0))
+    const billingPax = pa + (reservation.child || 0) + (reservation.infant || 0)
+    const cancelledOtaSettle = isReservationCancelled && isOTAChannel
+    const notIncludedTotal = cancelledOtaSettle ? 0 : (Number(editData.not_included_price) || 0) * (billingPax || 1)
+    const productTotalForSettlement = (Number(editData.product_price_total) || 0) + notIncludedTotal
+    return deriveCommissionGrossForSettlement(stored, {
+      returnedAmount,
+      depositAmount: Number(editData.deposit_amount) || 0,
+      productPriceTotal: productTotalForSettlement,
+      isOTAChannel,
+    })
+  }, [editData, reservation, isReservationCancelled, isOTAChannel, returnedAmount])
+
+  const omitAdditionalDiscountAndCostFromRevenueSumModal = useMemo(() => {
+    if (!editData || !reservation) return false
+    const fromForm = editData.channel_settlement_amount
+    const usesStored =
+      fromForm !== undefined &&
+      fromForm !== null &&
+      String(fromForm) !== '' &&
+      Number.isFinite(Number(fromForm))
+    return shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum({
+      usesStoredChannelSettlement: usesStored,
+      isOTAChannel,
+      depositAmount: Number(editData.deposit_amount) || 0,
+      onlinePaymentAmount: Number((reservation as { onlinePaymentAmount?: number }).onlinePaymentAmount) || 0,
+      channelPaymentGross: channelPaymentGrossDbLikeModal,
+    })
+  }, [editData, reservation, isOTAChannel, channelPaymentGrossDbLikeModal])
+
+  const isHomepageBookingReservation = useMemo(() => {
+    const cid = reservation?.channelId
+    if (!cid) return false
+    return isHomepageBookingChannel(
+      cid,
+      channelDisplayName != null
+        ? [{ id: String(cid), name: channelDisplayName }]
+        : [{ id: String(cid), name: '' }]
+    )
+  }, [reservation?.channelId, channelDisplayName])
+
   const revenueDisplayInput = useMemo(() => {
     if (!editData || !reservation) return null
     return {
@@ -686,6 +755,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       prepaymentCost: editData.prepayment_cost || 0,
       prepaymentTip: editData.prepayment_tip || 0,
       refundedAmount,
+      omitAdditionalDiscountAndCostFromSum: omitAdditionalDiscountAndCostFromRevenueSumModal,
+      excludeHomepageAdditionalCostFromCompanyTotals: isHomepageBookingReservation,
     }
   }, [
     editData,
@@ -696,6 +767,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     reservationOptionsTotalUsd,
     notIncludedBreakdownModal.totalUsd,
     refundedAmount,
+    omitAdditionalDiscountAndCostFromRevenueSumModal,
+    isHomepageBookingReservation,
   ])
 
   const totalRevenueDisplay = useMemo(() => {

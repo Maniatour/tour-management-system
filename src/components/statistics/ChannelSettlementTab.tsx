@@ -19,7 +19,9 @@ import {
   computeChannelSettlementAmount,
   computeCompanyTotalRevenueLikePricingSection,
   deriveCommissionGrossForSettlement,
+  shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
+import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 
 interface ChannelSettlementTabProps {
   dateRange: { start: string; end: string }
@@ -171,13 +173,39 @@ function buildCompanyTotalRevenueForChannelRow(
     refundedOur: number
     reservationOptionsSum: number
     isOta: boolean
+    isHomepageChannel: boolean
   }
 ): number {
   const base = channelSettlementBaseForStatsRow(item, extras, ctx.returnedAmount, ctx.partnerReceived, ctx.isOta)
   const billingPax = billingPaxForSettlementFromItem(item) || 1
   const notIncludedTotalUsd = (extras.notIncludedPrice || 0) * billingPax
+  const notIncludedForSettlement = (extras.notIncludedPrice || 0) * billingPax
+  const productTotalForSettlement = (item.productPriceTotal || 0) + notIncludedForSettlement
   const st = String(item.status || '').toLowerCase().trim()
   const isReservationCancelled = st === 'cancelled' || st === 'canceled'
+
+  const usesStored =
+    item.channelSettlementAmount != null && Number.isFinite(Number(item.channelSettlementAmount))
+  const onlineRaw = Number(extras.onlinePaymentAmount) || 0
+  const storedCb = Number(item.commissionBasePrice ?? extras.commissionBasePrice ?? 0)
+  let channelPaymentGrossDbLike = 0
+  if (Number.isFinite(onlineRaw) && onlineRaw !== 0) {
+    channelPaymentGrossDbLike = onlineRaw
+  } else if (storedCb) {
+    channelPaymentGrossDbLike = deriveCommissionGrossForSettlement(storedCb, {
+      returnedAmount: ctx.returnedAmount,
+      depositAmount: item.depositAmount ?? 0,
+      productPriceTotal: productTotalForSettlement,
+      isOTAChannel: ctx.isOta,
+    })
+  }
+  const omitAdditionalDiscountAndCostFromSum = shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum({
+    usesStoredChannelSettlement: usesStored,
+    isOTAChannel: ctx.isOta,
+    depositAmount: item.depositAmount ?? 0,
+    onlinePaymentAmount: onlineRaw,
+    channelPaymentGross: channelPaymentGrossDbLike,
+  })
 
   return computeCompanyTotalRevenueLikePricingSection({
     channelSettlementBase: base,
@@ -190,6 +218,8 @@ function buildCompanyTotalRevenueForChannelRow(
     tax: item.tax ?? 0,
     prepaymentCost: extras.prepaymentCost ?? 0,
     refundedOurAmount: ctx.refundedOur,
+    omitAdditionalDiscountAndCostFromSum,
+    excludeHomepageAdditionalCostFromCompanyTotals: ctx.isHomepageChannel,
   })
 }
 
@@ -565,6 +595,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
               refundedOur: refundedOurByReservation[item.id] ?? 0,
               reservationOptionsSum: reservationOptionsSumByReservation[item.id] ?? 0,
               isOta: isOtaChannelId(item.channelId),
+              isHomepageChannel: isHomepageBookingChannel(item.channelId, channels),
             }
           ),
         }
@@ -576,6 +607,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       refundedOurByReservation,
       reservationOptionsSumByReservation,
       isOtaChannelId,
+      channels,
     ]
   )
 
@@ -1728,6 +1760,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                          refundedOur: refundedOurByReservation[item.id] ?? 0,
                          reservationOptionsSum: reservationOptionsSumByReservation[item.id] ?? 0,
                          isOta: isOtaChannelId(item.channelId),
+                         isHomepageChannel: isHomepageBookingChannel(item.channelId, channels),
                        }),
                      0
                    )
@@ -1808,6 +1841,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                        refundedOur: refundedOurByReservation[item.id] ?? 0,
                                        reservationOptionsSum: reservationOptionsSumByReservation[item.id] ?? 0,
                                        isOta: isOtaChannelId(item.channelId),
+                                       isHomepageChannel: isHomepageBookingChannel(item.channelId, channels),
                                      }
                                    )
                                    return (

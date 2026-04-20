@@ -30,9 +30,25 @@ export async function GET(request: NextRequest) {
       .order('submit_on', { ascending: false })
       .range(from, to)
     
-    // 검색 필터 적용
-    if (search) {
-      query = query.or(`paid_to.ilike.%${search}%,paid_for.ilike.%${search}%,description.ilike.%${search}%`)
+    // 검색 필터: 결제처·내용·설명·결제방법 ID 부분일치 + payment_methods 표시명/방법명/ID 일치 시 해당 ID 행 포함
+    if (search && search.trim()) {
+      const raw = search.trim()
+      const like = `%${raw}%`
+      const orParts = [
+        `paid_to.ilike.${like}`,
+        `paid_for.ilike.${like}`,
+        `description.ilike.${like}`,
+        `payment_method.ilike.${like}`,
+      ]
+      const { data: pmRows } = await supabase
+        .from('payment_methods')
+        .select('id')
+        .or(`method.ilike.${like},display_name.ilike.${like},id.ilike.${like}`)
+      const pmIds = [...new Set((pmRows || []).map((r: { id: string }) => r.id))].slice(0, 200)
+      if (pmIds.length > 0) {
+        orParts.push(`payment_method.in.(${pmIds.join(',')})`)
+      }
+      query = query.or(orParts.join(','))
     }
     
     // 카테고리 필터

@@ -36,6 +36,44 @@ function toN(v: unknown): number {
 }
 
 const GROSS_NET_EPS = 0.02
+const PAY_LINE_EPS = 0.005
+
+/**
+ * 「4. 최종 매출」에서 추가할인·추가비용을 다시 넣지 않을지.
+ * 채널 결제/정산 산식(`computeChannelPaymentAfterReturn`)의 베이스에 이미 `(additionalCost - additionalDiscount)` 또는
+ * 고객 결제 전액(온라인·예치금·commission_base 복원 gross 등)이 반영된 경우 이중 계상됨 — card_fee와 동일 원칙.
+ */
+export function shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum(inp: {
+  usesStoredChannelSettlement: boolean
+  isOTAChannel: boolean
+  depositAmount: number
+  /** 폼 `onlinePaymentAmount` (0이면 미사용) */
+  onlinePaymentAmount: number
+  /**
+   * PricingSection의 `channelPaymentGrossDb`와 동일: 온라인 결제가 없을 때 정산용 gross(commission_base 등).
+   * OTA에서만 고객 결제 총액 추정에 사용.
+   */
+  channelPaymentGross: number
+}): boolean {
+  if (inp.usesStoredChannelSettlement) return true
+
+  const dep = toN(inp.depositAmount)
+  const onl = toN(inp.onlinePaymentAmount)
+  const cg = toN(inp.channelPaymentGross)
+
+  if (!inp.isOTAChannel && dep <= PAY_LINE_EPS) {
+    return true
+  }
+
+  if (inp.isOTAChannel) {
+    const hasCustomerPaymentGross =
+      dep > PAY_LINE_EPS || onl > PAY_LINE_EPS || cg > PAY_LINE_EPS
+    if (hasCustomerPaymentGross) return true
+    return false
+  }
+
+  return false
+}
 
 /**
  * DB·폼에 남아 있는 `commission_base_price`가 net(신규)인지 gross(기존 행)인지에 따라
@@ -133,6 +171,8 @@ function roundUsd2(n: number): number {
  * - 기준: `channelSettlementBeforePartnerReturn`(저장된 channel_settlement_amount 또는 동일 로직 계산값)
  * - OTA만 예약 옵션(reservation_options 합) 가산, 불포함·부가·우리측 Refunded 반영
  * - card_fee(결제 수수료)는 채널 결제 금액 산식에 이미 포함되므로 여기서는 가산하지 않음
+ * - 추가할인·추가비용: `omitAdditionalDiscountAndCostFromSum`이 true이면 채널 정산/결제에 이미 반영된 것으로 보아 가산·차감하지 않음
+ * - 홈페이지: `excludeHomepageAdditionalCostFromCompanyTotals`이면 추가비용을 매출에서 제외
  */
 export type CompanyTotalRevenueInput = {
   channelSettlementBase: number
@@ -147,6 +187,13 @@ export type CompanyTotalRevenueInput = {
   prepaymentCost: number
   /** payment_records Refunded (우리 쪽 환불) */
   refundedOurAmount: number
+  /**
+   * true: 추가할인 차감·추가비용 가산 생략(채널 정산·결제에 이미 반영).
+   * `shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum` 결과를 넣을 것.
+   */
+  omitAdditionalDiscountAndCostFromSum: boolean
+  /** 홈페이지 예약: 추가비용은 회사 매출에 넣지 않음(정산·소계에 섞여 있으면 최종에서 차감) */
+  excludeHomepageAdditionalCostFromCompanyTotals: boolean
 }
 
 export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRevenueInput): number {
@@ -161,6 +208,8 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     tax,
     prepaymentCost,
     refundedOurAmount,
+    omitAdditionalDiscountAndCostFromSum,
+    excludeHomepageAdditionalCostFromCompanyTotals,
   } = inp
 
   if (isReservationCancelled) {
@@ -176,11 +225,13 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   if (notIncludedTotalUsd > 0) {
     totalRevenue += notIncludedTotalUsd
   }
-  if (additionalDiscount > 0) {
-    totalRevenue -= additionalDiscount
-  }
-  if (additionalCost > 0) {
-    totalRevenue += additionalCost
+  if (!omitAdditionalDiscountAndCostFromSum) {
+    if (additionalDiscount > 0) {
+      totalRevenue -= additionalDiscount
+    }
+    if (additionalCost > 0) {
+      totalRevenue += additionalCost
+    }
   }
   if (tax > 0) {
     totalRevenue += tax
@@ -189,6 +240,10 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     totalRevenue += prepaymentCost
   }
   totalRevenue -= refundedOurAmount
+
+  if (excludeHomepageAdditionalCostFromCompanyTotals && additionalCost > 0) {
+    totalRevenue -= additionalCost
+  }
 
   return Math.max(0, roundUsd2(totalRevenue))
 }

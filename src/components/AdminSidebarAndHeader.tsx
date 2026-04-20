@@ -39,7 +39,8 @@ import {
   Cloud,
   ChevronLeft,
   ChevronRight,
-  Landmark
+  Landmark,
+  Replace
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -527,6 +528,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     // 파트너 자금 관리 (info@maniatour.com만 표시)
     ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: tSidebar('partnerFundManagement'), href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
     { name: tSidebar('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
+    { name: tSidebar('expensePaymentMethodNormalize'), href: `/${locale}/admin/expense-payment-method-normalize`, icon: Replace },
     { name: tSidebar('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
     { name: tSidebar('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
     { name: tSidebar('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },

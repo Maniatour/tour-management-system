@@ -17,7 +17,9 @@ import {
 import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
+  shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
+import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 
@@ -1119,6 +1121,7 @@ export default function PricingSection({
     (ch.name && (String(ch.name).toLowerCase().includes('homepage') || String(ch.name).includes('홈페이지')))
   ) : null
   const homepageChannelId = homepageChannel?.id ?? null
+  const isHomepageBooking = isHomepageBookingChannel(formData.channelId, channels)
 
   const hasDbReservationPricingRow = Boolean(reservationPricingId)
 
@@ -1347,6 +1350,28 @@ export default function PricingSection({
     isScenicProduct,
     channelPaymentAmountAfterReturn,
   ])
+
+  const omitAdditionalDiscountAndCostFromRevenueSum = useMemo(
+    () =>
+      shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum({
+        usesStoredChannelSettlement:
+          formData.channelSettlementAmount !== undefined &&
+          formData.channelSettlementAmount !== null &&
+          String(formData.channelSettlementAmount) !== '' &&
+          Number.isFinite(Number(formData.channelSettlementAmount)),
+        isOTAChannel: !!isOTAChannel,
+        depositAmount: Number(formData.depositAmount) || 0,
+        onlinePaymentAmount: Number(formData.onlinePaymentAmount) || 0,
+        channelPaymentGross: Number(channelPaymentGrossDb) || 0,
+      }),
+    [
+      formData.channelSettlementAmount,
+      isOTAChannel,
+      formData.depositAmount,
+      formData.onlinePaymentAmount,
+      channelPaymentGrossDb,
+    ]
+  )
 
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
   useEffect(() => {
@@ -3718,8 +3743,8 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 추가비용 */}
-              {(formData.additionalCost || 0) > 0 && (
+              {/* 추가비용 — 홈페이지 직예약은 회사 매출 블록에서 숨김 */}
+              {(formData.additionalCost || 0) > 0 && !isHomepageBooking && (
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="text-xs font-medium text-gray-700">+ {isKorean ? '추가비용' : 'Additional Cost'}</span>
                   <span className="text-xs font-medium text-gray-900">
@@ -3791,14 +3816,14 @@ export default function PricingSection({
                       totalRevenue += notIncludedTotal
                     }
                     
-                    // 추가할인 (차감)
-                    if ((formData.additionalDiscount || 0) > 0) {
-                      totalRevenue -= formData.additionalDiscount
-                    }
-                    
-                    // 추가비용
-                    if ((formData.additionalCost || 0) > 0) {
-                      totalRevenue += formData.additionalCost
+                    // 추가할인·추가비용: 채널 정산/결제 산식에 이미 반영된 경우 이중 반영하지 않음
+                    if (!omitAdditionalDiscountAndCostFromRevenueSum) {
+                      if ((formData.additionalDiscount || 0) > 0) {
+                        totalRevenue -= formData.additionalDiscount
+                      }
+                      if ((formData.additionalCost || 0) > 0) {
+                        totalRevenue += formData.additionalCost
+                      }
                     }
                     
                     // 세금
@@ -3814,6 +3839,11 @@ export default function PricingSection({
                     
                     // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
                     totalRevenue -= refundedAmount
+
+                    // 홈페이지: 추가비용은 회사 총 매출에 포함하지 않음(고객 결제·정산 소계에는 남을 수 있음)
+                    if (isHomepageBooking && (formData.additionalCost || 0) > 0) {
+                      totalRevenue -= formData.additionalCost
+                    }
                     
                     return totalRevenue.toFixed(2)
                   })()}
@@ -3864,14 +3894,13 @@ export default function PricingSection({
                       totalRevenue += notIncludedTotal
                     }
                     
-                    // 추가할인 (차감)
-                    if ((formData.additionalDiscount || 0) > 0) {
-                      totalRevenue -= formData.additionalDiscount
-                    }
-                    
-                    // 추가비용
-                    if ((formData.additionalCost || 0) > 0) {
-                      totalRevenue += formData.additionalCost
+                    if (!omitAdditionalDiscountAndCostFromRevenueSum) {
+                      if ((formData.additionalDiscount || 0) > 0) {
+                        totalRevenue -= formData.additionalDiscount
+                      }
+                      if ((formData.additionalCost || 0) > 0) {
+                        totalRevenue += formData.additionalCost
+                      }
                     }
                     
                     // 세금
@@ -3887,6 +3916,10 @@ export default function PricingSection({
                     
                     // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
                     totalRevenue -= refundedAmount
+
+                    if (isHomepageBooking && (formData.additionalCost || 0) > 0) {
+                      totalRevenue -= formData.additionalCost
+                    }
 
                     // 운영 이익 = 총 매출 - 선결제 팁
                     return (totalRevenue - (formData.prepaymentTip || 0)).toFixed(2)

@@ -19,10 +19,15 @@ import {
   Download,
   Upload,
   LayoutGrid,
-  Table2
+  Table2,
+  ArrowUp,
+  ArrowDown,
+  GitMerge,
+  ChevronDown
 } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import PaymentMethodUsageModal from '@/components/PaymentMethodUsageModal'
 import {
   Dialog,
   DialogContent,
@@ -31,6 +36,93 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+
+/** /api/admin/payment-methods/merge 참조 테이블 표시용 */
+const MERGE_REF_TABLE_LABELS: Record<string, string> = {
+  payment_records: '결제 기록',
+  company_expenses: '회사 지출',
+  reservation_expenses: '예약 지출',
+  tour_expenses: '투어 지출',
+  ticket_bookings: '티켓 부킹',
+  tour_hotel_bookings: '투어 호텔 부킹',
+}
+
+function paymentMethodFinancialLabel(m: PaymentMethod): string {
+  const n = m.financial_account?.name?.trim()
+  if (n) return n
+  if (m.financial_account_id) return m.financial_account_id
+  return '—'
+}
+
+/** 결제 방법 통합 모달 — 방법/ID · 가이드 · 사용자 · 금융 · 메모 열 (체크·라디오 열은 부모에서) */
+function MergeMethodDetailCells({
+  method,
+  userLabel,
+}: {
+  method: PaymentMethod
+  userLabel: string
+}) {
+  const guidePrimary =
+    method.team?.name_ko?.trim() || method.team?.name_en?.trim() || ''
+  const guideSub =
+    method.team?.name_ko &&
+    method.team?.name_en &&
+    method.team.name_ko !== method.team.name_en
+      ? method.team.name_en
+      : ''
+  const fin = paymentMethodFinancialLabel(method)
+  const memo = method.notes?.trim() || ''
+  return (
+    <>
+      <td className="px-2 py-1.5 align-top text-gray-900 max-w-[11rem] border-b border-gray-100">
+        <div className="font-medium truncate" title={method.method}>
+          {method.method}
+        </div>
+        <div className="text-[11px] font-mono text-gray-500 truncate" title={method.id}>
+          {method.id}
+        </div>
+      </td>
+      <td className="px-2 py-1.5 align-top text-gray-800 text-xs max-w-[9rem] border-b border-gray-100">
+        {guidePrimary ? (
+          <>
+            <div className="font-medium truncate" title={guidePrimary}>
+              {guidePrimary}
+            </div>
+            {guideSub ? (
+              <div className="text-gray-600 truncate" title={guideSub}>
+                {guideSub}
+              </div>
+            ) : null}
+          </>
+        ) : method.user_email ? (
+          <div className="text-gray-600 truncate" title={method.user_email}>
+            {method.user_email}
+          </div>
+        ) : (
+          <span className="text-gray-400">—</span>
+        )}
+      </td>
+      <td className="px-2 py-1.5 align-top text-gray-700 text-xs max-w-[12rem] border-b border-gray-100">
+        <span className="line-clamp-3 break-words" title={userLabel}>
+          {userLabel}
+        </span>
+      </td>
+      <td className="px-2 py-1.5 align-top text-gray-700 text-xs max-w-[10rem] border-b border-gray-100">
+        <span className="line-clamp-3 break-words" title={fin}>
+          {fin}
+        </span>
+      </td>
+      <td className="px-2 py-1.5 align-top text-gray-600 text-xs max-w-[12rem] border-b border-gray-100">
+        <span
+          className="line-clamp-3 break-words whitespace-pre-wrap"
+          title={memo || undefined}
+        >
+          {memo || '—'}
+        </span>
+      </td>
+    </>
+  )
+}
 
 interface PaymentMethod {
   id: string
@@ -56,6 +148,10 @@ interface PaymentMethod {
   updated_at: string
   display_name?: string | null
   deduct_card_fee_for_tips?: boolean | null
+  financial_account_id?: string | null
+  financial_account?: { id: string; name: string } | null
+  /** 지출·결제·부킹 등에서 이 ID(trim 일치)로 저장된 행 수. 서버에 service_role 없으면 null */
+  reference_count?: number | null
   team?: {
     email: string
     name_ko: string
@@ -94,6 +190,7 @@ export default function PaymentMethodManager({
 }: PaymentMethodManagerProps) {
   
   const t = useTranslations('paymentMethod')
+  const locale = useLocale()
   const [methods, setMethods] = useState<PaymentMethod[]>([])
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
   const [teamMembersWithStatus, setTeamMembersWithStatus] = useState<TeamMemberWithStatus[]>([])
@@ -102,8 +199,25 @@ export default function PaymentMethodManager({
   const [showAddForm, setShowAddForm] = useState(false)
   const [showBulkForm, setShowBulkForm] = useState(false)
   const [showBulkEditForm, setShowBulkEditForm] = useState(false)
-  const [listViewMode, setListViewMode] = useState<'cards' | 'table'>('cards')
+  const [listViewMode, setListViewMode] = useState<'cards' | 'table'>('table')
+  /** 테이블 뷰: 방법명(method) 정렬 — 중복 확인용 */
+  const [tableMethodNameSort, setTableMethodNameSort] = useState<'asc' | 'desc'>('asc')
+  /** null: 방법명만 정렬. asc: 참조 적은 순(0건 먼저), desc: 많은 순 */
+  const [tableReferenceSort, setTableReferenceSort] = useState<'asc' | 'desc' | null>(null)
   const [selectedMethodIds, setSelectedMethodIds] = useState<string[]>([])
+  /** 중복 결제 방법 → 하나로 통합 (전역 참조 테이블 마이그레이션) */
+  const [mergeModalOpen, setMergeModalOpen] = useState(false)
+  const [mergeTargetId, setMergeTargetId] = useState('')
+  const [mergeSourceIds, setMergeSourceIds] = useState<Set<string>>(() => new Set())
+  const [mergeDeleteSources, setMergeDeleteSources] = useState(true)
+  const [mergePreview, setMergePreview] = useState<{
+    perSource: Record<string, Record<string, number>>
+    total: number
+  } | null>(null)
+  const [mergePreviewLoading, setMergePreviewLoading] = useState(false)
+  const [mergeSubmitting, setMergeSubmitting] = useState(false)
+  /** 방법명 클릭 시 — 해당 ID를 참조하는 지출·부킹·입금 행 조회·수정 */
+  const [usageModalMethod, setUsageModalMethod] = useState<PaymentMethod | null>(null)
   const [bulkEditRows, setBulkEditRows] = useState<Array<{
     id: string
     method: string
@@ -147,6 +261,11 @@ export default function PaymentMethodManager({
     method_type: '',
     search: ''
   })
+
+  const paymentMethodSelectOptions = useMemo(
+    () => methods.map((m) => ({ id: m.id, method: m.method })),
+    [methods]
+  )
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -261,6 +380,7 @@ export default function PaymentMethodManager({
     try {
       setLoading(true)
       const params = new URLSearchParams()
+      params.append('limit', '5000')
       if (userEmail) params.append('user_email', userEmail)
       if (filters.status) params.append('status', filters.status)
       if (filters.method_type) params.append('method_type', filters.method_type)
@@ -273,10 +393,15 @@ export default function PaymentMethodManager({
         
         // 검색 필터 적용
         if (filters.search) {
+          const q = filters.search.toLowerCase()
           filteredData = filteredData.filter((method: PaymentMethod) =>
-            method.method.toLowerCase().includes(filters.search.toLowerCase()) ||
-            method.id.toLowerCase().includes(filters.search.toLowerCase()) ||
-            (method.team?.name_ko && method.team.name_ko.toLowerCase().includes(filters.search.toLowerCase()))
+            method.method.toLowerCase().includes(q) ||
+            method.id.toLowerCase().includes(q) ||
+            (method.team?.name_ko && method.team.name_ko.toLowerCase().includes(q)) ||
+            (method.team?.name_en && method.team.name_en.toLowerCase().includes(q)) ||
+            (method.notes && method.notes.toLowerCase().includes(q)) ||
+            (method.financial_account?.name &&
+              method.financial_account.name.toLowerCase().includes(q))
           )
         }
         
@@ -303,7 +428,8 @@ export default function PaymentMethodManager({
       const membersWithStatus: TeamMemberWithStatus[] = []
       
       data?.forEach((member) => {
-        membersMap[member.email] = member.name_ko
+        membersMap[String(member.email).toLowerCase()] =
+          member.name_ko || member.name_en || member.email
         membersWithStatus.push({
           email: member.email,
           name_ko: member.name_ko,
@@ -1116,6 +1242,183 @@ export default function PaymentMethodManager({
     }
   }
 
+  /** 테이블/카드: 직원명 + 이메일 (API team 조인 + 대소문자 무시 teamMembers 맵) */
+  const displayPaymentMethodUser = (method: PaymentMethod) => {
+    if (!method.user_email?.trim()) return '미할당'
+    const e = method.user_email.trim()
+    const el = e.toLowerCase()
+    const name = method.team?.name_ko || method.team?.name_en || teamMembers[el]
+    if (name) return `${name} · ${e}`
+    return e
+  }
+
+  /** 테이블 뷰: 참조 건수 정렬이 켜져 있으면 1차 참조 수, 2차 방법명. 아니면 방법명만 */
+  const tableSortedMethods = useMemo(() => {
+    if (listViewMode !== 'table') return methods
+    return [...methods].sort((a, b) => {
+      if (tableReferenceSort) {
+        const sentinel = (v: number | null | undefined) =>
+          v == null ? Number.POSITIVE_INFINITY : v
+        const ac = sentinel(a.reference_count)
+        const bc = sentinel(b.reference_count)
+        if (ac !== bc) {
+          return tableReferenceSort === 'asc' ? ac - bc : bc - ac
+        }
+      }
+      const cmp = a.method.localeCompare(b.method, undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      })
+      return tableMethodNameSort === 'asc' ? cmp : -cmp
+    })
+  }, [methods, listViewMode, tableMethodNameSort, tableReferenceSort])
+
+  /** 방법명 정규화(공백·대소문자) 기준 동일 문자열이 2행 이상인 그룹 — 중복 의심 (아코디언 목록용) */
+  const duplicateMethodNameGroupList = useMemo(() => {
+    const byKey = new Map<string, PaymentMethod[]>()
+    for (const m of methods) {
+      const k = m.method.trim().toLowerCase()
+      if (!k) continue
+      if (!byKey.has(k)) byKey.set(k, [])
+      byKey.get(k)!.push(m)
+    }
+    const groups: { key: string; label: string; items: PaymentMethod[] }[] = []
+    for (const [k, arr] of byKey) {
+      if (arr.length <= 1) continue
+      const label = arr[0].method.trim() || k
+      groups.push({
+        key: k,
+        label,
+        items: [...arr].sort((a, b) => a.id.localeCompare(b.id)),
+      })
+    }
+    groups.sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true })
+    )
+    return groups
+  }, [methods])
+
+  const openMergeModal = (presetSourceIds?: string[]) => {
+    setMergeTargetId('')
+    setMergeDeleteSources(true)
+    setMergePreview(null)
+    if (presetSourceIds && presetSourceIds.length >= 1) {
+      setMergeSourceIds(new Set(presetSourceIds))
+    } else {
+      setMergeSourceIds(new Set())
+    }
+    setMergeModalOpen(true)
+  }
+
+  const toggleMergeSource = (id: string) => {
+    if (id === mergeTargetId) return
+    setMergeSourceIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const runMergePaymentMethods = async () => {
+    if (!mergeTargetId.trim()) {
+      alert('유지할 결제 방법을 선택하세요.')
+      return
+    }
+    const sources = [...mergeSourceIds].filter((id) => id !== mergeTargetId)
+    if (sources.length === 0) {
+      alert('통합할 결제 방법을 하나 이상 선택하세요.')
+      return
+    }
+    const total = mergePreview?.total ?? 0
+    const msg1 = `모든 참조 테이블에서 ${sources.length}개 ID → "${mergeTargetId}"(으)로 바꿉니다.\n(미리보기 참조 약 ${total}건)`
+    if (!confirm(`${msg1}\n\n계속할까요?`)) return
+    if (mergeDeleteSources) {
+      if (
+        !confirm(
+          '선택한 원본 결제 방법 행을 payment_methods에서 삭제합니다.\n복구되지 않을 수 있습니다. 정말 삭제할까요?'
+        )
+      ) {
+        return
+      }
+    }
+    setMergeSubmitting(true)
+    try {
+      const res = await fetch('/api/admin/payment-methods/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetId: mergeTargetId.trim(),
+          sourceIds: sources,
+          deleteSources: mergeDeleteSources,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) {
+        alert(json.message || '통합에 실패했습니다.')
+        return
+      }
+      const t = json.totalUpdated ?? 0
+      const del = json.deletedSourceRows ?? 0
+      alert(
+        `통합 완료.\n참조 업데이트: ${t}건\n원본 삭제: ${mergeDeleteSources ? `${del}건` : '안 함'}`
+      )
+      setMergeModalOpen(false)
+      setMergeSourceIds(new Set())
+      setMergeTargetId('')
+      await loadMethods()
+      onMethodUpdated?.()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '통합에 실패했습니다.')
+    } finally {
+      setMergeSubmitting(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!mergeTargetId) return
+    setMergeSourceIds((prev) => {
+      if (!prev.has(mergeTargetId)) return prev
+      const next = new Set(prev)
+      next.delete(mergeTargetId)
+      return next
+    })
+  }, [mergeTargetId])
+
+  useEffect(() => {
+    if (!mergeModalOpen) return
+    const ids = [...mergeSourceIds].filter(Boolean)
+    if (ids.length === 0) {
+      setMergePreview(null)
+      return
+    }
+    const ac = new AbortController()
+    const timer = setTimeout(() => {
+      void (async () => {
+        setMergePreviewLoading(true)
+        try {
+          const res = await fetch(
+            `/api/admin/payment-methods/merge?sources=${encodeURIComponent(ids.join(','))}`,
+            { signal: ac.signal }
+          )
+          const j = await res.json()
+          if (j.success)
+            setMergePreview({ perSource: j.perSource, total: j.total })
+          else setMergePreview(null)
+        } catch (e) {
+          if ((e as Error).name === 'AbortError') return
+          setMergePreview(null)
+        } finally {
+          setMergePreviewLoading(false)
+        }
+      })()
+    }, 400)
+    return () => {
+      clearTimeout(timer)
+      ac.abort()
+    }
+  }, [mergeModalOpen, mergeSourceIds])
+
   // 상태별 색상
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -1272,6 +1575,29 @@ export default function PaymentMethodManager({
                   선택 수정{selectedMethodIds.length > 0 ? ` (${selectedMethodIds.length})` : ''}
                 </span>
               </button>
+            )}
+            {methods.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => openMergeModal()}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm border border-violet-400 bg-violet-50 text-violet-900 rounded-lg hover:bg-violet-100 transition-colors"
+                  title="여러 ID를 하나로 합치기"
+                >
+                  <GitMerge size={14} className="sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">통합</span>
+                </button>
+                {listViewMode === 'table' && selectedMethodIds.length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={() => openMergeModal(selectedMethodIds)}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+                  >
+                    <GitMerge size={14} className="sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">선택 통합 ({selectedMethodIds.length})</span>
+                  </button>
+                )}
+              </>
             )}
         </div>
       </div>
@@ -2011,7 +2337,7 @@ export default function PaymentMethodManager({
                         >
                           {row.user_email ? (
                             <span className="text-xs text-gray-700 truncate" title={row.user_email}>
-                              {teamMembers[row.user_email] || row.user_email}
+                              {teamMembers[row.user_email.toLowerCase()] || row.user_email}
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400">클릭하여 1명 선택</span>
@@ -2355,36 +2681,204 @@ export default function PaymentMethodManager({
       ) : methods.length > 0 ? (
         listViewMode === 'table' ? (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-            <div className="px-3 py-2 sm:px-4 sm:py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={allVisibleSelected}
-                  onChange={toggleSelectAllVisible}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>현재 목록 전체 선택 ({methods.length}개)</span>
-              </label>
-              <span className="text-xs text-gray-500">
-                선택됨 {selectedMethodIds.length}개 · &quot;선택 수정&quot;으로 일괄 수정 모달에 불러오기
-              </span>
+            <div className="px-3 py-2 sm:px-4 sm:py-3 border-b border-gray-100 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAllVisible}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>현재 목록 전체 선택 ({methods.length}개)</span>
+                </label>
+                <span className="text-xs text-gray-500">
+                  선택됨 {selectedMethodIds.length}개 · &quot;선택 수정&quot;으로 일괄 수정 모달에 불러오기
+                </span>
+              </div>
+              {duplicateMethodNameGroupList.length > 0 && (
+                <details className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md overflow-hidden open:[&_summary_svg]:rotate-180">
+                  <summary className="cursor-pointer list-none px-2 py-1.5 flex items-start gap-2 [&::-webkit-details-marker]:hidden">
+                    <ChevronDown
+                      className="h-4 w-4 shrink-0 mt-0.5 text-amber-700 transition-transform"
+                      aria-hidden
+                    />
+                    <span>
+                      방법명이 같은(앞뒤 공백·대소문자 무시) 행이{' '}
+                      <strong>{duplicateMethodNameGroupList.length}</strong>개 그룹 있습니다. 아래{' '}
+                      <strong>방법명</strong> 헤더를 눌러 정렬하면 나란히 확인할 수 있습니다.
+                      <span className="block mt-1 text-amber-900/90">
+                        이 박스를 펼치면 그룹별 행 목록(아코디언)을 볼 수 있습니다.
+                      </span>
+                    </span>
+                  </summary>
+                  <div className="px-2 pb-2 pt-0 border-t border-amber-200/90 max-h-[min(60vh,28rem)] overflow-y-auto space-y-1.5">
+                    {duplicateMethodNameGroupList.map((g) => (
+                      <details
+                        key={g.key}
+                        className="rounded-md border border-amber-100 bg-white/95 shadow-sm open:[&_summary_svg]:rotate-180"
+                      >
+                        <summary
+                          className="cursor-pointer list-none px-2 py-1.5 text-left flex flex-wrap items-baseline gap-x-2 gap-y-0.5 [&::-webkit-details-marker]:hidden"
+                          title={g.key}
+                        >
+                          <ChevronDown
+                            className="h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform"
+                            aria-hidden
+                          />
+                          <span className="font-semibold text-amber-950">{g.label}</span>
+                          <span className="text-gray-600">({g.items.length}행)</span>
+                        </summary>
+                        <div className="px-2 pb-2 overflow-x-auto border-t border-amber-50/90">
+                          <table className="w-full min-w-[720px] text-[11px] text-left">
+                            <thead>
+                              <tr className="text-gray-600 border-b border-gray-100 bg-gray-50/80">
+                                <th className="py-1 px-1 font-medium whitespace-nowrap">ID</th>
+                                <th className="py-1 px-1 font-medium min-w-[6rem]">방법명(저장값)</th>
+                                <th className="py-1 px-1 font-medium min-w-[5rem]">가이드(이름)</th>
+                                <th className="py-1 px-1 font-medium min-w-[6rem]">사용자</th>
+                                <th className="py-1 px-1 font-medium min-w-[5rem]">금융 계정</th>
+                                <th className="py-1 px-1 font-medium min-w-[6rem]">메모</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {g.items.map((m) => {
+                                const guidePrimary =
+                                  m.team?.name_ko?.trim() || m.team?.name_en?.trim() || ''
+                                const guideSub =
+                                  m.team?.name_ko &&
+                                  m.team?.name_en &&
+                                  m.team.name_ko !== m.team.name_en
+                                    ? m.team.name_en
+                                    : ''
+                                return (
+                                  <tr key={m.id} className="border-b border-gray-50 align-top last:border-0">
+                                    <td className="py-1 px-1 font-mono text-gray-700 whitespace-nowrap">
+                                      {m.id}
+                                    </td>
+                                    <td
+                                      className="py-1 px-1 text-gray-900 max-w-[10rem] break-words"
+                                      title={m.method}
+                                    >
+                                      {m.method}
+                                    </td>
+                                    <td className="py-1 px-1 text-gray-800">
+                                      {guidePrimary ? (
+                                        <>
+                                          <div className="font-medium">{guidePrimary}</div>
+                                          {guideSub ? (
+                                            <div className="text-gray-600">{guideSub}</div>
+                                          ) : null}
+                                        </>
+                                      ) : m.user_email ? (
+                                        <span className="text-gray-600">{m.user_email}</span>
+                                      ) : (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                    <td className="py-1 px-1 text-gray-700 max-w-[11rem] break-words">
+                                      {displayPaymentMethodUser(m)}
+                                    </td>
+                                    <td className="py-1 px-1 text-gray-700 max-w-[9rem] break-words">
+                                      {paymentMethodFinancialLabel(m)}
+                                    </td>
+                                    <td
+                                      className="py-1 px-1 text-gray-600 max-w-[14rem] whitespace-pre-wrap break-words"
+                                      title={m.notes || undefined}
+                                    >
+                                      {m.notes?.trim() || '—'}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </details>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openMergeModal()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-xs font-medium text-violet-900 hover:bg-violet-100"
+                >
+                  <GitMerge className="h-3.5 w-3.5" />
+                  결제 방법 통합
+                </button>
+                {selectedMethodIds.length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={() => openMergeModal(selectedMethodIds)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-violet-400 bg-violet-100 px-2.5 py-1.5 text-xs font-medium text-violet-950 hover:bg-violet-200"
+                  >
+                    <GitMerge className="h-3.5 w-3.5" />
+                    선택 {selectedMethodIds.length}건 통합
+                  </button>
+                )}
+              </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[720px]">
+              <table className="w-full text-sm min-w-[960px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-left text-gray-700">
                     <th className="w-10 px-2 py-2 sm:px-3"></th>
                     <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">ID</th>
-                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">방법명</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTableReferenceSort(null)
+                          setTableMethodNameSort((d) => (d === 'asc' ? 'desc' : 'asc'))
+                        }}
+                        className="inline-flex items-center gap-1 rounded border border-transparent px-1 py-0.5 -mx-1 hover:border-gray-300 hover:bg-gray-100 text-gray-800"
+                        title="방법명 기준 정렬 (오름차순 ↔ 내림차순)"
+                      >
+                        방법명
+                        {tableMethodNameSort === 'asc' ? (
+                          <ArrowUp className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                        ) : (
+                          <ArrowDown className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                        )}
+                      </button>
+                    </th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap text-right">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTableReferenceSort((prev) =>
+                            prev === null ? 'asc' : prev === 'asc' ? 'desc' : null
+                          )
+                        }
+                        className="inline-flex items-center gap-1 rounded border border-transparent px-1 py-0.5 -mx-1 hover:border-gray-300 hover:bg-gray-100 text-gray-800"
+                        title={t('referenceCountHint')}
+                      >
+                        {t('referenceCount')}
+                        {tableReferenceSort === 'asc' ? (
+                          <ArrowUp className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                        ) : tableReferenceSort === 'desc' ? (
+                          <ArrowDown className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                        ) : null}
+                      </button>
+                    </th>
                     <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">유형</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap min-w-[7rem]">
+                      가이드(이름)
+                    </th>
                     <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">사용자</th>
+                    <th className="px-2 py-2 sm:px-3 font-medium min-w-[8rem] max-w-[14rem]">
+                      금융 계정
+                    </th>
+                    <th className="px-2 py-2 sm:px-3 font-medium min-w-[140px] max-w-[220px]">메모</th>
                     <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap">상태</th>
                     <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap text-right">한도</th>
                     <th className="px-2 py-2 sm:px-3 font-medium whitespace-nowrap text-right">액션</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {methods.map((method) => (
+                  {tableSortedMethods.map((method) => (
                     <tr
                       key={method.id}
                       className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -2401,14 +2895,86 @@ export default function PaymentMethodManager({
                       <td className="px-2 py-2 sm:px-3 align-middle font-mono text-xs text-gray-600 max-w-[140px] truncate" title={method.id}>
                         {method.id}
                       </td>
-                      <td className="px-2 py-2 sm:px-3 align-middle font-medium text-gray-900 max-w-[160px] truncate" title={method.method}>
-                        {method.method}
+                      <td className="px-2 py-2 sm:px-3 align-middle max-w-[160px] truncate" title={method.method}>
+                        <button
+                          type="button"
+                          onClick={() => setUsageModalMethod(method)}
+                          className="font-medium text-left text-blue-700 hover:text-blue-900 hover:underline truncate max-w-full"
+                        >
+                          {method.method}
+                        </button>
+                      </td>
+                      <td
+                        className="px-2 py-2 sm:px-3 align-middle text-right tabular-nums text-gray-800 whitespace-nowrap"
+                        title={t('referenceCountHint')}
+                      >
+                        {method.reference_count != null ? (
+                          <span
+                            className={
+                              method.reference_count === 0
+                                ? 'text-amber-700 font-medium'
+                                : ''
+                            }
+                          >
+                            {method.reference_count.toLocaleString(locale)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-2 py-2 sm:px-3 align-middle capitalize text-gray-700 whitespace-nowrap">
                         {method.method_type}
                       </td>
-                      <td className="px-2 py-2 sm:px-3 align-middle text-gray-700 max-w-[180px] truncate" title={method.user_email || ''}>
-                        {teamMembers[method.user_email] || method.user_email || '미할당'}
+                      <td className="px-2 py-2 sm:px-3 align-middle text-gray-800 text-xs max-w-[14rem]">
+                        {(() => {
+                          const guidePrimary =
+                            method.team?.name_ko?.trim() || method.team?.name_en?.trim() || ''
+                          const guideSub =
+                            method.team?.name_ko &&
+                            method.team?.name_en &&
+                            method.team.name_ko !== method.team.name_en
+                              ? method.team.name_en
+                              : ''
+                          return guidePrimary ? (
+                            <>
+                              <div className="font-medium text-gray-900">{guidePrimary}</div>
+                              {guideSub ? (
+                                <div className="text-gray-600">{guideSub}</div>
+                              ) : null}
+                            </>
+                          ) : method.user_email ? (
+                            <div className="text-gray-600">{method.user_email}</div>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )
+                        })()}
+                      </td>
+                      <td
+                        className="px-2 py-2 sm:px-3 align-middle text-gray-700 max-w-[200px] truncate"
+                        title={method.user_email ? displayPaymentMethodUser(method) : ''}
+                      >
+                        {displayPaymentMethodUser(method)}
+                      </td>
+                      <td
+                        className="px-2 py-2 sm:px-3 align-middle text-gray-700 max-w-[14rem] text-xs"
+                        title={method.financial_account?.name || method.financial_account_id || ''}
+                      >
+                        <span className="line-clamp-2 break-words">
+                          {method.financial_account?.name?.trim() ||
+                            (method.financial_account_id ? (
+                              <span className="text-amber-700" title="계정을 찾을 수 없습니다">
+                                {method.financial_account_id}
+                              </span>
+                            ) : (
+                              '—'
+                            ))}
+                        </span>
+                      </td>
+                      <td
+                        className="px-2 py-2 sm:px-3 align-middle text-gray-600 max-w-[220px] text-xs"
+                        title={method.notes || ''}
+                      >
+                        <span className="line-clamp-2 break-words">{method.notes?.trim() || '—'}</span>
                       </td>
                       <td className="px-2 py-2 sm:px-3 align-middle whitespace-nowrap">
                         <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${getStatusColor(method.status)}`}>
@@ -2454,7 +3020,13 @@ export default function PaymentMethodManager({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
                     <CreditCard className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0" />
-                    <span className="font-semibold text-xs sm:text-sm text-gray-900 truncate">{method.method}</span>
+                    <button
+                      type="button"
+                      onClick={() => setUsageModalMethod(method)}
+                      className="font-semibold text-xs sm:text-sm text-left text-blue-700 hover:text-blue-900 hover:underline truncate"
+                    >
+                      {method.method}
+                    </button>
                   </div>
                   <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                     <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${getStatusColor(method.status)}`}>
@@ -2507,10 +3079,47 @@ export default function PaymentMethodManager({
               <div className="text-xs text-gray-500 mb-1 sm:mb-2 truncate" title={method.id}>
                 {method.id}
               </div>
+              <div className="text-xs tabular-nums text-gray-600 mb-1 sm:mb-2" title={t('referenceCountHint')}>
+                {method.reference_count != null ? (
+                  <>
+                    {t('referenceCountShort')}{' '}
+                    <span
+                      className={
+                        method.reference_count === 0 ? 'text-amber-700 font-medium' : 'font-medium text-gray-800'
+                      }
+                    >
+                      {method.reference_count.toLocaleString(locale)}
+                    </span>
+                    {t('referenceCountUnit')}
+                  </>
+                ) : (
+                  <span className="text-gray-400">{t('referenceCountUnavailable')}</span>
+                )}
+              </div>
               <div className="flex items-center gap-1 text-xs text-gray-600 mb-1 sm:mb-2">
                 <User size={12} className="flex-shrink-0" />
-                <span className="truncate">{teamMembers[method.user_email] || method.user_email || '미할당'}</span>
+                <span className="truncate" title={displayPaymentMethodUser(method)}>
+                  {displayPaymentMethodUser(method)}
+                </span>
               </div>
+              {(method.financial_account?.name || method.financial_account_id) && (
+                <div className="flex items-center gap-1 text-xs text-gray-600 mb-1 sm:mb-2">
+                  <DollarSign size={12} className="flex-shrink-0 text-emerald-600" />
+                  <span
+                    className="truncate"
+                    title={
+                      method.financial_account?.name ||
+                      method.financial_account_id ||
+                      ''
+                    }
+                  >
+                    {method.financial_account?.name?.trim() ||
+                      (method.financial_account_id
+                        ? `계정 ID: ${method.financial_account_id}`
+                        : '')}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5 sm:mb-2">
                 <span className="capitalize">{method.method_type}</span>
                 <span className="font-medium truncate ml-1">{method.limit_amount ? formatCurrency(method.limit_amount) : '제한없음'}</span>
@@ -2571,6 +3180,249 @@ export default function PaymentMethodManager({
           <p>등록된 결제 방법이 없습니다.</p>
         </div>
       )}
+
+      <Dialog
+        open={mergeModalOpen}
+        onOpenChange={(o) => {
+          setMergeModalOpen(o)
+          if (!o) setMergePreview(null)
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitMerge className="h-5 w-5 text-violet-700" />
+              결제 방법 통합
+            </DialogTitle>
+            <DialogDescription>
+              여러 결제 방법 ID를 하나로 합칩니다. 결제 기록, 회사·예약·투어 지출, 티켓·호텔 부킹 등{' '}
+              <span className="font-semibold text-gray-800">payment_method</span> 컬럼을 쓰는 모든 행이 함께
+              바뀝니다. 서버에 SUPABASE_SERVICE_ROLE_KEY가 있어야 합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium text-gray-700">
+                유지할 결제 방법 (통합 후 이 ID를 사용)
+              </label>
+              <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                <table className="w-full text-left text-xs min-w-[52rem]">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-gray-600">
+                      <th className="w-9 px-1 py-1.5 font-medium whitespace-nowrap" aria-hidden />
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[8rem]">
+                        방법 / ID
+                      </th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[6rem]">
+                        가이드(이름)
+                      </th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[7rem]">사용자</th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[6rem]">
+                        금융 계정
+                      </th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[7rem]">메모</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-gray-100 bg-gray-50/80">
+                      <td colSpan={6} className="px-2 py-1.5">
+                        <label className="flex items-center gap-2 cursor-pointer text-gray-500">
+                          <input
+                            type="radio"
+                            name="mergeTargetPick"
+                            className="border-gray-300 text-violet-600"
+                            checked={mergeTargetId === ''}
+                            onChange={() => setMergeTargetId('')}
+                          />
+                          <span>선택… (유지할 행을 고르세요)</span>
+                        </label>
+                      </td>
+                    </tr>
+                    {[...methods]
+                      .sort((a, b) =>
+                        a.method.localeCompare(b.method, undefined, { sensitivity: 'base' })
+                      )
+                      .map((m) => (
+                        <tr
+                          key={m.id}
+                          className={
+                            mergeTargetId === m.id
+                              ? 'bg-violet-50/90'
+                              : 'hover:bg-gray-50/80'
+                          }
+                        >
+                          <td className="px-1 py-1.5 align-top text-center">
+                            <input
+                              type="radio"
+                              name="mergeTargetPick"
+                              className="border-gray-300 text-violet-600"
+                              checked={mergeTargetId === m.id}
+                              onChange={() => setMergeTargetId(m.id)}
+                            />
+                          </td>
+                          <MergeMethodDetailCells
+                            method={m}
+                            userLabel={displayPaymentMethodUser(m)}
+                          />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <label className="text-sm font-medium text-gray-700">
+                  통합할 결제 방법 (선택한 ID는 모두 위 ID로 치환)
+                </label>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    type="button"
+                    className="text-xs text-violet-700 hover:underline"
+                    onClick={() => {
+                      const all = methods.filter((m) => m.id !== mergeTargetId).map((m) => m.id)
+                      setMergeSourceIds(new Set(all))
+                    }}
+                  >
+                    전체 선택
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-gray-500 hover:underline"
+                    onClick={() => setMergeSourceIds(new Set())}
+                  >
+                    해제
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-[min(24rem,55vh)] overflow-auto border border-gray-200 rounded-lg bg-gray-50/50">
+                <table className="w-full text-left text-xs min-w-[52rem]">
+                  <thead className="sticky top-0 z-[1] border-b border-gray-200 bg-gray-100 text-gray-600 shadow-sm">
+                    <tr>
+                      <th className="w-9 px-1 py-1.5 font-medium whitespace-nowrap" aria-hidden />
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[8rem]">
+                        방법 / ID
+                      </th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[6rem]">
+                        가이드(이름)
+                      </th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[7rem]">사용자</th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[6rem]">
+                        금융 계정
+                      </th>
+                      <th className="px-2 py-1.5 font-medium whitespace-nowrap min-w-[7rem]">메모</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {methods
+                      .filter((m) => m.id !== mergeTargetId)
+                      .sort((a, b) =>
+                        a.method.localeCompare(b.method, undefined, { sensitivity: 'base' })
+                      )
+                      .map((m) => (
+                        <tr
+                          key={m.id}
+                          className="hover:bg-white/90 border-b border-gray-100 last:border-b-0"
+                        >
+                          <td className="px-1 py-1.5 align-top text-center">
+                            <input
+                              type="checkbox"
+                              checked={mergeSourceIds.has(m.id)}
+                              onChange={() => toggleMergeSource(m.id)}
+                              className="rounded border-gray-300 text-violet-600"
+                              aria-label={`통합 대상 ${m.id}`}
+                            />
+                          </td>
+                          <MergeMethodDetailCells
+                            method={m}
+                            userLabel={displayPaymentMethodUser(m)}
+                          />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {mergePreviewLoading && (
+              <p className="text-xs text-gray-500">참조 건수 미리보기 계산 중…</p>
+            )}
+            {mergePreview && mergeSourceIds.size > 0 && !mergePreviewLoading && (
+              <div className="text-xs border border-violet-100 rounded-lg p-3 bg-violet-50/60 space-y-2">
+                <div className="font-medium text-violet-950">치환될 참조 (통합 전, 선택한 ID별)</div>
+                <p className="text-violet-900">
+                  합계 약 <strong>{mergePreview.total}</strong>건
+                </p>
+                {Object.entries(mergePreview.perSource).map(([sid, tbl]) => (
+                  <div key={sid} className="pl-2 border-l-2 border-violet-300">
+                    <div className="font-mono text-[11px] text-violet-950 break-all">{sid}</div>
+                    <ul className="text-[11px] text-gray-700 mt-0.5 space-y-0.5">
+                      {Object.entries(tbl).map(([t, c]) =>
+                        c > 0 ? (
+                          <li key={t}>
+                            {MERGE_REF_TABLE_LABELS[t] || t}: {c}건
+                          </li>
+                        ) : c < 0 ? (
+                          <li key={t} className="text-red-600">
+                            {MERGE_REF_TABLE_LABELS[t] || t}: 집계 오류
+                          </li>
+                        ) : null
+                      )}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label className="flex items-start gap-2 text-sm cursor-pointer text-gray-800">
+              <input
+                type="checkbox"
+                checked={mergeDeleteSources}
+                onChange={(e) => setMergeDeleteSources(e.target.checked)}
+                className="rounded border-gray-300 text-violet-600 mt-0.5"
+              />
+              <span>
+                통합 완료 후 위에서 선택한 원본 결제 방법 행을 <strong>payment_methods</strong>에서 삭제
+                (참조가 모두 옮겨진 뒤에만 안전합니다)
+              </span>
+            </label>
+          </div>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setMergeModalOpen(false)}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 w-full sm:w-auto"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              disabled={
+                mergeSubmitting ||
+                !mergeTargetId.trim() ||
+                [...mergeSourceIds].filter((id) => id !== mergeTargetId).length === 0
+              }
+              onClick={() => void runMergePaymentMethods()}
+              className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 disabled:opacity-50 w-full sm:w-auto"
+            >
+              {mergeSubmitting ? '처리 중…' : '통합 실행'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <PaymentMethodUsageModal
+        open={usageModalMethod != null}
+        onOpenChange={(o) => {
+          if (!o) setUsageModalMethod(null)
+        }}
+        locale={locale}
+        methodId={usageModalMethod?.id ?? ''}
+        methodLabel={usageModalMethod?.method ?? ''}
+        paymentMethodOptions={paymentMethodSelectOptions}
+        onSaved={() => {
+          void loadMethods()
+          onMethodUpdated?.()
+        }}
+      />
     </div>
   )
 }

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams, usePathname } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname, useParams } from 'next/navigation'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import CompanyExpenseManager from '@/components/CompanyExpenseManager'
@@ -14,6 +15,8 @@ type ExpenseTab = 'reservation' | 'company' | 'tour' | 'cash'
 
 export default function ExpensesManagementPage() {
   const t = useTranslations('expenses')
+  const params = useParams()
+  const locale = typeof params?.locale === 'string' ? params.locale : 'ko'
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -71,6 +74,14 @@ export default function ExpensesManagementPage() {
             <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{t('title')}</h1>
           </div>
           <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-gray-600 hidden sm:block">{t('subtitle')}</p>
+          <p className="mt-1 text-xs text-gray-500 hidden sm:block">
+            <Link
+              href={`/${locale}/admin/expense-payment-method-normalize`}
+              className="text-blue-600 hover:underline"
+            >
+              {t('linkNormalizePaymentMethods')}
+            </Link>
+          </p>
         </div>
         <button
           onClick={() => setIsCategoryManagerOpen(true)}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 
 // GET: 결제 방법 목록 조회
 export async function GET(request: NextRequest) {
@@ -38,33 +38,78 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // team 정보 별도 조회
-    const paymentMethods = data || []
-    const userEmails = [...new Set(paymentMethods.map((pm: any) => pm.user_email).filter(Boolean))]
-    
-    let teamMap: Record<string, { email: string; name_ko: string | null; name_en: string | null }> = {}
-    if (userEmails.length > 0) {
-      const { data: teamData } = await supabase
-        .from('team')
-        .select('email, name_ko, name_en')
-        .in('email', userEmails)
-      
-      if (teamData) {
-        teamData.forEach(team => {
-          teamMap[team.email] = {
-            email: team.email,
-            name_ko: team.name_ko,
-            name_en: team.name_en
-          }
-        })
+    /** payment_method 컬럼을 가진 테이블 전체에서 trim(ID) 일치 행 수 (service_role RPC) */
+    let referenceCountById = new Map<string, number>()
+    if (supabaseAdmin) {
+      const { data: countRows, error: countError } = await supabaseAdmin.rpc(
+        'payment_method_reference_counts'
+      )
+      if (countError) {
+        console.warn('payment_method_reference_counts RPC:', countError.message)
+      } else if (Array.isArray(countRows)) {
+        for (const row of countRows as { payment_method?: string; reference_count?: number | string }[]) {
+          const k = row.payment_method != null ? String(row.payment_method).trim() : ''
+          if (!k) continue
+          const n = Number(row.reference_count)
+          referenceCountById.set(k, Number.isFinite(n) ? n : 0)
+        }
       }
     }
 
-    // team 정보 추가
-    const paymentMethodsWithTeam = paymentMethods.map((pm: any) => ({
-      ...pm,
-      team: teamMap[pm.user_email] || null
-    }))
+    // team 정보 별도 조회 (이메일 대소문자 불일치 대비: 소문자 키로 매칭)
+    const paymentMethods = data || []
+    const userEmails = [...new Set(paymentMethods.map((pm: any) => pm.user_email).filter(Boolean))]
+    const neededLower = new Set(userEmails.map((e: string) => String(e).toLowerCase()))
+
+    let teamMap: Record<string, { email: string; name_ko: string | null; name_en: string | null }> = {}
+    if (neededLower.size > 0) {
+      const { data: teamData } = await supabase.from('team').select('email, name_ko, name_en')
+
+      teamData?.forEach((team) => {
+        const k = String(team.email).toLowerCase()
+        if (neededLower.has(k)) {
+          teamMap[k] = {
+            email: team.email,
+            name_ko: team.name_ko,
+            name_en: team.name_en,
+          }
+        }
+      })
+    }
+
+    const faIds = [
+      ...new Set(
+        paymentMethods
+          .map((pm: { financial_account_id?: string | null }) => pm.financial_account_id)
+          .filter((id: string | null | undefined): id is string => Boolean(id))
+      ),
+    ]
+    let financialAccountMap: Record<string, { id: string; name: string }> = {}
+    if (faIds.length > 0) {
+      const { data: faRows } = await supabase
+        .from('financial_accounts')
+        .select('id, name')
+        .in('id', faIds)
+      faRows?.forEach((fa: { id: string; name: string }) => {
+        financialAccountMap[fa.id] = { id: fa.id, name: fa.name }
+      })
+    }
+
+    // team · 금융 계정 · 참조 건수
+    const paymentMethodsWithTeam = paymentMethods.map((pm: any) => {
+      const idKey = pm.id != null ? String(pm.id).trim() : ''
+      const reference_count = supabaseAdmin
+        ? referenceCountById.get(idKey) ?? 0
+        : null
+      return {
+        ...pm,
+        team: pm.user_email ? teamMap[String(pm.user_email).toLowerCase()] || null : null,
+        financial_account: pm.financial_account_id
+          ? financialAccountMap[pm.financial_account_id] || null
+          : null,
+        reference_count,
+      }
+    })
 
     return NextResponse.json({
       success: true,

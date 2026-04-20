@@ -6,6 +6,7 @@ import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
+import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 
 interface TourExpense {
   id: string
@@ -46,6 +47,7 @@ export default function AllTourExpensesManager() {
   const locale = useLocale()
   const { user, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+  const { paymentMethodMap } = usePaymentMethodOptions()
 
   const [expenses, setExpenses] = useState<TourExpense[]>([])
   const [loading, setLoading] = useState(false)
@@ -193,11 +195,13 @@ export default function AllTourExpensesManager() {
     loadTeamMembers()
   }, [loadExpenses])
 
-  // 검색 필터 적용
-  const filteredExpenses = expenses.filter(expense => {
+  // 검색 필터 적용 (결제방법: 저장 ID + 결제 방법 관리 표시명)
+  const filteredExpenses = expenses.filter((expense) => {
     if (!searchTerm) return true
-    
+
     const searchLower = searchTerm.toLowerCase()
+    const pmId = expense.payment_method?.trim() || ''
+    const pmLabel = pmId ? paymentMethodMap[pmId] || '' : ''
     return (
       expense.paid_for?.toLowerCase().includes(searchLower) ||
       expense.paid_to?.toLowerCase().includes(searchLower) ||
@@ -205,7 +209,9 @@ export default function AllTourExpensesManager() {
       expense.products?.name?.toLowerCase().includes(searchLower) ||
       expense.products?.name_en?.toLowerCase().includes(searchLower) ||
       expense.products?.name_ko?.toLowerCase().includes(searchLower) ||
-      expense.note?.toLowerCase().includes(searchLower)
+      expense.note?.toLowerCase().includes(searchLower) ||
+      (pmId && pmId.toLowerCase().includes(searchLower)) ||
+      (pmLabel && pmLabel.toLowerCase().includes(searchLower))
     )
   })
 

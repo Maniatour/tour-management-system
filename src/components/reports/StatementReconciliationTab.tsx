@@ -598,6 +598,8 @@ export default function StatementReconciliationTab() {
   const params = useParams()
   const locale = typeof params?.locale === 'string' ? params.locale : 'ko'
   const email = authUser?.email ?? ''
+  /** 명세 CSV 업로드·잠금·삭제: info@ 또는 team 직책 super */
+  const [isTeamSuperForStatements, setIsTeamSuperForStatements] = useState(false)
 
   const [accounts, setAccounts] = useState<FinancialAccount[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([])
@@ -1271,10 +1273,50 @@ export default function StatementReconciliationTab() {
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [accounts])
 
-  const canMutateStatementUploads = useMemo(
-    () => email.toLowerCase().trim() === 'info@maniatour.com',
-    [email]
-  )
+  useEffect(() => {
+    if (!authUser?.email) {
+      setIsTeamSuperForStatements(false)
+      return
+    }
+    const emailLower = authUser.email.toLowerCase().trim()
+    if (emailLower === 'info@maniatour.com') {
+      setIsTeamSuperForStatements(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('team')
+          .select('position')
+          .eq('email', authUser.email)
+          .eq('is_active', true)
+          .maybeSingle()
+        if (cancelled) return
+        if (error || !data) {
+          setIsTeamSuperForStatements(false)
+          return
+        }
+        const position = String((data as { position?: string }).position ?? '')
+          .toLowerCase()
+          .trim()
+        setIsTeamSuperForStatements(position === 'super')
+      } catch (e) {
+        if (!cancelled) {
+          console.error(e)
+          setIsTeamSuperForStatements(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [authUser?.email])
+
+  const canMutateStatementUploads = useMemo(() => {
+    const em = email.toLowerCase().trim()
+    return em === 'info@maniatour.com' || isTeamSuperForStatements
+  }, [email, isTeamSuperForStatements])
 
   useEffect(() => {
     setImportAccountId((prev) => {
@@ -1931,7 +1973,9 @@ export default function StatementReconciliationTab() {
     }
     setImportCsvFeedback(null)
     if (!canMutateStatementUploads) {
-      notifyImport('명세 CSV 가져오기(업로드)는 info@maniatour.com 계정만 사용할 수 있습니다.')
+      notifyImport(
+        '명세 CSV 가져오기(업로드)는 info@maniatour.com 계정 또는 team에서 직책이 super인 활성 직원만 사용할 수 있습니다.'
+      )
       return
     }
     if (!importAccountId || !periodStart || !periodEnd || !csvText.trim()) {
@@ -2268,7 +2312,9 @@ export default function StatementReconciliationTab() {
   const lockImport = async () => {
     if (!lockTargetImport) return
     if (!canMutateStatementUploads) {
-      setMessage('명세 잠금은 info@maniatour.com 계정만 사용할 수 있습니다.')
+      setMessage(
+        '명세 잠금은 info@maniatour.com 계정 또는 team에서 직책이 super인 활성 직원만 사용할 수 있습니다.'
+      )
       return
     }
     setLoading(true)
@@ -3191,8 +3237,8 @@ export default function StatementReconciliationTab() {
           <div className="px-4 py-3 overflow-y-auto flex-1 min-h-0 space-y-3">
             {!canMutateStatementUploads && (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                CSV 업로드·가져오기는 <strong>info@maniatour.com</strong> 관리자 계정만 사용할 수 있습니다. (조회·대조는
-                그대로 가능합니다.)
+                CSV 업로드·가져오기는 <strong>info@maniatour.com</strong> 또는 team 직책{' '}
+                <strong>super</strong> 활성 직원만 사용할 수 있습니다. (조회·대조는 그대로 가능합니다.)
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -3505,46 +3551,39 @@ export default function StatementReconciliationTab() {
       </Dialog>
 
       <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 sm:p-4 space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h3 className="font-semibold text-sm text-emerald-950">금융 계정별 명세·대조 월 통계</h3>
-            <p className="text-xs text-slate-600 mt-1">
-              상단에서 선택한 <strong>금융 계정</strong> 한 줄만 표시합니다. 각 칸은{' '}
-              <strong className="text-emerald-900">대조 완료(matched) / 업로드된 전체 줄</strong> 수입니다. 거래일(
-              <code className="text-[11px] bg-white/80 px-1 rounded">posted_date</code>)이 해당 연·월에 속한 줄만
-              집계합니다.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            disabled={coverageStatsLoading || !filterAccountId}
-            onClick={() => void loadCoverageMonthStats()}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${coverageStatsLoading ? 'animate-spin' : ''}`} />
-            통계 새로고침
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center text-sm">
-          <label className="flex items-center gap-2">
-            연도
-            <select
-              className="border rounded px-2 py-1 bg-white"
-              value={coverageYear}
-              onChange={(e) => setCoverageYear(e.target.value)}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold text-sm text-emerald-950 min-w-0">
+            {filterAccountId
+              ? `금융 계정별 명세·대조 월 통계 (${selectedAccountLabel})`
+              : '금융 계정별 명세·대조 월 통계'}
+          </h3>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <label className="flex items-center gap-2 text-sm">
+              연도
+              <select
+                className="border rounded px-2 py-1 bg-white"
+                value={coverageYear}
+                onChange={(e) => setCoverageYear(e.target.value)}
+              >
+                {['2023', '2024', '2025', '2026', '2027'].map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={coverageStatsLoading || !filterAccountId}
+              onClick={() => void loadCoverageMonthStats()}
             >
-              {['2023', '2024', '2025', '2026', '2027'].map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="text-xs text-slate-500">
-            선택 계정: <strong className="text-slate-800">{selectedAccountLabel}</strong>
-          </span>
+              <RefreshCw className={`h-4 w-4 mr-1 ${coverageStatsLoading ? 'animate-spin' : ''}`} />
+              통계 새로고침
+            </Button>
+          </div>
         </div>
         <div className="overflow-x-auto -mx-1">
           <table className="text-xs border border-emerald-200 bg-white w-full min-w-[640px]">
@@ -3746,7 +3785,7 @@ export default function StatementReconciliationTab() {
             disabled={loading || !lockTargetImport || !canMutateStatementUploads}
             title={
               !canMutateStatementUploads
-                ? 'info@maniatour.com 계정만 잠글 수 있습니다.'
+                ? 'info@maniatour.com 또는 team 직책 super만 잠글 수 있습니다.'
                 : importsForAccount.length > 1
                   ? '가장 최근 명세 업로드(기간 종료일 기준) 한 건을 잠급니다.'
                   : undefined
@@ -4275,7 +4314,8 @@ export default function StatementReconciliationTab() {
                     <option value="reservation_expenses">예약</option>
                     <option value="ticket_bookings">입장권</option>
                   </select>
-                  <div ref={unmatchedPmFilterWrapRef} className="relative shrink-0 min-w-0 max-w-[min(100%,11rem)]">
+                </div>
+                <div ref={unmatchedPmFilterWrapRef} className="relative w-full min-w-0 shrink-0">
                     <button
                       type="button"
                       aria-label="결제방법 필터"
@@ -4283,7 +4323,7 @@ export default function StatementReconciliationTab() {
                       className="flex w-full min-w-0 items-center justify-between gap-1 border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white text-left"
                       onClick={() => setUnmatchedPmFilterOpen((o) => !o)}
                     >
-                      <span className="truncate">
+                      <span className="min-w-0 truncate text-left">
                         {unmatchedPanelPaymentMethodFilter.length === 0
                           ? '결제방법 전체'
                           : `결제방법 (${unmatchedPanelPaymentMethodFilter.length})`}
@@ -4297,7 +4337,7 @@ export default function StatementReconciliationTab() {
                     </button>
                     {unmatchedPmFilterOpen ? (
                       <div
-                        className="absolute left-0 right-0 z-50 mt-0.5 max-h-48 overflow-y-auto rounded border border-slate-200 bg-white py-1.5 shadow-md"
+                        className="absolute left-0 z-50 mt-0.5 max-h-48 min-w-full w-max max-w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded border border-slate-200 bg-white py-1.5 shadow-md"
                         role="listbox"
                         aria-multiselectable
                       >
@@ -4346,12 +4386,13 @@ export default function StatementReconciliationTab() {
                                 })
                               }}
                             />
-                            <span className="min-w-0 truncate">{lab}</span>
+                            <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-snug">
+                              {lab}
+                            </span>
                           </label>
                         ))}
                       </div>
                     ) : null}
-                  </div>
                 </div>
                 {unmatchedExpensePanelFilteredRows.length === 0 ? (
                   <p className="text-xs text-slate-500 py-2">

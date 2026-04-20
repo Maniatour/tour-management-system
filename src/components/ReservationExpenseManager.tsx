@@ -658,12 +658,16 @@ export default function ReservationExpenseManager({
       if (dateTo && subYmd && subYmd > dateTo) return false
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase()
+        const pmId = e.payment_method?.trim() || ''
+        const pmLabel = pmId ? paymentMethodMap[pmId] || '' : ''
         const blob = [
           e.paid_for,
           e.paid_to,
           e.note,
           e.reservation_id,
           e.submitted_by,
+          pmId,
+          pmLabel,
           e.reservations?.customer_name ?? e.reservations?.customers?.name,
           e.reservations?.customer_email,
         ]
@@ -674,7 +678,7 @@ export default function ReservationExpenseManager({
       }
       return true
     })
-  }, [adminList, expenses, searchTerm, statusFilter, dateFrom, dateTo])
+  }, [adminList, expenses, searchTerm, statusFilter, dateFrom, dateTo, paymentMethodMap])
 
   const totalFiltered = useMemo(
     () => filteredExpenses.reduce((s, e) => s + e.amount, 0),

@@ -143,6 +143,30 @@ export function isViatorBookingRequestEmailSubject(subject: string | null | unde
   return false
 }
 
+/**
+ * Viator 본문이 그랜드캐년·앤텔롭·호스슈 일정 + 로어 앤텔롭 + 자정 픽업(00:00)인지.
+ * URGENT 제목이 라스베가스 야경으로 덮어쓰기 전에 사용 (extractViator와 동일 판정 기준).
+ */
+export function viatorPlainTextIndicatesGrandCanyonSunriseLowerAntelope(
+  plainText: string | null | undefined
+): boolean {
+  const text = (plainText ?? '').trim()
+  if (text.length < 20) return false
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const gcTour =
+    /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(normalized)
+  if (!gcTour) return false
+  const hasLowerAntelope = /Lower\s*Antelope|로어\s*앤텔롭/i.test(normalized)
+  if (!hasLowerAntelope) return false
+  const head = normalized.slice(0, 12000)
+  const hasSunriseTime =
+    /\b00\s*:\s*00\b|00:00|\b0\s*:\s*00\b|12\s*:\s*00\s*(?:a\.?m\.?|am)\b/i.test(head) ||
+    /Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,40}00\s*:\s*00|Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,35}00:00/i.test(
+      normalized
+    )
+  return hasSunriseTime
+}
+
 /** 제목에 [타이드스퀘어] 가 있으면 해당 채널 메일로 간주 */
 export function isTidesquareChannelEmailSubject(subject: string | null | undefined): boolean {
   return /\[타이드스퀘어\]/.test((subject ?? '').trim())
@@ -2206,12 +2230,34 @@ export function extractReservationFromEmail(options: {
   if (platform_key === 'viator' && isViatorBookingRequestEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
-  /** Viator URGENT 제목은 라스베가스 야경투어 신규 접수 — 본문 Tour Name과 무관하게 상품 고정 */
+  /**
+   * Viator URGENT 제목은 기본적으로 라스베가스 야경투어 신규 접수로 두었으나,
+   * 본문이 Grand Canyon + Antelope + Horseshoe + 로어 앤텔롭 + 00:00(또는 Shared Van … 00:00)이면
+   * 밤도깨비 그랜드캐년 일출 투어로 두고 야경으로 덮어쓰지 않는다.
+   */
   if (platform_key === 'viator' && isViatorUrgentBookingRequestEmailSubject(subject)) {
-    merged = {
-      ...merged,
-      product_id: 'MDLVN',
-      product_name: '라스베가스 야경투어',
+    const gcSunriseLower = viatorPlainTextIndicatesGrandCanyonSunriseLowerAntelope(plainText)
+    if (gcSunriseLower) {
+      if (
+        merged.product_id !== 'MDGCSUNRISE' &&
+        merged.product_name !== '밤도깨비 그랜드캐년 일출 투어'
+      ) {
+        merged = {
+          ...merged,
+          product_id: 'MDGCSUNRISE',
+          product_name: '밤도깨비 그랜드캐년 일출 투어',
+          tour_time: '00:00',
+        }
+        if (!merged.import_choice_option_names?.length && /Lower\s*Antelope|로어\s*앤텔롭/i.test(plainText)) {
+          merged.import_choice_option_names = ['Lower Antelope Canyon']
+        }
+      }
+    } else {
+      merged = {
+        ...merged,
+        product_id: 'MDLVN',
+        product_name: '라스베가스 야경투어',
+      }
     }
   }
   // 홈페이지(maniatour): detectPlatform에서 vegasmaniatour@ + 제목 You got a new booking 일 때만 maniatour
