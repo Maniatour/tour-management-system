@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (auth.supabase as any)
       .from('financial_accounts')
-      .select('id, name, account_type, currency, is_active')
+      .select('id, name, account_type, currency, is_active, statement_csv_direction_mode')
       .eq('is_active', true)
       .order('name')
 
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         currency,
         is_active: true,
       })
-      .select('id, name, account_type, currency, is_active')
+      .select('id, name, account_type, currency, is_active, statement_csv_direction_mode')
       .single()
 
     if (error) {

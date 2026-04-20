@@ -15,6 +15,8 @@ import {
   Building2,
   CalendarDays,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Link2,
   Lock,
   MapPinned,
@@ -31,6 +33,8 @@ import {
   AlertCircle,
   BookOpen,
   GripVertical,
+  ListPlus,
+  Loader2,
   X
 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -62,7 +66,14 @@ import {
 } from '@/components/ui/dialog'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import StatementAdjustmentExpenseModal from '@/components/reconciliation/StatementAdjustmentExpenseModal'
-import { hashStatementCsvContent, makeDedupeKey, parseStatementCsvText } from '@/lib/statement-csv'
+import StatementBulkExpenseModal from '@/components/reconciliation/StatementBulkExpenseModal'
+import {
+  hashStatementCsvContent,
+  makeDedupeKey,
+  parseStatementCsvText,
+  shouldInvertStatementCsvDirections,
+  type StatementCsvDirectionMode
+} from '@/lib/statement-csv'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import {
   findBestExpenseForLine,
@@ -75,6 +86,8 @@ type FinancialAccount = {
   account_type: string
   currency: string
   is_active: boolean
+  /** 명세 CSV: auto(레거시) | invert | no_invert — UI 에서는 invert/no_invert 로 확정 저장 권장 */
+  statement_csv_direction_mode?: StatementCsvDirectionMode | string | null
 }
 
 type StatementImport = {
@@ -107,6 +120,32 @@ const PERSONAL_PARTNER_OPTIONS: { value: string; label: string }[] = [
   { value: 'partner2', label: 'Chad' },
   { value: 'erica', label: 'Erica' }
 ]
+
+/** CSV 가져오기 모달 — 미리보기 행 수 */
+const CSV_IMPORT_PREVIEW_MAX = 5
+
+function describeCsvImportInvertRule(account: FinancialAccount): {
+  ruleLabel: string
+  invertApplied: boolean
+} {
+  const mode = (account.statement_csv_direction_mode ?? 'auto') as string
+  const invertApplied = shouldInvertStatementCsvDirections(
+    account.account_type,
+    account.statement_csv_direction_mode
+  )
+  let ruleLabel: string
+  if (mode === 'invert') {
+    ruleLabel = '항상 반전 (양수 = 지출)'
+  } else if (mode === 'no_invert') {
+    ruleLabel = '반전 안 함 (음수·괄호 = 지출)'
+  } else {
+    ruleLabel =
+      account.account_type === 'credit_card'
+        ? '자동 · 신용카드 (부호 반전 적용)'
+        : '자동 · 은행·기타 (부호 반전 없음)'
+  }
+  return { ruleLabel, invertApplied }
+}
 
 type PaymentMethodRow = {
   id: string
@@ -188,6 +227,13 @@ const AUTO_MATCH_SOURCE_LABEL: Record<ExpenseCandidate['source_table'], string> 
 const RECONCILIATION_PAGE_SIZE = 40
 /** PostgREST 기본 max-rows(1000) — 단일 select로는 그 이후 행이 잘림 → range 순회 */
 const STATEMENT_LINES_FETCH_PAGE = 1000
+/** 대조 표에 쓰는 컬럼만 조회 (raw JSONB 제외로 전송·파싱 비용 대폭 감소) */
+const STATEMENT_LINE_LIST_SELECT =
+  'id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status,exclude_from_pnl,is_personal,personal_partner'
+/** reconciliation_matches IN 쿼리 병렬도 (한꺼번에 너무 많이 열면 브라우저·API 한도 이슈) */
+const RECON_MATCH_FETCH_PARALLEL = 12
+/** 명세 import 청크별로 줄·매칭을 겹쳐 로드할 때 import id 묶음 크기 */
+const STATEMENT_IMPORT_LINE_CHUNK = 40
 /** 지출/입금 후보 모달: 금액 근접 후보 상한 (전체 옵션을 행×만큼 DOM에 두지 않음) */
 const PICKER_QUICK_MAX = 120
 const PICKER_SEARCH_MAX = 500
@@ -210,7 +256,7 @@ async function fetchAllStatementLinesForImportChunk(importChunk: string[]): Prom
   for (;;) {
     const { data, error } = await supabase
       .from('statement_lines')
-      .select('*')
+      .select(STATEMENT_LINE_LIST_SELECT)
       .in('statement_import_id', importChunk)
       .order('id', { ascending: true })
       .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
@@ -223,26 +269,31 @@ async function fetchAllStatementLinesForImportChunk(importChunk: string[]): Prom
   return out
 }
 
-/** 월별 커버리지 집계용 — 동일하게 1000행 제한 회피 */
-async function fetchCoverageRowsForImportChunk(
-  importChunk: string[]
-): Promise<{ posted_date: string; matched_status: string }[]> {
-  const out: { posted_date: string; matched_status: string }[] = []
-  let from = 0
-  for (;;) {
-    const { data, error } = await supabase
-      .from('statement_lines')
-      .select('posted_date, matched_status')
-      .in('statement_import_id', importChunk)
-      .order('id', { ascending: true })
-      .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
-    if (error && !isAbortLikeError(error)) console.error(error)
-    const batch = (data || []) as { posted_date: string; matched_status: string }[]
-    out.push(...batch)
-    if (batch.length < STATEMENT_LINES_FETCH_PAGE) break
-    from += STATEMENT_LINES_FETCH_PAGE
+/** 이미 로드한 명세 줄로 연도·import 집합 기준 월별 커버리지 (별도 DB 전량 스캔 생략) */
+function aggregateCoverageMonthStatsFromLines(
+  rows: StatementLine[],
+  year: number,
+  allowedImportIds: Set<string>
+): { reconciled: number; uploaded: number }[] {
+  const byMonth = Array.from({ length: 12 }, () => ({ reconciled: 0, uploaded: 0 }))
+  if (!Number.isFinite(year) || allowedImportIds.size === 0) return byMonth
+  for (const row of rows) {
+    if (!allowedImportIds.has(row.statement_import_id)) continue
+    const raw = row.posted_date
+    if (raw == null) continue
+    const s = typeof raw === 'string' ? raw : String(raw)
+    if (s.length < 7) continue
+    const parts = s.slice(0, 10).split('-')
+    const y = parseInt(parts[0] || '0', 10)
+    const m = parseInt(parts[1] || '0', 10)
+    if (y !== year || m < 1 || m > 12) continue
+    const idx = m - 1
+    byMonth[idx].uploaded += 1
+    if (row.matched_status === 'matched') {
+      byMonth[idx].reconciled += 1
+    }
   }
-  return out
+  return byMonth
 }
 
 /** 동일 명세 줄·동일 출처가 매칭 배열에 중복될 때 1건만 유지(DB·응답 중복 방지) */
@@ -260,6 +311,39 @@ function dedupeReconciliationMatchRows(rows: ReconciliationMatchRow[]): Reconcil
     if (tb > ta) byComposite.set(k, r)
   }
   return [...byComposite.values()]
+}
+
+/** statement_line_id 목록에 대한 reconciliation_matches (80건씩 IN, 물결 병렬) */
+async function fetchReconciliationMatchesForLineIds(lineIds: string[]): Promise<ReconciliationMatchRow[]> {
+  if (lineIds.length === 0) return []
+  const idChunks: string[][] = []
+  const chunkSize = 80
+  for (let i = 0; i < lineIds.length; i += chunkSize) {
+    idChunks.push(lineIds.slice(i, i + chunkSize))
+  }
+  const matchRows: ReconciliationMatchRow[] = []
+  for (let w = 0; w < idChunks.length; w += RECON_MATCH_FETCH_PARALLEL) {
+    const wave = idChunks.slice(w, w + RECON_MATCH_FETCH_PARALLEL)
+    try {
+      const results = await Promise.all(
+        wave.map(async (chunk) => {
+          const { data: matchData, error: e2 } = await supabase
+            .from('reconciliation_matches')
+            .select('id, statement_line_id, source_table, source_id, matched_by, matched_at')
+            .in('statement_line_id', chunk)
+          if (e2) {
+            if (!isAbortLikeError(e2)) console.error(e2)
+            throw e2
+          }
+          return (matchData as ReconciliationMatchRow[]) || []
+        })
+      )
+      for (const part of results) matchRows.push(...part)
+    } catch {
+      break
+    }
+  }
+  return matchRows
 }
 
 /** 기간 내 payment_records 전부 — PostgREST max-rows(1000) 순회 */
@@ -316,6 +400,12 @@ function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/** 명세 줄 posted_date → 비교용 YYYY-MM-DD (10자 미만이면 범위 필터에서 제외) */
+function statementLinePostedYmd(line: { posted_date?: string | null }): string {
+  const raw = String(line.posted_date ?? '').trim()
+  return raw.length >= 10 ? raw.slice(0, 10) : ''
 }
 
 function paymentMethodLabelFromRows(id: string | null | undefined, rows: PaymentMethodRow[]): string {
@@ -572,21 +662,36 @@ async function fetchMatchedExpenseKeysForOptions(
     byTable.get(o.source_table)!.add(o.source_id)
   }
   const chunkSize = 100
+  /** 동일 테이블 내 IN 청크를 묶어 병렬 요청 (건수 많을 때 순차 대비 체감 속도) */
+  const CHUNK_WAVE = 8
   for (const [table, idSet] of byTable) {
     const ids = [...idSet]
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize)
-      const { data, error } = await client
-        .from('reconciliation_matches')
-        .select('source_id')
-        .eq('source_table', table)
-        .in('source_id', chunk)
-      if (error) {
-        if (!isAbortLikeError(error)) console.error(error)
-        continue
+    for (let i = 0; i < ids.length; i += chunkSize * CHUNK_WAVE) {
+      const wave: string[][] = []
+      for (let w = 0; w < CHUNK_WAVE; w++) {
+        const start = i + w * chunkSize
+        if (start >= ids.length) break
+        wave.push(ids.slice(start, start + chunkSize))
       }
-      for (const row of data || []) {
-        matched.add(`${table}:${row.source_id}`)
+      const settled = await Promise.allSettled(
+        wave.map((chunk) =>
+          client
+            .from('reconciliation_matches')
+            .select('source_id')
+            .eq('source_table', table)
+            .in('source_id', chunk)
+        )
+      )
+      for (const s of settled) {
+        if (s.status !== 'fulfilled') continue
+        const { data, error } = s.value
+        if (error) {
+          if (!isAbortLikeError(error)) console.error(error)
+          continue
+        }
+        for (const row of data || []) {
+          matched.add(`${table}:${row.source_id}`)
+        }
       }
     }
   }
@@ -607,6 +712,8 @@ export default function StatementReconciliationTab() {
   const [imports, setImports] = useState<StatementImport[]>([])
   const [lines, setLines] = useState<StatementLine[]>([])
   const [matches, setMatches] = useState<ReconciliationMatchRow[]>([])
+  /** 아래 명세 대조 표: 줄·매칭 Supabase 로드 중 */
+  const [reconciliationLinesLoading, setReconciliationLinesLoading] = useState(false)
 
   const [filterAccountId, setFilterAccountId] = useState('')
   /** true면 matched_status가 unmatched인 명세 줄만 표시 */
@@ -616,6 +723,9 @@ export default function StatementReconciliationTab() {
   /** 명세 대조 표: 한 번에 그리는 행 수 제한(대량 DOM으로 브라우저 멈춤 방지) */
   const [reconciliationPage, setReconciliationPage] = useState(1)
   const [selectedMonth, setSelectedMonth] = useState<string>('all')
+  /** 명세 대조 표: 거래일(posted_date) 시작·종료 — 비우면 범위 제한 없음(월 필터와 함께 적용) */
+  const [statementTableDateStart, setStatementTableDateStart] = useState('')
+  const [statementTableDateEnd, setStatementTableDateEnd] = useState('')
   const [expenseOptions, setExpenseOptions] = useState<ExpenseOption[]>([])
   /** 기간 내 지출 후보 중 DB에 이미 매칭된 expenseKey (미매칭 패널·드래그용) */
   const [matchedExpenseKeysInDb, setMatchedExpenseKeysInDb] = useState<Set<string>>(() => new Set())
@@ -632,8 +742,8 @@ export default function StatementReconciliationTab() {
   const [unmatchedEditCategory, setUnmatchedEditCategory] = useState('')
   const [unmatchedEditCompany, setUnmatchedEditCompany] = useState('')
   const [unmatchedEditTourDate, setUnmatchedEditTourDate] = useState('')
-  /** 미매칭 패널: 일자 정렬 — desc 최신 먼저, asc 과거 먼저 */
-  const [unmatchedPanelSortDate, setUnmatchedPanelSortDate] = useState<'desc' | 'asc'>('desc')
+  /** 미매칭 패널: 일자 정렬 — desc 최신 먼저, asc 과거 먼저(기본) */
+  const [unmatchedPanelSortDate, setUnmatchedPanelSortDate] = useState<'desc' | 'asc'>('asc')
   const [unmatchedPanelSearch, setUnmatchedPanelSearch] = useState('')
   /** 비어 있으면 전체 — id 또는 '__none__'(미지정) 다중 선택 */
   const [unmatchedPanelPaymentMethodFilter, setUnmatchedPanelPaymentMethodFilter] = useState<string[]>([])
@@ -650,13 +760,12 @@ export default function StatementReconciliationTab() {
   const [unmatchedPanelListScope, setUnmatchedPanelListScope] = useState<'unmatched' | 'all'>(
     'unmatched'
   )
+  /** xl에서 오른쪽 미매칭 패널 — 접어 두면 지출·매칭키 조회를 하지 않아 초기 로딩이 빨라짐 */
+  const [unmatchedSidebarOpen, setUnmatchedSidebarOpen] = useState(false)
+  const [unmatchedExpensesLoading, setUnmatchedExpensesLoading] = useState(false)
   const [paymentOptions, setPaymentOptions] = useState<PaymentRecordOption[]>([])
+  const [paymentOptionsLoading, setPaymentOptionsLoading] = useState(false)
   const [coverageYear, setCoverageYear] = useState(() => new Date().getFullYear().toString())
-  /** 선택 금융 계정·연도 기준, 월별 대조완료(matched) / 업로드 전체 줄 수 */
-  const [coverageMonthStats, setCoverageMonthStats] = useState<
-    { reconciled: number; uploaded: number }[]
-  >(() => Array.from({ length: 12 }, () => ({ reconciled: 0, uploaded: 0 })))
-  const [coverageStatsLoading, setCoverageStatsLoading] = useState(false)
 
   const [newAccountName, setNewAccountName] = useState('')
   const [newAccountType, setNewAccountType] = useState<'bank' | 'credit_card'>('credit_card')
@@ -678,6 +787,8 @@ export default function StatementReconciliationTab() {
   /** true면 목록 새로고침 시 draft 덮어쓰기 안 함 */
   const [paymentLinkDirty, setPaymentLinkDirty] = useState(false)
   const [savingPaymentLinks, setSavingPaymentLinks] = useState(false)
+  /** 결제수단 ↔ 금융계정 연결 모달: 카드·방법명·ID 등 검색 */
+  const [paymentLinkMethodSearch, setPaymentLinkMethodSearch] = useState('')
   const [helpModalOpen, setHelpModalOpen] = useState(false)
   const [securityModalOpen, setSecurityModalOpen] = useState(false)
   const [accountsModalOpen, setAccountsModalOpen] = useState(false)
@@ -691,6 +802,7 @@ export default function StatementReconciliationTab() {
   /** 미리보기에서 저장할 명세 줄 id — 기본은 후보 전체 선택 */
   const [autoMatchSelectedIds, setAutoMatchSelectedIds] = useState<Set<string>>(() => new Set())
   const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
+  const [bulkCompanyExpenseModalOpen, setBulkCompanyExpenseModalOpen] = useState(false)
   const [resetAllMatchesOpen, setResetAllMatchesOpen] = useState(false)
   const [resettingAllMatches, setResettingAllMatches] = useState(false)
   /** 행마다 수천 개 `<option>`을 두지 않고, 모달에서 검색·선택 */
@@ -709,6 +821,8 @@ export default function StatementReconciliationTab() {
   >({})
   const createAccountInFlight = useRef(false)
   const csvImportFileInputRef = useRef<HTMLInputElement>(null)
+  const [savingStatementCsvModeFor, setSavingStatementCsvModeFor] = useState<string | null>(null)
+  const [flippingStatementDirectionsFor, setFlippingStatementDirectionsFor] = useState<string | null>(null)
 
   /** 보정 지출 — 유형 선택 후 모달에서 실제 지출 입력 */
   const [adjustModalLine, setAdjustModalLine] = useState<StatementLine | null>(null)
@@ -799,81 +913,17 @@ export default function StatementReconciliationTab() {
     else if (!error) setImports((data as StatementImport[]) || [])
   }, [])
 
-  const emptyMonthStats = useCallback(
-    () => Array.from({ length: 12 }, () => ({ reconciled: 0, uploaded: 0 })),
-    []
-  )
-
-  /** loadCoverageMonthStats가 deps로 자주 바뀌면 loadLinesAndMatches → 무한에 가깝게 재실행되므로 ref로 최신값만 읽음 */
-  const filterAccountIdRef = useRef(filterAccountId)
-  const coverageYearRef = useRef(coverageYear)
   const importsRef = useRef(imports)
-  filterAccountIdRef.current = filterAccountId
-  coverageYearRef.current = coverageYear
   importsRef.current = imports
 
-  const coverageStatsRequestGen = useRef(0)
-
-  /** 상단 탭으로 고른 금융 계정의 모든 명세 import에 속한 줄을 월별 집계 (콜백 참조 고정) */
-  const loadCoverageMonthStats = useCallback(async () => {
-    const gen = ++coverageStatsRequestGen.current
-    const filterAccountId = filterAccountIdRef.current
-    const imports = importsRef.current
-    const coverageYear = coverageYearRef.current
-
-    if (!filterAccountId) {
-      setCoverageMonthStats(emptyMonthStats())
-      return
-    }
-    const importIds = imports.filter((im) => im.financial_account_id === filterAccountId).map((im) => im.id)
-    if (importIds.length === 0) {
-      setCoverageMonthStats(emptyMonthStats())
-      return
-    }
-    const year = parseInt(coverageYear, 10)
-    if (!Number.isFinite(year)) {
-      setCoverageMonthStats(emptyMonthStats())
-      return
-    }
-    setCoverageStatsLoading(true)
-    try {
-      const rows: { posted_date: string; matched_status: string }[] = []
-      const chunkSize = 80
-      for (let i = 0; i < importIds.length; i += chunkSize) {
-        if (gen !== coverageStatsRequestGen.current) return
-        const chunk = importIds.slice(i, i + chunkSize)
-        const batch = await fetchCoverageRowsForImportChunk(chunk)
-        rows.push(...batch)
-      }
-      if (gen !== coverageStatsRequestGen.current) return
-      const byMonth = emptyMonthStats()
-      for (const row of rows) {
-        const raw = row.posted_date
-        if (raw == null) continue
-        const s = typeof raw === 'string' ? raw : String(raw)
-        if (s.length < 7) continue
-        const parts = s.slice(0, 10).split('-')
-        const y = parseInt(parts[0] || '0', 10)
-        const m = parseInt(parts[1] || '0', 10)
-        if (y !== year || m < 1 || m > 12) continue
-        const idx = m - 1
-        byMonth[idx].uploaded += 1
-        if (row.matched_status === 'matched') {
-          byMonth[idx].reconciled += 1
-        }
-      }
-      if (gen !== coverageStatsRequestGen.current) return
-      setCoverageMonthStats(byMonth)
-    } finally {
-      if (gen === coverageStatsRequestGen.current) {
-        setCoverageStatsLoading(false)
-      }
-    }
-  }, [emptyMonthStats])
+  /** 명세 줄 로드 경합 시 이전 요청의 finally 가 로딩을 끄지 않도록 */
+  const loadLinesGenRef = useRef(0)
 
   /** 선택 금융 계정에 연결된 모든 명세 업로드의 줄·매칭을 합쳐 로드 */
   const loadLinesAndMatchesForAccount = useCallback(async (accountId: string) => {
     if (!accountId) {
+      loadLinesGenRef.current += 1
+      setReconciliationLinesLoading(false)
       startTransition(() => {
         setLines([])
         setMatches([])
@@ -884,61 +934,68 @@ export default function StatementReconciliationTab() {
       .filter((im) => im.financial_account_id === accountId)
       .map((im) => im.id)
     if (importIds.length === 0) {
+      loadLinesGenRef.current += 1
+      setReconciliationLinesLoading(false)
       startTransition(() => {
         setLines([])
         setMatches([])
       })
       return
     }
-    const linesArr: StatementLine[] = []
-    const idChunkSize = 40
-    for (let i = 0; i < importIds.length; i += idChunkSize) {
-      const chunk = importIds.slice(i, i + idChunkSize)
-      const batch = await fetchAllStatementLinesForImportChunk(chunk)
-      linesArr.push(...batch)
-    }
-    linesArr.sort((a, b) => {
-      const da = a.posted_date || ''
-      const db = b.posted_date || ''
-      if (da !== db) return da.localeCompare(db)
-      return String(a.id).localeCompare(String(b.id))
-    })
-    const ids = linesArr.map((l) => l.id)
-    let matchRows: ReconciliationMatchRow[] = []
-    if (ids.length > 0) {
-      const chunkSize = 80
-      for (let i = 0; i < ids.length; i += chunkSize) {
-        const chunk = ids.slice(i, i + chunkSize)
-        const { data: matchData, error: e2 } = await supabase
-          .from('reconciliation_matches')
-          .select('id, statement_line_id, source_table, source_id, matched_by, matched_at')
-          .in('statement_line_id', chunk)
-        if (e2) {
-          if (!isAbortLikeError(e2)) console.error(e2)
-          break
-        }
-        matchRows = matchRows.concat((matchData as ReconciliationMatchRow[]) || [])
+    const gen = ++loadLinesGenRef.current
+    setReconciliationLinesLoading(true)
+    try {
+      const perImportTasks: Promise<{
+        lines: StatementLine[]
+        matches: ReconciliationMatchRow[]
+      }>[] = []
+      for (let i = 0; i < importIds.length; i += STATEMENT_IMPORT_LINE_CHUNK) {
+        const slice = importIds.slice(i, i + STATEMENT_IMPORT_LINE_CHUNK)
+        perImportTasks.push(
+          (async () => {
+            const partLines = await fetchAllStatementLinesForImportChunk(slice)
+            const partIds = partLines.map((l) => l.id)
+            let partMatches: ReconciliationMatchRow[] = []
+            if (partIds.length > 0) {
+              try {
+                partMatches = await fetchReconciliationMatchesForLineIds(partIds)
+              } catch (e) {
+                /** 매칭만 실패해도 명세 줄은 반드시 유지 (이전엔 전 청크 reject 로 줄이 통째로 사라짐) */
+                if (!isAbortLikeError(e)) console.error(e)
+              }
+            }
+            return { lines: partLines, matches: partMatches }
+          })()
+        )
       }
-    }
-    matchRows = dedupeReconciliationMatchRows(matchRows)
-    startTransition(() => {
-      setLines(linesArr)
-      setMatches(matchRows)
-    })
-  }, [])
-
-  const coverageStatsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const scheduleCoverageStatsRefresh = useCallback(() => {
-    if (coverageStatsDebounceRef.current) clearTimeout(coverageStatsDebounceRef.current)
-    coverageStatsDebounceRef.current = setTimeout(() => {
-      coverageStatsDebounceRef.current = null
-      void loadCoverageMonthStats()
-    }, 450)
-  }, [loadCoverageMonthStats])
-
-  useEffect(() => {
-    return () => {
-      if (coverageStatsDebounceRef.current) clearTimeout(coverageStatsDebounceRef.current)
+      const settled = await Promise.allSettled(perImportTasks)
+      const linesArr: StatementLine[] = []
+      let matchRows: ReconciliationMatchRow[] = []
+      for (const s of settled) {
+        if (s.status === 'fulfilled') {
+          linesArr.push(...s.value.lines)
+          matchRows.push(...s.value.matches)
+        } else if (!isAbortLikeError(s.reason)) {
+          console.error(s.reason)
+        }
+      }
+      linesArr.sort((a, b) => {
+        const da = a.posted_date || ''
+        const db = b.posted_date || ''
+        if (da !== db) return da.localeCompare(db)
+        return String(a.id).localeCompare(String(b.id))
+      })
+      matchRows = dedupeReconciliationMatchRows(matchRows)
+      if (gen === loadLinesGenRef.current) {
+        startTransition(() => {
+          setLines(linesArr)
+          setMatches(matchRows)
+        })
+      }
+    } finally {
+      if (gen === loadLinesGenRef.current) {
+        setReconciliationLinesLoading(false)
+      }
     }
   }, [])
 
@@ -995,14 +1052,6 @@ export default function StatementReconciliationTab() {
     }
   }, [paymentPickerLineId, lines])
 
-  /** 계정·연도·import 목록 변경 시에만 월 통계 (디바운스로 연속 갱신 합침) */
-  useEffect(() => {
-    const t = setTimeout(() => {
-      void loadCoverageMonthStats()
-    }, 320)
-    return () => clearTimeout(t)
-  }, [filterAccountId, coverageYear, imports, loadCoverageMonthStats])
-
   /** 모달이 열려 있고 편집 중이 아니면 서버 목록과 draft 동기화 */
   useEffect(() => {
     if (!paymentLinkModalOpen) return
@@ -1024,10 +1073,48 @@ export default function StatementReconciliationTab() {
     })
   }, [paymentLinkModalOpen, paymentMethods, paymentLinkDraft])
 
+  const paymentLinkModalFilteredMethods = useMemo(() => {
+    const q = paymentLinkMethodSearch.trim().toLowerCase()
+    if (!q) return paymentMethods
+    return paymentMethods.filter((pm) => {
+      const fa = pm.financial_account_id
+        ? accounts.find((a) => a.id === pm.financial_account_id)
+        : undefined
+      const chunks: (string | null | undefined)[] = [
+        pm.id,
+        pm.method,
+        pm.display_name,
+        pm.notes,
+        pm.user_email,
+        pm.card_number_last4,
+        pm.team?.name_ko ?? undefined,
+        pm.team?.name_en ?? undefined,
+        pm.financial_account_id ?? undefined,
+        fa?.name,
+        fa?.account_type
+      ]
+      return chunks.some((c) => c && String(c).toLowerCase().includes(q))
+    })
+  }, [paymentMethods, paymentLinkMethodSearch, accounts])
+
   const importsForAccount = useMemo(
     () => imports.filter((im) => im.financial_account_id === filterAccountId),
     [imports, filterAccountId]
   )
+
+  const coverageImportIdSet = useMemo(
+    () => new Set(importsForAccount.map((im) => im.id)),
+    [importsForAccount]
+  )
+
+  /** 월 통계: 명세 줄을 한 번 불러온 뒤 메모리에서만 집계 (이전: 동일 데이터를 DB에서 다시 전량 조회) */
+  const coverageMonthStats = useMemo(() => {
+    if (!filterAccountId || coverageImportIdSet.size === 0) {
+      return Array.from({ length: 12 }, () => ({ reconciled: 0, uploaded: 0 }))
+    }
+    const year = parseInt(coverageYear, 10)
+    return aggregateCoverageMonthStatsFromLines(lines, year, coverageImportIdSet)
+  }, [lines, coverageYear, filterAccountId, coverageImportIdSet])
 
   /** 해당 계정의 모든 명세 업로드 기간을 합친 범위(지출 후보·피커·자동매칭 후보 조회용) */
   const accountExpenseWindow = useMemo(() => {
@@ -1147,6 +1234,7 @@ export default function StatementReconciliationTab() {
   const refreshUnmatchedExpenseKeys = useCallback(async () => {
     if (expenseOptions.length === 0) {
       setMatchedExpenseKeysInDb(new Set())
+      setMatchedExpenseKeysLoading(false)
       return
     }
     setMatchedExpenseKeysLoading(true)
@@ -1273,6 +1361,43 @@ export default function StatementReconciliationTab() {
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [accounts])
 
+  /** CSV 가져오기 모달: 선택 계정의 반전 규칙 + 파싱 미리보기(상위 N행) */
+  const csvImportParsePreview = useMemo(() => {
+    const tid = importAccountId?.trim()
+    const txt = csvText?.trim()
+    if (!tid) {
+      return { status: 'need_account' as const }
+    }
+    const acc =
+      accountsForReconciliation.find((a) => a.id === tid) ?? accounts.find((a) => a.id === tid)
+    if (!acc) {
+      return { status: 'need_account' as const }
+    }
+    const { ruleLabel, invertApplied } = describeCsvImportInvertRule(acc)
+    if (!txt) {
+      return {
+        status: 'need_csv' as const,
+        accountName: acc.name,
+        ruleLabel,
+        invertApplied,
+      }
+    }
+    const parsed = parseStatementCsvText(csvText, {
+      invertDirections: shouldInvertStatementCsvDirections(
+        acc.account_type,
+        acc.statement_csv_direction_mode
+      ),
+    })
+    return {
+      status: 'ready' as const,
+      accountName: acc.name,
+      ruleLabel,
+      invertApplied,
+      rows: parsed.slice(0, CSV_IMPORT_PREVIEW_MAX),
+      totalParsed: parsed.length,
+    }
+  }, [importAccountId, csvText, accountsForReconciliation, accounts])
+
   useEffect(() => {
     if (!authUser?.email) {
       setIsTeamSuperForStatements(false)
@@ -1344,11 +1469,40 @@ export default function StatementReconciliationTab() {
   }, [lines])
 
   const displayLines = useMemo(() => {
-    if (selectedMonth === 'all') return lines
-    return lines.filter((l) => l.posted_date?.startsWith(selectedMonth))
-  }, [lines, selectedMonth])
+    let rows = selectedMonth === 'all' ? lines : lines.filter((l) => l.posted_date?.startsWith(selectedMonth))
+    let startY = statementTableDateStart.trim().slice(0, 10)
+    let endY = statementTableDateEnd.trim().slice(0, 10)
+    if (startY.length >= 10 && endY.length >= 10) {
+      if (startY > endY) {
+        const t = startY
+        startY = endY
+        endY = t
+      }
+      rows = rows.filter((l) => {
+        const ymd = statementLinePostedYmd(l)
+        return ymd.length >= 10 && ymd >= startY && ymd <= endY
+      })
+    } else if (startY.length >= 10) {
+      rows = rows.filter((l) => {
+        const ymd = statementLinePostedYmd(l)
+        return ymd.length >= 10 && ymd >= startY
+      })
+    } else if (endY.length >= 10) {
+      rows = rows.filter((l) => {
+        const ymd = statementLinePostedYmd(l)
+        return ymd.length >= 10 && ymd <= endY
+      })
+    }
+    return rows
+  }, [lines, selectedMonth, statementTableDateStart, statementTableDateEnd])
 
-  /** 월·미대조만 필터 적용 후 (검색 전) — 빈 화면 메시지 구분용 */
+  const statementTableDateRangeActive = useMemo(() => {
+    const s = statementTableDateStart.trim().slice(0, 10)
+    const e = statementTableDateEnd.trim().slice(0, 10)
+    return s.length >= 10 || e.length >= 10
+  }, [statementTableDateStart, statementTableDateEnd])
+
+  /** 월·거래일 범위·미대조만 필터 적용 후 (검색 전) — 빈 화면 메시지 구분용 */
   const reconciliationLinesBeforeSearch = useMemo(() => {
     if (!showOnlyUnmatchedLines) return displayLines
     return displayLines.filter((l) => l.matched_status === 'unmatched')
@@ -1389,6 +1543,24 @@ export default function StatementReconciliationTab() {
       )
     })
   }, [reconciliationLinesBeforeSearch, reconciliationSearchQuery])
+
+  /** 일괄 회사 지출: 표의 출금·미대조·아직 매칭 없음 — 최대 200건 */
+  const bulkCompanyExpenseCandidates = useMemo(() => {
+    return reconciliationTableLines
+      .filter(
+        (l) =>
+          l.direction === 'outflow' &&
+          l.matched_status === 'unmatched' &&
+          (matchesByLine.get(l.id) || []).length === 0 &&
+          Number(l.amount) > 0
+      )
+      .slice(0, 200)
+  }, [reconciliationTableLines, matchesByLine])
+
+  const defaultPaymentMethodIdForAccount = useMemo(() => {
+    const pm = paymentMethods.find((p) => p.financial_account_id === filterAccountId)
+    return pm?.id ?? null
+  }, [paymentMethods, filterAccountId])
 
   const reconciliationPageCount = useMemo(
     () => Math.max(1, Math.ceil(reconciliationTableLines.length / RECONCILIATION_PAGE_SIZE)),
@@ -1446,11 +1618,28 @@ export default function StatementReconciliationTab() {
     unmatchedExpenseRangeTouched
   ])
 
-  /** 미매칭 패널·입금 후보 조회 — 사용자 지정 기간 */
-  const fetchExpenseOptionsForPeriod = useCallback(async (): Promise<{
-    ex: ExpenseOption[]
-    prOpts: PaymentRecordOption[]
-  } | null> => {
+  /** 입금 연결 모달 전용 — 미매칭 패널과 분리해 두면 초기에 payment_records 전량 순회를 하지 않음 */
+  const fetchPaymentRecordsForUnmatchedQueryRange = useCallback(async (): Promise<
+    PaymentRecordOption[] | null
+  > => {
+    if (!filterAccountId) return null
+    let startYmd = unmatchedExpenseQueryStart.trim().slice(0, 10)
+    let endYmd = unmatchedExpenseQueryEnd.trim().slice(0, 10)
+    if (!startYmd || !endYmd || startYmd.length < 10 || endYmd.length < 10) return null
+    if (startYmd > endYmd) {
+      const t = startYmd
+      startYmd = endYmd
+      endYmd = t
+    }
+    const start = new Date(startYmd + 'T00:00:00')
+    const end = new Date(endYmd + 'T23:59:59.999')
+    const startIso = start.toISOString()
+    const endIso = end.toISOString()
+    return fetchAllPaymentRecordsInDateRange(startIso, endIso)
+  }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd])
+
+  /** 미매칭 패널 지출 후보 — 사용자 지정 기간 (입금 기록은 별도 로드) */
+  const fetchExpenseOptionsForPeriod = useCallback(async (): Promise<ExpenseOption[] | null> => {
     if (!filterAccountId) return null
     let startYmd = unmatchedExpenseQueryStart.trim().slice(0, 10)
     let endYmd = unmatchedExpenseQueryEnd.trim().slice(0, 10)
@@ -1486,7 +1675,6 @@ export default function StatementReconciliationTab() {
         .gte('submit_on', startIso)
         .lte('submit_on', endIso)
     ])
-    const prOpts = await fetchAllPaymentRecordsInDateRange(startIso, endIso)
     const ex: ExpenseOption[] = [
       ...(ce || []).map((r: Record<string, unknown>) => ({
         source_table: 'company_expenses' as const,
@@ -1521,16 +1709,24 @@ export default function StatementReconciliationTab() {
         payment_method: expensePaymentMethodFromRow(r)
       }))
     ]
-    const exDeduped = dedupeExpenseOptionsList(ex)
-    return { ex: exDeduped, prOpts }
+    return dedupeExpenseOptionsList(ex)
   }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd])
 
   useEffect(() => {
     setReconciliationPage(1)
-  }, [filterAccountId, selectedMonth, showOnlyUnmatchedLines, reconciliationSearchQuery])
+  }, [
+    filterAccountId,
+    selectedMonth,
+    statementTableDateStart,
+    statementTableDateEnd,
+    showOnlyUnmatchedLines,
+    reconciliationSearchQuery
+  ])
 
   useEffect(() => {
     setReconciliationSearchQuery('')
+    setStatementTableDateStart('')
+    setStatementTableDateEnd('')
   }, [filterAccountId])
 
   useEffect(() => {
@@ -1538,6 +1734,7 @@ export default function StatementReconciliationTab() {
     setUnmatchedPanelPaymentMethodFilter([])
     setUnmatchedPanelSourceTableFilter('')
     setUnmatchedPmFilterOpen(false)
+    setUnmatchedSidebarOpen(false)
   }, [filterAccountId])
 
   useEffect(() => {
@@ -1576,41 +1773,83 @@ export default function StatementReconciliationTab() {
   }, [autoMatchPreviewOpen, autoMatchProposals.length, autoMatchSelectedIds])
 
   useEffect(() => {
+    if (!unmatchedSidebarOpen) {
+      startTransition(() => {
+        setExpenseOptions([])
+        setUnmatchedExpensesLoading(false)
+      })
+      return
+    }
     let cancelled = false
     ;(async () => {
-      const data = await fetchExpenseOptionsForPeriod()
-      if (cancelled) return
-      if (!data) {
+      setUnmatchedExpensesLoading(true)
+      try {
+        const ex = await fetchExpenseOptionsForPeriod()
+        if (cancelled) return
+        if (!ex) {
+          startTransition(() => {
+            setExpenseOptions([])
+          })
+          return
+        }
         startTransition(() => {
-          setExpenseOptions([])
-          setPaymentOptions([])
+          setExpenseOptions(ex)
         })
-        return
+      } finally {
+        if (!cancelled) setUnmatchedExpensesLoading(false)
       }
-      startTransition(() => {
-        setExpenseOptions(data.ex)
-        setPaymentOptions(data.prOpts)
-      })
     })()
     return () => {
       cancelled = true
     }
-  }, [fetchExpenseOptionsForPeriod])
+  }, [unmatchedSidebarOpen, fetchExpenseOptionsForPeriod])
 
   const refreshExpenseOptionsFromServer = useCallback(async () => {
-    const data = await fetchExpenseOptionsForPeriod()
-    if (!data) {
+    const ex = await fetchExpenseOptionsForPeriod()
+    if (!ex) {
       startTransition(() => {
         setExpenseOptions([])
-        setPaymentOptions([])
       })
       return
     }
     startTransition(() => {
-      setExpenseOptions(data.ex)
-      setPaymentOptions(data.prOpts)
+      setExpenseOptions(ex)
     })
   }, [fetchExpenseOptionsForPeriod])
+
+  /** 미매칭 패널을 열지 않은 채 지출 연결 모달만 연 경우 — 후보·검색용 지출 로드 */
+  useEffect(() => {
+    if (!expensePickerLineId || !filterAccountId) return
+    if (expenseOptions.length > 0) return
+    void refreshExpenseOptionsFromServer()
+  }, [expensePickerLineId, filterAccountId, expenseOptions.length, refreshExpenseOptionsFromServer])
+
+  /** 입금 연결 모달 — 열릴 때만 해당 기간 payment_records 순회 */
+  useEffect(() => {
+    if (!paymentPickerLineId || !filterAccountId) {
+      setPaymentOptions([])
+      setPaymentPickerReservationCustomerNames({})
+      setPaymentOptionsLoading(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setPaymentOptionsLoading(true)
+      try {
+        const pr = await fetchPaymentRecordsForUnmatchedQueryRange()
+        if (cancelled) return
+        setPaymentOptions(pr ?? [])
+      } catch (e) {
+        if (!cancelled && !isAbortLikeError(e)) console.error(e)
+        if (!cancelled) setPaymentOptions([])
+      } finally {
+        if (!cancelled) setPaymentOptionsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [paymentPickerLineId, filterAccountId, fetchPaymentRecordsForUnmatchedQueryRange])
 
   /** 지출 연결 모달 — 테이블 탐색: 현재 명세 줄 거래일( posted_date ) 기준 ±7일 */
   const expensePickerLinePostedYmd = useMemo(() => {
@@ -1897,6 +2136,140 @@ export default function StatementReconciliationTab() {
     }
   }
 
+  const saveAccountStatementCsvDirection = async (
+    accountId: string,
+    mode: StatementCsvDirectionMode
+  ) => {
+    if (!accountId) return
+    setSavingStatementCsvModeFor(accountId)
+    setAccountActionError(null)
+    try {
+      let accessToken = getStoredAccessToken()
+      if (!accessToken) {
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          accessToken = session?.access_token ?? null
+        } catch (e) {
+          if (isAbortLikeError(e)) {
+            accessToken = getStoredAccessToken()
+          } else {
+            throw e
+          }
+        }
+      }
+      if (!accessToken) {
+        setAccountActionError('로그인 세션이 없습니다. 다시 로그인한 뒤 시도하세요.')
+        return
+      }
+      const res = await fetch(`/api/financial/accounts/${encodeURIComponent(accountId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ statement_csv_direction_mode: mode }),
+        credentials: 'same-origin',
+      })
+      const json = (await res.json()) as {
+        error?: string
+        success?: boolean
+        data?: FinancialAccount
+      }
+      if (!res.ok) {
+        setAccountActionError(json.error || `저장 실패 (${res.status})`)
+        return
+      }
+      const saved = json.data?.statement_csv_direction_mode ?? mode
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === accountId ? { ...a, statement_csv_direction_mode: saved } : a))
+      )
+    } catch (e) {
+      if (isAbortLikeError(e)) {
+        setAccountActionError(
+          '요청이 중단되었습니다. 네트워크가 불안정하거나 세션이 갱신 중일 수 있습니다. 잠시 후 다시 눌러 보세요.'
+        )
+      } else {
+        setAccountActionError(e instanceof Error ? e.message : '오류가 발생했습니다.')
+      }
+    } finally {
+      setSavingStatementCsvModeFor(null)
+    }
+  }
+
+  /** 이미 적재된 명세 줄 direction 만 반전 (CSV 가져오기 규칙은 그대로) */
+  const flipExistingStatementLineDirections = async (accountId: string) => {
+    if (!canMutateStatementUploads) {
+      setAccountActionError(
+        '명세 데이터를 바꾸는 작업은 info@maniatour.com 계정 또는 team에서 직책이 super인 활성 직원만 사용할 수 있습니다.'
+      )
+      return
+    }
+    if (
+      !window.confirm(
+        '이 금융 계정에 연결된 모든 명세 줄의 지출·수입 방향만 반전합니다. (아래에서 고른 CSV 가져오기 규칙은 바뀌지 않습니다.) 계속할까요?'
+      )
+    ) {
+      return
+    }
+    setFlippingStatementDirectionsFor(accountId)
+    setAccountActionError(null)
+    try {
+      let accessToken = getStoredAccessToken()
+      if (!accessToken) {
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          accessToken = session?.access_token ?? null
+        } catch (e) {
+          if (isAbortLikeError(e)) {
+            accessToken = getStoredAccessToken()
+          } else {
+            throw e
+          }
+        }
+      }
+      if (!accessToken) {
+        setAccountActionError('로그인 세션이 없습니다. 다시 로그인한 뒤 시도하세요.')
+        return
+      }
+      const res = await fetch(
+        `/api/financial/accounts/${encodeURIComponent(accountId)}/flip-statement-lines`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          credentials: 'same-origin',
+        }
+      )
+      const json = (await res.json()) as {
+        error?: string
+        success?: boolean
+        flippedCount?: number
+      }
+      if (!res.ok) {
+        setAccountActionError(json.error || `실패 (${res.status})`)
+        return
+      }
+      const n = json.flippedCount ?? 0
+      setMessage(`명세 ${n}건의 지출·수입 방향을 반전했습니다. (CSV 가져오기 규칙은 그대로입니다.)`)
+      if (filterAccountId === accountId) {
+        await loadLinesAndMatchesForAccount(accountId)
+      }
+    } catch (e) {
+      if (isAbortLikeError(e)) {
+        setAccountActionError(
+          '요청이 중단되었습니다. 네트워크가 불안정하거나 세션이 갱신 중일 수 있습니다. 잠시 후 다시 눌러 보세요.'
+        )
+      } else {
+        setAccountActionError(e instanceof Error ? e.message : '오류가 발생했습니다.')
+      }
+    } finally {
+      setFlippingStatementDirectionsFor(null)
+    }
+  }
+
   const saveAllPaymentMethodLinks = async () => {
     const token = getStoredAccessToken()
     if (!token) {
@@ -1989,7 +2362,13 @@ export default function StatementReconciliationTab() {
     setLoading(true)
     setMessage(null)
     try {
-      const parsed = parseStatementCsvText(csvText)
+      const importAccount = accounts.find((a) => a.id === importAccountId)
+      const parsed = parseStatementCsvText(csvText, {
+        invertDirections: shouldInvertStatementCsvDirections(
+          importAccount?.account_type ?? '',
+          importAccount?.statement_csv_direction_mode
+        ),
+      })
       if (parsed.length === 0) {
         notifyImport(
           '파싱된 행이 없습니다. 첫 줄에 날짜·금액 열이 있는지 확인하세요. (은행/카드사마다 열 이름이 다르고, Excel CSV는 맨 앞에 보이지 않는 문자(BOM)가 붙을 수 있습니다.)'
@@ -2273,7 +2652,6 @@ export default function StatementReconciliationTab() {
         : `자동 매칭 ${n}건 저장됨`
     )
     await loadLinesAndMatchesForAccount(filterAccountId)
-    scheduleCoverageStatsRefresh()
     await refreshUnmatchedExpenseKeys()
   }
 
@@ -2298,7 +2676,6 @@ export default function StatementReconciliationTab() {
       setMessage('모든 명세 대조 매칭(지출·입금 연결)이 초기화되었습니다.')
       if (filterAccountId) {
         await loadLinesAndMatchesForAccount(filterAccountId)
-        scheduleCoverageStatsRefresh()
         await refreshUnmatchedExpenseKeys()
       }
       await loadImports()
@@ -2412,7 +2789,6 @@ export default function StatementReconciliationTab() {
       await syncLineMatchedFlag(line.id)
       setMessage(value ? '지출 매칭을 저장했습니다.' : '지출 매칭을 해제했습니다.')
       await loadLinesAndMatchesForAccount(filterAccountId)
-      scheduleCoverageStatsRefresh()
       await refreshUnmatchedExpenseKeys()
     } catch (e) {
       setMessage(e instanceof Error ? e.message : '저장 실패')
@@ -2444,7 +2820,6 @@ export default function StatementReconciliationTab() {
       await syncLineMatchedFlag(line.id)
       setMessage('입금 매칭을 추가했습니다.')
       await loadLinesAndMatchesForAccount(filterAccountId)
-      scheduleCoverageStatsRefresh()
     } catch (e) {
       setMessage(e instanceof Error ? e.message : '저장 실패')
     } finally {
@@ -2459,7 +2834,6 @@ export default function StatementReconciliationTab() {
       await supabase.from('reconciliation_matches').delete().eq('id', matchRowId)
       await syncLineMatchedFlag(lineId)
       await loadLinesAndMatchesForAccount(filterAccountId)
-      scheduleCoverageStatsRefresh()
       await refreshUnmatchedExpenseKeys()
       setMessage('매칭을 삭제했습니다.')
     } catch (e) {
@@ -2671,22 +3045,6 @@ export default function StatementReconciliationTab() {
     }
   }, [paymentPickerLineId, paymentOptions])
 
-  const statementOutflowSum = useMemo(
-    () =>
-      reconciliationTableLines
-        .filter((l) => l.direction === 'outflow' && !l.exclude_from_pnl)
-        .reduce((s, l) => s + Number(l.amount), 0),
-    [reconciliationTableLines]
-  )
-
-  const statementInflowSum = useMemo(
-    () =>
-      reconciliationTableLines
-        .filter((l) => l.direction === 'inflow' && !l.exclude_from_pnl)
-        .reduce((s, l) => s + Number(l.amount), 0),
-    [reconciliationTableLines]
-  )
-
   const selectedAccountLabel = useMemo(
     () => accountsForReconciliation.find((a) => a.id === filterAccountId)?.name ?? '—',
     [accountsForReconciliation, filterAccountId]
@@ -2849,7 +3207,22 @@ export default function StatementReconciliationTab() {
           setMessage('보정 지출이 생성·연결되었습니다.')
           if (filterAccountId) {
             await loadLinesAndMatchesForAccount(filterAccountId)
-            scheduleCoverageStatsRefresh()
+            await refreshUnmatchedExpenseKeys()
+          }
+        }}
+      />
+
+      <StatementBulkExpenseModal
+        open={bulkCompanyExpenseModalOpen}
+        onOpenChange={setBulkCompanyExpenseModalOpen}
+        candidateLines={bulkCompanyExpenseCandidates}
+        financialAccountId={filterAccountId}
+        defaultPaymentMethodId={defaultPaymentMethodIdForAccount}
+        email={email}
+        onCompleted={async () => {
+          setMessage('선택한 명세 줄에 지출을 생성·연결했습니다.')
+          if (filterAccountId) {
+            await loadLinesAndMatchesForAccount(filterAccountId)
             await refreshUnmatchedExpenseKeys()
           }
         }}
@@ -3214,12 +3587,91 @@ export default function StatementReconciliationTab() {
               같은 유형(은행/신용카드) 안에서는 이름이 겹치면 추가할 수 없습니다. 이미 만들어 둔 줄이 있으면 목록에서 확인하세요.
             </p>
             <ul className="text-sm text-gray-600 divide-y border-t border-gray-100">
-              {accounts.map((a) => (
-                <li key={a.id} className="py-1 flex justify-between">
-                  <span>{a.name}</span>
-                  <span className="text-gray-400">{a.account_type}</span>
-                </li>
-              ))}
+              {accounts.map((a) => {
+                const modeRaw = (a.statement_csv_direction_mode ?? 'auto') as string
+                const stored: StatementCsvDirectionMode = ['auto', 'invert', 'no_invert'].includes(modeRaw)
+                  ? (modeRaw as StatementCsvDirectionMode)
+                  : 'auto'
+                /** 라디오 표시: 예전 auto 는 계정 유형과 동일한 효과로 보여 줌 */
+                const csvRadioValue: 'invert' | 'no_invert' =
+                  stored === 'invert' || (stored === 'auto' && a.account_type === 'credit_card')
+                    ? 'invert'
+                    : 'no_invert'
+                return (
+                  <li
+                    key={a.id}
+                    className="py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between gap-x-3"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-medium text-gray-800">{a.name}</span>
+                      <span className="text-gray-400 ml-2">{a.account_type}</span>
+                    </div>
+                    <div className="flex flex-col gap-2 shrink-0 sm:items-end w-full sm:w-auto max-w-full">
+                      <fieldset className="min-w-0 w-full sm:max-w-md space-y-1.5 border-0 p-0 m-0">
+                        <legend className="text-xs text-gray-500 mb-0.5">CSV 가져오기 시 지출·수입 해석</legend>
+                        <div className="flex flex-col gap-2 text-xs text-gray-800">
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              className="mt-0.5 shrink-0"
+                              name={`statement_csv_mode_${a.id}`}
+                              value="invert"
+                              checked={csvRadioValue === 'invert'}
+                              disabled={
+                                savingStatementCsvModeFor === a.id ||
+                                flippingStatementDirectionsFor === a.id ||
+                                loading
+                              }
+                              onChange={() => void saveAccountStatementCsvDirection(a.id, 'invert')}
+                            />
+                            <span>항상 반전 (양수 = 지출)</span>
+                          </label>
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              className="mt-0.5 shrink-0"
+                              name={`statement_csv_mode_${a.id}`}
+                              value="no_invert"
+                              checked={csvRadioValue === 'no_invert'}
+                              disabled={
+                                savingStatementCsvModeFor === a.id ||
+                                flippingStatementDirectionsFor === a.id ||
+                                loading
+                              }
+                              onChange={() => void saveAccountStatementCsvDirection(a.id, 'no_invert')}
+                            />
+                            <span>반전 안 함 (음수·괄호 = 지출)</span>
+                          </label>
+                        </div>
+                        {stored === 'auto' && (
+                          <p className="text-[11px] text-amber-800/90 leading-snug">
+                            현재 DB 값은 「자동」입니다. 위에서 하나를 고르면 그대로 저장되어 앞으로 CSV에 적용됩니다.
+                          </p>
+                        )}
+                      </fieldset>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs w-full sm:w-auto shrink-0"
+                        disabled={
+                          !canMutateStatementUploads ||
+                          Boolean(flippingStatementDirectionsFor) ||
+                          savingStatementCsvModeFor === a.id ||
+                          loading
+                        }
+                        title="이미 DB에 있는 명세 줄의 지출·수입만 반전합니다. 위 CSV 규칙과는 별개입니다."
+                        onClick={() => void flipExistingStatementLineDirections(a.id)}
+                      >
+                        <RotateCcw
+                          className={`h-3.5 w-3.5 mr-1 ${flippingStatementDirectionsFor === a.id ? 'animate-spin' : ''}`}
+                        />
+                        {flippingStatementDirectionsFor === a.id ? '처리 중…' : '기존 데이터 반전하기'}
+                      </Button>
+                    </div>
+                  </li>
+                )
+              })}
               {accounts.length === 0 && <li className="text-gray-400 py-2">등록된 계정 없음</li>}
             </ul>
           </div>
@@ -3279,6 +3731,12 @@ export default function StatementReconciliationTab() {
                 />
               </label>
             </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              카드사 CSV마다 금액 부호가 다릅니다. 이용(지출)이 <strong>수입</strong>으로 잡히면 상단{' '}
+              <strong>금융 계정</strong> 모달에서 해당 계정의 <strong>CSV 가져오기 시 지출·수입 해석</strong>을{' '}
+              <strong>반전 안 함 (음수·괄호 = 지출)</strong> 또는 <strong>항상 반전 (양수 = 지출)</strong> 중 맞는 쪽으로
+              고른 뒤 다시 가져오세요. (Bonvoy Amex·MGM 등은 보통 반전 안 함)
+            </p>
             <div className="space-y-2">
               <label className="text-sm text-gray-700 block">CSV 파일</label>
               <input
@@ -3319,6 +3777,103 @@ export default function StatementReconciliationTab() {
               }}
               disabled={!canMutateStatementUploads}
             />
+            {csvImportParsePreview.status === 'need_account' && (
+              <div className="rounded-md border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-600">
+                미리보기: <strong>금융 계정</strong>을 선택하면, 해당 계정에 저장된 CSV 부호 규칙과 해석 샘플이
+                표시됩니다.
+              </div>
+            )}
+            {csvImportParsePreview.status === 'need_csv' && (
+              <div className="rounded-md border border-slate-200 bg-slate-50/90 px-3 py-2 space-y-1.5 text-xs text-slate-800">
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                  <span>
+                    <strong>{csvImportParsePreview.accountName}</strong>
+                  </span>
+                  <span className="text-slate-600">· 규칙: {csvImportParsePreview.ruleLabel}</span>
+                  <span className="text-slate-600">
+                    · 부호 반전:{' '}
+                    <strong
+                      className={
+                        csvImportParsePreview.invertApplied ? 'text-amber-900' : 'text-slate-800'
+                      }
+                    >
+                      {csvImportParsePreview.invertApplied ? '적용' : '미적용'}
+                    </strong>
+                  </span>
+                </div>
+                <p className="text-slate-500">CSV 내용을 붙여 넣거나 파일을 선택하면 상위 {CSV_IMPORT_PREVIEW_MAX}행 미리보기가 나옵니다.</p>
+              </div>
+            )}
+            {csvImportParsePreview.status === 'ready' && (
+              <div className="rounded-md border border-slate-200 bg-slate-50/90 px-3 py-2 space-y-2 text-xs text-slate-800">
+                <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                  <span>
+                    <strong>{csvImportParsePreview.accountName}</strong>
+                  </span>
+                  <span className="text-slate-600">· 규칙: {csvImportParsePreview.ruleLabel}</span>
+                  <span className="text-slate-600">
+                    · 부호 반전:{' '}
+                    <strong
+                      className={
+                        csvImportParsePreview.invertApplied ? 'text-amber-900' : 'text-slate-800'
+                      }
+                    >
+                      {csvImportParsePreview.invertApplied ? '적용' : '미적용'}
+                    </strong>
+                  </span>
+                </div>
+                {csvImportParsePreview.rows.length === 0 ? (
+                  <p className="text-amber-900">
+                    파싱된 데이터 행이 없습니다. 첫 줄 헤더·날짜·금액 열을 확인하세요.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-slate-600">
+                      해석 미리보기 (앞 {csvImportParsePreview.rows.length}행 / 파싱 성공{' '}
+                      {csvImportParsePreview.totalParsed}행)
+                    </p>
+                    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                      <table className="w-full min-w-[280px] text-left text-[11px] sm:text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-100 text-slate-700">
+                            <th className="p-1.5 font-medium whitespace-nowrap">거래일</th>
+                            <th className="p-1.5 font-medium whitespace-nowrap">구분</th>
+                            <th className="p-1.5 font-medium text-right whitespace-nowrap">금액</th>
+                            <th className="p-1.5 font-medium">설명</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {csvImportParsePreview.rows.map((r, idx) => (
+                            <tr
+                              key={`${r.postedDate}-${idx}-${r.description?.slice(0, 24)}`}
+                              className="border-b border-slate-100 last:border-b-0"
+                            >
+                              <td className="p-1.5 whitespace-nowrap font-mono align-top">{r.postedDate}</td>
+                              <td className="p-1.5 whitespace-nowrap align-top">
+                                {r.direction === 'outflow'
+                                  ? '지출'
+                                  : r.direction === 'inflow'
+                                    ? '수입'
+                                    : r.direction}
+                              </td>
+                              <td className="p-1.5 text-right font-mono whitespace-nowrap align-top">
+                                ${Number(r.amount).toFixed(2)}
+                              </td>
+                              <td
+                                className="p-1.5 max-w-[10rem] sm:max-w-[22rem] truncate align-top"
+                                title={formatStatementLineDescription(r.description, r.merchant)}
+                              >
+                                {formatStatementLineDescription(r.description, r.merchant)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button
                 type="button"
@@ -3344,7 +3899,10 @@ export default function StatementReconciliationTab() {
         open={paymentLinkModalOpen}
         onOpenChange={(open) => {
           setPaymentLinkModalOpen(open)
-          if (!open) setPaymentLinkDirty(false)
+          if (!open) {
+            setPaymentLinkDirty(false)
+            setPaymentLinkMethodSearch('')
+          }
         }}
       >
         <DialogContent className="max-w-5xl w-[calc(100vw-1.25rem)] p-0 gap-0 flex flex-col max-h-[min(92vh,920px)] sm:max-h-[90vh]">
@@ -3391,6 +3949,31 @@ export default function StatementReconciliationTab() {
                 {paymentMethodsError}
               </div>
             )}
+            <div className="mb-3">
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                카드·방법 검색 (이름, ID, 가이드, 메모, 끝자리, 연결 계정명)
+              </label>
+              <div className="relative max-w-md">
+                <Search
+                  className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none"
+                  aria-hidden
+                />
+                <input
+                  type="search"
+                  value={paymentLinkMethodSearch}
+                  onChange={(e) => setPaymentLinkMethodSearch(e.target.value)}
+                  placeholder="검색어 입력…"
+                  autoComplete="off"
+                  className="w-full border border-gray-300 rounded-md py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                  aria-label="결제수단 검색"
+                />
+              </div>
+              {paymentLinkMethodSearch.trim() ? (
+                <p className="text-xs text-gray-500 mt-1.5">
+                  표시 {paymentLinkModalFilteredMethods.length}건 / 전체 {paymentMethods.length}건
+                </p>
+              ) : null}
+            </div>
             <div className="overflow-x-auto -mx-1 px-1">
               <table className="w-full text-sm min-w-[720px]">
                 <thead>
@@ -3420,7 +4003,16 @@ export default function StatementReconciliationTab() {
                       </td>
                     </tr>
                   )}
-                  {paymentMethods.map((pm) => {
+                  {paymentMethods.length > 0 &&
+                    paymentLinkModalFilteredMethods.length === 0 &&
+                    !paymentMethodsError && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-gray-600 text-sm">
+                          검색 조건에 맞는 결제수단이 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                  {paymentLinkModalFilteredMethods.map((pm) => {
                     const linked =
                       paymentLinkDraft[pm.id] !== undefined
                         ? paymentLinkDraft[pm.id]
@@ -3577,11 +4169,13 @@ export default function StatementReconciliationTab() {
               variant="outline"
               size="sm"
               className="shrink-0"
-              disabled={coverageStatsLoading || !filterAccountId}
-              onClick={() => void loadCoverageMonthStats()}
+              disabled={reconciliationLinesLoading || !filterAccountId}
+              onClick={() => {
+                if (filterAccountId) void loadLinesAndMatchesForAccount(filterAccountId)
+              }}
             >
-              <RefreshCw className={`h-4 w-4 mr-1 ${coverageStatsLoading ? 'animate-spin' : ''}`} />
-              통계 새로고침
+              <RefreshCw className={`h-4 w-4 mr-1 ${reconciliationLinesLoading ? 'animate-spin' : ''}`} />
+              명세·통계 새로고침
             </Button>
           </div>
         </div>
@@ -3616,7 +4210,7 @@ export default function StatementReconciliationTab() {
                       key={i}
                       className="border border-emerald-200 p-1.5 text-center align-middle tabular-nums font-medium text-slate-800"
                     >
-                      {coverageStatsLoading ? (
+                      {reconciliationLinesLoading ? (
                         <span className="text-slate-400">…</span>
                       ) : st.uploaded === 0 ? (
                         <span className="text-slate-400">—</span>
@@ -3704,6 +4298,43 @@ export default function StatementReconciliationTab() {
           </div>
         </div>
 
+        {filterAccountId ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-gray-100 pt-2 mt-1 text-xs text-gray-700">
+            <span className="font-medium text-gray-600 shrink-0">표 거래일</span>
+            <input
+              type="date"
+              aria-label="명세 대조 표 시작일"
+              className="border border-gray-200 rounded px-2 py-1 text-sm h-9 bg-white max-w-[11rem]"
+              value={statementTableDateStart}
+              onChange={(e) => setStatementTableDateStart(e.target.value)}
+            />
+            <span className="text-gray-500 shrink-0">~</span>
+            <input
+              type="date"
+              aria-label="명세 대조 표 종료일"
+              className="border border-gray-200 rounded px-2 py-1 text-sm h-9 bg-white max-w-[11rem]"
+              value={statementTableDateEnd}
+              onChange={(e) => setStatementTableDateEnd(e.target.value)}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 text-xs text-gray-600 shrink-0"
+              disabled={!statementTableDateRangeActive}
+              onClick={() => {
+                setStatementTableDateStart('')
+                setStatementTableDateEnd('')
+              }}
+            >
+              범위 지우기
+            </Button>
+            <span className="text-[10px] text-gray-500 leading-snug min-w-0 max-w-full sm:max-w-[28rem]">
+              월 필터와 함께 적용됩니다. 한쪽만 넣으면 그날 이후·이전만 걸립니다.
+            </span>
+          </div>
+        ) : null}
+
         {filterAccountId && (
           <p className="text-sm text-gray-600 flex flex-wrap gap-x-2 gap-y-1">
             <span>
@@ -3713,6 +4344,15 @@ export default function StatementReconciliationTab() {
             <span>
               DB 명세 업로드 <strong>{importsForAccount.length}</strong>건 합산 표시
             </span>
+            {filterAccountId && !unmatchedSidebarOpen ? (
+              <>
+                <span>·</span>
+                <span className="text-slate-600">
+                  미매칭 지출 패널은 접혀 있어 지·입금 후보를 불러오지 않았습니다. 오른쪽(또는 아래)에서{' '}
+                  <strong>펼치기</strong>를 누르면 조회합니다.
+                </span>
+              </>
+            ) : null}
             {unmatchedExpenseQueryStart && unmatchedExpenseQueryEnd ? (
               <>
                 <span>·</span>
@@ -3728,16 +4368,18 @@ export default function StatementReconciliationTab() {
                 </span>
               </>
             ) : null}
-            <span>·</span>
-            <span>
-              표시 중 지출 합계:{' '}
-              <strong>${statementOutflowSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-            </span>
-            <span>·</span>
-            <span>
-              표시 중 수입 합계:{' '}
-              <strong>${statementInflowSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-            </span>
+            {statementTableDateRangeActive ? (
+              <>
+                <span>·</span>
+                <span>
+                  표 거래일 필터{' '}
+                  <strong className="tabular-nums">
+                    {statementTableDateStart.trim().slice(0, 10) || '…'} ~{' '}
+                    {statementTableDateEnd.trim().slice(0, 10) || '…'}
+                  </strong>
+                </span>
+              </>
+            ) : null}
             {showOnlyUnmatchedLines && (
               <>
                 <span>·</span>
@@ -3753,6 +4395,15 @@ export default function StatementReconciliationTab() {
                 </span>
               </>
             ) : null}
+            {reconciliationLinesLoading ? (
+              <>
+                <span>·</span>
+                <span className="inline-flex items-center gap-1.5 text-slate-700 font-medium">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+                  명세 표 불러오는 중…
+                </span>
+              </>
+            ) : null}
           </p>
         )}
 
@@ -3763,6 +4414,7 @@ export default function StatementReconciliationTab() {
             onClick={prepareAutoMatch}
             disabled={
               loading ||
+              reconciliationLinesLoading ||
               !filterAccountId ||
               !accountExpenseWindow ||
               autoMatchPreviewOpen ||
@@ -3776,6 +4428,26 @@ export default function StatementReconciliationTab() {
               <span className="ml-1 text-[11px] font-normal text-slate-600">
                 (페이지 {reconciliationPage}/{reconciliationPageCount})
               </span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setBulkCompanyExpenseModalOpen(true)}
+            disabled={
+              loading ||
+              reconciliationLinesLoading ||
+              !filterAccountId ||
+              !accountExpenseWindow ||
+              !canMutateStatementUploads ||
+              bulkCompanyExpenseCandidates.length === 0
+            }
+            title="회사·투어·예약·입장권 지출을 미리보기에서 고른 뒤 일괄 저장합니다. 회사 지출은 규칙·과거 설명으로 제안됩니다. 대상은 표의 출금·미연결 줄 최대 200건입니다."
+          >
+            <ListPlus className="h-4 w-4 mr-1 shrink-0" />
+            지출 일괄 입력
+            {bulkCompanyExpenseCandidates.length >= 200 ? (
+              <span className="ml-1 text-[11px] font-normal text-slate-600">(최대 200건)</span>
             ) : null}
           </Button>
           <Button
@@ -3839,9 +4511,22 @@ export default function StatementReconciliationTab() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch xl:gap-3 min-w-0 xl:h-[min(78vh,780px)] xl:min-h-[22rem]">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch xl:gap-0 min-w-0 xl:h-[min(78vh,780px)] xl:min-h-[22rem]">
           <div className="min-w-0 flex-1 flex flex-col min-h-0 xl:min-h-0">
-          <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto -mx-1 px-1 sm:mx-0 sm:px-0 touch-pan-x rounded-md border border-slate-100/80 bg-white">
+          <div
+            className="relative flex-1 min-h-0 overflow-x-auto overflow-y-auto -mx-1 px-1 sm:mx-0 sm:px-0 touch-pan-x rounded-md border border-slate-100/80 bg-white"
+            aria-busy={reconciliationLinesLoading}
+          >
+            {reconciliationLinesLoading && (
+              <div
+                className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/80 backdrop-blur-[1px]"
+                role="status"
+                aria-live="polite"
+              >
+                <Loader2 className="h-8 w-8 animate-spin text-slate-600" aria-hidden />
+                <span className="text-sm font-medium text-slate-700">명세 줄 불러오는 중…</span>
+              </div>
+            )}
           <table className="w-full min-w-[1350px] text-[11px] leading-snug sm:text-xs sm:leading-snug table-fixed">
             <thead>
               <tr className="border-b text-left text-gray-500">
@@ -4155,16 +4840,18 @@ export default function StatementReconciliationTab() {
               </div>
             </div>
           )}
-          {filterAccountId && reconciliationTableLines.length === 0 && (
+          {filterAccountId && reconciliationTableLines.length === 0 && !reconciliationLinesLoading && (
             <p className="text-xs text-gray-500 py-3">
               {lines.length === 0
                 ? '라인 없음'
                 : reconciliationLinesBeforeSearch.length === 0
                   ? showOnlyUnmatchedLines
-                    ? '이 조건에서 미대조 거래가 없습니다. 필터를 끄거나 월을 바꿔 보세요.'
+                    ? '이 조건에서 미대조 거래가 없습니다. 필터를 끄거나 월·거래일 범위를 바꿔 보세요.'
                     : selectedMonth !== 'all'
                       ? '선택한 월에 해당하는 거래가 없습니다.'
-                      : '표시할 거래가 없습니다.'
+                      : statementTableDateRangeActive
+                        ? '선택한 거래일 범위에 해당하는 거래가 없습니다. 날짜를 바꾸거나 «범위 지우기»를 눌러 보세요.'
+                        : '표시할 거래가 없습니다.'
                   : reconciliationSearchQuery.trim()
                     ? '검색 결과가 없습니다. 검색어를 바꾸거나 지워 보세요.'
                     : '표시할 거래가 없습니다.'}
@@ -4173,10 +4860,53 @@ export default function StatementReconciliationTab() {
           </div>
           </div>
 
-          <aside className="flex flex-col min-h-0 w-full shrink-0 rounded-lg border border-slate-200 bg-slate-50/90 p-2 shadow-sm xl:h-full xl:min-h-0 xl:w-[min(100%,28rem)] xl:max-w-[30rem]">
+          {filterAccountId && !unmatchedSidebarOpen ? (
+            <div className="shrink-0 xl:hidden px-0.5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full gap-1.5 text-xs"
+                onClick={() => setUnmatchedSidebarOpen(true)}
+              >
+                <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
+                미매칭 지출 펼치기 (조회 기간 후보 로드)
+              </Button>
+            </div>
+          ) : null}
+
+          {filterAccountId ? (
+            <div className="hidden xl:flex flex-col items-center shrink-0 w-8 border-l border-slate-200 bg-slate-100/70 py-2 self-stretch">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-9 w-9 p-0 rounded-md text-slate-600 hover:bg-white hover:text-slate-900"
+                aria-pressed={unmatchedSidebarOpen}
+                aria-label={unmatchedSidebarOpen ? '미매칭 지출 패널 접기' : '미매칭 지출 패널 펼치기'}
+                title={unmatchedSidebarOpen ? '미매칭 지출 패널 접기' : '미매칭 지출 패널 펼치기'}
+                onClick={() => setUnmatchedSidebarOpen((o) => !o)}
+              >
+                {unmatchedSidebarOpen ? (
+                  <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
+                ) : (
+                  <ChevronLeft className="h-5 w-5 shrink-0" aria-hidden />
+                )}
+              </Button>
+            </div>
+          ) : null}
+
+          <aside
+            className={
+              'flex flex-col min-h-0 w-full shrink-0 rounded-lg border border-slate-200 bg-slate-50/90 p-2 shadow-sm xl:h-full xl:min-h-0 ' +
+              (!filterAccountId || unmatchedSidebarOpen
+                ? 'xl:w-[min(100%,28rem)] xl:max-w-[30rem]'
+                : 'hidden xl:hidden')
+            }
+          >
             <div className="flex items-start gap-2 border-b border-slate-200/80 pb-1.5 mb-1.5 shrink-0">
               <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400 mt-0.5" aria-hidden />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h4 className="text-[11px] font-semibold text-slate-800 leading-tight">미매칭 지출</h4>
                 <p className="text-[10px] text-slate-600 mt-0.5 leading-snug">
                   {unmatchedPanelListScope === 'unmatched' ? (
@@ -4193,6 +4923,19 @@ export default function StatementReconciliationTab() {
                   )}
                 </p>
               </div>
+              {filterAccountId ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="xl:hidden h-8 shrink-0 px-2 text-[10px] text-slate-600 gap-0.5"
+                  aria-label="미매칭 지출 패널 접기"
+                  onClick={() => setUnmatchedSidebarOpen(false)}
+                >
+                  접기
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                </Button>
+              ) : null}
             </div>
             {filterAccountId ? (
               <div className="shrink-0 space-y-1 mb-2 pb-2 border-b border-slate-200/70">
@@ -4244,6 +4987,11 @@ export default function StatementReconciliationTab() {
             ) : null}
             {!filterAccountId ? (
               <p className="text-xs text-slate-500 py-2">상단에서 금융 계정을 선택하면 목록이 표시됩니다.</p>
+            ) : unmatchedExpensesLoading ? (
+              <p className="text-xs text-slate-600 py-6 text-center inline-flex flex-col items-center justify-center gap-2 w-full">
+                <Loader2 className="h-6 w-6 animate-spin shrink-0 text-slate-500" aria-hidden />
+                지출 후보를 불러오는 중입니다…
+              </p>
             ) : matchedExpenseKeysLoading && expenseOptions.length > 0 ? (
               <p className="text-xs text-slate-500 py-3 text-center">매칭 여부 확인 중…</p>
             ) : unmatchedExpensePanelRows.length === 0 ? (
@@ -4302,97 +5050,103 @@ export default function StatementReconciliationTab() {
                       </button>
                     ) : null}
                   </div>
-                  <select
-                    aria-label="지출 유형 필터"
-                    className="border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white min-w-0 shrink-0 max-w-[min(100%,8.5rem)]"
-                    value={unmatchedPanelSourceTableFilter}
-                    onChange={(e) => setUnmatchedPanelSourceTableFilter(e.target.value)}
-                  >
-                    <option value="">전체 유형</option>
-                    <option value="company_expenses">회사</option>
-                    <option value="tour_expenses">투어</option>
-                    <option value="reservation_expenses">예약</option>
-                    <option value="ticket_bookings">입장권</option>
-                  </select>
-                </div>
-                <div ref={unmatchedPmFilterWrapRef} className="relative w-full min-w-0 shrink-0">
-                    <button
-                      type="button"
-                      aria-label="결제방법 필터"
-                      aria-expanded={unmatchedPmFilterOpen}
-                      className="flex w-full min-w-0 items-center justify-between gap-1 border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white text-left"
-                      onClick={() => setUnmatchedPmFilterOpen((o) => !o)}
+                  <div className="flex shrink-0 flex-nowrap items-center gap-1.5 min-w-0">
+                    <select
+                      aria-label="지출 유형 필터"
+                      className="border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white min-w-0 shrink-0 max-w-[min(100%,8.5rem)]"
+                      value={unmatchedPanelSourceTableFilter}
+                      onChange={(e) => setUnmatchedPanelSourceTableFilter(e.target.value)}
                     >
-                      <span className="min-w-0 truncate text-left">
-                        {unmatchedPanelPaymentMethodFilter.length === 0
-                          ? '결제방법 전체'
-                          : `결제방법 (${unmatchedPanelPaymentMethodFilter.length})`}
-                      </span>
-                      <ChevronDown
-                        className={`h-3 w-3 shrink-0 text-slate-500 transition-transform ${
-                          unmatchedPmFilterOpen ? 'rotate-180' : ''
-                        }`}
-                        aria-hidden
-                      />
-                    </button>
-                    {unmatchedPmFilterOpen ? (
-                      <div
-                        className="absolute left-0 z-50 mt-0.5 max-h-48 min-w-full w-max max-w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded border border-slate-200 bg-white py-1.5 shadow-md"
-                        role="listbox"
-                        aria-multiselectable
+                      <option value="">전체 유형</option>
+                      <option value="company_expenses">회사</option>
+                      <option value="tour_expenses">투어</option>
+                      <option value="reservation_expenses">예약</option>
+                      <option value="ticket_bookings">입장권</option>
+                    </select>
+                    <div
+                      ref={unmatchedPmFilterWrapRef}
+                      className="relative min-w-0 shrink-0 w-[min(100%,10.5rem)] max-w-[11rem]"
+                    >
+                      <button
+                        type="button"
+                        aria-label="결제방법 필터"
+                        aria-expanded={unmatchedPmFilterOpen}
+                        className="flex w-full min-w-0 items-center justify-between gap-1 border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white text-left"
+                        onClick={() => setUnmatchedPmFilterOpen((o) => !o)}
                       >
-                        <p className="px-2 pb-1 text-[9px] leading-snug text-slate-500">
-                          여러 개 선택 시 해당 결제수단 중 하나라도 맞으면 표시됩니다. 아무 것도 선택하지 않으면 전체입니다.
-                        </p>
-                        {unmatchedPanelPaymentMethodFilter.length > 0 ? (
-                          <button
-                            type="button"
-                            className="mb-1 w-full px-2 py-0.5 text-left text-[9px] text-slate-600 underline hover:bg-slate-50"
-                            onClick={() => setUnmatchedPanelPaymentMethodFilter([])}
-                          >
-                            모두 해제 (전체 표시)
-                          </button>
-                        ) : null}
-                        <label className="flex cursor-pointer items-center gap-2 px-2 py-0.5 text-[10px] hover:bg-slate-50">
-                          <input
-                            type="checkbox"
-                            className="rounded border-slate-300"
-                            checked={unmatchedPanelPaymentMethodFilter.includes('__none__')}
-                            disabled={!unmatchedPanelPaymentFilterOptions.hasNone}
-                            onChange={() => {
-                              setUnmatchedPanelPaymentMethodFilter((prev) => {
-                                if (prev.includes('__none__')) return prev.filter((x) => x !== '__none__')
-                                return [...prev, '__none__']
-                              })
-                            }}
-                          />
-                          <span className={unmatchedPanelPaymentFilterOptions.hasNone ? '' : 'text-slate-400'}>
-                            미지정
-                          </span>
-                        </label>
-                        {unmatchedPanelPaymentFilterOptions.entries.map(([id, lab]) => (
-                          <label
-                            key={id}
-                            className="flex cursor-pointer items-center gap-2 px-2 py-0.5 text-[10px] hover:bg-slate-50"
-                          >
+                        <span className="min-w-0 truncate text-left">
+                          {unmatchedPanelPaymentMethodFilter.length === 0
+                            ? '결제방법 전체'
+                            : `결제방법 (${unmatchedPanelPaymentMethodFilter.length})`}
+                        </span>
+                        <ChevronDown
+                          className={`h-3 w-3 shrink-0 text-slate-500 transition-transform ${
+                            unmatchedPmFilterOpen ? 'rotate-180' : ''
+                          }`}
+                          aria-hidden
+                        />
+                      </button>
+                      {unmatchedPmFilterOpen ? (
+                        <div
+                          className="absolute left-0 z-50 mt-0.5 max-h-48 min-w-full w-max max-w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded border border-slate-200 bg-white py-1.5 shadow-md"
+                          role="listbox"
+                          aria-multiselectable
+                        >
+                          <p className="px-2 pb-1 text-[9px] leading-snug text-slate-500">
+                            여러 개 선택 시 해당 결제수단 중 하나라도 맞으면 표시됩니다. 아무 것도 선택하지 않으면
+                            전체입니다.
+                          </p>
+                          {unmatchedPanelPaymentMethodFilter.length > 0 ? (
+                            <button
+                              type="button"
+                              className="mb-1 w-full px-2 py-0.5 text-left text-[9px] text-slate-600 underline hover:bg-slate-50"
+                              onClick={() => setUnmatchedPanelPaymentMethodFilter([])}
+                            >
+                              모두 해제 (전체 표시)
+                            </button>
+                          ) : null}
+                          <label className="flex cursor-pointer items-center gap-2 px-2 py-0.5 text-[10px] hover:bg-slate-50">
                             <input
                               type="checkbox"
                               className="rounded border-slate-300"
-                              checked={unmatchedPanelPaymentMethodFilter.includes(id)}
+                              checked={unmatchedPanelPaymentMethodFilter.includes('__none__')}
+                              disabled={!unmatchedPanelPaymentFilterOptions.hasNone}
                               onChange={() => {
                                 setUnmatchedPanelPaymentMethodFilter((prev) => {
-                                  if (prev.includes(id)) return prev.filter((x) => x !== id)
-                                  return [...prev, id]
+                                  if (prev.includes('__none__')) return prev.filter((x) => x !== '__none__')
+                                  return [...prev, '__none__']
                                 })
                               }}
                             />
-                            <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-snug">
-                              {lab}
+                            <span className={unmatchedPanelPaymentFilterOptions.hasNone ? '' : 'text-slate-400'}>
+                              미지정
                             </span>
                           </label>
-                        ))}
-                      </div>
-                    ) : null}
+                          {unmatchedPanelPaymentFilterOptions.entries.map(([id, lab]) => (
+                            <label
+                              key={id}
+                              className="flex cursor-pointer items-center gap-2 px-2 py-0.5 text-[10px] hover:bg-slate-50"
+                            >
+                              <input
+                                type="checkbox"
+                                className="rounded border-slate-300"
+                                checked={unmatchedPanelPaymentMethodFilter.includes(id)}
+                                onChange={() => {
+                                  setUnmatchedPanelPaymentMethodFilter((prev) => {
+                                    if (prev.includes(id)) return prev.filter((x) => x !== id)
+                                    return [...prev, id]
+                                  })
+                                }}
+                              />
+                              <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-snug">
+                                {lab}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
                 {unmatchedExpensePanelFilteredRows.length === 0 ? (
                   <p className="text-xs text-slate-500 py-2">
@@ -5000,6 +5754,12 @@ export default function StatementReconciliationTab() {
           </DialogHeader>
           {paymentPickerLine ? (
             <div className="flex flex-col flex-1 min-h-0 gap-3 px-4 py-3 overflow-y-auto">
+              {paymentOptionsLoading ? (
+                <p className="text-xs text-slate-600 inline-flex items-center gap-2 py-1">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+                  입금 기록 목록을 불러오는 중입니다…
+                </p>
+              ) : null}
               <p className="text-xs text-slate-600 break-words">
                 명세 <strong>{paymentPickerLine.posted_date}</strong> · 수입{' '}
                 <strong>${Number(paymentPickerLine.amount).toFixed(2)}</strong>

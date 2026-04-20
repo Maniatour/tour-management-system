@@ -1992,6 +1992,16 @@
       "emailConfirmation": "Reservation confirmation email",
       "emailDeparture": "Tour departure confirmation email",
       "emailPickup": "Pickup notification email",
+      "emailResidentInquiry": "Residency / pass / payment email",
+      "residentInquiryPreviewTitle": "Residency, Annual Pass & payment email preview",
+      "residentInquiryCopyHtml": "Copy HTML",
+      "residentInquiryCopied": "Copied",
+      "residentInquirySend": "Send",
+      "residentInquirySending": "Sending…",
+      "residentInquiryTo": "To",
+      "residentInquirySubject": "Subject",
+      "residentInquiryReservationId": "Reservation ID",
+      "residentInquiryPreviewBody": "Body preview",
       "emailLogs": "Email send history",
       "editReservationTitle": "Edit reservation",
       "close": "Close",
@@ -3613,7 +3623,9 @@
     "saveReport": "Save Report",
     "noOptions": "No options",
     "noOptionsSelected": "No options selected",
-    "prepaidTipShort": "Prepaid tip"
+    "prepaidTipShort": "Prepaid tip",
+    "prepaidTipShareShort": "Tip share",
+    "prepaidTipShareTitle": "Your share from Tips Share (excluding office). Split by each reservation’s prepaid tip share of the tour total."
   },
   "paymentMethod": {
     "title": "Payment Method Management",

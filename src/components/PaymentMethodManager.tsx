@@ -136,6 +136,13 @@ function MergeMethodDetailCells({
   )
 }
 
+/** 일괄 수정 모달 — 금융 계정 드롭다운용 (/api/financial/accounts) */
+interface FinancialAccountOption {
+  id: string
+  name: string
+  account_type?: string
+}
+
 interface PaymentMethod {
   id: string
   method: string
@@ -237,18 +244,22 @@ export default function PaymentMethodManager({
     user_email: string
     status: string
     notes: string
+    financial_account_id: string
   }>>([{
     id: '',
     method: '',
     method_type: 'card',
     user_email: '',
     status: 'active',
-    notes: ''
+    notes: '',
+    financial_account_id: ''
   }])
   const [bulkEditUserSelectIndex, setBulkEditUserSelectIndex] = useState<number | null>(null)
   const [bulkEditUserMemberSearch, setBulkEditUserMemberSearch] = useState('')
   /** 일괄 수정 모달: 전체 목록 API 로딩 */
   const [bulkEditLoading, setBulkEditLoading] = useState(false)
+  const [bulkEditFinancialAccounts, setBulkEditFinancialAccounts] = useState<FinancialAccountOption[]>([])
+  const [bulkEditFinancialAccountsError, setBulkEditFinancialAccountsError] = useState<string | null>(null)
   const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null)
   const [bulkRows, setBulkRows] = useState<Array<{
     id: string
@@ -1030,8 +1041,43 @@ export default function PaymentMethodManager({
     method_type: 'card',
     user_email: '',
     status: 'active',
-    notes: ''
+    notes: '',
+    financial_account_id: ''
   })
+
+  const fetchFinancialAccountsForBulkEdit = async (): Promise<{
+    list: FinancialAccountOption[]
+    error: string | null
+  }> => {
+    try {
+      const token =
+        typeof window !== 'undefined' ? localStorage.getItem('sb-access-token')?.trim() : null
+      if (!token) {
+        return { list: [], error: '금융 계정 목록을 불러오려면 로그인이 필요합니다.' }
+      }
+      const res = await fetch('/api/financial/accounts', {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'same-origin'
+      })
+      const json = (await res.json()) as {
+        success?: boolean
+        data?: FinancialAccountOption[]
+        error?: string
+      }
+      if (!res.ok || json.success === false) {
+        return {
+          list: [],
+          error: json.error || `금융 계정 목록을 불러오지 못했습니다. (${res.status})`
+        }
+      }
+      return { list: json.data || [], error: null }
+    } catch (e) {
+      return {
+        list: [],
+        error: e instanceof Error ? e.message : '금융 계정 목록을 불러오지 못했습니다.'
+      }
+    }
+  }
 
   const paymentMethodsToBulkEditRows = (list: PaymentMethod[]) =>
     list.map((m) => ({
@@ -1040,7 +1086,8 @@ export default function PaymentMethodManager({
       method_type: m.method_type,
       user_email: m.user_email || '',
       status: m.status,
-      notes: m.notes || ''
+      notes: m.notes || '',
+      financial_account_id: m.financial_account_id ?? ''
     }))
 
   /** 상태/유형/검색 필터 없이 전부 로드 (페이지네이션). 관리자 단일 사용자 뷰(userEmail)는 유지 */
@@ -1076,7 +1123,12 @@ export default function PaymentMethodManager({
     setBulkEditRows([])
     setBulkEditLoading(true)
     try {
-      const fetched = await fetchAllPaymentMethodsForBulkEdit()
+      const [faRes, fetched] = await Promise.all([
+        fetchFinancialAccountsForBulkEdit(),
+        fetchAllPaymentMethodsForBulkEdit()
+      ])
+      setBulkEditFinancialAccounts(faRes.list)
+      setBulkEditFinancialAccountsError(faRes.error)
       setBulkEditRows(
         fetched.length > 0 ? paymentMethodsToBulkEditRows(fetched) : [emptyBulkEditRow()]
       )
@@ -1095,6 +1147,8 @@ export default function PaymentMethodManager({
     setBulkEditRows([emptyBulkEditRow()])
     setBulkEditUserSelectIndex(null)
     setBulkEditLoading(false)
+    setBulkEditFinancialAccounts([])
+    setBulkEditFinancialAccountsError(null)
   }
 
   const addBulkEditRow = () => {
@@ -1159,6 +1213,7 @@ export default function PaymentMethodManager({
               user_email: row.user_email.trim() || null,
               status: row.status,
               notes: row.notes.trim() || null,
+              financial_account_id: row.financial_account_id.trim() || null,
               updated_by: userEmail || null
             })
           })
@@ -1213,7 +1268,12 @@ export default function PaymentMethodManager({
     setBulkEditRows([])
     setBulkEditLoading(true)
     try {
-      const all = await fetchAllPaymentMethodsForBulkEdit()
+      const [faRes, all] = await Promise.all([
+        fetchFinancialAccountsForBulkEdit(),
+        fetchAllPaymentMethodsForBulkEdit()
+      ])
+      setBulkEditFinancialAccounts(faRes.list)
+      setBulkEditFinancialAccountsError(faRes.error)
       const idSet = new Set(selectedMethodIds)
       const picked = all.filter((m) => idSet.has(m.id))
       const rows = paymentMethodsToBulkEditRows(picked)
@@ -2247,7 +2307,7 @@ export default function PaymentMethodManager({
           <DialogHeader>
             <DialogTitle>일괄 수정 - 결제 방법 테이블 편집</DialogTitle>
             <DialogDescription>
-              열면 서버에서 결제 방법 전체 목록을 불러와 표에 채웁니다(목록 화면의 상태·유형·검색 필터와 무관). ID는 기존 레코드를 가리키며, 저장 시 반영됩니다. 행 추가로 신규 행을 넣을 수도 있습니다.
+              열면 서버에서 결제 방법 전체 목록을 불러와 표에 채웁니다(목록 화면의 상태·유형·검색 필터와 무관). ID는 기존 레코드를 가리키며, 저장 시 반영됩니다. 명세 대조용 금융 계정 연결도 여기서 바꿀 수 있습니다. 행 추가로 신규 행을 넣을 수도 있습니다.
             </DialogDescription>
           </DialogHeader>
 
@@ -2270,6 +2330,18 @@ export default function PaymentMethodManager({
               </button>
             </div>
 
+            {bulkEditFinancialAccountsError ? (
+              <div
+                className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+                role="status"
+              >
+                {bulkEditFinancialAccountsError}{' '}
+                <span className="text-amber-800/90">
+                  (금융 계정 열은 비어 있을 수 있습니다. Super 권한·로그인 상태를 확인하세요.)
+                </span>
+              </div>
+            ) : null}
+
             {bulkEditLoading ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-600">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mb-3" />
@@ -2291,6 +2363,9 @@ export default function PaymentMethodManager({
                       유형 <span className="text-red-500">*</span>
                     </th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">사용자</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700 min-w-[10rem]">
+                      금융 계정
+                    </th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">상태</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-medium text-gray-700">메모</th>
                   </tr>
@@ -2355,6 +2430,31 @@ export default function PaymentMethodManager({
                             <span className="text-xs text-gray-400">클릭하여 1명 선택</span>
                           )}
                         </div>
+                      </td>
+                      <td className="border border-gray-300 px-2 py-1">
+                        <select
+                          value={row.financial_account_id}
+                          onChange={(e) =>
+                            updateBulkEditRow(index, 'financial_account_id', e.target.value)
+                          }
+                          className="w-full min-w-[10rem] max-w-[18rem] px-2 py-1 border border-gray-300 rounded text-xs"
+                          title="명세 대조용 금융 계정"
+                          aria-label="금융 계정"
+                        >
+                          <option value="">없음</option>
+                          {row.financial_account_id &&
+                          !bulkEditFinancialAccounts.some((a) => a.id === row.financial_account_id) ? (
+                            <option value={row.financial_account_id} title={row.financial_account_id}>
+                              기존 연결 (목록에 없음)
+                            </option>
+                          ) : null}
+                          {bulkEditFinancialAccounts.map((a) => (
+                            <option key={a.id} value={a.id} title={a.name}>
+                              {a.name}
+                              {a.account_type ? ` (${a.account_type})` : ''}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="border border-gray-300 px-2 py-1">
                         <select

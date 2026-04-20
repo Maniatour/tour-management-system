@@ -16,6 +16,7 @@ import {
   FileText,
   Users,
   X,
+  UserRound,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { Reservation, Customer } from '@/types/reservation'
@@ -28,6 +29,7 @@ import {
   getStatusColor,
   formatChannelDashVariant,
 } from '@/utils/reservationUtils'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import { ReservationActionRequiredBalanceTable } from '@/components/reservation/ReservationActionRequiredBalanceTable'
@@ -45,7 +47,7 @@ export type ActionRequiredTableVariant =
 export interface ReservationActionRequiredTableProps {
   reservations: Reservation[]
   customers: Customer[]
-  products: Array<{ id: string; name: string; sub_category?: string }>
+  products: Array<{ id: string; name: string; sub_category?: string; product_code?: string | null }>
   channels: Array<{ id: string; name: string; favicon_url?: string | null }>
   pickupHotels: Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>
   productOptions: Array<{ id: string; name: string; is_required?: boolean }>
@@ -72,7 +74,10 @@ export interface ReservationActionRequiredTableProps {
   onPaymentClick: (reservation: Reservation) => void
   onDetailClick: (reservation: Reservation) => void
   onReviewClick: (reservation: Reservation) => void
-  onEmailPreview: (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => void
+  onEmailPreview: (
+    reservation: Reservation,
+    emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
+  ) => void
   onEmailLogsClick: (reservationId: string) => void
   onEmailDropdownToggle: (reservationId: string) => void
   onEditClick: (reservationId: string) => void
@@ -413,6 +418,7 @@ function ActionsCell(row: TableRowProps) {
   const product = products?.find((p) => p.id === reservation.productId)
   const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
   const showCreateTour = isManiaTour && !reservation.hasExistingTour
+  const showResidentInquiryEmail = productShowsResidentStatusSectionByCode(product?.product_code ?? null)
 
   return (
     <td className="px-2 py-2">
@@ -503,6 +509,16 @@ function ActionsCell(row: TableRowProps) {
               >
                 {t('card.emailPickup')}
               </button>
+              {showResidentInquiryEmail && (
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => onEmailPreview(reservation, 'resident_inquiry')}
+                >
+                  <UserRound className="w-3 h-3 shrink-0" />
+                  {t('card.emailResidentInquiry')}
+                </button>
+              )}
               <div className="border-t border-gray-100 my-1" />
               <button
                 type="button"

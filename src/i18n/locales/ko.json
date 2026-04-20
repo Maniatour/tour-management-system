@@ -2001,6 +2001,16 @@
       "emailConfirmation": "예약 확인 이메일",
       "emailDeparture": "투어 출발 확정 이메일",
       "emailPickup": "픽업 notification 이메일",
+      "emailResidentInquiry": "거주·패스·결제 안내 이메일",
+      "residentInquiryPreviewTitle": "거주·연간 패스·결제 안내 이메일 미리보기",
+      "residentInquiryCopyHtml": "HTML 복사",
+      "residentInquiryCopied": "복사됨",
+      "residentInquirySend": "보내기",
+      "residentInquirySending": "발송 중…",
+      "residentInquiryTo": "받는 사람",
+      "residentInquirySubject": "제목",
+      "residentInquiryReservationId": "예약 ID",
+      "residentInquiryPreviewBody": "본문 미리보기",
       "emailLogs": "이메일 발송 내역",
       "editReservationTitle": "예약 수정",
       "close": "닫기",
@@ -3639,7 +3649,9 @@
     "saveReport": "리포트 저장",
     "noOptions": "선택사항 없음",
     "noOptionsSelected": "선택사항 없음",
-    "prepaidTipShort": "선불 팁"
+    "prepaidTipShort": "선불 팁",
+    "prepaidTipShareShort": "팁 쉐어",
+    "prepaidTipShareTitle": "Tips 쉐어 관리에 저장된 본인 몫(오피스 팁 제외). 예약별 선불 팁 비율로 배분됩니다."
   },
   "team": {
     "title": "팀 관리",

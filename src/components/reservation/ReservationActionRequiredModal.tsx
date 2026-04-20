@@ -76,7 +76,10 @@ export interface ReservationActionRequiredModalProps {
   onPaymentClick: (reservation: Reservation) => void
   onDetailClick: (reservation: Reservation) => void
   onReviewClick: (reservation: Reservation) => void
-  onEmailPreview: (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => void
+  onEmailPreview: (
+    reservation: Reservation,
+    emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
+  ) => void
   onEmailLogsClick: (reservationId: string) => void
   onEmailDropdownToggle: (reservationId: string) => void
   onEditClick: (reservationId: string) => void

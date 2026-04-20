@@ -512,6 +512,12 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'currency', type: 'text', nullable: false, default: "'USD'" },
       { name: 'is_active', type: 'boolean', nullable: false, default: 'true' },
       { name: 'notes', type: 'text', nullable: true, default: null },
+      {
+        name: 'statement_csv_direction_mode',
+        type: 'text',
+        nullable: false,
+        default: "'auto'"
+      },
       { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
     ],
@@ -593,6 +599,22 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'exclude_from_pnl', type: 'boolean', nullable: false, default: 'false' },
       { name: 'is_personal', type: 'boolean', nullable: false, default: 'false' },
       { name: 'personal_partner', type: 'text', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
+    ],
+    statement_expense_autofill_rules: [
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'financial_account_id', type: 'text', nullable: true, default: null },
+      { name: 'pattern', type: 'text', nullable: false, default: null },
+      { name: 'match_mode', type: 'text', nullable: false, default: "'contains'" },
+      { name: 'paid_to', type: 'text', nullable: false, default: "''" },
+      { name: 'paid_for', type: 'text', nullable: false, default: null },
+      { name: 'category', type: 'text', nullable: false, default: null },
+      { name: 'priority', type: 'integer', nullable: false, default: '0' },
+      { name: 'source', type: 'text', nullable: false, default: "'template'" },
+      { name: 'usage_count', type: 'integer', nullable: false, default: '0' },
+      { name: 'notes', type: 'text', nullable: true, default: null },
+      { name: 'created_by', type: 'text', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp with time zone', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: false, default: 'now()' }
     ],

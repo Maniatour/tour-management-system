@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt } from 'lucide-react'
+import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -131,7 +131,10 @@ interface ReservationCardItemProps {
   onDetailClick: (reservation: Reservation) => void
   onReceiptClick?: (reservation: Reservation) => void
   onReviewClick: (reservation: Reservation) => void
-  onEmailPreview: (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => void
+  onEmailPreview: (
+    reservation: Reservation,
+    emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
+  ) => void
   onEmailLogsClick: (reservationId: string) => void
   onEmailDropdownToggle: (reservationId: string) => void
   onEditClick: (reservationId: string) => void
@@ -705,6 +708,16 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     <Mail className="w-3 h-3 inline mr-2" />
                     {t('card.emailPickup')}
                   </button>
+                  {showResidentStatusUi && (
+                    <button
+                      type="button"
+                      onClick={() => onEmailPreview(reservation, 'resident_inquiry')}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <UserRound className="w-3 h-3 shrink-0" />
+                      {t('card.emailResidentInquiry')}
+                    </button>
+                  )}
                   <div className="border-t border-gray-200 my-1" />
                   <button
                     type="button"
@@ -1395,6 +1408,16 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     <Mail className="w-3 h-3" />
                     <span>{t('card.emailPickup')}</span>
                   </button>
+                  {showResidentStatusUi && (
+                    <button
+                      type="button"
+                      onClick={() => onEmailPreview(reservation, 'resident_inquiry')}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <UserRound className="w-3 h-3 shrink-0" />
+                      <span>{t('card.emailResidentInquiry')}</span>
+                    </button>
+                  )}
                   <div className="border-t border-gray-200 my-1"></div>
                   <button
                     onClick={(e) => {

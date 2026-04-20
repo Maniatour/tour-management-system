@@ -14,6 +14,7 @@ import {
   FileText,
   Users,
   RefreshCw,
+  UserRound,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { Reservation, Customer } from '@/types/reservation'
@@ -36,6 +37,7 @@ import {
   isStoredCustomerTotalMismatchWithFormula,
   summarizePaymentRecordsForBalance,
 } from '@/utils/reservationPricingBalance'
+import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 
 function fmtUsd(v: number | undefined | null): string {
   if (v == null || (typeof v === 'number' && Number.isNaN(v))) return '—'
@@ -242,7 +244,7 @@ function customerPaymentComputedGross(
 type BalanceProps = {
   reservations: Reservation[]
   customers: Customer[]
-  products: Array<{ id: string; name: string; sub_category?: string }>
+  products: Array<{ id: string; name: string; sub_category?: string; product_code?: string | null }>
   channels: Array<{ id: string; name: string; favicon_url?: string | null }>
   reservationPricingMap: Map<string, ReservationPricingMapValue>
   /** 예약별 입금 내역 — DB 보증금·잔액과 비교 표시 */
@@ -257,7 +259,10 @@ type BalanceProps = {
   onPaymentClick: (reservation: Reservation) => void
   onDetailClick: (reservation: Reservation) => void
   onReviewClick: (reservation: Reservation) => void
-  onEmailPreview: (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => void
+  onEmailPreview: (
+    reservation: Reservation,
+    emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
+  ) => void
   onEmailLogsClick: (reservationId: string) => void
   onEmailDropdownToggle: (reservationId: string) => void
   onEditClick: (reservationId: string) => void
@@ -443,6 +448,7 @@ function BalanceRow(props: BalanceRowProps) {
   const product = products?.find((pr) => pr.id === reservation.productId)
   const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
   const showCreateTour = isManiaTour && !reservation.hasExistingTour
+  const showResidentInquiryEmail = productShowsResidentStatusSectionByCode(product?.product_code ?? null)
   const channel = channels?.find((c) => c.id === reservation.channelId)
 
   return (
@@ -885,6 +891,16 @@ function BalanceRow(props: BalanceRowProps) {
                   >
                     {t('card.emailPickup')}
                   </button>
+                  {showResidentInquiryEmail && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1 text-[10px] hover:bg-gray-50 flex items-center gap-1.5"
+                      onClick={() => onEmailPreview(reservation, 'resident_inquiry')}
+                    >
+                      <UserRound className="w-3 h-3 shrink-0" />
+                      {t('card.emailResidentInquiry')}
+                    </button>
+                  )}
                   <div className="border-t border-gray-100 my-0.5" />
                   <button type="button" className="w-full text-left px-2 py-1 text-[10px] text-blue-600 hover:bg-blue-50" onClick={() => onEmailLogsClick(reservation.id)}>
                     {t('card.emailLogs')}

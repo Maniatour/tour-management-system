@@ -10,6 +10,34 @@ export type ParsedStatementRow = {
   raw: Record<string, string>
 }
 
+/** 은행 통장 CSV 부호 관례에 맞춘 파싱 결과를, 카드사 CSV(양수=이용·지출, 음수=결제 등)에 맞게 쓸 때 true */
+export type ParseStatementCsvOptions = {
+  invertDirections?: boolean
+}
+
+/** 금융 계정별 CSV 반전 규칙 — DB `financial_accounts.statement_csv_direction_mode` 와 동일 */
+export type StatementCsvDirectionMode = 'auto' | 'invert' | 'no_invert'
+
+/**
+ * 파서 기본값(양수→수입·입금, 음수/괄호→지출·출금)에 대해 반전 적용 여부.
+ * - auto: 신용카드 계정만 반전 (일부 카드사 CSV는 양수=이용)
+ * - invert: 항상 반전
+ * - no_invert: 반전 안 함 (Amex·MGM 등 음수/괄호=이용 명세에 사용)
+ */
+export function shouldInvertStatementCsvDirections(
+  accountType: string,
+  mode: StatementCsvDirectionMode | string | null | undefined
+): boolean {
+  const m = (mode ?? 'auto') as StatementCsvDirectionMode
+  if (m === 'invert') return true
+  if (m === 'no_invert') return false
+  return accountType === 'credit_card'
+}
+
+function flipDirection(d: 'outflow' | 'inflow'): 'outflow' | 'inflow' {
+  return d === 'outflow' ? 'inflow' : 'outflow'
+}
+
 function normalizeHeader(h: string): string {
   return h.trim().toLowerCase().replace(/\s+/g, '_')
 }
@@ -45,7 +73,11 @@ function parseDateCell(s: string): string | null {
   return null
 }
 
-export function parseStatementCsvText(csvText: string): ParsedStatementRow[] {
+export function parseStatementCsvText(
+  csvText: string,
+  options?: ParseStatementCsvOptions
+): ParsedStatementRow[] {
+  const invertDirections = Boolean(options?.invertDirections)
   const text = csvText.replace(/^\uFEFF/, '').trim()
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
   if (lines.length < 2) return []
@@ -177,7 +209,7 @@ export function parseStatementCsvText(csvText: string): ParsedStatementRow[] {
     rows.push({
       postedDate: posted,
       amount,
-      direction,
+      direction: invertDirections ? flipDirection(direction) : direction,
       description: description || '(no description)',
       merchant,
       externalReference,

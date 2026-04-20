@@ -155,6 +155,11 @@ export default function GuideTourDetailPage() {
     prepayment_tip: number
     currency: string
   }>>([])
+  /** Tips 쉐어 관리에서 저장된 투어 단위 가이드/어시 몫(OP 제외) */
+  const [tourTipShare, setTourTipShare] = useState<{
+    guide_amount: number
+    assistant_amount: number
+  } | null>(null)
   const [reservationChoicesMap, setReservationChoicesMap] = useState<Map<string, Array<{
     choice_id: string
     option_id: string
@@ -196,10 +201,48 @@ export default function GuideTourDetailPage() {
     return pricing?.prepayment_tip ?? 0
   }
 
+  const emailsMatchLoose = (a: string | null | undefined, b: string | null | undefined) => {
+    if (a == null || b == null) return false
+    return String(a).trim().toLowerCase() === String(b).trim().toLowerCase()
+  }
+
+  /**
+   * 픽업 카드 선팁 표시: Tips 쉐어 저장 시 → 로그인 역할(가이드/어시) 몫을
+   * 투어 전체 prepayment_tip 합 대비 해당 예약 비율로 배분. 미저장 시 고객 선불 팁 원액.
+   * (관리자 등 배정 역할 아님 → 원액)
+   */
+  const getDisplayPrepaidTipForPickupCard = (reservationId: string) => {
+    const prep = getReservationPrepaidTip(reservationId)
+    if (prep <= 0) return 0
+    if (!tour || !tourTipShare) return prep
+
+    const guideId = (tour as TourRow & { tour_guide_id?: string | null }).tour_guide_id
+    const assistantId = (tour as TourRow & { assistant_id?: string | null }).assistant_id
+    const me = currentUserEmail
+
+    let pool = 0
+    if (emailsMatchLoose(me, guideId)) {
+      pool = tourTipShare.guide_amount
+    } else if (emailsMatchLoose(me, assistantId)) {
+      pool = tourTipShare.assistant_amount
+    } else {
+      return prep
+    }
+
+    if (pool <= 0) return prep
+
+    const totalPrepaid = reservationPricing.reduce((s, p) => s + (p.prepayment_tip || 0), 0)
+    if (totalPrepaid <= 0) return prep
+    return Math.round(pool * (prep / totalPrepaid) * 100) / 100
+  }
+
   const formatGuidePricingAmount = (amount: number, currency: string) => {
     if (currency === 'KRW') return `₩${amount.toLocaleString()}`
     return `$${amount.toLocaleString()}`
   }
+
+  const formatGuideTipUsd2 = (amount: number) =>
+    `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   // 총 balance 계산 함수
   const getTotalBalance = () => {
@@ -211,6 +254,7 @@ export default function GuideTourDetailPage() {
     try {
       setLoading(true)
       setError(null)
+      setTourTipShare(null)
 
       const tourId = params.id as string
       if (!tourId) {
@@ -237,6 +281,34 @@ export default function GuideTourDetailPage() {
       }
 
       setTour(tourData)
+
+      {
+        const { data: tipShareRow, error: tipShareErr } = await supabase
+          .from('tour_tip_shares')
+          .select('guide_amount, assistant_amount')
+          .eq('tour_id', tourId)
+          .maybeSingle()
+        if (tipShareErr && (tipShareErr as { code?: string }).code !== 'PGRST116') {
+          console.warn('가이드 페이지: tour_tip_shares 조회:', tipShareErr)
+        }
+        if (tipShareRow) {
+          const ga =
+            tipShareRow.guide_amount === null || tipShareRow.guide_amount === undefined
+              ? 0
+              : typeof tipShareRow.guide_amount === 'string'
+                ? parseFloat(tipShareRow.guide_amount) || 0
+                : Number(tipShareRow.guide_amount) || 0
+          const aa =
+            tipShareRow.assistant_amount === null || tipShareRow.assistant_amount === undefined
+              ? 0
+              : typeof tipShareRow.assistant_amount === 'string'
+                ? parseFloat(tipShareRow.assistant_amount) || 0
+                : Number(tipShareRow.assistant_amount) || 0
+          setTourTipShare({ guide_amount: ga, assistant_amount: aa })
+        } else {
+          setTourTipShare(null)
+        }
+      }
 
       let tourProductRow: ProductRow | null = null
       // 상품 정보 가져오기
@@ -1552,19 +1624,28 @@ export default function GuideTourDetailPage() {
                                       reservation.pickup_time
                                     ) &&
                                     (() => {
-                                      const tip = getReservationPrepaidTip(reservation.id)
-                                      if (tip <= 0) return null
+                                      const grossTip = getReservationPrepaidTip(reservation.id)
+                                      if (grossTip <= 0) return null
+                                      const displayTip = getDisplayPrepaidTipForPickupCard(
+                                        reservation.id
+                                      )
+                                      if (displayTip <= 0) return null
                                       const row = reservationPricing.find(
                                         (p) => p.reservation_id === reservation.id
                                       )
                                       const cur = row?.currency || 'USD'
                                       return (
-                                        <div className="text-right shrink-0">
+                                        <div
+                                          className="text-right shrink-0"
+                                          title={t('prepaidTipShareTitle')}
+                                        >
                                           <div className="text-[10px] text-gray-500 leading-tight">
-                                            {t('prepaidTipShort')}
+                                            {t('prepaidTipShareShort')}
                                           </div>
                                           <div className="text-sm font-semibold text-amber-800 tabular-nums">
-                                            {formatGuidePricingAmount(tip, cur)}
+                                            {cur === 'KRW'
+                                              ? formatGuidePricingAmount(displayTip, cur)
+                                              : formatGuideTipUsd2(displayTip)}
                                           </div>
                                         </div>
                                       )

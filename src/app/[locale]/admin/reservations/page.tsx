@@ -22,6 +22,7 @@ import { useReservationData } from '@/hooks/useReservationData'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
+import ResidentInquiryEmailPreviewModal from '@/components/reservation/ResidentInquiryEmailPreviewModal'
 import EmailLogsModal from '@/components/reservation/EmailLogsModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ResizableModal from '@/components/reservation/ResizableModal'
@@ -511,10 +512,14 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   const [showEmailPreview, setShowEmailPreview] = useState(false)
   const [emailPreviewData, setEmailPreviewData] = useState<{
     reservationId: string
-    emailType: 'confirmation' | 'departure' | 'pickup'
+    emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
     customerEmail: string
     pickupTime?: string | null
     tourDate?: string | null
+    customerName?: string | null
+    productName?: string | null
+    channelRN?: string | null
+    customerLanguage?: string | null
   } | null>(null)
   const [showEmailLogs, setShowEmailLogs] = useState(false)
   const [selectedReservationForEmailLogs, setSelectedReservationForEmailLogs] = useState<string | null>(null)
@@ -2066,7 +2071,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
 
   // ????????? ?? ??? - useCallback??? ????????
-  const handleOpenEmailPreview = useCallback((reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => {
+  const handleOpenEmailPreview = useCallback((reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry') => {
     const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
     if (!customer?.email) {
       alert(t('messages.noCustomerEmail'))
@@ -2075,6 +2080,23 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
     if (emailType === 'pickup' && (!reservation.pickUpTime || !reservation.tourDate)) {
       alert(t('messages.pickupAndTourDateRequired'))
+      return
+    }
+
+    if (emailType === 'resident_inquiry') {
+      setEmailPreviewData({
+        reservationId: reservation.id,
+        emailType: 'resident_inquiry',
+        customerEmail: customer.email,
+        pickupTime: null,
+        tourDate: reservation.tourDate,
+        customerName: getCustomerName(reservation.customerId, (customers as Customer[]) || []) || customer.name || '',
+        productName: getProductName(reservation.productId, products || []),
+        channelRN: reservation.channelRN ?? null,
+        customerLanguage: customer.language ?? null,
+      })
+      setShowEmailPreview(true)
+      setEmailDropdownOpen(null)
       return
     }
 
@@ -2087,7 +2109,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     })
     setShowEmailPreview(true)
     setEmailDropdownOpen(null)
-  }, [customers])
+  }, [customers, products])
 
   // ???????? ?? ??? - useCallback??? ????????
   const handleSendEmailFromPreview = useCallback(async () => {
@@ -2105,7 +2127,19 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       const customerLanguage = customer?.language?.toLowerCase() || 'ko'
       const locale = customerLanguage === 'en' || customerLanguage === 'english' ? 'en' : 'ko'
 
-      if (emailPreviewData.emailType === 'confirmation') {
+      if (emailPreviewData.emailType === 'resident_inquiry') {
+        response = await fetch('/api/send-resident-inquiry-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reservationId: emailPreviewData.reservationId,
+            locale,
+            sentBy: user?.email || null,
+          }),
+        })
+      } else if (emailPreviewData.emailType === 'confirmation') {
         // ??? ??? ?????
         response = await fetch('/api/send-email', {
           method: 'POST',
@@ -2135,7 +2169,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             sentBy: user?.email || null
           })
         })
-      } else {
+      } else if (emailPreviewData.emailType === 'pickup') {
         // ??? notification ?????
         if (!emailPreviewData.pickupTime || !emailPreviewData.tourDate) {
           throw new Error('??? ???????? ???? ????????')
@@ -2156,6 +2190,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             sentBy: user?.email || null
           })
         })
+      } else {
+        throw new Error(t('messages.emailSendError'))
       }
 
       const data = await response.json()
@@ -2173,7 +2209,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     } finally {
       setSendingEmail(null)
     }
-  }, [emailPreviewData, customers, reservations, user?.email])
+  }, [emailPreviewData, customers, reservations, user?.email, t])
 
   const closePickupTimeModalAndMaybeReshowSummary = useCallback(() => {
     const returnId = pendingReturnToPickupSummaryRef.current
@@ -3192,7 +3228,25 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       )}
 
       {/* ????????? ?? */}
-      {showEmailPreview && emailPreviewData && (
+      {showEmailPreview && emailPreviewData && emailPreviewData.emailType === 'resident_inquiry' && (
+        <ResidentInquiryEmailPreviewModal
+          isOpen
+          onClose={() => {
+            setShowEmailPreview(false)
+            setEmailPreviewData(null)
+          }}
+          reservationId={emailPreviewData.reservationId}
+          customerEmail={emailPreviewData.customerEmail}
+          customerName={emailPreviewData.customerName || ''}
+          customerLanguage={emailPreviewData.customerLanguage}
+          tourDate={emailPreviewData.tourDate}
+          productName={emailPreviewData.productName || ''}
+          channelRN={emailPreviewData.channelRN}
+          onSend={handleSendEmailFromPreview}
+        />
+      )}
+
+      {showEmailPreview && emailPreviewData && emailPreviewData.emailType !== 'resident_inquiry' && (
         <EmailPreviewModal
           isOpen={showEmailPreview}
           onClose={() => {
