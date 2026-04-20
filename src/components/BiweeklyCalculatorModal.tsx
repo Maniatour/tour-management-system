@@ -1086,6 +1086,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       checkIn: 'Check-in',
       checkOut: 'Check-out',
       hours: 'Hours',
+      hoursDeducted: 'Deduction',
       hoursAfterApplied: 'Paid hrs (applied rule)',
       hoursLegacy8h: 'Compare (8h auto)',
       attendancePayLegacyLine: 'Attendance (compare · 8h auto all dates):',
@@ -1122,6 +1123,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       checkIn: '출근 시간',
       checkOut: '퇴근 시간',
       hours: '근무시간',
+      hoursDeducted: '차감 시간',
       hoursAfterApplied: '적용 정산 시간',
       hoursLegacy8h: '비교(8시간 자동)',
       attendancePayLegacyLine: '출퇴근 소계 (비교·8시간 자동 전 구간):',
@@ -1355,6 +1357,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>${pr.checkIn}</th>
                   <th>${pr.checkOut}</th>
                   <th>${pr.hours}</th>
+                  <th>${pr.hoursDeducted}</th>
                   <th>${pr.hoursAfterApplied}</th>
                   <th>${pr.hoursLegacy8h}</th>
                   <th>${pr.status}</th>
@@ -1377,12 +1380,14 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   const whL = record.work_hours
                     ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
                     : 0
+                  const deductA = record.work_hours ? Math.max(0, (record.work_hours || 0) - whA) : null
                   return `
                   <tr>
                     <td>${pr.formatAttendanceDate(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_out_time)}</td>
                     <td>${pr.formatWorkHours(record.work_hours || 0)}</td>
+                    <td>${deductA !== null ? pr.formatWorkHours(deductA) : '-'}</td>
                     <td>${pr.formatWorkHours(whA)}</td>
                     <td>${pr.formatWorkHours(whL)}</td>
                     <td>${record.status || '-'}</td>
@@ -1794,6 +1799,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>${pr.checkIn}</th>
                   <th>${pr.checkOut}</th>
                   <th>${pr.hours}</th>
+                  <th>${pr.hoursDeducted}</th>
                   <th>${pr.hoursAfterApplied}</th>
                   <th>${pr.hoursLegacy8h}</th>
                   <th>${pr.status}</th>
@@ -1816,12 +1822,14 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   const whL = record.work_hours
                     ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
                     : 0
+                  const deductA = record.work_hours ? Math.max(0, (record.work_hours || 0) - whA) : null
                   return `
                   <tr>
                     <td>${pr.formatAttendanceDate(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_out_time)}</td>
                     <td>${pr.formatWorkHours(record.work_hours || 0)}</td>
+                    <td>${deductA !== null ? pr.formatWorkHours(deductA) : '-'}</td>
                     <td>${pr.formatWorkHours(whA)}</td>
                     <td>${pr.formatWorkHours(whL)}</td>
                     <td>${record.status || '-'}</td>
@@ -2405,6 +2413,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   const whL = record.work_hours
                     ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
                     : 0
+                  const deductApplied = record.work_hours
+                    ? Math.max(0, (record.work_hours || 0) - whA)
+                    : null
                   return (
                     <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -2425,6 +2436,8 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         <span>{formatTime(record.check_out_time)}</span>
                         <span>근무</span>
                         <span>{record.work_hours ? formatWorkHours(record.work_hours) : '-'}</span>
+                        <span>차감 시간</span>
+                        <span>{deductApplied !== null ? formatWorkHours(deductApplied) : '-'}</span>
                         <span>적용 정산</span>
                         <span>{record.work_hours ? formatWorkHours(whA) : '-'}</span>
                         <span>비교(8h)</span>
@@ -2452,6 +2465,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         근무시간
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        차감 시간
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         적용 정산
@@ -2485,6 +2501,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       const whL = record.work_hours
                         ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
                         : 0
+                      const deductApplied = record.work_hours
+                        ? Math.max(0, (record.work_hours || 0) - whA)
+                        : null
                       return (
                         <tr key={record.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
@@ -2498,6 +2517,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                             {record.work_hours ? formatWorkHours(record.work_hours) : '-'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 tabular-nums">
+                            {deductApplied !== null ? formatWorkHours(deductApplied) : '-'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                             {record.work_hours ? formatWorkHours(whA) : '-'}

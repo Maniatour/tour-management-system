@@ -5,6 +5,8 @@ import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edi
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import OptionManagementModal from './expense/OptionManagementModal'
+import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
+import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import {
   hotelAmountForSettlement,
@@ -102,6 +104,7 @@ export default function TourExpenseManager({
   tourStatus
 }: TourExpenseManagerProps) {
   const t = useTranslations('tours.tourExpense')
+  const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
   const [expenses, setExpenses] = useState<TourExpense[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [vendors, setVendors] = useState<ExpenseVendor[]>([])
@@ -572,6 +575,11 @@ export default function TourExpenseManager({
       return
     }
 
+    if (!formData.payment_method?.trim()) {
+      alert(t('paymentMethodRequired'))
+      return
+    }
+
     // 지급 대상 유효성 검사
     const finalPaidTo = formData.custom_paid_to || formData.paid_to || null
     if (!finalPaidTo) {
@@ -842,6 +850,11 @@ export default function TourExpenseManager({
   const handleUpdateExpense = async () => {
     if (!editingExpense) return
 
+    if (!formData.payment_method?.trim()) {
+      alert(t('paymentMethodRequired'))
+      return
+    }
+
     try {
       // 지급 대상 값 확인
       const finalPaidTo = formData.custom_paid_to || formData.paid_to || null
@@ -871,7 +884,14 @@ export default function TourExpenseManager({
       // 로컬 상태 업데이트
       setExpenses(prev => prev.map(expense => 
         expense.id === editingExpense.id 
-          ? { ...expense, paid_to: finalPaidTo, paid_for: formData.custom_paid_for || formData.paid_for, amount: parseFloat(formData.amount) }
+          ? {
+              ...expense,
+              paid_to: finalPaidTo,
+              paid_for: formData.custom_paid_for || formData.paid_for,
+              amount: parseFloat(formData.amount),
+              payment_method: formData.payment_method || null,
+              note: formData.note || null,
+            }
           : expense
       ))
 
@@ -1628,7 +1648,7 @@ export default function TourExpenseManager({
                 <div className="flex items-center space-x-2">
                   {expense.payment_method && (
                     <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">
-                      {expense.payment_method}
+                      {paymentMethodMap[expense.payment_method] || expense.payment_method}
                     </span>
                   )}
                   
@@ -2001,20 +2021,15 @@ export default function TourExpenseManager({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('paymentMethod')}
+                    {t('paymentMethod')} <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={formData.payment_method}
-                    onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">{t('selectOptions.pleaseSelect')}</option>
-                    <option value="cash">{t('paymentMethods.cash')}</option>
-                    <option value="credit_card">{t('paymentMethods.creditCard')}</option>
-                    <option value="debit_card">{t('paymentMethods.debitCard')}</option>
-                    <option value="mobile_payment">{t('paymentMethods.mobilePayment')}</option>
-                    <option value="other">{t('paymentMethods.other')}</option>
-                  </select>
+                  <PaymentMethodAutocomplete
+                    options={paymentMethodOptions}
+                    valueId={formData.payment_method || ''}
+                    onChange={(id) => setFormData((prev) => ({ ...prev, payment_method: id }))}
+                    disabled={uploading}
+                    pleaseSelectLabel={t('selectOptions.pleaseSelect')}
+                  />
                 </div>
               </div>
 

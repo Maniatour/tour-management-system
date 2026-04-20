@@ -40,7 +40,7 @@ export interface ExtractedReservationData {
   channel_variant_key?: string
   /** Klook: 목록·상세 표시 (예: All Inclusive, With Exclusions) */
   channel_variant_label?: string
-  /** 예약 접수 이메일 여부 (GetYourGuide: "Booking -", Klook: "Klook Order Received -"로 제목 시작 시 목록 강조) */
+  /** 예약 접수 이메일 여부 (GetYourGuide: "Booking -", Klook: Order Received 제목 또는 Confimed/Confirmed+본문 조건 — 파서 참고) */
   is_booking_confirmed?: boolean
   /** 이메일에서 파싱한 초이스 옵션명 (상품 초이스 매칭용, 예: "Lower Antelope Canyon") */
   import_choice_option_names?: string[]

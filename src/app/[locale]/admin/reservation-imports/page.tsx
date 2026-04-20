@@ -261,9 +261,11 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const isTripComBookingRow = (row: ImportItem) =>
     isTripComRow(row) && isTripComNewOrderEmailSubject(row.subject)
 
-  /** 예약 접수 여부 (파서 자동 + 사용자 드래그 분류 + KKday/Viator/maniatour/GYG 제목 보정) */
+  /** 예약 접수 여부 (파서 자동 + 목록 API의 Klook 보강 + 사용자 드래그 + KKday/Viator/maniatour/GYG 제목 보정) */
   const isBookingConfirmed = (row: ImportItem) =>
     Boolean(row.extracted_data?.is_booking_confirmed === true) ||
+    (row.platform_key === 'klook' &&
+      (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')) ||
     (isKKdayRow(row) && isKKdayBookingSubject(row)) ||
     (row.platform_key === 'viator' && isViatorBookingSubject(row)) ||
     (isTidesquareRow(row) && isTidesquareNewBookingEmailSubject(row.subject)) ||
@@ -837,8 +839,6 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {searchedAndFilteredItems.map((row) => {
-                  const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
-                  const isChannelReservationEmail = isGyGBookingRow(row) || isKlookOrderReceived || isBookingConfirmed(row)
                   /** 신규(빨강) / 처리됨(노랑): import 행의 채널 RN이 reservations.channel_rn과 일치할 때만 처리됨 */
                   const isRegistered = !!(row.reservation_exists_by_channel_rn || row.reservation_exists_by_customer_match)
                   /** 예약 저장 완료된 이메일 행 — 목록에 남기고 노란색 표시 */
@@ -846,7 +846,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                     row.status === 'confirmed' || !!row.reservation_id
                   const rowBg = isSavedToReservation
                     ? 'bg-amber-50/90 border-l-4 border-l-amber-500'
-                    : !isChannelReservationEmail
+                    : !isBookingConfirmed(row)
                       ? ''
                       : isRegistered
                         ? 'bg-amber-50/90 border-l-4 border-l-amber-500'
@@ -895,14 +895,12 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           {/* 모바일: 카드 리스트 (터치 친화) */}
           <div className="md:hidden space-y-2">
             {searchedAndFilteredItems.map((row) => {
-              const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
-              const isChannelReservationEmail = isGyGBookingRow(row) || isKlookOrderReceived || isBookingConfirmed(row)
               const isRegistered = !!(row.reservation_exists_by_channel_rn || row.reservation_exists_by_customer_match)
               const isSavedToReservation =
                 row.status === 'confirmed' || !!row.reservation_id
               const cardBg = isSavedToReservation
                 ? 'bg-amber-50/90 border-l-4 border-l-amber-500 border-amber-200'
-                : !isChannelReservationEmail
+                : !isBookingConfirmed(row)
                   ? 'bg-white border-gray-200'
                   : isRegistered
                     ? 'bg-amber-50/90 border-l-4 border-l-amber-500 border-gray-200'

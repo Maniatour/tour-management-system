@@ -14,12 +14,14 @@ import { useParams } from 'next/navigation'
 import {
   Building2,
   CalendarDays,
+  ChevronDown,
   Link2,
   Lock,
   MapPinned,
   Pencil,
   Receipt,
   RefreshCw,
+  RotateCcw,
   Search,
   Shield,
   Ticket,
@@ -42,8 +44,19 @@ function getStoredAccessToken(): string | null {
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
+import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
@@ -151,6 +164,25 @@ const EXPENSE_TABLES = [
   'reservation_expenses',
   'ticket_bookings'
 ] as const
+
+/** 자동 매칭 미리보기 행 — 확인 후 DB 저장 */
+type AutoMatchProposalRow = {
+  statement_line_id: string
+  posted_date: string
+  line_amount: number
+  line_desc: string
+  source_table: ExpenseCandidate['source_table']
+  source_id: string
+  expense_label: string
+  score: number
+}
+
+const AUTO_MATCH_SOURCE_LABEL: Record<ExpenseCandidate['source_table'], string> = {
+  company_expenses: '회사 지출',
+  tour_expenses: '투어 지출',
+  reservation_expenses: '예약 지출',
+  ticket_bookings: '입장권 부킹'
+}
 
 /** 한 페이지당 표시 행 수 — 행마다 무거운 UI가 있으면 DOM·레이아웃 비용이 커짐 */
 const RECONCILIATION_PAGE_SIZE = 40
@@ -269,6 +301,21 @@ function expensePaymentMethodFromRow(r: Record<string, unknown>): string | null 
   if (v == null || v === '') return null
   const s = String(v).trim()
   return s || null
+}
+
+/** YYYY-MM-DD 로컬 달력 기준 일수 가감 */
+function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
+  const core = ymd.trim().slice(0, 10)
+  const parts = core.split('-').map((x) => parseInt(x, 10))
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return core
+  const [yy, mm, dd] = parts
+  const d = new Date(yy, mm - 1, dd)
+  if (Number.isNaN(d.getTime())) return core
+  d.setDate(d.getDate() + deltaDays)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function paymentMethodLabelFromRows(id: string | null | undefined, rows: PaymentMethodRow[]): string {
@@ -586,8 +633,15 @@ export default function StatementReconciliationTab() {
   /** 미매칭 패널: 일자 정렬 — desc 최신 먼저, asc 과거 먼저 */
   const [unmatchedPanelSortDate, setUnmatchedPanelSortDate] = useState<'desc' | 'asc'>('desc')
   const [unmatchedPanelSearch, setUnmatchedPanelSearch] = useState('')
-  /** '' = 전체, '__none__' = 결제수단 미지정 */
-  const [unmatchedPanelPaymentMethodFilter, setUnmatchedPanelPaymentMethodFilter] = useState('')
+  /** 비어 있으면 전체 — id 또는 '__none__'(미지정) 다중 선택 */
+  const [unmatchedPanelPaymentMethodFilter, setUnmatchedPanelPaymentMethodFilter] = useState<string[]>([])
+  const [unmatchedPmFilterOpen, setUnmatchedPmFilterOpen] = useState(false)
+  const unmatchedPmFilterWrapRef = useRef<HTMLDivElement>(null)
+  /** 미매칭 지출·입금 후보 API 조회 구간 (기본: 명세 표 현재 페이지 첫·끝 일자 ±7일) */
+  const [unmatchedExpenseQueryStart, setUnmatchedExpenseQueryStart] = useState('')
+  const [unmatchedExpenseQueryEnd, setUnmatchedExpenseQueryEnd] = useState('')
+  /** true면 자동 기본값 동기화 안 함(검색으로 표가 바뀌어도 유지) — 페이지·계정 바꾸면 false로 리셋 */
+  const [unmatchedExpenseRangeTouched, setUnmatchedExpenseRangeTouched] = useState(false)
   /** '' = 전체 — company_expenses | tour_expenses | reservation_expenses | ticket_bookings */
   const [unmatchedPanelSourceTableFilter, setUnmatchedPanelSourceTableFilter] = useState('')
   /** 미매칭 패널: 미매칭 지출만 / 기간 내 지출 전체(이미 연결 포함) */
@@ -627,6 +681,16 @@ export default function StatementReconciliationTab() {
   const [accountsModalOpen, setAccountsModalOpen] = useState(false)
   const [csvImportModalOpen, setCsvImportModalOpen] = useState(false)
   const [journalModalOpen, setJournalModalOpen] = useState(false)
+  /** 자동 매칭: 미리보기 후 확인 시에만 reconciliation_matches 저장 */
+  const [autoMatchPreviewOpen, setAutoMatchPreviewOpen] = useState(false)
+  const [autoMatchProposals, setAutoMatchProposals] = useState<AutoMatchProposalRow[]>([])
+  const [autoMatchSummaryHint, setAutoMatchSummaryHint] = useState<string | null>(null)
+  const [autoMatchApplying, setAutoMatchApplying] = useState(false)
+  /** 미리보기에서 저장할 명세 줄 id — 기본은 후보 전체 선택 */
+  const [autoMatchSelectedIds, setAutoMatchSelectedIds] = useState<Set<string>>(() => new Set())
+  const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
+  const [resetAllMatchesOpen, setResetAllMatchesOpen] = useState(false)
+  const [resettingAllMatches, setResettingAllMatches] = useState(false)
   /** 행마다 수천 개 `<option>`을 두지 않고, 모달에서 검색·선택 */
   const [expensePickerLineId, setExpensePickerLineId] = useState<string | null>(null)
   const [expensePickerQuery, setExpensePickerQuery] = useState('')
@@ -989,79 +1053,6 @@ export default function StatementReconciliationTab() {
     return list[0] ?? null
   }, [importsForAccount])
 
-  /** 명세 기간(±7일) 지출·입금 후보 — 저장 후 갱신에도 사용 */
-  const fetchExpenseOptionsForPeriod = useCallback(async (): Promise<{
-    ex: ExpenseOption[]
-    prOpts: PaymentRecordOption[]
-  } | null> => {
-    if (!filterAccountId || !accountExpenseWindow) return null
-    const start = new Date(accountExpenseWindow.period_start)
-    const end = new Date(accountExpenseWindow.period_end)
-    start.setDate(start.getDate() - 7)
-    end.setDate(end.getDate() + 7)
-    const startIso = start.toISOString()
-    const endIso = end.toISOString()
-    const [{ data: ce }, { data: te }, { data: re }, { data: tb }] = await Promise.all([
-      supabase
-        .from('company_expenses')
-        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso),
-      supabase
-        .from('tour_expenses')
-        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso),
-      supabase
-        .from('reservation_expenses')
-        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso),
-      supabase
-        .from('ticket_bookings')
-        .select('id, expense, submit_on, category, company, payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso)
-    ])
-    const prOpts = await fetchAllPaymentRecordsInDateRange(startIso, endIso)
-    const ex: ExpenseOption[] = [
-      ...(ce || []).map((r: Record<string, unknown>) => ({
-        source_table: 'company_expenses' as const,
-        source_id: String(r.id),
-        label: `${r.paid_for} / ${r.paid_to}`,
-        amount: Number(r.amount),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      })),
-      ...(te || []).map((r: Record<string, unknown>) => ({
-        source_table: 'tour_expenses' as const,
-        source_id: String(r.id),
-        label: `${r.paid_for} / ${r.paid_to}`,
-        amount: Number(r.amount),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      })),
-      ...(re || []).map((r: Record<string, unknown>) => ({
-        source_table: 'reservation_expenses' as const,
-        source_id: String(r.id),
-        label: `${r.paid_for} / ${r.paid_to}`,
-        amount: Number(r.amount),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      })),
-      ...(tb || []).map((r: Record<string, unknown>) => ({
-        source_table: 'ticket_bookings' as const,
-        source_id: String(r.id),
-        label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
-        amount: Number(r.expense ?? 0),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      }))
-    ]
-    const exDeduped = dedupeExpenseOptionsList(ex)
-    return { ex: exDeduped, prOpts }
-  }, [filterAccountId, accountExpenseWindow])
-
   const matchesByLine = useMemo(() => {
     const m = new Map<string, ReconciliationMatchRow[]>()
     for (const x of matches) {
@@ -1227,14 +1218,14 @@ export default function StatementReconciliationTab() {
   }, [unmatchedExpensePanelSourceFilteredRows, paymentMethods])
 
   const unmatchedExpensePanelPaymentFilteredRows = useMemo(() => {
-    const fid = unmatchedPanelPaymentMethodFilter
-    if (!fid) return unmatchedExpensePanelSourceFilteredRows
-    if (fid === '__none__') {
-      return unmatchedExpensePanelSourceFilteredRows.filter((o) => !o.payment_method?.trim())
-    }
-    return unmatchedExpensePanelSourceFilteredRows.filter(
-      (o) => (o.payment_method?.trim() || '') === fid
-    )
+    const sel = unmatchedPanelPaymentMethodFilter
+    if (sel.length === 0) return unmatchedExpensePanelSourceFilteredRows
+    const selectedPm = new Set(sel)
+    return unmatchedExpensePanelSourceFilteredRows.filter((o) => {
+      const pm = o.payment_method?.trim() || ''
+      if (!pm) return selectedPm.has('__none__')
+      return selectedPm.has(pm)
+    })
   }, [unmatchedExpensePanelSourceFilteredRows, unmatchedPanelPaymentMethodFilter])
 
   const unmatchedExpensePanelFilteredRows = useMemo(() => {
@@ -1367,6 +1358,131 @@ export default function StatementReconciliationTab() {
     return reconciliationTableLines.slice(start, start + RECONCILIATION_PAGE_SIZE)
   }, [reconciliationTableLines, reconciliationPage])
 
+  /** 명세 표 현재 페이지 첫·마지막 행 거래일 ±7일 — 미매칭 지출 조회 기본값 */
+  const defaultUnmatchedExpenseRange = useMemo(() => {
+    const fallbackFromAccount = (): { start: string; end: string } => {
+      if (!accountExpenseWindow) return { start: '', end: '' }
+      const ps = accountExpenseWindow.period_start.trim().slice(0, 10)
+      const pe = accountExpenseWindow.period_end.trim().slice(0, 10)
+      if (ps.length < 10 || pe.length < 10) return { start: '', end: '' }
+      return { start: addCalendarDaysYmd(ps, -7), end: addCalendarDaysYmd(pe, 7) }
+    }
+    const lines = pagedReconciliationLines
+    if (lines.length > 0) {
+      const first = lines[0].posted_date?.trim().slice(0, 10) ?? ''
+      const last = lines[lines.length - 1].posted_date?.trim().slice(0, 10) ?? ''
+      if (first.length >= 10 && last.length >= 10) {
+        return { start: addCalendarDaysYmd(first, -7), end: addCalendarDaysYmd(last, 7) }
+      }
+    }
+    if (reconciliationTableLines.length > 0) {
+      const first = reconciliationTableLines[0].posted_date?.trim().slice(0, 10) ?? ''
+      const last =
+        reconciliationTableLines[reconciliationTableLines.length - 1].posted_date?.trim().slice(0, 10) ??
+        ''
+      if (first.length >= 10 && last.length >= 10) {
+        return { start: addCalendarDaysYmd(first, -7), end: addCalendarDaysYmd(last, 7) }
+      }
+    }
+    return fallbackFromAccount()
+  }, [pagedReconciliationLines, reconciliationTableLines, accountExpenseWindow])
+
+  useEffect(() => {
+    setUnmatchedExpenseRangeTouched(false)
+  }, [reconciliationPage, filterAccountId])
+
+  useEffect(() => {
+    if (unmatchedExpenseRangeTouched) return
+    const { start, end } = defaultUnmatchedExpenseRange
+    if (start && end) {
+      setUnmatchedExpenseQueryStart(start)
+      setUnmatchedExpenseQueryEnd(end)
+    }
+  }, [
+    defaultUnmatchedExpenseRange.start,
+    defaultUnmatchedExpenseRange.end,
+    unmatchedExpenseRangeTouched
+  ])
+
+  /** 미매칭 패널·입금 후보 조회 — 사용자 지정 기간 */
+  const fetchExpenseOptionsForPeriod = useCallback(async (): Promise<{
+    ex: ExpenseOption[]
+    prOpts: PaymentRecordOption[]
+  } | null> => {
+    if (!filterAccountId) return null
+    let startYmd = unmatchedExpenseQueryStart.trim().slice(0, 10)
+    let endYmd = unmatchedExpenseQueryEnd.trim().slice(0, 10)
+    if (!startYmd || !endYmd || startYmd.length < 10 || endYmd.length < 10) return null
+    if (startYmd > endYmd) {
+      const t = startYmd
+      startYmd = endYmd
+      endYmd = t
+    }
+    const start = new Date(startYmd + 'T00:00:00')
+    const end = new Date(endYmd + 'T23:59:59.999')
+    const startIso = start.toISOString()
+    const endIso = end.toISOString()
+    const [{ data: ce }, { data: te }, { data: re }, { data: tb }] = await Promise.all([
+      supabase
+        .from('company_expenses')
+        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
+        .gte('submit_on', startIso)
+        .lte('submit_on', endIso),
+      supabase
+        .from('tour_expenses')
+        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
+        .gte('submit_on', startIso)
+        .lte('submit_on', endIso),
+      supabase
+        .from('reservation_expenses')
+        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
+        .gte('submit_on', startIso)
+        .lte('submit_on', endIso),
+      supabase
+        .from('ticket_bookings')
+        .select('id, expense, submit_on, category, company, payment_method')
+        .gte('submit_on', startIso)
+        .lte('submit_on', endIso)
+    ])
+    const prOpts = await fetchAllPaymentRecordsInDateRange(startIso, endIso)
+    const ex: ExpenseOption[] = [
+      ...(ce || []).map((r: Record<string, unknown>) => ({
+        source_table: 'company_expenses' as const,
+        source_id: String(r.id),
+        label: `${r.paid_for} / ${r.paid_to}`,
+        amount: Number(r.amount),
+        submit_on: String(r.submit_on),
+        payment_method: expensePaymentMethodFromRow(r)
+      })),
+      ...(te || []).map((r: Record<string, unknown>) => ({
+        source_table: 'tour_expenses' as const,
+        source_id: String(r.id),
+        label: `${r.paid_for} / ${r.paid_to}`,
+        amount: Number(r.amount),
+        submit_on: String(r.submit_on),
+        payment_method: expensePaymentMethodFromRow(r)
+      })),
+      ...(re || []).map((r: Record<string, unknown>) => ({
+        source_table: 'reservation_expenses' as const,
+        source_id: String(r.id),
+        label: `${r.paid_for} / ${r.paid_to}`,
+        amount: Number(r.amount),
+        submit_on: String(r.submit_on),
+        payment_method: expensePaymentMethodFromRow(r)
+      })),
+      ...(tb || []).map((r: Record<string, unknown>) => ({
+        source_table: 'ticket_bookings' as const,
+        source_id: String(r.id),
+        label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
+        amount: Number(r.expense ?? 0),
+        submit_on: String(r.submit_on),
+        payment_method: expensePaymentMethodFromRow(r)
+      }))
+    ]
+    const exDeduped = dedupeExpenseOptionsList(ex)
+    return { ex: exDeduped, prOpts }
+  }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd])
+
   useEffect(() => {
     setReconciliationPage(1)
   }, [filterAccountId, selectedMonth, showOnlyUnmatchedLines, reconciliationSearchQuery])
@@ -1377,13 +1493,45 @@ export default function StatementReconciliationTab() {
 
   useEffect(() => {
     setUnmatchedPanelSearch('')
-    setUnmatchedPanelPaymentMethodFilter('')
+    setUnmatchedPanelPaymentMethodFilter([])
     setUnmatchedPanelSourceTableFilter('')
+    setUnmatchedPmFilterOpen(false)
   }, [filterAccountId])
+
+  useEffect(() => {
+    const allowed = new Set<string>()
+    if (unmatchedPanelPaymentFilterOptions.hasNone) allowed.add('__none__')
+    for (const [id] of unmatchedPanelPaymentFilterOptions.entries) {
+      allowed.add(id)
+    }
+    setUnmatchedPanelPaymentMethodFilter((prev) => {
+      const next = prev.filter((x) => allowed.has(x))
+      if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev
+      return next
+    })
+  }, [unmatchedPanelPaymentFilterOptions])
+
+  useEffect(() => {
+    if (!unmatchedPmFilterOpen) return
+    const onDown = (e: MouseEvent) => {
+      const el = unmatchedPmFilterWrapRef.current
+      if (el && !el.contains(e.target as Node)) setUnmatchedPmFilterOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [unmatchedPmFilterOpen])
 
   useEffect(() => {
     setReconciliationPage((p) => Math.min(Math.max(1, p), reconciliationPageCount))
   }, [reconciliationPageCount])
+
+  useEffect(() => {
+    const el = autoMatchSelectAllRef.current
+    if (!el) return
+    const total = autoMatchProposals.length
+    const n = autoMatchSelectedIds.size
+    el.indeterminate = total > 0 && n > 0 && n < total
+  }, [autoMatchPreviewOpen, autoMatchProposals.length, autoMatchSelectedIds])
 
   useEffect(() => {
     let cancelled = false
@@ -1914,8 +2062,12 @@ export default function StatementReconciliationTab() {
     [canMutateStatementUploads]
   )
 
-  const runAutoMatch = async () => {
+  const prepareAutoMatch = async () => {
     if (!filterAccountId || !accountExpenseWindow) return
+    if (pagedReconciliationLines.length === 0) {
+      setMessage('현재 페이지에 표시할 명세 줄이 없습니다. 필터·검색·페이지를 확인하세요.')
+      return
+    }
     setLoading(true)
     setMessage(null)
 
@@ -1987,8 +2139,8 @@ export default function StatementReconciliationTab() {
       }))
     ]
 
-    let n = 0
-    for (const line of lines) {
+    const proposals: AutoMatchProposalRow[] = []
+    for (const line of pagedReconciliationLines) {
       if (line.direction !== 'outflow') continue
       if ((matchesByLine.get(line.id) || []).length > 0) continue
       const amt = Number(line.amount)
@@ -1996,29 +2148,121 @@ export default function StatementReconciliationTab() {
       if (!best) continue
       const k = `${best.expense.source_table}:${best.expense.source_id}`
       used.add(k)
-      const { error } = await supabase.from('reconciliation_matches').insert({
+      proposals.push({
         statement_line_id: line.id,
+        posted_date: line.posted_date,
+        line_amount: amt,
+        line_desc: formatStatementLineDescription(line.description, line.merchant),
         source_table: best.expense.source_table,
         source_id: best.expense.source_id,
-        matched_amount: amt,
-        matched_by: email || null
+        expense_label: best.expense.label,
+        score: best.score
       })
-      if (error) {
-        if (!isAbortLikeError(error)) console.error(error)
-        continue
-      }
-      await supabase
-        .from('statement_lines')
-        .update({ matched_status: 'matched' })
-        .eq('id', line.id)
-      n += 1
     }
 
     setLoading(false)
-    setMessage(`자동 매칭 ${n}건`)
+
+    if (proposals.length === 0) {
+      setMessage(
+        reconciliationPageCount > 1
+          ? `이 페이지 (${reconciliationPage}/${reconciliationPageCount})에서 자동 연결할 출금·미매칭 후보가 없습니다.`
+          : '자동 연결할 출금·미매칭 후보가 없습니다.'
+      )
+      return
+    }
+
+    setAutoMatchSummaryHint(
+      reconciliationPageCount > 1
+        ? `페이지 ${reconciliationPage}/${reconciliationPageCount} · 표 ${pagedReconciliationLines.length}행 범위`
+        : null
+    )
+    setAutoMatchProposals(proposals)
+    setAutoMatchSelectedIds(new Set(proposals.map((p) => p.statement_line_id)))
+    setAutoMatchPreviewOpen(true)
+  }
+
+  const applyAutoMatchProposals = async () => {
+    if (!filterAccountId || autoMatchProposals.length === 0) {
+      setAutoMatchPreviewOpen(false)
+      setAutoMatchProposals([])
+      setAutoMatchSummaryHint(null)
+      setAutoMatchSelectedIds(new Set())
+      return
+    }
+    const toSave = autoMatchProposals.filter((p) => autoMatchSelectedIds.has(p.statement_line_id))
+    if (toSave.length === 0) {
+      setMessage('저장할 행을 한 건 이상 선택하세요.')
+      return
+    }
+    setAutoMatchApplying(true)
+    let n = 0
+    try {
+      for (const p of toSave) {
+        const { error } = await supabase.from('reconciliation_matches').insert({
+          statement_line_id: p.statement_line_id,
+          source_table: p.source_table,
+          source_id: p.source_id,
+          matched_amount: p.line_amount,
+          matched_by: email || null
+        })
+        if (error) {
+          if (!isAbortLikeError(error)) console.error(error)
+          continue
+        }
+        await supabase
+          .from('statement_lines')
+          .update({ matched_status: 'matched' })
+          .eq('id', p.statement_line_id)
+        n += 1
+      }
+    } finally {
+      setAutoMatchApplying(false)
+    }
+
+    setAutoMatchPreviewOpen(false)
+    setAutoMatchProposals([])
+    setAutoMatchSummaryHint(null)
+    setAutoMatchSelectedIds(new Set())
+    setMessage(
+      reconciliationPageCount > 1
+        ? `자동 매칭 ${n}건 저장됨 (페이지 ${reconciliationPage}/${reconciliationPageCount} 범위)`
+        : `자동 매칭 ${n}건 저장됨`
+    )
     await loadLinesAndMatchesForAccount(filterAccountId)
     scheduleCoverageStatsRefresh()
     await refreshUnmatchedExpenseKeys()
+  }
+
+  /** DB에 자동/수동 구분 없음 — reconciliation_matches 전부 삭제 후 명세 줄 대조 상태만 되돌림 */
+  const resetAllReconciliationMatches = async () => {
+    setResettingAllMatches(true)
+    setMessage(null)
+    try {
+      const { error: delErr } = await supabase
+        .from('reconciliation_matches')
+        .delete()
+        .gte('created_at', '1970-01-01T00:00:00.000Z')
+      if (delErr) throw delErr
+
+      const { error: upErr } = await supabase
+        .from('statement_lines')
+        .update({ matched_status: 'unmatched' })
+        .in('matched_status', ['matched', 'partial'])
+      if (upErr) throw upErr
+
+      setResetAllMatchesOpen(false)
+      setMessage('모든 명세 대조 매칭(지출·입금 연결)이 초기화되었습니다.')
+      if (filterAccountId) {
+        await loadLinesAndMatchesForAccount(filterAccountId)
+        scheduleCoverageStatsRefresh()
+        await refreshUnmatchedExpenseKeys()
+      }
+      await loadImports()
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : '매칭 초기화에 실패했습니다.')
+    } finally {
+      setResettingAllMatches(false)
+    }
   }
 
   const lockImport = async () => {
@@ -2565,6 +2809,137 @@ export default function StatementReconciliationTab() {
         }}
       />
 
+      <Dialog
+        open={autoMatchPreviewOpen}
+        onOpenChange={(open) => {
+          if (!open && autoMatchApplying) return
+          setAutoMatchPreviewOpen(open)
+          if (!open) {
+            setAutoMatchProposals([])
+            setAutoMatchSummaryHint(null)
+            setAutoMatchSelectedIds(new Set())
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-3xl w-[calc(100vw-1.25rem)] max-h-[min(88vh,720px)] flex flex-col p-0 gap-0"
+          onPointerDownOutside={(e) => {
+            if (autoMatchApplying) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (autoMatchApplying) e.preventDefault()
+          }}
+        >
+          <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b border-slate-100 shrink-0 text-left space-y-1">
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Wand2 className="h-5 w-5 shrink-0 text-slate-600" />
+              <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm> 미리보기
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600">
+              체크한 행만 저장됩니다. 저장하지 않을 행은 선택을 해제하세요. 취소하면 아무 것도 저장되지 않습니다.
+              {autoMatchSummaryHint ? (
+                <span className="block mt-1 text-slate-700">{autoMatchSummaryHint}</span>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-2 sm:px-4 py-2 overflow-y-auto flex-1 min-h-0">
+            <table className="w-full text-[11px] sm:text-xs border-collapse">
+              <thead>
+                <tr className="border-b text-left text-slate-500">
+                  <th className="py-1.5 pr-1 w-8 text-center">
+                    <input
+                      ref={autoMatchSelectAllRef}
+                      type="checkbox"
+                      className="rounded border-slate-300 align-middle"
+                      checked={
+                        autoMatchProposals.length > 0 &&
+                        autoMatchSelectedIds.size === autoMatchProposals.length
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setAutoMatchSelectedIds(
+                            new Set(autoMatchProposals.map((x) => x.statement_line_id))
+                          )
+                        } else {
+                          setAutoMatchSelectedIds(new Set())
+                        }
+                      }}
+                      title="이 페이지 후보 전체 선택/해제"
+                      aria-label="미리보기 행 전체 선택"
+                    />
+                  </th>
+                  <th className="py-1.5 pr-2 font-medium w-[5.5rem]">명세일</th>
+                  <th className="py-1.5 pr-2 font-medium text-right w-[4.5rem]">금액</th>
+                  <th className="py-1.5 pr-2 font-medium min-w-[8rem]">명세 설명</th>
+                  <th className="py-1.5 pr-2 font-medium w-[5.5rem]">연결 출처</th>
+                  <th className="py-1.5 font-medium min-w-[7rem]">지출 요약</th>
+                  <th className="py-1.5 pl-1 font-medium text-right w-[3rem]">점수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {autoMatchProposals.map((p) => (
+                  <tr key={p.statement_line_id} className="border-b border-slate-100 align-top">
+                    <td className="py-1.5 pr-1 text-center align-middle">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300"
+                        checked={autoMatchSelectedIds.has(p.statement_line_id)}
+                        onChange={() => {
+                          setAutoMatchSelectedIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(p.statement_line_id)) next.delete(p.statement_line_id)
+                            else next.add(p.statement_line_id)
+                            return next
+                          })
+                        }}
+                        aria-label="이 행 저장 여부"
+                      />
+                    </td>
+                    <td className="py-1.5 pr-2 whitespace-nowrap text-slate-800">{p.posted_date}</td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums">
+                      ${Number(p.line_amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-1.5 pr-2 text-slate-800 break-words">{p.line_desc || '—'}</td>
+                    <td className="py-1.5 pr-2 text-slate-700 whitespace-nowrap">
+                      {AUTO_MATCH_SOURCE_LABEL[p.source_table]}
+                    </td>
+                    <td className="py-1.5 text-slate-700 break-all">{p.expense_label || '—'}</td>
+                    <td className="py-1.5 pl-1 text-right tabular-nums text-slate-600">
+                      {p.score.toFixed(0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter className="px-4 py-3 border-t border-slate-100 shrink-0 gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={autoMatchApplying}
+              onClick={() => {
+                setAutoMatchPreviewOpen(false)
+                setAutoMatchProposals([])
+                setAutoMatchSummaryHint(null)
+                setAutoMatchSelectedIds(new Set())
+              }}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              disabled={autoMatchApplying || autoMatchSelectedIds.size === 0}
+              title={autoMatchSelectedIds.size === 0 ? '저장할 행을 선택하세요' : undefined}
+              onClick={() => void applyAutoMatchProposals()}
+            >
+              {autoMatchApplying
+                ? '저장 중…'
+                : `선택 저장 (${autoMatchSelectedIds.size}/${autoMatchProposals.length}건)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={helpModalOpen} onOpenChange={setHelpModalOpen}>
         <DialogContent className="max-w-3xl w-[calc(100vw-1.25rem)] max-h-[min(92vh,880px)] flex flex-col p-0 gap-0">
           <DialogHeader className="px-4 pt-5 pb-3 pr-12 border-b border-slate-100 shrink-0 text-left">
@@ -2629,7 +3004,7 @@ export default function StatementReconciliationTab() {
                   <strong>
                     <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>
                   </strong>
-                  을 실행합니다. 금액이 같고 날짜가 가까운 기존 지출(회사/투어/예약/입장권 부킹)과 연결됩니다.
+                  을 실행하면 <strong>미리보기</strong>가 나오고, 내용을 확인한 뒤 <strong>저장</strong>할 때만 DB에 반영됩니다. 표 하단 페이지네이션에서 <strong>지금 보이는 페이지</strong>에 한해, 금액이 같고 날짜가 가까운 기존 지출(회사/투어/예약/입장권 부킹)과 연결됩니다. 나머지는 페이지를 넘겨 가며 반복합니다.
                 </li>
                 <li>
                   여전히{' '}
@@ -3299,14 +3674,21 @@ export default function StatementReconciliationTab() {
             <span>
               DB 명세 업로드 <strong>{importsForAccount.length}</strong>건 합산 표시
             </span>
-            {accountExpenseWindow && (
+            {unmatchedExpenseQueryStart && unmatchedExpenseQueryEnd ? (
               <>
                 <span>·</span>
                 <span>
-                  지출 후보 조회 구간 {accountExpenseWindow.period_start} ~ {accountExpenseWindow.period_end}
+                  미매칭 지출 조회 {unmatchedExpenseQueryStart} ~ {unmatchedExpenseQueryEnd}
                 </span>
               </>
-            )}
+            ) : accountExpenseWindow ? (
+              <>
+                <span>·</span>
+                <span>
+                  명세 업로드 기간 {accountExpenseWindow.period_start} ~ {accountExpenseWindow.period_end}
+                </span>
+              </>
+            ) : null}
             <span>·</span>
             <span>
               표시 중 지출 합계:{' '}
@@ -3339,11 +3721,23 @@ export default function StatementReconciliationTab() {
           <Button
             type="button"
             variant="secondary"
-            onClick={runAutoMatch}
-            disabled={loading || !filterAccountId || !accountExpenseWindow}
+            onClick={prepareAutoMatch}
+            disabled={
+              loading ||
+              !filterAccountId ||
+              !accountExpenseWindow ||
+              autoMatchPreviewOpen ||
+              autoMatchApplying
+            }
+            title={`표에서 지금 보이는 페이지(최대 ${RECONCILIATION_PAGE_SIZE}행)의 출금·아직 매칭 없는 줄만 후보로 잡습니다. 미리보기에서 확인한 뒤 저장할 때만 반영됩니다.`}
           >
             <Wand2 className="h-4 w-4 mr-1" />
             <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>
+            {reconciliationTableLines.length > RECONCILIATION_PAGE_SIZE ? (
+              <span className="ml-1 text-[11px] font-normal text-slate-600">
+                (페이지 {reconciliationPage}/{reconciliationPageCount})
+              </span>
+            ) : null}
           </Button>
           <Button
             type="button"
@@ -3361,7 +3755,50 @@ export default function StatementReconciliationTab() {
             <Lock className="h-4 w-4 mr-1" />
             <AccountingTerm termKey="명세잠금">명세 잠금</AccountingTerm>
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-amber-300 text-amber-900 hover:bg-amber-50"
+            onClick={() => setResetAllMatchesOpen(true)}
+            disabled={
+              loading ||
+              resettingAllMatches ||
+              autoMatchApplying ||
+              !filterAccountId
+            }
+            title="모든 금융 계정 공통으로 저장된 대조 연결을 삭제합니다."
+          >
+            <RotateCcw className="h-4 w-4 mr-1" />
+            매칭 전부 초기화
+          </Button>
         </div>
+
+        <AlertDialog open={resetAllMatchesOpen} onOpenChange={setResetAllMatchesOpen}>
+          <AlertDialogContent className="z-[1150] max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle>대조 매칭을 모두 초기화할까요?</AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-700 space-y-2">
+                <span className="block">
+                  <code className="text-xs bg-slate-100 px-1 rounded border">reconciliation_matches</code>의{' '}
+                  <strong>모든 행</strong>이 삭제되고, 명세 줄의 대조 상태가 미대조로 돌아갑니다. 자동 매칭만이
+                  아니라 수동으로 연결한 지출·입금 매칭도 함께 제거됩니다.
+                </span>
+                <span className="block font-medium text-amber-900">되돌릴 수 없으니 필요할 때만 실행하세요.</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={resettingAllMatches}>취소</AlertDialogCancel>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={resettingAllMatches}
+                onClick={() => void resetAllReconciliationMatches()}
+              >
+                {resettingAllMatches ? '처리 중…' : '전부 초기화'}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch xl:gap-3 min-w-0 xl:h-[min(78vh,780px)] xl:min-h-[22rem]">
           <div className="min-w-0 flex-1 flex flex-col min-h-0 xl:min-h-0">
@@ -3705,7 +4142,7 @@ export default function StatementReconciliationTab() {
                 <p className="text-[10px] text-slate-600 mt-0.5 leading-snug">
                   {unmatchedPanelListScope === 'unmatched' ? (
                     <>
-                      선택 명세 기간(±7일) 내 회사·투어·예약·입장권 지출 중 아직 명세와 연결되지 않은 항목입니다. 행을{' '}
+                      아래 <strong>조회 기간</strong>으로 불러온 회사·투어·예약·입장권 지출 중 아직 명세와 연결되지 않은 항목입니다. 행을{' '}
                       <strong>드래그</strong>해 왼쪽 표의 <strong>출금</strong> 줄에 놓으면 매칭됩니다.
                     </>
                   ) : (
@@ -3718,6 +4155,54 @@ export default function StatementReconciliationTab() {
                 </p>
               </div>
             </div>
+            {filterAccountId ? (
+              <div className="shrink-0 space-y-1 mb-2 pb-2 border-b border-slate-200/70">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
+                  <span className="font-medium text-slate-700 shrink-0">조회 기간</span>
+                  <input
+                    type="date"
+                    aria-label="미매칭 지출 조회 시작일"
+                    className="border border-slate-200 rounded px-1 py-0.5 bg-white text-[10px] max-w-[9.5rem]"
+                    value={unmatchedExpenseQueryStart}
+                    onChange={(e) => {
+                      setUnmatchedExpenseQueryStart(e.target.value)
+                      setUnmatchedExpenseRangeTouched(true)
+                    }}
+                  />
+                  <span className="text-slate-500">~</span>
+                  <input
+                    type="date"
+                    aria-label="미매칭 지출 조회 종료일"
+                    className="border border-slate-200 rounded px-1 py-0.5 bg-white text-[10px] max-w-[9.5rem]"
+                    value={unmatchedExpenseQueryEnd}
+                    onChange={(e) => {
+                      setUnmatchedExpenseQueryEnd(e.target.value)
+                      setUnmatchedExpenseRangeTouched(true)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] text-slate-700 hover:bg-slate-50 shrink-0"
+                    title="왼쪽 명세 대조 표의 현재 페이지 첫 행 날짜−7일 ~ 마지막 행 날짜+7일로 맞춥니다"
+                    onClick={() => {
+                      const { start, end } = defaultUnmatchedExpenseRange
+                      if (start && end) {
+                        setUnmatchedExpenseQueryStart(start)
+                        setUnmatchedExpenseQueryEnd(end)
+                        setUnmatchedExpenseRangeTouched(false)
+                      }
+                    }}
+                  >
+                    표 페이지 기준
+                  </button>
+                </div>
+                <p className="text-[9px] text-slate-500 leading-snug">
+                  기본: 명세 표 <strong>현재 페이지</strong> 첫·끝 거래일 각각 <strong>−7일 / +7일</strong>. 페이지를 바꾸면
+                  그에 맞춰 갱신됩니다. 날짜를 직접 수정하면 그때부터는 자동 갱신을 멈추고, 다시 맞추려면 «표 페이지
+                  기준»을 누르세요.
+                </p>
+              </div>
+            ) : null}
             {!filterAccountId ? (
               <p className="text-xs text-slate-500 py-2">상단에서 금융 계정을 선택하면 목록이 표시됩니다.</p>
             ) : matchedExpenseKeysLoading && expenseOptions.length > 0 ? (
@@ -3790,22 +4275,83 @@ export default function StatementReconciliationTab() {
                     <option value="reservation_expenses">예약</option>
                     <option value="ticket_bookings">입장권</option>
                   </select>
-                  <select
-                    aria-label="결제방법 필터"
-                    className="border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white min-w-0 shrink-0 max-w-[min(100%,10rem)]"
-                    value={unmatchedPanelPaymentMethodFilter}
-                    onChange={(e) => setUnmatchedPanelPaymentMethodFilter(e.target.value)}
-                  >
-                    <option value="">전체</option>
-                    {unmatchedPanelPaymentFilterOptions.hasNone ? (
-                      <option value="__none__">미지정</option>
+                  <div ref={unmatchedPmFilterWrapRef} className="relative shrink-0 min-w-0 max-w-[min(100%,11rem)]">
+                    <button
+                      type="button"
+                      aria-label="결제방법 필터"
+                      aria-expanded={unmatchedPmFilterOpen}
+                      className="flex w-full min-w-0 items-center justify-between gap-1 border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white text-left"
+                      onClick={() => setUnmatchedPmFilterOpen((o) => !o)}
+                    >
+                      <span className="truncate">
+                        {unmatchedPanelPaymentMethodFilter.length === 0
+                          ? '결제방법 전체'
+                          : `결제방법 (${unmatchedPanelPaymentMethodFilter.length})`}
+                      </span>
+                      <ChevronDown
+                        className={`h-3 w-3 shrink-0 text-slate-500 transition-transform ${
+                          unmatchedPmFilterOpen ? 'rotate-180' : ''
+                        }`}
+                        aria-hidden
+                      />
+                    </button>
+                    {unmatchedPmFilterOpen ? (
+                      <div
+                        className="absolute left-0 right-0 z-50 mt-0.5 max-h-48 overflow-y-auto rounded border border-slate-200 bg-white py-1.5 shadow-md"
+                        role="listbox"
+                        aria-multiselectable
+                      >
+                        <p className="px-2 pb-1 text-[9px] leading-snug text-slate-500">
+                          여러 개 선택 시 해당 결제수단 중 하나라도 맞으면 표시됩니다. 아무 것도 선택하지 않으면 전체입니다.
+                        </p>
+                        {unmatchedPanelPaymentMethodFilter.length > 0 ? (
+                          <button
+                            type="button"
+                            className="mb-1 w-full px-2 py-0.5 text-left text-[9px] text-slate-600 underline hover:bg-slate-50"
+                            onClick={() => setUnmatchedPanelPaymentMethodFilter([])}
+                          >
+                            모두 해제 (전체 표시)
+                          </button>
+                        ) : null}
+                        <label className="flex cursor-pointer items-center gap-2 px-2 py-0.5 text-[10px] hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            className="rounded border-slate-300"
+                            checked={unmatchedPanelPaymentMethodFilter.includes('__none__')}
+                            disabled={!unmatchedPanelPaymentFilterOptions.hasNone}
+                            onChange={() => {
+                              setUnmatchedPanelPaymentMethodFilter((prev) => {
+                                if (prev.includes('__none__')) return prev.filter((x) => x !== '__none__')
+                                return [...prev, '__none__']
+                              })
+                            }}
+                          />
+                          <span className={unmatchedPanelPaymentFilterOptions.hasNone ? '' : 'text-slate-400'}>
+                            미지정
+                          </span>
+                        </label>
+                        {unmatchedPanelPaymentFilterOptions.entries.map(([id, lab]) => (
+                          <label
+                            key={id}
+                            className="flex cursor-pointer items-center gap-2 px-2 py-0.5 text-[10px] hover:bg-slate-50"
+                          >
+                            <input
+                              type="checkbox"
+                              className="rounded border-slate-300"
+                              checked={unmatchedPanelPaymentMethodFilter.includes(id)}
+                              onChange={() => {
+                                setUnmatchedPanelPaymentMethodFilter((prev) => {
+                                  if (prev.includes(id)) return prev.filter((x) => x !== id)
+                                  return [...prev, id]
+                                })
+                              }}
+                            />
+                            <span className="min-w-0 truncate">{lab}</span>
+                          </label>
+                        ))}
+                      </div>
                     ) : null}
-                    {unmatchedPanelPaymentFilterOptions.entries.map(([id, lab]) => (
-                      <option key={id} value={id}>
-                        {lab}
-                      </option>
-                    ))}
-                  </select>
+                  </div>
                 </div>
                 {unmatchedExpensePanelFilteredRows.length === 0 ? (
                   <p className="text-xs text-slate-500 py-2">

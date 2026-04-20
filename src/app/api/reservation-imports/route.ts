@@ -5,6 +5,8 @@ import {
   extractReservationFromEmail,
   isCancellationRequestEmailSubject,
   extractChannelRnForCancellationLookup,
+  isKlookBookingConfirmedReservationEmail,
+  isKlookOrderEmailSubjectForReservation,
 } from '@/lib/emailReservationParser'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
@@ -309,7 +311,9 @@ export async function GET(request: NextRequest) {
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
   let query = client
     .from('reservation_imports')
-    .select('id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at')
+    .select(
+      'id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at, raw_body_text, raw_body_html'
+    )
 
   if (status === 'active') {
     query = query.in('status', ['pending', 'confirmed'])
@@ -432,20 +436,62 @@ export async function GET(request: NextRequest) {
     existingCustomerIdentityKeys = await fetchReservationCustomerIdentityKeys(client as SupabaseClient<Database>)
   }
 
-  const data = list.map((r: { id: string; subject?: string | null; extracted_data?: ExtractedReservationData; reservation_id?: string | null }) => {
-    const channelRn = r.extracted_data?.channel_rn?.trim()
-    const existsByChannelRn = channelRnMatchesExistingSet(channelRn, existingChannelRns)
-    const existsByCustomerMatch = extractedDataMatchesCustomerIdentity(r.extracted_data, existingCustomerIdentityKeys)
-    const cancellationListBadge = isCancellationRequestEmailSubject(r.subject)
-      ? (cancellationBadgeByImportId.get(r.id) ?? 'needed')
-      : null
-    return {
-      ...r,
-      reservation_exists_by_channel_rn: existsByChannelRn,
-      reservation_exists_by_customer_match: existsByCustomerMatch,
-      cancellation_list_badge: cancellationListBadge,
+  const data = list.map(
+    (r: {
+      id: string
+      subject?: string | null
+      platform_key?: string | null
+      extracted_data?: ExtractedReservationData | null
+      raw_body_text?: string | null
+      raw_body_html?: string | null
+      reservation_id?: string | null
+      message_id?: string | null
+      source_email?: string | null
+      received_at?: string | null
+      status?: string | null
+      created_at?: string | null
+    }) => {
+      let extracted_data = r.extracted_data ?? undefined
+      const looksKlook =
+        r.platform_key === 'klook' || isKlookOrderEmailSubjectForReservation(r.subject)
+      if (looksKlook) {
+        const ext = extracted_data ?? ({} as ExtractedReservationData)
+        if (ext.is_booking_confirmed !== true) {
+          if (
+            isKlookBookingConfirmedReservationEmail(
+              r.subject ?? '',
+              r.raw_body_text ?? '',
+              r.raw_body_html ?? null
+            )
+          ) {
+            extracted_data = { ...ext, is_booking_confirmed: true }
+          }
+        }
+      }
+      const { raw_body_text: _rawOmit, raw_body_html: _htmlOmit, ...rest } = r
+      void _rawOmit
+      void _htmlOmit
+      const channelRn = (extracted_data ?? r.extracted_data)?.channel_rn?.trim()
+      const existsByChannelRn = channelRnMatchesExistingSet(channelRn, existingChannelRns)
+      const existsByCustomerMatch = extractedDataMatchesCustomerIdentity(
+        extracted_data ?? r.extracted_data,
+        existingCustomerIdentityKeys
+      )
+      const cancellationListBadge = isCancellationRequestEmailSubject(r.subject)
+        ? (cancellationBadgeByImportId.get(r.id) ?? 'needed')
+        : null
+      return {
+        ...rest,
+        platform_key:
+          rest.platform_key ??
+          (isKlookOrderEmailSubjectForReservation(r.subject) ? 'klook' : rest.platform_key),
+        extracted_data: extracted_data ?? r.extracted_data,
+        reservation_exists_by_channel_rn: existsByChannelRn,
+        reservation_exists_by_customer_match: existsByCustomerMatch,
+        cancellation_list_badge: cancellationListBadge,
+      }
     }
-  })
+  )
 
   return NextResponse.json({ data })
 }

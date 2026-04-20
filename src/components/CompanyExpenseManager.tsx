@@ -11,22 +11,48 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Search, Filter, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, ChevronLeft, ChevronRight, Receipt } from 'lucide-react'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
 import { toast } from 'sonner'
+import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
+import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 type TeamMember = Database['public']['Tables']['team']['Row']
 
+function ymdFromLocalDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** DB submit_on(ISO) → date input 값 (로컬 달력 기준) */
+function ymdFromSubmitOnIso(iso: string | null | undefined): string {
+  if (!iso) return ymdFromLocalDate(new Date())
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ymdFromLocalDate(new Date())
+  return ymdFromLocalDate(d)
+}
+
+/** date input(YYYY-MM-DD) → 명세·회사지출과 동일하게 정오 UTC ISO */
+function submitOnIsoFromYmd(ymd: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    return `${ymdFromLocalDate(new Date())}T12:00:00.000Z`
+  }
+  return `${ymd}T12:00:00.000Z`
+}
+
 interface CompanyExpenseFormData {
   id: string
+  /** YYYY-MM-DD — 표시·편집용 */
+  submit_on: string
   paid_to: string
   paid_for: string
   description: string
@@ -46,6 +72,7 @@ interface CompanyExpenseFormData {
 
 export default function CompanyExpenseManager() {
   const t = useTranslations('companyExpense')
+  const tTour = useTranslations('tours.tourExpense')
   let locale = 'ko'
   try {
     locale = useLocale()
@@ -53,6 +80,7 @@ export default function CompanyExpenseManager() {
     console.warn('로케일을 가져올 수 없습니다. 기본값(ko)을 사용합니다.', error)
   }
   const { user } = useAuth()
+  const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
   const [expenses, setExpenses] = useState<CompanyExpense[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [teamMembers, setTeamMembers] = useState<Map<string, TeamMember>>(new Map())
@@ -66,6 +94,8 @@ export default function CompanyExpenseManager() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [vehicleFilter, setVehicleFilter] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [isDragOver, setIsDragOver] = useState(false)
@@ -73,7 +103,6 @@ export default function CompanyExpenseManager() {
   const [expenseSuggestions, setExpenseSuggestions] = useState<{
     paid_to: string[]
     paid_for: string[]
-    payment_method: string[]
   } | null>(null)
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   /** reconciliation_matches에 연결된 회사 지출 id */
@@ -81,6 +110,7 @@ export default function CompanyExpenseManager() {
 
   const [formData, setFormData] = useState<CompanyExpenseFormData>({
     id: '',
+    submit_on: ymdFromLocalDate(new Date()),
     paid_to: '',
     paid_for: '',
     description: '',
@@ -116,6 +146,8 @@ export default function CompanyExpenseManager() {
       if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
       if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
       if (vehicleFilter && vehicleFilter !== 'all') params.append('vehicle_id', vehicleFilter)
+      if (dateFrom) params.append('date_from', dateFrom)
+      if (dateTo) params.append('date_to', dateTo)
       
       const response = await fetch(`/api/company-expenses?${params.toString()}`)
       const result = await response.json()
@@ -133,7 +165,7 @@ export default function CompanyExpenseManager() {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, page])
+  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, dateFrom, dateTo, page])
 
   useEffect(() => {
     const ids = expenses.map((e) => e.id)
@@ -207,7 +239,7 @@ export default function CompanyExpenseManager() {
   // 필터 변경 시 1페이지로
   useEffect(() => {
     setPage(1)
-  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter])
+  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, dateFrom, dateTo])
 
   useEffect(() => {
     loadExpenses()
@@ -227,17 +259,14 @@ export default function CompanyExpenseManager() {
         if (res.ok && json && typeof json === 'object' && !Array.isArray(json)) {
           const paid_to = Array.isArray(json.paid_to) ? json.paid_to.filter((x: unknown) => typeof x === 'string') : []
           const paid_for = Array.isArray(json.paid_for) ? json.paid_for.filter((x: unknown) => typeof x === 'string') : []
-          const payment_method = Array.isArray(json.payment_method)
-            ? json.payment_method.filter((x: unknown) => typeof x === 'string')
-            : []
-          setExpenseSuggestions({ paid_to, paid_for, payment_method })
+          setExpenseSuggestions({ paid_to, paid_for })
         } else {
-          setExpenseSuggestions({ paid_to: [], paid_for: [], payment_method: [] })
+          setExpenseSuggestions({ paid_to: [], paid_for: [] })
           if (!res.ok) toast.error(t('messages.suggestionsLoadError'))
         }
       } catch {
         if (!cancelled) {
-          setExpenseSuggestions({ paid_to: [], paid_for: [], payment_method: [] })
+          setExpenseSuggestions({ paid_to: [], paid_for: [] })
           toast.error(t('messages.suggestionsLoadError'))
         }
       } finally {
@@ -268,16 +297,6 @@ export default function CompanyExpenseManager() {
     if (cur) s.add(cur)
     return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
   }, [expenseSuggestions, formData.paid_for])
-
-  const paymentMethodDatalistOptions = useMemo(() => {
-    const s = new Set<string>()
-    expenseSuggestions?.payment_method?.forEach((x) => {
-      if (x) s.add(x)
-    })
-    const cur = formData.payment_method.trim()
-    if (cur) s.add(cur)
-    return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [expenseSuggestions, formData.payment_method])
 
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -419,6 +438,7 @@ export default function CompanyExpenseManager() {
 
       const submitData = {
         ...formData,
+        submit_on: submitOnIsoFromYmd(formData.submit_on),
         photo_url: formData.photo_url || uploadedFileUrls[0] || '', // 첫 번째 파일을 메인 이미지로
         attachments: attachmentsPayload,
         uploaded_files: undefined // 서버로 전송하지 않음
@@ -462,6 +482,9 @@ export default function CompanyExpenseManager() {
         : ''
     setFormData({
       id: expense.id ?? '',
+      submit_on: ymdFromSubmitOnIso(
+        (expense as { submit_on?: string | null }).submit_on ?? null
+      ),
       paid_to: expense.paid_to ?? '',
       paid_for: expense.paid_for ?? '',
       description: expense.description ?? '',
@@ -522,6 +545,7 @@ export default function CompanyExpenseManager() {
   const resetForm = () => {
     setFormData({
       id: '',
+      submit_on: ymdFromLocalDate(new Date()),
       paid_to: '',
       paid_for: '',
       description: '',
@@ -591,27 +615,62 @@ export default function CompanyExpenseManager() {
     { value: 'other', label: t('expenseTypes.other') }
   ]
 
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+
+  const parseExpenseAmount = (e: CompanyExpense) => parseFloat(String(e.amount ?? 0)) || 0
+
+  const totalAmount = useMemo(
+    () => expenses.reduce((sum, e) => sum + parseExpenseAmount(e), 0),
+    [expenses]
+  )
+  const pendingAmount = useMemo(
+    () =>
+      expenses.filter((e) => e.status === 'pending').reduce((sum, e) => sum + parseExpenseAmount(e), 0),
+    [expenses]
+  )
+  const approvedAmount = useMemo(
+    () =>
+      expenses.filter((e) => e.status === 'approved').reduce((sum, e) => sum + parseExpenseAmount(e), 0),
+    [expenses]
+  )
+
+  const resetFilters = () => {
+    setSearchTerm('')
+    setCategoryFilter('all')
+    setStatusFilter('all')
+    setVehicleFilter('all')
+    setDateFrom('')
+    setDateTo('')
+  }
+
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold truncate">{t('title')}</h1>
-          <p className="text-muted-foreground text-xs sm:text-sm">{t('expenseList')}</p>
-        </div>
-        
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              onClick={() => {
-                resetForm()
-                setEditingExpense(null)
-              }}
-              className="w-full sm:w-auto text-sm py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white border-0"
-            >
-              <Plus className="w-4 h-4 mr-1.5 sm:mr-2" />
-              {t('addExpense')}
-            </Button>
-          </DialogTrigger>
+    <div className="space-y-3 sm:space-y-4">
+      <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+          <div className="flex-1 relative min-w-0">
+            <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
+            <input
+              type="text"
+              placeholder={tTour('searchPlaceholder')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  resetForm()
+                  setEditingExpense(null)
+                }}
+                className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 bg-blue-600 hover:bg-blue-700 text-white border-0 rounded-lg flex items-center justify-center gap-1.5 sm:gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                {t('addExpense')}
+              </Button>
+            </DialogTrigger>
           
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -624,7 +683,18 @@ export default function CompanyExpenseManager() {
             </DialogHeader>
             
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="submit_on">{t('form.date')} *</Label>
+                  <Input
+                    id="submit_on"
+                    type="date"
+                    value={formData.submit_on}
+                    onChange={(e) => setFormData({ ...formData, submit_on: e.target.value })}
+                    required
+                    className="block w-full"
+                  />
+                </div>
                 <div>
                   <Label htmlFor="amount">{t('form.amount')} *</Label>
                   <Input
@@ -638,7 +708,7 @@ export default function CompanyExpenseManager() {
                 </div>
                 
                 {editingExpense && (
-                  <div>
+                  <div className="sm:col-span-2">
                     <Label htmlFor="id">{t('form.id')}</Label>
                     <Input
                       id="id"
@@ -755,21 +825,16 @@ export default function CompanyExpenseManager() {
                 
                 <div>
                   <Label htmlFor="payment_method">{t('form.paymentMethod')} *</Label>
-                  <Input
-                    id="payment_method"
-                    list="company-expense-datalist-payment-method"
-                    autoComplete="off"
-                    value={formData.payment_method}
-                    onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                    required
+                  <PaymentMethodAutocomplete
+                    options={paymentMethodOptions}
+                    valueId={formData.payment_method || ''}
+                    onChange={(id) => setFormData({ ...formData, payment_method: id })}
+                    disabled={saving}
+                    pleaseSelectLabel={t('form.selectPaymentMethodPlaceholder')}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   />
-                  <datalist id="company-expense-datalist-payment-method">
-                    {paymentMethodDatalistOptions.map((v) => (
-                      <option key={v} value={v} />
-                    ))}
-                  </datalist>
                   <p className="text-muted-foreground text-xs mt-1">
-                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.suggestOrType')}
+                    {t('form.paymentMethodHint')}
                   </p>
                 </div>
               </div>
@@ -959,110 +1024,136 @@ export default function CompanyExpenseManager() {
             </form>
           </DialogContent>
         </Dialog>
-      </div>
+        </div>
 
-      {/* 필터 - 모바일 컴팩트 */}
-      <Card className="border rounded-lg">
-        <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
-          <CardTitle className="flex items-center text-base sm:text-lg">
-            <Filter className="w-4 h-4 mr-1.5 sm:mr-2" />
-            필터
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-4 lg:p-6 pt-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-            <div>
-              <Label htmlFor="search">{t('filters.search')}</Label>
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="search"
-                  placeholder={t('filters.searchPlaceholder')}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="category">{t('filters.category')}</Label>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="카테고리" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t('filters.all')}</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category.value} value={category.value}>
-                      {category.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <Label htmlFor="status">{t('filters.status')}</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="상태" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t('filters.all')}</SelectItem>
-                  <SelectItem value="pending">{t('status.pending')}</SelectItem>
-                  <SelectItem value="approved">{t('status.approved')}</SelectItem>
-                  <SelectItem value="rejected">{t('status.rejected')}</SelectItem>
-                  <SelectItem value="paid">{t('status.paid')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <Label htmlFor="vehicle">{t('filters.vehicle')}</Label>
-              <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="차량" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t('filters.all')}</SelectItem>
-                  {vehicles.map((vehicle) => (
-                    <SelectItem key={vehicle.id} value={vehicle.id}>
-                      {vehicle.vehicle_number || vehicle.vehicle_type || 'Unknown'} ({vehicle.vehicle_category || 'N/A'})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-category">
+              {t('filters.category')}
+            </label>
+            <select
+              id="co-filter-category"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{t('filters.all')}</option>
+              {categories.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.label}
+                </option>
+              ))}
+            </select>
           </div>
-          
-          <div className="flex justify-end mt-3 sm:mt-4">
-            <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={() => {
-              setSearchTerm('')
-              setCategoryFilter('')
-              setStatusFilter('')
-              setVehicleFilter('')
-            }}>
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-status">
+              {tTour('statusLabel')}
+            </label>
+            <select
+              id="co-filter-status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{tTour('filterAll')}</option>
+              <option value="pending">{tTour('filterPending')}</option>
+              <option value="approved">{tTour('filterApproved')}</option>
+              <option value="rejected">{tTour('filterRejected')}</option>
+              <option value="paid">{t('status.paid')}</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-date-from">
+              {tTour('startDate')}
+            </label>
+            <input
+              id="co-filter-date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-date-to">
+              {tTour('endDate')}
+            </label>
+            <input
+              id="co-filter-date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 items-end">
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-vehicle">
+              {t('filters.vehicle')}
+            </label>
+            <select
+              id="co-filter-vehicle"
+              value={vehicleFilter}
+              onChange={(e) => setVehicleFilter(e.target.value)}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{t('filters.all')}</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicle.vehicle_number || vehicle.vehicle_type || 'Unknown'} ({vehicle.vehicle_category || 'N/A'})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex justify-end sm:justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs sm:text-sm w-full sm:w-auto"
+              onClick={resetFilters}
+            >
               {t('buttons.resetFilters')}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">
+          <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-100/80">
+            <div className="text-xs sm:text-sm text-gray-600">{tTour('totalExpenseSum')}</div>
+            <div className="text-base sm:text-2xl font-bold text-gray-900 truncate">{formatCurrency(totalAmount)}</div>
+          </div>
+          <div className="bg-yellow-50 rounded-lg p-2 sm:p-3 border border-yellow-100/80">
+            <div className="text-xs sm:text-sm text-gray-600">{tTour('pendingSum')}</div>
+            <div className="text-base sm:text-2xl font-bold text-yellow-600 truncate">{formatCurrency(pendingAmount)}</div>
+          </div>
+          <div className="bg-green-50 rounded-lg p-2 sm:p-3 border border-green-100/80">
+            <div className="text-xs sm:text-sm text-gray-600">{tTour('approvedSum')}</div>
+            <div className="text-base sm:text-2xl font-bold text-green-600 truncate">{formatCurrency(approvedAmount)}</div>
+          </div>
+        </div>
+        <p className="text-[10px] sm:text-xs text-gray-500">{t('statsPageNote')}</p>
+      </div>
 
       {/* 지출 목록 */}
-      <Card className="border rounded-lg">
-        <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
-          <CardTitle className="text-base sm:text-lg">{t('expenseList')}</CardTitle>
-          <CardDescription className="text-xs sm:text-sm">
-            총 {pagination.total}건 {pagination.totalPages > 1 ? `· ${page} / ${pagination.totalPages}페이지` : ''}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-4 lg:p-6">
+      <div className="space-y-2 sm:space-y-3">
+        <p className="text-xs sm:text-sm text-gray-600">
+          {t('expenseList')}
+          {pagination.total > 0
+            ? ` · ${t('listCountLabel', { count: pagination.total })}${pagination.totalPages > 1 ? ` · ${page} / ${pagination.totalPages}` : ''}`
+            : ''}
+        </p>
           {loading ? (
-            <div className="text-center py-6 sm:py-8 text-sm">{t('loading')}</div>
+            <div className="text-center py-6 sm:py-8">
+              <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto" />
+              <p className="text-gray-500 mt-2 text-sm">{t('loading')}</p>
+            </div>
           ) : expenses.length === 0 ? (
-            <div className="text-center py-6 sm:py-8 text-muted-foreground text-sm">
-              {t('noExpenses')}
+            <div className="text-center py-8 sm:py-12 text-gray-500 text-sm">
+              <Receipt className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 text-gray-300" />
+              <p>{t('noExpenses')}</p>
             </div>
           ) : (
             <>
@@ -1149,7 +1240,11 @@ export default function CompanyExpenseManager() {
                       <TableCell className="font-medium py-2">
                         ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
                       </TableCell>
-                      <TableCell className="py-2">{expense.payment_method || '-'}</TableCell>
+                      <TableCell className="py-2">
+                        {expense.payment_method
+                          ? paymentMethodMap[expense.payment_method] || expense.payment_method
+                          : '-'}
+                      </TableCell>
                       <TableCell className="w-32 py-2">
                         {expense.category && (
                           <Badge variant="outline">
@@ -1256,8 +1351,7 @@ export default function CompanyExpenseManager() {
               )}
             </>
           )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   )
 }

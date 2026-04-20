@@ -1,10 +1,12 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
-import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2 } from 'lucide-react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
+import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 
 interface ReservationExpense {
   id: string
@@ -27,9 +29,10 @@ interface ReservationExpense {
   updated_at: string
   reservations?: {
     id: string
-    customer_name: string
-    customer_email: string
+    customer_name?: string
+    customer_email?: string
     product_id: string
+    customers?: { name?: string; email?: string }
   } | null
 }
 
@@ -60,78 +63,6 @@ interface ReservationExpenseManagerProps {
   isPersisted?: boolean
   /** Shown when !isPersisted (loading/error). Default copy if omitted */
   persistHint?: string
-}
-
-function PaymentMethodAutocomplete({
-  options,
-  valueId,
-  onChange,
-  disabled,
-  pleaseSelectLabel,
-}: {
-  options: { id: string; name: string }[]
-  valueId: string
-  onChange: (id: string) => void
-  disabled?: boolean
-  pleaseSelectLabel: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState('')
-
-  useEffect(() => {
-    if (!valueId) {
-      if (!open) setQ('')
-      return
-    }
-    const sel = options.find((o) => o.id === valueId)
-    if (sel && !open) setQ(sel.name)
-  }, [valueId, options, open])
-
-  const filtered = options.filter((o) => o.name.toLowerCase().includes(q.trim().toLowerCase()))
-
-  return (
-    <div className="relative">
-      <input
-        type="text"
-        autoComplete="off"
-        disabled={disabled}
-        placeholder={pleaseSelectLabel}
-        value={q}
-        onChange={(e) => {
-          setQ(e.target.value)
-          setOpen(true)
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => {
-          setTimeout(() => setOpen(false), 120)
-          const exact = options.find((o) => o.name.toLowerCase() === q.trim().toLowerCase())
-          if (exact) onChange(exact.id)
-          else onChange('')
-        }}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-      />
-      {open && filtered.length > 0 && (
-        <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg">
-          {filtered.map((pm) => (
-            <li key={pm.id}>
-              <button
-                type="button"
-                className="w-full px-3 py-1.5 text-left hover:bg-gray-100"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  onChange(pm.id)
-                  setQ(pm.name)
-                  setOpen(false)
-                }}
-              >
-                {pm.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
 }
 
 function PaidForAutocomplete({
@@ -225,13 +156,15 @@ export default function ReservationExpenseManager({
 }: ReservationExpenseManagerProps) {
   
   const t = useTranslations('reservationExpense')
+  const tTour = useTranslations('tours.tourExpense')
+  const locale = useLocale()
+  const adminList = !reservationId
   const [expenses, setExpenses] = useState<ReservationExpense[]>([])
   const [paidToOptions, setPaidToOptions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
   const [reservations, setReservations] = useState<Reservation[]>([])
-  const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
-  const [paymentMethodOptions, setPaymentMethodOptions] = useState<{ id: string; name: string }[]>([])
+  const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
   const [showAddForm, setShowAddForm] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ReservationExpense | null>(null)
@@ -239,6 +172,12 @@ export default function ReservationExpenseManager({
   const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; paidFor: string } | null>(null)
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -259,7 +198,6 @@ export default function ReservationExpenseManager({
     loadExpenses()
     loadVendors()
     loadTeamMembers()
-    loadPaymentMethods()
     if (!reservationId) loadReservations()
   }, [reservationId])
 
@@ -269,30 +207,6 @@ export default function ReservationExpenseManager({
       setFormData((prev) => ({ ...prev, reservation_id: reservationId }))
     }
   }, [reservationId])
-
-  const loadPaymentMethods = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('payment_methods')
-        .select('id, method, display_name')
-        .order('method')
-      if (error) throw error
-      const map: Record<string, string> = {}
-      const options: { id: string; name: string }[] = []
-      data?.forEach((pm: { id: string; method: string; display_name?: string | null }) => {
-        const raw = (pm.display_name && pm.display_name.trim()) || pm.method
-        // "PAYM001 - Cash" → "Cash" 만 표시
-        const name = raw.includes(' - ') ? raw.split(' - ').pop()!.trim() : raw
-        map[pm.id] = name
-        map[pm.method] = name
-        options.push({ id: pm.id, name })
-      })
-      setPaymentMethodMap(map)
-      setPaymentMethodOptions(options)
-    } catch (error) {
-      console.error('결제 방법 로드 오류:', error)
-    }
-  }
 
   const loadExpenses = async () => {
     try {
@@ -731,20 +645,177 @@ export default function ReservationExpenseManager({
     }).format(amount)
   }
 
-  // 총 금액 계산
+  // 총 금액 계산 (예약 폼에 임베드될 때 헤더용 — 전체 목록)
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0)
   const isLine = itemVariant === 'line'
+
+  const filteredExpenses = useMemo(() => {
+    if (!adminList) return expenses
+    return expenses.filter((e) => {
+      if (statusFilter !== 'all' && e.status !== statusFilter) return false
+      const subYmd = e.submit_on ? e.submit_on.slice(0, 10) : ''
+      if (dateFrom && subYmd && subYmd < dateFrom) return false
+      if (dateTo && subYmd && subYmd > dateTo) return false
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase()
+        const blob = [
+          e.paid_for,
+          e.paid_to,
+          e.note,
+          e.reservation_id,
+          e.submitted_by,
+          e.reservations?.customer_name ?? e.reservations?.customers?.name,
+          e.reservations?.customer_email,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        if (!blob.includes(q)) return false
+      }
+      return true
+    })
+  }, [adminList, expenses, searchTerm, statusFilter, dateFrom, dateTo])
+
+  const totalFiltered = useMemo(
+    () => filteredExpenses.reduce((s, e) => s + e.amount, 0),
+    [filteredExpenses]
+  )
+  const pendingFiltered = useMemo(
+    () =>
+      filteredExpenses.filter((e) => e.status === 'pending').reduce((s, e) => s + e.amount, 0),
+    [filteredExpenses]
+  )
+  const approvedFiltered = useMemo(
+    () =>
+      filteredExpenses.filter((e) => e.status === 'approved').reduce((s, e) => s + e.amount, 0),
+    [filteredExpenses]
+  )
+
+  const displayExpenses = adminList ? filteredExpenses : expenses
+
+  const reservationCustomerLabel = (expense: ReservationExpense) => {
+    const r = expense.reservations
+    if (!r) return null
+    const name = r.customer_name ?? r.customers?.name ?? null
+    return name ? `${name} · ${r.product_id}` : r.product_id ?? null
+  }
+
+  const resetAdminFilters = () => {
+    setSearchTerm('')
+    setStatusFilter('all')
+    setDateFrom('')
+    setDateTo('')
+  }
 
   const showTitle = !hideTitle || titleProp
   const titleText = titleProp ?? t('expenseManagement')
   return (
-    <div className="space-y-2 sm:space-y-3">
+    <div className={adminList ? 'space-y-3 sm:space-y-4' : 'space-y-2 sm:space-y-3'}>
       {!isPersisted && (
         <p className="text-[11px] sm:text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
           {persistHint || '예약을 저장한 후에 예약 지출을 등록할 수 있습니다.'}
         </p>
       )}
-      {/* 헤더: 제목 왼쪽, 총액·추가 버튼 오른쪽 끝 */}
+
+      {adminList && (
+        <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+            <div className="flex-1 relative min-w-0">
+              <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
+              <input
+                type="text"
+                placeholder={tTour('searchPlaceholder')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={!isPersisted}
+              title={!isPersisted ? persistHint || '예약 저장 후 이용' : undefined}
+              onClick={() => {
+                setShowAddForm(true)
+                setEditingExpense(null)
+                setFormData({
+                  paid_to: '',
+                  paid_for: '',
+                  amount: '',
+                  payment_method: '',
+                  note: '',
+                  image_url: '',
+                  file_path: '',
+                  custom_paid_to: '',
+                  reservation_id: reservationId || '',
+                  uploaded_files: [],
+                })
+              }}
+              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1.5 sm:gap-2 text-sm w-full sm:w-auto shrink-0 disabled:opacity-50 disabled:pointer-events-none"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t('addExpense')}</span>
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{tTour('statusLabel')}</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="all">{tTour('filterAll')}</option>
+                <option value="pending">{tTour('filterPending')}</option>
+                <option value="approved">{tTour('filterApproved')}</option>
+                <option value="rejected">{tTour('filterRejected')}</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{tTour('startDate')}</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{tTour('endDate')}</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+            </div>
+            <div className="col-span-2 sm:col-span-1 flex items-end">
+              <button
+                type="button"
+                onClick={resetAdminFilters}
+                className="w-full px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-100 text-gray-700"
+              >
+                {t('filterReset')}
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">
+            <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-100/80">
+              <div className="text-xs sm:text-sm text-gray-600">{tTour('totalExpenseSum')}</div>
+              <div className="text-base sm:text-2xl font-bold text-gray-900 truncate">{formatCurrency(totalFiltered)}</div>
+            </div>
+            <div className="bg-yellow-50 rounded-lg p-2 sm:p-3 border border-yellow-100/80">
+              <div className="text-xs sm:text-sm text-gray-600">{tTour('pendingSum')}</div>
+              <div className="text-base sm:text-2xl font-bold text-yellow-600 truncate">{formatCurrency(pendingFiltered)}</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-2 sm:p-3 border border-green-100/80">
+              <div className="text-xs sm:text-sm text-gray-600">{tTour('approvedSum')}</div>
+              <div className="text-base sm:text-2xl font-bold text-green-600 truncate">{formatCurrency(approvedFiltered)}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!adminList && (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {showTitle && (
@@ -785,10 +856,13 @@ export default function ReservationExpenseManager({
           </button>
         </div>
       </div>
+      )}
 
       {/* 지출 추가 폼 - 인라인 (추가만, 수정은 모달 사용) */}
       {showAddForm && !editingExpense && (
-        <div className="bg-white border rounded-lg p-3 sm:p-4 shadow-sm">
+        <div
+          className={`bg-white border p-3 sm:p-4 shadow-sm ${adminList ? 'rounded-xl border-gray-200' : 'rounded-lg'}`}
+        >
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <h4 className="text-base sm:text-lg font-medium text-gray-900">
               {editingExpense ? t('editExpense') : t('addExpense')}
@@ -1109,14 +1183,151 @@ export default function ReservationExpenseManager({
 
       {/* 지출 목록 */}
       {loading ? (
-        <div className="text-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-500 mt-2">{t('loading')}</p>
+        <div className="text-center py-6 sm:py-8">
+          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto" />
+          <p className="text-gray-500 mt-2 text-sm">{t('loading')}</p>
         </div>
-      ) : expenses.length > 0 ? (
+      ) : displayExpenses.length > 0 ? (
+        adminList ? (
+          <>
+            <div className="md:hidden space-y-3">
+              {displayExpenses.map((expense) => (
+                <div
+                  key={expense.id}
+                  className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
+                    <p className="text-lg font-bold text-green-600 whitespace-nowrap">{formatCurrency(expense.amount)}</p>
+                  </div>
+                  <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
+                    <span className="text-gray-400">{tTour('date')}</span>
+                    <span>{expense.submit_on ? expense.submit_on.slice(0, 10) : '—'}</span>
+                    <span className="text-gray-400">{t('paidTo')}</span>
+                    <span className="truncate">{expense.paid_to}</span>
+                    <span className="text-gray-400">{tTour('submitter')}</span>
+                    <span className="truncate">{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
+                    <span className="text-gray-400">{tTour('statusLabel')}</span>
+                    <span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(expense.status)}`}>
+                        {getStatusText(expense.status)}
+                      </span>
+                    </span>
+                    {expense.reservations && reservationCustomerLabel(expense) && (
+                      <>
+                        <span className="text-gray-400">{t('form.reservationId')}</span>
+                        <span className="truncate">{reservationCustomerLabel(expense)}</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
+                    {expense.image_url && expense.image_url.trim() !== '' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setViewingReceipt({ imageUrl: expense.image_url!, paidFor: expense.paid_for })
+                        }
+                        className="inline-flex items-center gap-1 text-blue-600 text-xs font-medium py-2 px-3 rounded-lg hover:bg-blue-50 min-h-[44px]"
+                      >
+                        <Receipt className="w-4 h-4" />
+                        {t('viewReceipt')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleEditExpense(expense)}
+                      className="inline-flex items-center gap-1 text-gray-600 text-xs font-medium py-2 px-3 rounded-lg hover:bg-gray-100 min-h-[44px]"
+                    >
+                      <Edit className="w-4 h-4" />
+                      {t('buttons.edit')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('date')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidFor')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidTo')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('form.reservationId')}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('amount')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('submitter')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('statusLabel')}</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('receipt')}</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('action')}</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {displayExpenses.map((expense) => (
+                    <tr key={expense.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                        {expense.submit_on ? expense.submit_on.slice(0, 10) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900 max-w-[200px] truncate">{expense.paid_for}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{expense.paid_to}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate">
+                        {reservationCustomerLabel(expense) ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600 text-right">
+                        {formatCurrency(expense.amount)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {teamMembers[expense.submitted_by] || expense.submitted_by}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(expense.status)}`}>
+                          {getStatusText(expense.status)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        {expense.image_url && expense.image_url.trim() !== '' ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setViewingReceipt({ imageUrl: expense.image_url!, paidFor: expense.paid_for })
+                            }
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            <Receipt className="w-4 h-4" />
+                            {tTour('view')}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-400">{tTour('none')}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleEditExpense(expense)}
+                            className="p-1 text-gray-600 hover:text-blue-600"
+                            title={t('buttons.edit')}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExpense(expense.id)}
+                            className="p-1 text-gray-600 hover:text-red-600"
+                            title={t('buttons.delete')}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
         <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-1.5'}>
-          {expenses.map((expense) => (
-            <div key={expense.id} className={isLine ? 'py-2 first:pt-0' : 'border border-gray-200 rounded-lg px-2.5 py-2 bg-white hover:bg-gray-50/80 shadow-sm transition-colors'}>
+          {displayExpenses.map((expense) => (
+            <div key={expense.id} className={isLine ? 'py-2 first:pt-0' : 'border border-gray-200 rounded-xl px-2.5 py-2 bg-white hover:bg-gray-50/80 shadow-sm transition-colors'}>
               {/* 1행: 결제내용 + 금액 + 상태 + 액션 */}
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
@@ -1149,7 +1360,7 @@ export default function ReservationExpenseManager({
               {/* 2행: 결제처 · 제출일 · 제출자 (한 줄) */}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500">
                 <span className="truncate">{expense.paid_to}</span>
-                <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
+                <span>{new Date(expense.submit_on).toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR')}</span>
                 <span className="truncate">{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
                 {expense.image_url && (
                   <button
@@ -1162,8 +1373,8 @@ export default function ReservationExpenseManager({
                   </button>
                 )}
               </div>
-              {!reservationId && expense.reservations && (
-                <p className="mt-0.5 text-[10px] text-gray-400 truncate">{expense.reservations.customer_name} · {expense.reservations.product_id}</p>
+              {!reservationId && expense.reservations && reservationCustomerLabel(expense) && (
+                <p className="mt-0.5 text-[10px] text-gray-400 truncate">{reservationCustomerLabel(expense)}</p>
               )}
               {expense.note && (
                 <p className="mt-0.5 text-[10px] text-gray-500 truncate max-w-full" title={expense.note}>{expense.note}</p>
@@ -1171,10 +1382,57 @@ export default function ReservationExpenseManager({
             </div>
           ))}
         </div>
+        )
       ) : (
-        <div className="text-center py-3 text-gray-500">
-          <DollarSign className="h-8 w-8 text-gray-300 mx-auto mb-1" />
-          <p className="text-xs">{t('noExpensesMessage')}</p>
+        <div className="text-center py-8 sm:py-12 text-gray-500 text-sm">
+          <Receipt className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 text-gray-300" />
+          <p>{adminList ? tTour('noExpensesMatch') : t('noExpensesMessage')}</p>
+        </div>
+      )}
+
+      {viewingReceipt && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {tTour('receiptLabel')}: {viewingReceipt.paidFor}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingReceipt(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[calc(90vh-100px)]">
+              <div className="flex flex-col items-center">
+                <img
+                  src={viewingReceipt.imageUrl}
+                  alt=""
+                  className="max-w-full h-auto rounded-lg shadow-lg"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement
+                    target.style.display = 'none'
+                  }}
+                />
+                <div className="mt-4 flex gap-2">
+                  <a
+                    href={viewingReceipt.imageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    {tTour('openInNewWindow')}
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

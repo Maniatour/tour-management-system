@@ -68,6 +68,7 @@ export async function PUT(
       amount,
       payment_method,
       submit_by,
+      submit_on,
       photo_url,
       category,
       subcategory,
@@ -99,6 +100,9 @@ export async function PUT(
       return NextResponse.json({ error: '금액이 올바르지 않습니다.' }, { status: 400 })
     }
 
+    const submitOnIso =
+      typeof submit_on === 'string' && submit_on.trim() !== '' ? submit_on.trim() : undefined
+
     const updatePayload: CompanyExpenseUpdate = {
       paid_to,
       paid_for,
@@ -106,6 +110,7 @@ export async function PUT(
       amount: parsedAmount,
       payment_method: paymentMethodTrimmed,
       submit_by,
+      ...(submitOnIso !== undefined && { submit_on: submitOnIso }),
       photo_url: photo_url || null,
       category: category || null,
       subcategory: subcategory || null,

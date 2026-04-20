@@ -2879,6 +2879,8 @@
         "register": "Register",
         "registering": "Registering..."
       },
+      "fillRequiredFields": "Please fill in required fields (paid-for, amount, etc.).",
+      "paymentMethodRequired": "Please select a registered payment method.",
       "expenseRegistered": "Expense registered successfully",
       "expenseRegistrationError": "Failed to register expense",
       "status": {
@@ -3046,6 +3048,7 @@
       "delete": "Delete",
       "save": "Save"
     },
+    "filterReset": "Reset filters",
     "messages": {
       "expenseAdded": "Reservation expense has been registered.",
       "expenseUpdated": "Reservation expense has been updated.",
@@ -3235,6 +3238,8 @@
   "companyExpense": {
     "title": "Company Expense Management",
     "expenseList": "Expense List",
+    "listCountLabel": "{count} total",
+    "statsPageNote": "Totals below reflect only the expenses shown on this page.",
     "addExpense": "Add Expense",
     "loading": "Loading...",
     "noExpenses": "No company expenses registered.",
@@ -3265,6 +3270,7 @@
     },
     "form": {
       "id": "ID",
+      "date": "Expense date",
       "amount": "Amount",
       "paidTo": "Paid To",
       "paidFor": "Paid For",
@@ -3275,6 +3281,8 @@
       "expenseType": "Expense Type",
       "vehicleId": "Vehicle",
       "paymentMethod": "Payment Method",
+      "selectPaymentMethodPlaceholder": "Search and select a payment method",
+      "paymentMethodHint": "Choose from cards and accounts registered under Payment method management.",
       "notes": "Notes",
       "taxDeductible": "Tax Deductible"
     },
@@ -3298,7 +3306,7 @@
       "expenseUpdated": "Company expense has been updated.",
       "expenseDeleted": "Company expense has been deleted.",
       "confirmDelete": "Are you sure you want to delete this company expense?",
-      "suggestionsLoadError": "Could not load saved payee, description, or payment method suggestions. You can still type freely."
+      "suggestionsLoadError": "Could not load saved payee or description suggestions. You can still type freely."
     }
   },
   "options": {

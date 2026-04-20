@@ -2070,6 +2070,72 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
   },
 }
 
+/** 제목 앞의 Fwd:/Re:/전달: 등 반복 제거 (Klook 제목 매칭용) */
+function stripForwardReplySubject(subject: string): string {
+  let s = (subject || '').trim()
+  for (let i = 0; i < 8; i++) {
+    const next = s.replace(/^(?:fwd?|re|fw|전달)\s*:\s*/i, '').trim()
+    if (next === s) break
+    s = next
+  }
+  return s
+}
+
+/**
+ * Klook 주문 메일 제목 패턴인지 (Received / Confimed / Confirmed, Fwd:/Re: 제거 후 판별).
+ * Confimed·Confirmed 를 “예약 접수”로 확정하려면 isKlookBookingConfirmedReservationEmail 로 본문까지 본다.
+ */
+export function isKlookOrderEmailSubjectForReservation(subject: string | null | undefined): boolean {
+  const lower = stripForwardReplySubject(subject ?? '').toLowerCase()
+  return (
+    lower.startsWith('klook order received -') ||
+    lower.startsWith('klook order confimed -') ||
+    lower.startsWith('klook order confirmed -')
+  )
+}
+
+/** Gmail 등에 HTML만 있을 때 레이블·URL이 한 줄이 아니어도 매칭되도록 평문화 */
+function normalizeRawBodyForKlookBookingMatch(rawText: string, rawHtml: string | null | undefined): string {
+  const t = (rawText || '').trim()
+  const h = (rawHtml || '').trim()
+  const pick = t || h
+  if (pick.includes('<') && /<[a-z][\s\S]*>/i.test(pick)) {
+    return toPlainTextKlook(pick)
+  }
+  return pick.replace(/\r\n/g, '\n')
+}
+
+/**
+ * Klook 예약 접수 이메일(is_booking_confirmed).
+ * - 일반: 제목이 "Klook Order Received -" 로 시작 (Fwd:/Re: 접두 허용).
+ * - 일부 All Inclusive(앤텔롭 X / activity 113386)는 "Klook Order Confimed|Confirmed -" 로만 오는 경우가 있음.
+ *   이 제목은 다른 상품에도 쓰이므로, 본문에 Antelope Canyon X 와 klook activity/113386 가 함께 있을 때만 예약 접수로 본다.
+ * - raw_body_text 가 HTML이면 내부에서 Klook용 평문화 후 검사. raw_body_html 은 text 가 비었을 때 사용.
+ */
+export function isKlookBookingConfirmedReservationEmail(
+  subject: string,
+  rawBodyText: string,
+  rawBodyHtml?: string | null
+): boolean {
+  const lower = stripForwardReplySubject(subject || '').toLowerCase()
+  if (lower.startsWith('klook order received -')) {
+    return true
+  }
+  if (lower.startsWith('klook order confimed -') || lower.startsWith('klook order confirmed -')) {
+    const body = normalizeRawBodyForKlookBookingMatch(rawBodyText ?? '', rawBodyHtml ?? null)
+    const searchIn = body.replace(/\r\n/g, '\n')
+    const oneLine = searchIn.replace(/\s+/g, ' ')
+    const hasAntelopeCanyonXPackage =
+      /package\s*:\s*antelope\s+canyon\s+x\b/i.test(searchIn) ||
+      /\bantelope\s+canyon\s+x\b/i.test(searchIn)
+    const hasActivity113386 =
+      /\/activity\/113386(?:\/|\?|&|#|\b)/i.test(searchIn + oneLine) &&
+      /klook\.com/i.test(searchIn + oneLine)
+    return hasAntelopeCanyonXPackage && hasActivity113386
+  }
+  return false
+}
+
 /**
  * 이메일 제목 + 본문에서 예약/고객 정보 추출.
  * 채널별 파서는 CHANNEL_PARSERS에 등록된 것만 사용하며, 없으면 공통 패턴만 적용.
@@ -2081,8 +2147,13 @@ export function extractReservationFromEmail(options: {
   sourceEmail?: string | null
 }): { platform_key: string | null; extracted_data: ExtractedReservationData } {
   const { subject, text, html, sourceEmail } = options
-  const platform_key = detectPlatform(sourceEmail || null, subject)
+  let platform_key = detectPlatform(sourceEmail || null, subject)
+  if (!platform_key && isKlookOrderEmailSubjectForReservation(subject)) {
+    platform_key = 'klook'
+  }
   const parser = platform_key ? CHANNEL_PARSERS[platform_key] : undefined
+  const rawTextForKlookBooking = (text && text.trim()) || ''
+  const rawHtmlForKlookBooking = (html && html.trim()) || null
 
   let bodyRaw = (text && text.trim()) || ''
   const rawHtml = bodyRaw && bodyRaw.includes('<') ? bodyRaw : (html && html.trim()) || null
@@ -2122,7 +2193,10 @@ export function extractReservationFromEmail(options: {
   if (merged.customer_name && isGarbageImportedCustomerName(merged.customer_name)) {
     delete merged.customer_name
   }
-  if (platform_key === 'klook' && (subject || '').trimStart().toLowerCase().startsWith('klook order received -')) {
+  if (
+    platform_key === 'klook' &&
+    isKlookBookingConfirmedReservationEmail(subject, rawTextForKlookBooking, rawHtmlForKlookBooking)
+  ) {
     merged.is_booking_confirmed = true
   }
   // [KKday] 예약번호: 26KK242880792 주문이 접수되었습니다.

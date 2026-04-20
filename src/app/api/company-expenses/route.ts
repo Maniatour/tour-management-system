@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category')
     const status = searchParams.get('status')
     const vehicleId = searchParams.get('vehicle_id')
+    const dateFrom = searchParams.get('date_from')
+    const dateTo = searchParams.get('date_to')
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
     const from = (page - 1) * limit
@@ -46,6 +48,14 @@ export async function GET(request: NextRequest) {
     // 차량 필터
     if (vehicleId && vehicleId !== 'all') {
       query = query.eq('vehicle_id', vehicleId)
+    }
+
+    // 지출일(submit_on) 구간 — YYYY-MM-DD
+    if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
+      query = query.gte('submit_on', `${dateFrom}T00:00:00.000Z`)
+    }
+    if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+      query = query.lte('submit_on', `${dateTo}T23:59:59.999Z`)
     }
     
     const { data, error, count } = await query
@@ -86,6 +96,7 @@ export async function POST(request: NextRequest) {
       amount,
       payment_method,
       submit_by,
+      submit_on,
       photo_url,
       category,
       subcategory,
@@ -104,6 +115,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 })
     }
     
+    const submitOnIso =
+      typeof submit_on === 'string' && submit_on.trim() !== '' ? submit_on.trim() : undefined
+
     const expenseData: CompanyExpenseInsert = {
       // ID는 자동 생성되므로 제공되지 않은 경우 undefined로 설정
       ...(id && { id }),
@@ -113,6 +127,7 @@ export async function POST(request: NextRequest) {
       amount: parseFloat(amount),
       payment_method: paymentMethodTrimmed,
       submit_by,
+      ...(submitOnIso !== undefined && { submit_on: submitOnIso }),
       photo_url: photo_url || null,
       category: category || null,
       subcategory: subcategory || null,

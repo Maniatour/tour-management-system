@@ -2904,6 +2904,8 @@
           "register": "등록",
           "registering": "등록 중..."
         },
+        "fillRequiredFields": "필수 항목(지급 항목, 금액 등)을 입력해 주세요.",
+        "paymentMethodRequired": "등록된 결제 방법을 선택해 주세요.",
         "expenseRegistered": "비용이 등록되었습니다",
         "expenseRegistrationError": "비용 등록에 실패했습니다",
         "status": {
@@ -3071,6 +3073,7 @@
       "delete": "삭제",
       "save": "저장"
     },
+    "filterReset": "필터 초기화",
     "messages": {
       "expenseAdded": "예약 지출이 등록되었습니다.",
       "expenseUpdated": "예약 지출이 수정되었습니다.",
@@ -3114,6 +3117,8 @@
   "companyExpense": {
     "title": "회사 지출 관리",
     "expenseList": "지출 목록",
+    "listCountLabel": "총 {count}건",
+    "statsPageNote": "아래 합계는 현재 페이지에 표시된 지출만 반영합니다.",
     "addExpense": "지출 추가",
     "loading": "로딩 중...",
     "noExpenses": "등록된 회사 지출이 없습니다.",
@@ -3145,6 +3150,7 @@
     },
     "form": {
       "id": "ID",
+      "date": "지출일",
       "amount": "금액",
       "paidTo": "결제처",
       "paidFor": "결제내용",
@@ -3155,6 +3161,8 @@
       "expenseType": "지출 유형",
       "vehicleId": "차량",
       "paymentMethod": "결제 방법",
+      "selectPaymentMethodPlaceholder": "검색하여 결제 방법 선택",
+      "paymentMethodHint": "관리자 메뉴의 결제 방법 관리에 등록된 카드·계좌 등에서 선택합니다.",
       "notes": "메모",
       "taxDeductible": "세금 공제"
     },
@@ -3178,7 +3186,7 @@
       "expenseUpdated": "회사 지출이 수정되었습니다.",
       "expenseDeleted": "회사 지출이 삭제되었습니다.",
       "confirmDelete": "정말로 이 회사 지출을 삭제하시겠습니까?",
-      "suggestionsLoadError": "기존 결제처·결제내용·결제 방법 목록을 불러오지 못했습니다. 직접 입력은 가능합니다."
+      "suggestionsLoadError": "기존 결제처·결제내용 목록을 불러오지 못했습니다. 직접 입력은 가능합니다."
     }
   },
   "tagTranslations": {

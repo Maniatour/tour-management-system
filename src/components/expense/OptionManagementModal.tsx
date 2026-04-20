@@ -13,7 +13,7 @@ interface OptionItem {
   id: string
   value: string
   label: string
-  category: 'paid_to' | 'paid_for' | 'payment_method'
+  category: 'paid_to' | 'paid_for'
   isCustom: boolean
 }
 
@@ -36,7 +36,7 @@ const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
   onOptionsUpdated
 }) => {
   const t = useTranslations('tours.tourExpense')
-  const [activeTab, setActiveTab] = useState<'paid_to' | 'paid_for' | 'payment_method'>('paid_to')
+  const [activeTab, setActiveTab] = useState<'paid_to' | 'paid_for'>('paid_to')
   const [options, setOptions] = useState<OptionItem[]>([])
   const [loading, setLoading] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -49,18 +49,8 @@ const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
   // 탭별 라벨 매핑
   const tabLabels = {
     paid_to: '지급 대상',
-    paid_for: '지급 목적', 
-    payment_method: '결제 방법'
+    paid_for: '지급 목적'
   }
-
-  // 결제 방법 기본값들
-  const defaultPaymentMethods = [
-    { value: 'cash', label: '현금' },
-    { value: 'credit_card', label: '신용카드' },
-    { value: 'debit_card', label: '체크카드' },
-    { value: 'mobile_payment', label: '모바일 결제' },
-    { value: 'other', label: '기타' }
-  ]
 
   // 옵션 로드
   const loadOptions = async () => {
@@ -107,17 +97,6 @@ const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
           })
         })
       }
-
-      // payment_method 옵션들 (기본값들)
-      defaultPaymentMethods.forEach(method => {
-        allOptions.push({
-          id: `payment_method_${method.value}`,
-          value: method.value,
-          label: method.label,
-          category: 'payment_method',
-          isCustom: false
-        })
-      })
 
       setOptions(allOptions)
     } catch (error) {
@@ -263,7 +242,7 @@ const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
           isCustom: false
         }])
       } else {
-        // 로컬 상태에만 추가 (paid_to, payment_method)
+        // 로컬 상태에만 추가 (지급 대상)
         const newOption: OptionItem = {
           id: `${activeTab}_${Date.now()}`,
           value: newValue.trim(),
@@ -376,7 +355,7 @@ const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
           {Object.entries(tabLabels).map(([key, label]) => (
             <button
               key={key}
-              onClick={() => setActiveTab(key as any)}
+              onClick={() => setActiveTab(key as 'paid_to' | 'paid_for')}
               className={`px-6 py-3 font-medium ${
                 activeTab === key
                   ? 'text-blue-600 border-b-2 border-blue-600'
