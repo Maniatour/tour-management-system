@@ -14,6 +14,62 @@ import {
 const UNDECIDED_OPTION_ID = '__undecided__'
 const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
 
+function normalizeTourDateForSlot(d: unknown): string {
+  const s = String(d ?? '').trim()
+  if (!s) return ''
+  return s.includes('T') ? s.split('T')[0]! : s
+}
+
+/**
+ * 예약이 다른 상품/날짜로 옮겨갈 때, (새 product_id + tour_date)가 아닌 투어들의 reservation_ids에서만 제거한다.
+ * 같은 날·같은 상품의 다른 투어에 수동 배정된 상태는 유지한다.
+ */
+async function removeReservationFromToursNotMatchingSlot(
+  reservationId: string,
+  targetProductId: string,
+  targetTourDate: string
+): Promise<void> {
+  const rid = String(reservationId).trim()
+  if (!rid) return
+
+  const targetP = String(targetProductId ?? '').trim()
+  const targetD = normalizeTourDateForSlot(targetTourDate)
+
+  const { data: tours, error } = await supabase
+    .from('tours')
+    .select('id, product_id, tour_date, reservation_ids')
+    .contains('reservation_ids', [rid])
+
+  if (error || !tours?.length) {
+    if (error) console.error('removeReservationFromToursNotMatchingSlot:', error)
+    return
+  }
+
+  for (const tour of tours) {
+    const row = tour as {
+      id: string
+      product_id?: string | null
+      tour_date?: string | null
+      reservation_ids?: unknown
+    }
+    const tp = String(row.product_id ?? '').trim()
+    const td = normalizeTourDateForSlot(row.tour_date)
+    if (tp === targetP && td === targetD) continue
+
+    const ids = Array.isArray(row.reservation_ids)
+      ? row.reservation_ids.map((x: unknown) => String(x).trim()).filter(Boolean)
+      : []
+    if (!ids.includes(rid)) continue
+
+    const next = ids.filter((id) => id !== rid)
+    const { error: upErr } = await supabase
+      .from('tours')
+      .update({ reservation_ids: next } as any)
+      .eq('id', row.id)
+    if (upErr) console.error('removeReservationFromToursNotMatchingSlot tour update:', upErr)
+  }
+}
+
 export type ReservationUpdatePayload = Omit<Reservation, 'id'> & {
   pricingInfo?: Record<string, unknown>
   customerLanguage?: string
@@ -39,6 +95,26 @@ export async function updateReservation(
   payload: ReservationUpdatePayload
 ): Promise<UpdateReservationResult> {
   try {
+    const { data: existingReservation, error: existingErr } = await supabase
+      .from('reservations')
+      .select('product_id, tour_date')
+      .eq('id', reservationId)
+      .maybeSingle()
+
+    if (existingErr || !existingReservation) {
+      return { success: false, error: existingErr?.message || '예약을 찾을 수 없습니다.' }
+    }
+
+    const oldP = String((existingReservation as { product_id?: string | null }).product_id ?? '').trim()
+    const oldD = normalizeTourDateForSlot((existingReservation as { tour_date?: string | null }).tour_date)
+    const newP = String(payload.productId ?? '').trim()
+    const newD = normalizeTourDateForSlot(payload.tourDate)
+    const slotChanged = oldP !== newP || oldD !== newD
+
+    if (slotChanged) {
+      await removeReservationFromToursNotMatchingSlot(reservationId, newP, newD)
+    }
+
     const reservationData = {
       customer_id: payload.customerId,
       product_id: payload.productId,
@@ -54,7 +130,7 @@ export async function updateReservation(
       channel_id: payload.channelId,
       channel_rn: payload.channelRN,
       added_by: payload.addedBy,
-      tour_id: payload.tourId,
+      tour_id: slotChanged ? null : payload.tourId,
       status: payload.status,
       selected_options: payload.selectedOptions,
       selected_option_prices: payload.selectedOptionPrices,

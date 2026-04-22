@@ -46,29 +46,16 @@ export default function ResidentInquiryEmailPreviewModal({
     ? 'en'
     : 'ko'
 
-  const passUploadAbsoluteUrl = useMemo(() => {
-    if (typeof window === 'undefined') return ''
-    const origin = window.location.origin.replace(/\/$/, '')
-    return `${origin}/${emailLocale}/dashboard/pass-upload`
-  }, [emailLocale])
-
   const emailContent = useMemo(() => {
     return buildResidentInquiryEmail({
       customerName,
       tourDate,
       productName,
       channelReference: channelRN ?? null,
-      passUploadAbsoluteUrl,
+      residentCheckAbsoluteUrl: '',
       locale: emailLocale,
     })
-  }, [
-    customerName,
-    tourDate,
-    productName,
-    channelRN,
-    passUploadAbsoluteUrl,
-    emailLocale,
-  ])
+  }, [customerName, tourDate, productName, channelRN, emailLocale])
 
   const handleCopyHtml = useCallback(async () => {
     const cleanHtml = emailContent.html

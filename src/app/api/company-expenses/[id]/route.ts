@@ -78,6 +78,8 @@ export async function PUT(
       attachments,
       expense_type,
       tax_deductible,
+      status: statusBody,
+      paid_for_label_id: paidForLabelIdBody,
     } = body
 
     const paymentMethodTrimmed =
@@ -120,6 +122,13 @@ export async function PUT(
       attachments: attachments ?? null,
       expense_type: expense_type || null,
       tax_deductible: tax_deductible !== undefined ? tax_deductible : true,
+      ...(statusBody !== undefined &&
+        statusBody !== null &&
+        String(statusBody).trim() !== '' && { status: String(statusBody).trim() }),
+      ...(paidForLabelIdBody !== undefined && {
+        paid_for_label_id:
+          paidForLabelIdBody === null || paidForLabelIdBody === '' ? null : String(paidForLabelIdBody),
+      }),
     }
 
     const { data, error } = await supabase

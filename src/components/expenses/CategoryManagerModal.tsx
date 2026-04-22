@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, Save, Plus, Trash2, Settings, RefreshCw, Search, AlertCircle } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { X, Plus, Trash2, Settings, RefreshCw, Search, AlertCircle, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface StandardCategory {
@@ -136,6 +136,18 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
   // 새 카테고리 추가
   const [newCategory, setNewCategory] = useState({ name: '', name_ko: '', description: '', parent_id: '' })
   const [showAddCategory, setShowAddCategory] = useState(false)
+  const [editingStandardCategoryId, setEditingStandardCategoryId] = useState<string | null>(null)
+  const [editStandardForm, setEditStandardForm] = useState({
+    name: '',
+    name_ko: '',
+    description: '',
+    parent_id: '',
+    irs_schedule_c_line: '',
+    deduction_limit_percent: 100,
+    tax_deductible: true,
+    display_order: 0,
+    is_active: true,
+  })
   const [selectedMainCategories, setSelectedMainCategories] = useState<Map<number, string>>(new Map())
   const [selectedSubCategories, setSelectedSubCategories] = useState<Map<number, string>>(new Map())
   const [categorySelectModalOpen, setCategorySelectModalOpen] = useState<number | null>(null) // 현재 카테고리 선택 모달이 열린 행의 인덱스
@@ -163,6 +175,26 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     }
   }, [editingMappingId, mappings])
 
+  useEffect(() => {
+    if (!editingStandardCategoryId) return
+    const cat = standardCategories.find((c) => c.id === editingStandardCategoryId)
+    if (!cat) return
+    setEditStandardForm({
+      name: cat.name,
+      name_ko: cat.name_ko ?? '',
+      description: cat.description ?? '',
+      parent_id: cat.parent_id ?? '',
+      irs_schedule_c_line: cat.irs_schedule_c_line ?? '',
+      deduction_limit_percent:
+        cat.deduction_limit_percent !== undefined && cat.deduction_limit_percent !== null
+          ? cat.deduction_limit_percent
+          : 100,
+      tax_deductible: cat.tax_deductible,
+      display_order: cat.display_order,
+      is_active: cat.is_active,
+    })
+  }, [editingStandardCategoryId, standardCategories])
+
   // 정규화 탭이 활성화되거나 테이블이 변경될 때 데이터 로드
   useEffect(() => {
     if (activeTab === 'normalize') {
@@ -182,7 +214,6 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
         const { data, error } = await supabase
           .from('expense_standard_categories')
           .select('*')
-          .eq('is_active', true)
           .order('display_order')
         
         if (!error) {
@@ -566,6 +597,59 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     }
   }
 
+  const handleUpdateStandardCategory = async () => {
+    if (!editingStandardCategoryId) return
+    if (!editStandardForm.name.trim()) {
+      alert('영문 이름을 입력하세요.')
+      return
+    }
+
+    const existing = standardCategories.find((c) => c.id === editingStandardCategoryId)
+    const isMain = !existing?.parent_id
+    const parentId = isMain ? null : editStandardForm.parent_id || null
+    if (!isMain && !parentId) {
+      alert('서브카테고리는 상위(메인) 카테고리를 선택하세요.')
+      return
+    }
+    if (!isMain && parentId === editingStandardCategoryId) {
+      alert('자기 자신을 상위로 지정할 수 없습니다.')
+      return
+    }
+
+    const pct = Math.min(100, Math.max(0, Math.round(Number(editStandardForm.deduction_limit_percent) || 0)))
+    const order = Math.round(Number(editStandardForm.display_order) || 0)
+
+    setSaving(true)
+    try {
+      const { error } = await supabase
+        .from('expense_standard_categories')
+        .update({
+          name: editStandardForm.name.trim(),
+          name_ko: editStandardForm.name_ko.trim() || null,
+          description: editStandardForm.description.trim() || null,
+          parent_id: parentId,
+          irs_schedule_c_line: editStandardForm.irs_schedule_c_line.trim() || null,
+          deduction_limit_percent: pct,
+          tax_deductible: editStandardForm.tax_deductible,
+          display_order: order,
+          is_active: editStandardForm.is_active,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingStandardCategoryId)
+
+      if (error) throw error
+
+      setEditingStandardCategoryId(null)
+      await loadData()
+      onSave?.()
+    } catch (error) {
+      console.error('표준 카테고리 수정 오류:', error)
+      alert('카테고리 수정 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const getSourceLabel = (source: string) => {
     switch (source) {
       case 'tour_expenses': return '투어 지출'
@@ -707,6 +791,16 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
       subCategoriesByParent.set(cat.parent_id, subs)
     }
   })
+
+  const pickerMainCategories = useMemo(
+    () => standardCategories.filter((c) => !c.parent_id && c.is_active),
+    [standardCategories]
+  )
+
+  const getPickerSubCategories = (parentId: string) =>
+    standardCategories
+      .filter((c) => c.parent_id === parentId && c.is_active)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
 
   // 카테고리 선택 핸들러 (메인 + 서브카테고리)
   const handleCategorySelect = async (expense: UnmappedExpense, categoryId: string, subCategoryId?: string) => {
@@ -989,7 +1083,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                   className="p-1 text-blue-500 hover:bg-blue-50 rounded"
                                   title="수정"
                                 >
-                                  <Save size={16} />
+                                  <Pencil size={16} />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteMapping(mapping.id)}
@@ -1060,7 +1154,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                       onChange={(e) => setNewCategory({ ...newCategory, parent_id: e.target.value })}
                     >
                       <option value="">메인 카테고리 (서브카테고리가 아닌 경우)</option>
-                      {mainCategories.map(cat => (
+                      {pickerMainCategories.map(cat => (
                         <option key={cat.id} value={cat.id}>
                           {cat.name_ko || cat.name}
                         </option>
@@ -1087,6 +1181,21 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                 </div>
               )}
 
+              {standardCategories.some((c) => c.id === 'CAT024') &&
+                !standardCategories.some((c) => c.id === 'CAT024-008') && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    <p className="font-medium">COGS 확장 항목(유류 CAT024-008 등)이 DB에 없습니다.</p>
+                    <p className="mt-1 text-amber-900/90">
+                      벤토 마이그레이션만 적용된 상태이면 <strong className="font-mono">CAT024-001</strong>(도시락)만 보입니다.
+                      아래 파일을 Supabase에 적용하면 <strong className="font-mono">CAT024-008</strong>{' '}
+                      <span className="whitespace-nowrap">「유류비 (투어 차량)」</span> 등이 추가됩니다.
+                    </p>
+                    <p className="mt-2 font-mono text-xs break-all text-amber-900/80">
+                      supabase/migrations/20260424120000_expense_standard_categories_cogs_part3.sql
+                    </p>
+                  </div>
+                )}
+
               {/* 표준 카테고리 목록 (계층 구조) */}
               <div className="border rounded-lg overflow-hidden">
                 <table className="w-full">
@@ -1099,15 +1208,19 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IRS Line</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">공제율</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">세금공제</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">액션</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {mainCategories.map((cat) => {
-                      const subCats = subCategoriesByParent.get(cat.id) || []
+                      const subCats = [...(subCategoriesByParent.get(cat.id) || [])].sort(
+                        (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
+                      )
                       return (
                         <React.Fragment key={cat.id}>
                           {/* 메인 카테고리 */}
-                          <tr className="hover:bg-gray-50 bg-blue-50">
+                          <tr className={`hover:bg-gray-50 ${cat.is_active ? 'bg-blue-50' : 'bg-gray-100 opacity-90'}`}>
                             <td className="px-4 py-3 text-sm font-medium text-gray-700">{cat.id}</td>
                             <td className="px-4 py-3 text-sm font-semibold">{cat.name}</td>
                             <td className="px-4 py-3 text-sm font-semibold">{cat.name_ko || '-'}</td>
@@ -1123,10 +1236,28 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                 <span className="text-red-600">아니오</span>
                               )}
                             </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {cat.is_active ? (
+                                <span className="text-green-700">사용</span>
+                              ) : (
+                                <span className="text-gray-500">비활성</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                onClick={() => setEditingStandardCategoryId(cat.id)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
+                                title="수정"
+                              >
+                                <Pencil size={16} />
+                                수정
+                              </button>
+                            </td>
                           </tr>
                           {/* 서브카테고리들 */}
                           {subCats.map((subCat) => (
-                            <tr key={subCat.id} className="hover:bg-gray-50">
+                            <tr key={subCat.id} className={`hover:bg-gray-50 ${!subCat.is_active ? 'bg-gray-50 opacity-90' : ''}`}>
                               <td className="px-4 py-3 text-sm text-gray-400 pl-8">
                                 <span className="text-xs">└</span> {subCat.id}
                               </td>
@@ -1143,6 +1274,24 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                 ) : (
                                   <span className="text-red-600">아니오</span>
                                 )}
+                              </td>
+                              <td className="px-4 py-3 text-sm pl-8 text-gray-600">
+                                {subCat.is_active ? (
+                                  <span className="text-green-700">사용</span>
+                                ) : (
+                                  <span className="text-gray-500">비활성</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 pl-8">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingStandardCategoryId(subCat.id)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
+                                  title="수정"
+                                >
+                                  <Pencil size={16} />
+                                  수정
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1281,8 +1430,8 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               {/* 카테고리 목록 */}
               <div className="flex-1 overflow-y-auto p-4">
                 <div className="space-y-2">
-                  {mainCategories.map(mainCat => {
-                    const subs = subCategoriesByParent.get(mainCat.id) || []
+                  {pickerMainCategories.map(mainCat => {
+                    const subs = getPickerSubCategories(mainCat.id)
                     const isMainSelected = selectedMainCategories.get(categorySelectModalOpen) === mainCat.id
                     
                     return (
@@ -1462,7 +1611,9 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               <div className="flex-1 overflow-y-auto p-4">
                 <div className="space-y-2">
                   {mainCategories.map(mainCat => {
-                    const subs = subCategoriesByParent.get(mainCat.id) || []
+                    const subs = [...(subCategoriesByParent.get(mainCat.id) || [])].sort(
+                      (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
+                    )
                     const isMainSelected = editMainCat === mainCat.id || (mapping.standard_category_id === mainCat.id && editMainCat === '')
                     
                     return (
@@ -1589,6 +1740,163 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   {saving ? '저장 중...' : '저장'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {editingStandardCategoryId && (() => {
+        const cat = standardCategories.find((c) => c.id === editingStandardCategoryId)
+        if (!cat) return null
+        const isMain = !cat.parent_id
+        const parentOptions = standardCategories.filter(
+          (c) => !c.parent_id && (c.is_active || c.id === editStandardForm.parent_id)
+        )
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
+              <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">표준 카테고리 수정</h3>
+                  <p className="text-sm text-gray-500 mt-1 font-mono">ID: {cat.id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingStandardCategoryId(null)}
+                  className="p-2 hover:bg-gray-200 rounded-lg"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-4 space-y-3 overflow-y-auto flex-1">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">영문 이름</label>
+                  <input
+                    type="text"
+                    value={editStandardForm.name}
+                    onChange={(e) => setEditStandardForm({ ...editStandardForm, name: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">한글 이름</label>
+                  <input
+                    type="text"
+                    value={editStandardForm.name_ko}
+                    onChange={(e) => setEditStandardForm({ ...editStandardForm, name_ko: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">설명</label>
+                  <textarea
+                    value={editStandardForm.description}
+                    onChange={(e) => setEditStandardForm({ ...editStandardForm, description: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+                {!isMain && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">상위(메인) 카테고리</label>
+                    <select
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      value={editStandardForm.parent_id}
+                      onChange={(e) => setEditStandardForm({ ...editStandardForm, parent_id: e.target.value })}
+                    >
+                      <option value="">선택…</option>
+                      {parentOptions.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name_ko || p.name}
+                          {!p.is_active ? ' (비활성)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">IRS Line</label>
+                    <input
+                      type="text"
+                      value={editStandardForm.irs_schedule_c_line}
+                      onChange={(e) =>
+                        setEditStandardForm({ ...editStandardForm, irs_schedule_c_line: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      placeholder="예: Line 24b"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">공제율 (%)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={editStandardForm.deduction_limit_percent}
+                      onChange={(e) =>
+                        setEditStandardForm({
+                          ...editStandardForm,
+                          deduction_limit_percent: Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">표시 순서</label>
+                    <input
+                      type="number"
+                      value={editStandardForm.display_order}
+                      onChange={(e) =>
+                        setEditStandardForm({ ...editStandardForm, display_order: Number(e.target.value) })
+                      }
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end gap-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editStandardForm.tax_deductible}
+                        onChange={(e) =>
+                          setEditStandardForm({ ...editStandardForm, tax_deductible: e.target.checked })
+                        }
+                      />
+                      세금 공제 가능
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editStandardForm.is_active}
+                        onChange={(e) =>
+                          setEditStandardForm({ ...editStandardForm, is_active: e.target.checked })
+                        }
+                      />
+                      활성 (신규 매핑에 표시)
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div className="border-t p-4 bg-gray-50 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingStandardCategoryId(null)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleUpdateStandardCategory()}
+                  disabled={saving}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm"
+                >
+                  {saving ? '저장 중…' : '저장'}
                 </button>
               </div>
             </div>

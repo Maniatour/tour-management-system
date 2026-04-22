@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { supabase } from '@/lib/supabase'
-import {
-  buildResidentInquiryEmail,
-  siteUrlForEmail,
-} from '@/lib/residentInquiryEmailHtml'
+import { buildResidentInquiryEmail } from '@/lib/residentInquiryEmailHtml'
+import { mintResidentCheckTokenForReservation } from '@/lib/mintResidentCheckToken'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 
 /**
@@ -85,16 +83,19 @@ export async function POST(request: NextRequest) {
 
     const en = resolveReservationEmailIsEnglish(cust.language, localeParam)
     const emailLocale = en ? 'en' : 'ko'
-    const base = siteUrlForEmail()
-    const passPath = `/${emailLocale}/dashboard/pass-upload`
-    const passUploadAbsoluteUrl = base ? `${base}${passPath}` : ''
+
+    const minted = await mintResidentCheckTokenForReservation({
+      reservationId: reservationId.trim(),
+      emailLocalePath: emailLocale,
+    })
+    const residentCheckAbsoluteUrl = minted?.absoluteUrl?.trim() || ''
 
     const { subject, html } = buildResidentInquiryEmail({
       customerName: cust.name || '',
       tourDate: row.tour_date,
       productName: productName || (emailLocale === 'en' ? 'Tour' : '투어'),
       channelReference: row.channel_rn,
-      passUploadAbsoluteUrl,
+      residentCheckAbsoluteUrl,
       locale: emailLocale,
     })
 

@@ -344,10 +344,11 @@ export type GetBalanceDisplayOpts = {
 }
 
 /**
- * 잔액 표시: DB balance_amount(사용자 저장값) 최우선, 없을 때만 계산값.
+ * 잔액 표시: DB balance_amount(사용자가 저장한 비영 잔액) 최우선, 그 외는 계산값.
  * - 취소 → 0
- * - balance_amount 가 null/undefined/빈 문자열이 아니면 → 그 값(0 포함)
- * - 비어 있으면 defaultBalance = 순 총액 − (보증금 순 + 잔금 수령) 또는 총액 − 보증금
+ * - `balance_amount` 컬럼은 스키마 기본값이 0.00이라, 숫자 0은 "미동기화/미입력"과 구분 불가 →
+ *   절댓값이 0.5센트 미만이면 명시 저장으로 보지 않고 산출 경로 사용
+ * - null/undefined/빈 문자열 → 순 총액 − (보증금 순 + 잔금 수령) 또는 총액 − 보증금
  */
 export function getBalanceAmountForDisplay(
   pricing: PricingBalanceFields | null | undefined,
@@ -363,10 +364,14 @@ export function getBalanceAmountForDisplay(
   if (cancelled) return 0
 
   const rawStored = pricing.balance_amount
+  const storedNum = pricingFieldToNumber(rawStored)
   const hasExplicitBalance =
-    rawStored !== undefined && rawStored !== null && rawStored !== ''
+    rawStored !== undefined &&
+    rawStored !== null &&
+    rawStored !== '' &&
+    Math.abs(storedNum) >= 0.005
   if (hasExplicitBalance) {
-    return Math.max(0, roundUsd2(pricingFieldToNumber(rawStored)))
+    return Math.max(0, roundUsd2(storedNum))
   }
 
   const gross = computeCustomerTotalDueGross(pricing, optionsTotalFromOptions, party)

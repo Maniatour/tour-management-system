@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     // 차량 정보 조회
     const { data: vehicleData, error: vehicleError } = await supabase
       .from('vehicles')
-      .select('car_name, license_plate')
+      .select('vehicle_number, vehicle_type, vehicle_category')
       .eq('id', vehicle_id)
       .single()
     
@@ -72,10 +72,11 @@ export async function POST(request: NextRequest) {
     
     // 회사 지출 데이터 생성
     const expenseId = `EXP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const vehicleLabel = `${vehicleData.vehicle_number} (${vehicleData.vehicle_type})`
     const expenseData: CompanyExpenseInsert = {
       id: expenseId,
       paid_to: service_provider || '정비소',
-      paid_for: `${vehicleData.car_name} (${vehicleData.license_plate}) - ${description}`,
+      paid_for: `${vehicleLabel} - ${description}`,
       description: `차량 정비: ${category} - ${subcategory || description}`,
       amount: parseFloat(total_cost),
       payment_method: payment_method || null,
@@ -184,8 +185,9 @@ export async function GET(request: NextRequest) {
         *,
         vehicles (
           id,
-          car_name,
-          license_plate
+          vehicle_number,
+          vehicle_type,
+          vehicle_category
         ),
         company_expenses (
           id,

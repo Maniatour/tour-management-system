@@ -12,6 +12,7 @@ import {
   Calendar,
   PieChart,
   LineChart,
+  Mountain,
   Download,
   Eye,
   ChevronDown,
@@ -50,6 +51,14 @@ const TicketBookingFormAny = TicketBookingForm as any
 
 interface TourStatisticsData {
   totalTours: number
+  /** 기간 내 유효 투어에 배정된 예약 인원 합 (total_people, 취소·환불 예약 제외) */
+  totalTourParticipants: number
+  /** 투어당 평균 인원 (총 인원 ÷ 총 투어 수) */
+  averagePeoplePerTour: number
+  /** 일일 평균 인원 (총 진행 인원 ÷ 조회 기간 일수, 시작~종료 포함) */
+  averageDailyPeople: number
+  /** 일일 최대 인원 (같은 날 투어 인원 합 중 최댓값) */
+  maxDailyPeople: number
   totalRevenue: number
   totalExpenses: number
   netProfit: number
@@ -227,6 +236,41 @@ function formatDate(dateString: string): string {
   })
 }
 
+function inclusiveDayCountYmd(start: string, end: string): number {
+  const a = new Date(`${start}T00:00:00`).getTime()
+  const b = new Date(`${end}T00:00:00`).getTime()
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 1
+  return Math.max(1, Math.floor((b - a) / 86400000) + 1)
+}
+
+function maxDailyPeopleFromTourRows(rows: { tourDate: string; totalPeople: number }[]): number {
+  const byDay: Record<string, number> = {}
+  for (const t of rows) {
+    const d = String(t.tourDate ?? '').slice(0, 10)
+    if (!d) continue
+    byDay[d] = (byDay[d] ?? 0) + (t.totalPeople || 0)
+  }
+  const vals = Object.values(byDay)
+  return vals.length > 0 ? Math.max(...vals) : 0
+}
+
+/** 투어일별 인원 합·투어 건수, 인원 많은 순 */
+function dailyPeopleTotalsSorted(
+  rows: { tourDate: string; totalPeople: number }[]
+): Array<{ date: string; people: number; tourCount: number }> {
+  const byDay: Record<string, { people: number; tourCount: number }> = {}
+  for (const t of rows) {
+    const d = String(t.tourDate ?? '').slice(0, 10)
+    if (!d) continue
+    if (!byDay[d]) byDay[d] = { people: 0, tourCount: 0 }
+    byDay[d].people += t.totalPeople || 0
+    byDay[d].tourCount += 1
+  }
+  return Object.entries(byDay)
+    .map(([date, v]) => ({ date, people: v.people, tourCount: v.tourCount }))
+    .sort((a, b) => b.people - a.people || b.tourCount - a.tourCount || a.date.localeCompare(b.date))
+}
+
 /** DB마다 ticket_bookings 컬럼이 다름(예: reservation_name/cc/total_price 없음). 모달용으로 통일 */
 function ticketBookingRowToDetailModal(
   raw: Record<string, unknown>,
@@ -294,12 +338,16 @@ async function getTourFinancialStats(tourId: string) {
     console.log(`투어 ${tourId}의 전체 지출 (상태 무관):`, allExpenses)
     console.log(`투어 ${tourId}의 전체 지출 개수:`, allExpenses?.length || 0)
 
-    // 예약 데이터 가져오기: tour.reservation_ids 기준으로 합산 (취소 여부 무관, 모든 예약 포함)
+    // 예약 데이터: tour.reservation_ids 기준 (인원 합은 취소·환불 제외 — 투어 통계 API와 동일)
+    const excludeReservationPeople = (s: string | null | undefined) => {
+      const lower = (s || '').toLowerCase().trim()
+      return lower === 'cancelled' || lower === 'refunded'
+    }
     let reservations: any[] = []
     if (tourRow?.reservation_ids && Array.isArray(tourRow.reservation_ids) && tourRow.reservation_ids.length > 0) {
       const { data: reservationsData, error: reservationsError } = await supabase
         .from('reservations')
-        .select('id, customer_id, total_people')
+        .select('id, customer_id, total_people, status')
         .in('id', tourRow.reservation_ids)
 
       if (reservationsError) {
@@ -603,7 +651,9 @@ async function getTourFinancialStats(tourId: string) {
       }
     }
     const reservationPeopleMap: Record<string, number> = {}
-    reservations?.forEach((r: any) => { reservationPeopleMap[r.id] = r.total_people || 0 })
+    reservations?.forEach((r: any) => {
+      reservationPeopleMap[r.id] = excludeReservationPeople(r.status) ? 0 : r.total_people || 0
+    })
     const totalNotIncludedPriceFromPricing = filteredReservationPricing.reduce((sum, pricing) => {
       const people = reservationPeopleMap[pricing.reservation_id] || 0
       return sum + (pricing.not_included_price || 0) * people
@@ -642,10 +692,11 @@ async function getTourFinancialStats(tourId: string) {
       hotelBookingsCount: hotelBookings?.length || 0
     })
 
-    // reservation_ids에 있는 예약들의 total_people만 합산 (다른 조건 없음)
-    const totalPeopleFromReservations = reservations?.reduce((sum, r) => {
-      return sum + (r.total_people || 0)
-    }, 0) || 0
+    const totalPeopleFromReservations =
+      reservations?.reduce((sum, r) => {
+        if (excludeReservationPeople(r.status)) return sum
+        return sum + (r.total_people || 0)
+      }, 0) || 0
 
     const result = {
       tourId,
@@ -878,15 +929,21 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
   const [expenseDetails, setExpenseDetails] = useState<Record<string, any>>({})
   const [tourStatisticsData, setTourStatisticsData] = useState<TourStatisticsData>({
     totalTours: 0,
+    totalTourParticipants: 0,
+    averagePeoplePerTour: 0,
+    averageDailyPeople: 0,
+    maxDailyPeople: 0,
     totalRevenue: 0,
     totalExpenses: 0,
     netProfit: 0,
     averageProfitPerTour: 0,
+    totalAdditionalCostRounded: 0,
     tourStats: [],
     expenseBreakdown: [],
     vehicleStats: []
   })
   const [isCalculating, setIsCalculating] = useState(false)
+  const [dailyPeopleBreakdownOpen, setDailyPeopleBreakdownOpen] = useState(false)
 
   // 지출 상세 내역 토글
   const toggleExpenseDetails = async (tourId: string, tourDate?: string) => {
@@ -1184,6 +1241,10 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
         const data = await res.json()
         setTourStatisticsData({
           totalTours: data.totalTours ?? 0,
+          totalTourParticipants: data.totalTourParticipants ?? 0,
+          averagePeoplePerTour: data.averagePeoplePerTour ?? 0,
+          averageDailyPeople: data.averageDailyPeople ?? 0,
+          maxDailyPeople: data.maxDailyPeople ?? 0,
           totalRevenue: data.totalRevenue ?? 0,
           totalExpenses: data.totalExpenses ?? 0,
           netProfit: data.netProfit ?? 0,
@@ -1197,6 +1258,10 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
         console.error('투어 통계 계산 오류:', error)
         setTourStatisticsData({
           totalTours: 0,
+          totalTourParticipants: 0,
+          averagePeoplePerTour: 0,
+          averageDailyPeople: 0,
+          maxDailyPeople: 0,
           totalRevenue: 0,
           totalExpenses: 0,
           netProfit: 0,
@@ -1247,6 +1312,32 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
       : byProduct
     return bySearch
   }, [sortedTourStats, selectedProducts, tourSearch])
+
+  const visibleTourPeopleSummary = useMemo(() => {
+    const count = visibleTourStats.length
+    const totalPeople = visibleTourStats.reduce((s, t) => s + (t.totalPeople || 0), 0)
+    const rangeDays = inclusiveDayCountYmd(dateRange.start, dateRange.end)
+    return {
+      count,
+      totalPeople,
+      avgPerTour: count > 0 ? totalPeople / count : 0,
+      avgDailyPeople: totalPeople / rangeDays,
+      maxDailyPeople: maxDailyPeopleFromTourRows(visibleTourStats),
+    }
+  }, [visibleTourStats, dateRange.start, dateRange.end])
+
+  const visibleDailyPeopleBreakdown = useMemo(
+    () => dailyPeopleTotalsSorted(visibleTourStats),
+    [visibleTourStats]
+  )
+
+  const sortedTourProductNames = useMemo(
+    () =>
+      Array.from(new Set(tourStatisticsData.tourStats.map((t) => t.productName))).sort((a, b) =>
+        a.localeCompare(b, 'ko')
+      ),
+    [tourStatisticsData.tourStats]
+  )
 
   // 1인당 지표 평균 계산 (표시/하이라이트 용도)
   const perPersonAverages = useMemo(() => {
@@ -1308,7 +1399,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
     <>
     <div className="space-y-4 sm:space-y-6">
       {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-9 gap-2 sm:gap-4">
         <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center gap-2 sm:gap-0">
             <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
@@ -1317,6 +1408,76 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
             <div className="min-w-0 sm:ml-4">
               <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 투어 수</p>
               <p className="text-sm sm:text-base font-bold text-gray-900 truncate">{tourStatisticsData.totalTours}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-cyan-100 rounded-lg flex-shrink-0">
+              <Users className="h-5 w-5 sm:h-6 sm:w-6 text-cyan-700" />
+            </div>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 투어 진행 인원</p>
+              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+                {tourStatisticsData.totalTourParticipants.toLocaleString()}명
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-indigo-100 rounded-lg flex-shrink-0">
+              <PieChart className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-600" />
+            </div>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">투어당 평균 인원</p>
+              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+                {tourStatisticsData.totalTours > 0
+                  ? `${tourStatisticsData.averagePeoplePerTour.toFixed(1)}명`
+                  : '—'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-sky-100 rounded-lg flex-shrink-0">
+              <LineChart className="h-5 w-5 sm:h-6 sm:w-6 text-sky-700" />
+            </div>
+            <div className="min-w-0 sm:ml-4">
+              <p
+                className="text-xs sm:text-sm font-medium text-gray-600 truncate"
+                title="총 투어 진행 인원 ÷ 조회 기간 일수(시작~종료 포함)"
+              >
+                일일 평균 인원
+              </p>
+              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+                {`${tourStatisticsData.averageDailyPeople.toFixed(1)}명`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-rose-100 rounded-lg flex-shrink-0">
+              <Mountain className="h-5 w-5 sm:h-6 sm:w-6 text-rose-700" />
+            </div>
+            <div className="min-w-0 sm:ml-4">
+              <p
+                className="text-xs sm:text-sm font-medium text-gray-600 truncate"
+                title="같은 날 운행한 투어의 참가 인원을 합한 값 중 가장 큰 날"
+              >
+                일일 최대 인원
+              </p>
+              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+                {tourStatisticsData.totalTours > 0
+                  ? `${tourStatisticsData.maxDailyPeople.toLocaleString()}명`
+                  : '—'}
+              </p>
             </div>
           </div>
         </div>
@@ -1359,7 +1520,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200 col-span-2 lg:col-span-1">
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200 col-span-2 2xl:col-span-1">
           <div className="flex items-center gap-2 sm:gap-0">
             <div className="p-1.5 sm:p-2 bg-orange-100 rounded-lg flex-shrink-0">
               <Users className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
@@ -1376,66 +1537,229 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
 
       {/* 차트 선택 탭 */}
       <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-        {/* 투어 필터 */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4 sm:mb-6">
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">상품(투어) 필터</label>
-            <select
-              multiple
-              value={selectedProducts}
-              onChange={(e) => {
-                const options = Array.from(e.target.selectedOptions).map(o => o.value)
-                setFilters((f) => ({ ...f, selectedProducts: options }))
-              }}
-              className="w-full md:w-96 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md h-20 sm:h-28 text-sm"
-            >
-              {Array.from(new Set(tourStatisticsData.tourStats.map(t => t.productName))).sort().map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">검색(상품명/날짜)</label>
-            <input
-              value={tourSearch}
-              onChange={(e) => setFilters((f) => ({ ...f, tourSearch: e.target.value }))}
-              placeholder="예: 그랜드, 2025. 01. 20"
-              className="w-full md:w-80 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md text-sm"
-            />
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setFilters((f) => ({ ...f, selectedProducts: [], tourSearch: '' }))}
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
-            >필터 초기화</button>
-            <div className="text-xs sm:text-sm text-gray-500">표시: {visibleTourStats.length}개</div>
+        {/* 투어 필터(체크박스) + 목록 기준 집계 카드 */}
+        <div className="mb-4 sm:mb-6">
+          <div className="flex flex-col lg:flex-row lg:items-stretch gap-3">
+            <div className="shrink-0 lg:w-96 flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-3 pt-2.5 pb-1.5 border-b border-gray-100 bg-gray-50/80">
+                <span className="text-xs sm:text-sm font-medium text-gray-700">상품(투어) 필터</span>
+                <div className="flex items-center gap-2 shrink-0 text-[11px] sm:text-xs">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFilters((f) => ({ ...f, selectedProducts: [...sortedTourProductNames] }))
+                    }
+                    className="text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-40"
+                    disabled={sortedTourProductNames.length === 0}
+                  >
+                    모두 선택
+                  </button>
+                  <span className="text-gray-300" aria-hidden>
+                    |
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFilters((f) => ({ ...f, selectedProducts: [] }))}
+                    className="text-gray-600 hover:text-gray-900 hover:underline"
+                  >
+                    선택 해제
+                  </button>
+                </div>
+              </div>
+              <div
+                className="max-h-44 sm:max-h-40 lg:max-h-[11.5rem] overflow-y-auto px-2 py-2 space-y-0.5"
+                role="group"
+                aria-label="상품 다중 선택"
+              >
+                {sortedTourProductNames.length === 0 ? (
+                  <p className="text-xs text-gray-500 px-1 py-2">표시할 상품이 없습니다.</p>
+                ) : (
+                  sortedTourProductNames.map((name, idx) => {
+                    const inputId = `tour-product-filter-${idx}`
+                    const checked = selectedProducts.includes(name)
+                    return (
+                      <label
+                        key={name}
+                        htmlFor={inputId}
+                        className={`flex items-start gap-2 cursor-pointer rounded-md px-2 py-1 text-sm leading-snug hover:bg-gray-50 ${checked ? 'bg-blue-50/60' : ''}`}
+                      >
+                        <input
+                          id={inputId}
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFilters((f) => ({
+                                ...f,
+                                selectedProducts: f.selectedProducts.includes(name)
+                                  ? f.selectedProducts
+                                  : [...f.selectedProducts, name],
+                              }))
+                            } else {
+                              setFilters((f) => ({
+                                ...f,
+                                selectedProducts: f.selectedProducts.filter((p) => p !== name),
+                              }))
+                            }
+                          }}
+                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="min-w-0 break-words text-gray-800">{name}</span>
+                      </label>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col gap-2 sm:gap-3">
+              <p className="text-[11px] sm:text-xs text-gray-500 leading-snug px-0.5">
+                상품 선택·검색 조건이 반영된{' '}
+                <span className="font-medium text-gray-700">아래 목록 기준</span> 집계입니다. 일일 평균은{' '}
+                <span className="font-medium text-gray-700">조회 기간 일수(시작~종료 포함)</span>로 나눈 값이고, 일일 최대는{' '}
+                <span className="font-medium text-gray-700">같은 날 투어 인원 합(취소·환불 제외)</span> 중 가장 큰 값입니다.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 sm:gap-4 flex-1 auto-rows-fr">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[5.5rem] flex items-center justify-center p-3 sm:p-4">
+                  <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-full">
+                    <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
+                      <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
+                    </div>
+                    <div className="min-w-0 text-center">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">총 투어 수</p>
+                      <p className="text-sm sm:text-base font-bold text-gray-900 tabular-nums">
+                        {visibleTourPeopleSummary.count}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[5.5rem] flex items-center justify-center p-3 sm:p-4">
+                  <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-full">
+                    <div className="p-1.5 sm:p-2 bg-cyan-100 rounded-lg flex-shrink-0">
+                      <Users className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-700" />
+                    </div>
+                    <div className="min-w-0 text-center">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">총 투어 진행 인원</p>
+                      <p className="text-sm sm:text-base font-bold text-gray-900 tabular-nums">
+                        {visibleTourPeopleSummary.totalPeople.toLocaleString()}명
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[5.5rem] flex items-center justify-center p-3 sm:p-4">
+                  <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-full">
+                    <div className="p-1.5 sm:p-2 bg-indigo-100 rounded-lg flex-shrink-0">
+                      <PieChart className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600" />
+                    </div>
+                    <div className="min-w-0 text-center">
+                      <p className="text-xs sm:text-sm font-medium text-gray-600">투어당 평균 인원</p>
+                      <p className="text-sm sm:text-base font-bold text-gray-900 tabular-nums">
+                        {visibleTourPeopleSummary.count > 0
+                          ? `${visibleTourPeopleSummary.avgPerTour.toFixed(1)}명`
+                          : '—'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[5.5rem] flex items-center justify-center p-3 sm:p-4">
+                  <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-full">
+                    <div className="p-1.5 sm:p-2 bg-sky-100 rounded-lg flex-shrink-0">
+                      <LineChart className="h-4 w-4 sm:h-5 sm:w-5 text-sky-700" />
+                    </div>
+                    <div className="min-w-0 text-center">
+                      <p
+                        className="text-xs sm:text-sm font-medium text-gray-600"
+                        title="총 투어 진행 인원 ÷ 조회 기간 일수(시작~종료 포함)"
+                      >
+                        일일 평균 인원
+                      </p>
+                      <p className="text-sm sm:text-base font-bold text-gray-900 tabular-nums">
+                        {`${visibleTourPeopleSummary.avgDailyPeople.toFixed(1)}명`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={visibleTourPeopleSummary.count === 0}
+                  onClick={() => setDailyPeopleBreakdownOpen(true)}
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 h-full min-h-[5.5rem] flex items-center justify-center p-3 sm:p-4 w-full transition-colors hover:border-rose-300 hover:bg-rose-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2 disabled:opacity-50 disabled:hover:border-gray-200 disabled:hover:bg-white disabled:cursor-not-allowed"
+                  title="클릭하면 일자별 인원을 많은 순으로 봅니다"
+                >
+                  <div className="flex items-center justify-center gap-2 sm:gap-3 max-w-full">
+                    <div className="p-1.5 sm:p-2 bg-rose-100 rounded-lg flex-shrink-0">
+                      <Mountain className="h-4 w-4 sm:h-5 sm:w-5 text-rose-700" />
+                    </div>
+                    <div className="min-w-0 text-center">
+                      <p
+                        className="text-xs sm:text-sm font-medium text-gray-600"
+                        title="같은 날 운행한 투어의 참가 인원을 합한 값 중 가장 큰 날"
+                      >
+                        일일 최대 인원
+                      </p>
+                      <p className="text-sm sm:text-base font-bold text-gray-900 tabular-nums">
+                        {visibleTourPeopleSummary.count > 0
+                          ? `${visibleTourPeopleSummary.maxDailyPeople.toLocaleString()}명`
+                          : '—'}
+                      </p>
+                      {visibleTourPeopleSummary.count > 0 ? (
+                        <p className="text-[10px] sm:text-[11px] text-rose-600 mt-0.5">클릭하여 일자별 보기</p>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6">
-          {[
-            { key: 'profit', label: '투어별 손익', icon: BarChart3 },
-            { key: 'daily', label: '날짜별 집계', icon: LineChart },
-            { key: 'expenses', label: '지출 상세', icon: PieChart },
-            { key: 'vehicles', label: '차량별 가스비', icon: Car }
-          ].map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() =>
-                setFilters((f) => ({
-                  ...f,
-                  selectedChart: key as TourStatsFiltersState['selectedChart'],
-                }))
-              }
-              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
-                selectedChart === key
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <Icon size={16} className="sm:w-5 sm:h-5" />
-              <span>{label}</span>
-            </button>
-          ))}
+        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between mb-4 sm:mb-6">
+          <div className="flex flex-wrap gap-2 sm:gap-4">
+            {[
+              { key: 'profit', label: '투어별 손익', icon: BarChart3 },
+              { key: 'daily', label: '날짜별 집계', icon: LineChart },
+              { key: 'expenses', label: '지출 상세', icon: PieChart },
+              { key: 'vehicles', label: '차량별 가스비', icon: Car }
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() =>
+                  setFilters((f) => ({
+                    ...f,
+                    selectedChart: key as TourStatsFiltersState['selectedChart'],
+                  }))
+                }
+                className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
+                  selectedChart === key
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Icon size={16} className="sm:w-5 sm:h-5" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full md:w-auto md:justify-end md:ml-auto md:shrink-0">
+            <label className="sr-only" htmlFor="tour-stats-search">검색(상품명/날짜)</label>
+            <input
+              id="tour-stats-search"
+              value={tourSearch}
+              onChange={(e) => setFilters((f) => ({ ...f, tourSearch: e.target.value }))}
+              placeholder="검색: 상품명·날짜"
+              className="w-full sm:w-64 lg:w-72 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md text-sm"
+            />
+            <div className="flex flex-wrap items-center gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setFilters((f) => ({ ...f, selectedProducts: [], tourSearch: '' }))}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm whitespace-nowrap"
+              >
+                필터 초기화
+              </button>
+              <div className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">
+                표시: {visibleTourStats.length}개
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* 투어별 손익 차트 */}
@@ -2447,6 +2771,49 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           </div>
         </div>
       ) : null}
+
+      <Dialog open={dailyPeopleBreakdownOpen} onOpenChange={setDailyPeopleBreakdownOpen}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0 gap-0 sm:rounded-lg">
+          <DialogHeader className="px-4 py-3 border-b border-gray-200 shrink-0 text-left space-y-1">
+            <DialogTitle className="text-base font-semibold">일자별 인원 (많은 순)</DialogTitle>
+            <p className="text-xs text-gray-500 font-normal leading-snug">
+              상품·검색 조건이 반영된 아래 목록 기준입니다. 같은 날 여러 투어이면 인원을 합산했고,{' '}
+              <span className="font-medium text-gray-600">취소·환불 예약 인원은 제외</span>합니다.
+            </p>
+          </DialogHeader>
+          <div className="overflow-y-auto px-2 py-2 sm:px-3 sm:py-3 min-h-0">
+            {visibleDailyPeopleBreakdown.length === 0 ? (
+              <p className="text-sm text-gray-500 px-2 py-4 text-center">표시할 날짜가 없습니다.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+                    <th className="py-2 pl-2 pr-1 font-medium w-10">#</th>
+                    <th className="py-2 px-1 font-medium">날짜</th>
+                    <th className="py-2 px-1 font-medium text-right">인원 합</th>
+                    <th className="py-2 pl-1 pr-2 font-medium text-right">투어 수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleDailyPeopleBreakdown.map((row, idx) => (
+                    <tr
+                      key={row.date}
+                      className="border-b border-gray-100 hover:bg-gray-50/80 tabular-nums"
+                    >
+                      <td className="py-2 pl-2 pr-1 text-gray-500">{idx + 1}</td>
+                      <td className="py-2 px-1 text-gray-900">{formatDate(row.date)}</td>
+                      <td className="py-2 px-1 text-right font-semibold text-gray-900">
+                        {row.people.toLocaleString()}명
+                      </td>
+                      <td className="py-2 pl-1 pr-2 text-right text-gray-600">{row.tourCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

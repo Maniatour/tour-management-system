@@ -24,6 +24,33 @@ function excludeStatus(s: string) {
   return lower === 'cancelled' || lower === 'refunded'
 }
 
+/** 예약 인원 집계에 포함 (취소·환불 제외) */
+function reservationCountsTowardParticipants(status: string | null | undefined): boolean {
+  return !excludeStatus(status || '')
+}
+
+/** 조회 시작·종료일(YYYY-MM-DD) 포함 일수 — 일일 평균 인원 분모 */
+function inclusiveDayCountYmd(start: string, end: string): number {
+  const a = new Date(`${start}T00:00:00`).getTime()
+  const b = new Date(`${end}T00:00:00`).getTime()
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 1
+  return Math.max(1, Math.floor((b - a) / 86400000) + 1)
+}
+
+/** 같은 투어일(YYYY-MM-DD)별 인원 합 중 최댓값 */
+function maxDailyPeopleFromTourStats(
+  rows: { tourDate: string; totalPeople: number }[]
+): number {
+  const byDay: Record<string, number> = {}
+  for (const t of rows) {
+    const d = String(t.tourDate ?? '').slice(0, 10)
+    if (!d) continue
+    byDay[d] = (byDay[d] ?? 0) + (t.totalPeople || 0)
+  }
+  const vals = Object.values(byDay)
+  return vals.length > 0 ? Math.max(...vals) : 0
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('Authorization')
@@ -79,9 +106,15 @@ export async function GET(request: NextRequest) {
     const validTours = allTours.filter(
       (t: { tour_status?: string }) => VALID_TOUR_STATUSES.includes(t.tour_status || '')
     )
+    const rangeDayCount = inclusiveDayCountYmd(start, end)
+
     if (validTours.length === 0) {
       return NextResponse.json({
         totalTours: 0,
+        totalTourParticipants: 0,
+        averagePeoplePerTour: 0,
+        averageDailyPeople: 0,
+        maxDailyPeople: 0,
         totalRevenue: 0,
         totalExpenses: 0,
         netProfit: 0,
@@ -100,12 +133,18 @@ export async function GET(request: NextRequest) {
     const uniqueReservationIds = [...new Set(allReservationIds)].filter(Boolean)
 
     // 2) 예약 일괄 조회
-    let reservations: { id: string; customer_id?: string; total_people?: number; channel_id?: string }[] = []
+    let reservations: {
+      id: string
+      customer_id?: string
+      total_people?: number
+      channel_id?: string
+      status?: string | null
+    }[] = []
     for (let i = 0; i < uniqueReservationIds.length; i += BATCH) {
       const batch = uniqueReservationIds.slice(i, i + BATCH)
       const { data, error } = await supabase
         .from('reservations')
-        .select('id, customer_id, total_people, channel_id')
+        .select('id, customer_id, total_people, channel_id, status')
         .in('id', batch)
       if (!error && data?.length) reservations = reservations.concat(data)
     }
@@ -222,7 +261,11 @@ export async function GET(request: NextRequest) {
     }
 
     const reservationPeopleMap: Record<string, number> = {}
-    reservations.forEach(r => { reservationPeopleMap[r.id] = r.total_people || 0 })
+    reservations.forEach((r) => {
+      reservationPeopleMap[r.id] = reservationCountsTowardParticipants(r.status)
+        ? r.total_people || 0
+        : 0
+    })
 
     // 투어별 비거주자 옵션 비용 (클라이언트와 동일: 고정 ID 우선, 없으면 옵션명/카테고리 매칭)
     function getTourNotIncludedPrice(reservationIdsArray: string[], pricingList: ReservationPricingRow[]) {
@@ -324,7 +367,9 @@ export async function GET(request: NextRequest) {
       const totalHotelCosts = hotelByTour[tid] || 0
       const totalExpensesWithFeesAndBookings = totalExpenses + totalFees + totalTicketCosts + totalHotelCosts
       const profit = totalOperatingProfit - totalExpensesWithFeesAndBookings
-      const totalPeople = tourReservations.reduce((sum, r) => sum + (r.total_people || 0), 0)
+      const totalPeople = tourReservations
+        .filter((r) => reservationCountsTowardParticipants(r.status))
+        .reduce((sum, r) => sum + (r.total_people || 0), 0)
 
       tourStats.push({
         tourId: tid,
@@ -348,6 +393,10 @@ export async function GET(request: NextRequest) {
     }
 
     const totalTours = tourStats.length
+    const totalTourParticipants = tourStats.reduce((s, t) => s + (t.totalPeople || 0), 0)
+    const averagePeoplePerTour = totalTours > 0 ? totalTourParticipants / totalTours : 0
+    const averageDailyPeople = totalTourParticipants / rangeDayCount
+    const maxDailyPeople = maxDailyPeopleFromTourStats(tourStats)
     const totalRevenue = tourStats.reduce((s, t) => s + t.revenue, 0)
     const totalExpenses = tourStats.reduce((s, t) => s + t.expenses, 0)
     const netProfit = totalRevenue - totalExpenses
@@ -385,6 +434,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       totalTours,
+      totalTourParticipants,
+      averagePeoplePerTour,
+      averageDailyPeople,
+      maxDailyPeople,
       totalRevenue,
       totalExpenses,
       netProfit,

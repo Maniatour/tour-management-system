@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const vehicleId = searchParams.get('vehicle_id')
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
+    const paidFor = searchParams.get('paid_for')
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
     const from = (page - 1) * limit
@@ -64,6 +65,11 @@ export async function GET(request: NextRequest) {
     // 차량 필터
     if (vehicleId && vehicleId !== 'all') {
       query = query.eq('vehicle_id', vehicleId)
+    }
+
+    // 결제 내용(정확 일치)
+    if (paidFor && paidFor.trim() !== '' && paidFor !== 'all') {
+      query = query.eq('paid_for', paidFor.trim())
     }
 
     // 지출일(submit_on) 구간 — YYYY-MM-DD
@@ -121,7 +127,8 @@ export async function POST(request: NextRequest) {
       notes,
       attachments,
       expense_type,
-      tax_deductible
+      tax_deductible,
+      paid_for_label_id,
     } = body
     
     // 필수 필드 검증 (ID는 자동 생성되므로 제외)
@@ -153,7 +160,10 @@ export async function POST(request: NextRequest) {
       attachments: attachments || null,
       expense_type: expense_type || null,
       tax_deductible: tax_deductible !== undefined ? tax_deductible : true,
-      status: 'pending'
+      status: 'pending',
+      ...(paid_for_label_id !== undefined &&
+        paid_for_label_id !== null &&
+        paid_for_label_id !== '' && { paid_for_label_id: String(paid_for_label_id) }),
     }
     
     const { data, error } = await supabase

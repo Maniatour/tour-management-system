@@ -871,12 +871,20 @@ export default function CustomerDashboard() {
                   </div>
                 )}
               </div>
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
                 <Link
                   href={`/${locale}/dashboard/profile`}
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                 >
                   {t('editInfo')} →
+                </Link>
+                <Link
+                  href={`/${locale}/dashboard/resident-check`}
+                  className="text-teal-700 hover:text-teal-800 text-sm font-medium"
+                >
+                  {locale === 'en'
+                    ? 'Park entry / residency (email link) →'
+                    : '국립공원 입장·거주 확인(이메일 링크) →'}
                 </Link>
               </div>
             </div>

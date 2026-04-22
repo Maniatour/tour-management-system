@@ -69,6 +69,25 @@ const getDefaultDateRange = () => {
 
 const VALID_TABS = ['reservations', 'tours', 'settlement', 'channelSettlement', 'cash', 'pnl'] as const
 
+/** 예약 통계 탭이 아닐 때 동일 참조 반환 — 참조 데이터 로드마다 chartData·리렌더 연쇄 방지 */
+const EMPTY_STATISTICS_DATA: StatisticsData = {
+  totalReservations: 0,
+  totalPeople: 0,
+  totalRevenue: 0,
+  channelStats: [],
+  productStats: [],
+  statusStats: [],
+  trendData: []
+}
+
+/** 쿼리 정규화(키 정렬) — 이미 동일한 URL이면 router.replace 생략해 불필요한 탐색 파라미터 갱신·리렌더 감소 */
+function normalizedQueryString(sp: URLSearchParams): string {
+  return [...sp.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]) || String(a[1]).localeCompare(String(b[1])))
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&')
+}
+
 export default function AdminReservationStatistics({ }: AdminReservationStatisticsProps) {
   const t = useTranslations('reservations')
   const { authUser } = useAuth()
@@ -152,8 +171,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') ?? '')
   const endDateInputRef = useRef<HTMLInputElement>(null)
 
-  /** 현금·PNL은 부모의 예약 목록이 필요 없음 — 전량 로드·통계 순회로 UI 멈춤 방지 */
-  const skipParentReservationLoad = activeTab === 'cash' || activeTab === 'pnl'
+  /** 예약 통계 탭만 부모에서 예약 전량 로드. 투어/정산/현금/PNL 등은 각 탭·API에서 처리해 배치별 리렌더·메인 스레드 부담 감소 */
+  const skipParentReservationLoad = activeTab !== 'reservations'
 
   const {
     reservations,
@@ -181,8 +200,10 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     if (searchQuery.trim()) params.set('q', searchQuery.trim())
     if (selectedChannelId) params.set('channel', selectedChannelId)
     if (selectedStatuses.length > 0) params.set('statuses', selectedStatuses.join(','))
-    const qs = params.toString()
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    const desiredQs = normalizedQueryString(params)
+    const currentQs = normalizedQueryString(new URLSearchParams(searchParams.toString()))
+    if (desiredQs === currentQs) return
+    router.replace(desiredQs ? `${pathname}?${desiredQs}` : pathname, { scroll: false })
   }, [
     searchParams,
     activeTab,
@@ -199,35 +220,11 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   // 통계 데이터 계산 (예약 통계 탭에서만 필요 — 다른 탭에서 대량 예약 순회 시 메인 스레드 정지 방지)
   const statisticsData = useMemo((): StatisticsData => {
     if (activeTab !== 'reservations') {
-      return {
-        totalReservations: 0,
-        totalPeople: 0,
-        totalRevenue: 0,
-        channelStats: [],
-        productStats: [],
-        statusStats: [],
-        trendData: []
-      }
+      return EMPTY_STATISTICS_DATA
     }
 
-    console.log('통계 데이터 계산 시작:', {
-      totalReservations: reservations.length,
-      dateRange,
-      selectedStatuses,
-      selectedChannelId
-    })
-
     if (!reservations.length) {
-      console.log('예약 데이터가 없습니다.')
-      return {
-        totalReservations: 0,
-        totalPeople: 0,
-        totalRevenue: 0,
-        channelStats: [],
-        productStats: [],
-        statusStats: [],
-        trendData: []
-      }
+      return EMPTY_STATISTICS_DATA
     }
 
     // 날짜 필터링
@@ -242,8 +239,6 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       return reservationDate >= startDate && reservationDate <= endDate
     })
 
-    console.log('날짜 필터링 후:', filteredReservations.length, '개')
-
     // 채널 필터링
     if (selectedChannelId) {
       filteredReservations = filteredReservations.filter(reservation =>
@@ -253,13 +248,11 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
 
     // 상태 필터링 (대소문자 구분 없이 비교)
     if (selectedStatuses.length > 0) {
-      const beforeStatusFilter = filteredReservations.length
       filteredReservations = filteredReservations.filter(reservation =>
         selectedStatuses.some(selectedStatus => 
           reservation.status?.toLowerCase() === selectedStatus.toLowerCase()
         )
       )
-      console.log('상태 필터링 후:', filteredReservations.length, '개 (필터링 전:', beforeStatusFilter, '개)')
     }
 
     // 검색 필터링
@@ -393,16 +386,6 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         .map(([period, data]) => ({ period, ...data }))
         .sort((a, b) => a.period.localeCompare(b.period))
     })()
-
-    console.log('최종 통계 데이터:', {
-      totalReservations,
-      totalPeople,
-      totalRevenue,
-      channelStatsCount: channelStats.length,
-      productStatsCount: productStats.length,
-      statusStatsCount: statusStats.length,
-      trendDataCount: trendData.length
-    })
 
     return {
       totalReservations,

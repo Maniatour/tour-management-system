@@ -5,8 +5,10 @@ export type BuildResidentInquiryEmailParams = {
   tourDate: string | null | undefined
   productName: string
   channelReference: string | null | undefined
-  /** Full URL to customer pass / proof upload page; if empty, copy omits anchor */
-  passUploadAbsoluteUrl: string
+  /**
+   * Tokenized guest URL (설문·업로드·결제). 미리보기에서는 빈 문자열이면 안내 문구만 표시.
+   */
+  residentCheckAbsoluteUrl: string
   locale: ResidentInquiryEmailLocale
 }
 
@@ -34,7 +36,7 @@ function formatTourLine(
 }
 
 /**
- * Grand Canyon 등 거주·연간 패스·결제 수단 안내용 고객 회신 요청 이메일 HTML.
+ * 국립공원(NPS) 거주·연간 패스·추가 입장료·결제 안내 — 고객용 웹 페이지 링크 중심.
  */
 export function buildResidentInquiryEmail(
   params: BuildResidentInquiryEmailParams
@@ -44,7 +46,7 @@ export function buildResidentInquiryEmail(
     tourDate,
     productName,
     channelReference,
-    passUploadAbsoluteUrl,
+    residentCheckAbsoluteUrl,
     locale,
   } = params
 
@@ -54,45 +56,34 @@ export function buildResidentInquiryEmail(
   const refPlain = channelReference?.trim() || (locale === 'en' ? 'N/A' : '—')
   const rn = escapeHtml(refPlain)
 
-  const uploadUrl = passUploadAbsoluteUrl.trim()
-  const uploadLink =
-    uploadUrl.length > 0
-      ? `<a href="${escapeHtml(uploadUrl)}" style="color:#1d4ed8;">${escapeHtml(uploadUrl)}</a>`
+  const flowUrl = residentCheckAbsoluteUrl.trim()
+  const flowLink =
+    flowUrl.length > 0
+      ? `<a href="${escapeHtml(flowUrl)}" style="display:inline-block;margin:12px 0;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;">${locale === 'en' ? 'Open secure guest page' : '고객 안내 페이지 열기'}</a><div style="font-size:13px;color:#64748b;margin-top:8px;word-break:break-all;">${escapeHtml(flowUrl)}</div>`
       : locale === 'en'
-        ? '<em>(Please log in to your customer dashboard and use the Pass / proof upload page.)</em>'
-        : '<em>(고객 대시보드 로그인 후 패스·증빙 업로드 메뉴를 이용해 주세요.)</em>'
+        ? '<p style="margin:12px 0;font-size:14px;color:#64748b;"><em>Your personal link is added automatically when this email is sent.</em></p>'
+        : '<p style="margin:12px 0;font-size:14px;color:#64748b;"><em>실제 발송 시 본인 전용 링크가 자동으로 들어갑니다.</em></p>'
 
   if (locale === 'en') {
-    const subject = `[Action required] US residency / Annual Pass & payment — Ref. ${refPlain}`
+    const subject = `[Action required] US residency / Annual Pass & NPS fee — Ref. ${refPlain}`
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:24px;background:#f8fafc;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.55;color:#0f172a;">
   <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px 28px;">
     <p style="margin:0 0 16px;">Hello ${name},</p>
-    <p style="margin:0 0 16px;">To complete your reservation and park entry arrangements, please <strong>reply to this email</strong> and indicate your situation using the checklist below (you may type e.g. “X” next to the line that applies, or describe in your own words).</p>
+    <p style="margin:0 0 12px;font-size:14px;color:#475569;">Las Vegas Mania Tour</p>
+    <p style="margin:0 0 16px;">According to the U.S. National Park Service (NPS) policy, starting <strong>January 1, 2026</strong>, when visiting certain popular national parks (11 parks total), <strong>non-U.S. residents</strong> are required to pay an <strong>additional $100 per person (ages 16 and over)</strong> on top of the standard entrance fee.</p>
+    <p style="margin:0 0 16px;"><strong>U.S. residents:</strong> the standard entrance fee remains the same. Valid government-issued proof of U.S. residency is required on the tour day.</p>
+    <p style="margin:0 0 16px;"><strong>Mixed groups:</strong> if any member is a non-U.S. resident, please enter the exact number of non-U.S. residents (16+) in the online form.</p>
+    <p style="margin:0 0 16px;"><strong>Card payments:</strong> a <strong>5% card processing fee</strong> applies to the additional NPS amount paid by card today.</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>Booking:</strong> ${product}<br/><strong>Tour date:</strong> ${tour}<br/><strong>Reference:</strong> ${rn}</p>
 
-    <h2 style="font-size:16px;margin:24px 0 10px;">1) Residency</h2>
-    <ul style="margin:0;padding-left:0;list-style:none;">
-      <li style="margin:8px 0;">☐ <strong>US Resident</strong> — If this applies, please attach a clear photo or scan of proof (e.g. state ID or other residency documentation).</li>
-      <li style="margin:8px 0;">☐ <strong>Non-US Resident</strong></li>
-    </ul>
-
-    <h2 style="font-size:16px;margin:24px 0 10px;">2) If you are a <strong>Non-US Resident</strong></h2>
-    <ul style="margin:0;padding-left:0;list-style:none;">
-      <li style="margin:8px 0;">☐ <strong>I already have</strong> an America the Beautiful / National Parks <strong>Annual Pass</strong> — please upload a <strong>clear photo</strong> of the pass.<br/><span style="font-size:14px;color:#334155;">Upload page: ${uploadLink}</span></li>
-      <li style="margin:8px 0;">☐ <strong>I do not</strong> have an Annual Pass yet.</li>
-      <li style="margin:8px 0;">☐ I would like <strong>purchase assistance</strong> for a <strong>Non-Resident Annual Pass</strong> (our team purchases the pass on your behalf). We will follow up with the amount and timing.</li>
-    </ul>
-
-    <h2 style="font-size:16px;margin:24px 0 10px;">3) Payment methods <span style="font-weight:600;color:#b45309;">(if Non-US Resident, or if you requested pass purchase assistance)</span></h2>
-    <p style="margin:0 0 10px;font-size:14px;color:#475569;">Please choose one and mention it in your reply:</p>
-    <ul style="margin:0;padding-left:0;list-style:none;">
-      <li style="margin:8px 0;">☐ <strong>1. Cash</strong></li>
-      <li style="margin:8px 0;">☐ <strong>2. Card payment</strong> — a <strong>5% card processing fee</strong> applies in addition to the tour amount.</li>
-    </ul>
-
+    <h2 style="font-size:16px;margin:24px 0 10px;">Complete online (required)</h2>
+    <p style="margin:0 0 12px;">Please use the secure page below to confirm residency, upload an Annual Pass photo if applicable, upload ID/proof, agree to the terms, and pay any balance by card if you choose card payment.</p>
+    ${flowLink}
+    <p style="margin:16px 0 0;font-size:13px;color:#64748b;">This link is valid for <strong>14 days</strong>. After you finish, the page becomes read-only. If you need a new link, please contact us.</p>
+    <p style="margin:16px 0 0;font-size:14px;color:#475569;">You may still reply to this email if you have questions.</p>
     <p style="margin:28px 0 0;font-size:14px;color:#64748b;">Thank you,<br/>Maniatour Team</p>
   </div>
 </body>
@@ -100,36 +91,24 @@ export function buildResidentInquiryEmail(
     return { subject, html }
   }
 
-  const subject = `[회신 요청] 미국 거주 여부·연간 패스·결제 안내 (예약 RN ${refPlain})`
+  const subject = `[회신 요청] 미국 거주·연간 패스·NPS 추가 요금·결제 안내 (예약 RN ${refPlain})`
   const html = `<!DOCTYPE html>
 <html lang="ko">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:24px;background:#f8fafc;font-family:'Malgun Gothic',system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;color:#0f172a;">
   <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px 28px;">
-    <p style="margin:0 0 16px;">안녕하세요, ${name}님</p>
-    <p style="margin:0 0 16px;">예약 확정 및 국립공원 입장 준비를 위해, 아래 항목을 확인하시고 <strong>본 이메일에 회신</strong>해 주시기 바랍니다. (☐ 옆에 해당 사항을 표시하시거나, 짧게 문장으로 적어 주셔도 됩니다.)</p>
+    <p style="margin:0 0 16px;">안녕하세요, ${name}님 — 라스베가스 매니아 투어입니다.</p>
+    <p style="margin:0 0 16px;">미국 국립공원관리국(NPS) 정책에 따라 <strong>2026년 1월 1일</strong>부터 일부 인기 국립공원(총 11곳) 방문 시 <strong>비거주자(만 16세 이상)</strong>에게 표준 입장료 외 <strong>인당 $100의 추가 입장료</strong>가 부과될 수 있습니다.</p>
+    <p style="margin:0 0 16px;"><strong>미국 거주자</strong>는 기본 입장료만 적용됩니다. 투어 당일 유효한 거주·신분 증빙이 필요합니다.</p>
+    <p style="margin:0 0 16px;"><strong>혼합 그룹</strong>인 경우 비거주 인원(만 16세 이상) 수를 온라인 양식에 정확히 입력해 주세요.</p>
+    <p style="margin:0 0 16px;"><strong>카드 결제</strong> 시 오늘 결제하는 NPS 추가 금액에 대해 <strong>카드 수수료 5%</strong>가 별도 부과됩니다.</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>상품:</strong> ${product}<br/><strong>투어일:</strong> ${tour}<br/><strong>예약 번호(RN):</strong> ${rn}</p>
 
-    <h2 style="font-size:16px;margin:24px 0 10px;">1) 거주 여부</h2>
-    <ul style="margin:0;padding-left:0;list-style:none;">
-      <li style="margin:8px 0;">☐ <strong>미국 거주자 (US Resident)</strong> — 해당 시 신분증 등 <strong>거주·신분 증빙 사진</strong>을 첨부해 주세요.</li>
-      <li style="margin:8px 0;">☐ <strong>비거주자 (Non-US Resident)</strong></li>
-    </ul>
-
-    <h2 style="font-size:16px;margin:24px 0 10px;">2) <strong>비거주자</strong>이신 경우</h2>
-    <ul style="margin:0;padding-left:0;list-style:none;">
-      <li style="margin:8px 0;">☐ <strong>연간 패스(Annual Pass) 보유</strong> — 패스 <strong>사진 업로드</strong>를 부탁드립니다.<br/><span style="font-size:14px;color:#334155;">업로드 페이지: ${uploadLink}</span></li>
-      <li style="margin:8px 0;">☐ <strong>연간 패스 없음 (Annual Pass 없음)</strong></li>
-      <li style="margin:8px 0;">☐ <strong>비거주자 연간 패스 구매 대행</strong> 요청 (당사에서 구매까지 진행) — 금액·진행 일정은 별도 안내드립니다.</li>
-    </ul>
-
-    <h2 style="font-size:16px;margin:24px 0 10px;">3) 결제 방법 <span style="font-weight:600;color:#b45309;">(비거주자이시거나, 패스 구매 대행을 선택하신 경우)</span></h2>
-    <p style="margin:0 0 10px;font-size:14px;color:#475569;">아래 중 하나를 회신에 적어 주세요.</p>
-    <ul style="margin:0;padding-left:0;list-style:none;">
-      <li style="margin:8px 0;">☐ <strong>1. 현금</strong></li>
-      <li style="margin:8px 0;">☐ <strong>2. 카드결제</strong> — 투어 금액 외에 <strong>카드 수수료 5%</strong>가 별도 부과됩니다.</li>
-    </ul>
-
+    <h2 style="font-size:16px;margin:24px 0 10px;">온라인으로 완료 (필수)</h2>
+    <p style="margin:0 0 12px;">아래 보안 페이지에서 거주 여부 확인, 해당 시 연간 패스 사진·신분/증빙 업로드, 동의, 카드 결제 선택 시 잔액 결제를 진행해 주세요.</p>
+    ${flowLink}
+    <p style="margin:16px 0 0;font-size:13px;color:#64748b;">링크 유효기간은 발송일 기준 <strong>14일</strong>입니다. 완료 후에는 읽기 전용으로 표시됩니다. 링크가 필요하시면 연락 주세요.</p>
+    <p style="margin:16px 0 0;font-size:14px;color:#475569;">문의 사항은 본 메일 회신도 가능합니다.</p>
     <p style="margin:28px 0 0;font-size:14px;color:#64748b;">감사합니다.<br/>마니아투어 드림</p>
   </div>
 </body>

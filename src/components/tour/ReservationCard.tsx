@@ -361,12 +361,21 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       }
 
       if (data) {
+        const rawBal: unknown = data.balance_amount
+        const normalizedBalance =
+          rawBal === null || rawBal === undefined || rawBal === ''
+            ? null
+            : typeof rawBal === 'string'
+              ? (() => {
+                  const n = parseFloat(rawBal)
+                  return Number.isFinite(n) ? n : null
+                })()
+              : typeof rawBal === 'number' && Number.isFinite(rawBal)
+                ? rawBal
+                : null
         const pricing = {
           ...data,
-          balance_amount:
-            typeof data.balance_amount === 'string'
-              ? parseFloat(data.balance_amount) || 0
-              : (data.balance_amount || 0),
+          balance_amount: normalizedBalance,
         } as ReservationPricing
         setReservationPricing(pricing)
         const { data: opts } = await supabase

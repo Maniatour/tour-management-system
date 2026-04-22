@@ -5,6 +5,10 @@ import html2canvas from 'html2canvas'
 
 interface TourStatisticsData {
   totalTours: number
+  totalTourParticipants?: number
+  averagePeoplePerTour?: number
+  averageDailyPeople?: number
+  maxDailyPeople?: number
   totalRevenue: number
   totalExpenses: number
   netProfit: number
@@ -70,8 +74,46 @@ export function generateTourStatisticsPDF({ data, dateRange, chartElementId }: P
   doc.setFontSize(12)
   doc.setFont('helvetica', 'normal')
   
+  const totalTourParticipants =
+    data.totalTourParticipants ??
+    data.tourStats.reduce((s, t) => s + (t.totalPeople || 0), 0)
+  const averagePeoplePerTour =
+    data.averagePeoplePerTour ??
+    (data.totalTours > 0 ? totalTourParticipants / data.totalTours : 0)
+
+  const rangeDays = Math.max(
+    1,
+    Math.floor(
+      (new Date(`${dateRange.end}T00:00:00`).getTime() -
+        new Date(`${dateRange.start}T00:00:00`).getTime()) /
+        86400000
+    ) + 1
+  )
+  const averageDailyPeople =
+    data.averageDailyPeople ?? totalTourParticipants / rangeDays
+
+  const maxDailyPeople =
+    data.maxDailyPeople ??
+    (() => {
+      const byDay: Record<string, number> = {}
+      for (const t of data.tourStats) {
+        const d = String(t.tourDate ?? '').slice(0, 10)
+        if (!d) continue
+        byDay[d] = (byDay[d] ?? 0) + (t.totalPeople || 0)
+      }
+      const v = Object.values(byDay)
+      return v.length > 0 ? Math.max(...v) : 0
+    })()
+
   const summaryData = [
     ['총 투어 수', data.totalTours.toString()],
+    ['총 투어 진행 인원', `${totalTourParticipants.toLocaleString()}명`],
+    [
+      '투어당 평균 인원',
+      data.totalTours > 0 ? `${averagePeoplePerTour.toFixed(1)}명` : '—'
+    ],
+    ['일일 평균 인원', `${averageDailyPeople.toFixed(1)}명`],
+    ['일일 최대 인원', `${maxDailyPeople.toLocaleString()}명`],
     ['총 수익', `$${data.totalRevenue.toLocaleString()}`],
     ['총 지출', `$${data.totalExpenses.toLocaleString()}`],
     ['순수익', `$${data.netProfit.toLocaleString()}`],

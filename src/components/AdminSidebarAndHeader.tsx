@@ -34,6 +34,7 @@ import {
   CreditCard,
   Wrench,
   Tag,
+  Tags,
   Plus,
   TrendingUp,
   Cloud,
@@ -525,6 +526,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         ]
       : []),
     { name: tSidebar('expenseManagement'), href: `/${locale}/admin/expenses`, icon: DollarSign },
+    { name: tSidebar('paidForLabelManagement'), href: `/${locale}/admin/company-expense-paid-for-labels`, icon: Tags },
     // 파트너 자금 관리 (info@maniatour.com만 표시)
     ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: tSidebar('partnerFundManagement'), href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
     { name: tSidebar('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },

@@ -1052,6 +1052,8 @@ const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
   '113386': '밤도깨비 그랜드캐년 일출 투어',
   /** https://www.klook.com/.../activity/78870 — With Exclusions·로어 앤텔롭 고정 매칭 */
   '78870': '밤도깨비 그랜드캐년 일출 투어',
+  /** Las Vegas 2-Day National Parks Small Group Adventure 등 — Activity URL activity/78962 */
+  '78962': '그랜드서클 1박 2일 투어',
 }
 
 /** Activity ID → 내부 product_id (상품명 유사 매칭 오류 방지, 예: 일출 vs 비일출) */
@@ -1059,6 +1061,7 @@ const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
   '113386': 'MDGCSUNRISE',
   '78944': 'MDGCSUNRISE',
   '78870': 'MDGCSUNRISE',
+  '78962': 'MNGC1N',
 }
 
 /** Activity ID별 Klook 채널 variant 강제 매핑 (본문 금액 파싱 결과보다 우선) */

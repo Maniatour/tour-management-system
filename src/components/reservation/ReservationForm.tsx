@@ -373,6 +373,8 @@ export default function ReservationForm({
   const [similarCustomers, setSimilarCustomers] = useState<Customer[]>([])
   const [pendingCustomerData, setPendingCustomerData] = useState<any>(null)
   const resolvedCustomerIdRef = useRef<string | null>(null)
+  /** 이메일 가져오기: 상위 reservation.channel_id는 비동기로 채워지며, 이후 effect가 사용자가 모달에서 고른 채널을 덮어쓰면 안 됨 */
+  const emailImportChannelParentSyncedRef = useRef(false)
 
   useEffect(() => {
     if (!isStubReservationOnlyId) {
@@ -1232,7 +1234,6 @@ export default function ReservationForm({
     if (rez.infant != null) next.infant = rez.infant
     if ((rez as any).total_people != null) next.totalPeople = (rez as any).total_people
     if (rez.product_id) next.productId = rez.product_id
-    if (rez.channel_id) next.channelId = rez.channel_id
     if (rez.channel_rn != null) {
       const rn = String(rez.channel_rn).trim()
       if (rn && rn.toLowerCase() !== 'id') next.channelRN = rn
@@ -1248,8 +1249,20 @@ export default function ReservationForm({
       }
     }
     if (rez.event_note != null) next.eventNote = rez.event_note
-    if (Object.keys(next).length === 0) return
-    setFormData(prev => ({ ...prev, ...next }))
+
+    const parentChannelId = rez.channel_id ? String(rez.channel_id) : ''
+    const tryApplyParentChannelOnce =
+      Boolean(parentChannelId) && !emailImportChannelParentSyncedRef.current
+
+    if (Object.keys(next).length === 0 && !tryApplyParentChannelOnce) return
+
+    setFormData((prev) => {
+      const merged = { ...prev, ...next }
+      if (!tryApplyParentChannelOnce) return merged
+      emailImportChannelParentSyncedRef.current = true
+      if (!prev.channelId) return { ...merged, channelId: parentChannelId }
+      return merged
+    })
   }, [
     isImportMode,
     pickupHotels,
