@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
 
+export { isAbortLikeError } from './isAbortLikeError'
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -19,35 +21,6 @@ if (process.env.NODE_ENV === 'development') {
   })
 }
 
-/** fetch/Supabase 요청 취소(언마운트, Fast Refresh, 중복 요청 등) — 실패로 보면 안 됨 */
-export function isAbortLikeError(err: unknown): boolean {
-  if (err == null) return false
-  if (typeof err === 'object' && 'name' in err && (err as Error).name === 'AbortError')
-    return true
-  const msg =
-    err instanceof Error
-      ? err.message
-      : typeof err === 'object' &&
-          err !== null &&
-          'message' in err &&
-          (err as { message: unknown }).message != null
-        ? String((err as { message: string }).message)
-        : String(err)
-  const details =
-    typeof err === 'object' &&
-    err !== null &&
-    'details' in err &&
-    (err as { details: unknown }).details != null
-      ? String((err as { details: string }).details)
-      : ''
-  const s = `${msg} ${details}`
-  return (
-    s.includes('AbortError') ||
-    s.includes('aborted') ||
-    s.includes('signal is aborted')
-  )
-}
-
 // 재시도 로직이 포함된 fetch 함수
 const fetchWithRetry = async (
   url: RequestInfo | URL,
@@ -62,10 +35,13 @@ const fetchWithRetry = async (
   // 여기서만 타임아웃(AbortController)을 건다.
   const { signal: _supabaseSignal, ...restOptions } = options
 
+  // 서버(API 라우트)에서는 중첩 조회 등으로 30초를 넘기기 쉬움 — 클라이언트는 기존 유지
+  const fetchTimeoutMs = typeof window === 'undefined' ? 60000 : 30000
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000)
+      const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs)
 
       const headers = new Headers(restOptions.headers)
       
@@ -126,6 +102,40 @@ const fetchWithRetry = async (
   throw lastError || new Error('Unknown error')
 }
 
+/**
+ * GoTrue(/auth/v1/)는 REST용 fetchWithRetry(30초 Abort·다단 재시도)와 겹치면 초기화가 과도하게 길어짐.
+ * 대신 게이트웨이 일시 오류(502/503/504/408)만 짧은 백오프로 1~2회 재시도.
+ */
+async function fetchAuthWithGatewayRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const retryStatuses = new Set([408, 502, 503, 504])
+  const maxExtraAttempts = 2
+  let response = await fetch(input, init)
+  for (let extra = 0; extra < maxExtraAttempts && retryStatuses.has(response.status); extra++) {
+    const delayMs = 400 * Math.pow(2, extra)
+    await new Promise((r) => setTimeout(r, delayMs))
+    response = await fetch(input, init)
+  }
+  return response
+}
+
+function supabaseGlobalFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input instanceof Request
+          ? input.url
+          : String(input)
+  if (url.includes('/auth/v1/')) {
+    return fetchAuthWithGatewayRetry(input, init)
+  }
+  return fetchWithRetry(input, init ?? {})
+}
+
 // 전역 싱글톤 인스턴스 생성 (auth 설정 포함)
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -134,7 +144,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true
   },
   global: {
-    fetch: fetchWithRetry
+    fetch: supabaseGlobalFetch
   }
 })
 

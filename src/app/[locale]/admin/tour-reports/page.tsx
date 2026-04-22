@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { createClient } from '@/lib/supabase'
+import { createClientSupabase } from '@/lib/supabase'
 import TourReportList from '@/components/TourReportList'
 import TourReportForm from '@/components/TourReportForm'
 import { Button } from '@/components/ui/button'
@@ -48,7 +48,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
 
   const fetchTours = async () => {
     try {
-      const supabase = createClient()
+      const supabase = createClientSupabase()
       const { data, error } = await supabase
         .from('tours')
         .select(`

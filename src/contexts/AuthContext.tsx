@@ -186,8 +186,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('is_active', true)
           .maybeSingle()
         
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Query timeout')), 3000)
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Query timeout')), 2200)
         )
         
         const { data: teamData, error } = await Promise.race([queryPromise, timeoutPromise]) as { 
@@ -547,34 +547,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 
                 // Supabase 클라이언트에 토큰 설정
                 updateSupabaseToken(accessToken)
-                
-                // 토큰이 곧 만료되는 경우 갱신 시도
+
+                // 갱신은 네트워크 지연·504에 막히지 않도록 백그라운드만 수행 — 역할 확인·UI는 바로 진행
                 if (tokenExpiry <= now + 3600) {
-                  console.log('AuthContext: Token expires soon, attempting refresh')
-                  try {
-                    const refreshToken = localStorage.getItem('sb-refresh-token')
-                    if (refreshToken && supabase) {
-                      const { data, error } = await supabase.auth.refreshSession({
-                        refresh_token: refreshToken
-                      })
-                      
-                      if (data.session && !error) {
-                        console.log('AuthContext: Token refreshed successfully')
-                        localStorage.setItem('sb-access-token', data.session.access_token)
-                        localStorage.setItem('sb-refresh-token', data.session.refresh_token)
-                        // 토큰 만료 시간을 7일로 설정
-                        const newExpiry = data.session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
-                        localStorage.setItem('sb-expires-at', newExpiry.toString())
-                        updateSupabaseToken(data.session.access_token)
-                      } else {
-                        console.warn('AuthContext: Token refresh failed:', error)
+                  const refreshToken = localStorage.getItem('sb-refresh-token')
+                  if (refreshToken && supabase) {
+                    void (async () => {
+                      try {
+                        const { data, error } = await supabase.auth.refreshSession({
+                          refresh_token: refreshToken,
+                        })
+                        if (data.session && !error) {
+                          localStorage.setItem('sb-access-token', data.session.access_token)
+                          localStorage.setItem('sb-refresh-token', data.session.refresh_token)
+                          const newExpiry =
+                            data.session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
+                          localStorage.setItem('sb-expires-at', newExpiry.toString())
+                          updateSupabaseToken(data.session.access_token)
+                        }
+                      } catch (e) {
+                        console.warn('AuthContext: background refreshSession error:', e)
                       }
-                    }
-                  } catch (refreshError) {
-                    console.warn('AuthContext: Token refresh error:', refreshError)
+                    })()
                   }
                 }
-                
+
                 checkUserRole(mockUser.email || '').catch(error => {
                   console.error('AuthContext: Team membership check failed:', error)
                   setUserRole('customer')
@@ -607,7 +604,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Supabase에서 현재 세션 확인
       if (supabase) {
         try {
-          const { data: { session }, error } = await supabase.auth.getSession()
+          const GET_SESSION_BUDGET_MS = 6000
+          const { data: { session }, error } = await Promise.race([
+            supabase.auth.getSession(),
+            new Promise<{ data: { session: null }; error: { message: string } }>((resolve) =>
+              setTimeout(
+                () => resolve({ data: { session: null }, error: { message: 'getSession_timeout' } }),
+                GET_SESSION_BUDGET_MS
+              )
+            ),
+          ])
+          if (error?.message === 'getSession_timeout') {
+            console.warn(
+              `AuthContext: getSession exceeded ${GET_SESSION_BUDGET_MS}ms, continuing without session`
+            )
+          }
           
           if (session && !error) {
             console.log('AuthContext: Found Supabase session:', session.user.email)
@@ -725,7 +736,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPermissions(null)
         setLoading(false)
         setIsInitialized(true)
-      }, 600) // 새로고침 시 세션 복원(INITIAL_SESSION) 대기 후 미인증 판단
+      }, 350) // INITIAL_SESSION·스토리지 반영 여유 (짧을수록 미인증 판정까지 대기 시간 감소)
     }
     
     checkStoredTokens().catch(error => {
@@ -1149,13 +1160,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 토큰 자동 갱신 (30분마다 체크)
   useEffect(() => {
     if (user && !isSimulating) {
-      const interval = setInterval(async () => {
-        const refreshed = await refreshTokenIfNeeded()
-        if (!refreshed) {
-          console.warn('AuthContext: Token refresh failed, user may need to re-login')
-        }
+      const interval = setInterval(() => {
+        void refreshTokenIfNeeded()
       }, 30 * 60 * 1000) // 30분마다 체크
-      
+
       return () => clearInterval(interval)
     }
     
@@ -1190,16 +1198,4 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider')
   }
   return context
-}
-
-/**
- * 상위에 이미 AuthProvider가 있으면 그대로 통과(중복 상태·이중 구독 방지).
- * 없을 때만 AuthProvider로 감싼다(admin 등 RSC/레이아웃 경계에서 컨텍스트 누락 시 대비).
- */
-export function AuthProviderBoundary({ children }: { children: React.ReactNode }) {
-  const existing = useContext(AuthContext)
-  if (existing !== undefined) {
-    return <>{children}</>
-  }
-  return <AuthProvider>{children}</AuthProvider>
 }

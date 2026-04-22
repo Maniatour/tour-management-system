@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { isAbortLikeError } from '@/lib/supabase'
+import { isAbortLikeError } from '@/lib/isAbortLikeError'
 
 /**
  * Stripe 관련 오류 핸들러 컴포넌트

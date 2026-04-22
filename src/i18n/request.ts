@@ -30,9 +30,10 @@ export default getRequestConfig(async ({ locale }) => {
     // 1. 기본 JSON 파일 로드
     const fileMessages = (await import(`./locales/${locale}.json`)).default
     
-    // 2. DB에서 커스터마이징된 번역 가져오기
+    // 2. DB에서 커스터마이징된 번역 가져오기 (PGRST002 스키마 캐시 재시도 등으로 수 분 걸릴 수 있어 상한 두고 파일만 사용)
     try {
-      const { data: dbTranslations, error: dbError } = await supabase
+      const DB_TRANSLATIONS_TIMEOUT_MS = 8000
+      const query = supabase
         .from('translation_values')
         .select(`
           locale,
@@ -41,7 +42,21 @@ export default getRequestConfig(async ({ locale }) => {
         `)
         .eq('locale', locale)
 
-      if (!dbError && dbTranslations && dbTranslations.length > 0) {
+      const { data: dbTranslations, error: dbError } = await Promise.race([
+        query,
+        new Promise<{ data: null; error: { message: string } }>((resolve) =>
+          setTimeout(
+            () => resolve({ data: null, error: { message: 'translation_db_timeout' } }),
+            DB_TRANSLATIONS_TIMEOUT_MS
+          )
+        ),
+      ])
+
+      if (dbError?.message === 'translation_db_timeout') {
+        console.warn(
+          `[i18n] translation_values query exceeded ${DB_TRANSLATIONS_TIMEOUT_MS}ms, using file messages only`
+        )
+      } else if (!dbError && dbTranslations && dbTranslations.length > 0) {
         // DB 번역을 messages 객체에 병합 (DB 번역이 우선순위 높음)
         const dbMessages = { ...fileMessages }
         

@@ -48,6 +48,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { describeError, serializeError } from '@/lib/errorSerialization'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { useAdminTourChatUnreadCount } from '@/hooks/useAdminTourChatUnreadCount'
 import { useTranslations } from 'next-intl'
@@ -63,28 +64,6 @@ function isAbortError(err: unknown): boolean {
     return err.name === 'AbortError' || err.message?.includes('aborted') || err.message?.includes('signal is aborted')
   const msg = typeof (err as { message?: string })?.message === 'string' ? (err as { message: string }).message : ''
   return msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')
-}
-
-/** Supabase/Error 객체를 로깅 가능한 형태로 변환 (비열거형 속성·빈 {} 방지) */
-function serializeError(err: unknown): Record<string, unknown> {
-  if (err == null) return { _raw: null }
-  const o = err as Record<string, unknown>
-  // Error 인스턴스 또는 message가 있는 객체: 명시적 속성 접근 (비열거형도 읽기)
-  const message = err instanceof Error ? err.message : (o?.message != null ? String(o.message) : undefined)
-  const name = err instanceof Error ? err.name : (o?.name != null ? String(o.name) : undefined)
-  const code = o?.code != null ? o.code : o?.status
-  const details = o?.details
-  const hint = o?.hint
-  const stack = err instanceof Error ? err.stack : (o?.stack != null ? String(o.stack) : undefined)
-  const out: Record<string, unknown> = {}
-  if (message !== undefined) out.message = message
-  if (name !== undefined) out.name = name
-  if (code !== undefined) out.code = code
-  if (details !== undefined) out.details = details
-  if (hint !== undefined) out.hint = hint
-  if (stack !== undefined) out.stack = stack
-  if (Object.keys(out).length === 0) out._raw = String(err)
-  return out
 }
 
 interface AdminSidebarAndHeaderProps {
@@ -301,10 +280,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       
       // 에러 로깅 (앱 중단 방지) — AbortError는 로그 생략
       if (meError && !isAbortError(meError)) {
-        console.error('Error fetching team position:', {
-          email: authUser.email,
-          ...serializeError(meError)
-        })
+        const email = authUser.email ?? '(no-email)'
+        console.error(
+          `Error fetching team position [${email}]: ${describeError(meError)}`,
+          { email: authUser.email, ...serializeError(meError) }
+        )
       }
 
       const myPosition = me && typeof me === 'object' && me !== null && 'position' in me 

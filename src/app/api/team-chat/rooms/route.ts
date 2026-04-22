@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 
 // 채팅방 목록 조회
 export async function GET(request: NextRequest) {
@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
     const roomType = searchParams.get('type')
 
     // 사용자가 참여 중인 채팅방만 조회
+    // team_chat_messages는 중첩 시 방마다 전체 메시지를 끌어와 지연·30초 fetch 타임아웃(Abort) 유발.
+    // 클라이언트는 /api/team-chat/last-message 로 미리보기를 채움.
     let query = supabase
       .from('team_chat_rooms')
       .select(`
@@ -35,13 +37,6 @@ export async function GET(request: NextRequest) {
           participant_name,
           participant_position,
           is_admin
-        ),
-        team_chat_messages(
-          id,
-          message,
-          sender_name,
-          sender_position,
-          created_at
         )
       `)
       .eq('is_active', true)
@@ -55,12 +50,26 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query
 
     if (error) {
+      if (isAbortLikeError(error)) {
+        console.warn('채팅방 조회 중단/시간 초과(네트워크·Supabase 지연):', error)
+        return NextResponse.json(
+          { error: '요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.' },
+          { status: 504 }
+        )
+      }
       console.error('채팅방 조회 오류:', error)
       return NextResponse.json({ error: '채팅방을 불러올 수 없습니다' }, { status: 500 })
     }
 
     return NextResponse.json({ rooms: data || [] })
   } catch (error) {
+    if (isAbortLikeError(error)) {
+      console.warn('채팅방 조회 중단/시간 초과:', error)
+      return NextResponse.json(
+        { error: '요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.' },
+        { status: 504 }
+      )
+    }
     console.error('채팅방 조회 오류:', error)
     return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }

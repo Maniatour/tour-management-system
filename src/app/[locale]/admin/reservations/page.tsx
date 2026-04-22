@@ -4,7 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useR
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { X, Search, SlidersHorizontal, Printer, Archive } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
 import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
@@ -60,6 +60,7 @@ import type {
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
 import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
+import { describeError, serializeError } from '@/lib/errorSerialization'
 
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -1180,7 +1181,16 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
       setServerListTotal(count ?? 0)
     } catch (e) {
-      console.error('loadAdminReservationList:', e)
+      // Strict Mode·탭 전환·필터 변경 등으로 이전 요청이 Abort된 경우 — 목록을 비우지 않고 무시
+      if (isAbortLikeError(e)) {
+        return
+      }
+      const msg =
+        e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)
+      if (msg.includes('AbortError') || msg.includes('aborted')) {
+        return
+      }
+      console.error(`loadAdminReservationList: ${describeError(e)}`, serializeError(e))
       await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
       setServerListTotal(0)
     } finally {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createSupabaseClientWithToken } from '@/lib/supabase'
 
 // 사용자의 모든 채팅방에서 안읽은 메시지 수 조회
 export async function GET(request: NextRequest) {
@@ -11,9 +11,11 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+    // 서버에서는 전역 anon 클라이언트로 .from() 하면 RLS에 사용자가 안 잡혀 500이 난다 → JWT로 RLS 적용 클라이언트 사용
+    const supabaseUser = createSupabaseClientWithToken(token)
+
+    const { data: { user }, error: authError } = await supabaseUser.auth.getUser(token)
     if (authError || !user) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
@@ -21,14 +23,14 @@ export async function GET(request: NextRequest) {
     const userEmail = user.email!
 
     // 사용자가 참여한 채팅방 목록 조회
-    const { data: userRooms, error: roomsError } = await supabase
+    const { data: userRooms, error: roomsError } = await supabaseUser
       .from('team_chat_participants')
       .select('room_id')
       .eq('participant_email', userEmail)
 
     if (roomsError) {
       console.error('채팅방 조회 오류:', roomsError)
-      return NextResponse.json({ error: '채팅방을 조회할 수 없습니다' }, { status: 500 })
+      return NextResponse.json({ unreadCount: 0, roomCounts: {} })
     }
 
     if (!userRooms || userRooms.length === 0) {
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
     const roomIds = userRooms.map(room => room.room_id)
 
     // 한 번의 쿼리로 모든 채팅방의 안읽은 메시지 수 계산 (성능 최적화)
-    const { data: unreadData, error: unreadError } = await supabase
+    const { data: unreadData, error: unreadError } = await supabaseUser
       .from('team_chat_messages')
       .select(`
         room_id,
@@ -59,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     // 읽음 상태를 한 번에 조회
     const messageIds = unreadData.map(msg => msg.id)
-    const { data: readStatuses, error: readError } = await supabase
+    const { data: readStatuses, error: readError } = await supabaseUser
       .from('team_chat_read_status')
       .select('message_id')
       .in('message_id', messageIds)
