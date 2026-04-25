@@ -1,11 +1,26 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-type StatRow = { paid_for: string; count: number; paid_for_label_id: string | null }
+type StatRow = {
+  paid_for: string
+  count: number
+  paid_for_label_id: string | null
+  /** 그룹 내 standard_paid_for 가 비어 있는 지출 건수(RPC 미배포 시 생략 가능) */
+  missing_standard_count?: number
+  sample_standard_paid_for: string | null
+  sample_category: string | null
+  sample_expense_type: string | null
+}
+
+function optJsonString(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'string') return v
+  return String(v)
+}
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data, error } = await supabase.rpc('company_expense_paid_for_normalization_stats')
 
     if (error) {
@@ -27,10 +42,19 @@ export async function GET() {
       for (const r of raw) {
         if (r && typeof r === 'object') {
           const o = r as Record<string, unknown>
+          let missing_standard_count: number | undefined
+          if ('missing_standard_count' in o) {
+            const n = Number(o.missing_standard_count)
+            if (Number.isFinite(n)) missing_standard_count = n
+          }
           parsed.push({
             paid_for: String(o.paid_for ?? ''),
             count: Number(o.count ?? 0),
             paid_for_label_id: (o.paid_for_label_id as string | null) ?? null,
+            ...(missing_standard_count !== undefined ? { missing_standard_count } : {}),
+            sample_standard_paid_for: optJsonString(o.sample_standard_paid_for),
+            sample_category: optJsonString(o.sample_category),
+            sample_expense_type: optJsonString(o.sample_expense_type),
           })
         }
       }

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const includeInactive = request.nextUrl.searchParams.get('includeInactive') === '1'
 
     let q = supabase
@@ -37,7 +37,7 @@ function slugCode(input: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const body = await request.json()
     const label_ko = typeof body.label_ko === 'string' ? body.label_ko.trim() : ''
     if (!label_ko) {

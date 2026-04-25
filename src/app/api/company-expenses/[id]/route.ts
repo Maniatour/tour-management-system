@@ -16,7 +16,7 @@ export async function GET(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
@@ -53,7 +53,7 @@ export async function PUT(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
@@ -80,13 +80,14 @@ export async function PUT(
       tax_deductible,
       status: statusBody,
       paid_for_label_id: paidForLabelIdBody,
+      standard_paid_for: standardPaidForBody,
     } = body
 
     const paymentMethodTrimmed =
       typeof payment_method === 'string' ? payment_method.trim() : ''
+    const paidForTrimmed = typeof paid_for === 'string' ? paid_for.trim() : ''
     if (
       !paid_to ||
-      !paid_for ||
       amount === undefined ||
       amount === null ||
       amount === '' ||
@@ -107,7 +108,7 @@ export async function PUT(
 
     const updatePayload: CompanyExpenseUpdate = {
       paid_to,
-      paid_for,
+      paid_for: paidForTrimmed,
       description: description || null,
       amount: parsedAmount,
       payment_method: paymentMethodTrimmed,
@@ -128,6 +129,12 @@ export async function PUT(
       ...(paidForLabelIdBody !== undefined && {
         paid_for_label_id:
           paidForLabelIdBody === null || paidForLabelIdBody === '' ? null : String(paidForLabelIdBody),
+      }),
+      ...(standardPaidForBody !== undefined && {
+        standard_paid_for:
+          standardPaidForBody === null || standardPaidForBody === ''
+            ? null
+            : String(standardPaidForBody),
       }),
     }
 
@@ -155,7 +162,7 @@ export async function DELETE(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })

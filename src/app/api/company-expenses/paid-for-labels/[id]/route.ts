@@ -10,7 +10,7 @@ async function resolveId(params: RouteParams): Promise<string | undefined> {
 
 export async function PATCH(request: NextRequest, { params }: { params: RouteParams }) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest, { params }: { params: RoutePar
 /** 비활성화(소프트 삭제). 참조 중인 지출이 있어도 안전합니다. */
 export async function DELETE(_request: NextRequest, { params }: { params: RouteParams }) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })

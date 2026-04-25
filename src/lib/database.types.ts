@@ -1031,6 +1031,7 @@ export type Database = {
           paid_by: string | null
           paid_for: string | null
           paid_for_label_id: string | null
+          standard_paid_for: string | null
           paid_on: string | null
           paid_to: string | null
           payment_method: string | null
@@ -1061,6 +1062,7 @@ export type Database = {
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
+          standard_paid_for?: string | null
           paid_on?: string | null
           paid_to?: string | null
           payment_method?: string | null
@@ -1091,6 +1093,7 @@ export type Database = {
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
+          standard_paid_for?: string | null
           paid_on?: string | null
           paid_to?: string | null
           payment_method?: string | null

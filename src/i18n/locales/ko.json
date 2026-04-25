@@ -3173,6 +3173,9 @@
       "amount": "금액",
       "paidTo": "결제처",
       "paidFor": "결제내용",
+      "paidForOptional": "선택",
+      "paidForPlaceholder": "기존 문구를 고르거나 입력",
+      "paidForComboboxHelp": "이전에 등록한 결제 내용이 제안됩니다. 목록·표준에 없으면 직접 입력하세요. 비워 둘 수 있습니다.",
       "suggestOrType": "목록에서 선택하거나 직접 입력해 새 값을 쓸 수 있습니다.",
       "suggestionsLoading": "기존 값 목록을 불러오는 중…",
       "description": "설명",
@@ -3208,7 +3211,44 @@
       "cogsVsExpensesManualOpenTitle": "COGS와 일반 경비 구분 안내",
       "cogsVsExpensesManualDialogTitle": "비슷한 항목: COGS vs 일반 경비",
       "cogsVsExpensesManualDialogDescription": "표준 결제 내용을 고를 때 참고용입니다. 실제 장부·세무 처리는 계약 구조와 회계 정책, CPA 자문이 우선입니다.",
-      "cogsVsExpensesManualBody": "【한 줄 요약】\nCOGS(CAT024 계열)는 “그날 그 투어(또는 고객에게 약속한 서비스)를 실행하기 위해 직접 따라붙는 원가”에 가깝게 두었습니다. 일반 경비(교통·식비·사무 등)는 “사업을 돌리기 위한 관리·유지·판매”에 가깝습니다.\n\n【비슷해 보일 때 예시】\n• 연료 — 투어 실행 차량에만 넣은 주유 → 「유류비 (투어 차량)」 등 COGS. 사무·관리 이동, 일반 업무용 차량 → 「교통비」 등 운영비 쪽.\n• 식사 — 고객에게 주는 도시락·고객 제공 식사 원가 → 「도시락 / 식사 (고객 제공)」 등 COGS. 가이드·직원이 식사한 비용 → 「사업 식비」·식비 계열(운영비).\n• 입장료·공연 티켓 — 투어 상품에 포함해 고객에게 제공하는 매입·대행 정산 → COGS·입장료류에 가깝게. 직원 교육·내부 견학용 공연 → 입장료·여비 등 운영비 쪽.\n• 가이드·인력 — 해당 투어에만 붙는 일당·외주 → COGS「가이드 외주」류. 월급·상시 계약직 → 「인건비」 등 운영비.\n• 차량 — 투어 전용 렌탈·그 실행에만 쓴 비용 → COGS. 차량 보험·정비·감가 등 전사 비용 → 차량·정비(운영비).\n\n【주의】\n“대행”이 수수료만 매출인지, 티켓 매입을 통째로 원가로 보는지(주인/대리)에 따라 나뉩니다. 앱의 표준 이름이 헷갈리면 위 기준으로 고른 뒤, 필요 시 카테고리 매니저에서 매핑을 조정하세요.",
+      "cogsVsExpensesManualContent": {
+        "summaryTitle": "한 줄 요약",
+        "summaryText": "COGS(CAT024 계열)는 “그날 그 투어(또는 고객에게 약속한 서비스)를 실행하기 위해 직접 따라붙는 원가”에 가깝게 두었습니다. 일반 경비(교통·식비·사무 등)는 “사업을 돌리기 위한 관리·유지·판매”에 가깝습니다.",
+        "pillCogs": "COGS · CAT024",
+        "pillOpex": "일반 경비",
+        "examplesTitle": "비슷해 보일 때 예시",
+        "cogsColumnLabel": "COGS에 가깝다",
+        "opexColumnLabel": "일반 경비에 가깝다",
+        "examples": [
+          {
+            "label": "연료",
+            "cogs": "투어 실행 차량에만 넣은 주유 → 「유류비 (투어 차량)」 등.",
+            "opex": "사무·관리 이동, 일반 업무용 차량 → 「교통비」 등 운영비."
+          },
+          {
+            "label": "식사",
+            "cogs": "고객에게 주는 도시락·고객 제공 식사 원가 → 「도시락 / 식사 (고객 제공)」 등.",
+            "opex": "가이드·직원이 식사한 비용 → 「사업 식비」·식비 계열(운영비)."
+          },
+          {
+            "label": "입장료·공연 티켓",
+            "cogs": "투어 상품에 포함해 고객에게 제공하는 매입·대행 정산 → COGS·입장료류에 가깝게.",
+            "opex": "직원 교육·내부 견학용 공연 → 입장료·여비 등 운영비."
+          },
+          {
+            "label": "가이드·인력",
+            "cogs": "해당 투어에만 붙는 일당·외주 → COGS 「가이드 외주」류.",
+            "opex": "월급·상시 계약직 → 「인건비」 등 운영비."
+          },
+          {
+            "label": "차량",
+            "cogs": "투어 전용 렌탈·그 실행에만 쓴 비용 → COGS.",
+            "opex": "차량 보험·정비·감가 등 전사 비용 → 차량·정비(운영비)."
+          }
+        ],
+        "noteTitle": "주의",
+        "noteText": "“대행”이 수수료만 매출인지, 티켓 매입을 통째로 원가로 보는지(주인/대리)에 따라 나뉩니다. 앱의 표준 이름이 헷갈리면 위 기준으로 고른 뒤, 필요 시 카테고리 매니저에서 매핑을 조정하세요."
+      },
       "cogsVsExpensesManualClose": "닫기"
     },
     "standardLeafDoubleCheck": {
@@ -3222,31 +3262,14 @@
       "tourCustomerMealsTitle": "「투어 고객 식사」가 맞나요?",
       "tourCustomerMealsBody": "이 항목은 투어 중 고객에게 제공하는 식사 비용으로, 표준상 식비·투어 고객 식사 라인에 가깝습니다.\n\n다른 선택과 구분:\n• 도시락 / 식사 (고객 제공)(COGS) — 고객 식사이지만 매출원가(Line 4)로 잡아야 할 원가인지 회계·세무 정책에 따라 선택이 갈릴 수 있습니다.\n• 사업 식비 — 가이드·직원 본인의 식사비.\n\n지출 성격이 COGS인지, 투어 고객 식사 라인인지 확인한 뒤 진행해 주세요."
     },
-    "unifiedBulk": {
-      "openButton": "표준 분류 일괄 정리",
-      "title": "회사 지출 표준 분류 일괄 정리",
-      "description": "기존 지출의 «결제 내용»을 표준에 맞춰 결제 내용·카테고리·지출 유형을 한 번에 맞춥니다. 먼저 미리보기로 건수를 확인한 뒤 적용하세요.",
-      "modeLabel": "적용 방식",
-      "modeMappingTitle": "카테고리 매핑 기준",
-      "modeMappingHint": "카테고리 매니저에서 company_expenses용으로 저장한 매핑(원문 → 표준)이 있고, 그 표준이 선택 가능한 리프이면 해당 행을 갱신합니다.",
-      "modeTextTitle": "결제 내용 문자 일치",
-      "modeTextHint": "«결제 내용»이 표준 항목의 한글명과 정확히 같으면(공백 제외) 그 표준의 분류로 갱신합니다.",
-      "preview": "미리보기",
-      "loading": "처리 중…",
-      "previewDone": "미리보기: {count}건 변경 예정",
-      "previewTitle": "변경 예시 (최대 50건 표시, 총 {count}건)",
-      "apply": "적용",
-      "close": "닫기",
-      "confirmApply": "총 {count}건을 표준 분류로 갱신할까요? (결제 내용 라벨은 해제됩니다.)",
-      "applyDone": "{count}건을 갱신했습니다.",
-      "nothingToApply": "미리보기에서 변경할 건이 없습니다.",
-      "error": "처리에 실패했습니다."
-    },
     "paidForNormalization": {
       "openButton": "결제 내용 정규화",
       "title": "결제 내용 정규화",
-      "description": "같은 의미인데 표기만 다른 «결제 내용» 원문을, 카테고리 매니저의 표준 카테고리(지출 추가 화면의 «표준 결제 내용»과 동일 목록)에 맞춥니다. 항목을 고르면 해당 원문을 쓰는 지출의 «결제 내용»·회사 지출 카테고리·지출 유형·세금 공제가 한 번에 갱신되고, 기존 «결제 내용 라벨»(paid_for_label) 지정은 해제됩니다.",
-      "onlyUnlabeled": "아직 표준 결제 내용이 지정되지 않은 값만 보기",
+      "description": "같은 «결제 내용» 원문(paid_for)으로 묶인 지출에, 카테고리 매니저의 표준 카테고리(지출 추가 화면의 «표준 결제 내용»과 동일 목록)를 골라 적용합니다. 원문 «결제 내용»은 바꾸지 않고, «표준 결제내용»(standard_paid_for) 칸에만 표준 문구를 넣으며 회사 지출 카테고리·지출 유형·세금 공제를 갱신합니다. 기존 «결제 내용 라벨»(paid_for_label)은 제거하지 않습니다.",
+      "listFilterLabel": "표시",
+      "listFilterAll": "전체 그룹",
+      "listFilterMissingStandard": "표준 결제내용이 비어 있는 지출이 있는 그룹",
+      "listFilterUnlabeled": "결제 내용 라벨이 없는 그룹만",
       "refresh": "새로고침",
       "loading": "불러오는 중…",
       "empty": "표시할 행이 없습니다.",
@@ -3254,6 +3277,7 @@
       "colCount": "건수",
       "colCurrentLabel": "기존 결제 내용 라벨",
       "colTargetLabel": "새로운 표준 결제 내용",
+      "pickerNoSelection": "선택 없음",
       "colAction": "적용",
       "pickLabel": "새 표준 결제 내용을 선택하세요.",
       "apply": "일괄 적용",
@@ -3263,9 +3287,32 @@
       "loadStatsError": "통계를 불러오지 못했습니다.",
       "loadLabelsError": "기존 라벨(표시용) 목록을 불러오지 못했습니다.",
       "loadCategoriesError": "표준 카테고리(카테고리 매니저) 목록을 불러오지 못했습니다.",
-      "noStandardCategories": "활성화된 표준 카테고리가 없습니다. 카테고리 매니저에서 먼저 등록하세요.",
+      "noStandardCategories": "표준 카테고리가 없습니다. 카테고리 매니저의 «표준 카테고리» 탭에서 등록하세요.",
+      "inactiveCategory": "비활성",
       "loadError": "불러오기에 실패했습니다.",
-      "vehicleTag": "차량 정비 연동"
+      "vehicleTag": "차량 정비 연동",
+      "rowSelectHint": "행을 클릭하면 해당 결제 내용으로 묶인 지출 목록을 아래에서 볼 수 있습니다. 같은 행을 다시 클릭하면 접습니다.",
+      "detailTitle": "포함된 지출 ({total}건)",
+      "detailLoading": "지출 목록을 불러오는 중…",
+      "detailEmpty": "표시할 지출이 없습니다.",
+      "detailLoadError": "지출 목록을 불러오지 못했습니다.",
+      "detailClose": "목록 접기",
+      "detailColDate": "지출일",
+      "detailColAmount": "금액",
+      "detailColPaidTo": "지급 대상",
+      "detailColCategory": "카테고리",
+      "detailColExpenseType": "유형",
+      "detailColDescription": "설명",
+      "detailColStatus": "상태",
+      "detailPrev": "이전",
+      "detailNext": "다음",
+      "detailPageStatus": "{from}–{to} / 총 {total}건 (페이지 {page}/{totalPages})",
+      "detailSelectAllPage": "이 페이지 전체",
+      "detailApplySelected": "선택 항목만 적용",
+      "detailApplyingSelected": "선택 적용 중…",
+      "detailNoneSelected": "적용할 지출을 한 건 이상 선택하세요.",
+      "detailApplySelectedSuccess": "선택 {count}건을 갱신했습니다.",
+      "detailSelectedCount": "{count}건 선택됨"
     },
     "maintenanceLinks": {
       "title": "포함되는 차량 정비 기록",
@@ -3347,7 +3394,49 @@
       "status": "상태",
       "vehicle": "차량",
       "paidFor": "결제 내용",
+      "standardPaidFor": "표준 결제내용",
+      "standardPaidForSet": "저장됨",
+      "standardPaidForUnset": "미저장",
       "all": "전체"
+    },
+    "listBatchStandard": {
+      "toolbarTitle": "선택한 지출에 표준 카테고리 일괄 적용",
+      "preservePaidForHint": "원문 «결제내용»은 그대로 두고, 표준 문구는 «표준 결제내용» 칸에만 저장합니다. 회사 지출 카테고리·유형·세금공제는 표준에 맞게 갱신됩니다.",
+      "selectedCount": "{count}건 선택",
+      "clearSelection": "선택 해제",
+      "apply": "표준 카테고리 적용",
+      "applying": "적용 중…",
+      "noSelectionToast": "적용할 지출을 목록에서 선택하세요.",
+      "noStandardLeafToast": "적용할 표준 카테고리(세부 항목)를 선택하세요.",
+      "applySuccess": "{count}건에 반영했습니다.",
+      "applyPartial": "요청 {requested}건 중 {updated}건만 반영되었습니다. 권한이나 다른 제약으로 나머지는 바뀌지 않았을 수 있습니다.",
+      "applyError": "일괄 적용에 실패했습니다.",
+      "noStandardData": "표준 카테고리 목록을 불러오지 못했습니다.",
+      "selectRowAria": "이 지출 선택",
+      "selectAllPageAria": "현재 페이지 전체 선택",
+      "selectPage": "이 페이지 모두 선택",
+      "deselectPage": "이 페이지 선택 해제"
+    },
+    "listStandardPaidFor": {
+      "column": "표준 결제내용",
+      "columnHint": "일괄 적용·표준 리프에서 채운 정규화 문구입니다. 왼쪽 «결제내용»은 제출 당시 원문입니다."
+    },
+    "listQuickEdit": {
+      "standardTitle": "표준 결제내용",
+      "standardDescription": "이 지출의 표준 결제내용을 선택합니다. 원문 결제내용은 그대로 둡니다.",
+      "paymentTitle": "결제 방법",
+      "paymentDescription": "이 지출의 결제 방법을 선택합니다.",
+      "vehicleTitle": "차량",
+      "vehicleDescription": "이 지출에 연결할 차량을 선택합니다.",
+      "saving": "저장 중…",
+      "saveError": "저장에 실패했습니다. 다시 시도해 주세요.",
+      "tapToSetStandard": "탭하여 표준 결제내용 설정",
+      "tapToSetPayment": "탭하여 결제 방법 설정",
+      "tapToSetVehicle": "탭하여 차량 설정",
+      "openStandardHint": "표준 결제내용을 변경하려면 클릭",
+      "openPaymentHint": "결제 방법을 변경하려면 클릭",
+      "openVehicleHint": "차량을 변경하려면 클릭",
+      "paymentRequired": "결제 방법을 선택해 주세요."
     },
     "listInlineEdit": {
       "enter": "인라인 편집",

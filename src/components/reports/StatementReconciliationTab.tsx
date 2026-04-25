@@ -17,6 +17,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  FileText,
   Link2,
   Lock,
   MapPinned,
@@ -24,10 +26,13 @@ import {
   Receipt,
   RefreshCw,
   RotateCcw,
+  Save,
   Search,
   Shield,
+  Tag,
   Ticket,
   Upload,
+  UserRound,
   Wand2,
   Plus,
   AlertCircle,
@@ -75,10 +80,7 @@ import {
   type StatementCsvDirectionMode
 } from '@/lib/statement-csv'
 import { formatStatementLineDescription } from '@/lib/statement-display'
-import {
-  findBestExpenseForLine,
-  type ExpenseCandidate
-} from '@/lib/reconciliation-engine'
+import { type ExpenseCandidate } from '@/lib/reconciliation-engine'
 
 type FinancialAccount = {
   id: string
@@ -165,14 +167,39 @@ type ReconciliationMatchRow = {
   source_id: string
   matched_by: string | null
   matched_at?: string
+  updated_by?: string | null
+  updated_at?: string | null
+}
+
+type ReconciliationMatchEventRow = {
+  id: string
+  match_id: string | null
+  statement_line_id: string
+  action: 'created' | 'updated' | 'deleted'
+  actor_email: string | null
+  occurred_at: string
+  before_source_table: string | null
+  before_source_id: string | null
+  after_source_table: string | null
+  after_source_id: string | null
+  before_matched_amount: number | string | null
+  after_matched_amount: number | string | null
 }
 
 type ExpenseOption = {
-  source_table: 'company_expenses' | 'tour_expenses' | 'reservation_expenses' | 'ticket_bookings'
+  source_table:
+    | 'company_expenses'
+    | 'tour_expenses'
+    | 'reservation_expenses'
+    | 'ticket_bookings'
+    | 'tour_hotel_bookings'
   source_id: string
   label: string
   amount: number
   submit_on: string
+  paid_to: string
+  paid_for: string
+  description: string | null
   /** payment_methods.id — 없으면 null */
   payment_method: string | null
 }
@@ -201,19 +228,74 @@ const EXPENSE_TABLES = [
   'company_expenses',
   'tour_expenses',
   'reservation_expenses',
-  'ticket_bookings'
+  'ticket_bookings',
+  'tour_hotel_bookings'
 ] as const
 
+type ReconciliationViewTab = 'statements' | 'operational-ledger'
+
+type OperationalLedgerSourceTable =
+  | 'reservation_expenses'
+  | 'company_expenses'
+  | 'payment_records'
+  | 'ticket_bookings'
+  | 'tour_hotel_bookings'
+
+type OperationalLedgerRow = {
+  key: string
+  source_table: OperationalLedgerSourceTable
+  source_id: string
+  direction: 'outflow' | 'inflow'
+  date: string
+  amount: number
+  party: string
+  purpose: string
+  note: string | null
+  payment_method: string | null
+  already_matched: boolean
+}
+
+type StatementLineCandidate = {
+  id: string
+  financial_account_id: string
+  financial_account_name: string
+  posted_date: string
+  direction: string
+  amount: number
+  description: string
+  matched_status: string
+  score: number
+  amount_diff: number
+  day_diff: number
+}
+
 /** 자동 매칭 미리보기 행 — 확인 후 DB 저장 */
+type AutoMatchCandidateOption = {
+  key: string
+  source_table: ExpenseCandidate['source_table']
+  source_id: string
+  expense_label: string
+  expense_registered_date: string
+  expense_amount: number
+  expense_paid_to: string
+  expense_paid_for: string
+  expense_standard_paid_for: string | null
+  score: number
+  amount_diff: number
+}
+
 type AutoMatchProposalRow = {
   statement_line_id: string
   posted_date: string
   line_amount: number
   line_desc: string
-  source_table: ExpenseCandidate['source_table']
-  source_id: string
-  expense_label: string
-  score: number
+  candidates: AutoMatchCandidateOption[]
+}
+
+type AutoMatchExpenseCandidate = ExpenseCandidate & {
+  paid_to: string
+  paid_for: string
+  standard_paid_for: string | null
 }
 
 const AUTO_MATCH_SOURCE_LABEL: Record<ExpenseCandidate['source_table'], string> = {
@@ -222,6 +304,22 @@ const AUTO_MATCH_SOURCE_LABEL: Record<ExpenseCandidate['source_table'], string> 
   reservation_expenses: '예약 지출',
   ticket_bookings: '입장권 부킹'
 }
+
+const OPERATIONAL_LEDGER_SOURCE_LABEL: Record<OperationalLedgerSourceTable, string> = {
+  reservation_expenses: '예약',
+  company_expenses: '회사',
+  payment_records: '입금',
+  ticket_bookings: '티켓',
+  tour_hotel_bookings: '호텔 부킹'
+}
+
+const EXPENSE_SOURCE_FILTER_OPTIONS: { value: '' | ExpensePickerBrowseTable; label: string }[] = [
+  { value: '', label: '전체' },
+  { value: 'company_expenses', label: '회사' },
+  { value: 'tour_expenses', label: '투어' },
+  { value: 'reservation_expenses', label: '예약' },
+  { value: 'ticket_bookings', label: '입장권' }
+]
 
 /** 한 페이지당 표시 행 수 — 행마다 무거운 UI가 있으면 DOM·레이아웃 비용이 커짐 */
 const RECONCILIATION_PAGE_SIZE = 40
@@ -242,6 +340,32 @@ const PICKER_SEARCH_MIN_CHARS = 2
 const PICKER_QUICK_DATE_WINDOW_DAYS = 21
 /** 지출 연결 모달 — 테이블 탐색 시 페이지당 행 수 (다음 페이지 여부 판별용 +1건 조회) */
 const PICKER_BROWSE_PAGE_SIZE = 40
+/** 결제수단 ↔ 금융계정 모달: 한 번에 렌더링할 결제수단 행 수 */
+const PAYMENT_LINK_RENDER_LIMIT = 150
+/** 자동 매칭 미리보기: 한 명세 줄당 표시할 후보 수 */
+const AUTO_MATCH_CANDIDATE_LIMIT = 8
+/** 자동 매칭 미리보기: 금액이 완전히 같지 않아도 후보로 볼 최대 차이(또는 5%) */
+const AUTO_MATCH_MAX_AMOUNT_DIFF_ABS = 5
+const AUTO_MATCH_MAX_DAY_DIFF = 7
+
+function dayDiffFromYmd(iso: string, ymd: string): number {
+  const a = new Date(iso).getTime()
+  const b = new Date(`${ymd}T12:00:00`).getTime()
+  if (Number.isNaN(a) || Number.isNaN(b)) return Number.POSITIVE_INFINITY
+  return Math.abs(a - b) / 86400000
+}
+
+function autoMatchCandidateScore(lineAmount: number, postedDate: string, expense: AutoMatchExpenseCandidate) {
+  const amountDiff = Math.abs(Number(expense.amount) - lineAmount)
+  const maxAmountDiff = Math.max(AUTO_MATCH_MAX_AMOUNT_DIFF_ABS, Math.abs(lineAmount) * 0.05)
+  if (amountDiff > maxAmountDiff) return null
+  const dayDiff = dayDiffFromYmd(expense.occurred_at, postedDate)
+  if (dayDiff > AUTO_MATCH_MAX_DAY_DIFF) return null
+  const amountPenalty = amountDiff === 0 ? 0 : Math.min(45, (amountDiff / maxAmountDiff) * 45)
+  const datePenalty = dayDiff * 5
+  const labelBonus = expense.label.trim().length > 2 ? 5 : 0
+  return Math.max(1, 100 - amountPenalty - datePenalty + labelBonus)
+}
 
 type ExpensePickerBrowseTable =
   | 'company_expenses'
@@ -329,7 +453,7 @@ async function fetchReconciliationMatchesForLineIds(lineIds: string[]): Promise<
         wave.map(async (chunk) => {
           const { data: matchData, error: e2 } = await supabase
             .from('reconciliation_matches')
-            .select('id, statement_line_id, source_table, source_id, matched_by, matched_at')
+            .select('id,statement_line_id,source_table,source_id,matched_by,matched_at,updated_by,updated_at')
             .in('statement_line_id', chunk)
           if (e2) {
             if (!isAbortLikeError(e2)) console.error(e2)
@@ -421,10 +545,23 @@ function paymentMethodLabelFromRows(id: string | null | undefined, rows: Payment
 }
 
 function recordToExpenseOption(
-  table: ExpensePickerBrowseTable,
+  table: ExpenseOption['source_table'],
   r: Record<string, unknown>
 ): ExpenseOption {
   const pm = expensePaymentMethodFromRow(r)
+  if (table === 'tour_hotel_bookings') {
+    return {
+      source_table: 'tour_hotel_bookings',
+      source_id: String(r.id),
+      label: `${String(r.hotel ?? '')} / ${String(r.reservation_name ?? '')}`,
+      amount: Number(r.total_price ?? 0),
+      submit_on: String(r.submit_on ?? r.check_in_date ?? r.created_at ?? ''),
+      paid_to: String(r.hotel ?? ''),
+      paid_for: String(r.reservation_name ?? '호텔 부킹'),
+      description: r.note == null ? null : String(r.note),
+      payment_method: pm
+    }
+  }
   if (table === 'ticket_bookings') {
     return {
       source_table: 'ticket_bookings',
@@ -432,15 +569,24 @@ function recordToExpenseOption(
       label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
       amount: Number(r.expense ?? 0),
       submit_on: String(r.submit_on),
+      paid_to: String(r.company ?? ''),
+      paid_for: String(r.category ?? ''),
+      description: null,
       payment_method: pm
     }
   }
+  const paidFor = String(r.paid_for ?? '')
+  const paidTo = String(r.paid_to ?? '')
   return {
     source_table: table,
     source_id: String(r.id),
-    label: `${r.paid_for} / ${r.paid_to}`,
+    label: `${paidFor} / ${paidTo}`,
     amount: Number(r.amount),
     submit_on: String(r.submit_on),
+    paid_to: paidTo,
+    paid_for: paidFor,
+    description:
+      r.description == null && r.note == null ? null : String(r.description ?? r.note ?? ''),
     payment_method: pm
   }
 }
@@ -460,6 +606,18 @@ function formatExpensePickerLineLabel(o: ExpenseOption) {
 function formatExpenseOptionSubmitDate(o: ExpenseOption) {
   const s = o.submit_on?.trim() ?? ''
   return s.length >= 10 ? s.slice(0, 10) : s || '—'
+}
+
+function formatReconciliationTimestamp(value: string | null | undefined): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 16)
+  return d.toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 /** 카드 한 줄용 MM/DD/YYYY (submit_on ISO) */
@@ -500,6 +658,8 @@ function expenseSourceTableAriaLabel(sourceTable: string): string {
       return '예약 지출'
     case 'ticket_bookings':
       return '입장권 부킹'
+    case 'tour_hotel_bookings':
+      return '호텔 부킹'
     default:
       return '지출 연결'
   }
@@ -516,6 +676,8 @@ function expenseSourceTypeIconColorClass(sourceTable: string): string {
       return 'text-violet-600'
     case 'ticket_bookings':
       return 'text-emerald-600'
+    case 'tour_hotel_bookings':
+      return 'text-orange-600'
     default:
       return 'text-slate-500'
   }
@@ -538,6 +700,8 @@ function ExpenseSourceTypeIcon({
       return <CalendarDays className={cn} aria-hidden />
     case 'ticket_bookings':
       return <Ticket className={cn} aria-hidden />
+    case 'tour_hotel_bookings':
+      return <Building2 className={cn} aria-hidden />
     default:
       return <Link2 className={cn} aria-hidden />
   }
@@ -649,6 +813,30 @@ function dedupeExpenseOptionsList(ex: ExpenseOption[]): ExpenseOption[] {
 
 const DRAG_MIME_EXPENSE = 'application/x-tms-expense'
 
+function formatMoneyUsd(value: number): string {
+  return `$${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`
+}
+
+function normalizeDateYmd(value: string | null | undefined): string {
+  const s = String(value ?? '').trim()
+  return s.length >= 10 ? s.slice(0, 10) : s
+}
+
+function operationalLedgerKey(sourceTable: string, sourceId: string): string {
+  return `${sourceTable}:${sourceId}`
+}
+
+function todayYmd(): string {
+  const d = new Date()
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
 /** 명세 기간에 로드된 지출 후보만 대상으로, DB에 이미 매칭된 source 키 조회 */
 async function fetchMatchedExpenseKeysForOptions(
   client: typeof supabase,
@@ -712,6 +900,7 @@ export default function StatementReconciliationTab() {
   const [imports, setImports] = useState<StatementImport[]>([])
   const [lines, setLines] = useState<StatementLine[]>([])
   const [matches, setMatches] = useState<ReconciliationMatchRow[]>([])
+  const [teamDisplayNamesByEmail, setTeamDisplayNamesByEmail] = useState<Record<string, string>>({})
   /** 아래 명세 대조 표: 줄·매칭 Supabase 로드 중 */
   const [reconciliationLinesLoading, setReconciliationLinesLoading] = useState(false)
 
@@ -801,10 +990,20 @@ export default function StatementReconciliationTab() {
   const [autoMatchApplying, setAutoMatchApplying] = useState(false)
   /** 미리보기에서 저장할 명세 줄 id — 기본은 후보 전체 선택 */
   const [autoMatchSelectedIds, setAutoMatchSelectedIds] = useState<Set<string>>(() => new Set())
+  /** 미리보기에서 명세 줄별로 선택한 후보 key */
+  const [autoMatchCandidateSelection, setAutoMatchCandidateSelection] = useState<Record<string, string>>({})
   const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
   const [bulkCompanyExpenseModalOpen, setBulkCompanyExpenseModalOpen] = useState(false)
   const [resetAllMatchesOpen, setResetAllMatchesOpen] = useState(false)
   const [resettingAllMatches, setResettingAllMatches] = useState(false)
+  const [matchHistoryTarget, setMatchHistoryTarget] = useState<{
+    line: StatementLine
+    match: ReconciliationMatchRow
+    expense?: ExpenseOption
+  } | null>(null)
+  const [matchHistoryRows, setMatchHistoryRows] = useState<ReconciliationMatchEventRow[]>([])
+  const [matchHistoryLoading, setMatchHistoryLoading] = useState(false)
+  const [matchHistoryError, setMatchHistoryError] = useState<string | null>(null)
   /** 행마다 수천 개 `<option>`을 두지 않고, 모달에서 검색·선택 */
   const [expensePickerLineId, setExpensePickerLineId] = useState<string | null>(null)
   const [expensePickerQuery, setExpensePickerQuery] = useState('')
@@ -813,16 +1012,28 @@ export default function StatementReconciliationTab() {
   const [expensePickerBrowseRows, setExpensePickerBrowseRows] = useState<ExpenseOption[]>([])
   const [expensePickerBrowseLoading, setExpensePickerBrowseLoading] = useState(false)
   const [expensePickerBrowseHasMore, setExpensePickerBrowseHasMore] = useState(false)
+  const [matchedExpenseDetails, setMatchedExpenseDetails] = useState<Record<string, ExpenseOption>>({})
   const [paymentPickerLineId, setPaymentPickerLineId] = useState<string | null>(null)
   const [paymentPickerQuery, setPaymentPickerQuery] = useState('')
   /** payment_records.reservation_id → customers.name (입금 연결 모달 표시용) */
   const [paymentPickerReservationCustomerNames, setPaymentPickerReservationCustomerNames] = useState<
     Record<string, string>
   >({})
+  const paymentMethodsLoadedRef = useRef(false)
   const createAccountInFlight = useRef(false)
   const csvImportFileInputRef = useRef<HTMLInputElement>(null)
   const [savingStatementCsvModeFor, setSavingStatementCsvModeFor] = useState<string | null>(null)
   const [flippingStatementDirectionsFor, setFlippingStatementDirectionsFor] = useState<string | null>(null)
+  const [reconciliationViewTab, setReconciliationViewTab] = useState<ReconciliationViewTab>('statements')
+  const [operationalLedgerStart, setOperationalLedgerStart] = useState(() => todayYmd())
+  const [operationalLedgerEnd, setOperationalLedgerEnd] = useState(() => todayYmd())
+  const [operationalLedgerRows, setOperationalLedgerRows] = useState<OperationalLedgerRow[]>([])
+  const [operationalLedgerLoading, setOperationalLedgerLoading] = useState(false)
+  const [operationalLedgerSearch, setOperationalLedgerSearch] = useState('')
+  const [operationalLedgerSourceFilter, setOperationalLedgerSourceFilter] = useState<OperationalLedgerSourceTable | ''>('')
+  const [operationalLedgerScope, setOperationalLedgerScope] = useState<'unmatched' | 'all'>('unmatched')
+  const [statementCandidatesByLedgerKey, setStatementCandidatesByLedgerKey] = useState<Record<string, StatementLineCandidate[]>>({})
+  const [statementCandidateLoadingKey, setStatementCandidateLoadingKey] = useState<string | null>(null)
 
   /** 보정 지출 — 유형 선택 후 모달에서 실제 지출 입력 */
   const [adjustModalLine, setAdjustModalLine] = useState<StatementLine | null>(null)
@@ -831,15 +1042,35 @@ export default function StatementReconciliationTab() {
   const loadAccounts = useCallback(async () => {
     setAccountsListError(null)
     try {
-      const token = getStoredAccessToken()
-      if (!token) {
-        setAccounts([])
-        return
+      const getSessionToken = async () => {
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          return session?.access_token ?? null
+        } catch (e) {
+          if (isAbortLikeError(e)) return getStoredAccessToken()
+          throw e
+        }
       }
-      const res = await fetch('/api/financial/accounts', {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: 'same-origin',
-      })
+
+      let token = getStoredAccessToken() || (await getSessionToken())
+      const fetchAccounts = (accessToken: string | null) =>
+        fetch('/api/financial/accounts', {
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          credentials: 'same-origin',
+        })
+
+      let res = await fetchAccounts(token)
+
+      if (res.status === 401) {
+        const refreshedToken = await getSessionToken()
+        if (refreshedToken && refreshedToken !== token) {
+          token = refreshedToken
+          res = await fetchAccounts(refreshedToken)
+        }
+      }
+
       const json = (await res.json()) as {
         success?: boolean
         data?: FinancialAccount[]
@@ -858,7 +1089,8 @@ export default function StatementReconciliationTab() {
   }, [])
 
   /** 결제 방법 관리 페이지와 동일 API — 클라이언트 직접 조회보다 스키마·한도 일치, 실패 시 메시지 표시 */
-  const loadPaymentMethods = useCallback(async () => {
+  const loadPaymentMethods = useCallback(async (force = false) => {
+    if (!force && paymentMethodsLoadedRef.current) return
     setPaymentMethodsError(null)
     try {
       const res = await fetch('/api/payment-methods?limit=5000')
@@ -878,6 +1110,7 @@ export default function StatementReconciliationTab() {
       }
       if (!res.ok || json.success === false) {
         setPaymentMethods([])
+        paymentMethodsLoadedRef.current = false
         setPaymentMethodsError(
           json.message || `결제수단 목록을 불러오지 못했습니다. (${res.status})`
         )
@@ -896,9 +1129,11 @@ export default function StatementReconciliationTab() {
           team: pm.team ?? null
         }))
       )
+      paymentMethodsLoadedRef.current = true
     } catch (e) {
       console.error(e)
       setPaymentMethods([])
+      paymentMethodsLoadedRef.current = false
       setPaymentMethodsError(e instanceof Error ? e.message : '결제수단을 불러오는 중 오류가 났습니다.')
     }
   }, [])
@@ -911,6 +1146,24 @@ export default function StatementReconciliationTab() {
       .limit(200)
     if (error && !isAbortLikeError(error)) console.error(error)
     else if (!error) setImports((data as StatementImport[]) || [])
+  }, [])
+
+  const loadTeamDisplayNames = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('team')
+      .select('email,name_ko,name_en')
+      .eq('is_active', true)
+    if (error) {
+      if (!isAbortLikeError(error)) console.error(error)
+      return
+    }
+    const map: Record<string, string> = {}
+    for (const row of (data || []) as { email?: string | null; name_ko?: string | null; name_en?: string | null }[]) {
+      const em = row.email?.trim().toLowerCase()
+      if (!em) continue
+      map[em] = row.name_ko?.trim() || row.name_en?.trim() || row.email?.trim() || em
+    }
+    setTeamDisplayNamesByEmail(map)
   }, [])
 
   const importsRef = useRef(imports)
@@ -1003,6 +1256,10 @@ export default function StatementReconciliationTab() {
     loadImports()
   }, [loadImports])
 
+  useEffect(() => {
+    if (authUser?.email) void loadTeamDisplayNames()
+  }, [authUser?.email, loadTeamDisplayNames])
+
   /** 결제수단 목록은 연결 모달·미매칭 지출 결제방법 표시에 필요 */
   useEffect(() => {
     if (paymentLinkModalOpen || filterAccountId) {
@@ -1073,13 +1330,41 @@ export default function StatementReconciliationTab() {
     })
   }, [paymentLinkModalOpen, paymentMethods, paymentLinkDraft])
 
+  const deferredPaymentLinkMethodSearch = useDeferredValue(paymentLinkMethodSearch)
+
+  const accountsById = useMemo(() => {
+    return new Map(accounts.map((a) => [a.id, a]))
+  }, [accounts])
+
+  const paymentMethodFinancialAccountById = useMemo(() => {
+    return new Map(paymentMethods.map((pm) => [pm.id, pm.financial_account_id ?? null]))
+  }, [paymentMethods])
+
+  const expenseMatchesSelectedFinancialAccount = useCallback(
+    (o: Pick<ExpenseOption, 'payment_method'>) => {
+      const pm = o.payment_method?.trim()
+      if (!pm || !filterAccountId) return false
+      return paymentMethodFinancialAccountById.get(pm) === filterAccountId
+    },
+    [paymentMethodFinancialAccountById, filterAccountId]
+  )
+
+  const compareExpenseFinancialAccountPriority = useCallback(
+    (a: ExpenseOption, b: ExpenseOption) => {
+      const am = expenseMatchesSelectedFinancialAccount(a)
+      const bm = expenseMatchesSelectedFinancialAccount(b)
+      if (am !== bm) return am ? -1 : 1
+      return 0
+    },
+    [expenseMatchesSelectedFinancialAccount]
+  )
+
   const paymentLinkModalFilteredMethods = useMemo(() => {
-    const q = paymentLinkMethodSearch.trim().toLowerCase()
+    if (!paymentLinkModalOpen) return []
+    const q = deferredPaymentLinkMethodSearch.trim().toLowerCase()
     if (!q) return paymentMethods
     return paymentMethods.filter((pm) => {
-      const fa = pm.financial_account_id
-        ? accounts.find((a) => a.id === pm.financial_account_id)
-        : undefined
+      const fa = pm.financial_account_id ? accountsById.get(pm.financial_account_id) : undefined
       const chunks: (string | null | undefined)[] = [
         pm.id,
         pm.method,
@@ -1095,7 +1380,17 @@ export default function StatementReconciliationTab() {
       ]
       return chunks.some((c) => c && String(c).toLowerCase().includes(q))
     })
-  }, [paymentMethods, paymentLinkMethodSearch, accounts])
+  }, [paymentLinkModalOpen, paymentMethods, deferredPaymentLinkMethodSearch, accountsById])
+
+  const paymentLinkModalVisibleMethods = useMemo(
+    () => paymentLinkModalFilteredMethods.slice(0, PAYMENT_LINK_RENDER_LIMIT),
+    [paymentLinkModalFilteredMethods]
+  )
+
+  const paymentLinkHiddenCount = Math.max(
+    0,
+    paymentLinkModalFilteredMethods.length - paymentLinkModalVisibleMethods.length
+  )
 
   const importsForAccount = useMemo(
     () => imports.filter((im) => im.financial_account_id === filterAccountId),
@@ -1228,8 +1523,11 @@ export default function StatementReconciliationTab() {
     for (const o of expenseOptions) {
       m.set(`${o.source_table}:${o.source_id}`, o)
     }
+    for (const [k, o] of Object.entries(matchedExpenseDetails)) {
+      if (!m.has(k)) m.set(k, o)
+    }
     return m
-  }, [expenseOptions])
+  }, [expenseOptions, matchedExpenseDetails])
 
   const refreshUnmatchedExpenseKeys = useCallback(async () => {
     if (expenseOptions.length === 0) {
@@ -1270,6 +1568,8 @@ export default function StatementReconciliationTab() {
             return nonZero(o)
           })
     rows.sort((a, b) => {
+      const priorityCmp = compareExpenseFinancialAccountPriority(a, b)
+      if (priorityCmp !== 0) return priorityCmp
       const tb = new Date(String(b.submit_on)).getTime()
       const ta = new Date(String(a.submit_on)).getTime()
       const aBad = Number.isNaN(ta)
@@ -1284,6 +1584,7 @@ export default function StatementReconciliationTab() {
   }, [
     expenseOptions,
     matchedExpenseKeysInDb,
+    compareExpenseFinancialAccountPriority,
     unmatchedPanelSortDate,
     unmatchedPanelListScope
   ])
@@ -1293,6 +1594,14 @@ export default function StatementReconciliationTab() {
     if (!t) return unmatchedExpensePanelRows
     return unmatchedExpensePanelRows.filter((o) => o.source_table === t)
   }, [unmatchedExpensePanelRows, unmatchedPanelSourceTableFilter])
+
+  const unmatchedExpenseSourceTabCounts = useMemo(() => {
+    const counts: Record<string, number> = { '': unmatchedExpensePanelRows.length }
+    for (const o of unmatchedExpensePanelRows) {
+      counts[o.source_table] = (counts[o.source_table] ?? 0) + 1
+    }
+    return counts
+  }, [unmatchedExpensePanelRows])
 
   const unmatchedPanelPaymentFilterOptions = useMemo(() => {
     const idToLabel = new Map<string, string>()
@@ -1572,6 +1881,56 @@ export default function StatementReconciliationTab() {
     return reconciliationTableLines.slice(start, start + RECONCILIATION_PAGE_SIZE)
   }, [reconciliationTableLines, reconciliationPage])
 
+  useEffect(() => {
+    const wanted = new Map<ExpenseOption['source_table'], Set<string>>()
+    for (const line of pagedReconciliationLines) {
+      const ms = matchesByLine.get(line.id) || []
+      for (const m of ms) {
+        if (!EXPENSE_TABLES.includes(m.source_table as ExpenseOption['source_table'])) continue
+        const key = expenseKey(m.source_table, m.source_id)
+        if (expenseOptionByKey.has(key)) continue
+        const table = m.source_table as ExpenseOption['source_table']
+        const ids = wanted.get(table) || new Set<string>()
+        ids.add(m.source_id)
+        wanted.set(table, ids)
+      }
+    }
+    if (wanted.size === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      const next: Record<string, ExpenseOption> = {}
+      const jobs = [...wanted.entries()].map(async ([table, ids]) => {
+        const idList = [...ids]
+        if (idList.length === 0) return
+        const sel =
+          table === 'ticket_bookings'
+            ? 'id,expense,submit_on,category,company,payment_method'
+            : table === 'tour_hotel_bookings'
+              ? 'id,total_price,submit_on,check_in_date,hotel,reservation_name,payment_method'
+            : table === 'company_expenses'
+              ? 'id,amount,submit_on,paid_for,paid_to,description,payment_method'
+              : 'id,amount,submit_on,paid_for,paid_to,note,payment_method'
+        const { data, error } = await (supabase as any).from(table).select(sel).in('id', idList)
+        if (error) {
+          if (!isAbortLikeError(error)) console.error(error)
+          return
+        }
+        for (const row of data || []) {
+          const o = recordToExpenseOption(table, row as Record<string, unknown>)
+          next[expenseKey(o.source_table, o.source_id)] = o
+        }
+      })
+      await Promise.all(jobs)
+      if (cancelled || Object.keys(next).length === 0) return
+      setMatchedExpenseDetails((prev) => ({ ...prev, ...next }))
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [pagedReconciliationLines, matchesByLine, expenseOptionByKey])
+
   /** 명세 표 현재 페이지 첫·마지막 행 거래일 ±7일 — 미매칭 지출 조회 기본값 */
   const defaultUnmatchedExpenseRange = useMemo(() => {
     const fallbackFromAccount = (): { start: string; end: string } => {
@@ -1656,58 +2015,30 @@ export default function StatementReconciliationTab() {
     const [{ data: ce }, { data: te }, { data: re }, { data: tb }] = await Promise.all([
       supabase
         .from('company_expenses')
-        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
+        .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
         .gte('submit_on', startIso)
         .lte('submit_on', endIso),
       supabase
         .from('tour_expenses')
-        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
+        .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
         .gte('submit_on', startIso)
         .lte('submit_on', endIso),
       supabase
         .from('reservation_expenses')
-        .select('id, amount, submit_on, paid_for, paid_to, payment_method')
+        .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
         .gte('submit_on', startIso)
         .lte('submit_on', endIso),
       supabase
         .from('ticket_bookings')
-        .select('id, expense, submit_on, category, company, payment_method')
+        .select('id,expense,submit_on,category,company,payment_method')
         .gte('submit_on', startIso)
         .lte('submit_on', endIso)
     ])
     const ex: ExpenseOption[] = [
-      ...(ce || []).map((r: Record<string, unknown>) => ({
-        source_table: 'company_expenses' as const,
-        source_id: String(r.id),
-        label: `${r.paid_for} / ${r.paid_to}`,
-        amount: Number(r.amount),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      })),
-      ...(te || []).map((r: Record<string, unknown>) => ({
-        source_table: 'tour_expenses' as const,
-        source_id: String(r.id),
-        label: `${r.paid_for} / ${r.paid_to}`,
-        amount: Number(r.amount),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      })),
-      ...(re || []).map((r: Record<string, unknown>) => ({
-        source_table: 'reservation_expenses' as const,
-        source_id: String(r.id),
-        label: `${r.paid_for} / ${r.paid_to}`,
-        amount: Number(r.amount),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      })),
-      ...(tb || []).map((r: Record<string, unknown>) => ({
-        source_table: 'ticket_bookings' as const,
-        source_id: String(r.id),
-        label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
-        amount: Number(r.expense ?? 0),
-        submit_on: String(r.submit_on),
-        payment_method: expensePaymentMethodFromRow(r)
-      }))
+      ...(ce || []).map((r: Record<string, unknown>) => recordToExpenseOption('company_expenses', r)),
+      ...(te || []).map((r: Record<string, unknown>) => recordToExpenseOption('tour_expenses', r)),
+      ...(re || []).map((r: Record<string, unknown>) => recordToExpenseOption('reservation_expenses', r)),
+      ...(tb || []).map((r: Record<string, unknown>) => recordToExpenseOption('ticket_bookings', r))
     ]
     return dedupeExpenseOptionsList(ex)
   }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd])
@@ -1882,10 +2213,12 @@ export default function StatementReconciliationTab() {
         const from = page * PICKER_BROWSE_PAGE_SIZE
         const sel =
           table === 'ticket_bookings'
-            ? 'id, expense, submit_on, category, company, payment_method'
+            ? 'id,expense,submit_on,category,company,payment_method'
             : table === 'tour_expenses'
-              ? 'id, amount, submit_on, paid_for, paid_to, tour_date, payment_method'
-              : 'id, amount, submit_on, paid_for, paid_to, payment_method'
+              ? 'id,amount,submit_on,paid_for,paid_to,note,tour_date,payment_method'
+              : table === 'company_expenses'
+                ? 'id,amount,submit_on,paid_for,paid_to,description,payment_method'
+                : 'id,amount,submit_on,paid_for,paid_to,note,payment_method'
 
         const { data, error } = await supabase
           .from(table)
@@ -1946,10 +2279,10 @@ export default function StatementReconciliationTab() {
     ;(async () => {
       const sel =
         source_table === 'ticket_bookings'
-          ? 'id, expense, submit_on, category, company'
+          ? 'id,expense,submit_on,category,company'
           : source_table === 'tour_expenses'
-            ? 'id, amount, submit_on, paid_for, paid_to, tour_date'
-            : 'id, amount, submit_on, paid_for, paid_to'
+            ? 'id,amount,submit_on,paid_for,paid_to,tour_date'
+            : 'id,amount,submit_on,paid_for,paid_to'
       const { data, error } = await supabase.from(source_table).select(sel).eq('id', source_id).maybeSingle()
       if (cancelled) return
       setUnmatchedEditLoading(false)
@@ -2328,7 +2661,7 @@ export default function StatementReconciliationTab() {
         return
       }
       setPaymentLinkDirty(false)
-      await loadPaymentMethods()
+      await loadPaymentMethods(true)
       setMessage(`${changes.length}건의 연결을 저장했습니다.`)
     } catch (e) {
       const errText = e instanceof Error ? e.message : '저장 중 오류가 났습니다.'
@@ -2505,7 +2838,7 @@ export default function StatementReconciliationTab() {
       await Promise.all([
         supabase
           .from('company_expenses')
-          .select('id, amount, submit_on, paid_for, paid_to')
+          .select('id, amount, submit_on, paid_for, paid_to, standard_paid_for')
           .gte('submit_on', startIso)
           .lte('submit_on', endIso),
         supabase
@@ -2513,7 +2846,7 @@ export default function StatementReconciliationTab() {
           .select('id, amount, submit_on, paid_for, paid_to')
           .gte('submit_on', startIso)
           .lte('submit_on', endIso),
-        supabase
+        (supabase as any)
           .from('reservation_expenses')
           .select('id, amount, submit_on, paid_for, paid_to')
           .gte('submit_on', startIso)
@@ -2531,55 +2864,96 @@ export default function StatementReconciliationTab() {
       used.add(`${m.source_table}:${m.source_id}`)
     }
 
-    const candidates: ExpenseCandidate[] = [
+    const candidates: AutoMatchExpenseCandidate[] = [
       ...(ce || []).map((r: Record<string, unknown>) => ({
         source_table: 'company_expenses' as const,
         source_id: String(r.id),
         amount: Number(r.amount),
         occurred_at: String(r.submit_on),
-        label: `${r.paid_for} / ${r.paid_to}`
+        label: `${r.paid_for} / ${r.paid_to}`,
+        paid_to: String(r.paid_to ?? ''),
+        paid_for: String(r.paid_for ?? ''),
+        standard_paid_for: r.standard_paid_for == null ? null : String(r.standard_paid_for)
       })),
       ...(te || []).map((r: Record<string, unknown>) => ({
         source_table: 'tour_expenses' as const,
         source_id: String(r.id),
         amount: Number(r.amount),
         occurred_at: String(r.submit_on),
-        label: `${r.paid_for} / ${r.paid_to}`
+        label: `${r.paid_for} / ${r.paid_to}`,
+        paid_to: String(r.paid_to ?? ''),
+        paid_for: String(r.paid_for ?? ''),
+        standard_paid_for: null
       })),
       ...(re || []).map((r: Record<string, unknown>) => ({
         source_table: 'reservation_expenses' as const,
         source_id: String(r.id),
         amount: Number(r.amount),
         occurred_at: String(r.submit_on),
-        label: `${r.paid_for} / ${r.paid_to}`
+        label: `${r.paid_for} / ${r.paid_to}`,
+        paid_to: String(r.paid_to ?? ''),
+        paid_for: String(r.paid_for ?? ''),
+        standard_paid_for: null
       })),
       ...(tb || []).map((r: Record<string, unknown>) => ({
         source_table: 'ticket_bookings' as const,
         source_id: String(r.id),
         amount: Number(r.expense ?? 0),
         occurred_at: String(r.submit_on),
-        label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`
+        label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
+        paid_to: String(r.company ?? ''),
+        paid_for: String(r.category ?? ''),
+        standard_paid_for: null
       }))
     ]
 
     const proposals: AutoMatchProposalRow[] = []
+    const selectedCandidateByLine: Record<string, string> = {}
+    const usedForDefaultSelection = new Set(used)
     for (const line of pagedReconciliationLines) {
       if (line.direction !== 'outflow') continue
       if ((matchesByLine.get(line.id) || []).length > 0) continue
       const amt = Number(line.amount)
-      const best = findBestExpenseForLine(amt, line.posted_date, candidates, used)
-      if (!best) continue
-      const k = `${best.expense.source_table}:${best.expense.source_id}`
-      used.add(k)
+      const options = candidates
+        .map((expense) => {
+          const key = `${expense.source_table}:${expense.source_id}`
+          if (used.has(key)) return null
+          const score = autoMatchCandidateScore(amt, line.posted_date, expense)
+          if (!score) return null
+          return {
+            key,
+            source_table: expense.source_table,
+            source_id: expense.source_id,
+            expense_label: expense.label,
+            expense_registered_date: expense.occurred_at,
+            expense_amount: Number(expense.amount),
+            expense_paid_to: expense.paid_to,
+            expense_paid_for: expense.paid_for,
+            expense_standard_paid_for: expense.standard_paid_for,
+            score,
+            amount_diff: Math.abs(Number(expense.amount) - amt)
+          } satisfies AutoMatchCandidateOption
+        })
+        .filter((x): x is AutoMatchCandidateOption => x != null)
+        .sort((a, b) => {
+          const scoreCmp = b.score - a.score
+          if (scoreCmp !== 0) return scoreCmp
+          const diffCmp = a.amount_diff - b.amount_diff
+          if (diffCmp !== 0) return diffCmp
+          return new Date(a.expense_registered_date).getTime() - new Date(b.expense_registered_date).getTime()
+        })
+        .slice(0, AUTO_MATCH_CANDIDATE_LIMIT)
+      if (options.length === 0) continue
+
+      const defaultCandidate = options.find((o) => !usedForDefaultSelection.has(o.key)) ?? options[0]
+      selectedCandidateByLine[line.id] = defaultCandidate.key
+      usedForDefaultSelection.add(defaultCandidate.key)
       proposals.push({
         statement_line_id: line.id,
         posted_date: line.posted_date,
         line_amount: amt,
         line_desc: formatStatementLineDescription(line.description, line.merchant),
-        source_table: best.expense.source_table,
-        source_id: best.expense.source_id,
-        expense_label: best.expense.label,
-        score: best.score
+        candidates: options
       })
     }
 
@@ -2601,6 +2975,7 @@ export default function StatementReconciliationTab() {
     )
     setAutoMatchProposals(proposals)
     setAutoMatchSelectedIds(new Set(proposals.map((p) => p.statement_line_id)))
+    setAutoMatchCandidateSelection(selectedCandidateByLine)
     setAutoMatchPreviewOpen(true)
   }
 
@@ -2610,6 +2985,7 @@ export default function StatementReconciliationTab() {
       setAutoMatchProposals([])
       setAutoMatchSummaryHint(null)
       setAutoMatchSelectedIds(new Set())
+      setAutoMatchCandidateSelection({})
       return
     }
     const toSave = autoMatchProposals.filter((p) => autoMatchSelectedIds.has(p.statement_line_id))
@@ -2621,17 +2997,36 @@ export default function StatementReconciliationTab() {
     let n = 0
     try {
       for (const p of toSave) {
-        const { error } = await supabase.from('reconciliation_matches').insert({
-          statement_line_id: p.statement_line_id,
-          source_table: p.source_table,
-          source_id: p.source_id,
-          matched_amount: p.line_amount,
-          matched_by: email || null
-        })
+        const selectedKey = autoMatchCandidateSelection[p.statement_line_id] || p.candidates[0]?.key
+        const selected = p.candidates.find((c) => c.key === selectedKey) ?? p.candidates[0]
+        if (!selected) continue
+        const { data: inserted, error } = await supabase
+          .from('reconciliation_matches')
+          .insert({
+            statement_line_id: p.statement_line_id,
+            source_table: selected.source_table,
+            source_id: selected.source_id,
+            matched_amount: p.line_amount,
+            matched_by: email || null
+          })
+          .select('id')
+          .maybeSingle()
         if (error) {
           if (!isAbortLikeError(error)) console.error(error)
           continue
         }
+        await logReconciliationMatchEvent({
+          match_id: inserted?.id ? String(inserted.id) : null,
+          statement_line_id: p.statement_line_id,
+          action: 'created',
+          actor_email: email || null,
+          before_source_table: null,
+          before_source_id: null,
+          after_source_table: selected.source_table,
+          after_source_id: selected.source_id,
+          before_matched_amount: null,
+          after_matched_amount: p.line_amount
+        })
         await supabase
           .from('statement_lines')
           .update({ matched_status: 'matched' })
@@ -2646,6 +3041,7 @@ export default function StatementReconciliationTab() {
     setAutoMatchProposals([])
     setAutoMatchSummaryHint(null)
     setAutoMatchSelectedIds(new Set())
+    setAutoMatchCandidateSelection({})
     setMessage(
       reconciliationPageCount > 1
         ? `자동 매칭 ${n}건 저장됨 (페이지 ${reconciliationPage}/${reconciliationPageCount} 범위)`
@@ -2771,20 +3167,79 @@ export default function StatementReconciliationTab() {
           m.statement_line_id === line.id &&
           EXPENSE_TABLES.includes(m.source_table as (typeof EXPENSE_TABLES)[number])
       )
-      for (const m of lineMatches) {
-        await supabase.from('reconciliation_matches').delete().eq('id', m.id)
-      }
       if (value) {
         const colon = value.indexOf(':')
         const st = value.slice(0, colon)
         const sid = value.slice(colon + 1)
-        await supabase.from('reconciliation_matches').insert({
-          statement_line_id: line.id,
-          source_table: st,
-          source_id: sid,
-          matched_amount: Number(line.amount),
-          matched_by: email
-        })
+        const existing = lineMatches[0]
+        if (existing) {
+          if (existing.source_table !== st || existing.source_id !== sid) {
+            const { error } = await supabase
+              .from('reconciliation_matches')
+              .update({
+                source_table: st,
+                source_id: sid,
+                matched_amount: Number(line.amount),
+                updated_by: email,
+                updated_at: new Date().toISOString()
+              } as any)
+              .eq('id', existing.id)
+            if (error) throw error
+            await logReconciliationMatchEvent({
+              match_id: existing.id,
+              statement_line_id: line.id,
+              action: 'updated',
+              actor_email: email,
+              before_source_table: existing.source_table,
+              before_source_id: existing.source_id,
+              after_source_table: st,
+              after_source_id: sid,
+              before_matched_amount: Number(line.amount),
+              after_matched_amount: Number(line.amount)
+            })
+          }
+        } else {
+          const { data: inserted, error } = await supabase
+            .from('reconciliation_matches')
+            .insert({
+              statement_line_id: line.id,
+              source_table: st,
+              source_id: sid,
+              matched_amount: Number(line.amount),
+              matched_by: email
+            })
+            .select('id')
+            .maybeSingle()
+          if (error) throw error
+          await logReconciliationMatchEvent({
+            match_id: inserted?.id ? String(inserted.id) : null,
+            statement_line_id: line.id,
+            action: 'created',
+            actor_email: email,
+            before_source_table: null,
+            before_source_id: null,
+            after_source_table: st,
+            after_source_id: sid,
+            before_matched_amount: null,
+            after_matched_amount: Number(line.amount)
+          })
+        }
+      } else {
+        for (const m of lineMatches) {
+          await logReconciliationMatchEvent({
+            match_id: m.id,
+            statement_line_id: line.id,
+            action: 'deleted',
+            actor_email: email,
+            before_source_table: m.source_table,
+            before_source_id: m.source_id,
+            after_source_table: null,
+            after_source_id: null,
+            before_matched_amount: Number(line.amount),
+            after_matched_amount: null
+          })
+          await supabase.from('reconciliation_matches').delete().eq('id', m.id)
+        }
       }
       await syncLineMatchedFlag(line.id)
       setMessage(value ? '지출 매칭을 저장했습니다.' : '지출 매칭을 해제했습니다.')
@@ -2831,6 +3286,22 @@ export default function StatementReconciliationTab() {
     if (!filterAccountId) return
     setLoading(true)
     try {
+      const match = matches.find((m) => m.id === matchRowId)
+      const line = lines.find((l) => l.id === lineId)
+      if (match) {
+        await logReconciliationMatchEvent({
+          match_id: match.id,
+          statement_line_id: lineId,
+          action: 'deleted',
+          actor_email: email || null,
+          before_source_table: match.source_table,
+          before_source_id: match.source_id,
+          after_source_table: null,
+          after_source_id: null,
+          before_matched_amount: line ? Number(line.amount) : null,
+          after_matched_amount: null
+        })
+      }
       await supabase.from('reconciliation_matches').delete().eq('id', matchRowId)
       await syncLineMatchedFlag(lineId)
       await loadLinesAndMatchesForAccount(filterAccountId)
@@ -2878,6 +3349,11 @@ export default function StatementReconciliationTab() {
       }
     }
     if (exact.length > 0) {
+      exact.sort((a, b) => {
+        const priorityCmp = compareExpenseFinancialAccountPriority(a.o, b.o)
+        if (priorityCmp !== 0) return priorityCmp
+        return String(a.o.submit_on ?? '').localeCompare(String(b.o.submit_on ?? ''))
+      })
       return {
         list: dedupeExpensePickerQuickItems(exact).slice(0, PICKER_QUICK_MAX),
         mode: 'exact' as const
@@ -2902,13 +3378,23 @@ export default function StatementReconciliationTab() {
         score
       })
     }
-    scored.sort((a, b) => b.score - a.score)
+    scored.sort((a, b) => {
+      const priorityCmp = compareExpenseFinancialAccountPriority(a.item.o, b.item.o)
+      if (priorityCmp !== 0) return priorityCmp
+      return b.score - a.score
+    })
     const similar = dedupeExpensePickerQuickItems(scored.map((s) => s.item)).slice(0, PICKER_QUICK_MAX)
     if (similar.length > 0) {
       return { list: similar, mode: 'similar' as const }
     }
     return { list: [], mode: 'none' as const }
-  }, [expensePickerLineId, expensePickerLine, expenseOptions, expenseOptionSelectableFast])
+  }, [
+    expensePickerLineId,
+    expensePickerLine,
+    expenseOptions,
+    expenseOptionSelectableFast,
+    compareExpenseFinancialAccountPriority
+  ])
 
   const expensePickerSearchResults = useMemo(() => {
     if (!expensePickerLineId || !expensePickerLine) return []
@@ -2922,13 +3408,16 @@ export default function StatementReconciliationTab() {
       out.push(o)
       if (out.length >= PICKER_SEARCH_MAX) break
     }
-    return dedupeExpenseOptionsByKey(out).slice(0, PICKER_SEARCH_MAX)
+    return dedupeExpenseOptionsByKey(out)
+      .sort((a, b) => compareExpenseFinancialAccountPriority(a, b))
+      .slice(0, PICKER_SEARCH_MAX)
   }, [
     expensePickerLineId,
     expensePickerLine,
     deferredExpensePickerQuery,
     expenseOptions,
-    expenseOptionSelectableFast
+    expenseOptionSelectableFast,
+    compareExpenseFinancialAccountPriority
   ])
 
   const paymentPickerQuickOptions = useMemo(() => {
@@ -3045,10 +3534,367 @@ export default function StatementReconciliationTab() {
     }
   }, [paymentPickerLineId, paymentOptions])
 
+  const logReconciliationMatchEvent = useCallback(
+    async (event: Omit<ReconciliationMatchEventRow, 'id' | 'occurred_at'>) => {
+      const { error } = await (supabase as any).from('reconciliation_match_events').insert(event)
+      if (error && !isAbortLikeError(error)) console.error('reconciliation_match_events insert:', error)
+    },
+    []
+  )
+
+  const loadOperationalLedgerRows = useCallback(async () => {
+    let startYmd = operationalLedgerStart.trim().slice(0, 10)
+    let endYmd = operationalLedgerEnd.trim().slice(0, 10)
+    if (!startYmd || !endYmd || startYmd.length < 10 || endYmd.length < 10) {
+      setMessage('운영 원장 조회 기간을 선택하세요.')
+      return
+    }
+    if (startYmd > endYmd) {
+      const t = startYmd
+      startYmd = endYmd
+      endYmd = t
+    }
+    const startIso = new Date(`${startYmd}T00:00:00`).toISOString()
+    const endIso = new Date(`${endYmd}T23:59:59.999`).toISOString()
+    setOperationalLedgerLoading(true)
+    setMessage(null)
+    try {
+      const [re, ce, pr, tb, hb] = await Promise.all([
+        supabase
+          .from('reservation_expenses')
+          .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
+          .gte('submit_on', startIso)
+          .lte('submit_on', endIso),
+        (supabase as any)
+          .from('company_expenses')
+          .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
+          .gte('submit_on', startIso)
+          .lte('submit_on', endIso),
+        (supabase as any)
+          .from('payment_records')
+          .select('id,amount,submit_on,reservation_id,note,payment_method')
+          .gte('submit_on', startIso)
+          .lte('submit_on', endIso),
+        (supabase as any)
+          .from('ticket_bookings')
+          .select('id,expense,submit_on,category,company,note,payment_method')
+          .gte('submit_on', startIso)
+          .lte('submit_on', endIso),
+        (supabase as any)
+          .from('tour_hotel_bookings')
+          .select('id,total_price,submit_on,check_in_date,hotel,reservation_name,payment_method')
+          .gte('submit_on', startIso)
+          .lte('submit_on', endIso)
+      ])
+      const errors = [re.error, ce.error, pr.error, tb.error, hb.error].filter(Boolean)
+      if (errors.length > 0) throw errors[0]
+
+      const rows: OperationalLedgerRow[] = [
+        ...((re.data || []) as Record<string, unknown>[]).map((r) => ({
+          key: operationalLedgerKey('reservation_expenses', String(r.id)),
+          source_table: 'reservation_expenses' as const,
+          source_id: String(r.id),
+          direction: 'outflow' as const,
+          date: normalizeDateYmd(String(r.submit_on ?? '')),
+          amount: Number(r.amount ?? 0),
+          party: String(r.paid_to ?? ''),
+          purpose: String(r.paid_for ?? ''),
+          note: r.note == null ? null : String(r.note),
+          payment_method: expensePaymentMethodFromRow(r),
+          already_matched: false
+        })),
+        ...((ce.data || []) as Record<string, unknown>[]).map((r) => ({
+          key: operationalLedgerKey('company_expenses', String(r.id)),
+          source_table: 'company_expenses' as const,
+          source_id: String(r.id),
+          direction: 'outflow' as const,
+          date: normalizeDateYmd(String(r.submit_on ?? '')),
+          amount: Number(r.amount ?? 0),
+          party: String(r.paid_to ?? ''),
+          purpose: String(r.paid_for ?? ''),
+          note: r.description == null ? null : String(r.description),
+          payment_method: expensePaymentMethodFromRow(r),
+          already_matched: false
+        })),
+        ...((pr.data || []) as Record<string, unknown>[]).map((r) => ({
+          key: operationalLedgerKey('payment_records', String(r.id)),
+          source_table: 'payment_records' as const,
+          source_id: String(r.id),
+          direction: 'inflow' as const,
+          date: normalizeDateYmd(String(r.submit_on ?? '')),
+          amount: Number(r.amount ?? 0),
+          party: String(r.reservation_id ?? ''),
+          purpose: 'payment_record',
+          note: r.note == null ? null : String(r.note),
+          payment_method: expensePaymentMethodFromRow(r),
+          already_matched: false
+        })),
+        ...((tb.data || []) as Record<string, unknown>[]).map((r) => ({
+          key: operationalLedgerKey('ticket_bookings', String(r.id)),
+          source_table: 'ticket_bookings' as const,
+          source_id: String(r.id),
+          direction: 'outflow' as const,
+          date: normalizeDateYmd(String(r.submit_on ?? '')),
+          amount: Number(r.expense ?? 0),
+          party: String(r.company ?? ''),
+          purpose: String(r.category ?? ''),
+          note: r.note == null ? null : String(r.note),
+          payment_method: expensePaymentMethodFromRow(r),
+          already_matched: false
+        })),
+        ...((hb.data || []) as Record<string, unknown>[]).map((r) => ({
+          key: operationalLedgerKey('tour_hotel_bookings', String(r.id)),
+          source_table: 'tour_hotel_bookings' as const,
+          source_id: String(r.id),
+          direction: 'outflow' as const,
+          date: normalizeDateYmd(String(r.submit_on ?? r.check_in_date ?? '')),
+          amount: Number(r.total_price ?? 0),
+          party: String(r.hotel ?? ''),
+          purpose: String(r.reservation_name ?? '호텔 부킹'),
+          note: null,
+          payment_method: expensePaymentMethodFromRow(r),
+          already_matched: false
+        }))
+      ].filter((r) => Number.isFinite(r.amount) && r.amount !== 0 && r.date.length >= 10)
+
+      const matched = new Set<string>()
+      const byTable = new Map<OperationalLedgerSourceTable, string[]>()
+      for (const row of rows) {
+        byTable.set(row.source_table, [...(byTable.get(row.source_table) || []), row.source_id])
+      }
+      await Promise.all(
+        [...byTable.entries()].map(async ([table, ids]) => {
+          const unique = [...new Set(ids)]
+          if (unique.length === 0) return
+          const { data, error } = await (supabase as any)
+            .from('reconciliation_matches')
+            .select('source_id')
+            .eq('source_table', table)
+            .in('source_id', unique)
+          if (error) {
+            if (!isAbortLikeError(error)) console.error(error)
+            return
+          }
+          for (const m of data || []) matched.add(operationalLedgerKey(table, String(m.source_id)))
+        })
+      )
+
+      setOperationalLedgerRows(
+        rows
+          .map((r) => ({ ...r, already_matched: matched.has(r.key) }))
+          .sort((a, b) => {
+            const d = a.date.localeCompare(b.date)
+            if (d !== 0) return d
+            return a.source_table.localeCompare(b.source_table)
+          })
+      )
+      setStatementCandidatesByLedgerKey({})
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : '운영 원장을 불러오지 못했습니다.')
+      setOperationalLedgerRows([])
+    } finally {
+      setOperationalLedgerLoading(false)
+    }
+  }, [operationalLedgerStart, operationalLedgerEnd])
+
+  const operationalLedgerFilteredRows = useMemo(() => {
+    const q = operationalLedgerSearch.trim().toLowerCase()
+    return operationalLedgerRows.filter((row) => {
+      if (operationalLedgerScope === 'unmatched' && row.already_matched) return false
+      if (operationalLedgerSourceFilter && row.source_table !== operationalLedgerSourceFilter) return false
+      if (!q) return true
+      const hay = [
+        row.date,
+        row.amount,
+        row.party,
+        row.purpose,
+        row.note,
+        row.source_table,
+        row.source_id,
+        paymentMethodLabelFromRows(row.payment_method, paymentMethods)
+      ]
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(q)
+    })
+  }, [
+    operationalLedgerRows,
+    operationalLedgerScope,
+    operationalLedgerSourceFilter,
+    operationalLedgerSearch,
+    paymentMethods
+  ])
+
+  const findStatementCandidatesForLedgerRow = useCallback(
+    async (row: OperationalLedgerRow) => {
+      setStatementCandidateLoadingKey(row.key)
+      setMessage(null)
+      try {
+        const startYmd = addCalendarDaysYmd(row.date, -7)
+        const endYmd = addCalendarDaysYmd(row.date, 7)
+        const importIds = imports
+          .filter((im) => im.period_start.slice(0, 10) <= endYmd && im.period_end.slice(0, 10) >= startYmd)
+          .map((im) => im.id)
+        if (importIds.length === 0) {
+          setStatementCandidatesByLedgerKey((prev) => ({ ...prev, [row.key]: [] }))
+          return
+        }
+        const importToAccount = new Map(imports.map((im) => [im.id, im.financial_account_id]))
+        const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
+        const all: StatementLineCandidate[] = []
+        for (let i = 0; i < importIds.length; i += 80) {
+          const chunk = importIds.slice(i, i + 80)
+          const { data, error } = await (supabase as any)
+            .from('statement_lines')
+            .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+            .in('statement_import_id', chunk)
+            .gte('posted_date', startYmd)
+            .lte('posted_date', endYmd)
+            .eq('direction', row.direction)
+          if (error) throw error
+          for (const line of (data || []) as Record<string, unknown>[]) {
+            const lineAmount = Number(line.amount ?? 0)
+            const amountDiff = Math.abs(Math.abs(lineAmount) - Math.abs(row.amount))
+            const dayDiff = dayDiffFromYmd(String(line.posted_date ?? ''), row.date)
+            if (amountDiff > Math.max(5, Math.abs(row.amount) * 0.05)) continue
+            const importId = String(line.statement_import_id ?? '')
+            const accountId = importToAccount.get(importId) || ''
+            const pmAccountId = row.payment_method ? paymentMethodFinancialAccountById.get(row.payment_method) : null
+            const accountBonus = pmAccountId && pmAccountId === accountId ? 20 : 0
+            const exactBonus = amountDiff < 0.02 ? 40 : 0
+            all.push({
+              id: String(line.id),
+              financial_account_id: accountId,
+              financial_account_name: accountNameById.get(accountId) || accountId || '—',
+              posted_date: String(line.posted_date ?? ''),
+              direction: String(line.direction ?? ''),
+              amount: lineAmount,
+              description: formatStatementLineDescription(
+                line.description == null ? null : String(line.description),
+                line.merchant == null ? null : String(line.merchant)
+              ),
+              matched_status: String(line.matched_status ?? ''),
+              amount_diff: amountDiff,
+              day_diff: dayDiff,
+              score: 100 + exactBonus + accountBonus - amountDiff * 10 - dayDiff * 3
+            })
+          }
+        }
+        all.sort((a, b) => {
+          if ((a.matched_status === 'unmatched') !== (b.matched_status === 'unmatched')) {
+            return a.matched_status === 'unmatched' ? -1 : 1
+          }
+          const score = b.score - a.score
+          if (score !== 0) return score
+          const amt = a.amount_diff - b.amount_diff
+          if (amt !== 0) return amt
+          return a.day_diff - b.day_diff
+        })
+        setStatementCandidatesByLedgerKey((prev) => ({ ...prev, [row.key]: all.slice(0, 8) }))
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : '명세 후보를 찾지 못했습니다.')
+      } finally {
+        setStatementCandidateLoadingKey(null)
+      }
+    },
+    [imports, accounts, paymentMethodFinancialAccountById]
+  )
+
+  const saveOperationalLedgerMatch = useCallback(
+    async (row: OperationalLedgerRow, candidate: StatementLineCandidate) => {
+      if (!email) {
+        setMessage('로그인이 필요합니다.')
+        return
+      }
+      if (row.already_matched) {
+        setMessage('이미 명세와 연결된 운영 원장 행입니다.')
+        return
+      }
+      setLoading(true)
+      setMessage(null)
+      try {
+        const { data: inserted, error } = await (supabase as any)
+          .from('reconciliation_matches')
+          .insert({
+            statement_line_id: candidate.id,
+            source_table: row.source_table,
+            source_id: row.source_id,
+            matched_amount: candidate.amount,
+            matched_by: email
+          })
+          .select('id')
+          .maybeSingle()
+        if (error) throw error
+        await logReconciliationMatchEvent({
+          match_id: inserted?.id ? String(inserted.id) : null,
+          statement_line_id: candidate.id,
+          action: 'created',
+          actor_email: email,
+          before_source_table: null,
+          before_source_id: null,
+          after_source_table: row.source_table,
+          after_source_id: row.source_id,
+          before_matched_amount: null,
+          after_matched_amount: candidate.amount
+        })
+        await (supabase as any).from('statement_lines').update({ matched_status: 'matched' }).eq('id', candidate.id)
+        setOperationalLedgerRows((prev) =>
+          prev.map((r) => (r.key === row.key ? { ...r, already_matched: true } : r))
+        )
+        setMessage('운영 원장 행을 명세와 매칭했습니다.')
+        if (filterAccountId) await loadLinesAndMatchesForAccount(filterAccountId)
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : '매칭 저장 실패')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [email, filterAccountId, loadLinesAndMatchesForAccount, logReconciliationMatchEvent]
+  )
+
   const selectedAccountLabel = useMemo(
     () => accountsForReconciliation.find((a) => a.id === filterAccountId)?.name ?? '—',
     [accountsForReconciliation, filterAccountId]
   )
+
+  const displayNameForEmail = useCallback(
+    (value: string | null | undefined) => {
+      const em = value?.trim()
+      if (!em) return '—'
+      return teamDisplayNamesByEmail[em.toLowerCase()] || em
+    },
+    [teamDisplayNamesByEmail]
+  )
+
+  const loadMatchHistory = useCallback(async (target: {
+    line: StatementLine
+    match: ReconciliationMatchRow
+    expense?: ExpenseOption
+  }) => {
+    setMatchHistoryTarget(target)
+    setMatchHistoryRows([])
+    setMatchHistoryError(null)
+    setMatchHistoryLoading(true)
+    try {
+      const { data, error } = await (supabase as any)
+        .from('reconciliation_match_events')
+        .select(
+          'id,match_id,statement_line_id,action,actor_email,occurred_at,before_source_table,before_source_id,after_source_table,after_source_id,before_matched_amount,after_matched_amount'
+        )
+        .eq('statement_line_id', target.line.id)
+        .order('occurred_at', { ascending: false })
+      if (error) throw error
+      setMatchHistoryRows((data || []) as ReconciliationMatchEventRow[])
+    } catch (e) {
+      setMatchHistoryError(
+        e instanceof Error
+          ? e.message
+          : '매칭 이력을 불러오지 못했습니다. 마이그레이션 적용 여부를 확인하세요.'
+      )
+    } finally {
+      setMatchHistoryLoading(false)
+    }
+  }, [])
 
   return (
     <div className="space-y-6 sm:space-y-8 min-w-0">
@@ -3196,6 +4042,31 @@ export default function StatementReconciliationTab() {
         <div className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-800">{message}</div>
       )}
 
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+        <button
+          type="button"
+          className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+            reconciliationViewTab === 'statements'
+              ? 'border-slate-900 bg-slate-900 text-white'
+              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+          }`}
+          onClick={() => setReconciliationViewTab('statements')}
+        >
+          명세 대조
+        </button>
+        <button
+          type="button"
+          className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+            reconciliationViewTab === 'operational-ledger'
+              ? 'border-slate-900 bg-slate-900 text-white'
+              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+          }`}
+          onClick={() => setReconciliationViewTab('operational-ledger')}
+        >
+          운영 지출입 찾기
+        </button>
+      </div>
+
       <StatementAdjustmentExpenseModal
         open={adjustModalLine !== null}
         onOpenChange={(v) => {
@@ -3237,11 +4108,12 @@ export default function StatementReconciliationTab() {
             setAutoMatchProposals([])
             setAutoMatchSummaryHint(null)
             setAutoMatchSelectedIds(new Set())
+            setAutoMatchCandidateSelection({})
           }
         }}
       >
         <DialogContent
-          className="max-w-3xl w-[calc(100vw-1.25rem)] max-h-[min(88vh,720px)] flex flex-col p-0 gap-0"
+          className="w-[min(98vw,110rem)] max-w-[min(98vw,110rem)] max-h-[min(92vh,860px)] flex flex-col p-0 gap-0"
           onPointerDownOutside={(e) => {
             if (autoMatchApplying) e.preventDefault()
           }}
@@ -3256,13 +4128,14 @@ export default function StatementReconciliationTab() {
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-slate-600">
               체크한 행만 저장됩니다. 저장하지 않을 행은 선택을 해제하세요. 취소하면 아무 것도 저장되지 않습니다.
+              선택된 금융 계정에 연결된 결제수단의 지출은 후보 목록에서 우선 표시됩니다.
               {autoMatchSummaryHint ? (
                 <span className="block mt-1 text-slate-700">{autoMatchSummaryHint}</span>
               ) : null}
             </DialogDescription>
           </DialogHeader>
-          <div className="px-2 sm:px-4 py-2 overflow-y-auto flex-1 min-h-0">
-            <table className="w-full text-[11px] sm:text-xs border-collapse">
+          <div className="px-2 sm:px-4 py-2 overflow-auto flex-1 min-h-0">
+            <table className="w-full min-w-[106rem] text-[11px] sm:text-xs border-collapse">
               <thead>
                 <tr className="border-b text-left text-slate-500">
                   <th className="py-1.5 pr-1 w-8 text-center">
@@ -3289,14 +4162,24 @@ export default function StatementReconciliationTab() {
                   </th>
                   <th className="py-1.5 pr-2 font-medium w-[5.5rem]">명세일</th>
                   <th className="py-1.5 pr-2 font-medium text-right w-[4.5rem]">금액</th>
-                  <th className="py-1.5 pr-2 font-medium min-w-[8rem]">명세 설명</th>
+                  <th className="py-1.5 pr-2 font-medium min-w-[14rem]">명세 설명</th>
+                  <th className="py-1.5 pr-2 font-medium min-w-[18rem]">후보 선택</th>
                   <th className="py-1.5 pr-2 font-medium w-[5.5rem]">연결 출처</th>
-                  <th className="py-1.5 font-medium min-w-[7rem]">지출 요약</th>
+                  <th className="py-1.5 pr-2 font-medium w-[6.5rem]">등록 날짜</th>
+                  <th className="py-1.5 pr-2 font-medium text-right w-[6rem]">지출 금액</th>
+                  <th className="py-1.5 pr-2 font-medium min-w-[10rem]">Paid To</th>
+                  <th className="py-1.5 pr-2 font-medium min-w-[12rem]">Paid For</th>
+                  <th className="py-1.5 pr-2 font-medium min-w-[12rem]">표준 결제 카테고리</th>
+                  <th className="py-1.5 font-medium min-w-[10rem]">지출 요약</th>
                   <th className="py-1.5 pl-1 font-medium text-right w-[3rem]">점수</th>
                 </tr>
               </thead>
               <tbody>
-                {autoMatchProposals.map((p) => (
+                {autoMatchProposals.map((p) => {
+                  const selectedKey = autoMatchCandidateSelection[p.statement_line_id] || p.candidates[0]?.key
+                  const selected = p.candidates.find((c) => c.key === selectedKey) ?? p.candidates[0]
+                  const amountDiff = selected ? Math.abs(selected.expense_amount - p.line_amount) : 0
+                  return (
                   <tr key={p.statement_line_id} className="border-b border-slate-100 align-top">
                     <td className="py-1.5 pr-1 text-center align-middle">
                       <input
@@ -3319,15 +4202,68 @@ export default function StatementReconciliationTab() {
                       ${Number(p.line_amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-1.5 pr-2 text-slate-800 break-words">{p.line_desc || '—'}</td>
-                    <td className="py-1.5 pr-2 text-slate-700 whitespace-nowrap">
-                      {AUTO_MATCH_SOURCE_LABEL[p.source_table]}
+                    <td className="py-1.5 pr-2">
+                      <select
+                        value={selected?.key ?? ''}
+                        onChange={(e) => {
+                          const nextKey = e.target.value
+                          setAutoMatchCandidateSelection((prev) => ({
+                            ...prev,
+                            [p.statement_line_id]: nextKey
+                          }))
+                        }}
+                        className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px]"
+                        aria-label="자동 매칭 후보 선택"
+                      >
+                        {p.candidates.map((c, idx) => {
+                          const diff = Math.abs(c.expense_amount - p.line_amount)
+                          return (
+                            <option key={c.key} value={c.key}>
+                              {idx + 1}. {AUTO_MATCH_SOURCE_LABEL[c.source_table]} · $
+                              {c.expense_amount.toFixed(2)}
+                              {diff >= 0.015 ? ` (차이 $${diff.toFixed(2)})` : ''} ·{' '}
+                              {formatExpenseSubmitOnUsMdY(c.expense_registered_date)} ·{' '}
+                              {c.expense_paid_for || c.expense_label}
+                            </option>
+                          )
+                        })}
+                      </select>
+                      {p.candidates.length > 1 ? (
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          후보 {p.candidates.length}개 중 선택
+                        </p>
+                      ) : null}
                     </td>
-                    <td className="py-1.5 text-slate-700 break-all">{p.expense_label || '—'}</td>
+                    <td className="py-1.5 pr-2 text-slate-700 whitespace-nowrap">
+                      {selected ? AUTO_MATCH_SOURCE_LABEL[selected.source_table] : '—'}
+                    </td>
+                    <td className="py-1.5 pr-2 whitespace-nowrap tabular-nums text-slate-700">
+                      {selected ? formatExpenseSubmitOnUsMdY(selected.expense_registered_date) : '—'}
+                    </td>
+                    <td
+                      className={`py-1.5 pr-2 text-right tabular-nums ${
+                        amountDiff >= 0.015 ? 'font-semibold text-amber-800' : 'text-slate-700'
+                      }`}
+                    >
+                      {selected ? `$${selected.expense_amount.toFixed(2)}` : '—'}
+                      {amountDiff >= 0.015 ? (
+                        <div className="text-[10px] font-normal text-amber-700">
+                          차이 ${amountDiff.toFixed(2)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="py-1.5 pr-2 text-slate-700 break-words">{selected?.expense_paid_to || '—'}</td>
+                    <td className="py-1.5 pr-2 text-slate-700 break-words">{selected?.expense_paid_for || '—'}</td>
+                    <td className="py-1.5 pr-2 text-slate-700 break-words">
+                      {selected?.expense_standard_paid_for || '—'}
+                    </td>
+                    <td className="py-1.5 text-slate-700 break-words">{selected?.expense_label || '—'}</td>
                     <td className="py-1.5 pl-1 text-right tabular-nums text-slate-600">
-                      {p.score.toFixed(0)}
+                      {selected ? selected.score.toFixed(0) : '—'}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -3341,6 +4277,7 @@ export default function StatementReconciliationTab() {
                 setAutoMatchProposals([])
                 setAutoMatchSummaryHint(null)
                 setAutoMatchSelectedIds(new Set())
+                setAutoMatchCandidateSelection({})
               }}
             >
               취소
@@ -3923,7 +4860,7 @@ export default function StatementReconciliationTab() {
                 className="shrink-0"
                 onClick={() => {
                   setPaymentLinkDirty(false)
-                  void loadPaymentMethods()
+                  void loadPaymentMethods(true)
                 }}
                 title="목록 새로고침 (서버 기준으로 다시 불러와 선택 초기화)"
               >
@@ -4012,7 +4949,7 @@ export default function StatementReconciliationTab() {
                         </td>
                       </tr>
                     )}
-                  {paymentLinkModalFilteredMethods.map((pm) => {
+                  {paymentLinkModalVisibleMethods.map((pm) => {
                     const linked =
                       paymentLinkDraft[pm.id] !== undefined
                         ? paymentLinkDraft[pm.id]
@@ -4072,52 +5009,39 @@ export default function StatementReconciliationTab() {
                               상단 <strong>금융 계정</strong>에서 먼저 추가한 뒤 연결할 수 있습니다.
                             </p>
                           ) : (
-                            <div className="flex flex-wrap gap-1.5 max-w-[22rem]">
-                              <button
-                                type="button"
+                            <div className="max-w-[22rem]">
+                              <select
                                 disabled={savingPaymentLinks}
-                                onClick={() => {
-                                  if (linked == null) return
-                                  setPaymentLinkDraft((prev) => ({ ...prev, [pm.id]: null }))
+                                value={linked ?? ''}
+                                onChange={(e) => {
+                                  const next = e.target.value || null
+                                  if (next === linked) return
+                                  setPaymentLinkDraft((prev) => ({ ...prev, [pm.id]: next }))
                                   setPaymentLinkDirty(true)
                                 }}
-                                className={`px-2 py-1 text-xs rounded-md border shrink-0 transition-colors disabled:opacity-50 ${
-                                  linked == null
-                                    ? 'bg-slate-700 text-white border-slate-700'
-                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                }`}
+                                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 disabled:opacity-50"
                               >
-                                없음
-                              </button>
-                              {accounts.map((a) => {
-                                const selected = linked === a.id
-                                return (
-                                  <button
-                                    key={a.id}
-                                    type="button"
-                                    disabled={savingPaymentLinks}
-                                    onClick={() => {
-                                      if (selected) return
-                                      setPaymentLinkDraft((prev) => ({ ...prev, [pm.id]: a.id }))
-                                      setPaymentLinkDirty(true)
-                                    }}
-                                    className={`px-2 py-1 text-xs rounded-md border max-w-[11rem] text-left truncate transition-colors disabled:opacity-50 ${
-                                      selected
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                                        : 'bg-white text-gray-800 border-gray-300 hover:bg-blue-50/80 hover:border-blue-300'
-                                    }`}
-                                    title={`${a.name} (${a.account_type})`}
-                                  >
-                                    <span className="block truncate">{a.name}</span>
-                                  </button>
-                                )
-                              })}
+                                <option value="">없음</option>
+                                {accounts.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.name} ({a.account_type})
+                                  </option>
+                                ))}
+                              </select>
                             </div>
                           )}
                         </td>
                       </tr>
                     )
                   })}
+                  {paymentLinkHiddenCount > 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-3 text-center text-xs text-gray-500">
+                        렌더링 성능을 위해 상위 {PAYMENT_LINK_RENDER_LIMIT}건만 표시 중입니다. 나머지{' '}
+                        {paymentLinkHiddenCount}건은 검색어를 더 좁혀서 표시하세요.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -4142,6 +5066,8 @@ export default function StatementReconciliationTab() {
         </DialogContent>
       </Dialog>
 
+      {reconciliationViewTab === 'statements' ? (
+        <>
       <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 sm:p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold text-sm text-emerald-950 min-w-0">
@@ -4631,26 +5557,46 @@ export default function StatementReconciliationTab() {
                                     <ExpenseSourceTypeIcon sourceTable={expenseMatch.source_table} />
                                   </span>
                                   <div
-                                    className="min-w-0 flex-1 text-[11px] leading-snug text-slate-800 line-clamp-2"
+                                    className="min-w-0 flex-1 text-[11px] leading-snug text-slate-800 space-y-0.5"
                                     title={
                                       linkedExpenseOpt
-                                        ? `${formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)} $${Number(linkedExpenseOpt.amount).toFixed(2)} ${linkedExpenseOpt.label}`
-                                        : `${expenseMatch.source_table} · ${expenseMatch.source_id}`
+                                        ? [
+                                            expenseSourceTableAriaLabel(expenseMatch.source_table),
+                                            `등록: ${formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)}`,
+                                            `금액: $${Number(linkedExpenseOpt.amount).toFixed(2)}`,
+                                            `paid_to: ${linkedExpenseOpt.paid_to || '—'}`,
+                                            `paid_for: ${linkedExpenseOpt.paid_for || '—'}`,
+                                            `description: ${linkedExpenseOpt.description || '—'}`
+                                          ].join('\n')
+                                        : `${expenseSourceTableAriaLabel(expenseMatch.source_table)} · ${expenseMatch.source_id}`
                                     }
                                   >
                                     {linkedExpenseOpt ? (
                                       <>
-                                        <span className="tabular-nums text-slate-700">
-                                          {formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)}
-                                        </span>{' '}
-                                        <span className="tabular-nums font-medium">
-                                          ${Number(linkedExpenseOpt.amount).toFixed(2)}
-                                        </span>{' '}
-                                        <span className="break-words">{linkedExpenseOpt.label}</span>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-tight">
+                                          <span className="tabular-nums text-slate-700">
+                                            {formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)}
+                                          </span>
+                                          <span className="tabular-nums font-medium">
+                                            ${Number(linkedExpenseOpt.amount).toFixed(2)}
+                                          </span>
+                                          <span className="inline-flex min-w-0 items-center gap-0.5" title="Paid to">
+                                            <UserRound className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+                                            <span className="max-w-[7rem] truncate">{linkedExpenseOpt.paid_to || '—'}</span>
+                                          </span>
+                                          <span className="inline-flex min-w-0 items-center gap-0.5" title="Paid for">
+                                            <Tag className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+                                            <span className="max-w-[8rem] truncate">{linkedExpenseOpt.paid_for || '—'}</span>
+                                          </span>
+                                          <span className="inline-flex min-w-0 items-center gap-0.5" title="Description">
+                                            <FileText className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+                                            <span className="max-w-[10rem] truncate">{linkedExpenseOpt.description || '—'}</span>
+                                          </span>
+                                        </div>
                                       </>
                                     ) : (
                                       <span className="text-slate-600">
-                                        {expenseMatch.source_table} · {expenseMatch.source_id.slice(0, 8)}…
+                                        {expenseMatch.source_id.slice(0, 8)}…
                                       </span>
                                     )}
                                   </div>
@@ -4685,11 +5631,34 @@ export default function StatementReconciliationTab() {
                                   </Button>
                                 </div>
                               </div>
-                              <div className="mt-1 border-t border-slate-200/60 pt-1 text-[11px] text-slate-500">
-                                저장: {expenseMatch.matched_by ?? '—'} ·{' '}
-                                {expenseMatch.matched_at
-                                  ? new Date(expenseMatch.matched_at).toLocaleString()
-                                  : ''}
+                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-200/60 pt-1 text-[11px] text-slate-500">
+                                <span className="inline-flex items-center gap-0.5">
+                                  <Save className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                                  <span>{displayNameForEmail(expenseMatch.matched_by)}</span>
+                                </span>
+                                {expenseMatch.updated_by ? (
+                                  <span className="inline-flex items-center gap-0.5">
+                                    <Pencil className="h-3.5 w-3.5 text-red-600" aria-hidden />
+                                    <span>{displayNameForEmail(expenseMatch.updated_by)}</span>
+                                  </span>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-slate-500 underline decoration-dotted hover:bg-slate-100 hover:text-slate-800"
+                                  title="매칭 이력 보기"
+                                  onClick={() =>
+                                    void loadMatchHistory({
+                                      line,
+                                      match: expenseMatch,
+                                      ...(linkedExpenseOpt ? { expense: linkedExpenseOpt } : {})
+                                    })
+                                  }
+                                >
+                                  <Clock className="h-3.5 w-3.5" aria-hidden />
+                                  <span>
+                                    {formatReconciliationTimestamp(expenseMatch.updated_at || expenseMatch.matched_at)}
+                                  </span>
+                                </button>
                               </div>
                             </div>
                           ) : (
@@ -5051,18 +6020,35 @@ export default function StatementReconciliationTab() {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-nowrap items-center gap-1.5 min-w-0">
-                    <select
-                      aria-label="지출 유형 필터"
-                      className="border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white min-w-0 shrink-0 max-w-[min(100%,8.5rem)]"
-                      value={unmatchedPanelSourceTableFilter}
-                      onChange={(e) => setUnmatchedPanelSourceTableFilter(e.target.value)}
+                    <div
+                      className="flex max-w-full shrink-0 flex-wrap items-center gap-1"
+                      role="tablist"
+                      aria-label="지출 테이블 탭"
                     >
-                      <option value="">전체 유형</option>
-                      <option value="company_expenses">회사</option>
-                      <option value="tour_expenses">투어</option>
-                      <option value="reservation_expenses">예약</option>
-                      <option value="ticket_bookings">입장권</option>
-                    </select>
+                      {EXPENSE_SOURCE_FILTER_OPTIONS.map((opt) => {
+                        const active = unmatchedPanelSourceTableFilter === opt.value
+                        const count = unmatchedExpenseSourceTabCounts[opt.value] ?? 0
+                        return (
+                          <button
+                            key={opt.value || 'all'}
+                            type="button"
+                            role="tab"
+                            aria-selected={active}
+                            className={`rounded-full border px-2 py-1 text-[10px] leading-none ${
+                              active
+                                ? 'border-slate-900 bg-slate-900 text-white'
+                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            }`}
+                            onClick={() => setUnmatchedPanelSourceTableFilter(opt.value)}
+                          >
+                            {opt.label}{' '}
+                            <span className={active ? 'text-slate-300' : 'text-slate-400'}>
+                              {count}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
                     <div
                       ref={unmatchedPmFilterWrapRef}
                       className="relative min-w-0 shrink-0 w-[min(100%,10.5rem)] max-w-[11rem]"
@@ -5230,6 +6216,11 @@ export default function StatementReconciliationTab() {
                                 연결됨
                               </span>
                             ) : null}
+                            {expenseMatchesSelectedFinancialAccount(o) ? (
+                              <span className="shrink-0 text-[9px] font-medium text-sky-800 bg-sky-100/90 px-1 py-px rounded">
+                                금융계정
+                              </span>
+                            ) : null}
                             <span className="line-clamp-2 break-words min-w-0">{o.label}</span>
                           </div>
                         </td>
@@ -5265,6 +6256,210 @@ export default function StatementReconciliationTab() {
           </aside>
         </div>
       </section>
+        </>
+      ) : (
+        <section className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4 space-y-3">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">운영 지출입 찾기</h3>
+              <p className="mt-1 text-xs text-slate-600">
+                예약 지출, 회사 지출, payment_records, 티켓, 호텔 부킹을 날짜순으로 모아 보고 각 행을 카드/은행 명세에서 찾습니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <label className="flex items-center gap-1">
+                시작
+                <input
+                  type="date"
+                  className="rounded border border-slate-200 px-2 py-1"
+                  value={operationalLedgerStart}
+                  onChange={(e) => setOperationalLedgerStart(e.target.value)}
+                />
+              </label>
+              <label className="flex items-center gap-1">
+                종료
+                <input
+                  type="date"
+                  className="rounded border border-slate-200 px-2 py-1"
+                  value={operationalLedgerEnd}
+                  onChange={(e) => setOperationalLedgerEnd(e.target.value)}
+                />
+              </label>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void loadOperationalLedgerRows()}
+                disabled={operationalLedgerLoading}
+              >
+                <Search className="mr-1 h-4 w-4" />
+                {operationalLedgerLoading ? '조회 중…' : '지출입 가져오기'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              className="rounded border border-slate-200 bg-white px-2 py-1"
+              value={operationalLedgerScope}
+              onChange={(e) => setOperationalLedgerScope(e.target.value as 'unmatched' | 'all')}
+            >
+              <option value="unmatched">연결 안 된 행만</option>
+              <option value="all">전체</option>
+            </select>
+            <select
+              className="rounded border border-slate-200 bg-white px-2 py-1"
+              value={operationalLedgerSourceFilter}
+              onChange={(e) => setOperationalLedgerSourceFilter(e.target.value as OperationalLedgerSourceTable | '')}
+            >
+              <option value="">전체 테이블</option>
+              {Object.entries(OPERATIONAL_LEDGER_SOURCE_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <div className="relative min-w-[14rem] flex-1">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                className="w-full rounded border border-slate-200 py-1 pl-7 pr-2"
+                placeholder="금액·내용·거래처·ID 검색"
+                value={operationalLedgerSearch}
+                onChange={(e) => setOperationalLedgerSearch(e.target.value)}
+              />
+            </div>
+            <span className="text-slate-500">
+              표시 {operationalLedgerFilteredRows.length}건 / 로드 {operationalLedgerRows.length}건
+            </span>
+          </div>
+
+          <div className="overflow-x-auto rounded border border-slate-100">
+            <table className="w-full min-w-[1180px] text-xs">
+              <thead className="bg-slate-50 text-left text-slate-500">
+                <tr>
+                  <th className="px-2 py-2">일자</th>
+                  <th className="px-2 py-2">테이블</th>
+                  <th className="px-2 py-2 text-right">금액</th>
+                  <th className="px-2 py-2">결제수단</th>
+                  <th className="px-2 py-2">거래처</th>
+                  <th className="px-2 py-2">내용</th>
+                  <th className="px-2 py-2">명세 후보</th>
+                </tr>
+              </thead>
+              <tbody>
+                {operationalLedgerLoading ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
+                      운영 지출입을 불러오는 중…
+                    </td>
+                  </tr>
+                ) : operationalLedgerFilteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
+                      조회된 운영 지출입이 없습니다. 기간을 선택하고 «지출입 가져오기»를 누르세요.
+                    </td>
+                  </tr>
+                ) : (
+                  operationalLedgerFilteredRows.slice(0, 400).map((row) => {
+                    const candidates = statementCandidatesByLedgerKey[row.key]
+                    const pmLabel = paymentMethodLabelFromRows(row.payment_method, paymentMethods)
+                    return (
+                      <tr key={row.key} className="border-t border-slate-100 align-top">
+                        <td className="px-2 py-2 tabular-nums text-slate-700">{row.date}</td>
+                        <td className="px-2 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                row.direction === 'inflow'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {row.direction === 'inflow' ? '입금' : '지출'}
+                            </span>
+                            <span>{OPERATIONAL_LEDGER_SOURCE_LABEL[row.source_table]}</span>
+                            {row.already_matched ? (
+                              <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">연결됨</span>
+                            ) : null}
+                          </div>
+                          <code className="mt-1 block max-w-[10rem] truncate text-[10px] text-slate-400" title={row.source_id}>
+                            {row.source_id}
+                          </code>
+                        </td>
+                        <td className={`px-2 py-2 text-right tabular-nums font-medium ${row.direction === 'inflow' ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          {formatMoneyUsd(row.amount)}
+                        </td>
+                        <td className="px-2 py-2 text-slate-600">{pmLabel}</td>
+                        <td className="px-2 py-2 text-slate-700">{row.party || '—'}</td>
+                        <td className="px-2 py-2 text-slate-700">
+                          <div className="line-clamp-2" title={[row.purpose, row.note].filter(Boolean).join(' · ')}>
+                            {row.purpose || '—'}
+                            {row.note ? ` · ${row.note}` : ''}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="space-y-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[11px]"
+                              disabled={statementCandidateLoadingKey === row.key || row.already_matched}
+                              onClick={() => void findStatementCandidatesForLedgerRow(row)}
+                            >
+                              {statementCandidateLoadingKey === row.key ? '찾는 중…' : '금융계정 명세에서 찾기'}
+                            </Button>
+                            {candidates ? (
+                              candidates.length === 0 ? (
+                                <p className="text-[11px] text-slate-500">±7일, 유사 금액 후보가 없습니다.</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {candidates.map((c) => (
+                                    <div key={c.id} className="rounded border border-slate-200 bg-slate-50 px-2 py-1">
+                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                                        <span className="font-medium text-slate-800">{c.financial_account_name}</span>
+                                        <span className="tabular-nums">{c.posted_date}</span>
+                                        <span className="tabular-nums">{formatMoneyUsd(c.amount)}</span>
+                                        {c.amount_diff < 0.02 ? (
+                                          <span className="rounded bg-blue-100 px-1 text-blue-800">같은 금액</span>
+                                        ) : (
+                                          <span className="text-amber-700">차이 {formatMoneyUsd(c.amount_diff)}</span>
+                                        )}
+                                        {c.matched_status !== 'unmatched' ? (
+                                          <span className="text-red-700">이미 대조됨</span>
+                                        ) : null}
+                                      </div>
+                                      <div className="mt-0.5 line-clamp-1 text-[11px] text-slate-600" title={c.description}>
+                                        {c.description || '—'}
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="mt-1 h-6 text-[11px]"
+                                        disabled={loading || row.already_matched || c.matched_status !== 'unmatched'}
+                                        onClick={() => void saveOperationalLedgerMatch(row, c)}
+                                      >
+                                        이 명세와 매칭
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          {operationalLedgerFilteredRows.length > 400 ? (
+            <p className="text-xs text-slate-500">상위 400건만 표시합니다. 검색어나 기간을 좁혀 주세요.</p>
+          ) : null}
+        </section>
+      )}
 
       <Dialog
         open={Boolean(unmatchedEditOption)}
@@ -5455,6 +6650,9 @@ export default function StatementReconciliationTab() {
               <p className="text-xs text-slate-600 break-words">
                 명세 <strong>{expensePickerLine.posted_date}</strong> · 출금{' '}
                 <strong>${Number(expensePickerLine.amount).toFixed(2)}</strong>
+                <span className="block mt-1 text-[11px] text-slate-500">
+                  현재 금융 계정에 연결된 결제수단의 지출을 후보 상단에 표시합니다.
+                </span>
               </p>
               <label className="text-xs text-slate-600 block space-y-1">
                 검색 ({PICKER_SEARCH_MIN_CHARS}자 이상 — 설명·금액·일자·ID)
@@ -5515,6 +6713,11 @@ export default function StatementReconciliationTab() {
                             {blockedElsewhere ? (
                               <span className="text-[10px] font-medium text-amber-900 bg-amber-100 px-1.5 py-0 rounded shrink-0">
                                 다른 명세에 연결됨
+                              </span>
+                            ) : null}
+                            {expenseMatchesSelectedFinancialAccount(o) ? (
+                              <span className="text-[10px] font-medium text-sky-800 bg-sky-100 px-1.5 py-0 rounded shrink-0">
+                                금융계정 우선
                               </span>
                             ) : null}
                           </span>
@@ -5714,7 +6917,14 @@ export default function StatementReconciliationTab() {
                             void saveExpenseSelection(expensePickerLine, `${o.source_table}:${o.source_id}`)
                           }}
                         >
-                          <span>{formatExpensePickerLineLabel(o)}</span>
+                          <span className="flex flex-wrap items-center gap-1.5 w-full">
+                            <span>{formatExpensePickerLineLabel(o)}</span>
+                            {expenseMatchesSelectedFinancialAccount(o) ? (
+                              <span className="text-[10px] font-medium text-sky-800 bg-sky-100 px-1.5 py-0 rounded shrink-0">
+                                금융계정 우선
+                              </span>
+                            ) : null}
+                          </span>
                           <span className="text-[11px] text-slate-500 tabular-nums">
                             일자 {formatExpenseOptionSubmitDate(o)}
                           </span>
@@ -5841,6 +7051,95 @@ export default function StatementReconciliationTab() {
               )}
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(matchHistoryTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMatchHistoryTarget(null)
+            setMatchHistoryRows([])
+            setMatchHistoryError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl w-[calc(100vw-1.25rem)] max-h-[min(90vh,720px)] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b border-slate-100 shrink-0 text-left">
+            <DialogTitle className="text-base">매칭 저장·수정 이력</DialogTitle>
+            {matchHistoryTarget ? (
+              <DialogDescription className="text-xs text-slate-600">
+                명세 {matchHistoryTarget.line.posted_date} · ${Number(matchHistoryTarget.line.amount).toFixed(2)}
+                {matchHistoryTarget.expense ? ` · ${matchHistoryTarget.expense.label}` : ''}
+              </DialogDescription>
+            ) : null}
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+            {matchHistoryLoading ? (
+              <p className="text-sm text-slate-600">이력을 불러오는 중…</p>
+            ) : matchHistoryError ? (
+              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {matchHistoryError}
+              </p>
+            ) : matchHistoryRows.length === 0 ? (
+              <div className="space-y-2 text-sm text-slate-700">
+                <p>아직 별도 이력 로그가 없습니다. 현재 매칭 정보만 표시합니다.</p>
+                {matchHistoryTarget ? (
+                  <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                    <div className="inline-flex items-center gap-1 text-slate-700">
+                      <Save className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                      저장: {displayNameForEmail(matchHistoryTarget.match.matched_by)} ·{' '}
+                      {formatReconciliationTimestamp(matchHistoryTarget.match.matched_at)}
+                    </div>
+                    {matchHistoryTarget.match.updated_by ? (
+                      <div className="mt-1 inline-flex items-center gap-1 text-slate-700">
+                        <Pencil className="h-3.5 w-3.5 text-red-600" aria-hidden />
+                        수정: {displayNameForEmail(matchHistoryTarget.match.updated_by)} ·{' '}
+                        {formatReconciliationTimestamp(matchHistoryTarget.match.updated_at)}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {matchHistoryRows.map((ev) => {
+                  const isUpdate = ev.action === 'updated'
+                  const isDelete = ev.action === 'deleted'
+                  const Icon = isUpdate || isDelete ? Pencil : Save
+                  const iconClass = isUpdate || isDelete ? 'text-red-600' : 'text-blue-600'
+                  const actionLabel = ev.action === 'created' ? '저장' : ev.action === 'updated' ? '수정' : '해제'
+                  return (
+                    <div key={ev.id} className="rounded border border-slate-200 bg-white px-3 py-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <Icon className={`h-4 w-4 shrink-0 ${iconClass}`} aria-hidden />
+                        <span className="font-medium text-slate-900">{actionLabel}</span>
+                        <span className="text-slate-700">{displayNameForEmail(ev.actor_email)}</span>
+                        <span className="tabular-nums text-slate-500">
+                          {formatReconciliationTimestamp(ev.occurred_at)}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-slate-600">
+                        {ev.action === 'updated' ? (
+                          <>
+                            {ev.before_source_table}:{ev.before_source_id} → {ev.after_source_table}:{ev.after_source_id}
+                          </>
+                        ) : ev.action === 'deleted' ? (
+                          <>
+                            연결 해제: {ev.before_source_table}:{ev.before_source_id}
+                          </>
+                        ) : (
+                          <>
+                            연결 생성: {ev.after_source_table}:{ev.after_source_id}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

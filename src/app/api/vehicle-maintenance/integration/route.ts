@@ -7,7 +7,7 @@ type VehicleMaintenanceInsert = Database['public']['Tables']['vehicle_maintenanc
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const body = await request.json()
     
     const {
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { searchParams } = new URL(request.url)
     
     const vehicleId = searchParams.get('vehicle_id')

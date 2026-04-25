@@ -6,6 +6,9 @@ import {
 /** 차량 수리·정비 등 표준 리프 — 지출 폼에서 정비 작업 연동 조건에 사용 */
 export const VEHICLE_REPAIR_STANDARD_LEAF_ID = 'CAT001-002' as const
 
+/** 매출원가(COGS) 상위 표준 카테고리 — 지출 폼·정규화 목록에서 맨 위에 둠 */
+export const COGS_STANDARD_ROOT_ID = 'CAT024' as const
+
 export type UnifiedStandardLeafItem = {
   id: string
   /** 하위 항목 한 줄 표시 (영문 · 한글) — 구버전 호환용으로 menuLabel과 동일하게 둠 */
@@ -23,6 +26,11 @@ export type UnifiedStandardLeafGroup = {
   /** 하위만 있을 때 상단 그룹 제목 (예: Car and Truck Expenses) */
   groupLabel: string
   items: UnifiedStandardLeafItem[]
+}
+
+/** includeInactive: 카테고리 매니저·결제 내용 정규화와 동일하게 비활성 행 포함 */
+export type BuildUnifiedStandardLeafGroupsOptions = {
+  includeInactive?: boolean
 }
 
 /** 표준 카테고리: 영문·한글을 한 줄로 (둘 다 있고 다르면 "EN · KO") */
@@ -68,16 +76,26 @@ function searchBlobForRootOnly(root: ExpenseStandardCategoryPickRow): string {
 /** 부모 헤더 + 자식만 선택. 부모에 자식이 없으면 부모 한 줄만 선택 가능 */
 export function buildUnifiedStandardLeafGroups(
   cats: ExpenseStandardCategoryPickRow[],
-  _locale: string
+  _locale: string,
+  options?: BuildUnifiedStandardLeafGroupsOptions
 ): UnifiedStandardLeafGroup[] {
-  const active = cats.filter((c) => c.is_active !== false)
+  const pool = options?.includeInactive ? cats : cats.filter((c) => c.is_active !== false)
+  const poolIds = new Set(pool.map((c) => c.id))
   const sortFn = (a: ExpenseStandardCategoryPickRow, b: ExpenseStandardCategoryPickRow) =>
     (a.display_order ?? 0) - (b.display_order ?? 0)
-  const roots = active.filter((c) => !c.parent_id).sort(sortFn)
+  /** 상위가 비활성·누락이면 하위만 남는 경우에도 트리 루트로 취급 */
+  const roots = pool
+    .filter((c) => !c.parent_id || !poolIds.has(c.parent_id))
+    .sort((a, b) => {
+      const aCogs = a.id === COGS_STANDARD_ROOT_ID ? -1 : 0
+      const bCogs = b.id === COGS_STANDARD_ROOT_ID ? -1 : 0
+      if (aCogs !== bCogs) return aCogs - bCogs
+      return sortFn(a, b)
+    })
   const groups: UnifiedStandardLeafGroup[] = []
 
   for (const r of roots) {
-    const subs = active.filter((c) => c.parent_id === r.id).sort(sortFn)
+    const subs = pool.filter((c) => c.parent_id === r.id).sort(sortFn)
     const gLabel = bilingualStandardLabel(r.name, r.name_ko)
     if (subs.length === 0) {
       const display = bilingualStandardLabel(r.name, r.name_ko)
@@ -112,6 +130,31 @@ export function buildUnifiedStandardLeafGroups(
     }
   }
 
+  const seen = new Set<string>()
+  for (const g of groups) {
+    seen.add(g.rootId)
+    for (const it of g.items) seen.add(it.id)
+  }
+  for (const c of [...pool].sort(sortFn)) {
+    if (seen.has(c.id)) continue
+    const display = bilingualStandardLabel(c.name, c.name_ko)
+    const parent = c.parent_id ? pool.find((x) => x.id === c.parent_id) ?? null : null
+    groups.push({
+      rootId: c.id,
+      groupLabel: display,
+      items: [
+        {
+          id: c.id,
+          menuLabel: display,
+          displayLabel: display,
+          paidForText: canonicalPaidForTextFromStandardCategory(c),
+          searchText: parent ? searchBlobForLeaf(parent, c) : searchBlobForRootOnly(c),
+        },
+      ],
+    })
+    seen.add(c.id)
+  }
+
   return groups
 }
 
@@ -119,20 +162,28 @@ export function flattenUnifiedLeaves(groups: UnifiedStandardLeafGroup[]): Unifie
   return groups.flatMap((g) => g.items)
 }
 
+/** 지출 폼·통합 피커 트리거에 표시: «상위 › 세부» 또는 단일 루트면 세부 한 줄만 */
+export function unifiedStandardTriggerLabel(
+  groups: UnifiedStandardLeafGroup[],
+  leafId: string
+): string {
+  if (!leafId) return ''
+  const g = groups.find((gr) => gr.items.some((i) => i.id === leafId))
+  const it = g?.items.find((i) => i.id === leafId)
+  if (!g || !it) return ''
+  const soleRoot = g.items.length === 1 && g.items[0].id === g.rootId
+  if (soleRoot) return it.displayLabel
+  return `${g.groupLabel} › ${it.displayLabel}`
+}
+
 /** 지출 폼·결제 내용 정규화와 동일: 선택 가능한 표준 리프(id)인지 */
 export function isSelectableStandardExpenseLeaf(
   leafId: string,
-  cats: ExpenseStandardCategoryPickRow[]
+  cats: ExpenseStandardCategoryPickRow[],
+  options?: BuildUnifiedStandardLeafGroupsOptions
 ): boolean {
-  const active = cats.filter((c) => c.is_active !== false)
-  const byId = new Map(active.map((c) => [c.id, c]))
-  const cat = byId.get(leafId)
-  if (!cat) return false
-  if (!cat.parent_id) {
-    const subs = active.filter((c) => c.parent_id === cat.id)
-    return subs.length === 0
-  }
-  return true
+  const leaves = flattenUnifiedLeaves(buildUnifiedStandardLeafGroups(cats, 'ko', options))
+  return leaves.some((l) => l.id === leafId)
 }
 
 /** 지출 추가 모달 Select: 상위 그룹(rootId)마다 다른 배경색(테두리·둥근 카드 스타일 없음) */
@@ -265,7 +316,8 @@ export function matchUnifiedLeafIdFromForm(
   locale: string
 ): string | '__custom__' {
   const byId = new Map(cats.map((c) => [c.id, c]))
-  const groups = buildUnifiedStandardLeafGroups(cats, locale)
+  /** DB에 저장된 표준값·정규화 API와 동일하게 비활성 리프도 후보에 넣음(역매칭 누락 방지) */
+  const groups = buildUnifiedStandardLeafGroups(cats, locale, { includeInactive: true })
   const leaves = flattenUnifiedLeaves(groups)
   const pf = paid_for.trim()
   const cat = (category || '').trim()

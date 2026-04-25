@@ -7,23 +7,34 @@ import {
 } from '@/lib/companyExpenseStandardUnified'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 
+const MAX_IDS = 100
+
 /**
- * 동일한 결제 내용 문자열을 카테고리 매니저의 표준 카테고리(리프)에 맞춰 일괄 반영합니다.
+ * 선택한 company_expenses id만 표준 리프에 맞춰 갱신합니다.
  * 원문 paid_for 는 유지하고 standard_paid_for 만 채웁니다.
- * body: { paidFor: string, previousLabelId: string | null, standardLeafId: string }
+ * body: { expenseIds: string[], standardLeafId: string, paidFor: string, previousLabelId: string | null }
+ * paidFor·previousLabelId는 통계 행과 일치하는지 검증해 잘못된 id 갱신을 막습니다.
  */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     const dbForCategories = supabaseAdmin ?? supabase
     const body = await request.json()
-    const paidFor = typeof body.paidFor === 'string' ? body.paidFor : ''
+    const rawIds = Array.isArray(body.expenseIds) ? body.expenseIds : []
+    const expenseIds = [...new Set(rawIds.filter((x: unknown) => typeof x === 'string' && String(x).trim()))].slice(
+      0,
+      MAX_IDS
+    )
     const standardLeafId = typeof body.standardLeafId === 'string' ? body.standardLeafId : ''
+    const paidFor = typeof body.paidFor === 'string' ? body.paidFor : ''
     const previousLabelId =
       body.previousLabelId === null || body.previousLabelId === undefined || body.previousLabelId === ''
         ? null
         : String(body.previousLabelId)
 
+    if (expenseIds.length === 0) {
+      return NextResponse.json({ error: 'expenseIds 가 필요합니다.' }, { status: 400 })
+    }
     if (!paidFor.trim() || !standardLeafId.trim()) {
       return NextResponse.json({ error: 'paidFor 과 standardLeafId 가 필요합니다.' }, { status: 400 })
     }
@@ -58,6 +69,7 @@ export async function POST(request: NextRequest) {
         tax_deductible: applied.tax_deductible,
         updated_at: new Date().toISOString(),
       })
+      .in('id', expenseIds)
       .eq('paid_for', paidFor)
 
     if (previousLabelId === null) {
@@ -69,7 +81,7 @@ export async function POST(request: NextRequest) {
     const { data: updated, error: upErr } = await q.select('id')
 
     if (upErr) {
-      console.error('결제 내용 정규화 적용 오류:', upErr)
+      console.error('결제 내용 정규화(선택) 적용 오류:', upErr)
       return NextResponse.json({ error: '업데이트에 실패했습니다.' }, { status: 500 })
     }
 
@@ -78,7 +90,7 @@ export async function POST(request: NextRequest) {
       standard_paid_for: applied.paid_for,
     })
   } catch (e) {
-    console.error('결제 내용 정규화 적용 오류:', e)
+    console.error('결제 내용 정규화(선택) 적용 오류:', e)
     return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   }
 }

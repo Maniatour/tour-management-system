@@ -7,25 +7,30 @@ import {
 } from '@/lib/companyExpenseStandardUnified'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 
+const MAX_IDS = 100
+
 /**
- * 동일한 결제 내용 문자열을 카테고리 매니저의 표준 카테고리(리프)에 맞춰 일괄 반영합니다.
- * 원문 paid_for 는 유지하고 standard_paid_for 만 채웁니다.
- * body: { paidFor: string, previousLabelId: string | null, standardLeafId: string }
+ * 필터된 목록 등에서 고른 company_expenses 행에 동일한 표준 리프를 반영합니다.
+ * 원문 paid_for 는 유지하고, 표준 문구는 standard_paid_for 에만 저장합니다.
+ * body: { expenseIds: string[], standardLeafId: string }
  */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     const dbForCategories = supabaseAdmin ?? supabase
     const body = await request.json()
-    const paidFor = typeof body.paidFor === 'string' ? body.paidFor : ''
-    const standardLeafId = typeof body.standardLeafId === 'string' ? body.standardLeafId : ''
-    const previousLabelId =
-      body.previousLabelId === null || body.previousLabelId === undefined || body.previousLabelId === ''
-        ? null
-        : String(body.previousLabelId)
+    const rawIds = Array.isArray(body.expenseIds) ? body.expenseIds : []
+    const expenseIds = [...new Set(rawIds.filter((x: unknown) => typeof x === 'string' && String(x).trim()))].slice(
+      0,
+      MAX_IDS
+    )
+    const standardLeafId = typeof body.standardLeafId === 'string' ? body.standardLeafId.trim() : ''
 
-    if (!paidFor.trim() || !standardLeafId.trim()) {
-      return NextResponse.json({ error: 'paidFor 과 standardLeafId 가 필요합니다.' }, { status: 400 })
+    if (expenseIds.length === 0) {
+      return NextResponse.json({ error: 'expenseIds 가 필요합니다.' }, { status: 400 })
+    }
+    if (!standardLeafId) {
+      return NextResponse.json({ error: 'standardLeafId 가 필요합니다.' }, { status: 400 })
     }
 
     const { data: catRows, error: catErr } = await dbForCategories
@@ -49,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '표준 분류를 적용할 수 없습니다.' }, { status: 400 })
     }
 
-    let q = supabase
+    const { data: updated, error: upErr } = await supabase
       .from('company_expenses')
       .update({
         standard_paid_for: applied.paid_for,
@@ -58,27 +63,21 @@ export async function POST(request: NextRequest) {
         tax_deductible: applied.tax_deductible,
         updated_at: new Date().toISOString(),
       })
-      .eq('paid_for', paidFor)
-
-    if (previousLabelId === null) {
-      q = q.is('paid_for_label_id', null)
-    } else {
-      q = q.eq('paid_for_label_id', previousLabelId)
-    }
-
-    const { data: updated, error: upErr } = await q.select('id')
+      .in('id', expenseIds)
+      .select('id')
 
     if (upErr) {
-      console.error('결제 내용 정규화 적용 오류:', upErr)
+      console.error('회사 지출 일괄 표준 적용 오류:', upErr)
       return NextResponse.json({ error: '업데이트에 실패했습니다.' }, { status: 500 })
     }
 
     return NextResponse.json({
       updatedCount: updated?.length ?? 0,
+      requestedCount: expenseIds.length,
       standard_paid_for: applied.paid_for,
     })
   } catch (e) {
-    console.error('결제 내용 정규화 적용 오류:', e)
+    console.error('회사 지출 일괄 표준 적용 오류:', e)
     return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   }
 }

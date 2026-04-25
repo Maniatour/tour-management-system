@@ -1,17 +1,6 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../database.types'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-// 환경 변수 검증
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables. Please check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.')
-}
-
-// 서버용 Supabase 클라이언트 생성
-export const createClient = () => {
-  return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey)
-}
-
-export type { Database }
+/**
+ * Route Handler / Server Action용 — 요청 쿠키의 Supabase 세션을 사용합니다.
+ * (anon 키만 쓰는 클라이언트는 RLS `authenticated` 정책에서 행이 비어 나올 수 있습니다.)
+ */
+export { createServerSupabase as createClient } from '../supabase-server'
+export type { Database } from '../database.types'

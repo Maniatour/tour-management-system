@@ -475,6 +475,7 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'submit_on', type: 'timestamp with time zone', nullable: false, default: 'now()' },
       { name: 'paid_to', type: 'character varying(255)', nullable: false, default: null },
       { name: 'paid_for', type: 'character varying(255)', nullable: false, default: null },
+      { name: 'standard_paid_for', type: 'text', nullable: true, default: null },
       { name: 'description', type: 'text', nullable: true, default: null },
       { name: 'amount', type: 'numeric(10, 2)', nullable: false, default: null },
       { name: 'payment_method', type: 'character varying(100)', nullable: true, default: null },

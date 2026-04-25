@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'vehicleId가 없습니다.' }, { status: 400 })
     }
 
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data, error } = await supabase
       .from('company_expenses')
       .select(

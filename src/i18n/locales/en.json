@@ -3293,6 +3293,9 @@
       "amount": "Amount",
       "paidTo": "Paid To",
       "paidFor": "Paid For",
+      "paidForOptional": "optional",
+      "paidForPlaceholder": "Pick a suggestion or type",
+      "paidForComboboxHelp": "Suggestions come from your past company expenses. Type anything new, or leave blank.",
       "suggestOrType": "Pick from suggestions or type a new value.",
       "suggestionsLoading": "Loading existing values…",
       "description": "Description",
@@ -3328,7 +3331,44 @@
       "cogsVsExpensesManualOpenTitle": "When to use COGS vs operating expenses",
       "cogsVsExpensesManualDialogTitle": "Similar items: COGS vs operating expenses",
       "cogsVsExpensesManualDialogDescription": "Reference only when picking a standard line. Books and tax treatment follow your contracts, policy, and your CPA.",
-      "cogsVsExpensesManualBody": "【In one sentence】\nCOGS (CAT024 family) is aimed at costs that attach directly to delivering a specific tour or a customer-facing promise. General expenses (transport, meals, office, etc.) are closer to running the business day-to-day.\n\n【Examples when lines look alike】\n• Fuel — gas for the vehicle used only to run that tour → COGS such as “Fuel — tour execution vehicles”. Office runs or general fleet → Transportation / vehicle operating lines.\n• Meals — bentos or meals you give to customers as part of the product → COGS (customer-provided meals). Guides or staff eating on the job → Business meals / meals operating lines.\n• Admissions / show tickets — wholesale or pass-through costs bundled into what you sell to the customer → COGS / admission-style lines. Staff training or internal visits → operating admission / travel lines.\n• Guides — day-rate or outsourced labor tied to one departure → COGS-style guide outsourcing. Salaries or standing contractors → Payroll / operating.\n• Vehicles — tour-only rental or costs used only to execute that tour → COGS. Insurance, maintenance, depreciation for the whole business → Vehicle / maintenance operating lines.\n\n【Caveat】\nFor ticket “agency,” whether you are principal vs agent changes whether the ticket amount is your COGS or only your fee is revenue—confirm with your advisor. If a label is ambiguous, pick using the rules above, then adjust mappings in the category manager if needed.",
+      "cogsVsExpensesManualContent": {
+        "summaryTitle": "In one sentence",
+        "summaryText": "COGS (CAT024 family) is for costs that attach directly to delivering a specific tour or a customer-facing promise. General expenses (transport, meals, office, etc.) are closer to running the business day-to-day.",
+        "pillCogs": "COGS · CAT024",
+        "pillOpex": "Operating expenses",
+        "examplesTitle": "When two lines look alike",
+        "cogsColumnLabel": "Closer to COGS",
+        "opexColumnLabel": "Closer to operating expenses",
+        "examples": [
+          {
+            "label": "Fuel",
+            "cogs": "Gas for the vehicle used only to run that tour → e.g. “Fuel — tour execution vehicles.”",
+            "opex": "Office runs or general fleet → Transportation / vehicle operating lines."
+          },
+          {
+            "label": "Meals",
+            "cogs": "Bentos or meals you give customers as part of the product → COGS (customer-provided meals).",
+            "opex": "Guides or staff eating on the job → Business meals / meals operating lines."
+          },
+          {
+            "label": "Admissions / show tickets",
+            "cogs": "Pass-through or wholesale bundled into what you sell → COGS / admission-style lines.",
+            "opex": "Staff training or internal visits → Operating admission / travel lines."
+          },
+          {
+            "label": "Guides / labor",
+            "cogs": "Day-rate or outsourced labor tied to one departure → COGS-style guide outsourcing.",
+            "opex": "Salaries or standing contractors → Payroll / operating."
+          },
+          {
+            "label": "Vehicles",
+            "cogs": "Tour-only rental or costs used only to execute that tour → COGS.",
+            "opex": "Insurance, maintenance, depreciation for the whole business → Vehicle / maintenance operating lines."
+          }
+        ],
+        "noteTitle": "Caveat",
+        "noteText": "For ticket “agency,” principal vs agent changes whether the ticket is COGS or only your fee is revenue—confirm with your advisor. If a label is ambiguous, use the rules above, then adjust mappings in the category manager if needed."
+      },
       "cogsVsExpensesManualClose": "Close"
     },
     "standardLeafDoubleCheck": {
@@ -3342,31 +3382,14 @@
       "tourCustomerMealsTitle": "Is “Tour customer meals” correct?",
       "tourCustomerMealsBody": "This is for meals provided to customers during a tour under the meals / tour-customer path.\n\nContrast with:\n• Bento / meals (customer-provided) (COGS) — same customer-facing meal, but classified as COGS / Line 4 depending on policy.\n• Business meals — meals for guides or staff themselves.\n\nConfirm whether this should be COGS or the tour-customer meals line, then continue."
     },
-    "unifiedBulk": {
-      "openButton": "Bulk standardize",
-      "title": "Bulk-apply standard classification",
-      "description": "Align existing rows so payment-for text, category, and expense type match the standard category tree. Preview counts first, then apply.",
-      "modeLabel": "How to match",
-      "modeMappingTitle": "Use category manager mappings",
-      "modeMappingHint": "Uses expense_category_mappings for source_table company_expenses when the mapped standard id is a selectable leaf.",
-      "modeTextTitle": "Match payment-for text",
-      "modeTextHint": "When paid-for text exactly equals a standard item’s Korean display name (trimmed), apply that leaf’s classification.",
-      "preview": "Preview",
-      "loading": "Working…",
-      "previewDone": "Preview: {count} row(s) would change",
-      "previewTitle": "Sample changes (showing up to 50 of {count})",
-      "apply": "Apply",
-      "close": "Close",
-      "confirmApply": "Update {count} row(s) to the standard classification? (Paid-for labels will be cleared.)",
-      "applyDone": "Updated {count} row(s).",
-      "nothingToApply": "Nothing to apply from the preview.",
-      "error": "Request failed."
-    },
     "paidForNormalization": {
       "openButton": "Normalize paid for",
       "title": "Normalize paid-for text",
-      "description": "Align raw paid-for text to the standard category tree from the category manager—the same selectable list as “Standard payment description” on the expense form. Applying updates paid-for text, company category, expense type, and tax-deductible for every matching row, and clears any legacy paid-for label link.",
-      "onlyUnlabeled": "Show rows with no standard payment description only",
+      "description": "Groups expenses by the raw paid-for string, then pick a leaf from the category manager’s standard tree (same as “Standard payment description” on the expense form). Applying keeps the original payment-for text, fills the standard_paid_for field with the canonical wording, updates company category, expense type, and tax-deductible, and does not remove legacy paid-for label links.",
+      "listFilterLabel": "Show",
+      "listFilterAll": "All groups",
+      "listFilterMissingStandard": "Groups with at least one expense missing standard payment for",
+      "listFilterUnlabeled": "Groups with no legacy paid-for label only",
       "refresh": "Refresh",
       "loading": "Loading…",
       "empty": "Nothing to show.",
@@ -3374,6 +3397,7 @@
       "colCount": "Count",
       "colCurrentLabel": "Legacy paid-for label (if any)",
       "colTargetLabel": "New standard payment description",
+      "pickerNoSelection": "No selection",
       "colAction": "Apply",
       "pickLabel": "Choose a standard payment description.",
       "apply": "Apply to all",
@@ -3383,9 +3407,32 @@
       "loadStatsError": "Could not load stats.",
       "loadLabelsError": "Could not load legacy labels (for display only).",
       "loadCategoriesError": "Could not load standard categories from the category manager.",
-      "noStandardCategories": "No active standard categories. Add them in the category manager first.",
+      "noStandardCategories": "No standard categories found. Add them under Standard categories in the category manager.",
+      "inactiveCategory": "inactive",
       "loadError": "Could not load data.",
-      "vehicleTag": "Vehicle maintenance link"
+      "vehicleTag": "Vehicle maintenance link",
+      "rowSelectHint": "Click a row to see expenses with this paid-for text below. Click the same row again to collapse.",
+      "detailTitle": "Matching expenses ({total})",
+      "detailLoading": "Loading expense list…",
+      "detailEmpty": "No expenses to show.",
+      "detailLoadError": "Could not load the expense list.",
+      "detailClose": "Collapse list",
+      "detailColDate": "Date",
+      "detailColAmount": "Amount",
+      "detailColPaidTo": "Paid to",
+      "detailColCategory": "Category",
+      "detailColExpenseType": "Type",
+      "detailColDescription": "Description",
+      "detailColStatus": "Status",
+      "detailPrev": "Previous",
+      "detailNext": "Next",
+      "detailPageStatus": "{from}–{to} of {total} (page {page} / {totalPages})",
+      "detailSelectAllPage": "Select all on this page",
+      "detailApplySelected": "Apply to selected",
+      "detailApplyingSelected": "Applying…",
+      "detailNoneSelected": "Select one or more expenses to apply.",
+      "detailApplySelectedSuccess": "Updated {count} selected row(s).",
+      "detailSelectedCount": "{count} selected"
     },
     "maintenanceLinks": {
       "title": "Linked vehicle maintenance records",
@@ -3467,7 +3514,49 @@
       "status": "Status",
       "vehicle": "Vehicle",
       "paidFor": "Payment for",
+      "standardPaidFor": "Standard payment for",
+      "standardPaidForSet": "Saved",
+      "standardPaidForUnset": "Not saved",
       "all": "All"
+    },
+    "listBatchStandard": {
+      "toolbarTitle": "Apply a standard category to selected rows",
+      "preservePaidForHint": "Original “Payment for” text is kept. The standardized wording is stored only in “Standard payment for.” Category, expense type, and tax-deductible follow the standard mapping.",
+      "selectedCount": "{count} selected",
+      "clearSelection": "Clear selection",
+      "apply": "Apply standard category",
+      "applying": "Applying…",
+      "noSelectionToast": "Select one or more expenses in the list.",
+      "noStandardLeafToast": "Choose a standard category (detail line) to apply.",
+      "applySuccess": "Updated {count} expense(s).",
+      "applyPartial": "Only {updated} of {requested} selected expense(s) were updated. Permissions or other rules may have blocked the rest.",
+      "applyError": "Bulk apply failed.",
+      "noStandardData": "Standard categories could not be loaded.",
+      "selectRowAria": "Select this expense",
+      "selectAllPageAria": "Select all on this page",
+      "selectPage": "Select all on this page",
+      "deselectPage": "Clear selection on this page"
+    },
+    "listStandardPaidFor": {
+      "column": "Standard payment for",
+      "columnHint": "Normalized text from bulk apply or the standard leaf. “Payment for” on the left is the original submission text."
+    },
+    "listQuickEdit": {
+      "standardTitle": "Standard payment for",
+      "standardDescription": "Pick the normalized standard text for this expense. The original “payment for” text is unchanged.",
+      "paymentTitle": "Payment method",
+      "paymentDescription": "Choose how this expense was paid.",
+      "vehicleTitle": "Vehicle",
+      "vehicleDescription": "Link this expense to a vehicle.",
+      "saving": "Saving…",
+      "saveError": "Could not save. Please try again.",
+      "tapToSetStandard": "Tap to set standard payment for",
+      "tapToSetPayment": "Tap to set payment method",
+      "tapToSetVehicle": "Tap to set vehicle",
+      "openStandardHint": "Click to change standard payment for",
+      "openPaymentHint": "Click to change payment method",
+      "openVehicleHint": "Click to change vehicle",
+      "paymentRequired": "Please select a payment method."
     },
     "listInlineEdit": {
       "enter": "Edit in table",

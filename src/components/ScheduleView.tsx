@@ -1220,6 +1220,15 @@ export default function ScheduleView() {
     [monthDays]
   )
 
+  /** 그리드 마지막 컬럼 날짜(익월 1일 패딩). 달력 월 말일만 기준으로 멀티데이를 자르면 말일 시작 1박2일이 하루로 잘림 */
+  const scheduleGridLastDay = useMemo(
+    () =>
+      monthDays.length > 0
+        ? dayjs(monthDays[monthDays.length - 1].dateString)
+        : dayjs(currentDate).endOf('month'),
+    [monthDays, currentDate]
+  )
+
   // 날짜 컬럼 공통 스타일 계산: 최소 40px, 남는 공간은 균등 분배
   const fixedSideColumnsPx = 176 // 좌측 제목칸 96 + 우측 합계 80
   const dayColumnWidthCalc = useMemo(() => `calc((100% - ${fixedSideColumnsPx}px) / ${monthDays.length})`, [monthDays.length])
@@ -2567,13 +2576,12 @@ export default function ScheduleView() {
             multiDayDays: multiDayDays
           } as DailyData
           
-          // 다음달로 이어지는 투어의 경우 현재 월의 마지막 날까지 표시
+          // 그리드 밖으로 넘어가는 경우에만 일수·화살표 조정 (익월 1일 컬럼까지는 그리드에 포함)
           const start = dayjs(dateString)
           const end = start.add(multiDayDays - 1, 'day')
-          const monthEnd = dayjs(currentDate).endOf('month')
-          if (end.isAfter(monthEnd, 'day')) {
-            const daysInCurrentMonth = monthEnd.diff(start, 'day') + 1
-            dailyData[dateString].multiDayDays = daysInCurrentMonth
+          if (end.isAfter(scheduleGridLastDay, 'day')) {
+            const daysVisibleOnGrid = scheduleGridLastDay.diff(start, 'day') + 1
+            dailyData[dateString].multiDayDays = Math.max(1, daysVisibleOnGrid)
             ;(dailyData[dateString] as DailyData).extendsToNextMonth = true
           } else {
             dailyData[dateString].multiDayDays = multiDayDays
@@ -2645,7 +2653,7 @@ export default function ScheduleView() {
     })
 
     return data
-  }, [tours, reservations, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors, currentDate, isOffDate, defaultPresetIds])
+  }, [tours, reservations, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors, currentDate, isOffDate, defaultPresetIds, scheduleGridLastDay])
 
   // 월 이동
   const goToPreviousMonth = () => {
@@ -4532,8 +4540,7 @@ export default function ScheduleView() {
                   if (dayData?.isMultiDay && dayData.multiDayDays >= 1) {
                     const start = dayjs(dateString)
                     const end = start.add(dayData.multiDayDays - 1, 'day')
-                    const lastDayOfCurrentMonth = dayjs(currentDate).endOf('month')
-                    const extendsToNextMonth = end.isAfter(lastDayOfCurrentMonth, 'day')
+                    const extendsToNextMonth = end.isAfter(scheduleGridLastDay, 'day')
                     
                     multiDayTours[dateString] = {
                       startDate: dateString,
@@ -4575,8 +4582,7 @@ export default function ScheduleView() {
                           guideInitials = gInfoName.split('').map((ch: string) => ch.charAt(0)).join('').substring(0, 2)
                         }
                       }
-                      const lastDayOfCurrentMonth = dayjs(currentDate).endOf('month')
-                      const extendsToNextMonth = end.isAfter(lastDayOfCurrentMonth, 'day')
+                      const extendsToNextMonth = end.isAfter(scheduleGridLastDay, 'day')
                       const startKey = start.format('YYYY-MM-DD')
                       if (!multiDayTours[startKey]) {
                         multiDayTours[startKey] = {
@@ -4597,7 +4603,10 @@ export default function ScheduleView() {
                         }
                         
                         // 이전 달에서 시작한 멀티데이 투어의 경우 이번 달에 해당하는 일수만큼 합계에 추가
-                        const daysInCurrentMonth = Math.min(mdays, lastDayOfCurrentMonth.diff(firstDayOfMonth, 'day') + 1)
+                        const daysInCurrentMonth = Math.min(
+                          mdays,
+                          dayjs(currentDate).endOf('month').diff(firstDayOfMonth, 'day') + 1
+                        )
                         if (daysInCurrentMonth > 0) {
                         // 이전 달에서 시작한 투어는 totalPeople이 0이므로 assignedPeople만 계산
                         // totalAssignedPeople += assignedPeople * daysInCurrentMonth

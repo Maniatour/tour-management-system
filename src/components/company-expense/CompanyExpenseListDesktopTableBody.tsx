@@ -1,25 +1,16 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import React from 'react'
 import { TableBody, TableCell, TableRow } from '@/components/ui/table'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Pencil, Check, X, Wrench } from 'lucide-react'
+import { Wrench } from 'lucide-react'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
-import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { Database } from '@/lib/database.types'
-import { CompanyExpenseInlineListDraft } from './companyExpenseListInlineTypes'
-import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
-import {
-  applyStandardLeafToCompanyExpense,
-  matchUnifiedLeafIdFromForm,
-  type UnifiedStandardLeafGroup,
-} from '@/lib/companyExpenseStandardUnified'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type TeamMember = Database['public']['Tables']['team']['Row']
-
-const STATUS_VALUES = ['pending', 'approved', 'rejected', 'paid'] as const
 
 type PaidForLabelRow = {
   id: string
@@ -58,415 +49,160 @@ function paidForLabelBadge(
 
 type Props = {
   expenses: CompanyExpense[]
-  listTableEditMode: boolean
-  inlineEditingId: string | null
-  inlineDraft: CompanyExpenseInlineListDraft | null
-  setInlineDraft: React.Dispatch<React.SetStateAction<CompanyExpenseInlineListDraft | null>>
-  inlineSaving: boolean
-  onSaveInline: () => void
-  onCancelInline: () => void
-  onStartInline: (e: CompanyExpense) => void
   handleEdit: (e: CompanyExpense) => void
-  /** tailwind: h-8 text-xs w-full... */
-  inputCls: string
   reconciledExpenseIds: Set<string>
   paymentMethodMap: Record<string, string>
-  paymentMethodOptions: { id: string; name: string }[]
   getCategoryLabel: (c: string) => string
-  categorySelectOptions: { value: string; label: string }[]
-  expenseTypeSelectOptions: { value: string; label: string }[]
   getStatusBadge: (s: string | null) => React.ReactNode
   hasUsableVehicleId: (id: string | null | undefined) => boolean
   getVehicleLineLabel: (id: string) => string
   openVehicleMaintenanceHistory: (id: string) => void
   renderEmployeeEmailCell: (e: CompanyExpense) => React.ReactNode
-  vehicles: Database['public']['Tables']['vehicles']['Row'][]
   teamMembers: Map<string, TeamMember>
   locale: string
   paidForLabels: PaidForLabelRow[]
-  unifiedStandardGroups: UnifiedStandardLeafGroup[]
-  expenseStandardCategories: ExpenseStandardCategoryPickRow[]
   t: (key: string) => string
+  selectedExpenseIds: Set<string>
+  onToggleExpenseSelect: (id: string, selected: boolean) => void
+  onOpenQuickStandard: (e: CompanyExpense) => void
+  onOpenQuickPayment: (e: CompanyExpense) => void
+  onOpenQuickVehicle: (e: CompanyExpense) => void
 }
+
+const cellClickableCls =
+  'cursor-pointer rounded-md px-1 -mx-1 py-0.5 transition-colors hover:bg-muted/80 hover:text-foreground underline-offset-2 hover:underline'
 
 export function CompanyExpenseListDesktopTableBody({
   expenses,
-  listTableEditMode,
-  inlineEditingId,
-  inlineDraft,
-  setInlineDraft,
-  inlineSaving,
-  onSaveInline,
-  onCancelInline,
-  onStartInline,
   handleEdit,
-  inputCls,
   reconciledExpenseIds,
   paymentMethodMap,
-  paymentMethodOptions,
   getCategoryLabel,
-  categorySelectOptions,
-  expenseTypeSelectOptions,
   getStatusBadge,
   hasUsableVehicleId,
   getVehicleLineLabel,
   openVehicleMaintenanceHistory,
   renderEmployeeEmailCell,
-  vehicles,
   teamMembers,
   locale,
   paidForLabels,
-  unifiedStandardGroups,
-  expenseStandardCategories,
   t,
+  selectedExpenseIds,
+  onToggleExpenseSelect,
+  onOpenQuickStandard,
+  onOpenQuickPayment,
+  onOpenQuickVehicle,
 }: Props) {
-  const activePaidForLabels = useMemo(
-    () => paidForLabels.filter((l) => l.is_active !== false),
-    [paidForLabels]
-  )
-
   return (
     <TableBody>
-      {expenses.map((expense) => {
-        const isEditing = Boolean(
-          listTableEditMode && inlineEditingId === expense.id && inlineDraft
-        )
-        if (isEditing && inlineDraft) {
-          const d = inlineDraft
-          return (
-            <TableRow key={expense.id} className="align-top border-amber-200/50 bg-amber-50/25">
-              <TableCell className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
-              </TableCell>
-              <TableCell className="py-2 w-[9rem]">
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={d.submit_on}
-                  onChange={(e) => setInlineDraft({ ...d, submit_on: e.target.value })}
-                />
-              </TableCell>
-              <TableCell className="py-2 min-w-[5.5rem] max-w-[8rem]">
-                <input
-                  className={inputCls}
-                  value={d.paid_to}
-                  onChange={(e) => setInlineDraft({ ...d, paid_to: e.target.value })}
-                />
-              </TableCell>
-              <TableCell className="py-2 min-w-[7rem] max-w-[11rem]">
-                <div className="space-y-1 min-w-0">
-                  {unifiedStandardGroups.length > 0 && (
-                    <select
-                      className={inputCls}
-                      title={t('form.unifiedStandardClassification')}
-                      value={(() => {
-                        const matched = matchUnifiedLeafIdFromForm(
-                          d.paid_for,
-                          d.category,
-                          d.expense_type,
-                          expenseStandardCategories,
-                          locale
-                        )
-                        return matched === '__custom__' ? '' : `std:${matched}`
-                      })()}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setInlineDraft((prev) => {
-                          if (!prev) return prev
-                          if (!v) return { ...prev, paid_for_label_id: '' }
-                          const id = v.startsWith('std:') ? v.slice(4) : ''
-                          const byId = new Map(expenseStandardCategories.map((c) => [c.id, c]))
-                          const applied = applyStandardLeafToCompanyExpense(id, byId)
-                          if (!applied) return prev
-                          return {
-                            ...prev,
-                            paid_for: applied.paid_for,
-                            category: applied.category,
-                            expense_type: applied.expense_type,
-                            paid_for_label_id: '',
-                          }
-                        })
-                      }}
-                    >
-                      <option value="">{t('form.paidForStandardCategoryManual')}</option>
-                      {unifiedStandardGroups.map((g) => (
-                        <optgroup key={g.rootId} label={g.groupLabel}>
-                          {g.items.map((it) => (
-                            <option key={it.id} value={`std:${it.id}`}>
-                              {it.displayLabel}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  )}
-                  <input
-                    className={inputCls}
-                    value={d.paid_for}
-                    onChange={(e) =>
-                      setInlineDraft({ ...d, paid_for: e.target.value, paid_for_label_id: '' })
-                    }
-                  />
-                  <select
-                    className={inputCls}
-                    value={d.paid_for_label_id || ''}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      setInlineDraft((prev) => {
-                        if (!prev) return prev
-                        if (!v) return { ...prev, paid_for_label_id: '' }
-                        const lab = activePaidForLabels.find((l) => l.id === v)
-                        return {
-                          ...prev,
-                          paid_for_label_id: v,
-                          paid_for: lab?.label_ko ?? prev.paid_for,
-                        }
-                      })
-                    }}
-                  >
-                    <option value="">{t('listInlineEdit.standardLabelNoneOption')}</option>
-                    {activePaidForLabels.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.label_ko}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </TableCell>
-              <TableCell className="py-2 min-w-[5.5rem] max-w-[9rem]">
-                <input
-                  className={inputCls}
-                  value={d.description}
-                  onChange={(e) => setInlineDraft({ ...d, description: e.target.value })}
-                />
-              </TableCell>
-              <TableCell className="py-2 w-24">
-                <input
-                  type="number"
-                  step="0.01"
-                  className={inputCls + ' text-right tabular-nums'}
-                  value={d.amount}
-                  onChange={(e) => setInlineDraft({ ...d, amount: e.target.value })}
-                />
-              </TableCell>
-              <TableCell className="py-2 min-w-[8rem] max-w-[14rem]">
-                <PaymentMethodAutocomplete
-                  options={paymentMethodOptions}
-                  valueId={d.payment_method}
-                  onChange={(id) => setInlineDraft({ ...d, payment_method: id })}
-                  disabled={inlineSaving}
-                  pleaseSelectLabel={t('form.selectPaymentMethodPlaceholder')}
-                  className={inputCls}
-                />
-              </TableCell>
-              <TableCell className="w-36 py-2">
-                <div className="flex flex-col gap-1 min-w-0">
-                  <select
-                    className={inputCls}
-                    value={d.category}
-                    onChange={(e) => setInlineDraft({ ...d, category: e.target.value })}
-                  >
-                    <option value="">{t('listInlineEdit.categoryEmpty')}</option>
-                    {categorySelectOptions.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className={inputCls}
-                    value={d.expense_type}
-                    onChange={(e) => setInlineDraft({ ...d, expense_type: e.target.value })}
-                  >
-                    <option value="">{t('listInlineEdit.expenseTypeEmpty')}</option>
-                    {expenseTypeSelectOptions.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </TableCell>
-              <TableCell className="max-w-[12rem] py-2">
-                <select
-                  className={inputCls}
-                  value={d.vehicle_id}
-                  onChange={(e) => setInlineDraft({ ...d, vehicle_id: e.target.value })}
-                >
-                  <option value="none">{t('listInlineEdit.noVehicle')}</option>
-                  {vehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.id}>
-                      {`${vehicle.vehicle_number || vehicle.vehicle_type || 'Unknown'} (${vehicle.vehicle_category || 'N/A'})`}
-                    </option>
-                  ))}
-                </select>
-              </TableCell>
-              <TableCell className="w-12 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                {hasUsableVehicleId(d.vehicle_id) ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => openVehicleMaintenanceHistory(d.vehicle_id)}
-                    title={`${t('vehicleMaintenanceHistory.openButton')} — ${getVehicleLineLabel(d.vehicle_id)}`}
-                  >
-                    <Wrench className="w-4 h-4" />
-                  </Button>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell className="w-28 py-2">
-                <select
-                  className={inputCls}
-                  value={d.status}
-                  onChange={(e) => setInlineDraft({ ...d, status: e.target.value })}
-                >
-                  {STATUS_VALUES.map((s) => (
-                    <option key={s} value={s}>
-                      {t(`status.${s}`)}
-                    </option>
-                  ))}
-                </select>
-              </TableCell>
-              {renderEmployeeEmailCell(expense)}
-              <TableCell className="py-2 min-w-[6rem]">
-                <input
-                  type="text"
-                  className={inputCls}
-                  value={d.submit_by}
-                  onChange={(e) => setInlineDraft({ ...d, submit_by: e.target.value })}
-                  autoComplete="off"
-                />
-              </TableCell>
-              <TableCell className="py-2 w-[6.5rem] text-right" onClick={(e) => e.stopPropagation()}>
-                <div className="flex flex-col gap-1 items-stretch min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 w-full"
-                    onClick={onSaveInline}
-                    disabled={inlineSaving}
-                  >
-                    <Check className="h-3.5 w-3.5 sm:mr-1" />
-                    {inlineSaving ? t('listInlineEdit.saving') : t('buttons.save')}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-full"
-                    onClick={onCancelInline}
-                    disabled={inlineSaving}
-                  >
-                    <X className="h-3.5 w-3.5 sm:mr-1" />
-                    {t('buttons.cancel')}
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          )
-        }
-        return (
-          <TableRow
-            key={expense.id}
-            onClick={!listTableEditMode ? () => handleEdit(expense) : undefined}
-            className={!listTableEditMode ? 'cursor-pointer hover:bg-gray-50' : 'hover:bg-gray-50/50'}
-          >
-            <TableCell className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
-              <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
-            </TableCell>
-            <TableCell className="py-2">
-              {expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}
-            </TableCell>
-            <TableCell className="py-2">{expense.paid_to}</TableCell>
-            <TableCell className="max-w-[11rem] py-2">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="truncate text-sm" title={expense.paid_for ?? undefined}>
-                  {expense.paid_for}
-                </span>
-                {paidForLabelBadge(expense, paidForLabels, locale, t)}
-              </div>
-            </TableCell>
-            <TableCell className="max-w-xs truncate py-2">{expense.description || '-'}</TableCell>
-            <TableCell className="font-medium py-2">
-              ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
-            </TableCell>
-            <TableCell className="py-2">
+      {expenses.map((expense) => (
+        <TableRow key={expense.id} onClick={() => handleEdit(expense)} className="cursor-pointer hover:bg-gray-50">
+          <TableCell className="py-2 w-10 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={selectedExpenseIds.has(expense.id)}
+              onCheckedChange={(c) => onToggleExpenseSelect(expense.id, c === true)}
+              aria-label={t('listBatchStandard.selectRowAria')}
+            />
+          </TableCell>
+          <TableCell className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
+            <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
+          </TableCell>
+          <TableCell className="py-2">
+            {expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}
+          </TableCell>
+          <TableCell className="py-2">{expense.paid_to}</TableCell>
+          <TableCell className="max-w-[11rem] py-2">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="truncate text-sm" title={expense.paid_for ?? undefined}>
+                {expense.paid_for}
+              </span>
+              {paidForLabelBadge(expense, paidForLabels, locale, t)}
+            </div>
+          </TableCell>
+          <TableCell className="max-w-[10rem] py-2 text-sm align-top" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className={`${cellClickableCls} w-full text-left`}
+              title={t('listQuickEdit.openStandardHint')}
+              onClick={() => onOpenQuickStandard(expense)}
+            >
+              {expense.standard_paid_for ? (
+                <span className="line-clamp-3 text-gray-800">{expense.standard_paid_for}</span>
+              ) : (
+                <span className="text-muted-foreground">{t('listQuickEdit.tapToSetStandard')}</span>
+              )}
+            </button>
+          </TableCell>
+          <TableCell className="max-w-xs truncate py-2">{expense.description || '-'}</TableCell>
+          <TableCell className="font-medium py-2">
+            ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
+          </TableCell>
+          <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className={`${cellClickableCls} max-w-full truncate text-left text-sm`}
+              title={t('listQuickEdit.openPaymentHint')}
+              onClick={() => onOpenQuickPayment(expense)}
+            >
               {expense.payment_method
                 ? paymentMethodMap[expense.payment_method] || expense.payment_method
-                : '-'}
-            </TableCell>
-            <TableCell className="w-32 py-2">
-              {expense.category && <Badge variant="outline">{getCategoryLabel(expense.category)}</Badge>}
-            </TableCell>
-            <TableCell
-              className="max-w-[12rem] py-2 text-xs text-gray-800 align-top"
-              title={
-                hasUsableVehicleId(expense.vehicle_id)
-                  ? getVehicleLineLabel(expense.vehicle_id!)
-                  : undefined
-              }
+                : t('listQuickEdit.tapToSetPayment')}
+            </button>
+          </TableCell>
+          <TableCell className="w-32 py-2">
+            {expense.category && <Badge variant="outline">{getCategoryLabel(expense.category)}</Badge>}
+          </TableCell>
+          <TableCell
+            className="max-w-[12rem] py-2 text-xs text-gray-800 align-top"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className={`${cellClickableCls} line-clamp-2 w-full break-words text-left`}
+              title={t('listQuickEdit.openVehicleHint')}
+              onClick={() => onOpenQuickVehicle(expense)}
             >
               {hasUsableVehicleId(expense.vehicle_id) ? (
-                <span className="line-clamp-2 break-words">
-                  {getVehicleLineLabel(expense.vehicle_id!)}
-                </span>
+                <span title={getVehicleLineLabel(expense.vehicle_id!)}>{getVehicleLineLabel(expense.vehicle_id!)}</span>
               ) : (
-                <span className="text-muted-foreground">—</span>
+                <span className="text-muted-foreground">{t('listQuickEdit.tapToSetVehicle')}</span>
               )}
-            </TableCell>
-            <TableCell className="w-12 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-              {hasUsableVehicleId(expense.vehicle_id) ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => openVehicleMaintenanceHistory(expense.vehicle_id!)}
-                  title={`${t('vehicleMaintenanceHistory.openButton')} — ${getVehicleLineLabel(expense.vehicle_id!)}`}
-                >
-                  <Wrench className="w-4 h-4" />
-                </Button>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </TableCell>
-            <TableCell className="w-28 py-2">{getStatusBadge(expense.status || 'pending')}</TableCell>
-            {renderEmployeeEmailCell(expense)}
-            <TableCell className="py-2">
-              {(() => {
-                if (!expense.submit_by) return '-'
-                try {
-                  const member = teamMembers.get(expense.submit_by.toLowerCase())
-                  if (member) {
-                    return locale === 'ko' ? member.name_ko : member.name_en || member.name_ko
-                  }
-                  return expense.submit_by
-                } catch {
-                  return expense.submit_by
-                }
-              })()}
-            </TableCell>
-            {listTableEditMode && (
-              <TableCell className="py-2 w-[6.5rem] text-right" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 w-full"
-                  onClick={() => onStartInline(expense)}
-                  disabled={inlineEditingId != null && inlineEditingId !== expense.id}
-                >
-                  <Pencil className="h-3.5 w-3.5 sm:mr-1" />
-                  <span className="hidden sm:inline">{t('listInlineEdit.pencil')}</span>
-                </Button>
-              </TableCell>
+            </button>
+          </TableCell>
+          <TableCell className="w-12 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+            {hasUsableVehicleId(expense.vehicle_id) ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => openVehicleMaintenanceHistory(expense.vehicle_id!)}
+                title={`${t('vehicleMaintenanceHistory.openButton')} — ${getVehicleLineLabel(expense.vehicle_id!)}`}
+              >
+                <Wrench className="w-4 h-4" />
+              </Button>
+            ) : (
+              <span className="text-muted-foreground">—</span>
             )}
-          </TableRow>
-        )
-      })}
+          </TableCell>
+          <TableCell className="w-28 py-2">{getStatusBadge(expense.status || 'pending')}</TableCell>
+          {renderEmployeeEmailCell(expense)}
+          <TableCell className="py-2">
+            {(() => {
+              if (!expense.submit_by) return '-'
+              try {
+                const member = teamMembers.get(expense.submit_by.toLowerCase())
+                if (member) {
+                  return locale === 'ko' ? member.name_ko : member.name_en || member.name_ko
+                }
+                return expense.submit_by
+              } catch {
+                return expense.submit_by
+              }
+            })()}
+          </TableCell>
+        </TableRow>
+      ))}
     </TableBody>
   )
 }

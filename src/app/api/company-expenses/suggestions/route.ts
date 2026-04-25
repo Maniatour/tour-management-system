@@ -18,7 +18,7 @@ function mergeDistinctSorted(base: string[], extra: string[]): string[] {
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
 
     const [rpcResult, pmResult] = await Promise.all([
       supabase.rpc('company_expense_suggestions'),

@@ -8,7 +8,7 @@ type CompanyExpenseUpdate = Database['public']['Tables']['company_expenses']['Up
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { searchParams } = new URL(request.url)
     
     // 쿼리 파라미터 추출
@@ -19,6 +19,8 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
     const paidFor = searchParams.get('paid_for')
+    /** all 외: set = standard_paid_for 있음, unset = 없음(null) */
+    const standardPaidFor = searchParams.get('standard_paid_for')
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
     const from = (page - 1) * limit
@@ -72,6 +74,13 @@ export async function GET(request: NextRequest) {
       query = query.eq('paid_for', paidFor.trim())
     }
 
+    // 표준 결제내용(standard_paid_for) 저장 여부
+    if (standardPaidFor === 'set') {
+      query = query.not('standard_paid_for', 'is', null)
+    } else if (standardPaidFor === 'unset') {
+      query = query.is('standard_paid_for', null)
+    }
+
     // 지출일(submit_on) 구간 — YYYY-MM-DD
     if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
       query = query.gte('submit_on', `${dateFrom}T00:00:00.000Z`)
@@ -107,7 +116,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const body = await request.json()
     
     const {
@@ -131,10 +140,11 @@ export async function POST(request: NextRequest) {
       paid_for_label_id,
     } = body
     
-    // 필수 필드 검증 (ID는 자동 생성되므로 제외)
+    // 필수: 결제처·금액·제출자·결제수단 (paid_for는 선택 — 빈 문자열 저장 가능)
     const paymentMethodTrimmed =
       typeof payment_method === 'string' ? payment_method.trim() : ''
-    if (!paid_to || !paid_for || !amount || !submit_by || !paymentMethodTrimmed) {
+    const paidForTrimmed = typeof paid_for === 'string' ? paid_for.trim() : ''
+    if (!paid_to || !amount || !submit_by || !paymentMethodTrimmed) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 })
     }
     
@@ -145,7 +155,7 @@ export async function POST(request: NextRequest) {
       // ID는 자동 생성되므로 제공되지 않은 경우 undefined로 설정
       ...(id && { id }),
       paid_to,
-      paid_for,
+      paid_for: paidForTrimmed,
       description: description || null,
       amount: parseFloat(amount),
       payment_method: paymentMethodTrimmed,
@@ -186,7 +196,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const body = await request.json()
     
     const { id, ...updateData } = body
@@ -221,7 +231,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

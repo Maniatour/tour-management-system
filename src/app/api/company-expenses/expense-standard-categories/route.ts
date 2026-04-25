@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase'
 
-/** 카테고리 매니저와 동일한 활성 표준 카테고리 목록 (지출 폼·정규화 선택용) */
+/** 카테고리 매니저 «표준 카테고리»와 동일: 비활성 포함 전체. RLS는 authenticated 전용이라 API만 쓸 때는 service role로 조회 */
 export async function GET() {
   try {
-    const supabase = createClient()
-    const { data, error } = await supabase
+    const db = supabaseAdmin ?? (await createClient())
+    const { data, error } = await db
       .from('expense_standard_categories')
       .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
-      .eq('is_active', true)
       .order('display_order', { ascending: true })
 
     if (error) {

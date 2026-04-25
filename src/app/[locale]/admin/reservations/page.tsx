@@ -325,6 +325,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const replaceReservationsFromQueryResultRef = useRef(replaceReservationsFromQueryResult)
   replaceReservationsFromQueryResultRef.current = replaceReservationsFromQueryResult
 
+  const refreshReservationPricingForIdsRef = useRef(refreshReservationPricingForIds)
+  const refreshReservationOptionsPresenceForIdsRef = useRef(refreshReservationOptionsPresenceForIds)
+  refreshReservationPricingForIdsRef.current = refreshReservationPricingForIds
+  refreshReservationOptionsPresenceForIdsRef.current = refreshReservationOptionsPresenceForIds
+
   /**
    * 예약 ID → 투어 ID: tours.reservation_ids에 실제로 포함된 투어만 반영.
    * 동일 예약이 여러 투어에 남아 있으면 tour_status가 deleted인 투어는 뒤로 두고,
@@ -545,7 +550,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   }, [emailDropdownOpen])
 
   useEffect(() => {
-    if (!showDeletedReservationsModal) return
+    if (!showDeletedReservationsModal) {
+      setDeletedReservationsModalLoading(false)
+      return
+    }
     let cancelled = false
     void (async () => {
       setDeletedReservationsModalLoading(true)
@@ -558,6 +566,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           .limit(500)
         if (error || cancelled) {
           if (error) console.error('deleted reservations load:', error)
+          if (!cancelled) setDeletedModalReservations([])
           return
         }
         const rows = (data || []) as Record<string, unknown>[]
@@ -605,8 +614,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         const ids = mapped.map((r) => r.id)
         if (ids.length > 0) {
           await Promise.all([
-            refreshReservationPricingForIds(ids),
-            refreshReservationOptionsPresenceForIds(ids),
+            refreshReservationPricingForIdsRef.current(ids),
+            refreshReservationOptionsPresenceForIdsRef.current(ids),
           ])
         }
       } finally {
@@ -616,12 +625,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     return () => {
       cancelled = true
     }
-  }, [
-    showDeletedReservationsModal,
-    products,
-    refreshReservationPricingForIds,
-    refreshReservationOptionsPresenceForIds,
-  ])
+  }, [showDeletedReservationsModal, products])
 
   // ??? ??? ???
   const [tourInfoMap, setTourInfoMap] = useState<Map<string, {

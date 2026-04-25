@@ -42,6 +42,17 @@ export async function resolveFinancialApiAuth(request: NextRequest): Promise<
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
+  const resolveCookieSession = async () => {
+    const serverSb = await createServerSupabase()
+    const {
+      data: { session },
+    } = await serverSb.auth.getSession()
+    if (!session?.user?.email) {
+      return null
+    }
+    return { supabase: serverSb, userEmail: session.user.email }
+  }
+
   if (token) {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,17 +68,18 @@ export async function resolveFinancialApiAuth(request: NextRequest): Promise<
       error: userErr,
     } = await supabase.auth.getUser(token)
     if (userErr || !user?.email) {
+      const cookieAuth = await resolveCookieSession()
+      if (cookieAuth) {
+        return { ok: true, supabase: cookieAuth.supabase, userEmail: cookieAuth.userEmail }
+      }
       return { ok: false, response: NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 }) }
     }
     return { ok: true, supabase, userEmail: user.email }
   }
 
-  const serverSb = await createServerSupabase()
-  const {
-    data: { session },
-  } = await serverSb.auth.getSession()
-  if (!session?.user?.email) {
+  const cookieAuth = await resolveCookieSession()
+  if (!cookieAuth) {
     return { ok: false, response: NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 }) }
   }
-  return { ok: true, supabase: serverSb, userEmail: session.user.email }
+  return { ok: true, supabase: cookieAuth.supabase, userEmail: cookieAuth.userEmail }
 }

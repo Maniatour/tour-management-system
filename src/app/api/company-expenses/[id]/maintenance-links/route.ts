@@ -13,7 +13,7 @@ export async function GET(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
@@ -80,7 +80,7 @@ export async function PUT(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })

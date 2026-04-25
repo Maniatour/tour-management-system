@@ -1,18 +1,27 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import { fetchUploadApi } from '@/lib/uploadClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
@@ -29,7 +38,6 @@ import {
   Wrench,
   BarChart3,
   BookOpen,
-  ChevronsUpDown,
 } from 'lucide-react'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
@@ -38,10 +46,10 @@ import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAut
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { VehicleRepairCostReportModal } from '@/components/company-expense/VehicleRepairCostReportModal'
 import { CompanyExpenseListDesktopTableBody } from '@/components/company-expense/CompanyExpenseListDesktopTableBody'
-import type { CompanyExpenseInlineListDraft } from '@/components/company-expense/companyExpenseListInlineTypes'
 import { PaidForNormalizationModal } from '@/components/company-expense/PaidForNormalizationModal'
-import { CompanyExpenseUnifiedBulkModal } from '@/components/company-expense/CompanyExpenseUnifiedBulkModal'
+import { UnifiedStandardLeafPicker } from '@/components/company-expense/UnifiedStandardLeafPicker'
 import { CompanyExpenseMaintenanceLinksSection } from '@/components/company-expense/CompanyExpenseMaintenanceLinksSection'
+import { CogsVsExpensesManualDialog } from '@/components/company-expense/CogsVsExpensesManualDialog'
 import { VEHICLE_MAINTENANCE_PAID_FOR_LABEL_CODE } from '@/lib/companyExpensePaidForLabels'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import {
@@ -49,10 +57,8 @@ import {
   buildUnifiedStandardLeafGroups,
   flattenUnifiedLeaves,
   matchUnifiedLeafIdFromForm,
-  unifiedStandardGroupSelectChrome,
   VEHICLE_REPAIR_STANDARD_LEAF_ID,
   type UnifiedStandardLeafGroup,
-  type UnifiedStandardLeafItem,
 } from '@/lib/companyExpenseStandardUnified'
 import {
   standardLeafDoubleCheckMessageKeys,
@@ -126,8 +132,6 @@ interface VehicleMaintenanceIntegrationRow {
   vehicles?: { id: string; vehicle_number?: string; vehicle_type?: string; vehicle_category?: string | null } | null
 }
 
-const inlineListInputCls = 'h-8 text-xs w-full min-w-0 border border-input rounded-md bg-background px-2 py-1'
-
 export default function CompanyExpenseManager() {
   const t = useTranslations('companyExpense')
   const tVm = useTranslations('vehicleMaintenance')
@@ -154,6 +158,8 @@ export default function CompanyExpenseManager() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [vehicleFilter, setVehicleFilter] = useState('all')
   const [paidForFilter, setPaidForFilter] = useState('all')
+  /** 표준 결제내용(standard_paid_for) 저장 여부: all | set | unset */
+  const [standardPaidForFilter, setStandardPaidForFilter] = useState<'all' | 'set' | 'unset'>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
@@ -173,10 +179,16 @@ export default function CompanyExpenseManager() {
   const [vehicleMaintenanceLoading, setVehicleMaintenanceLoading] = useState(false)
   const [vehicleMaintenanceError, setVehicleMaintenanceError] = useState<string | null>(null)
   const [vehicleRepairReportOpen, setVehicleRepairReportOpen] = useState(false)
-  const [listTableEditMode, setListTableEditMode] = useState(false)
-  const [inlineEditingId, setInlineEditingId] = useState<string | null>(null)
-  const [inlineDraft, setInlineDraft] = useState<CompanyExpenseInlineListDraft | null>(null)
-  const [inlineSaving, setInlineSaving] = useState(false)
+  /** 목록 행: 표준 결제내용·결제방법·차량 빠른 수정 */
+  const [listQuickField, setListQuickField] = useState<
+    null | { type: 'standard'; expense: CompanyExpense } | { type: 'payment'; expense: CompanyExpense } | { type: 'vehicle'; expense: CompanyExpense }
+  >(null)
+  const [listQuickStandardLeafId, setListQuickStandardLeafId] = useState('')
+  const [listQuickPaymentMethodId, setListQuickPaymentMethodId] = useState('')
+  const [listQuickVehicleId, setListQuickVehicleId] = useState('')
+  const [listQuickSaving, setListQuickSaving] = useState(false)
+  /** 목록 표준 결제 빠른 수정: 콤보 목록이 열리면 모달을 더 높게 */
+  const [listQuickStandardListOpen, setListQuickStandardListOpen] = useState(false)
   const [paidForLabels, setPaidForLabels] = useState<
     Array<{
       id: string
@@ -188,7 +200,6 @@ export default function CompanyExpenseManager() {
     }>
   >([])
   const [paidForNormModalOpen, setPaidForNormModalOpen] = useState(false)
-  const [unifiedBulkModalOpen, setUnifiedBulkModalOpen] = useState(false)
   const [expenseStandardCategories, setExpenseStandardCategories] = useState<ExpenseStandardCategoryPickRow[]>([])
   /** 표준 결제 내용: 선택된 표준 리프(하위) id */
   const [standardHierarchyLeafId, setStandardHierarchyLeafId] = useState('')
@@ -196,10 +207,14 @@ export default function CompanyExpenseManager() {
   const [pendingStandardLeafConfirm, setPendingStandardLeafConfirm] =
     useState<StandardLeafDoubleCheckId | null>(null)
   const [cogsExpensesManualOpen, setCogsExpensesManualOpen] = useState(false)
-  const [unifiedStandardPickerOpen, setUnifiedStandardPickerOpen] = useState(false)
-  const [unifiedStandardSearchQuery, setUnifiedStandardSearchQuery] = useState('')
-  const unifiedStandardPickerRef = useRef<HTMLDivElement>(null)
-  const unifiedStandardSearchInputRef = useRef<HTMLInputElement>(null)
+  /** 목록에서 일괄 표준 카테고리 적용용 선택 id (현재 페이지·필터 결과 내) */
+  const [listSelectedIds, setListSelectedIds] = useState<Set<string>>(() => new Set())
+  const [listBatchLeafId, setListBatchLeafId] = useState('')
+  const [listBatchApplying, setListBatchApplying] = useState(false)
+  /** 표준 리프 재확인 다이얼로그: 폼 vs 목록 일괄 */
+  const [standardLeafConfirmSource, setStandardLeafConfirmSource] = useState<
+    'form' | 'listBatch' | 'listQuickStandard'
+  >('form')
 
   const [formData, setFormData] = useState<CompanyExpenseFormData>({
     id: '',
@@ -241,6 +256,9 @@ export default function CompanyExpenseManager() {
       if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
       if (vehicleFilter && vehicleFilter !== 'all') params.append('vehicle_id', vehicleFilter)
       if (paidForFilter && paidForFilter !== 'all') params.append('paid_for', paidForFilter)
+      if (standardPaidForFilter === 'set' || standardPaidForFilter === 'unset') {
+        params.append('standard_paid_for', standardPaidForFilter)
+      }
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
       
@@ -260,7 +278,7 @@ export default function CompanyExpenseManager() {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, paidForFilter, dateFrom, dateTo, page])
+  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, paidForFilter, standardPaidForFilter, dateFrom, dateTo, page])
 
   useEffect(() => {
     const ids = expenses.map((e) => e.id)
@@ -334,21 +352,14 @@ export default function CompanyExpenseManager() {
   // 필터 변경 시 1페이지로
   useEffect(() => {
     setPage(1)
-  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, paidForFilter, dateFrom, dateTo])
-
-  useEffect(() => {
-    if (!listTableEditMode) {
-      setInlineEditingId(null)
-      setInlineDraft(null)
-    }
-  }, [listTableEditMode])
+  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, paidForFilter, standardPaidForFilter, dateFrom, dateTo])
 
   const loadExpenseStandardCategories = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('expense_standard_categories')
         .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
-        .eq('is_active', true)
+        .or('is_active.is.null,is_active.eq.true')
         .order('display_order', { ascending: true })
       if (error) {
         setExpenseStandardCategories([])
@@ -429,30 +440,30 @@ export default function CompanyExpenseManager() {
   }, [expenseSuggestions, formData.paid_to])
 
   const unifiedStandardGroups: UnifiedStandardLeafGroup[] = useMemo(
-    () => buildUnifiedStandardLeafGroups(expenseStandardCategories, locale),
+    () => buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, { includeInactive: true }),
     [expenseStandardCategories, locale]
   )
 
   const unifiedFlatLeaves = useMemo(() => flattenUnifiedLeaves(unifiedStandardGroups), [unifiedStandardGroups])
 
-  const unifiedStandardPickerFiltered = useMemo(() => {
-    const q = unifiedStandardSearchQuery.trim().toLowerCase()
-    const out: { group: UnifiedStandardLeafGroup; items: UnifiedStandardLeafItem[] }[] = []
-    for (const g of unifiedStandardGroups) {
-      if (!q) {
-        out.push({ group: g, items: g.items })
-        continue
+  const listPageIds = useMemo(() => expenses.map((e) => e.id), [expenses])
+  const listAllPageSelected =
+    listPageIds.length > 0 && listPageIds.every((id) => listSelectedIds.has(id))
+  const listSomePageSelected = listPageIds.some((id) => listSelectedIds.has(id))
+
+  useEffect(() => {
+    const allowed = new Set(expenses.map((e) => e.id))
+    setListSelectedIds((prev) => {
+      let removed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id)
+        else removed = true
       }
-      const headerHit = g.groupLabel.toLowerCase().includes(q)
-      const matched = headerHit
-        ? g.items
-        : g.items.filter(
-            (it) => it.searchText.includes(q) || it.displayLabel.toLowerCase().includes(q)
-          )
-      if (matched.length > 0) out.push({ group: g, items: matched })
-    }
-    return out
-  }, [unifiedStandardGroups, unifiedStandardSearchQuery])
+      if (!removed && next.size === prev.size) return prev
+      return next
+    })
+  }, [expenses])
 
   const applyStandardHierarchyLeaf = useCallback(
     (leafId: string) => {
@@ -483,62 +494,97 @@ export default function CompanyExpenseManager() {
           expense_type: '',
           paid_for_label_id: '',
         }))
-        setUnifiedStandardPickerOpen(false)
-        setUnifiedStandardSearchQuery('')
         return
       }
       if (standardLeafRequiresDoubleCheck(leafId)) {
-        setUnifiedStandardPickerOpen(false)
-        setUnifiedStandardSearchQuery('')
+        setStandardLeafConfirmSource('form')
         setPendingStandardLeafConfirm(leafId)
         setStandardLeafConfirmOpen(true)
         return
       }
       applyStandardHierarchyLeaf(leafId)
-      setUnifiedStandardPickerOpen(false)
-      setUnifiedStandardSearchQuery('')
     },
     [applyStandardHierarchyLeaf]
   )
 
-  /** 트리거에 표시: «상위 › 세부» (영·한 병기) */
-  const standardLeafTriggerLabel = useMemo(() => {
-    if (!standardHierarchyLeafId) return ''
-    const g = unifiedStandardGroups.find((gr) => gr.items.some((i) => i.id === standardHierarchyLeafId))
-    const it = g?.items.find((i) => i.id === standardHierarchyLeafId)
-    if (!g || !it) return ''
-    const soleRoot = g.items.length === 1 && g.items[0].id === g.rootId
-    if (soleRoot) return it.displayLabel
-    return `${g.groupLabel} › ${it.displayLabel}`
-  }, [unifiedStandardGroups, standardHierarchyLeafId])
+  const handleListBatchStandardPick = useCallback((leafId: string | null) => {
+    setListBatchLeafId(leafId ?? '')
+  }, [])
 
-  useEffect(() => {
-    if (!isDialogOpen) {
-      setUnifiedStandardPickerOpen(false)
-      setUnifiedStandardSearchQuery('')
-    }
-  }, [isDialogOpen])
-
-  useEffect(() => {
-    if (!unifiedStandardPickerOpen) return
-    setUnifiedStandardSearchQuery('')
-    const id = window.requestAnimationFrame(() => {
-      unifiedStandardSearchInputRef.current?.focus()
+  const toggleListExpenseSelect = useCallback((id: string, selected: boolean) => {
+    setListSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (selected) next.add(id)
+      else next.delete(id)
+      return next
     })
-    return () => window.cancelAnimationFrame(id)
-  }, [unifiedStandardPickerOpen])
+  }, [])
 
-  useEffect(() => {
-    if (!unifiedStandardPickerOpen) return
-    const onDocMouseDown = (ev: MouseEvent) => {
-      const root = unifiedStandardPickerRef.current
-      if (root && !root.contains(ev.target as Node)) {
-        setUnifiedStandardPickerOpen(false)
+  const toggleListSelectAllPage = useCallback(() => {
+    setListSelectedIds((prev) => {
+      const ids = expenses.map((e) => e.id)
+      const allOn = ids.length > 0 && ids.every((id) => prev.has(id))
+      const next = new Set(prev)
+      if (allOn) {
+        ids.forEach((id) => next.delete(id))
+      } else {
+        ids.forEach((id) => next.add(id))
       }
+      return next
+    })
+  }, [expenses])
+
+  const executeListBatchStandardApply = useCallback(
+    async (standardLeafId: string) => {
+      const expenseIds = [...listSelectedIds]
+      if (expenseIds.length === 0) return
+      setListBatchApplying(true)
+      try {
+        const res = await fetch('/api/company-expenses/batch-apply-standard-leaf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expenseIds, standardLeafId }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error(typeof json.error === 'string' ? json.error : t('listBatchStandard.applyError'))
+          return
+        }
+        const updated = typeof json.updatedCount === 'number' ? json.updatedCount : 0
+        const requested = typeof json.requestedCount === 'number' ? json.requestedCount : expenseIds.length
+        if (updated < requested) {
+          toast.message(t('listBatchStandard.applyPartial', { updated, requested }))
+        } else {
+          toast.success(t('listBatchStandard.applySuccess', { count: updated }))
+        }
+        setListSelectedIds(new Set())
+        await loadExpenses()
+      } catch {
+        toast.error(t('listBatchStandard.applyError'))
+      } finally {
+        setListBatchApplying(false)
+      }
+    },
+    [listSelectedIds, loadExpenses, t]
+  )
+
+  const submitListBatchStandardApply = useCallback(() => {
+    if (listSelectedIds.size === 0) {
+      toast.error(t('listBatchStandard.noSelectionToast'))
+      return
     }
-    document.addEventListener('mousedown', onDocMouseDown)
-    return () => document.removeEventListener('mousedown', onDocMouseDown)
-  }, [unifiedStandardPickerOpen])
+    if (!listBatchLeafId.trim()) {
+      toast.error(t('listBatchStandard.noStandardLeafToast'))
+      return
+    }
+    if (standardLeafRequiresDoubleCheck(listBatchLeafId)) {
+      setStandardLeafConfirmSource('listBatch')
+      setPendingStandardLeafConfirm(listBatchLeafId)
+      setStandardLeafConfirmOpen(true)
+      return
+    }
+    void executeListBatchStandardApply(listBatchLeafId)
+  }, [listBatchLeafId, listSelectedIds, executeListBatchStandardApply, t])
 
   useEffect(() => {
     if (!isDialogOpen || unifiedStandardGroups.length === 0) return
@@ -677,18 +723,7 @@ export default function CompanyExpenseManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const hasUnifiedStandard = unifiedStandardGroups.length > 0
-    if (hasUnifiedStandard) {
-      if (!standardHierarchyLeafId.trim()) {
-        toast.error(t('form.standardPaidForRequired'))
-        return
-      }
-    } else if (!formData.paid_for?.trim()) {
-      toast.error('필수 필드를 모두 입력해주세요.')
-      return
-    }
-
-    // ID는 자동 생성되므로 검증에서 제외
+    // ID는 자동 생성되므로 검증에서 제외 (paid_for는 선택)
     if (!formData.paid_to || !formData.amount || !formData.payment_method?.trim()) {
       toast.error('필수 필드를 모두 입력해주세요.')
       return
@@ -740,6 +775,7 @@ export default function CompanyExpenseManager() {
 
       const submitData = {
         ...formData,
+        paid_for: (formData.paid_for ?? '').trim(),
         submit_on: submitOnIsoFromYmd(formData.submit_on),
         photo_url: formData.photo_url || uploadedFileUrls[0] || '', // 첫 번째 파일을 메인 이미지로
         attachments: attachmentsPayload,
@@ -802,7 +838,7 @@ export default function CompanyExpenseManager() {
       uploaded_files: [], // 기존 데이터에는 없으므로 빈 배열
       paid_for_label_id: expense.paid_for_label_id ? String(expense.paid_for_label_id) : ''
     })
-    const groups = buildUnifiedStandardLeafGroups(expenseStandardCategories, locale)
+    const groups = buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, { includeInactive: true })
     setStandardHierarchyLeafId('')
     if (groups.length > 0) {
       const m = matchUnifiedLeafIdFromForm(
@@ -961,6 +997,7 @@ export default function CompanyExpenseManager() {
     setStatusFilter('all')
     setVehicleFilter('all')
     setPaidForFilter('all')
+    setStandardPaidForFilter('all')
     setDateFrom('')
     setDateTo('')
   }
@@ -1013,96 +1050,194 @@ export default function CompanyExpenseManager() {
     })()
   }
 
-  const cancelInlineListEdit = useCallback(() => {
-    setInlineEditingId(null)
-    setInlineDraft(null)
-  }, [])
-
-  const startInlineListEdit = useCallback((expense: CompanyExpense) => {
-    setInlineEditingId(expense.id)
-    setInlineDraft({
-      submit_on: ymdFromSubmitOnIso(
-        (expense as { submit_on?: string | null }).submit_on ?? null
-      ),
-      paid_to: expense.paid_to ?? '',
-      paid_for: expense.paid_for ?? '',
-      paid_for_label_id: expense.paid_for_label_id ? String(expense.paid_for_label_id) : '',
-      description: expense.description ?? '',
-      amount: expense.amount != null ? String(expense.amount) : '',
-      payment_method: (expense.payment_method ?? '').trim(),
-      category: expense.category ?? '',
-      expense_type: expense.expense_type ?? '',
-      vehicle_id: expense.vehicle_id && expense.vehicle_id !== 'none' ? expense.vehicle_id : 'none',
-      status: (expense.status as string) || 'pending',
-      submit_by: expense.submit_by ?? '',
-    })
-  }, [])
-
-  const handleInlineListSave = useCallback(async () => {
-    if (!inlineEditingId || !inlineDraft) return
-    const expense = expenses.find((e) => e.id === inlineEditingId)
-    if (!expense) return
-    const pm = inlineDraft.payment_method?.trim() ?? ''
-    if (!inlineDraft.paid_to?.trim() || !inlineDraft.paid_for?.trim() || !inlineDraft.amount?.trim() || !pm) {
-      toast.error('필수 필드를 모두 입력해주세요.')
-      return
-    }
-    const submitBy = inlineDraft.submit_by?.trim() || user?.email || ''
-    if (!submitBy) {
-      toast.error('필수 필드를 모두 입력해주세요.')
-      return
-    }
-    const amount = parseFloat(inlineDraft.amount)
-    if (Number.isNaN(amount)) {
-      toast.error('금액이 올바르지 않습니다.')
-      return
-    }
-    setInlineSaving(true)
-    try {
-      const res = await fetch(`/api/company-expenses/${encodeURIComponent(inlineEditingId)}`, {
+  const putExpenseFromListRow = useCallback(
+    async (
+      expense: CompanyExpense,
+      overrides: Partial<{
+        standard_paid_for: string | null
+        category: string | null
+        expense_type: string | null
+        tax_deductible: boolean
+        payment_method: string
+        vehicle_id: string | null
+      }>
+    ) => {
+      const payment_method = (overrides.payment_method ?? expense.payment_method ?? '').toString().trim()
+      if (!payment_method) {
+        toast.error(t('listQuickEdit.paymentRequired'))
+        return false
+      }
+      let vehicle_id: string | null
+      if (overrides.vehicle_id !== undefined) {
+        vehicle_id =
+          overrides.vehicle_id === 'none' || !overrides.vehicle_id || overrides.vehicle_id === ''
+            ? null
+            : overrides.vehicle_id
+      } else {
+        vehicle_id =
+          expense.vehicle_id && String(expense.vehicle_id) !== 'none' ? String(expense.vehicle_id) : null
+      }
+      const submitOn =
+        expense.submit_on && String(expense.submit_on).trim() !== ''
+          ? String(expense.submit_on)
+          : submitOnIsoFromYmd(ymdFromSubmitOnIso(expense.submit_on))
+      const body = {
+        paid_to: (expense.paid_to ?? '').trim(),
+        paid_for: (expense.paid_for ?? '').trim(),
+        description: expense.description ?? null,
+        amount: expense.amount != null ? Number(expense.amount) : 0,
+        payment_method,
+        submit_by: (expense.submit_by ?? '').trim() || user?.email || '',
+        submit_on: submitOn,
+        photo_url: expense.photo_url ?? null,
+        category: overrides.category !== undefined ? overrides.category : expense.category ?? null,
+        subcategory: expense.subcategory ?? null,
+        vehicle_id,
+        maintenance_type: expense.maintenance_type ?? null,
+        notes: expense.notes ?? null,
+        attachments: expense.attachments ?? null,
+        expense_type: overrides.expense_type !== undefined ? overrides.expense_type : expense.expense_type ?? null,
+        tax_deductible:
+          overrides.tax_deductible !== undefined ? overrides.tax_deductible : expense.tax_deductible !== false,
+        status: expense.status || 'pending',
+        paid_for_label_id: expense.paid_for_label_id ? String(expense.paid_for_label_id) : null,
+        standard_paid_for:
+          overrides.standard_paid_for !== undefined
+            ? overrides.standard_paid_for
+            : (expense.standard_paid_for ?? null),
+      }
+      const res = await fetch(`/api/company-expenses/${encodeURIComponent(expense.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paid_to: inlineDraft.paid_to.trim(),
-          paid_for: inlineDraft.paid_for.trim(),
-          description: inlineDraft.description || null,
-          amount,
-          payment_method: pm,
-          submit_by: submitBy,
-          submit_on: submitOnIsoFromYmd(inlineDraft.submit_on),
-          photo_url: expense.photo_url ?? null,
-          category: inlineDraft.category || null,
-          subcategory: expense.subcategory ?? null,
-          vehicle_id: inlineDraft.vehicle_id === 'none' || !inlineDraft.vehicle_id ? null : inlineDraft.vehicle_id,
-          maintenance_type: expense.maintenance_type ?? null,
-          notes: expense.notes ?? null,
-          attachments: expense.attachments ?? null,
-          expense_type: inlineDraft.expense_type?.trim() || null,
-          tax_deductible: expense.tax_deductible !== false,
-          status: inlineDraft.status,
-          paid_for_label_id: inlineDraft.paid_for_label_id?.trim()
-            ? inlineDraft.paid_for_label_id.trim()
-            : null
-        })
+        body: JSON.stringify(body),
       })
       const json = (await res.json()) as { data?: CompanyExpense; error?: string }
       if (!res.ok) {
-        toast.error(json.error || '지출을 저장할 수 없습니다.')
-        return
+        toast.error(json.error || t('listQuickEdit.saveError'))
+        return false
       }
       if (json.data) {
-        setExpenses((prev) => prev.map((e) => (e.id === inlineEditingId ? (json.data as CompanyExpense) : e)))
+        setExpenses((prev) => prev.map((e) => (e.id === expense.id ? (json.data as CompanyExpense) : e)))
       }
       toast.success(t('messages.expenseUpdated'))
-      cancelInlineListEdit()
-    } catch (err) {
-      if (isAbortError(err)) return
-      console.error('인라인 저장 오류:', err)
-      toast.error('지출 저장 중 오류가 발생했습니다.')
-    } finally {
-      setInlineSaving(false)
+      return true
+    },
+    [t, user?.email]
+  )
+
+  const openListQuickStandard = useCallback(
+    (expense: CompanyExpense) => {
+      const pf = (expense.standard_paid_for ?? '').trim() || (expense.paid_for ?? '').trim()
+      const m = matchUnifiedLeafIdFromForm(
+        pf,
+        (expense.category ?? '').trim(),
+        (expense.expense_type ?? '').trim(),
+        expenseStandardCategories,
+        locale
+      )
+      setListQuickStandardLeafId(m !== '__custom__' && m ? m : '')
+      setListQuickField({ type: 'standard', expense })
+    },
+    [expenseStandardCategories, locale]
+  )
+
+  const openListQuickPayment = useCallback((expense: CompanyExpense) => {
+    setListQuickPaymentMethodId((expense.payment_method ?? '').trim())
+    setListQuickField({ type: 'payment', expense })
+  }, [])
+
+  const openListQuickVehicle = useCallback((expense: CompanyExpense) => {
+    setListQuickVehicleId(
+      expense.vehicle_id && String(expense.vehicle_id) !== 'none' ? String(expense.vehicle_id) : 'none'
+    )
+    setListQuickField({ type: 'vehicle', expense })
+  }, [])
+
+  const saveListQuickStandardWithLeaf = useCallback(
+    async (leafId: string) => {
+      const q = listQuickField
+      if (!q || q.type !== 'standard') return
+      const byId = new Map(expenseStandardCategories.map((c) => [c.id, c]))
+      const applied = applyStandardLeafToCompanyExpense(leafId, byId)
+      if (!applied) {
+        toast.error(t('listQuickEdit.saveError'))
+        return
+      }
+      setListQuickSaving(true)
+      try {
+        const ok = await putExpenseFromListRow(q.expense, {
+          standard_paid_for: applied.paid_for,
+          category: applied.category,
+          expense_type: applied.expense_type,
+          tax_deductible: applied.tax_deductible,
+        })
+        if (ok) {
+          setListQuickField(null)
+          setListQuickStandardLeafId('')
+        }
+      } finally {
+        setListQuickSaving(false)
+      }
+    },
+    [listQuickField, expenseStandardCategories, putExpenseFromListRow, t]
+  )
+
+  const submitListQuickStandardModal = useCallback(() => {
+    const q = listQuickField
+    if (!q || q.type !== 'standard') return
+    if (!listQuickStandardLeafId.trim()) {
+      void (async () => {
+        setListQuickSaving(true)
+        try {
+          const ok = await putExpenseFromListRow(q.expense, { standard_paid_for: null })
+          if (ok) {
+            setListQuickField(null)
+            setListQuickStandardLeafId('')
+          }
+        } finally {
+          setListQuickSaving(false)
+        }
+      })()
+      return
     }
-  }, [inlineDraft, inlineEditingId, expenses, user?.email, t, cancelInlineListEdit])
+    if (standardLeafRequiresDoubleCheck(listQuickStandardLeafId)) {
+      setStandardLeafConfirmSource('listQuickStandard')
+      setPendingStandardLeafConfirm(listQuickStandardLeafId)
+      setStandardLeafConfirmOpen(true)
+      return
+    }
+    void saveListQuickStandardWithLeaf(listQuickStandardLeafId)
+  }, [
+    listQuickField,
+    listQuickStandardLeafId,
+    putExpenseFromListRow,
+    saveListQuickStandardWithLeaf,
+  ])
+
+  const submitListQuickPaymentModal = useCallback(async () => {
+    const q = listQuickField
+    if (!q || q.type !== 'payment') return
+    setListQuickSaving(true)
+    try {
+      const ok = await putExpenseFromListRow(q.expense, { payment_method: listQuickPaymentMethodId.trim() })
+      if (ok) setListQuickField(null)
+    } finally {
+      setListQuickSaving(false)
+    }
+  }, [listQuickField, listQuickPaymentMethodId, putExpenseFromListRow])
+
+  const submitListQuickVehicleModal = useCallback(async () => {
+    const q = listQuickField
+    if (!q || q.type !== 'vehicle') return
+    setListQuickSaving(true)
+    try {
+      const vid = listQuickVehicleId === 'none' || !listQuickVehicleId ? null : listQuickVehicleId
+      const ok = await putExpenseFromListRow(q.expense, { vehicle_id: vid })
+      if (ok) setListQuickField(null)
+    } finally {
+      setListQuickSaving(false)
+    }
+  }, [listQuickField, listQuickVehicleId, putExpenseFromListRow])
 
   const renderEmployeeEmailCell = (expense: CompanyExpense) => (
     <TableCell className="w-48 py-2" onClick={(e) => e.stopPropagation()}>
@@ -1200,14 +1335,6 @@ export default function CompanyExpenseManager() {
           >
             {t('paidForNormalization.openButton')}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 border-gray-300"
-            onClick={() => setUnifiedBulkModalOpen(true)}
-          >
-            {t('unifiedBulk.openButton')}
-          </Button>
           <Dialog
             open={isDialogOpen}
             onOpenChange={(open) => {
@@ -1281,12 +1408,12 @@ export default function CompanyExpenseManager() {
               </div>
               
               {unifiedStandardGroups.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <Label htmlFor="standard_leaf_unified">{t('form.unifiedStandardClassification')}</Label>
-                      <p className="text-muted-foreground text-xs">{t('form.unifiedStandardHint')}</p>
-                    </div>
+                <UnifiedStandardLeafPicker
+                  groups={unifiedStandardGroups}
+                  value={standardHierarchyLeafId}
+                  onPick={handleUnifiedStandardLeafPick}
+                  parentOpen={isDialogOpen}
+                  headerTrailing={
                     <Button
                       type="button"
                       variant="outline"
@@ -1298,147 +1425,27 @@ export default function CompanyExpenseManager() {
                     >
                       <BookOpen className="h-4 w-4" />
                     </Button>
-                  </div>
-                  <div ref={unifiedStandardPickerRef} className="relative">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      id="standard_leaf_unified"
-                      role="combobox"
-                      aria-expanded={unifiedStandardPickerOpen}
-                      aria-controls="standard-leaf-unified-listbox"
-                      aria-haspopup="listbox"
-                      className="h-auto min-h-10 w-full justify-between gap-2 whitespace-normal py-2 text-left font-normal text-sm"
-                      onClick={() => setUnifiedStandardPickerOpen((o) => !o)}
-                    >
-                      <span
-                        className={cn(
-                          'line-clamp-4 min-w-0 flex-1 text-left',
-                          !standardLeafTriggerLabel && 'text-muted-foreground'
-                        )}
-                      >
-                        {standardLeafTriggerLabel || t('form.unifiedStandardPlaceholder')}
-                      </span>
-                      <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
-                    </Button>
-                    {unifiedStandardPickerOpen ? (
-                      <div
-                        id="standard-leaf-unified-listbox"
-                        role="listbox"
-                        className="absolute left-0 right-0 z-[1201] mt-1 flex max-h-[min(22rem,60vh)] flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            setUnifiedStandardPickerOpen(false)
-                            e.preventDefault()
-                          }
-                        }}
-                      >
-                        <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-2 py-1.5">
-                          <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                          <input
-                            ref={unifiedStandardSearchInputRef}
-                            type="text"
-                            value={unifiedStandardSearchQuery}
-                            onChange={(e) => setUnifiedStandardSearchQuery(e.target.value)}
-                            className="min-w-0 flex-1 border-0 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground"
-                            placeholder={t('form.unifiedStandardSearchPlaceholder')}
-                            aria-label={t('form.unifiedStandardSearchPlaceholder')}
-                          />
-                        </div>
-                        <div className="min-h-0 flex-1 overflow-y-auto py-1">
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected={!standardHierarchyLeafId}
-                            className="w-full px-3 py-2 text-left text-sm text-muted-foreground hover:bg-gray-50"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => handleUnifiedStandardLeafPick('')}
-                          >
-                            {t('form.standardPaidForLeafNone')}
-                          </button>
-                          {unifiedStandardPickerFiltered.length === 0 ? (
-                            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                              {t('form.unifiedStandardSearchEmpty')}
-                            </div>
-                          ) : (
-                            unifiedStandardPickerFiltered.map(({ group: g, items }) => {
-                              const chrome = unifiedStandardGroupSelectChrome(g.rootId)
-                              const soleRoot = items.length === 1 && items[0].id === g.rootId
-                              if (soleRoot) {
-                                const it0 = items[0]
-                                const selected = standardHierarchyLeafId === it0.id
-                                return (
-                                  <button
-                                    key={g.rootId}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={selected}
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    className={cn(
-                                      'w-full border-0 text-left text-sm',
-                                      chrome.singleItemClassName,
-                                      selected && 'ring-1 ring-inset ring-blue-500/60'
-                                    )}
-                                    onClick={() => handleUnifiedStandardLeafPick(it0.id)}
-                                  >
-                                    {it0.displayLabel}
-                                  </button>
-                                )
-                              }
-                              return (
-                                <div key={g.rootId} className="pb-1">
-                                  <div
-                                    className={cn(
-                                      chrome.labelClassName,
-                                      'mx-0 mt-0 w-full max-w-none first:mt-0'
-                                    )}
-                                  >
-                                    {g.groupLabel}
-                                  </div>
-                                  {items.map((it) => {
-                                    const selected = standardHierarchyLeafId === it.id
-                                    return (
-                                      <button
-                                        key={it.id}
-                                        type="button"
-                                        role="option"
-                                        aria-selected={selected}
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        className={cn(
-                                          'w-full border-0 py-2 pl-10 pr-3 text-left text-sm hover:bg-gray-50',
-                                          selected && 'bg-blue-50'
-                                        )}
-                                        onClick={() => handleUnifiedStandardLeafPick(it.id)}
-                                      >
-                                        {it.displayLabel}
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              )
-                            })
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                  {standardHierarchyLeafId ? (
-                    <p className="text-xs text-muted-foreground rounded-md border bg-muted/30 px-2 py-1.5">
-                      {t('form.unifiedSummaryPrefix')}
-                      <span className="font-medium text-foreground">{formData.paid_for}</span>
-                      {' · '}
-                      {getCategoryLabel(formData.category)}
-                      {' · '}
-                      {expenseTypes.find((x) => x.value === formData.expense_type)?.label ?? formData.expense_type}
-                    </p>
-                  ) : null}
-                </div>
+                  }
+                  summary={
+                    standardHierarchyLeafId ? (
+                      <p className="text-xs text-muted-foreground rounded-md border bg-muted/30 px-2 py-1.5">
+                        {t('form.unifiedSummaryPrefix')}
+                        <span className="font-medium text-foreground">{formData.paid_for}</span>
+                        {' · '}
+                        {getCategoryLabel(formData.category)}
+                        {' · '}
+                        {expenseTypes.find((x) => x.value === formData.expense_type)?.label ??
+                          formData.expense_type}
+                      </p>
+                    ) : undefined
+                  }
+                />
               )}
 
               <div
                 className={cn(
                   'grid gap-4',
-                  unifiedStandardGroups.length === 0 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'
+                  'grid-cols-1 sm:grid-cols-2'
                 )}
               >
                 <div>
@@ -1461,29 +1468,30 @@ export default function CompanyExpenseManager() {
                   </p>
                 </div>
 
-                {unifiedStandardGroups.length === 0 && (
-                  <div>
-                    <Label htmlFor="paid_for">{t('form.paidFor')} *</Label>
-                    <Input
-                      id="paid_for"
-                      list="company-expense-datalist-paid-for"
-                      autoComplete="off"
-                      value={formData.paid_for}
-                      onChange={(e) =>
-                        setFormData({ ...formData, paid_for: e.target.value, paid_for_label_id: '' })
-                      }
-                      required
-                    />
-                    <datalist id="company-expense-datalist-paid-for">
-                      {paidForDatalistOptions.map((v) => (
-                        <option key={v} value={v} />
-                      ))}
-                    </datalist>
-                    <p className="text-muted-foreground text-xs mt-1">
-                      {suggestionsLoading ? t('form.suggestionsLoading') : t('form.suggestOrType')}
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <Label htmlFor="paid_for">
+                    {t('form.paidFor')}
+                    <span className="text-muted-foreground font-normal"> · {t('form.paidForOptional')}</span>
+                  </Label>
+                  <Input
+                    id="paid_for"
+                    list="company-expense-datalist-paid-for"
+                    autoComplete="off"
+                    value={formData.paid_for}
+                    onChange={(e) =>
+                      setFormData({ ...formData, paid_for: e.target.value, paid_for_label_id: '' })
+                    }
+                    placeholder={t('form.paidForPlaceholder')}
+                  />
+                  <datalist id="company-expense-datalist-paid-for">
+                    {paidForDatalistOptions.map((v) => (
+                      <option key={v} value={v} />
+                    ))}
+                  </datalist>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.paidForComboboxHelp')}
+                  </p>
+                </div>
               </div>
 
               {unifiedStandardGroups.length === 0 && (
@@ -1875,7 +1883,22 @@ export default function CompanyExpenseManager() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4 items-end">
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-standard-paid-for">
+              {t('filters.standardPaidFor')}
+            </label>
+            <select
+              id="co-filter-standard-paid-for"
+              value={standardPaidForFilter}
+              onChange={(e) => setStandardPaidForFilter(e.target.value as 'all' | 'set' | 'unset')}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{t('filters.all')}</option>
+              <option value="set">{t('filters.standardPaidForSet')}</option>
+              <option value="unset">{t('filters.standardPaidForUnset')}</option>
+            </select>
+          </div>
           <div>
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1" htmlFor="co-filter-vehicle">
               {t('filters.vehicle')}
@@ -1952,18 +1975,64 @@ export default function CompanyExpenseManager() {
               ? ` · ${t('listCountLabel', { count: pagination.total })}${pagination.totalPages > 1 ? ` · ${page} / ${pagination.totalPages}` : ''}`
               : ''}
           </p>
-          <div className="hidden md:flex flex-col items-end gap-0.5 shrink-0">
-            <Button
-              type="button"
-              size="sm"
-              variant={listTableEditMode ? 'secondary' : 'outline'}
-              onClick={() => setListTableEditMode((v) => !v)}
-            >
-              {listTableEditMode ? t('listInlineEdit.exit') : t('listInlineEdit.enter')}
-            </Button>
-            {listTableEditMode && <span className="text-[10px] text-gray-500 max-w-[16rem] text-right leading-tight">{t('listInlineEdit.hint')}</span>}
-          </div>
         </div>
+        {!loading && expenses.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border border-gray-200/80 bg-gray-50/50 p-2 sm:p-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-xs font-medium text-gray-700">{t('listBatchStandard.toolbarTitle')}</p>
+              <p className="text-[11px] text-muted-foreground leading-snug">{t('listBatchStandard.preservePaidForHint')}</p>
+              {unifiedStandardGroups.length > 0 ? (
+                <UnifiedStandardLeafPicker
+                  groups={unifiedStandardGroups}
+                  value={listBatchLeafId}
+                  onPick={handleListBatchStandardPick}
+                  allowClear
+                  parentOpen={!isDialogOpen}
+                  className="max-w-xl"
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">{t('listBatchStandard.noStandardData')}</p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {t('listBatchStandard.selectedCount', { count: listSelectedIds.size })}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={toggleListSelectAllPage}
+                disabled={listPageIds.length === 0}
+                className="md:hidden"
+              >
+                {listAllPageSelected ? t('listBatchStandard.deselectPage') : t('listBatchStandard.selectPage')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setListSelectedIds(new Set())}
+                disabled={listSelectedIds.size === 0}
+              >
+                {t('listBatchStandard.clearSelection')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={submitListBatchStandardApply}
+                disabled={
+                  listBatchApplying ||
+                  listSelectedIds.size === 0 ||
+                  !listBatchLeafId.trim() ||
+                  unifiedStandardGroups.length === 0
+                }
+              >
+                {listBatchApplying ? t('listBatchStandard.applying') : t('listBatchStandard.apply')}
+              </Button>
+            </div>
+          </div>
+        )}
           {loading ? (
             <div className="text-center py-6 sm:py-8">
               <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto" />
@@ -1985,6 +2054,18 @@ export default function CompanyExpenseManager() {
                     className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm cursor-pointer hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
+                      <div
+                        className="shrink-0 pt-0.5"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                      >
+                        <Checkbox
+                          checked={listSelectedIds.has(expense.id)}
+                          onCheckedChange={(c) => toggleListExpenseSelect(expense.id, c === true)}
+                          aria-label={t('listBatchStandard.selectRowAria')}
+                        />
+                      </div>
                       <div className="font-semibold text-gray-900 text-sm flex-1 flex flex-col gap-1 min-w-0">
                         <p className="flex items-center gap-1.5 min-w-0">
                           <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
@@ -2019,6 +2100,34 @@ export default function CompanyExpenseManager() {
                       <span>{expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}</span>
                       <span className="text-gray-400">결제처</span>
                       <span className="truncate">{expense.paid_to}</span>
+                      <span className="text-gray-400">{t('listStandardPaidFor.column')}</span>
+                      <span className="min-w-0 text-right">
+                        <button
+                          type="button"
+                          className="truncate max-w-full text-left text-blue-700 underline-offset-2 hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openListQuickStandard(expense)
+                          }}
+                        >
+                          {expense.standard_paid_for || t('listQuickEdit.tapToSetStandard')}
+                        </button>
+                      </span>
+                      <span className="text-gray-400">{t('form.paymentMethod')}</span>
+                      <span className="min-w-0 text-right">
+                        <button
+                          type="button"
+                          className="truncate max-w-full text-left text-blue-700 underline-offset-2 hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openListQuickPayment(expense)
+                          }}
+                        >
+                          {expense.payment_method
+                            ? paymentMethodMap[expense.payment_method] || expense.payment_method
+                            : t('listQuickEdit.tapToSetPayment')}
+                        </button>
+                      </span>
                       <span className="text-gray-400">직원(이메일)</span>
                       <span className="truncate">
                         {(() => {
@@ -2037,18 +2146,19 @@ export default function CompanyExpenseManager() {
                       )}
                       <span className="text-gray-400">차량</span>
                       <div className="flex items-center justify-end gap-1 min-w-0 text-right">
-                        <span
-                          className="truncate flex-1 min-w-0"
-                          title={
-                            hasUsableVehicleId(expense.vehicle_id)
-                              ? getVehicleLineLabel(expense.vehicle_id!)
-                              : undefined
-                          }
+                        <button
+                          type="button"
+                          className="truncate flex-1 min-w-0 text-left text-blue-700 underline-offset-2 hover:underline"
+                          title={t('listQuickEdit.openVehicleHint')}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openListQuickVehicle(expense)
+                          }}
                         >
                           {hasUsableVehicleId(expense.vehicle_id)
                             ? getVehicleLineLabel(expense.vehicle_id!)
-                            : '—'}
-                        </span>
+                            : t('listQuickEdit.tapToSetVehicle')}
+                        </button>
                         {hasUsableVehicleId(expense.vehicle_id) && (
                           <Button
                             type="button"
@@ -2073,15 +2183,25 @@ export default function CompanyExpenseManager() {
               </div>
               {/* 데스크톱: 테이블 */}
               <div className="hidden md:block overflow-x-auto">
-              <Table className={listTableEditMode ? 'min-w-[1420px]' : 'min-w-[1240px]'}>
+              <Table className="min-w-[1320px]">
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="py-2 w-10 text-center">
+                      <Checkbox
+                        checked={listAllPageSelected ? true : listSomePageSelected ? 'indeterminate' : false}
+                        onCheckedChange={() => toggleListSelectAllPage()}
+                        aria-label={t('listBatchStandard.selectAllPageAria')}
+                      />
+                    </TableHead>
                     <TableHead className="py-2 w-10 text-center" title="명세 대조">
                       명세
                     </TableHead>
                     <TableHead className="py-2">제출일</TableHead>
                     <TableHead className="py-2">결제처</TableHead>
                     <TableHead className="py-2">결제내용</TableHead>
+                    <TableHead className="py-2 min-w-[6.5rem] max-w-[11rem]" title={t('listStandardPaidFor.columnHint')}>
+                      {t('listStandardPaidFor.column')}
+                    </TableHead>
                     <TableHead className="py-2">설명</TableHead>
                     <TableHead className="py-2">금액</TableHead>
                     <TableHead className="py-2">결제방법</TableHead>
@@ -2093,41 +2213,28 @@ export default function CompanyExpenseManager() {
                     <TableHead className="w-28 py-2">상태</TableHead>
                     <TableHead className="w-48 py-2">직원(이메일)</TableHead>
                     <TableHead className="py-2">제출자</TableHead>
-                    {listTableEditMode && (
-                      <TableHead className="w-[6.5rem] py-2 text-right pr-1 whitespace-nowrap">{t('listInlineEdit.columnHeader')}</TableHead>
-                    )}
                   </TableRow>
                 </TableHeader>
                 <CompanyExpenseListDesktopTableBody
                   expenses={expenses}
-                  listTableEditMode={listTableEditMode}
-                  inlineEditingId={inlineEditingId}
-                  inlineDraft={inlineDraft}
-                  setInlineDraft={setInlineDraft}
-                  inlineSaving={inlineSaving}
-                  onSaveInline={handleInlineListSave}
-                  onCancelInline={cancelInlineListEdit}
-                  onStartInline={startInlineListEdit}
                   handleEdit={handleEdit}
-                  inputCls={inlineListInputCls}
                   reconciledExpenseIds={reconciledExpenseIds}
                   paymentMethodMap={paymentMethodMap}
-                  paymentMethodOptions={paymentMethodOptions}
                   getCategoryLabel={getCategoryLabel}
-                  categorySelectOptions={categories}
-                  expenseTypeSelectOptions={expenseTypes}
                   getStatusBadge={getStatusBadge}
                   hasUsableVehicleId={hasUsableVehicleId}
                   getVehicleLineLabel={getVehicleLineLabel}
                   openVehicleMaintenanceHistory={openVehicleMaintenanceHistory}
                   renderEmployeeEmailCell={renderEmployeeEmailCell}
-                  vehicles={vehicles}
                   teamMembers={teamMembers}
                   locale={locale}
                   paidForLabels={paidForLabels}
-                  unifiedStandardGroups={unifiedStandardGroups}
-                  expenseStandardCategories={expenseStandardCategories}
                   t={t}
+                  selectedExpenseIds={listSelectedIds}
+                  onToggleExpenseSelect={toggleListExpenseSelect}
+                  onOpenQuickStandard={openListQuickStandard}
+                  onOpenQuickPayment={openListQuickPayment}
+                  onOpenQuickVehicle={openListQuickVehicle}
                 />
               </Table>
               </div>
@@ -2260,32 +2367,141 @@ export default function CompanyExpenseManager() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={cogsExpensesManualOpen} onOpenChange={setCogsExpensesManualOpen}>
-        <DialogContent className="max-h-[min(90vh,36rem)] w-full max-w-lg overflow-hidden flex flex-col gap-0 p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
-            <DialogTitle className="text-base">{t('form.cogsVsExpensesManualDialogTitle')}</DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              {t('form.cogsVsExpensesManualDialogDescription')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-            <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">
-              {t('form.cogsVsExpensesManualBody')}
-            </p>
-          </div>
-          <div className="shrink-0 border-t px-6 py-3 flex justify-end">
-            <Button type="button" variant="secondary" onClick={() => setCogsExpensesManualOpen(false)}>
-              {t('form.cogsVsExpensesManualClose')}
-            </Button>
-          </div>
+      <Dialog
+        open={listQuickField != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setListQuickField(null)
+            setListQuickStandardListOpen(false)
+            setListQuickStandardLeafId('')
+            setListQuickPaymentMethodId('')
+            setListQuickVehicleId('')
+          }
+        }}
+      >
+        <DialogContent
+          className={cn(
+            'max-w-lg overflow-y-auto transition-[min-height,max-height] duration-200 ease-out',
+            listQuickField?.type === 'standard' && listQuickStandardListOpen
+              ? 'min-h-[min(72vh,560px)] max-h-[min(94vh,860px)]'
+              : 'max-h-[min(90vh,640px)]',
+          )}
+        >
+          {listQuickField?.type === 'standard' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{t('listQuickEdit.standardTitle')}</DialogTitle>
+                <DialogDescription>{t('listQuickEdit.standardDescription')}</DialogDescription>
+              </DialogHeader>
+              {unifiedStandardGroups.length > 0 ? (
+                <UnifiedStandardLeafPicker
+                  groups={unifiedStandardGroups}
+                  value={listQuickStandardLeafId}
+                  onPick={(id) => setListQuickStandardLeafId(id ?? '')}
+                  allowClear
+                  parentOpen={listQuickField != null}
+                  placeholderWhenEmpty={t('paidForNormalization.pickerNoSelection')}
+                  clearOptionLabel={t('paidForNormalization.pickerNoSelection')}
+                  onListboxOpenChange={setListQuickStandardListOpen}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('listBatchStandard.noStandardData')}</p>
+              )}
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setListQuickField(null)}
+                  disabled={listQuickSaving}
+                >
+                  {t('buttons.cancel')}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void submitListQuickStandardModal()}
+                  disabled={listQuickSaving || unifiedStandardGroups.length === 0}
+                >
+                  {listQuickSaving ? t('listQuickEdit.saving') : t('buttons.save')}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+          {listQuickField?.type === 'payment' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{t('listQuickEdit.paymentTitle')}</DialogTitle>
+                <DialogDescription>{t('listQuickEdit.paymentDescription')}</DialogDescription>
+              </DialogHeader>
+              <PaymentMethodAutocomplete
+                options={paymentMethodOptions}
+                valueId={listQuickPaymentMethodId}
+                onChange={setListQuickPaymentMethodId}
+                disabled={listQuickSaving}
+                pleaseSelectLabel={t('form.selectPaymentMethodPlaceholder')}
+                className="h-10 w-full min-w-0 border border-input rounded-md bg-background px-2"
+              />
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setListQuickField(null)}
+                  disabled={listQuickSaving}
+                >
+                  {t('buttons.cancel')}
+                </Button>
+                <Button type="button" onClick={() => void submitListQuickPaymentModal()} disabled={listQuickSaving}>
+                  {listQuickSaving ? t('listQuickEdit.saving') : t('buttons.save')}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+          {listQuickField?.type === 'vehicle' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{t('listQuickEdit.vehicleTitle')}</DialogTitle>
+                <DialogDescription>{t('listQuickEdit.vehicleDescription')}</DialogDescription>
+              </DialogHeader>
+              <select
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white"
+                value={listQuickVehicleId}
+                onChange={(e) => setListQuickVehicleId(e.target.value)}
+                disabled={listQuickSaving}
+              >
+                <option value="none">{t('listInlineEdit.noVehicle')}</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {`${vehicle.vehicle_number || vehicle.vehicle_type || 'Unknown'} (${vehicle.vehicle_category || 'N/A'})`}
+                  </option>
+                ))}
+              </select>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setListQuickField(null)}
+                  disabled={listQuickSaving}
+                >
+                  {t('buttons.cancel')}
+                </Button>
+                <Button type="button" onClick={() => void submitListQuickVehicleModal()} disabled={listQuickSaving}>
+                  {listQuickSaving ? t('listQuickEdit.saving') : t('buttons.save')}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
+
+      <CogsVsExpensesManualDialog open={cogsExpensesManualOpen} onOpenChange={setCogsExpensesManualOpen} />
 
       <AlertDialog
         open={standardLeafConfirmOpen}
         onOpenChange={(open) => {
           setStandardLeafConfirmOpen(open)
-          if (!open) setPendingStandardLeafConfirm(null)
+          if (!open) {
+            setPendingStandardLeafConfirm(null)
+            setStandardLeafConfirmSource('form')
+          }
         }}
       >
         <AlertDialogContent className="max-w-lg">
@@ -2309,11 +2525,20 @@ export default function CompanyExpenseManager() {
             <AlertDialogCancel>{t('standardLeafDoubleCheck.cancelButton')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (pendingStandardLeafConfirm) {
-                  applyStandardHierarchyLeaf(pendingStandardLeafConfirm)
+                const leaf = pendingStandardLeafConfirm
+                const src = standardLeafConfirmSource
+                if (leaf) {
+                  if (src === 'listBatch') {
+                    void executeListBatchStandardApply(leaf)
+                  } else if (src === 'listQuickStandard') {
+                    void saveListQuickStandardWithLeaf(leaf)
+                  } else {
+                    applyStandardHierarchyLeaf(leaf)
+                  }
                 }
                 setStandardLeafConfirmOpen(false)
                 setPendingStandardLeafConfirm(null)
+                setStandardLeafConfirmSource('form')
               }}
             >
               {t('standardLeafDoubleCheck.confirmButton')}
@@ -2333,15 +2558,6 @@ export default function CompanyExpenseManager() {
         onApplied={() => {
           void loadExpenses()
           void loadPaidForLabels()
-        }}
-      />
-
-      <CompanyExpenseUnifiedBulkModal
-        open={unifiedBulkModalOpen}
-        onOpenChange={setUnifiedBulkModalOpen}
-        onApplied={() => {
-          void loadExpenses()
-          void loadExpenseStandardCategories()
         }}
       />
     </div>

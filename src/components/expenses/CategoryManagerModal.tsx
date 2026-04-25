@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { X, Plus, Trash2, Settings, RefreshCw, Search, AlertCircle, Pencil } from 'lucide-react'
+import { X, Plus, Trash2, Settings, RefreshCw, Search, AlertCircle, Pencil, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface StandardCategory {
@@ -39,6 +39,9 @@ interface CategoryManagerModalProps {
   onClose: () => void
   onSave?: () => void
 }
+
+/** null: 닫힘 · edit: 기존 행 수정 · create: 복사 초안 등 신규 저장 전 */
+type StandardCategoryEditorState = null | { type: 'edit'; id: string } | { type: 'create' }
 
 interface NormalizeRowProps {
   item: { original: string, normalized: string, count: number }
@@ -136,8 +139,9 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
   // 새 카테고리 추가
   const [newCategory, setNewCategory] = useState({ name: '', name_ko: '', description: '', parent_id: '' })
   const [showAddCategory, setShowAddCategory] = useState(false)
-  const [editingStandardCategoryId, setEditingStandardCategoryId] = useState<string | null>(null)
+  const [standardCategoryEditor, setStandardCategoryEditor] = useState<StandardCategoryEditorState>(null)
   const [editStandardForm, setEditStandardForm] = useState({
+    id: '',
     name: '',
     name_ko: '',
     description: '',
@@ -176,10 +180,11 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
   }, [editingMappingId, mappings])
 
   useEffect(() => {
-    if (!editingStandardCategoryId) return
-    const cat = standardCategories.find((c) => c.id === editingStandardCategoryId)
+    if (!standardCategoryEditor || standardCategoryEditor.type !== 'edit') return
+    const cat = standardCategories.find((c) => c.id === standardCategoryEditor.id)
     if (!cat) return
     setEditStandardForm({
+      id: cat.id,
       name: cat.name,
       name_ko: cat.name_ko ?? '',
       description: cat.description ?? '',
@@ -193,7 +198,14 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
       display_order: cat.display_order,
       is_active: cat.is_active,
     })
-  }, [editingStandardCategoryId, standardCategories])
+  }, [standardCategoryEditor, standardCategories])
+
+  useEffect(() => {
+    if (!standardCategoryEditor || standardCategoryEditor.type !== 'edit' || loading) return
+    if (!standardCategories.some((c) => c.id === standardCategoryEditor.id)) {
+      setStandardCategoryEditor(null)
+    }
+  }, [standardCategoryEditor, standardCategories, loading])
 
   // 정규화 탭이 활성화되거나 테이블이 변경될 때 데이터 로드
   useEffect(() => {
@@ -597,21 +609,136 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     }
   }
 
-  const handleUpdateStandardCategory = async () => {
-    if (!editingStandardCategoryId) return
+  const suggestDuplicateCategoryId = (baseId: string) => {
+    const existingIds = new Set(standardCategories.map((c) => c.id))
+    let candidate = `${baseId}-copy`
+    let n = 0
+    while (existingIds.has(candidate)) {
+      n += 1
+      candidate = `${baseId}-copy-${n}`
+    }
+    return candidate
+  }
+
+  /** DB에 넣지 않고 수정 모달을 신규(복사) 모드로 연다. */
+  const openStandardCategoryCopyDraft = (cat: StandardCategory) => {
+    const suffix = ' (복사)'
+    const nameWithSuffix = (s: string) => (s.trim() ? `${s.trim()}${suffix}` : `Category${suffix}`)
+    const nameKoWithSuffix = (s: string | null | undefined) => {
+      const t = s?.trim()
+      if (!t) return ''
+      return `${t}${suffix}`
+    }
+    const newId = suggestDuplicateCategoryId(cat.id)
+    const siblings = cat.parent_id
+      ? standardCategories.filter((c) => c.parent_id === cat.parent_id)
+      : standardCategories.filter((c) => !c.parent_id)
+    const maxOrder = siblings.length ? Math.max(...siblings.map((c) => c.display_order ?? 0)) : 0
+
+    setEditStandardForm({
+      id: newId,
+      name: nameWithSuffix(cat.name),
+      name_ko: nameKoWithSuffix(cat.name_ko),
+      description: cat.description ?? '',
+      parent_id: cat.parent_id ?? '',
+      irs_schedule_c_line: cat.irs_schedule_c_line ?? '',
+      deduction_limit_percent:
+        cat.deduction_limit_percent !== undefined && cat.deduction_limit_percent !== null
+          ? cat.deduction_limit_percent
+          : 100,
+      tax_deductible: cat.tax_deductible,
+      display_order: maxOrder + 1,
+      is_active: cat.is_active,
+    })
+    setStandardCategoryEditor({ type: 'create' })
+  }
+
+  /** 매핑·상위 참조를 유지한 채 표준 카테고리 PK만 변경 */
+  const renameStandardCategoryId = async (oldId: string, newId: string) => {
+    if (oldId === newId) return
+    if (standardCategories.some((c) => c.id === newId)) {
+      throw new Error('DUPLICATE_ID')
+    }
+    const { error: e1 } = await supabase
+      .from('expense_category_mappings')
+      .update({ standard_category_id: newId, updated_at: new Date().toISOString() })
+      .eq('standard_category_id', oldId)
+    if (e1) throw e1
+    const { error: e2 } = await supabase
+      .from('expense_category_mappings')
+      .update({ sub_category_id: newId, updated_at: new Date().toISOString() })
+      .eq('sub_category_id', oldId)
+    if (e2) throw e2
+    const { error: e3 } = await supabase
+      .from('expense_standard_categories')
+      .update({ parent_id: newId, updated_at: new Date().toISOString() })
+      .eq('parent_id', oldId)
+    if (e3) throw e3
+    const { error: e4 } = await supabase
+      .from('expense_standard_categories')
+      .update({ id: newId, updated_at: new Date().toISOString() })
+      .eq('id', oldId)
+    if (e4) throw e4
+  }
+
+  const handleDeleteStandardCategory = async () => {
+    if (!standardCategoryEditor || standardCategoryEditor.type !== 'edit') return
+    const targetId = standardCategoryEditor.id
+    const cat = standardCategories.find((c) => c.id === targetId)
+    if (!cat) return
+
+    const subs = standardCategories.filter((c) => c.parent_id === targetId)
+    if (subs.length > 0) {
+      if (
+        !confirm(
+          `「${cat.name_ko || cat.name}」에 하위 카테고리 ${subs.length}개가 있습니다.\n하위까지 모두 삭제할까요? (연결된 매핑은 해제됩니다.)`
+        )
+      ) {
+        return
+      }
+    } else {
+      if (!confirm(`「${cat.name_ko || cat.name}」(${targetId}) 카테고리를 삭제할까요?`)) return
+    }
+
+    setSaving(true)
+    try {
+      for (const sub of subs) {
+        const { error } = await supabase.from('expense_standard_categories').delete().eq('id', sub.id)
+        if (error) throw error
+      }
+      const { error } = await supabase.from('expense_standard_categories').delete().eq('id', targetId)
+      if (error) throw error
+
+      setStandardCategoryEditor(null)
+      await loadData()
+      onSave?.()
+    } catch (error) {
+      console.error('표준 카테고리 삭제 오류:', error)
+      alert('삭제 중 오류가 발생했습니다. 하위·매핑 참조를 확인하세요.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveStandardCategory = async () => {
+    if (!standardCategoryEditor) return
+    const newIdTrimmed = editStandardForm.id.trim()
+    if (!newIdTrimmed) {
+      alert('ID를 입력하세요.')
+      return
+    }
     if (!editStandardForm.name.trim()) {
       alert('영문 이름을 입력하세요.')
       return
     }
 
-    const existing = standardCategories.find((c) => c.id === editingStandardCategoryId)
-    const isMain = !existing?.parent_id
+    const isMain = !editStandardForm.parent_id
     const parentId = isMain ? null : editStandardForm.parent_id || null
     if (!isMain && !parentId) {
       alert('서브카테고리는 상위(메인) 카테고리를 선택하세요.')
       return
     }
-    if (!isMain && parentId === editingStandardCategoryId) {
+    if (!isMain && parentId === newIdTrimmed) {
       alert('자기 자신을 상위로 지정할 수 없습니다.')
       return
     }
@@ -619,8 +746,64 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     const pct = Math.min(100, Math.max(0, Math.round(Number(editStandardForm.deduction_limit_percent) || 0)))
     const order = Math.round(Number(editStandardForm.display_order) || 0)
 
+    if (standardCategoryEditor.type === 'create') {
+      if (standardCategories.some((c) => c.id === newIdTrimmed)) {
+        alert('이미 사용 중인 ID입니다. 다른 ID를 입력하세요.')
+        return
+      }
+      setSaving(true)
+      try {
+        const { error } = await supabase.from('expense_standard_categories').insert({
+          id: newIdTrimmed,
+          name: editStandardForm.name.trim(),
+          name_ko: editStandardForm.name_ko.trim() || null,
+          description: editStandardForm.description.trim() || null,
+          parent_id: parentId,
+          irs_schedule_c_line: editStandardForm.irs_schedule_c_line.trim() || null,
+          deduction_limit_percent: pct,
+          tax_deductible: editStandardForm.tax_deductible,
+          display_order: order,
+          is_active: editStandardForm.is_active,
+        })
+        if (error) {
+          if (error.message.includes('does not exist') || error.code === '42P01') {
+            alert('테이블이 없습니다. 마이그레이션을 먼저 실행하세요.')
+            return
+          }
+          throw error
+        }
+        setStandardCategoryEditor(null)
+        await loadData()
+        onSave?.()
+      } catch (error) {
+        console.error('표준 카테고리 추가 오류:', error)
+        alert('저장 중 오류가 발생했습니다.')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
+    const originalId = standardCategoryEditor.id
+    if (standardCategories.some((c) => c.id === newIdTrimmed && c.id !== originalId)) {
+      alert('이미 사용 중인 ID입니다. 다른 ID를 입력하세요.')
+      return
+    }
+
     setSaving(true)
     try {
+      if (newIdTrimmed !== originalId) {
+        try {
+          await renameStandardCategoryId(originalId, newIdTrimmed)
+        } catch (err: unknown) {
+          if (err instanceof Error && err.message === 'DUPLICATE_ID') {
+            alert('이미 사용 중인 ID입니다.')
+            return
+          }
+          throw err
+        }
+      }
+
       const { error } = await supabase
         .from('expense_standard_categories')
         .update({
@@ -635,16 +818,16 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
           is_active: editStandardForm.is_active,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', editingStandardCategoryId)
+        .eq('id', newIdTrimmed)
 
       if (error) throw error
 
-      setEditingStandardCategoryId(null)
+      setStandardCategoryEditor(null)
       await loadData()
       onSave?.()
     } catch (error) {
-      console.error('표준 카테고리 수정 오류:', error)
-      alert('카테고리 수정 중 오류가 발생했습니다.')
+      console.error('표준 카테고리 저장 오류:', error)
+      alert('저장 중 오류가 발생했습니다.')
     } finally {
       setSaving(false)
     }
@@ -792,14 +975,18 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     }
   })
 
+  /** 카테고리 매핑 선택·부모 지정 — 표준 카테고리 관리 탭과 동일하게 전체(비활성 포함) 노출 */
   const pickerMainCategories = useMemo(
-    () => standardCategories.filter((c) => !c.parent_id && c.is_active),
+    () =>
+      standardCategories
+        .filter((c) => !c.parent_id)
+        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)),
     [standardCategories]
   )
 
   const getPickerSubCategories = (parentId: string) =>
     standardCategories
-      .filter((c) => c.parent_id === parentId && c.is_active)
+      .filter((c) => c.parent_id === parentId)
       .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
 
   // 카테고리 선택 핸들러 (메인 + 서브카테고리)
@@ -878,7 +1065,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-lg w-full max-w-[min(1600px,calc(100vw-2rem))] max-h-[90vh] overflow-hidden flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b bg-gray-50">
           <div className="flex items-center gap-3">
@@ -1154,9 +1341,10 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                       onChange={(e) => setNewCategory({ ...newCategory, parent_id: e.target.value })}
                     >
                       <option value="">메인 카테고리 (서브카테고리가 아닌 경우)</option>
-                      {pickerMainCategories.map(cat => (
+                      {pickerMainCategories.map((cat) => (
                         <option key={cat.id} value={cat.id}>
                           {cat.name_ko || cat.name}
+                          {!cat.is_active ? ' (비활성)' : ''}
                         </option>
                       ))}
                     </select>
@@ -1201,15 +1389,15 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[calc(8.5rem+2ch)]">ID</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">영문</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">한글</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IRS Line</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[6.5rem]">IRS Line</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">공제율</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">세금공제</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">액션</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[4.75rem] whitespace-nowrap">세금공제</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[calc(3.75rem+2ch)] whitespace-nowrap">상태</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[calc(5.25rem+3ch)] whitespace-nowrap">액션</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -1221,77 +1409,101 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                         <React.Fragment key={cat.id}>
                           {/* 메인 카테고리 */}
                           <tr className={`hover:bg-gray-50 ${cat.is_active ? 'bg-blue-50' : 'bg-gray-100 opacity-90'}`}>
-                            <td className="px-4 py-3 text-sm font-medium text-gray-700">{cat.id}</td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-700 min-w-[calc(8.5rem+2ch)]">{cat.id}</td>
                             <td className="px-4 py-3 text-sm font-semibold">{cat.name}</td>
                             <td className="px-4 py-3 text-sm font-semibold">{cat.name_ko || '-'}</td>
                             <td className="px-4 py-3 text-sm text-gray-600">{cat.description || '-'}</td>
-                            <td className="px-4 py-3 text-sm text-gray-500">{cat.irs_schedule_c_line || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500 min-w-[6.5rem]">{cat.irs_schedule_c_line || '-'}</td>
                             <td className="px-4 py-3 text-sm text-gray-500">
                               {cat.deduction_limit_percent !== undefined ? `${cat.deduction_limit_percent}%` : '100%'}
                             </td>
-                            <td className="px-4 py-3 text-sm">
+                            <td className="px-4 py-3 text-sm min-w-[4.75rem] whitespace-nowrap">
                               {cat.tax_deductible ? (
                                 <span className="text-green-600">예</span>
                               ) : (
                                 <span className="text-red-600">아니오</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-gray-600 min-w-[calc(3.75rem+2ch)] whitespace-nowrap">
                               {cat.is_active ? (
                                 <span className="text-green-700">사용</span>
                               ) : (
                                 <span className="text-gray-500">비활성</span>
                               )}
                             </td>
-                            <td className="px-4 py-3">
-                              <button
-                                type="button"
-                                onClick={() => setEditingStandardCategoryId(cat.id)}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
-                                title="수정"
-                              >
-                                <Pencil size={16} />
-                                수정
-                              </button>
+                            <td className="px-4 py-3 min-w-[calc(5.25rem+3ch)] whitespace-nowrap">
+                              <div className="flex flex-wrap items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setStandardCategoryEditor({ type: 'edit', id: cat.id })}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                                  title="수정"
+                                  aria-label="수정"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openStandardCategoryCopyDraft(cat)}
+                                  disabled={saving}
+                                  className="p-1.5 text-gray-700 hover:bg-gray-100 rounded disabled:opacity-50"
+                                  title="복사 (하위 서브카테고리 포함)"
+                                  aria-label="복사 (하위 서브카테고리 포함)"
+                                >
+                                  <Copy size={16} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                           {/* 서브카테고리들 */}
                           {subCats.map((subCat) => (
                             <tr key={subCat.id} className={`hover:bg-gray-50 ${!subCat.is_active ? 'bg-gray-50 opacity-90' : ''}`}>
-                              <td className="px-4 py-3 text-sm text-gray-400 pl-8">
+                              <td className="px-4 py-3 text-sm text-gray-400 pl-8 min-w-[calc(8.5rem+2ch)]">
                                 <span className="text-xs">└</span> {subCat.id}
                               </td>
                               <td className="px-4 py-3 text-sm pl-8">{subCat.name}</td>
                               <td className="px-4 py-3 text-sm pl-8">{subCat.name_ko || '-'}</td>
                               <td className="px-4 py-3 text-sm text-gray-500 pl-8">{subCat.description || '-'}</td>
-                              <td className="px-4 py-3 text-sm text-gray-400 pl-8">{subCat.irs_schedule_c_line || '-'}</td>
+                              <td className="px-4 py-3 text-sm text-gray-400 pl-8 min-w-[6.5rem]">{subCat.irs_schedule_c_line || '-'}</td>
                               <td className="px-4 py-3 text-sm text-gray-400 pl-8">
                                 {subCat.deduction_limit_percent !== undefined ? `${subCat.deduction_limit_percent}%` : '100%'}
                               </td>
-                              <td className="px-4 py-3 text-sm pl-8">
+                              <td className="px-4 py-3 text-sm pl-8 min-w-[4.75rem] whitespace-nowrap">
                                 {subCat.tax_deductible ? (
                                   <span className="text-green-600">예</span>
                                 ) : (
                                   <span className="text-red-600">아니오</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-sm pl-8 text-gray-600">
+                              <td className="px-4 py-3 text-sm pl-8 text-gray-600 min-w-[calc(3.75rem+2ch)] whitespace-nowrap">
                                 {subCat.is_active ? (
                                   <span className="text-green-700">사용</span>
                                 ) : (
                                   <span className="text-gray-500">비활성</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 pl-8">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingStandardCategoryId(subCat.id)}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
-                                  title="수정"
-                                >
-                                  <Pencil size={16} />
-                                  수정
-                                </button>
+                              <td className="px-4 py-3 pl-8 min-w-[calc(5.25rem+3ch)] whitespace-nowrap">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setStandardCategoryEditor({ type: 'edit', id: subCat.id })}
+                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                                    title="수정"
+                                    aria-label="수정"
+                                  >
+                                    <Pencil size={16} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openStandardCategoryCopyDraft(subCat)}
+                                    disabled={saving}
+                                    className="p-1.5 text-gray-700 hover:bg-gray-100 rounded disabled:opacity-50"
+                                    title="복사"
+                                    aria-label="복사"
+                                  >
+                                    <Copy size={16} />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -1472,7 +1684,17 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                         >
                           <div className="flex flex-col">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold">{mainCat.name_ko || mainCat.name}</span>
+                              <span className="font-semibold">
+                                {mainCat.name_ko || mainCat.name}
+                                {!mainCat.is_active && (
+                                  <span
+                                    className={`font-normal ${isMainSelected ? 'text-blue-100' : 'text-gray-500'}`}
+                                  >
+                                    {' '}
+                                    (비활성)
+                                  </span>
+                                )}
+                              </span>
                               {mainCat.irs_schedule_c_line && (
                                 <span className={`text-xs ${isMainSelected ? 'text-blue-100' : 'text-gray-500'}`}>
                                   {mainCat.irs_schedule_c_line}
@@ -1519,7 +1741,17 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                                   <div className="flex flex-col">
                                     <div>
                                       <span className="text-gray-400 mr-2">└</span>
-                                      <span className="font-medium">{subCat.name_ko || subCat.name}</span>
+                                      <span className="font-medium">
+                                        {subCat.name_ko || subCat.name}
+                                        {!subCat.is_active && (
+                                          <span
+                                            className={`font-normal ${isSubSelected ? 'text-blue-100' : 'text-gray-500'}`}
+                                          >
+                                            {' '}
+                                            (비활성)
+                                          </span>
+                                        )}
+                                      </span>
                                     </div>
                                     {subCat.description && (
                                       <p className={`text-xs mt-0.5 ml-5 ${isSubSelected ? 'text-blue-100' : 'text-gray-500'}`}>
@@ -1747,30 +1979,53 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
         )
       })()}
 
-      {editingStandardCategoryId && (() => {
-        const cat = standardCategories.find((c) => c.id === editingStandardCategoryId)
-        if (!cat) return null
-        const isMain = !cat.parent_id
+      {standardCategoryEditor && (() => {
+        const editor = standardCategoryEditor
+        const cat =
+          editor.type === 'edit' ? standardCategories.find((c) => c.id === editor.id) : null
+        if (editor.type === 'edit' && !cat) return null
+        const currentIdForParent = editStandardForm.id.trim()
         const parentOptions = standardCategories.filter(
-          (c) => !c.parent_id && (c.is_active || c.id === editStandardForm.parent_id)
+          (c) =>
+            !c.parent_id &&
+            c.id !== currentIdForParent &&
+            (c.is_active || c.id === editStandardForm.parent_id)
         )
+        const isCreate = editor.type === 'create'
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
             <div className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
               <div className="flex items-center justify-between p-4 border-b bg-gray-50">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">표준 카테고리 수정</h3>
-                  <p className="text-sm text-gray-500 mt-1 font-mono">ID: {cat.id}</p>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {isCreate ? '표준 카테고리 추가 (복사)' : '표준 카테고리 수정'}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {isCreate
+                      ? '내용을 확인한 뒤 ID·이름을 조정하고 저장하면 새로 생성됩니다.'
+                      : 'ID 변경 시 매핑·하위 카테고리의 참조가 함께 바뀝니다.'}
+                  </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setEditingStandardCategoryId(null)}
+                  onClick={() => setStandardCategoryEditor(null)}
                   className="p-2 hover:bg-gray-200 rounded-lg"
                 >
                   <X size={20} />
                 </button>
               </div>
               <div className="p-4 space-y-3 overflow-y-auto flex-1">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">ID (고유)</label>
+                  <input
+                    type="text"
+                    value={editStandardForm.id}
+                    onChange={(e) => setEditStandardForm({ ...editStandardForm, id: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+                    placeholder="예: CAT025"
+                    autoComplete="off"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">영문 이름</label>
                   <input
@@ -1798,24 +2053,27 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                     className="w-full px-3 py-2 border rounded-lg text-sm"
                   />
                 </div>
-                {!isMain && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">상위(메인) 카테고리</label>
-                    <select
-                      className="w-full px-3 py-2 border rounded-lg text-sm"
-                      value={editStandardForm.parent_id}
-                      onChange={(e) => setEditStandardForm({ ...editStandardForm, parent_id: e.target.value })}
-                    >
-                      <option value="">선택…</option>
-                      {parentOptions.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name_ko || p.name}
-                          {!p.is_active ? ' (비활성)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    상위(메인) 카테고리
+                  </label>
+                  <p className="text-xs text-gray-500 mb-1.5">
+                    최상위면 아래에서 「없음 (최상위 메인)」을 고르고, 특정 메인 아래에 넣으려면 해당 메인을 선택하세요.
+                  </p>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    value={editStandardForm.parent_id}
+                    onChange={(e) => setEditStandardForm({ ...editStandardForm, parent_id: e.target.value })}
+                  >
+                    <option value="">없음 (최상위 메인)</option>
+                    {parentOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name_ko || p.name}
+                        {!p.is_active ? ' (비활성)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">IRS Line</label>
@@ -1882,22 +2140,37 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                   </div>
                 </div>
               </div>
-              <div className="border-t p-4 bg-gray-50 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingStandardCategoryId(null)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm"
-                >
-                  취소
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleUpdateStandardCategory()}
-                  disabled={saving}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm"
-                >
-                  {saving ? '저장 중…' : '저장'}
-                </button>
+              <div className="border-t p-4 bg-gray-50 flex items-center justify-between gap-2">
+                <div>
+                  {!isCreate && (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteStandardCategory()}
+                      disabled={saving}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-red-700 bg-red-50 hover:bg-red-100 rounded-lg disabled:opacity-50"
+                    >
+                      <Trash2 size={16} />
+                      삭제
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStandardCategoryEditor(null)}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveStandardCategory()}
+                    disabled={saving}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm"
+                  >
+                    {saving ? '저장 중…' : '저장'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

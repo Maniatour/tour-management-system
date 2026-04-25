@@ -26,7 +26,7 @@ function toYmd(d: Date): string {
 /** 자사 차량: 회사 지출(company_expenses) 첫 `submit_on`~마지막 `submit_on`으로 기간, 금액은 해당 차량 지출 합. km·연환산은 그 기간 기준(주행은 차량 주행거리). */
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data: vehicleRows, error: vError } = await supabase
       .from('vehicles')
       .select('id, vehicle_number, vehicle_type, current_mileage, mileage_at_purchase, status, vehicle_category')
