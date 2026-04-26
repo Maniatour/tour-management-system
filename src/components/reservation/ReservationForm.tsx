@@ -319,7 +319,7 @@ export default function ReservationForm({
   layout = 'modal',
   onViewCustomer,
   initialCustomerId,
-  allowPastDateEdit = false,
+  allowPastDateEdit: _allowPastDateEdit = false,
   titleAction,
   isNewReservation = false,
   initialDataFromImport,
@@ -529,6 +529,8 @@ export default function ReservationForm({
     couponDiscount: number
     additionalDiscount: number
     additionalCost: number
+    refundReason: string
+    refundAmount: number
     cardFee: number
     tax: number
     prepaymentCost: number
@@ -751,6 +753,8 @@ export default function ReservationForm({
     couponDiscount: 0,
     additionalDiscount: 0,
     additionalCost: 0,
+    refundReason: '',
+    refundAmount: 0,
     cardFee: 0,
     tax: 0,
     prepaymentCost: 0,
@@ -2887,7 +2891,7 @@ export default function ReservationForm({
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
           .select(
-            'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, choices, choices_total, pricing_adults'
+            'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, choices, choices_total, pricing_adults'
           )
           .eq('reservation_id', pricingReservationId)
           .maybeSingle()
@@ -3015,7 +3019,7 @@ export default function ReservationForm({
           
           // DB에 저장된 잔액(가격 정보 모달 「잔액(투어 당일 지불)」 등)은 채널 종류와 관계없이 로드
           const balanceAmount = Number(existingPricing.balance_amount) || 0
-          const onSiteBalanceAmount = balanceAmount > 0 ? balanceAmount : 0
+          const onSiteBalanceAmount = balanceAmount
           
           setFormData(prev => {
             const { channelSettlementAmount: _stripChSettle, ...prevWithoutChSettle } = prev
@@ -3043,6 +3047,8 @@ export default function ReservationForm({
               couponDiscount: Number(existingPricing.coupon_discount) || 0,
               additionalDiscount: Number(existingPricing.additional_discount) || 0,
               additionalCost: Number(existingPricing.additional_cost) || 0,
+              refundReason: (existingPricing as any).refund_reason || '',
+              refundAmount: Number((existingPricing as any).refund_amount) || 0,
               cardFee: Number(existingPricing.card_fee) || 0,
               tax: Number(existingPricing.tax) || 0,
               prepaymentCost: Number(existingPricing.prepayment_cost) || 0,
@@ -3107,16 +3113,17 @@ export default function ReservationForm({
             
             const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
             const totalDiscount = updated.couponDiscount + updated.additionalDiscount
+            const refundAmount = Number(updated.refundAmount) || 0
             const totalAdditional = updated.additionalCost + updated.cardFee + updated.tax +
               updated.prepaymentCost + updated.prepaymentTip +
               (updated.isPrivateTour ? updated.privateTourAdditionalCost : 0) +
               reservationOptionsTotalPrice
-            const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
+            const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
             const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
             
             // 명시 잔액(DB/당일 지불)이 있으면 항상 우선. 없으면 총액−보증금 계산값 사용
             const finalBalanceAmount =
-              updated.onSiteBalanceAmount > 0 ? updated.onSiteBalanceAmount : newBalance
+              updated.onSiteBalanceAmount !== 0 ? updated.onSiteBalanceAmount : newBalance
             
             // commission_amount가 데이터베이스에서 불러온 값이면 절대 덮어쓰지 않음
             const finalCommissionAmount = loadedCommissionAmount.current !== null && loadedCommissionAmount.current > 0
@@ -3171,6 +3178,7 @@ export default function ReservationForm({
             couponDiscount: (existingPricing as any).coupon_discount != null && (existingPricing as any).coupon_discount !== '',
             additionalDiscount: (existingPricing as any).additional_discount != null && (existingPricing as any).additional_discount !== '',
             additionalCost: (existingPricing as any).additional_cost != null && (existingPricing as any).additional_cost !== '',
+            refundAmount: (existingPricing as any).refund_amount != null && (existingPricing as any).refund_amount !== '',
             cardFee: (existingPricing as any).card_fee != null && (existingPricing as any).card_fee !== '',
             tax: (existingPricing as any).tax != null && (existingPricing as any).tax !== '',
             prepaymentCost: (existingPricing as any).prepayment_cost != null && (existingPricing as any).prepayment_cost !== '',
@@ -3838,11 +3846,12 @@ export default function ReservationForm({
           ? newProductPriceTotal + optionalOptionTotal + notIncludedTotal
           : newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
         const totalDiscount = updated.couponDiscount + updated.additionalDiscount
+        const refundAmount = Number(updated.refundAmount) || 0
         const totalAdditional = updated.additionalCost + updated.cardFee + updated.tax +
           updated.prepaymentCost + updated.prepaymentTip +
           (updated.isPrivateTour ? updated.privateTourAdditionalCost : 0) +
           reservationOptionsTotalPrice
-        const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
+        const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
         const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
         
         return {
@@ -3851,7 +3860,7 @@ export default function ReservationForm({
           requiredOptionTotal: requiredOptionTotal,
           subtotal: newSubtotal,
           totalPrice: newTotalPrice,
-          balanceAmount: updated.onSiteBalanceAmount > 0 ? updated.onSiteBalanceAmount : newBalance
+          balanceAmount: updated.onSiteBalanceAmount !== 0 ? updated.onSiteBalanceAmount : newBalance
         }
       })
 
@@ -3976,6 +3985,7 @@ export default function ReservationForm({
   const calculateTotalPrice = useCallback(() => {
     const subtotal = calculateSubtotal()
     const totalDiscount = formData.couponDiscount + formData.additionalDiscount
+    const refundAmount = Number(formData.refundAmount) || 0
     // Grand Total에는 추가비용, 세금, 카드 수수료, 선결제 지출, 선결제 팁이 모두 포함됨
     const totalAdditional = formData.additionalCost + formData.cardFee + formData.tax +
       formData.prepaymentCost + formData.prepaymentTip +
@@ -3983,9 +3993,9 @@ export default function ReservationForm({
       reservationOptionsTotalPrice
 
     // 총 가격(고객 총지불 기준, balance는 별도로 표시만 함)
-    const grossTotal = Math.max(0, subtotal - totalDiscount + totalAdditional)
+    const grossTotal = Math.max(0, subtotal - totalDiscount + totalAdditional - refundAmount)
     return grossTotal
-  }, [calculateSubtotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip, formData.isPrivateTour, formData.privateTourAdditionalCost, reservationOptionsTotalPrice])
+  }, [calculateSubtotal, formData.couponDiscount, formData.additionalDiscount, formData.refundAmount, formData.additionalCost, formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip, formData.isPrivateTour, formData.privateTourAdditionalCost, reservationOptionsTotalPrice])
 
   const calculateBalance = useCallback(() => {
     return Math.max(0, formData.totalPrice - formData.depositAmount)
@@ -4517,11 +4527,12 @@ export default function ReservationForm({
       
       const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
       const totalDiscount = prev.couponDiscount + prev.additionalDiscount
+      const refundAmount = Number(prev.refundAmount) || 0
       const totalAdditional = prev.additionalCost + prev.cardFee + prev.tax +
         prev.prepaymentCost + prev.prepaymentTip +
         (prev.isPrivateTour ? prev.privateTourAdditionalCost : 0) +
         reservationOptionsTotalPrice
-      const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
+      const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
       const newBalance = Math.max(0, newTotalPrice - prev.depositAmount)
       
       return {
@@ -4531,7 +4542,7 @@ export default function ReservationForm({
         choicesTotal: choicesTotal,
         subtotal: newSubtotal,
         totalPrice: newTotalPrice,
-        balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
+        balanceAmount: prev.onSiteBalanceAmount !== 0 ? prev.onSiteBalanceAmount : newBalance
       }
     })
   }, [reservationOptionsTotalPrice])
@@ -4572,7 +4583,7 @@ export default function ReservationForm({
     setFormData(prev => ({
       ...prev,
       totalPrice: newTotalPrice,
-      balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
+      balanceAmount: prev.onSiteBalanceAmount !== 0 ? prev.onSiteBalanceAmount : newBalance
     }))
   }, [reservationOptionsTotalPrice, reservation?.id])
 
@@ -4728,7 +4739,7 @@ export default function ReservationForm({
       const fd = formDataRef.current
       const isPartialPaymentSync = overrides != null
       // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격·수수료·잔액 컬럼 포함)
-      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount'
+      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount'
       const { data: existingRow, error: checkError } = await (supabase as any)
         .from('reservation_pricing')
         .select(selectColumns)
@@ -4858,6 +4869,8 @@ export default function ReservationForm({
         coupon_discount: Number(fd.couponDiscount) || 0,
         additional_discount: Number(fd.additionalDiscount) || 0,
         additional_cost: Number(fd.additionalCost) || 0,
+        refund_reason: String(fd.refundReason ?? '').trim() || null,
+        refund_amount: Number(fd.refundAmount) || 0,
         card_fee: keep(Number(fd.cardFee) || 0, (existing as any)?.card_fee),
         tax: keep(Number(fd.tax) || 0, (existing as any)?.tax),
         prepayment_cost: keep(Number(fd.prepaymentCost) || 0, (existing as any)?.prepayment_cost),
@@ -5198,6 +5211,8 @@ export default function ReservationForm({
           couponDiscount: toNum(fd.couponDiscount),
           additionalDiscount: toNum(fd.additionalDiscount),
           additionalCost: toNum(fd.additionalCost),
+          refundReason: String(fd.refundReason ?? ''),
+          refundAmount: toNum(fd.refundAmount),
           cardFee: toNum(fd.cardFee),
           tax: toNum(fd.tax),
           prepaymentCost: toNum(fd.prepaymentCost),
@@ -5919,15 +5934,99 @@ export default function ReservationForm({
 
             {/* 가격 정보 - 기존 상품/채널 선택 컬럼 자리 (제목은 PricingSection에서 버튼과 같은 줄로 표시) */}
             <div id="pricing-section" className={`col-span-1 lg:col-span-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-3 ${isModal ? 'lg:h-auto' : 'lg:min-h-0 lg:flex-1'}`}>
-              {reservation?.id && (
-                <div className="text-xs text-gray-500 mb-2 pb-2 border-b border-gray-200">
-                  reservation_pricing id: <span className="font-mono text-gray-700">{reservationPricingId ?? '(아직 저장되지 않음)'}</span>
+              <div className="mb-2 pb-2 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-gray-500">
+                  {reservation?.id ? (
+                    <>
+                      reservation_pricing id: <span className="font-mono text-gray-700">{reservationPricingId ?? '(아직 저장되지 않음)'}</span>
+                    </>
+                  ) : null}
                 </div>
-              )}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 cursor-pointer hover:bg-violet-100 focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-1">
+                    <input
+                      type="checkbox"
+                      checked={formData.isPrivateTour}
+                      onChange={(e) => {
+                        setPricingFieldsFromDb((prev) => ({ ...prev, totalPrice: false }))
+                        setFormData({ ...formData, isPrivateTour: e.target.checked })
+                      }}
+                      className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-violet-300 rounded"
+                    />
+                    <span className="text-xs font-medium text-violet-800">단독투어</span>
+                  </label>
+                  {formData.isPrivateTour && (
+                    <div className="flex items-center space-x-1">
+                      <span className="text-xs text-gray-600">+$</span>
+                      <input
+                        type="number"
+                        value={formData.privateTourAdditionalCost}
+                        onChange={(e) => {
+                          setPricingFieldsFromDb((prev) => ({ ...prev, totalPrice: false }))
+                          setFormData({ ...formData, privateTourAdditionalCost: Number(e.target.value) || 0 })
+                        }}
+                        className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        step="0.01"
+                        placeholder="0"
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        if (!effectiveReservationId) {
+                          alert(locale === 'ko' ? '가격 정보만 저장하려면 먼저 예약을 저장해 주세요.' : 'Please save the reservation first to save pricing.')
+                          return
+                        }
+                        await savePricingInfo(effectiveReservationId)
+                        alert('가격 정보가 저장되었습니다!')
+                      } catch {
+                        alert('가격 정보 저장 중 오류가 발생했습니다.')
+                      }
+                    }}
+                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                  >
+                    저장
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPricingFieldsFromDb({})
+                      setFormData((prev: any) => ({
+                        ...prev,
+                        adultProductPrice: 0,
+                        childProductPrice: 0,
+                        infantProductPrice: 0,
+                        selectedChoices: {},
+                        couponCode: '',
+                        couponDiscount: 0,
+                        additionalDiscount: 0,
+                        additionalCost: 0,
+                        refundReason: '',
+                        refundAmount: 0,
+                        cardFee: 0,
+                        tax: 0,
+                        prepaymentCost: 0,
+                        prepaymentTip: 0,
+                        selectedOptionalOptions: {},
+                        depositAmount: 0,
+                        isPrivateTour: false,
+                        privateTourAdditionalCost: 0,
+                        commission_percent: 0,
+                        commission_amount: 0,
+                        productChoices: []
+                      }))
+                    }}
+                    className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
+                  >
+                    초기화
+                  </button>
+                </div>
+              </div>
               <PricingSection
                 formData={formData as any}
                 setFormData={setFormData}
-                savePricingInfo={savePricingInfo}
                 calculateProductPriceTotal={calculateProductPriceTotal}
                 calculateChoiceTotal={calculateRequiredOptionTotal}
                 calculateCouponDiscount={calculateCouponDiscount}
@@ -5948,6 +6047,9 @@ export default function ReservationForm({
                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                 isExistingPricingLoaded={isExistingPricingLoaded}
                 pricingFieldsFromDb={pricingFieldsFromDb}
+                onPricingFieldEdited={(field) =>
+                  setPricingFieldsFromDb((prev) => ({ ...prev, [field]: false }))
+                }
                 onChannelSettlementEdited={() =>
                   setPricingFieldsFromDb((prev) => ({ ...prev, channel_settlement_amount: false }))
                 }
@@ -6058,9 +6160,7 @@ export default function ReservationForm({
                 t={t}
                 layout="modal"
                 onAccordionToggle={setChannelAccordionExpanded}
-                selectedChannelTitleOverride={
-                  formData.channelId ? selectedChannelDisplayTitle : undefined
-                }
+                {...(formData.channelId ? { selectedChannelTitleOverride: selectedChannelDisplayTitle } : {})}
                 {...(isImportMode && importPreferredVariantKey
                   ? { importPreferredVariantKey }
                   : {})}

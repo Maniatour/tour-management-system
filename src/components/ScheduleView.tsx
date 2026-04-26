@@ -315,6 +315,30 @@ const SCHEDULE_GUIDE_DROP_ZONE_HIGHLIGHT = ['bg-blue-200', 'border-2', 'border-b
 const SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT = ['ring-2', 'ring-blue-400', 'bg-blue-50'] as const
 const SCHEDULE_ROW_REORDER_HIGHLIGHT = ['border-t-2', 'border-blue-500'] as const
 
+function addScheduleLocalDaysYmd(daysFromToday: number): string {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysFromToday)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function getScheduleRentalVehiclePrefill() {
+  return {
+    vehicle_category: 'rental',
+    vehicle_number: 'RENT',
+    vehicle_type: 'Ford Transit 15 passenger',
+    capacity: 15,
+    rental_company: 'Enterprise',
+    status: 'reserved',
+    rental_start_date: addScheduleLocalDaysYmd(1),
+    rental_end_date: addScheduleLocalDaysYmd(2),
+    rental_pickup_location: 'Airport Rent a Car Center',
+    rental_return_location: 'Airport Rent a Car Center',
+  }
+}
+
 export default function ScheduleView() {
   const router = useRouter()
   const locale = useLocale()
@@ -493,6 +517,8 @@ export default function ScheduleView() {
   const [showVehicleEditModal, setShowVehicleEditModal] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [vehicleEditModalVehicle, setVehicleEditModalVehicle] = useState<any>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [vehicleEditModalPrefill, setVehicleEditModalPrefill] = useState<any>(null)
   // 상품 색상 프리셋 선택 모달 (상품별로 클릭 시 열림)
   const [colorPresetModal, setColorPresetModal] = useState<{ productId: string; productName: string } | null>(null)
 
@@ -1918,6 +1944,7 @@ export default function ScheduleView() {
             }
           : { ...row, photos: [], typePhotos: [] }
         setVehicleEditModalVehicle(withPhotos)
+        setVehicleEditModalPrefill(null)
         setShowVehicleEditModal(true)
       } catch (e) {
         console.error('스케줄에서 차량 조회 오류:', e)
@@ -1927,10 +1954,16 @@ export default function ScheduleView() {
     [isSuperAdmin]
   )
 
+  const openRentalVehicleAddFromSchedule = useCallback(() => {
+    if (!isSuperAdmin) return
+    setVehicleEditModalVehicle(null)
+    setVehicleEditModalPrefill(getScheduleRentalVehiclePrefill())
+    setShowVehicleEditModal(true)
+  }, [isSuperAdmin])
+
   const handleVehicleEditModalSave = useCallback(
     async (vehicleData: Record<string, unknown>) => {
       const id = vehicleEditModalVehicle?.id as string | undefined
-      if (!id) return
       const allowedFields = [
         'vehicle_number',
         'vin',
@@ -1996,11 +2029,16 @@ export default function ScheduleView() {
           {} as Record<string, unknown>
         )
       try {
-        const { error } = await supabase.from('vehicles').update(filteredData).eq('id', id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vehiclesTable = (supabase as any).from('vehicles')
+        const { error } = id
+          ? await vehiclesTable.update(filteredData).eq('id', id)
+          : await vehiclesTable.insert([filteredData])
         if (error) throw error
         await fetchData()
         setShowVehicleEditModal(false)
         setVehicleEditModalVehicle(null)
+        setVehicleEditModalPrefill(null)
         showMessage('저장 완료', '차량 정보가 저장되었습니다.', 'success')
       } catch (error) {
         console.error('스케줄에서 차량 저장 오류:', error)
@@ -4027,6 +4065,19 @@ export default function ScheduleView() {
               >
                 <CalendarOff className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
+
+              {isSuperAdmin ? (
+                <button
+                  type="button"
+                  onClick={openRentalVehicleAddFromSchedule}
+                  className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                  title={locale === 'ko' ? '렌터카 추가' : 'Add rent a car'}
+                  aria-label={locale === 'ko' ? '렌터카 추가' : 'Add rent a car'}
+                >
+                  <Car className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
+                  <Plus className="absolute right-1 top-1 h-2.5 w-2.5 sm:h-3 sm:w-3" aria-hidden />
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -7553,10 +7604,12 @@ export default function ScheduleView() {
       {showVehicleEditModal && (
         <VehicleEditModal
           vehicle={vehicleEditModalVehicle}
+          prefill={vehicleEditModalVehicle ? null : vehicleEditModalPrefill}
           onSave={handleVehicleEditModalSave}
           onClose={() => {
             setShowVehicleEditModal(false)
             setVehicleEditModalVehicle(null)
+            setVehicleEditModalPrefill(null)
           }}
         />
       )}

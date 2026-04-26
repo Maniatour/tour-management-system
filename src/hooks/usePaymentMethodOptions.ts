@@ -6,8 +6,19 @@ import { supabase } from '@/lib/supabase'
 type PmRow = {
   id: string
   method: string
+  method_type: string | null
   display_name: string | null
   user_email: string | null
+  status: string | null
+}
+
+export type PaymentMethodOption = {
+  id: string
+  name: string
+  method: string
+  method_type: string | null
+  user_email: string | null
+  status: string | null
 }
 
 type TeamRow = {
@@ -67,14 +78,14 @@ function buildPaymentMethodLabel(
 
 /** 예약·투어·회사 지출 폼: `payment_methods` + team(가이드) 표시명 */
 export function usePaymentMethodOptions() {
-  const [paymentMethodOptions, setPaymentMethodOptions] = useState<{ id: string; name: string }[]>([])
+  const [paymentMethodOptions, setPaymentMethodOptions] = useState<PaymentMethodOption[]>([])
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
 
   const loadPaymentMethods = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('payment_methods')
-        .select('id, method, display_name, user_email')
+        .select('id, method, method_type, display_name, user_email, status')
         .order('method')
       if (error) throw error
 
@@ -91,14 +102,21 @@ export function usePaymentMethodOptions() {
       })
 
       const map: Record<string, string> = {}
-      const options: { id: string; name: string }[] = []
+      const options: PaymentMethodOption[] = []
       const rows: PmRow[] = (data || []) as PmRow[]
 
       rows.forEach((pm) => {
         const name = buildPaymentMethodLabel(pm, teamByEmailLower)
         map[pm.id] = name
         map[pm.method] = name
-        options.push({ id: pm.id, name })
+        options.push({
+          id: pm.id,
+          name,
+          method: pm.method,
+          method_type: pm.method_type,
+          user_email: pm.user_email,
+          status: pm.status
+        })
       })
       setPaymentMethodMap(map)
       setPaymentMethodOptions(options)

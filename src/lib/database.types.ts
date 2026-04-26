@@ -5509,6 +5509,8 @@ export type Database = {
           prepayment_tip: number | null
           private_tour_additional_cost: number | null
           product_price_total: number | null
+          refund_amount: number | null
+          refund_reason: string | null
           required_option_total: number | null
           required_options: Json | null
           reservation_id: string
@@ -5541,6 +5543,8 @@ export type Database = {
           prepayment_tip?: number | null
           private_tour_additional_cost?: number | null
           product_price_total?: number | null
+          refund_amount?: number | null
+          refund_reason?: string | null
           required_option_total?: number | null
           required_options?: Json | null
           reservation_id: string
@@ -5573,6 +5577,8 @@ export type Database = {
           prepayment_tip?: number | null
           private_tour_additional_cost?: number | null
           product_price_total?: number | null
+          refund_amount?: number | null
+          refund_reason?: string | null
           required_option_total?: number | null
           required_options?: Json | null
           reservation_id?: string

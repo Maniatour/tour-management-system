@@ -28,6 +28,8 @@ interface PricingInfo {
   couponDiscount?: number
   additionalDiscount?: number
   additionalCost?: number
+  refundReason?: string | null
+  refundAmount?: number
   cardFee?: number
   tax?: number
   prepaymentCost?: number
@@ -234,6 +236,8 @@ export async function POST(
       coupon_discount: Number(pricingInfo.couponDiscount) || 0,
       additional_discount: Number(pricingInfo.additionalDiscount) || 0,
       additional_cost: Number(pricingInfo.additionalCost) || 0,
+      refund_reason: String(pricingInfo.refundReason ?? '').trim() || null,
+      refund_amount: Number(pricingInfo.refundAmount) || 0,
       card_fee: Number(pricingInfo.cardFee) || 0,
       tax: Number(pricingInfo.tax) || 0,
       prepayment_cost: Number(pricingInfo.prepaymentCost) || 0,

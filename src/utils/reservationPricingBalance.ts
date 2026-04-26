@@ -42,6 +42,7 @@ export type PricingBalanceFields = {
   card_fee?: unknown
   prepayment_cost?: unknown
   prepayment_tip?: unknown
+  refund_amount?: unknown
 }
 
 /** 입금 내역 → 보증금(순)·잔금 수령·Returned (PricingSection·카드 공통) */
@@ -259,7 +260,8 @@ export function computeCustomerPaymentTotalLineFormula(
     pricingFieldToNumber(pricing.card_fee) +
     pricingFieldToNumber(pricing.prepayment_cost) +
     pricingFieldToNumber(pricing.prepayment_tip) +
-    pricingFieldToNumber(pricing.private_tour_additional_cost)
+    pricingFieldToNumber(pricing.private_tour_additional_cost) -
+    pricingFieldToNumber(pricing.refund_amount)
   const optionsSubtotal =
     pricingFieldToNumber(pricing.required_option_total) +
     pricingFieldToNumber(pricing.option_total)
@@ -297,7 +299,8 @@ export function computeCustomerTotalDueGross(
     pricingFieldToNumber(pricing.tax) +
     pricingFieldToNumber(pricing.card_fee) +
     pricingFieldToNumber(pricing.prepayment_cost) +
-    pricingFieldToNumber(pricing.prepayment_tip)
+    pricingFieldToNumber(pricing.prepayment_tip) -
+    pricingFieldToNumber(pricing.refund_amount)
   )
 }
 
@@ -371,7 +374,7 @@ export function getBalanceAmountForDisplay(
     rawStored !== '' &&
     Math.abs(storedNum) >= 0.005
   if (hasExplicitBalance) {
-    return Math.max(0, roundUsd2(storedNum))
+    return roundUsd2(storedNum)
   }
 
   const gross = computeCustomerTotalDueGross(pricing, optionsTotalFromOptions, party)

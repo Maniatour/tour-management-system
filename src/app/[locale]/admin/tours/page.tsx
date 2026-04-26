@@ -769,15 +769,9 @@ export default function AdminTours() {
               onClick={() => setShowDeletedToursModal(true)}
               title={t('openDeletedToursModal')}
               aria-label={t('openDeletedToursModal')}
-              className="bg-gray-700 text-white px-3 py-1.5 rounded-md hover:bg-gray-800 flex items-center gap-1.5 text-sm font-medium"
+              className="bg-gray-700 text-white p-1.5 rounded-md hover:bg-gray-800 inline-flex items-center justify-center text-sm font-medium"
             >
-              <Trash2 size={18} className="shrink-0 sm:hidden" aria-hidden />
-              <span className="hidden sm:inline">{t('openDeletedToursModal')}</span>
-              {deletedToursBin.length > 0 ? (
-                <span className="text-xs opacity-90 tabular-nums sm:text-xs">
-                  ({deletedToursBin.length})
-                </span>
-              ) : null}
+              <Trash2 size={18} className="shrink-0" aria-hidden />
             </button>
           </div>
         </div>

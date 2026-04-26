@@ -323,6 +323,8 @@ const EXPENSE_SOURCE_FILTER_OPTIONS: { value: '' | ExpensePickerBrowseTable; lab
 
 /** 한 페이지당 표시 행 수 — 행마다 무거운 UI가 있으면 DOM·레이아웃 비용이 커짐 */
 const RECONCILIATION_PAGE_SIZE = 40
+/** 운영 지출입 찾기 — 각 행 후보를 자동 조회하므로 페이지 단위로 제한 */
+const OPERATIONAL_LEDGER_PAGE_SIZE = 20
 /** PostgREST 기본 max-rows(1000) — 단일 select로는 그 이후 행이 잘림 → range 순회 */
 const STATEMENT_LINES_FETCH_PAGE = 1000
 /** 대조 표에 쓰는 컬럼만 조회 (raw JSONB 제외로 전송·파싱 비용 대폭 감소) */
@@ -1032,8 +1034,9 @@ export default function StatementReconciliationTab() {
   const [operationalLedgerSearch, setOperationalLedgerSearch] = useState('')
   const [operationalLedgerSourceFilter, setOperationalLedgerSourceFilter] = useState<OperationalLedgerSourceTable | ''>('')
   const [operationalLedgerScope, setOperationalLedgerScope] = useState<'unmatched' | 'all'>('unmatched')
+  const [operationalLedgerPage, setOperationalLedgerPage] = useState(1)
   const [statementCandidatesByLedgerKey, setStatementCandidatesByLedgerKey] = useState<Record<string, StatementLineCandidate[]>>({})
-  const [statementCandidateLoadingKey, setStatementCandidateLoadingKey] = useState<string | null>(null)
+  const [statementCandidateLoadingKeys, setStatementCandidateLoadingKeys] = useState<Set<string>>(() => new Set())
 
   /** 보정 지출 — 유형 선택 후 모달에서 실제 지출 입력 */
   const [adjustModalLine, setAdjustModalLine] = useState<StatementLine | null>(null)
@@ -3689,6 +3692,7 @@ export default function StatementReconciliationTab() {
           })
       )
       setStatementCandidatesByLedgerKey({})
+      setOperationalLedgerPage(1)
     } catch (e) {
       setMessage(e instanceof Error ? e.message : '운영 원장을 불러오지 못했습니다.')
       setOperationalLedgerRows([])
@@ -3725,9 +3729,27 @@ export default function StatementReconciliationTab() {
     paymentMethods
   ])
 
+  const operationalLedgerPageCount = useMemo(
+    () => Math.max(1, Math.ceil(operationalLedgerFilteredRows.length / OPERATIONAL_LEDGER_PAGE_SIZE)),
+    [operationalLedgerFilteredRows.length]
+  )
+
+  const pagedOperationalLedgerRows = useMemo(() => {
+    const start = (operationalLedgerPage - 1) * OPERATIONAL_LEDGER_PAGE_SIZE
+    return operationalLedgerFilteredRows.slice(start, start + OPERATIONAL_LEDGER_PAGE_SIZE)
+  }, [operationalLedgerFilteredRows, operationalLedgerPage])
+
+  useEffect(() => {
+    setOperationalLedgerPage((p) => Math.min(Math.max(1, p), operationalLedgerPageCount))
+  }, [operationalLedgerPageCount])
+
   const findStatementCandidatesForLedgerRow = useCallback(
     async (row: OperationalLedgerRow) => {
-      setStatementCandidateLoadingKey(row.key)
+      setStatementCandidateLoadingKeys((prev) => {
+        const next = new Set(prev)
+        next.add(row.key)
+        return next
+      })
       setMessage(null)
       try {
         const startYmd = addCalendarDaysYmd(row.date, -7)
@@ -3780,7 +3802,9 @@ export default function StatementReconciliationTab() {
             })
           }
         }
-        all.sort((a, b) => {
+        const exactAmountCandidates = all.filter((c) => c.amount_diff < 0.02)
+        const displayCandidates = exactAmountCandidates.length > 0 ? exactAmountCandidates : all
+        displayCandidates.sort((a, b) => {
           if ((a.matched_status === 'unmatched') !== (b.matched_status === 'unmatched')) {
             return a.matched_status === 'unmatched' ? -1 : 1
           }
@@ -3790,15 +3814,48 @@ export default function StatementReconciliationTab() {
           if (amt !== 0) return amt
           return a.day_diff - b.day_diff
         })
-        setStatementCandidatesByLedgerKey((prev) => ({ ...prev, [row.key]: all.slice(0, 8) }))
+        setStatementCandidatesByLedgerKey((prev) => ({ ...prev, [row.key]: displayCandidates.slice(0, 8) }))
       } catch (e) {
         setMessage(e instanceof Error ? e.message : '명세 후보를 찾지 못했습니다.')
       } finally {
-        setStatementCandidateLoadingKey(null)
+        setStatementCandidateLoadingKeys((prev) => {
+          const next = new Set(prev)
+          next.delete(row.key)
+          return next
+        })
       }
     },
     [imports, accounts, paymentMethodFinancialAccountById]
   )
+
+  useEffect(() => {
+    if (reconciliationViewTab !== 'operational-ledger' || operationalLedgerLoading) return
+    if (imports.length === 0 || accounts.length === 0) return
+    const rowsToLoad = pagedOperationalLedgerRows.filter(
+      (row) => !row.already_matched && statementCandidatesByLedgerKey[row.key] === undefined
+    )
+    if (rowsToLoad.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      for (const row of rowsToLoad) {
+        if (cancelled) break
+        await findStatementCandidatesForLedgerRow(row)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    reconciliationViewTab,
+    operationalLedgerLoading,
+    imports.length,
+    accounts.length,
+    pagedOperationalLedgerRows,
+    statementCandidatesByLedgerKey,
+    findStatementCandidatesForLedgerRow
+  ])
 
   const saveOperationalLedgerMatch = useCallback(
     async (row: OperationalLedgerRow, candidate: StatementLineCandidate) => {
@@ -6301,7 +6358,10 @@ export default function StatementReconciliationTab() {
             <select
               className="rounded border border-slate-200 bg-white px-2 py-1"
               value={operationalLedgerScope}
-              onChange={(e) => setOperationalLedgerScope(e.target.value as 'unmatched' | 'all')}
+              onChange={(e) => {
+                setOperationalLedgerScope(e.target.value as 'unmatched' | 'all')
+                setOperationalLedgerPage(1)
+              }}
             >
               <option value="unmatched">연결 안 된 행만</option>
               <option value="all">전체</option>
@@ -6309,7 +6369,10 @@ export default function StatementReconciliationTab() {
             <select
               className="rounded border border-slate-200 bg-white px-2 py-1"
               value={operationalLedgerSourceFilter}
-              onChange={(e) => setOperationalLedgerSourceFilter(e.target.value as OperationalLedgerSourceTable | '')}
+              onChange={(e) => {
+                setOperationalLedgerSourceFilter(e.target.value as OperationalLedgerSourceTable | '')
+                setOperationalLedgerPage(1)
+              }}
             >
               <option value="">전체 테이블</option>
               {Object.entries(OPERATIONAL_LEDGER_SOURCE_LABEL).map(([value, label]) => (
@@ -6325,11 +6388,15 @@ export default function StatementReconciliationTab() {
                 className="w-full rounded border border-slate-200 py-1 pl-7 pr-2"
                 placeholder="금액·내용·거래처·ID 검색"
                 value={operationalLedgerSearch}
-                onChange={(e) => setOperationalLedgerSearch(e.target.value)}
+                onChange={(e) => {
+                  setOperationalLedgerSearch(e.target.value)
+                  setOperationalLedgerPage(1)
+                }}
               />
             </div>
             <span className="text-slate-500">
-              표시 {operationalLedgerFilteredRows.length}건 / 로드 {operationalLedgerRows.length}건
+              표시 {operationalLedgerFilteredRows.length}건 / 로드 {operationalLedgerRows.length}건 · 쪽{' '}
+              {operationalLedgerPage}/{operationalLedgerPageCount}
             </span>
           </div>
 
@@ -6360,11 +6427,13 @@ export default function StatementReconciliationTab() {
                     </td>
                   </tr>
                 ) : (
-                  operationalLedgerFilteredRows.slice(0, 400).map((row) => {
+                  pagedOperationalLedgerRows.map((row) => {
                     const candidates = statementCandidatesByLedgerKey[row.key]
+                    const isCandidateLoading = statementCandidateLoadingKeys.has(row.key)
                     const pmLabel = paymentMethodLabelFromRows(row.payment_method, paymentMethods)
                     return (
-                      <tr key={row.key} className="border-t border-slate-100 align-top">
+                      <React.Fragment key={row.key}>
+                      <tr className="border-t border-slate-100 align-top">
                         <td className="px-2 py-2 tabular-nums text-slate-700">{row.date}</td>
                         <td className="px-2 py-2">
                           <div className="flex items-center gap-1.5">
@@ -6404,59 +6473,145 @@ export default function StatementReconciliationTab() {
                               size="sm"
                               variant="outline"
                               className="h-7 text-[11px]"
-                              disabled={statementCandidateLoadingKey === row.key || row.already_matched}
+                              disabled={isCandidateLoading || row.already_matched}
                               onClick={() => void findStatementCandidatesForLedgerRow(row)}
                             >
-                              {statementCandidateLoadingKey === row.key ? '찾는 중…' : '금융계정 명세에서 찾기'}
+                              {isCandidateLoading
+                                ? '찾는 중…'
+                                : candidates
+                                  ? '다시 찾기'
+                                  : '금융계정 명세에서 찾기'}
                             </Button>
-                            {candidates ? (
-                              candidates.length === 0 ? (
-                                <p className="text-[11px] text-slate-500">±7일, 유사 금액 후보가 없습니다.</p>
-                              ) : (
-                                <div className="space-y-1">
-                                  {candidates.map((c) => (
-                                    <div key={c.id} className="rounded border border-slate-200 bg-slate-50 px-2 py-1">
-                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-                                        <span className="font-medium text-slate-800">{c.financial_account_name}</span>
-                                        <span className="tabular-nums">{c.posted_date}</span>
-                                        <span className="tabular-nums">{formatMoneyUsd(c.amount)}</span>
-                                        {c.amount_diff < 0.02 ? (
-                                          <span className="rounded bg-blue-100 px-1 text-blue-800">같은 금액</span>
-                                        ) : (
-                                          <span className="text-amber-700">차이 {formatMoneyUsd(c.amount_diff)}</span>
-                                        )}
-                                        {c.matched_status !== 'unmatched' ? (
-                                          <span className="text-red-700">이미 대조됨</span>
-                                        ) : null}
-                                      </div>
-                                      <div className="mt-0.5 line-clamp-1 text-[11px] text-slate-600" title={c.description}>
-                                        {c.description || '—'}
-                                      </div>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        className="mt-1 h-6 text-[11px]"
-                                        disabled={loading || row.already_matched || c.matched_status !== 'unmatched'}
-                                        onClick={() => void saveOperationalLedgerMatch(row, c)}
-                                      >
-                                        이 명세와 매칭
-                                      </Button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )
+                            {isCandidateLoading ? (
+                              <p className="text-[11px] text-slate-500">후보 로딩 중…</p>
+                            ) : candidates ? (
+                              <p className="text-[11px] text-slate-500">
+                                {candidates.length === 0 ? '후보 없음' : `후보 ${candidates.length}건`}
+                              </p>
                             ) : null}
                           </div>
                         </td>
                       </tr>
+                      {isCandidateLoading || candidates ? (
+                        <tr className="border-t border-slate-100 bg-slate-50/50">
+                          <td colSpan={7} className="px-3 py-3">
+                            {isCandidateLoading ? (
+                              <p className="text-xs text-slate-500">현재 페이지의 명세 후보를 자동으로 찾는 중입니다…</p>
+                            ) : candidates && candidates.length === 0 ? (
+                              <p className="text-xs text-slate-500">±7일, 유사 금액 후보가 없습니다.</p>
+                            ) : (
+                              <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                                <table className="w-full min-w-[920px] text-[11px]">
+                                  <thead className="bg-slate-50 text-left text-slate-500">
+                                    <tr>
+                                      <th className="px-2 py-1.5 font-medium">금융계정</th>
+                                      <th className="px-2 py-1.5 font-medium">명세일</th>
+                                      <th className="px-2 py-1.5 text-right font-medium">명세 금액</th>
+                                      <th className="px-2 py-1.5 font-medium">금액 비교</th>
+                                      <th className="px-2 py-1.5 font-medium">설명</th>
+                                      <th className="px-2 py-1.5 font-medium">상태</th>
+                                      <th className="px-2 py-1.5 text-right font-medium">작업</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(candidates || []).map((c) => (
+                                      <tr key={c.id} className="border-t border-slate-100 align-middle">
+                                        <td className="px-2 py-1.5 font-medium text-slate-900">
+                                          {c.financial_account_name}
+                                        </td>
+                                        <td className="px-2 py-1.5 tabular-nums text-slate-700">{c.posted_date}</td>
+                                        <td className="px-2 py-1.5 text-right tabular-nums font-medium text-slate-900">
+                                          {formatMoneyUsd(c.amount)}
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                          {c.amount_diff < 0.02 ? (
+                                            <span className="rounded bg-blue-100 px-1.5 py-0.5 font-medium text-blue-800">
+                                              같은 금액
+                                            </span>
+                                          ) : (
+                                            <span className="text-amber-700">차이 {formatMoneyUsd(c.amount_diff)}</span>
+                                          )}
+                                          <span className="ml-2 text-slate-500">
+                                            날짜 {Number.isFinite(c.day_diff) ? `${c.day_diff.toFixed(0)}일 차이` : '—'}
+                                          </span>
+                                        </td>
+                                        <td className="px-2 py-1.5 text-slate-600">
+                                          <div className="line-clamp-2" title={c.description}>
+                                            {c.description || '—'}
+                                          </div>
+                                        </td>
+                                        <td className="px-2 py-1.5">
+                                          {c.matched_status === 'unmatched' ? (
+                                            <span className="text-slate-600">미대조</span>
+                                          ) : (
+                                            <span className="font-medium text-red-700">이미 대조됨</span>
+                                          )}
+                                        </td>
+                                        <td className="px-2 py-1.5 text-right">
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            className="h-7 text-[11px]"
+                                            disabled={loading || row.already_matched || c.matched_status !== 'unmatched'}
+                                            onClick={() => void saveOperationalLedgerMatch(row, c)}
+                                          >
+                                            이 명세와 매칭
+                                          </Button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                      </React.Fragment>
                     )
                   })
                 )}
               </tbody>
             </table>
           </div>
-          {operationalLedgerFilteredRows.length > 400 ? (
-            <p className="text-xs text-slate-500">상위 400건만 표시합니다. 검색어나 기간을 좁혀 주세요.</p>
+          {operationalLedgerFilteredRows.length > OPERATIONAL_LEDGER_PAGE_SIZE ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-slate-50/60 px-2 py-2 text-xs text-slate-600">
+              <span>
+                표시 중{' '}
+                <strong>
+                  {(operationalLedgerPage - 1) * OPERATIONAL_LEDGER_PAGE_SIZE + 1}–
+                  {Math.min(operationalLedgerPage * OPERATIONAL_LEDGER_PAGE_SIZE, operationalLedgerFilteredRows.length)}
+                </strong>
+                건 / 전체 <strong>{operationalLedgerFilteredRows.length}</strong>건 · 쪽{' '}
+                <strong>
+                  {operationalLedgerPage}/{operationalLedgerPageCount}
+                </strong>
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  disabled={operationalLedgerPage <= 1}
+                  onClick={() => setOperationalLedgerPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="mr-1 h-3.5 w-3.5" />
+                  이전
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  disabled={operationalLedgerPage >= operationalLedgerPageCount}
+                  onClick={() => setOperationalLedgerPage((p) => Math.min(operationalLedgerPageCount, p + 1))}
+                >
+                  다음
+                  <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
           ) : null}
         </section>
       )}

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Bed, Package } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -48,6 +48,20 @@ interface ExpenseVendor {
   name: string
 }
 
+type ReceiptOcrCandidates = {
+  paid_to: string
+  amount: number | null
+  date: string | null
+  payment_method_text: string
+  card_last4: string
+  paid_for: string
+}
+
+type ReceiptOcrResult = {
+  text: string
+  candidates: ReceiptOcrCandidates
+}
+
 interface ReservationPricing {
   id: string
   reservation_id: string
@@ -83,6 +97,7 @@ interface TourExpenseManagerProps {
   submittedBy: string
   reservationIds?: string[] // 투어에 배정된 예약 ID들
   userRole?: string // 사용자 역할 (admin, manager, team_member 등)
+  allowReceiptOnlyUpload?: boolean
   onExpenseUpdated?: () => void
   /** 팀 구성 & 차량 배정에서 설정한 수수료 (전달 시 총 지출에 반영, 부모 tour 업데이트 시 즉시 반영) */
   tourGuideFee?: number | null
@@ -98,6 +113,7 @@ export default function TourExpenseManager({
   submittedBy, 
   reservationIds,
   userRole = 'team_member',
+  allowReceiptOnlyUpload = false,
   onExpenseUpdated,
   tourGuideFee,
   tourAssistantFee,
@@ -121,9 +137,24 @@ export default function TourExpenseManager({
   const [showCustomPaidFor, setShowCustomPaidFor] = useState(false)
   const [showOptionManagement, setShowOptionManagement] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [paymentMethodTab, setPaymentMethodTab] = useState<'own' | 'other'>('own')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const receiptOnlyInputRef = useRef<HTMLInputElement>(null)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
+  const [ocrReview, setOcrReview] = useState<{
+    expense: TourExpense
+    result: ReceiptOcrResult
+    draft: {
+      paid_to: string
+      paid_for: string
+      amount: string
+      payment_method: string
+      date: string
+      note: string
+    }
+  } | null>(null)
+  const [ocrLoadingExpenseId, setOcrLoadingExpenseId] = useState<string | null>(null)
   const [showDriveImporter, setShowDriveImporter] = useState(false)
   const [showMoreCategories, setShowMoreCategories] = useState(false)
   
@@ -141,6 +172,7 @@ export default function TourExpenseManager({
   // 예약별 지출 데이터 상태
   const [reservationExpenses, setReservationExpenses] = useState<Record<string, number>>({})
   const [reservationChannels, setReservationChannels] = useState<Record<string, any>>({})
+  const receiptOnlyPaidFor = 'Receipt Pending'
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -154,6 +186,66 @@ export default function TourExpenseManager({
     custom_paid_to: '',
     custom_paid_for: ''
   })
+
+  const guideEmail = String(tourData?.tour_guide_id || '').trim().toLowerCase()
+  const activePaymentMethodOptions = useMemo(
+    () => paymentMethodOptions.filter((option) => String(option.status || 'active').toLowerCase() === 'active'),
+    [paymentMethodOptions]
+  )
+  const guideCardPaymentMethodOptions = useMemo(
+    () =>
+      activePaymentMethodOptions.filter((option) => {
+        const optionOwner = String(option.user_email || '').trim().toLowerCase()
+        const methodType = String(option.method_type || 'card').toLowerCase()
+        return !!guideEmail && optionOwner === guideEmail && methodType === 'card'
+      }),
+    [activePaymentMethodOptions, guideEmail]
+  )
+  const guideCardPaymentMethodIds = useMemo(
+    () => new Set(guideCardPaymentMethodOptions.map((option) => option.id)),
+    [guideCardPaymentMethodOptions]
+  )
+  const otherPaymentMethodOptions = useMemo(
+    () => activePaymentMethodOptions.filter((option) => !guideCardPaymentMethodIds.has(option.id)),
+    [activePaymentMethodOptions, guideCardPaymentMethodIds]
+  )
+  const visiblePaymentMethodOptions =
+    paymentMethodTab === 'own' ? guideCardPaymentMethodOptions : otherPaymentMethodOptions
+
+  const getExpensePaidForLabel = (paidFor: string) =>
+    paidFor === receiptOnlyPaidFor ? t('receiptOnlyPendingPaidFor') : paidFor
+
+  const canRunReceiptOcr = userRole === 'admin' || userRole === 'manager'
+
+  const findPaymentMethodCandidate = (candidates: ReceiptOcrCandidates) => {
+    const last4 = candidates.card_last4.trim()
+    const paymentText = candidates.payment_method_text.trim().toLowerCase()
+
+    if (last4) {
+      const byLast4 = paymentMethodOptions.find((option) =>
+        option.name.includes(last4) || option.method.includes(last4)
+      )
+      if (byLast4) return byLast4.id
+    }
+
+    if (paymentText) {
+      const byText = paymentMethodOptions.find((option) =>
+        option.name.toLowerCase().includes(paymentText) ||
+        option.method.toLowerCase().includes(paymentText)
+      )
+      if (byText) return byText.id
+    }
+
+    return ''
+  }
+
+  const handlePaymentMethodTabChange = (tab: 'own' | 'other') => {
+    const nextOptions = tab === 'own' ? guideCardPaymentMethodOptions : otherPaymentMethodOptions
+    setPaymentMethodTab(tab)
+    if (formData.payment_method && !nextOptions.some((option) => option.id === formData.payment_method)) {
+      setFormData((prev) => ({ ...prev, payment_method: '' }))
+    }
+  }
 
   // 예약 데이터 로드 - reservationIds가 있으면 해당 예약들만, 없으면 빈 배열
   const loadReservations = useCallback(async () => {
@@ -665,6 +757,7 @@ export default function TourExpenseManager({
       setShowCustomPaidFor(false)
       setShowCustomPaidTo(false)
       setShowMoreCategories(false)
+      setPaymentMethodTab('own')
       onExpenseUpdated?.()
       alert(t('expenseRegistered'))
     } catch (error) {
@@ -702,6 +795,56 @@ export default function TourExpenseManager({
     } catch (error) {
       console.error('File upload error:', error)
       alert(error instanceof Error ? error.message : t('imageUploadFailed', { error: error instanceof Error ? error.message : t('unknownError') }))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleReceiptOnlyUpload = async (files: FileList | null) => {
+    if (!files?.length) return
+
+    try {
+      setUploading(true)
+      const file = files[0]
+
+      if (!file.type.startsWith('image/')) {
+        throw new Error('이미지 파일만 업로드할 수 있습니다.')
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('파일 크기는 5MB 이하여야 합니다.')
+      }
+
+      const { filePath, imageUrl } = await handleImageUpload(file)
+      const finalProductId = productId || tourData?.product_id || null
+
+      const { data, error } = await supabase
+        .from('tour_expenses')
+        .insert({
+          tour_id: tourId,
+          paid_to: null,
+          paid_for: receiptOnlyPaidFor,
+          amount: 0,
+          payment_method: null,
+          note: 'Receipt uploaded first; expense details pending.',
+          tour_date: tourDate,
+          product_id: finalProductId,
+          submitted_by: submittedBy,
+          image_url: imageUrl,
+          file_path: filePath,
+          status: 'pending'
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setExpenses(prev => [data, ...prev])
+      onExpenseUpdated?.()
+      alert(t('receiptOnlyUploadSuccess'))
+    } catch (error) {
+      console.error('Receipt-only upload error:', error)
+      alert(error instanceof Error ? error.message : t('expenseRegistrationError'))
     } finally {
       setUploading(false)
     }
@@ -802,6 +945,8 @@ export default function TourExpenseManager({
     
     // 기존 paid_to 값이 paidToOptions 목록에 있는지 확인
     const isPaidToInOptions = paidToOptions.includes(expense.paid_to || '')
+    const isPaidForInOptions = categories.some((category) => category.name === expense.paid_for)
+    const isReceiptOnlyPending = expense.paid_for === receiptOnlyPaidFor
     
     console.log('지출 수정 시작:', {
       expensePaidTo: expense.paid_to,
@@ -812,20 +957,107 @@ export default function TourExpenseManager({
     
     setFormData({
       paid_to: isPaidToInOptions ? expense.paid_to : '',
-      paid_for: expense.paid_for,
+      paid_for: isPaidForInOptions ? expense.paid_for : '',
       amount: expense.amount.toString(),
       payment_method: expense.payment_method || '',
       note: expense.note || '',
       image_url: expense.image_url || '',
       file_path: expense.file_path || '',
       custom_paid_to: isPaidToInOptions ? '' : expense.paid_to,
-      custom_paid_for: ''
+      custom_paid_for: !isPaidForInOptions && !isReceiptOnlyPending ? expense.paid_for : ''
     })
+    setPaymentMethodTab(
+      expense.payment_method && guideCardPaymentMethodIds.has(expense.payment_method) ? 'own' : 'other'
+    )
     
     // 기존 값이 paidToOptions 목록에 없으면 직접 입력 모드로 전환
     setShowCustomPaidTo(!isPaidToInOptions)
-    setShowCustomPaidFor(false)
+    setShowCustomPaidFor(!isPaidForInOptions && !isReceiptOnlyPending)
     setShowAddForm(true)
+  }
+
+  const handleRunReceiptOcr = async (expense: TourExpense) => {
+    const imageUrl = expense.image_url?.trim()
+    if (!imageUrl) {
+      alert(t('receiptOcrNoImage'))
+      return
+    }
+
+    try {
+      setOcrLoadingExpenseId(expense.id)
+      const response = await fetch('/api/expenses/receipt-ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl })
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || t('receiptOcrFailed'))
+      }
+
+      const ocrResult = result as ReceiptOcrResult
+      const candidatePaidFor = categories.some((category) => category.name === ocrResult.candidates.paid_for)
+        ? ocrResult.candidates.paid_for
+        : ''
+      const paymentMethodId = findPaymentMethodCandidate(ocrResult.candidates)
+      const noteParts = [
+        expense.note || '',
+        ocrResult.candidates.date ? `${t('receiptOcrDateLabel')}: ${ocrResult.candidates.date}` : ''
+      ].filter(Boolean)
+
+      setOcrReview({
+        expense,
+        result: ocrResult,
+        draft: {
+          paid_to: ocrResult.candidates.paid_to || expense.paid_to || '',
+          paid_for: candidatePaidFor,
+          amount: ocrResult.candidates.amount != null
+            ? ocrResult.candidates.amount.toFixed(2)
+            : (expense.amount > 0 ? expense.amount.toString() : ''),
+          payment_method: paymentMethodId || expense.payment_method || '',
+          date: ocrResult.candidates.date || '',
+          note: noteParts.join('\n')
+        }
+      })
+    } catch (error) {
+      console.error('Receipt OCR error:', error)
+      alert(error instanceof Error ? error.message : t('receiptOcrFailed'))
+    } finally {
+      setOcrLoadingExpenseId(null)
+    }
+  }
+
+  const handleApplyOcrToForm = () => {
+    if (!ocrReview) return
+
+    const { expense, draft } = ocrReview
+    const isPaidToInOptions = paidToOptions.includes(draft.paid_to || '')
+    const dateNote = draft.date ? `${t('receiptOcrDateLabel')}: ${draft.date}` : ''
+    const finalNote = dateNote && !draft.note.includes(dateNote)
+      ? [draft.note, dateNote].filter(Boolean).join('\n')
+      : draft.note
+
+    setEditingExpense(expense)
+    setFormData({
+      paid_to: isPaidToInOptions ? draft.paid_to : '',
+      paid_for: draft.paid_for,
+      amount: draft.amount,
+      payment_method: draft.payment_method,
+      note: finalNote,
+      image_url: expense.image_url || '',
+      file_path: expense.file_path || '',
+      custom_paid_to: isPaidToInOptions ? '' : draft.paid_to,
+      custom_paid_for: ''
+    })
+    setPaymentMethodTab(
+      draft.payment_method && guideCardPaymentMethodIds.has(draft.payment_method) ? 'own' : 'other'
+    )
+    setShowCustomPaidTo(Boolean(draft.paid_to && !isPaidToInOptions))
+    setShowCustomPaidFor(false)
+    setShowMoreCategories(false)
+    setShowAddForm(true)
+    setOcrReview(null)
   }
 
   // 지출 수정 취소
@@ -844,11 +1076,22 @@ export default function TourExpenseManager({
       custom_paid_to: '',
       custom_paid_for: ''
     })
+    setPaymentMethodTab('own')
   }
 
   // 지출 수정 저장
   const handleUpdateExpense = async () => {
     if (!editingExpense) return
+
+    if (!formData.paid_for && !formData.custom_paid_for) {
+      alert(t('fillRequiredFields'))
+      return
+    }
+
+    if (!formData.amount) {
+      alert(t('fillRequiredFields'))
+      return
+    }
 
     if (!formData.payment_method?.trim()) {
       alert(t('paymentMethodRequired'))
@@ -998,7 +1241,7 @@ export default function TourExpenseManager({
       // 투어 기본 정보 로드
       const { data: tour, error: tourError } = await supabase
         .from('tours')
-        .select('id, product_id, team_type, guide_fee, assistant_fee, tour_status')
+        .select('id, product_id, team_type, guide_fee, assistant_fee, tour_status, tour_guide_id')
         .eq('id', tourId)
         .single()
 
@@ -1265,6 +1508,29 @@ export default function TourExpenseManager({
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <div className="flex items-center space-x-2">
+          {allowReceiptOnlyUpload && (
+            <>
+              <input
+                ref={receiptOnlyInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  void handleReceiptOnlyUpload(e.target.files)
+                  e.target.value = ''
+                }}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => receiptOnlyInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center justify-center w-10 h-10 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={t('receiptOnlyUpload')}
+              >
+                <Receipt size={20} />
+              </button>
+            </>
+          )}
           <button
             onClick={() => setShowOptionManagement(true)}
             className="flex items-center justify-center w-10 h-10 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
@@ -1273,7 +1539,10 @@ export default function TourExpenseManager({
             <Settings size={20} />
           </button>
           <button
-            onClick={() => setShowAddForm(true)}
+            onClick={() => {
+              setPaymentMethodTab('own')
+              setShowAddForm(true)
+            }}
             className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             title={t('addExpense')}
           >
@@ -1414,7 +1683,7 @@ export default function TourExpenseManager({
                 {Object.entries(expenseBreakdown).map(([category, data]) => (
                   <div key={category} className="bg-white rounded p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-900">{category}</span>
+                      <span className="font-medium text-gray-900">{getExpensePaidForLabel(category)}</span>
                       <span className="font-bold text-red-600">
                         {formatCurrency(data.amount)} ({data.count} {t('items')})
                       </span>
@@ -1587,7 +1856,7 @@ export default function TourExpenseManager({
               {/* 상단: 지출명, 금액, 상태 뱃지, 수정/삭제/승인/거부 버튼 (오른쪽 끝 정렬) */}
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
-                  <span className="font-medium text-gray-900">{expense.paid_for}</span>
+                  <span className="font-medium text-gray-900">{getExpensePaidForLabel(expense.paid_for)}</span>
                   <span className="text-sm font-bold text-green-600">
                     ${expense.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
@@ -1639,8 +1908,12 @@ export default function TourExpenseManager({
               {/* 하단: 결제처, 제출자, 제출일, 결제방법 */}
               <div className="flex items-center justify-between text-xs text-gray-600">
                 <div className="flex items-center space-x-2">
-                  <span>{expense.paid_to}</span>
-                  <span>•</span>
+                  {expense.paid_to && (
+                    <>
+                      <span>{expense.paid_to}</span>
+                      <span>•</span>
+                    </>
+                  )}
                   <span>{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
                   <span>•</span>
                   <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
@@ -1654,18 +1927,30 @@ export default function TourExpenseManager({
                   
                   {/* 액션 버튼들 (영수증 보기) */}
                   <div className="flex items-center space-x-1">
+                    {canRunReceiptOcr && expense.image_url && expense.image_url.trim() !== '' && (
+                      <button
+                        onClick={() => void handleRunReceiptOcr(expense)}
+                        disabled={ocrLoadingExpenseId === expense.id}
+                        className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={t('receiptOcrAction')}
+                      >
+                        <span className="text-[10px] font-bold">
+                          {ocrLoadingExpenseId === expense.id ? '...' : 'OCR'}
+                        </span>
+                      </button>
+                    )}
                     {expense.image_url && expense.image_url.trim() !== '' ? (
                       <button
                         onClick={() => {
                           console.log('📸 Opening receipt:', {
                             expenseId: expense.id,
                             imageUrl: expense.image_url,
-                            paidFor: expense.paid_for
+                            paidFor: getExpensePaidForLabel(expense.paid_for)
                           })
                           setViewingReceipt({ 
                             imageUrl: expense.image_url!, 
                             expenseId: expense.id,
-                            paidFor: expense.paid_for 
+                            paidFor: getExpensePaidForLabel(expense.paid_for)
                           })
                         }}
                         className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
@@ -1741,6 +2026,155 @@ export default function TourExpenseManager({
         </div>
       )}
 
+      {/* OCR 추출 확인 모달 */}
+      {ocrReview && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl my-8">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{t('receiptOcrReviewTitle')}</h3>
+                <p className="text-sm text-gray-500">{t('receiptOcrReviewDescription')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOcrReview(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paidTo')}</label>
+                  <input
+                    type="text"
+                    value={ocrReview.draft.paid_to}
+                    onChange={(e) =>
+                      setOcrReview((prev) =>
+                        prev ? { ...prev, draft: { ...prev.draft, paid_to: e.target.value } } : prev
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('amount')} (USD)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={ocrReview.draft.amount}
+                    onChange={(e) =>
+                      setOcrReview((prev) =>
+                        prev ? { ...prev, draft: { ...prev.draft, amount: e.target.value } } : prev
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paidFor')}</label>
+                  <select
+                    value={ocrReview.draft.paid_for}
+                    onChange={(e) =>
+                      setOcrReview((prev) =>
+                        prev ? { ...prev, draft: { ...prev.draft, paid_for: e.target.value } } : prev
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">{t('selectOptions.pleaseSelect')}</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.name}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paymentMethod')}</label>
+                  <select
+                    value={ocrReview.draft.payment_method}
+                    onChange={(e) =>
+                      setOcrReview((prev) =>
+                        prev ? { ...prev, draft: { ...prev.draft, payment_method: e.target.value } } : prev
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">{t('selectOptions.pleaseSelect')}</option>
+                    {activePaymentMethodOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('receiptOcrDateLabel')}</label>
+                  <input
+                    type="date"
+                    value={ocrReview.draft.date}
+                    onChange={(e) =>
+                      setOcrReview((prev) =>
+                        prev ? { ...prev, draft: { ...prev.draft, date: e.target.value } } : prev
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('memo')}</label>
+                  <textarea
+                    value={ocrReview.draft.note}
+                    onChange={(e) =>
+                      setOcrReview((prev) =>
+                        prev ? { ...prev, draft: { ...prev.draft, note: e.target.value } } : prev
+                      )
+                    }
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="mb-2 text-sm font-medium text-gray-700">{t('receiptOcrRawText')}</div>
+                <textarea
+                  value={ocrReview.result.text}
+                  readOnly
+                  rows={8}
+                  className="w-full rounded border border-gray-200 bg-white p-2 text-xs text-gray-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 p-4 border-t">
+              <button
+                type="button"
+                onClick={() => setOcrReview(null)}
+                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyOcrToForm}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                {t('receiptOcrApplyToForm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 지출 추가 폼 모달 */}
       {showAddForm && (
         <div 
@@ -1753,6 +2187,7 @@ export default function TourExpenseManager({
               } else {
                 setShowAddForm(false)
                 setShowMoreCategories(false)
+                setPaymentMethodTab('own')
               }
             }
           }}
@@ -1874,26 +2309,26 @@ export default function TourExpenseManager({
                         </button>
                       )}
                       
-                      {/* Misc */}
-                      {categories.find(c => c.name === 'Misc') && (
+                      {/* Meals */}
+                      {categories.find(c => c.name === 'Meals') && (
                         <button
                           type="button"
                           onClick={() => {
-                            if (formData.paid_for === 'Misc') {
+                            if (formData.paid_for === 'Meals') {
                               setFormData(prev => ({ ...prev, paid_for: '' }))
                             } else {
-                              setFormData(prev => ({ ...prev, paid_for: 'Misc' }))
+                              setFormData(prev => ({ ...prev, paid_for: 'Meals' }))
                             }
                             setShowCustomPaidFor(false)
                           }}
                           className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
-                            formData.paid_for === 'Misc'
+                            formData.paid_for === 'Meals'
                               ? 'border-blue-500 bg-blue-50'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}
                         >
-                          <MoreHorizontal className={`w-6 h-6 mb-1 ${formData.paid_for === 'Misc' ? 'text-blue-600' : 'text-gray-600'}`} />
-                          <span className="text-xs text-center text-gray-700">Misc</span>
+                          <UtensilsCrossed className={`w-6 h-6 mb-1 ${formData.paid_for === 'Meals' ? 'text-blue-600' : 'text-gray-600'}`} />
+                          <span className="text-xs text-center text-gray-700">Meals</span>
                         </button>
                       )}
                       
@@ -1908,7 +2343,7 @@ export default function TourExpenseManager({
                         }`}
                       >
                         <MoreHorizontal className={`w-6 h-6 mb-1 ${showMoreCategories ? 'text-blue-600' : 'text-gray-600'}`} />
-                        <span className="text-xs text-center text-gray-700">more</span>
+                        <span className="text-xs text-center text-gray-700">More</span>
                       </button>
                     </div>
                     
@@ -1916,7 +2351,7 @@ export default function TourExpenseManager({
                     {showMoreCategories && (
                       <div className="mt-2 grid grid-cols-4 gap-2">
                         {categories
-                          .filter(c => !['Entrance Fee', 'Gas', 'Misc'].includes(c.name))
+                          .filter(c => !['Entrance Fee', 'Gas', 'Meals'].includes(c.name))
                           .map((category) => {
                             // 카테고리별 아이콘 매핑
                             const getCategoryIcon = (name: string) => {
@@ -2023,13 +2458,48 @@ export default function TourExpenseManager({
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('paymentMethod')} <span className="text-red-500">*</span>
                   </label>
-                  <PaymentMethodAutocomplete
-                    options={paymentMethodOptions}
-                    valueId={formData.payment_method || ''}
-                    onChange={(id) => setFormData((prev) => ({ ...prev, payment_method: id }))}
-                    disabled={uploading}
-                    pleaseSelectLabel={t('selectOptions.pleaseSelect')}
-                  />
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
+                      <button
+                        type="button"
+                        onClick={() => handlePaymentMethodTabChange('own')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          paymentMethodTab === 'own'
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {t('ownCard')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePaymentMethodTabChange('other')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          paymentMethodTab === 'other'
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {t('otherPaymentMethods')}
+                      </button>
+                    </div>
+                    {paymentMethodTab === 'own' && !guideEmail && (
+                      <p className="text-xs text-amber-600">{t('noGuideAssignedForPaymentMethods')}</p>
+                    )}
+                    {paymentMethodTab === 'own' && guideEmail && guideCardPaymentMethodOptions.length === 0 && (
+                      <p className="text-xs text-amber-600">{t('noGuideCardPaymentMethods')}</p>
+                    )}
+                    {paymentMethodTab === 'other' && otherPaymentMethodOptions.length === 0 && (
+                      <p className="text-xs text-amber-600">{t('noOtherActivePaymentMethods')}</p>
+                    )}
+                    <PaymentMethodAutocomplete
+                      options={visiblePaymentMethodOptions}
+                      valueId={formData.payment_method || ''}
+                      onChange={(id) => setFormData((prev) => ({ ...prev, payment_method: id }))}
+                      disabled={uploading}
+                      pleaseSelectLabel={t('selectOptions.pleaseSelect')}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2176,6 +2646,7 @@ export default function TourExpenseManager({
                   onClick={editingExpense ? handleCancelEdit : () => {
                     setShowAddForm(false)
                     setShowMoreCategories(false)
+                    setPaymentMethodTab('own')
                   }}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                 >

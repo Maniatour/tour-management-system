@@ -267,7 +267,7 @@ export async function updateReservation(
       const { data: existingRow } = await supabase
         .from('reservation_pricing')
         .select(
-          'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price'
+          'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price'
         )
         .eq('reservation_id', reservationId)
         .maybeSingle()
@@ -391,6 +391,8 @@ export async function updateReservation(
         coupon_discount: toNum(pricingInfo.couponDiscount),
         additional_discount: toNum(pricingInfo.additionalDiscount),
         additional_cost: toNum(pricingInfo.additionalCost),
+        refund_reason: String(pricingInfo.refundReason ?? '').trim() || null,
+        refund_amount: toNum(pricingInfo.refundAmount),
         card_fee: keep(toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee), existingRow?.card_fee),
         tax: keep(toNum(pricingInfo.tax), existingRow?.tax),
         prepayment_cost: keep(toNum(pricingInfo.prepaymentCost), existingRow?.prepayment_cost),

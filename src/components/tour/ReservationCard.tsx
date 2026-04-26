@@ -1319,6 +1319,97 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
+  // 음수 Balance 환불 처리 핸들러 (고객에게 현금 환불 후 기록)
+  const handleRefundNegativeBalance = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    if (!reservationPricing || !isStaff) return
+
+    const balanceAmount = getBalanceAmountForDisplay(
+      reservationPricing,
+      optionsTotalFromOptions,
+      reservation,
+      { paymentRecords, reservationStatus: reservation.status ?? null }
+    )
+    const refundAmount = Math.abs(balanceAmount)
+
+    if (balanceAmount >= 0 || refundAmount <= 0) {
+      alert('환불할 금액이 없습니다.')
+      return
+    }
+
+    if (!confirm(`환불 ${formatCurrency(refundAmount, reservationPricing?.currency || 'USD')}을 현금으로 지불 완료 처리하시겠습니까?`)) {
+      return
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('인증이 필요합니다.')
+      }
+
+      const userEmail = session.user.email ?? ''
+      const teamDisplay = (await fetchTeamDisplayNameByEmail(supabase, userEmail)) ?? (userEmail || '관리자')
+
+      const paymentResponse = await fetch('/api/payment-records', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          reservation_id: reservation.id,
+          payment_status: 'Refunded',
+          amount: refundAmount,
+          payment_method: 'cash',
+          note: `현금 환불 (${teamDisplay})`
+        })
+      })
+
+      if (!paymentResponse.ok) {
+        const errorData = await paymentResponse.json()
+        throw new Error(errorData.error || '입출금 기록 생성에 실패했습니다.')
+      }
+
+      const { data: existingPricing, error: pricingFetchError } = await supabase
+        .from('reservation_pricing')
+        .select('id')
+        .eq('reservation_id', reservation.id)
+        .single() as { data: { id: string } | null; error: any }
+
+      if (pricingFetchError && pricingFetchError.code !== 'PGRST116') {
+        const msg = typeof pricingFetchError?.message === 'string' ? pricingFetchError.message : ''
+        if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+          console.error('reservation_pricing 조회 오류:', pricingFetchError)
+        }
+      }
+
+      if (existingPricing) {
+        const { error: updateError } = await (supabase as any)
+          .from('reservation_pricing')
+          .update({
+            balance_amount: 0,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingPricing.id)
+
+        if (updateError) {
+          console.error('가격 정보 업데이트 오류:', updateError)
+          alert('환불 기록은 생성되었지만 가격 정보 업데이트에 실패했습니다. 페이지를 새로고침해주세요.')
+        }
+      }
+
+      await fetchPaymentRecords()
+      await fetchReservationPricing()
+      onRefresh?.()
+
+      alert('환불 지불 완료 처리가 기록되었습니다.')
+    } catch (error) {
+      console.error('환불 지불 완료 처리 오류:', error)
+      alert(error instanceof Error ? error.message : '환불 지불 완료 처리 중 오류가 발생했습니다.')
+    }
+  }
+
   return (
      <div 
        className={`p-3 rounded-lg border transition-colors ${
@@ -1630,7 +1721,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               {getPickupLocation() || ''}
             </div>
             
-            {/* 잔액 뱃지 및 수령 버튼 - reservation_pricing.balance_amount 사용(실제 예약 잔금과 일치) */}
+            {/* 잔액/환불 뱃지 및 처리 버튼 - reservation_pricing.balance_amount 사용(실제 예약 잔금과 일치) */}
             {isStaff && (() => {
               const displayBalanceBadge = getBalanceAmountForDisplay(
                 reservationPricing,
@@ -1651,6 +1742,24 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                     >
                       <Wallet size={12} />
                       <span>수령</span>
+                    </button>
+                  </div>
+                )
+              }
+              if (displayBalanceBadge < 0) {
+                const refundAmount = Math.abs(displayBalanceBadge)
+                return (
+                  <div className="flex items-center space-x-2">
+                    <div className="px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                      -{formatCurrency(refundAmount, reservationPricing?.currency || 'USD')}
+                    </div>
+                    <button
+                      onClick={handleRefundNegativeBalance}
+                      className="px-2 py-1 text-xs font-medium bg-rose-600 text-white rounded hover:bg-rose-700 transition-colors flex items-center space-x-1"
+                      title="현금 환불 지불 완료"
+                    >
+                      <HandCoins size={12} />
+                      <span>지불</span>
                     </button>
                   </div>
                 )

@@ -760,7 +760,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+      className="fixed inset-0 z-[1200] flex items-end justify-center sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="vehicle-edit-modal-title"
@@ -1588,7 +1588,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
       {/* 사진 갤러리 모달 */}
       {showPhotoGallery && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-3">
+        <div className="fixed inset-0 z-[1210] flex items-center justify-center bg-black bg-opacity-50 p-3">
           <div className="max-h-[82vh] max-w-4xl overflow-y-auto rounded-lg bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-base font-semibold text-gray-900">

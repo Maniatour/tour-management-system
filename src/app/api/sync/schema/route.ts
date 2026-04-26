@@ -390,6 +390,8 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'coupon_discount', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'additional_discount', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'additional_cost', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'refund_reason', type: 'text', nullable: true, default: null },
+      { name: 'refund_amount', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'card_fee', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'tax', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'prepayment_cost', type: 'numeric', nullable: true, default: '0.00' },

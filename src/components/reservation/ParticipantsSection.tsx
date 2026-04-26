@@ -291,7 +291,7 @@ export default function ParticipantsSection({
         <textarea
           value={formData.eventNote}
           onChange={(e) => setFormData({ ...formData, eventNote: e.target.value })}
-          rows={2}
+          rows={6}
           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
           placeholder={t('form.eventNotePlaceholder')}
         />

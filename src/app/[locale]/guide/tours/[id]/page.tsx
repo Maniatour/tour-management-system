@@ -1929,6 +1929,8 @@ export default function GuideTourDetailPage() {
             productId={tour.product_id}
             submittedBy={currentUserEmail || ''}
             reservationIds={tour.reservation_ids || []}
+            userRole={userRole || 'team_member'}
+            allowReceiptOnlyUpload
             tourGuideFee={isTourCancelled(tour.tour_status) ? 0 : tour.guide_fee}
             tourAssistantFee={isTourCancelled(tour.tour_status) ? 0 : tour.assistant_fee}
             tourStatus={tour.tour_status}

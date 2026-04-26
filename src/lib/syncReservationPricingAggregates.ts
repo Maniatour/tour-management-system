@@ -131,7 +131,7 @@ export async function syncReservationPricingAggregates(
       const lineGross = computeCustomerPaymentTotalLineFormula(pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0], party)
       const { depositTotalNet, balanceReceivedTotal, returnedTotal } = summarizePaymentRecordsForBalance(records)
       const customerNet = Math.max(0, roundUsd2(lineGross - returnedTotal))
-      balance_amount = Math.max(0, roundUsd2(customerNet - depositTotalNet - balanceReceivedTotal))
+      balance_amount = roundUsd2(customerNet - depositTotalNet - balanceReceivedTotal)
       deposit_amount = depositTotalNet
     }
 

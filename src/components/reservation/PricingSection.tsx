@@ -109,6 +109,8 @@ interface PricingSectionProps {
     couponDiscount: number
     additionalDiscount: number
     additionalCost: number
+    refundReason?: string
+    refundAmount?: number
     tax: number
     cardFee: number
     prepaymentCost: number
@@ -160,7 +162,6 @@ interface PricingSectionProps {
   expenseUpdateTrigger?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
-  savePricingInfo: (reservationId: string, overrides?: { depositAmount?: number; balanceAmount?: number }) => Promise<void>
   calculateProductPriceTotal: () => number
   calculateChoiceTotal: () => number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,6 +186,8 @@ interface PricingSectionProps {
   pricingFieldsFromDb?: Record<string, boolean>
   /** 동적가격 로드·정산 연쇄 계산 중이면 숫자 대신 오버레이 (깜빡임 완화) */
   priceCalculationPending?: boolean
+  /** 사용자가 가격 필드를 직접 수정하면 DB 출처 표시(검정)를 끄고 계산/수정값(빨강)으로 전환 */
+  onPricingFieldEdited?: (field: string) => void
   /** 사용자가 채널 정산 금액을 직접 수정하면 DB 출처 표시(검정)를 끔 */
   onChannelSettlementEdited?: () => void
 }
@@ -192,7 +195,6 @@ interface PricingSectionProps {
 export default function PricingSection({
   formData,
   setFormData,
-  savePricingInfo,
   calculateProductPriceTotal,
   calculateChoiceTotal,
   calculateCouponDiscount,
@@ -203,6 +205,7 @@ export default function PricingSection({
   isExistingPricingLoaded,
   pricingFieldsFromDb = {},
   priceCalculationPending = false,
+  onPricingFieldEdited,
   onChannelSettlementEdited,
   reservationId,
   reservationPricingId,
@@ -215,6 +218,12 @@ export default function PricingSection({
   const isKorean = locale === 'ko'
   /** DB 값 = 검은색, 계산값 = 빨간색 */
   const priceTextClass = (field: string) => (pricingFieldsFromDb[field] ? 'text-gray-900' : 'text-red-600')
+  const markPricingEdited = useCallback(
+    (...fields: string[]) => {
+      fields.forEach((field) => onPricingFieldEdited?.(field))
+    },
+    [onPricingFieldEdited]
+  )
   /** reservation_pricing에 commission_base_price(채널 결제 net)가 있으면 상품가·보증금 effect로 덮어쓰지 않음 */
   const channelPaymentLoadedFromDb = Boolean(
     pricingFieldsFromDb.onlinePaymentAmount || pricingFieldsFromDb.commission_base_price
@@ -630,8 +639,12 @@ export default function PricingSection({
     const cardFee = formData.cardFee || 0
     const prepaymentCost = formData.prepaymentCost || 0
     const prepaymentTip = formData.prepaymentTip || 0
+    const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
     // 초이스 판매 총액(choiceTotal/choicesTotal)은 불포함 금액과 이중 계산되므로 합산하지 않음
-    return discountedProductPrice + optionsTotal + notIncludedPrice + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
+    return Math.max(
+      0,
+      discountedProductPrice + optionsTotal + notIncludedPrice + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip - manualRefundAmount
+    )
   }, [
     formData.productPriceTotal,
     formData.couponDiscount,
@@ -645,6 +658,7 @@ export default function PricingSection({
     formData.cardFee,
     formData.prepaymentCost,
     formData.prepaymentTip,
+    formData.refundAmount,
     reservationOptionsTotalPrice,
     notIncludedBreakdown.totalUsd,
     (formData as { status?: string }).status,
@@ -668,7 +682,7 @@ export default function PricingSection({
     if (cancelled) return 0
     const totalCustomerPayment = calculateTotalCustomerPayment()
     const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
-    const defaultBalance = Math.max(0, roundUsd2(totalCustomerPayment - totalPaid))
+    const defaultBalance = roundUsd2(totalCustomerPayment - totalPaid)
     const stored = formData.onSiteBalanceAmount
     if (stored === undefined || stored === null) return defaultBalance
     if (stored === 0 && defaultBalance > 0.01) return defaultBalance
@@ -748,7 +762,7 @@ export default function PricingSection({
       const grossDue = calculateTotalCustomerPaymentGrossRef.current()
       const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedTotal))
       const totalPaid = depositTotalNet + balanceReceivedTotal
-      const remainingBalance = Math.max(0, totalCustomerPayment - totalPaid)
+      const remainingBalance = roundUsd2(totalCustomerPayment - totalPaid)
 
       // OTA 채널 여부 확인 (최신 formData/channels는 ref에서 참조)
       const fd = formDataRef.current
@@ -867,7 +881,7 @@ export default function PricingSection({
     }
     const totalCustomerPayment = calculateTotalCustomerPayment()
     const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
-    const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
+    const calculatedBalance = roundUsd2(totalCustomerPayment - totalPaid)
 
     const notIncludedPrice = notIncludedBreakdown.totalUsd
 
@@ -904,7 +918,10 @@ export default function PricingSection({
       (stored === 0 && calculatedBalance > 0.01) ||
       balanceDifference > 0.01
 
-    if (shouldWrite && !(calculatedBalance === 0 && currentBalance > 0.01)) {
+    const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
+    const preserveExistingPositiveBalance = calculatedBalance === 0 && currentBalance > 0.01 && manualRefundAmount <= 0
+
+    if (shouldWrite && !preserveExistingPositiveBalance) {
       setFormData((prevForm: typeof formData) => ({
         ...prevForm,
         onSiteBalanceAmount: calculatedBalance,
@@ -921,6 +938,7 @@ export default function PricingSection({
     formData.pricingAdults,
     formData.child,
     formData.infant,
+    formData.refundAmount,
     notIncludedBreakdown.totalUsd,
     setFormData,
     productSalePriceCommitTick,
@@ -1048,10 +1066,7 @@ export default function PricingSection({
               calculatedCommission
             )
             const commissionToSet = nextCommissionAmount
-            const otaRemainingBalance = Math.max(
-              0,
-              roundUsd2(totalCustomerPayment - depositPortion - calculatedBalanceReceivedTotal)
-            )
+            const otaRemainingBalance = roundUsd2(totalCustomerPayment - depositPortion - calculatedBalanceReceivedTotal)
             const same =
               Math.abs((formData.depositAmount ?? 0) - depositPortion) < 0.01 &&
               Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01 &&
@@ -1085,9 +1100,13 @@ export default function PricingSection({
             // 잔액도 함께 계산하여 업데이트
             const totalCustomerPayment = calculateTotalCustomerPayment()
             const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
-            const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
+            const calculatedBalance = roundUsd2(totalCustomerPayment - totalPaid)
             const existingBalance = formData.onSiteBalanceAmount ?? 0
-            const balanceToUse = (calculatedBalance === 0 && existingBalance > 0) ? existingBalance : calculatedBalance
+            const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
+            const balanceToUse =
+              calculatedBalance === 0 && existingBalance > 0 && manualRefundAmount <= 0
+                ? existingBalance
+                : calculatedBalance
             // 무한 루프 방지: 설정할 값이 이미 현재와 같으면 setFormData 호출하지 않음
             const sameDeposit = Math.abs((formData.depositAmount ?? 0) - discountedPrice) < 0.01
             const sameBalance = Math.abs((formData.onSiteBalanceAmount ?? 0) - balanceToUse) < 0.01
@@ -1191,6 +1210,7 @@ export default function PricingSection({
     ['cancelled', 'canceled'].includes(String(reservationStatusRaw).toLowerCase().trim())
   /** 취소 후에도 OTA 부분 정산 시 `commission_amount` 그대로 반영 (미입력이면 0) */
   const effectiveCommissionAmount = Number(formData.commission_amount) || 0
+  const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
 
   // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (정산·채널 결제 UI에서 공통)
   const discountedProductPrice =
@@ -1753,7 +1773,7 @@ export default function PricingSection({
     // OTA 채널일 때는 단순 계산: OTA 판매가 - 쿠폰 할인 + 추가비용 - 커미션
     if (isOTAChannel) {
       const otaSalePrice = formData.productPriceTotal // OTA 판매가 (초이스 포함)
-      const afterCoupon = otaSalePrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+      const afterCoupon = otaSalePrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost - manualRefundAmount
       
       let commissionAmount = 0
       if (effectiveCommissionAmount > 0) {
@@ -1765,7 +1785,7 @@ export default function PricingSection({
       return afterCoupon - commissionAmount
     }
     
-    const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal + reservationOptionsTotalPrice
+    const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal + reservationOptionsTotalPrice - manualRefundAmount
     
     // commission_base_price_only가 true인 경우, 판매가격에만 커미션 적용
     if (commissionBasePriceOnly) {
@@ -1774,7 +1794,7 @@ export default function PricingSection({
       const notIncludedTotal = notIncludedBreakdown.totalUsd
       
       // 판매가격만 계산 (초이스와 불포함 금액 제외)
-      const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+      const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost - manualRefundAmount
       
       let commissionAmount = 0
       if (effectiveCommissionAmount > 0) {
@@ -2236,7 +2256,7 @@ export default function PricingSection({
           </span>
         </div>
       )}
-      {/* 왼쪽: 제목·채널·날짜·기존가격/완료 뱃지·단독투어 / 오른쪽 끝: 저장·초기화 */}
+      {/* 가격 정보 상태 뱃지 */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-medium text-gray-900">{t('form.pricingInfo')}</h3>
@@ -2253,6 +2273,15 @@ export default function PricingSection({
           {isExistingPricingLoaded && (
             <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">기존 가격</span>
           )}
+          {!isExistingPricingLoaded && (
+            <span className="px-2 py-1 bg-red-50 border border-red-200 rounded text-xs text-red-700">동적가격/계산값</span>
+          )}
+          <span className="px-2 py-1 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
+            검정=DB값
+          </span>
+          <span className="px-2 py-1 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+            빨강=계산/수정값
+          </span>
           <div className="flex items-center space-x-1">
             {!formData.productId && (
               <span className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">상품</span>
@@ -2267,79 +2296,6 @@ export default function PricingSection({
               <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">✓ 완료</span>
             )}
           </div>
-          <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 cursor-pointer hover:bg-violet-100 focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-1">
-            <input
-              type="checkbox"
-              checked={formData.isPrivateTour}
-              onChange={(e) => setFormData({ ...formData, isPrivateTour: e.target.checked })}
-              className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-violet-300 rounded"
-            />
-            <span className="text-xs font-medium text-violet-800">단독투어</span>
-          </label>
-          {formData.isPrivateTour && (
-            <div className="flex items-center space-x-1">
-              <span className="text-xs text-gray-600">+$</span>
-              <input
-                type="number"
-                value={formData.privateTourAdditionalCost}
-                onChange={(e) => setFormData({ ...formData, privateTourAdditionalCost: Number(e.target.value) || 0 })}
-                className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                step="0.01"
-                placeholder="0"
-              />
-            </div>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                if (!reservationId) {
-                  alert(isKorean ? '가격 정보만 저장하려면 먼저 예약을 저장해 주세요.' : 'Please save the reservation first to save pricing.')
-                  return
-                }
-                await savePricingInfo(reservationId)
-                alert('가격 정보가 저장되었습니다!')
-              } catch {
-                alert('가격 정보 저장 중 오류가 발생했습니다.')
-              }
-            }}
-            className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-          >
-            저장
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              setFormData((prev: any) => ({
-                ...prev,
-                adultProductPrice: 0,
-                childProductPrice: 0,
-                infantProductPrice: 0,
-                selectedChoices: {},
-                couponCode: '',
-                couponDiscount: 0,
-                additionalDiscount: 0,
-                additionalCost: 0,
-                cardFee: 0,
-                tax: 0,
-                prepaymentCost: 0,
-                prepaymentTip: 0,
-                selectedOptionalOptions: {},
-                depositAmount: 0,
-                isPrivateTour: false,
-                privateTourAdditionalCost: 0,
-                commission_percent: 0,
-                commission_amount: 0,
-                productChoices: []
-              }))
-            }}
-            className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
-          >
-            초기화
-          </button>
         </div>
       </div>
 
@@ -2369,6 +2325,7 @@ export default function PricingSection({
                       value={formData.pricingAdults}
                       onChange={(e) => {
                         const v = Math.max(0, Math.floor(Number(e.target.value) || 0))
+                        markPricingEdited('pricingAdults', 'productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
                         setFormData({ ...formData, pricingAdults: v })
                       }}
                       className={`w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-blue-500 ${priceTextClass('pricingAdults')}`}
@@ -2389,6 +2346,7 @@ export default function PricingSection({
                       onBlur={onProductSalePriceFocusOut}
                       onChange={(e) => {
                         const salePrice = Number(e.target.value) || 0
+                        markPricingEdited('productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
                         // 상품 가격 총합 계산 (불포함 가격 제외)
                         const childPrice = isSinglePrice ? salePrice : (formData.childProductPrice || 0)
                         const infantPrice = isSinglePrice ? salePrice : (formData.infantProductPrice || 0)
@@ -2421,6 +2379,7 @@ export default function PricingSection({
                       value={formData.not_included_price || ''}
                       onChange={(e) => {
                         const notIncluded = Number(e.target.value) || 0
+                        markPricingEdited('not_included_price', 'productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
                         // 상품 가격 총합 계산 (불포함 가격 제외)
                         const salePrice = formData.adultProductPrice || 0
                         const childSalePrice = formData.childProductPrice || 0
@@ -2489,6 +2448,7 @@ export default function PricingSection({
                         onBlur={onProductSalePriceFocusOut}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
+                          markPricingEdited('productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
                           const childTotalPrice = newPrice + (formData.not_included_price || 0)
                           const infantTotalPrice = (formData.infantProductPrice || 0) + (formData.not_included_price || 0)
@@ -2521,6 +2481,7 @@ export default function PricingSection({
                         onBlur={onProductSalePriceFocusOut}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
+                          markPricingEdited('productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
                           const childTotalPrice = (formData.childProductPrice || 0) + (formData.not_included_price || 0)
                           const infantTotalPrice = newPrice + (formData.not_included_price || 0)
@@ -2676,6 +2637,7 @@ export default function PricingSection({
                   value={formData.couponCode}
                   onChange={(e) => {
                     onCouponDropdownUserInput?.()
+                    markPricingEdited('couponDiscount', 'totalPrice', 'onSiteBalanceAmount')
                     const selectedCouponCode = e.target.value
                     const notIncludedPrice = notIncludedBreakdown.totalUsd
                     setFormData((prev: typeof formData) => {
@@ -2778,7 +2740,10 @@ export default function PricingSection({
                     <input
                       type="number"
                       value={formData.additionalDiscount}
-                      onChange={(e) => setFormData({ ...formData, additionalDiscount: Number(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        markPricingEdited('additionalDiscount', 'totalPrice', 'onSiteBalanceAmount')
+                        setFormData({ ...formData, additionalDiscount: Number(e.target.value) || 0 })
+                      }}
                       className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                     />
@@ -2791,7 +2756,10 @@ export default function PricingSection({
                     <input
                       type="number"
                       value={formData.additionalCost}
-                      onChange={(e) => setFormData({ ...formData, additionalCost: Number(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        markPricingEdited('additionalCost', 'totalPrice', 'onSiteBalanceAmount')
+                        setFormData({ ...formData, additionalCost: Number(e.target.value) || 0 })
+                      }}
                       className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                     />
@@ -2807,7 +2775,10 @@ export default function PricingSection({
                     <input
                       type="number"
                       value={formData.tax}
-                      onChange={(e) => setFormData({ ...formData, tax: Number(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        markPricingEdited('tax', 'totalPrice', 'onSiteBalanceAmount')
+                        setFormData({ ...formData, tax: Number(e.target.value) || 0 })
+                      }}
                       className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                     />
@@ -2820,7 +2791,10 @@ export default function PricingSection({
                     <input
                       type="number"
                       value={formData.cardFee}
-                      onChange={(e) => setFormData({ ...formData, cardFee: Number(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        markPricingEdited('cardFee', 'totalPrice', 'onSiteBalanceAmount')
+                        setFormData({ ...formData, cardFee: Number(e.target.value) || 0 })
+                      }}
                       className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                     />
@@ -2838,7 +2812,10 @@ export default function PricingSection({
                       <input
                         type="number"
                         value={formData.prepaymentCost}
-                        onChange={(e) => setFormData({ ...formData, prepaymentCost: Number(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          markPricingEdited('prepaymentCost', 'totalPrice', 'onSiteBalanceAmount')
+                          setFormData({ ...formData, prepaymentCost: Number(e.target.value) || 0 })
+                        }}
                         className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                         step="0.01"
                         placeholder="0"
@@ -2852,7 +2829,10 @@ export default function PricingSection({
                       <input
                         type="number"
                         value={formData.prepaymentTip}
-                        onChange={(e) => setFormData({ ...formData, prepaymentTip: Number(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          markPricingEdited('prepaymentTip', 'totalPrice', 'onSiteBalanceAmount')
+                          setFormData({ ...formData, prepaymentTip: Number(e.target.value) || 0 })
+                        }}
                         className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                         step="0.01"
                         placeholder="0"
@@ -2860,6 +2840,40 @@ export default function PricingSection({
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 환불 입력 */}
+          <div className="bg-white p-3 rounded border border-gray-200">
+            <h4 className="text-sm font-medium text-gray-900 mb-2">환불</h4>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">환불 금액</label>
+                <div className="relative">
+                  <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                  <input
+                    type="number"
+                    value={formData.refundAmount ?? 0}
+                    onChange={(e) => {
+                      markPricingEdited('refundAmount', 'totalPrice', 'onSiteBalanceAmount')
+                      setFormData({ ...formData, refundAmount: Number(e.target.value) || 0 })
+                    }}
+                    className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">환불 이유</label>
+                <textarea
+                  value={formData.refundReason ?? ''}
+                  onChange={(e) => setFormData({ ...formData, refundReason: e.target.value })}
+                  rows={3}
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  placeholder="예: 일정 변경, 고객 취소"
+                />
               </div>
             </div>
           </div>
@@ -2984,6 +2998,21 @@ export default function PricingSection({
                   <span className={`text-[10px] text-gray-700 ${priceTextClass('additionalCost')}`}>+${(formData.additionalCost || 0).toFixed(2)}</span>
                 </div>
               )}
+
+              {manualRefundAmount > 0 && (
+                <div className="flex justify-between items-center mb-1.5 rounded px-1.5 py-1 bg-red-50 border border-red-100">
+                  <span
+                    className="text-[10px] text-red-800 cursor-help"
+                    title={formData.refundReason?.trim() || (isKorean ? '직접 입력한 환불 금액입니다.' : 'Manual refund amount.')}
+                  >
+                    {isKorean ? '− 환불' : '− Refund'}
+                    {formData.refundReason?.trim() ? `: ${formData.refundReason.trim()}` : ''}
+                  </span>
+                  <span className={`text-[10px] font-semibold text-red-700 ${priceTextClass('refundAmount')}`}>
+                    −${manualRefundAmount.toFixed(2)}
+                  </span>
+                </div>
+              )}
               
               {/* 세금 */}
               {(formData.tax || 0) > 0 && (
@@ -3105,10 +3134,11 @@ export default function PricingSection({
                       value={formData.depositAmount}
                       onChange={(e) => {
                         depositAmountUserEditedRef.current = true
+                        markPricingEdited('depositAmount', 'onSiteBalanceAmount', 'balanceAmount')
                         const newDepositAmount = Number(e.target.value) || 0
                         const totalCustomerPayment = calculateTotalCustomerPayment()
                         const totalPaid = newDepositAmount + calculatedBalanceReceivedTotal
-                        const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
+                        const calculatedBalance = roundUsd2(totalCustomerPayment - totalPaid)
                         setFormData((prev: typeof formData) => {
                           const otaNetBase = Math.max(0, newDepositAmount - returnedAmount)
                           const next = {
@@ -3180,6 +3210,7 @@ export default function PricingSection({
                       const inputValue = e.target.value
                       setOnSiteBalanceAmountInput(inputValue)
                       const newBalance = Number(inputValue) || 0
+                      markPricingEdited('onSiteBalanceAmount', 'balanceAmount')
                       setFormData({ ...formData, onSiteBalanceAmount: newBalance, balanceAmount: newBalance })
                     }}
                     onFocus={() => {
@@ -3189,6 +3220,7 @@ export default function PricingSection({
                     onBlur={() => {
                       setIsOnSiteBalanceAmountFocused(false)
                       const finalValue = parseFloat(parseFloat(onSiteBalanceAmountInput || '0').toFixed(2))
+                      markPricingEdited('onSiteBalanceAmount', 'balanceAmount')
                       setFormData({ ...formData, onSiteBalanceAmount: finalValue, balanceAmount: finalValue })
                     }}
                     className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('onSiteBalanceAmount')}`}
@@ -3236,6 +3268,7 @@ export default function PricingSection({
                       onChange={(e) => {
                         const inputValue = e.target.value
                         setChannelPaymentAmountInput(inputValue)
+                        markPricingEdited('onlinePaymentAmount', 'commission_base_price', 'commission_amount', 'channel_settlement_amount')
                         
                         const numValue = Number(inputValue) || 0
                         // Returned를 고려한 실제 금액
@@ -3280,6 +3313,7 @@ export default function PricingSection({
                       }}
                       onBlur={() => {
                         setIsChannelPaymentAmountFocused(false)
+                        markPricingEdited('onlinePaymentAmount', 'commission_base_price', 'commission_amount', 'channel_settlement_amount')
                         const finalValue = Number(channelPaymentAmountInput) || 0
                         const actualAmount = finalValue + returnedAmount
                         
@@ -3402,6 +3436,7 @@ export default function PricingSection({
                           }
                           onChange={(e) => {
                             const percent = Number(e.target.value) || 0
+                            markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
                             const basePrice = formData.commission_base_price !== undefined 
                               ? formData.commission_base_price 
                               : (formData.onlinePaymentAmount || (() => {
@@ -3468,6 +3503,7 @@ export default function PricingSection({
                           setCommissionAmountInput(inputValue)
                           const newAmount = Number(inputValue) || 0
                           isCardFeeManuallyEdited.current = true
+                          markPricingEdited('commission_amount', 'channel_settlement_amount')
                           console.log('PricingSection: commission_amount 수동 입력:', newAmount)
                           setFormData((prev: typeof formData) => ({
                             ...omitChannelSettlementAmount(prev),
@@ -3482,6 +3518,7 @@ export default function PricingSection({
                           setIsCommissionAmountFocused(false)
                           const finalAmount = Number(commissionAmountInput) || formData.commission_amount || 0
                           isCardFeeManuallyEdited.current = true
+                          markPricingEdited('commission_amount', 'channel_settlement_amount')
                           setFormData((prev: typeof formData) => ({
                             ...omitChannelSettlementAmount(prev),
                             commission_amount: finalAmount,
@@ -3513,6 +3550,7 @@ export default function PricingSection({
                               value={formData.commission_percent ?? 2.9}
                               onChange={(e) => {
                                 isCardFeeManuallyEdited.current = true
+                                markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
                                 const newPercent = Number(e.target.value) || 0
                                 const basePrice = formData.commission_base_price !== undefined 
                                   ? formData.commission_base_price 
@@ -3565,6 +3603,7 @@ export default function PricingSection({
                             setCommissionAmountInput(inputValue)
                             const newAmount = Number(inputValue) || 0
                             isCardFeeManuallyEdited.current = true
+                          markPricingEdited('commission_amount', 'channel_settlement_amount')
                             setFormData((prev: typeof formData) => ({
                               ...omitChannelSettlementAmount(prev),
                               commission_amount: newAmount,
@@ -3578,6 +3617,7 @@ export default function PricingSection({
                             setIsCommissionAmountFocused(false)
                             const finalAmount = Number(commissionAmountInput) || formData.commission_amount || 0
                             isCardFeeManuallyEdited.current = true
+                          markPricingEdited('commission_amount', 'channel_settlement_amount')
                             setFormData((prev: typeof formData) => ({
                               ...omitChannelSettlementAmount(prev),
                               commission_amount: finalAmount,
@@ -3635,6 +3675,7 @@ export default function PricingSection({
                       const n = Number(inputValue)
                       if (inputValue === '' || inputValue === '-') return
                       if (Number.isFinite(n)) {
+                        markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => ({
                           ...prev,
                           channelSettlementAmount: Math.max(0, n),
@@ -3650,9 +3691,11 @@ export default function PricingSection({
                       setIsChannelSettlementAmountFocused(false)
                       const raw = channelSettlementAmountInput.trim()
                       if (raw === '') {
+                        markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => omitChannelSettlementAmount({ ...prev }))
                       } else {
                         const finalValue = Math.max(0, roundUsd2(Number(raw) || 0))
+                        markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => ({
                           ...prev,
                           channelSettlementAmount: finalValue,
@@ -3776,12 +3819,22 @@ export default function PricingSection({
               
               {/* 환불금 — 파트너 Returned는 위 채널 결제 금액(표시)에 이미 반영되어 이중 차감하지 않음 */}
               {(() => {
-                if (refundedAmount <= 0) return null
+                if (refundedAmount <= 0 && manualRefundAmount <= 0) return null
+                const totalRefundAmount = refundedAmount + manualRefundAmount
                 return (
                   <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-xs font-medium text-red-700">- {isKorean ? '환불금 (우리)' : 'Refunded (Our Side)'}</span>
+                    <span
+                      className="text-xs font-medium text-red-700 cursor-help"
+                      title={
+                        manualRefundAmount > 0 && formData.refundReason?.trim()
+                          ? formData.refundReason.trim()
+                          : undefined
+                      }
+                    >
+                      - {isKorean ? '환불금' : 'Refund'}
+                    </span>
                     <span className="text-xs font-medium text-red-600">
-                      -${refundedAmount.toFixed(2)}
+                      -${totalRefundAmount.toFixed(2)}
                     </span>
                   </div>
                 )
@@ -3795,7 +3848,9 @@ export default function PricingSection({
                 <span className="text-base font-bold text-green-600">
                   ${(() => {
                     if (isReservationCancelled) {
-                      if (isOTAChannel) return channelSettlementBeforePartnerReturn.toFixed(2)
+                      if (isOTAChannel) {
+                        return (channelSettlementBeforePartnerReturn - refundedAmount - manualRefundAmount).toFixed(2)
+                      }
                       return '0.00'
                     }
                     const channelSettlementAmount = channelSettlementBeforePartnerReturn
@@ -3838,7 +3893,7 @@ export default function PricingSection({
                     }
                     
                     // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
-                    totalRevenue -= refundedAmount
+                    totalRevenue -= refundedAmount + manualRefundAmount
 
                     // 홈페이지: 추가비용은 회사 총 매출에 포함하지 않음(고객 결제·정산 소계에는 남을 수 있음)
                     if (isHomepageBooking && (formData.additionalCost || 0) > 0) {
@@ -3871,7 +3926,10 @@ export default function PricingSection({
                     if (isReservationCancelled) {
                       if (isOTAChannel) {
                         return (
-                          channelSettlementBeforePartnerReturn - (formData.prepaymentTip || 0)
+                          channelSettlementBeforePartnerReturn -
+                          refundedAmount -
+                          manualRefundAmount -
+                          (formData.prepaymentTip || 0)
                         ).toFixed(2)
                       }
                       return '0.00'
@@ -3915,7 +3973,7 @@ export default function PricingSection({
                     }
                     
                     // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
-                    totalRevenue -= refundedAmount
+                    totalRevenue -= refundedAmount + manualRefundAmount
 
                     if (isHomepageBooking && (formData.additionalCost || 0) > 0) {
                       totalRevenue -= formData.additionalCost
