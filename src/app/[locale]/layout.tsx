@@ -24,26 +24,55 @@ const inter = Inter({
 // Use generateMetadata instead of static metadata to inject dynamic favicon
 
 export async function generateMetadata(): Promise<Metadata> {
+  const fallbackMetadata: Metadata = {
+    manifest: '/manifest.json',
+    icons: {
+      icon: [{ url: '/company-logo.png' }],
+      shortcut: [{ url: '/company-logo.png' }],
+      apple: [{ url: '/company-logo.png' }]
+    },
+    other: {
+      'preload-css': 'true'
+    }
+  };
+
   try {
     const supabase = await createServerSupabase();
-    // 채널 중 파비콘이 설정된 항목을 우선 가져오고, self 타입을 우선 선택
-    const { data } = await supabase
+    // 1) 홈페이지 채널 아이콘(M00001 또는 이름에 홈페이지/homepage)을 최우선으로 조회
+    const { data: homepageChannel } = await supabase
       .from('channels' as any)
-      .select('favicon_url, type')
+      .select('id, name, favicon_url, type')
+      .or('id.eq.M00001,name.ilike.%homepage%,name.ilike.%홈페이지%')
       .not('favicon_url', 'is', null)
-      .limit(50);
+      .limit(1)
+      .maybeSingle();
 
-    const faviconUrl = (data || [])
-      .sort((a: any, b: any) => (a.type === 'self' ? -1 : b.type === 'self' ? 1 : 0))
-      .find((c: any) => !!c.favicon_url)?.favicon_url as string | undefined;
+    // 2) 없으면 self 채널 아이콘 조회
+    let faviconUrl = homepageChannel?.favicon_url as string | undefined;
+    if (!faviconUrl) {
+      const { data: selfChannel } = await supabase
+        .from('channels' as any)
+        .select('favicon_url')
+        .eq('type', 'self')
+        .not('favicon_url', 'is', null)
+        .limit(1)
+        .maybeSingle();
+      faviconUrl = selfChannel?.favicon_url as string | undefined;
+    }
+
+    // 3) 그래도 없으면 아무 채널 아이콘 1개
+    if (!faviconUrl) {
+      const { data: anyChannel } = await supabase
+        .from('channels' as any)
+        .select('favicon_url')
+        .not('favicon_url', 'is', null)
+        .limit(1)
+        .maybeSingle();
+      faviconUrl = anyChannel?.favicon_url as string | undefined;
+    }
 
     if (!faviconUrl) {
-      return {
-        manifest: '/manifest.json',
-        other: {
-          'preload-css': 'true'
-        }
-      }
+      return fallbackMetadata;
     }
 
     return {
@@ -58,9 +87,7 @@ export async function generateMetadata(): Promise<Metadata> {
       }
     };
   } catch {
-    return {
-      manifest: '/manifest.json'
-    };
+    return fallbackMetadata;
   }
 }
 

@@ -26,6 +26,53 @@ export function normalizeReservationIds(reservationIds: unknown): string[] {
   return []
 }
 
+/** 정규화한 뒤, 첫 등장 순서를 유지하며 ID 중복을 제거 (한 투어의 reservation_ids 배열만 정리) */
+export function dedupeReservationIdsPreservingOrder(reservationIds: unknown): string[] {
+  const ids = normalizeReservationIds(reservationIds)
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of ids) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+/**
+ * 모든 투어의 reservation_ids에 각 예약 ID가 등장한 총 횟수.
+ * 동일 투어 배열에 같은 ID가 두 번 있으면 2로 집계됩니다.
+ */
+export function countReservationOccurrencesAcrossTours(
+  tours: Array<{ reservation_ids?: unknown }>
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const t of tours) {
+    for (const id of normalizeReservationIds(t.reservation_ids)) {
+      const k = String(id).trim()
+      if (!k) continue
+      counts.set(k, (counts.get(k) || 0) + 1)
+    }
+  }
+  return counts
+}
+
+/** 투어에 배정된 예약 중 하나라도 전역적으로 2번 이상 등장하면 true (배열 내 중복·다른 투어 중복 포함) */
+export function tourHasReservationAssignmentDuplicates(
+  reservationIdsRaw: unknown,
+  globalCounts: Map<string, number>
+): boolean {
+  const ids = normalizeReservationIds(reservationIdsRaw)
+  const seen = new Set<string>()
+  for (const id of ids) {
+    const k = String(id).trim()
+    if (!k || seen.has(k)) continue
+    seen.add(k)
+    if ((globalCounts.get(k) || 0) >= 2) return true
+  }
+  return false
+}
+
 /** 예약 상태가 취소인지 (cancelled / canceled / cancel 포함) */
 export function isReservationCancelledStatus(status: string | null | undefined): boolean {
   const s = (status || '').toString().toLowerCase().trim()

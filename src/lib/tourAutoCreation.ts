@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { createTourPhotosBucket } from './tourPhotoBucket'
 import { generateTourId } from './entityIds'
+import { normalizeReservationIds } from '@/utils/tourUtils'
 
 export interface TourAutoCreationResult {
   success: boolean
@@ -67,11 +68,20 @@ export async function autoCreateOrUpdateTour(
     }
 
     if (existingTours && existingTours.length > 0) {
+      const rid = String(reservationId).trim()
+      for (const t of existingTours) {
+        if (normalizeReservationIds(t.reservation_ids).includes(rid)) {
+          return {
+            success: true,
+            tourId: t.id,
+            message: '이미 해당 날짜·상품 투어에 연결된 예약입니다.',
+          }
+        }
+      }
       // 3. 기존 투어가 있는 경우: reservation_ids에 새 예약 ID 추가
       const existingTour = existingTours[0]
-      // reservation_ids를 TEXT[] 형식으로 처리
-      const currentReservationIds = existingTour.reservation_ids || []
-      const updatedReservationIds = [...currentReservationIds, reservationId]
+      const currentReservationIds = normalizeReservationIds(existingTour.reservation_ids)
+      const updatedReservationIds = [...new Set([...currentReservationIds, rid])]
 
       // 투어에 단독투어 예약이 추가되면 투어도 단독투어로 표시
       const shouldUpdateToPrivate = isPrivateTour || false

@@ -1,5 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { PAYMENT_METHOD_REF_TABLES } from '@/lib/paymentMethodRefTables'
+
+const REFERENCE_COUNT_BATCH_SIZE = 1000
+
+async function loadReferenceCountByKeyFallback(): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  if (!supabaseAdmin) return counts
+
+  for (const table of PAYMENT_METHOD_REF_TABLES) {
+    let offset = 0
+    while (true) {
+      const { data, error } = await supabaseAdmin
+        .from(table)
+        .select('payment_method')
+        .range(offset, offset + REFERENCE_COUNT_BATCH_SIZE - 1)
+
+      if (error) {
+        console.warn(`reference_count fallback ${table}:`, error.message)
+        break
+      }
+
+      const rows = Array.isArray(data) ? data : []
+      for (const row of rows as { payment_method?: string | null }[]) {
+        const key = row.payment_method != null ? String(row.payment_method).trim() : ''
+        if (!key) continue
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+
+      if (rows.length < REFERENCE_COUNT_BATCH_SIZE) break
+      offset += REFERENCE_COUNT_BATCH_SIZE
+    }
+  }
+
+  return counts
+}
 
 // GET: 결제 방법 목록 조회
 export async function GET(request: NextRequest) {
@@ -40,12 +75,15 @@ export async function GET(request: NextRequest) {
 
     /** 각 테이블의 payment_method 문자열(trim)별 건수 — 키는 ID·표시명 등과 동일한 문자열일 수 있음 */
     let referenceCountByKey = new Map<string, number>()
+    let referenceCountAvailable = false
     if (supabaseAdmin) {
       const { data: countRows, error: countError } = await supabaseAdmin.rpc(
         'payment_method_reference_counts'
       )
       if (countError) {
         console.warn('payment_method_reference_counts RPC:', countError.message)
+        referenceCountByKey = await loadReferenceCountByKeyFallback()
+        referenceCountAvailable = true
       } else if (Array.isArray(countRows)) {
         for (const row of countRows as { payment_method?: string; reference_count?: number | string }[]) {
           const k = row.payment_method != null ? String(row.payment_method).trim() : ''
@@ -53,6 +91,7 @@ export async function GET(request: NextRequest) {
           const n = Number(row.reference_count)
           referenceCountByKey.set(k, Number.isFinite(n) ? n : 0)
         }
+        referenceCountAvailable = true
       }
     }
 
@@ -115,7 +154,7 @@ export async function GET(request: NextRequest) {
 
     // team · 금융 계정 · 참조 건수 (저장값이 구 ID·방법명·표시명 중 무엇이든 합산)
     const paymentMethodsWithTeam = paymentMethods.map((pm: any) => {
-      const reference_count = supabaseAdmin ? referenceCountForRow(pm) : null
+      const reference_count = referenceCountAvailable ? referenceCountForRow(pm) : null
       return {
         ...pm,
         team: pm.user_email ? teamMap[String(pm.user_email).toLowerCase()] || null : null,

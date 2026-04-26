@@ -156,7 +156,7 @@ export default function PaymentMethodsPage() {
   }
 
   return (
-    <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto">
+    <div className="p-3 sm:p-4 lg:p-6 w-full">
       {/* 헤더 - 모바일 컴팩트 */}
       <div className="mb-4 sm:mb-6 lg:mb-8">
         <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">

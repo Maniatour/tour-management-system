@@ -126,6 +126,20 @@ export default function PaymentMethodUsageModal({
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Record<string, true>>({})
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState<string>('')
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
+
+  const tableSummaries = PAYMENT_METHOD_REF_TABLES.map((table) => {
+    const group = groups.find((g) => g.table === table)
+    return {
+      table,
+      label: TABLE_LABELS[table] || table,
+      count: group?.count ?? 0,
+      hasError: Boolean(group?.error),
+    }
+  })
 
   const load = useCallback(async () => {
     if (!methodId) return
@@ -133,6 +147,8 @@ export default function PaymentMethodUsageModal({
     setLoadError(null)
     setExpanded(null)
     setDraft({})
+    setSelectedRowKeys({})
+    setBulkError(null)
     try {
       const res = await fetch(`/api/admin/payment-methods/${encodeURIComponent(methodId)}/references`)
       const json = await res.json()
@@ -149,6 +165,79 @@ export default function PaymentMethodUsageModal({
       setLoading(false)
     }
   }, [methodId])
+
+  const makeRowKey = (table: string, id: string) => `${table}:${id}`
+  const selectedCount = Object.keys(selectedRowKeys).length
+
+  const toggleRowSelection = (table: string, id: string, checked: boolean) => {
+    const key = makeRowKey(table, id)
+    setSelectedRowKeys((prev) => {
+      if (checked) return { ...prev, [key]: true }
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+
+  const toggleTableSelection = (table: string, rows: Record<string, unknown>[], checked: boolean) => {
+    setSelectedRowKeys((prev) => {
+      const next = { ...prev }
+      for (const row of rows) {
+        const id = String(row.id ?? '')
+        if (!id) continue
+        const key = makeRowKey(table, id)
+        if (checked) next[key] = true
+        else delete next[key]
+      }
+      return next
+    })
+  }
+
+  const applyBulkPaymentMethod = async () => {
+    if (!bulkPaymentMethod) {
+      setBulkError('일괄 변경할 결제 방법을 선택해 주세요.')
+      return
+    }
+    if (selectedCount === 0) {
+      setBulkError('일괄 변경할 행을 먼저 선택해 주세요.')
+      return
+    }
+
+    setBulkSaving(true)
+    setBulkError(null)
+    try {
+      const idsByTable: Record<string, string[]> = {}
+      for (const key of Object.keys(selectedRowKeys)) {
+        const i = key.indexOf(':')
+        if (i <= 0) continue
+        const table = key.slice(0, i)
+        const id = key.slice(i + 1)
+        if (!id) continue
+        if (!idsByTable[table]) idsByTable[table] = []
+        idsByTable[table].push(id)
+      }
+
+      const tasks = Object.entries(idsByTable).map(async ([table, ids]) => {
+        const res = await fetch('/api/admin/payment-method-references', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table, ids, payment_method: bulkPaymentMethod }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          throw new Error(json.message || `${table} 일괄 수정에 실패했습니다.`)
+        }
+      })
+
+      await Promise.all(tasks)
+      await load()
+      onSaved?.()
+    } catch (e) {
+      setBulkError(e instanceof Error ? e.message : '일괄 수정에 실패했습니다.')
+    } finally {
+      setBulkSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (open && methodId) void load()
@@ -309,7 +398,7 @@ export default function PaymentMethodUsageModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>결제 방법 사용 내역</DialogTitle>
           <DialogDescription asChild>
@@ -334,6 +423,51 @@ export default function PaymentMethodUsageModal({
             <p className="text-sm text-gray-700">
               총 <strong>{total}</strong>건
             </p>
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 space-y-2">
+              <div className="text-xs text-blue-900">
+                선택된 행 <strong>{selectedCount}</strong>건
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <select
+                  className="border border-blue-200 bg-white rounded px-2 py-1 text-sm min-w-[14rem]"
+                  value={bulkPaymentMethod}
+                  onChange={(e) => setBulkPaymentMethod(e.target.value)}
+                >
+                  <option value="">일괄 변경할 결제 방법 선택</option>
+                  {paymentMethodOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.method} ({o.id})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="text-sm px-3 py-1.5 rounded bg-blue-600 text-white disabled:opacity-50"
+                  onClick={() => void applyBulkPaymentMethod()}
+                  disabled={bulkSaving || selectedCount === 0 || !bulkPaymentMethod}
+                >
+                  {bulkSaving ? '일괄 변경 중…' : '선택 행 결제 방법 일괄 변경'}
+                </button>
+              </div>
+              {bulkError && <div className="text-xs text-red-600">{bulkError}</div>}
+            </div>
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="text-xs font-medium text-gray-600 mb-1">테이블별 건수</div>
+              <div className="flex flex-wrap gap-2">
+                {tableSummaries.map((summary) => (
+                  <span
+                    key={summary.table}
+                    className={`text-xs rounded-full px-2 py-0.5 border ${
+                      summary.hasError
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : 'border-gray-200 bg-white text-gray-700'
+                    }`}
+                  >
+                    {summary.label} {summary.count}건{summary.hasError ? ' (오류)' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
 
             {groups.map((g) => {
               if (g.error && g.count === 0) {
@@ -348,7 +482,17 @@ export default function PaymentMethodUsageModal({
               return (
                 <div key={g.table} className="border border-gray-200 rounded-lg overflow-hidden">
                   <div className="bg-gray-50 px-3 py-2 text-sm font-medium text-gray-800 border-b border-gray-200 flex justify-between gap-2">
-                    <span>{TABLE_LABELS[g.table] || g.table}</span>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={
+                          g.rows.length > 0 &&
+                          g.rows.every((row) => Boolean(selectedRowKeys[makeRowKey(g.table, String(row.id ?? ''))]))
+                        }
+                        onChange={(e) => toggleTableSelection(g.table, g.rows, e.target.checked)}
+                      />
+                      <span>{TABLE_LABELS[g.table] || g.table}</span>
+                    </label>
                     <span className="text-gray-500 font-normal">
                       {g.count}건{g.capped ? ' (상한 도달, 일부만 표시)' : ''}
                     </span>
@@ -365,7 +509,14 @@ export default function PaymentMethodUsageModal({
                         <div key={key} className="bg-white">
                           <div className="px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className="text-sm text-gray-900 line-clamp-2">{rowSummary(g.table, row)}</div>
+                              <div className="text-sm text-gray-900 line-clamp-2 flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selectedRowKeys[key])}
+                                  onChange={(e) => toggleRowSelection(g.table, id, e.target.checked)}
+                                />
+                                <span>{rowSummary(g.table, row)}</span>
+                              </div>
                               <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                                 <span>금액 {formatMoney(rowAmount(g.table, row))}</span>
                                 <span>{formatDate(rowDate(g.table, row))}</span>

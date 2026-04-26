@@ -769,9 +769,14 @@ export default function PaymentMethodManager({
   // 결제 방법 삭제
   const handleDeleteMethod = async (id: string) => {
     if (!confirm('정말로 이 결제 방법을 삭제하시겠습니까?')) return
+    const normalizedId = String(id ?? '').trim()
+    if (!normalizedId) {
+      alert('유효한 결제 방법 ID가 없습니다.')
+      return
+    }
     
     try {
-      const response = await fetch(`/api/payment-methods/${id}`, {
+      const response = await fetch(`/api/payment-methods/${encodeURIComponent(normalizedId)}`, {
         method: 'DELETE'
       })
 
@@ -780,7 +785,7 @@ export default function PaymentMethodManager({
         throw new Error(result.message)
       }
 
-      setMethods(prev => prev.filter(method => method.id !== id))
+      await loadMethods()
       onMethodUpdated?.()
       alert('결제 방법이 삭제되었습니다.')
     } catch (error) {

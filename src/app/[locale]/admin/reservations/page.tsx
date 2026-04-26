@@ -35,9 +35,11 @@ import ReservationsEmptyState from '@/components/reservation/ReservationsEmptySt
 import ReservationsPagination from '@/components/reservation/ReservationsPagination'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 import ReservationActionRequiredModal from '@/components/reservation/ReservationActionRequiredModal'
+import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { useAuth } from '@/contexts/AuthContext'
+import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -2403,14 +2405,64 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     setEditingCustomer(customer)
   }, [])
 
+  const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
+  const [cancellationReasonValue, setCancellationReasonValue] = useState('')
+  const [cancellationReasonSaving, setCancellationReasonSaving] = useState(false)
+  const cancellationReasonTargetReservationIdRef = useRef<string | null>(null)
+  const cancellationReasonResolveRef = useRef<((value: string | null) => void) | null>(null)
+
+  const requestCancellationReason = useCallback((reservationId: string) => {
+    cancellationReasonTargetReservationIdRef.current = reservationId
+    setCancellationReasonValue('')
+    setCancellationReasonModalOpen(true)
+    return new Promise<string | null>((resolve) => {
+      cancellationReasonResolveRef.current = resolve
+    })
+  }, [])
+
+  const closeCancellationReasonModal = useCallback(() => {
+    setCancellationReasonModalOpen(false)
+    cancellationReasonTargetReservationIdRef.current = null
+    cancellationReasonResolveRef.current?.(null)
+    cancellationReasonResolveRef.current = null
+  }, [])
+
+  const submitCancellationReasonModal = useCallback(async (reason: string) => {
+    const trimmed = reason.trim()
+    if (!trimmed) return
+    setCancellationReasonSaving(true)
+    try {
+      setCancellationReasonModalOpen(false)
+      cancellationReasonResolveRef.current?.(trimmed)
+      cancellationReasonResolveRef.current = null
+      cancellationReasonTargetReservationIdRef.current = null
+      setCancellationReasonValue(trimmed)
+    } finally {
+      setCancellationReasonSaving(false)
+    }
+  }, [])
+
   const handleStatusChange = useCallback(async (reservationId: string, newStatus: string) => {
+    const normalized = (newStatus || '').toLowerCase()
+    if (normalized === 'cancelled' || normalized === 'canceled') {
+      const reason = await requestCancellationReason(reservationId)
+      if (!reason) return
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: newStatus })
+        .eq('id', reservationId)
+      if (error) throw error
+      await upsertReservationCancellationReason(reservationId, reason, user?.email ?? null)
+      await refreshReservations()
+      return
+    }
     const { error } = await supabase
       .from('reservations')
       .update({ status: newStatus })
       .eq('id', reservationId)
     if (error) throw error
     await refreshReservations()
-  }, [refreshReservations])
+  }, [refreshReservations, requestCancellationReason, user?.email])
 
   const handleEmailLogsClick = useCallback((reservationId: string) => {
     setSelectedReservationForEmailLogs(reservationId)
@@ -3460,6 +3512,15 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
           />
         )}
+      />
+
+      <CancellationReasonModal
+        isOpen={cancellationReasonModalOpen}
+        locale={locale}
+        initialValue={cancellationReasonValue}
+        saving={cancellationReasonSaving}
+        onClose={closeCancellationReasonModal}
+        onSubmit={submitCancellationReasonModal}
       />
     </div>
   )

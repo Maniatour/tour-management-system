@@ -120,7 +120,13 @@ export default function AdminTours() {
   }, [tourUiHydrated, refreshNeedCheckStats])
 
   const handleNeedCheckDataLoaded = useCallback(
-    (p: { unionCount: number; noReceiptCount: number; balanceCount: number }) => {
+    (p: {
+      unionCount: number
+      noReceiptCount: number
+      balanceCount: number
+      duplicateCount: number
+      unassignedCount: number
+    }) => {
       setNeedCheckStats({ union: p.unionCount })
     },
     []
@@ -1076,6 +1082,8 @@ export default function AdminTours() {
         subtitle={t('needCheckModalSubtitle')}
         tabNoReceiptLabel={t('needCheckTabNoReceipt')}
         tabBalanceLabel={t('needCheckTabBalance')}
+        tabDuplicateLabel={t('needCheckTabDuplicate')}
+        tabUnassignedLabel={t('needCheckTabUnassigned')}
         locale={locale}
         onDataLoaded={handleNeedCheckDataLoaded}
         onTourClick={(tourId) => {

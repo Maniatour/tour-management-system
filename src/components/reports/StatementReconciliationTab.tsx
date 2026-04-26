@@ -325,6 +325,8 @@ const EXPENSE_SOURCE_FILTER_OPTIONS: { value: '' | ExpensePickerBrowseTable; lab
 const RECONCILIATION_PAGE_SIZE = 40
 /** 운영 지출입 찾기 — 각 행 후보를 자동 조회하므로 페이지 단위로 제한 */
 const OPERATIONAL_LEDGER_PAGE_SIZE = 20
+/** 운영 지출입 찾기: reconciliation_matches source_id IN 조회 청크 */
+const OPERATIONAL_LEDGER_MATCH_IN_CHUNK = 200
 /** PostgREST 기본 max-rows(1000) — 단일 select로는 그 이후 행이 잘림 → range 순회 */
 const STATEMENT_LINES_FETCH_PAGE = 1000
 /** 대조 표에 쓰는 컬럼만 조회 (raw JSONB 제외로 전송·파싱 비용 대폭 감소) */
@@ -346,15 +348,32 @@ const PICKER_BROWSE_PAGE_SIZE = 40
 const PAYMENT_LINK_RENDER_LIMIT = 150
 /** 자동 매칭 미리보기: 한 명세 줄당 표시할 후보 수 */
 const AUTO_MATCH_CANDIDATE_LIMIT = 8
+/** 자동 매칭 미리보기: 한 번에 렌더링할 행 수(체크 토글 버벅임 완화) */
+const AUTO_MATCH_PREVIEW_PAGE_SIZE = 120
 /** 자동 매칭 미리보기: 금액이 완전히 같지 않아도 후보로 볼 최대 차이(또는 5%) */
 const AUTO_MATCH_MAX_AMOUNT_DIFF_ABS = 5
 const AUTO_MATCH_MAX_DAY_DIFF = 7
+/** 계정별 명세 줄·매칭 메모리 캐시 TTL (짧게 유지해 DB 왕복만 완화) */
+const RECONCILIATION_LOAD_CACHE_TTL_MS = 15000
+
+function ymdToUtcDayNumber(raw: string): number {
+  const s = String(raw ?? '').trim()
+  const ymd = s.length >= 10 ? s.slice(0, 10) : s
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return Number.NaN
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  const t = Date.UTC(y, mo - 1, d)
+  if (Number.isNaN(t)) return Number.NaN
+  return Math.floor(t / 86400000)
+}
 
 function dayDiffFromYmd(iso: string, ymd: string): number {
-  const a = new Date(iso).getTime()
-  const b = new Date(`${ymd}T12:00:00`).getTime()
-  if (Number.isNaN(a) || Number.isNaN(b)) return Number.POSITIVE_INFINITY
-  return Math.abs(a - b) / 86400000
+  const a = ymdToUtcDayNumber(iso)
+  const b = ymdToUtcDayNumber(ymd)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.POSITIVE_INFINITY
+  return Math.abs(a - b)
 }
 
 function autoMatchCandidateScore(lineAmount: number, postedDate: string, expense: AutoMatchExpenseCandidate) {
@@ -992,6 +1011,7 @@ export default function StatementReconciliationTab() {
   const [autoMatchApplying, setAutoMatchApplying] = useState(false)
   /** 미리보기에서 저장할 명세 줄 id — 기본은 후보 전체 선택 */
   const [autoMatchSelectedIds, setAutoMatchSelectedIds] = useState<Set<string>>(() => new Set())
+  const [autoMatchPreviewPage, setAutoMatchPreviewPage] = useState(1)
   /** 미리보기에서 명세 줄별로 선택한 후보 key */
   const [autoMatchCandidateSelection, setAutoMatchCandidateSelection] = useState<Record<string, string>>({})
   const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
@@ -1144,7 +1164,7 @@ export default function StatementReconciliationTab() {
   const loadImports = useCallback(async () => {
     const { data, error } = await supabase
       .from('statement_imports')
-      .select('*')
+      .select('id,financial_account_id,period_label,period_start,period_end,status,original_filename,created_at')
       .order('period_start', { ascending: false })
       .limit(200)
     if (error && !isAbortLikeError(error)) console.error(error)
@@ -1171,12 +1191,16 @@ export default function StatementReconciliationTab() {
 
   const importsRef = useRef(imports)
   importsRef.current = imports
+  const linesMatchesCacheRef = useRef<
+    Map<string, { loadedAt: number; lines: StatementLine[]; matches: ReconciliationMatchRow[] }>
+  >(new Map())
 
   /** 명세 줄 로드 경합 시 이전 요청의 finally 가 로딩을 끄지 않도록 */
   const loadLinesGenRef = useRef(0)
 
   /** 선택 금융 계정에 연결된 모든 명세 업로드의 줄·매칭을 합쳐 로드 */
-  const loadLinesAndMatchesForAccount = useCallback(async (accountId: string) => {
+  const loadLinesAndMatchesForAccount = useCallback(async (accountId: string, options?: { force?: boolean }) => {
+    const force = Boolean(options?.force)
     if (!accountId) {
       loadLinesGenRef.current += 1
       setReconciliationLinesLoading(false)
@@ -1189,6 +1213,7 @@ export default function StatementReconciliationTab() {
     const importIds = importsRef.current
       .filter((im) => im.financial_account_id === accountId)
       .map((im) => im.id)
+      .sort()
     if (importIds.length === 0) {
       loadLinesGenRef.current += 1
       setReconciliationLinesLoading(false)
@@ -1197,6 +1222,18 @@ export default function StatementReconciliationTab() {
         setMatches([])
       })
       return
+    }
+    const cacheKey = `${accountId}|${importIds.join(',')}`
+    if (!force) {
+      const cached = linesMatchesCacheRef.current.get(cacheKey)
+      if (cached && Date.now() - cached.loadedAt < RECONCILIATION_LOAD_CACHE_TTL_MS) {
+        startTransition(() => {
+          setLines(cached.lines)
+          setMatches(cached.matches)
+        })
+        setReconciliationLinesLoading(false)
+        return
+      }
     }
     const gen = ++loadLinesGenRef.current
     setReconciliationLinesLoading(true)
@@ -1242,6 +1279,11 @@ export default function StatementReconciliationTab() {
         return String(a.id).localeCompare(String(b.id))
       })
       matchRows = dedupeReconciliationMatchRows(matchRows)
+      linesMatchesCacheRef.current.set(cacheKey, {
+        loadedAt: Date.now(),
+        lines: linesArr,
+        matches: matchRows
+      })
       if (gen === loadLinesGenRef.current) {
         startTransition(() => {
           setLines(linesArr)
@@ -1878,6 +1920,26 @@ export default function StatementReconciliationTab() {
     () => Math.max(1, Math.ceil(reconciliationTableLines.length / RECONCILIATION_PAGE_SIZE)),
     [reconciliationTableLines.length]
   )
+  const autoMatchPreviewPageCount = useMemo(
+    () => Math.max(1, Math.ceil(autoMatchProposals.length / AUTO_MATCH_PREVIEW_PAGE_SIZE)),
+    [autoMatchProposals.length]
+  )
+  const normalizedAutoMatchPreviewPage = Math.min(autoMatchPreviewPage, autoMatchPreviewPageCount)
+  const autoMatchPagedProposals = useMemo(() => {
+    const start = (normalizedAutoMatchPreviewPage - 1) * AUTO_MATCH_PREVIEW_PAGE_SIZE
+    return autoMatchProposals.slice(start, start + AUTO_MATCH_PREVIEW_PAGE_SIZE)
+  }, [autoMatchProposals, normalizedAutoMatchPreviewPage])
+  const autoMatchPageAllSelected =
+    autoMatchPagedProposals.length > 0 &&
+    autoMatchPagedProposals.every((p) => autoMatchSelectedIds.has(p.statement_line_id))
+  const autoMatchPageSelectedCount = useMemo(
+    () =>
+      autoMatchPagedProposals.reduce(
+        (count, p) => count + (autoMatchSelectedIds.has(p.statement_line_id) ? 1 : 0),
+        0
+      ),
+    [autoMatchPagedProposals, autoMatchSelectedIds]
+  )
 
   const pagedReconciliationLines = useMemo(() => {
     const start = (reconciliationPage - 1) * RECONCILIATION_PAGE_SIZE
@@ -2101,10 +2163,14 @@ export default function StatementReconciliationTab() {
   useEffect(() => {
     const el = autoMatchSelectAllRef.current
     if (!el) return
-    const total = autoMatchProposals.length
-    const n = autoMatchSelectedIds.size
+    const total = autoMatchPagedProposals.length
+    const n = autoMatchPageSelectedCount
     el.indeterminate = total > 0 && n > 0 && n < total
-  }, [autoMatchPreviewOpen, autoMatchProposals.length, autoMatchSelectedIds])
+  }, [autoMatchPreviewOpen, autoMatchPagedProposals, autoMatchPageSelectedCount])
+
+  useEffect(() => {
+    setAutoMatchPreviewPage((p) => Math.min(Math.max(1, p), autoMatchPreviewPageCount))
+  }, [autoMatchPreviewPageCount])
 
   useEffect(() => {
     if (!unmatchedSidebarOpen) {
@@ -2591,7 +2657,7 @@ export default function StatementReconciliationTab() {
       const n = json.flippedCount ?? 0
       setMessage(`명세 ${n}건의 지출·수입 방향을 반전했습니다. (CSV 가져오기 규칙은 그대로입니다.)`)
       if (filterAccountId === accountId) {
-        await loadLinesAndMatchesForAccount(accountId)
+        await loadLinesAndMatchesForAccount(accountId, { force: true })
       }
     } catch (e) {
       if (isAbortLikeError(e)) {
@@ -2978,6 +3044,7 @@ export default function StatementReconciliationTab() {
     )
     setAutoMatchProposals(proposals)
     setAutoMatchSelectedIds(new Set(proposals.map((p) => p.statement_line_id)))
+    setAutoMatchPreviewPage(1)
     setAutoMatchCandidateSelection(selectedCandidateByLine)
     setAutoMatchPreviewOpen(true)
   }
@@ -2988,6 +3055,7 @@ export default function StatementReconciliationTab() {
       setAutoMatchProposals([])
       setAutoMatchSummaryHint(null)
       setAutoMatchSelectedIds(new Set())
+      setAutoMatchPreviewPage(1)
       setAutoMatchCandidateSelection({})
       return
     }
@@ -3044,13 +3112,14 @@ export default function StatementReconciliationTab() {
     setAutoMatchProposals([])
     setAutoMatchSummaryHint(null)
     setAutoMatchSelectedIds(new Set())
+    setAutoMatchPreviewPage(1)
     setAutoMatchCandidateSelection({})
     setMessage(
       reconciliationPageCount > 1
         ? `자동 매칭 ${n}건 저장됨 (페이지 ${reconciliationPage}/${reconciliationPageCount} 범위)`
         : `자동 매칭 ${n}건 저장됨`
     )
-    await loadLinesAndMatchesForAccount(filterAccountId)
+    await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
     await refreshUnmatchedExpenseKeys()
   }
 
@@ -3074,7 +3143,7 @@ export default function StatementReconciliationTab() {
       setResetAllMatchesOpen(false)
       setMessage('모든 명세 대조 매칭(지출·입금 연결)이 초기화되었습니다.')
       if (filterAccountId) {
-        await loadLinesAndMatchesForAccount(filterAccountId)
+        await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
         await refreshUnmatchedExpenseKeys()
       }
       await loadImports()
@@ -3117,11 +3186,24 @@ export default function StatementReconciliationTab() {
           personal_partner: next ? line.personal_partner : null
         })
         .eq('id', line.id)
+      setLines((prev) =>
+        prev.map((row) =>
+          row.id === line.id
+            ? {
+                ...row,
+                is_personal: next,
+                personal_partner: next ? row.personal_partner : null
+              }
+            : row
+        )
+      )
     } else {
       const next = !line.exclude_from_pnl
       await supabase.from('statement_lines').update({ exclude_from_pnl: next }).eq('id', line.id)
+      setLines((prev) =>
+        prev.map((row) => (row.id === line.id ? { ...row, exclude_from_pnl: next } : row))
+      )
     }
-    await loadLinesAndMatchesForAccount(filterAccountId)
   }
 
   const setStatementPersonalPartner = async (
@@ -3132,7 +3214,9 @@ export default function StatementReconciliationTab() {
       .from('statement_lines')
       .update({ personal_partner: partner || null })
       .eq('id', line.id)
-    await loadLinesAndMatchesForAccount(filterAccountId)
+    setLines((prev) =>
+      prev.map((row) => (row.id === line.id ? { ...row, personal_partner: partner || null } : row))
+    )
   }
 
   const syncLineMatchedFlag = async (lineId: string) => {
@@ -3246,7 +3330,7 @@ export default function StatementReconciliationTab() {
       }
       await syncLineMatchedFlag(line.id)
       setMessage(value ? '지출 매칭을 저장했습니다.' : '지출 매칭을 해제했습니다.')
-      await loadLinesAndMatchesForAccount(filterAccountId)
+      await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
       await refreshUnmatchedExpenseKeys()
     } catch (e) {
       setMessage(e instanceof Error ? e.message : '저장 실패')
@@ -3277,7 +3361,7 @@ export default function StatementReconciliationTab() {
       })
       await syncLineMatchedFlag(line.id)
       setMessage('입금 매칭을 추가했습니다.')
-      await loadLinesAndMatchesForAccount(filterAccountId)
+      await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
     } catch (e) {
       setMessage(e instanceof Error ? e.message : '저장 실패')
     } finally {
@@ -3307,7 +3391,7 @@ export default function StatementReconciliationTab() {
       }
       await supabase.from('reconciliation_matches').delete().eq('id', matchRowId)
       await syncLineMatchedFlag(lineId)
-      await loadLinesAndMatchesForAccount(filterAccountId)
+      await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
       await refreshUnmatchedExpenseKeys()
       setMessage('매칭을 삭제했습니다.')
     } catch (e) {
@@ -3663,34 +3747,36 @@ export default function StatementReconciliationTab() {
       const matched = new Set<string>()
       const byTable = new Map<OperationalLedgerSourceTable, string[]>()
       for (const row of rows) {
-        byTable.set(row.source_table, [...(byTable.get(row.source_table) || []), row.source_id])
+        const arr = byTable.get(row.source_table)
+        if (arr) arr.push(row.source_id)
+        else byTable.set(row.source_table, [row.source_id])
       }
       await Promise.all(
         [...byTable.entries()].map(async ([table, ids]) => {
           const unique = [...new Set(ids)]
           if (unique.length === 0) return
-          const { data, error } = await (supabase as any)
-            .from('reconciliation_matches')
-            .select('source_id')
-            .eq('source_table', table)
-            .in('source_id', unique)
-          if (error) {
-            if (!isAbortLikeError(error)) console.error(error)
-            return
+          for (let i = 0; i < unique.length; i += OPERATIONAL_LEDGER_MATCH_IN_CHUNK) {
+            const chunk = unique.slice(i, i + OPERATIONAL_LEDGER_MATCH_IN_CHUNK)
+            const { data, error } = await (supabase as any)
+              .from('reconciliation_matches')
+              .select('source_id')
+              .eq('source_table', table)
+              .in('source_id', chunk)
+            if (error) {
+              if (!isAbortLikeError(error)) {
+                console.error(
+                  `reconciliation_matches 조회 실패 (table=${table}, chunk=${i / OPERATIONAL_LEDGER_MATCH_IN_CHUNK + 1})`,
+                  error
+                )
+              }
+              continue
+            }
+            for (const m of data || []) matched.add(operationalLedgerKey(table, String(m.source_id)))
           }
-          for (const m of data || []) matched.add(operationalLedgerKey(table, String(m.source_id)))
         })
       )
 
-      setOperationalLedgerRows(
-        rows
-          .map((r) => ({ ...r, already_matched: matched.has(r.key) }))
-          .sort((a, b) => {
-            const d = a.date.localeCompare(b.date)
-            if (d !== 0) return d
-            return a.source_table.localeCompare(b.source_table)
-          })
-      )
+      setOperationalLedgerRows(rows.map((r) => ({ ...r, already_matched: matched.has(r.key) })))
       setStatementCandidatesByLedgerKey({})
       setOperationalLedgerPage(1)
     } catch (e) {
@@ -3701,9 +3787,37 @@ export default function StatementReconciliationTab() {
     }
   }, [operationalLedgerStart, operationalLedgerEnd])
 
+  /** 금융 계정이 연결된 결제수단 — DB에 저장될 수 있는 id·방법명·표시명 키 */
+  const operationalLedgerLinkedPaymentKeys = useMemo(() => {
+    const s = new Set<string>()
+    for (const pm of paymentMethods) {
+      if (!pm.financial_account_id) continue
+      for (const v of [pm.id, pm.method, pm.display_name]) {
+        if (v == null) continue
+        const k = String(v).trim()
+        if (k) s.add(k)
+      }
+    }
+    return s
+  }, [paymentMethods])
+
+  /** 결제수단↔금융계정 연결이 있는 행을 먼저(날짜·테이블은 그 다음) */
+  const operationalLedgerSortedRows = useMemo(() => {
+    return [...operationalLedgerRows].sort((a, b) => {
+      const aKey = a.payment_method?.trim() ?? ''
+      const bKey = b.payment_method?.trim() ?? ''
+      const aLinked = aKey.length > 0 && operationalLedgerLinkedPaymentKeys.has(aKey)
+      const bLinked = bKey.length > 0 && operationalLedgerLinkedPaymentKeys.has(bKey)
+      if (aLinked !== bLinked) return aLinked ? -1 : 1
+      const d = a.date.localeCompare(b.date)
+      if (d !== 0) return d
+      return a.source_table.localeCompare(b.source_table)
+    })
+  }, [operationalLedgerRows, operationalLedgerLinkedPaymentKeys])
+
   const operationalLedgerFilteredRows = useMemo(() => {
     const q = operationalLedgerSearch.trim().toLowerCase()
-    return operationalLedgerRows.filter((row) => {
+    return operationalLedgerSortedRows.filter((row) => {
       if (operationalLedgerScope === 'unmatched' && row.already_matched) return false
       if (operationalLedgerSourceFilter && row.source_table !== operationalLedgerSourceFilter) return false
       if (!q) return true
@@ -3722,7 +3836,7 @@ export default function StatementReconciliationTab() {
       return hay.includes(q)
     })
   }, [
-    operationalLedgerRows,
+    operationalLedgerSortedRows,
     operationalLedgerScope,
     operationalLedgerSourceFilter,
     operationalLedgerSearch,
@@ -3899,7 +4013,7 @@ export default function StatementReconciliationTab() {
           prev.map((r) => (r.key === row.key ? { ...r, already_matched: true } : r))
         )
         setMessage('운영 원장 행을 명세와 매칭했습니다.')
-        if (filterAccountId) await loadLinesAndMatchesForAccount(filterAccountId)
+        if (filterAccountId) await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
       } catch (e) {
         setMessage(e instanceof Error ? e.message : '매칭 저장 실패')
       } finally {
@@ -4134,7 +4248,7 @@ export default function StatementReconciliationTab() {
         onCompleted={async () => {
           setMessage('보정 지출이 생성·연결되었습니다.')
           if (filterAccountId) {
-            await loadLinesAndMatchesForAccount(filterAccountId)
+            await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
             await refreshUnmatchedExpenseKeys()
           }
         }}
@@ -4150,7 +4264,7 @@ export default function StatementReconciliationTab() {
         onCompleted={async () => {
           setMessage('선택한 명세 줄에 지출을 생성·연결했습니다.')
           if (filterAccountId) {
-            await loadLinesAndMatchesForAccount(filterAccountId)
+            await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
             await refreshUnmatchedExpenseKeys()
           }
         }}
@@ -4165,6 +4279,7 @@ export default function StatementReconciliationTab() {
             setAutoMatchProposals([])
             setAutoMatchSummaryHint(null)
             setAutoMatchSelectedIds(new Set())
+            setAutoMatchPreviewPage(1)
             setAutoMatchCandidateSelection({})
           }
         }}
@@ -4200,17 +4315,24 @@ export default function StatementReconciliationTab() {
                       ref={autoMatchSelectAllRef}
                       type="checkbox"
                       className="rounded border-slate-300 align-middle"
-                      checked={
-                        autoMatchProposals.length > 0 &&
-                        autoMatchSelectedIds.size === autoMatchProposals.length
-                      }
+                      checked={autoMatchPageAllSelected}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setAutoMatchSelectedIds(
-                            new Set(autoMatchProposals.map((x) => x.statement_line_id))
-                          )
+                          setAutoMatchSelectedIds((prev) => {
+                            const next = new Set(prev)
+                            for (const row of autoMatchPagedProposals) {
+                              next.add(row.statement_line_id)
+                            }
+                            return next
+                          })
                         } else {
-                          setAutoMatchSelectedIds(new Set())
+                          setAutoMatchSelectedIds((prev) => {
+                            const next = new Set(prev)
+                            for (const row of autoMatchPagedProposals) {
+                              next.delete(row.statement_line_id)
+                            }
+                            return next
+                          })
                         }
                       }}
                       title="이 페이지 후보 전체 선택/해제"
@@ -4232,7 +4354,7 @@ export default function StatementReconciliationTab() {
                 </tr>
               </thead>
               <tbody>
-                {autoMatchProposals.map((p) => {
+                {autoMatchPagedProposals.map((p) => {
                   const selectedKey = autoMatchCandidateSelection[p.statement_line_id] || p.candidates[0]?.key
                   const selected = p.candidates.find((c) => c.key === selectedKey) ?? p.candidates[0]
                   const amountDiff = selected ? Math.abs(selected.expense_amount - p.line_amount) : 0
@@ -4325,6 +4447,34 @@ export default function StatementReconciliationTab() {
             </table>
           </div>
           <DialogFooter className="px-4 py-3 border-t border-slate-100 shrink-0 gap-2 sm:gap-2">
+            <div className="mr-auto flex items-center gap-2 text-xs text-slate-600">
+              <span>
+                페이지 <strong>{normalizedAutoMatchPreviewPage}</strong>/<strong>{autoMatchPreviewPageCount}</strong>
+              </span>
+              <span>
+                현재 페이지 선택 <strong>{autoMatchPageSelectedCount}</strong>/<strong>{autoMatchPagedProposals.length}</strong>
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2"
+                disabled={normalizedAutoMatchPreviewPage <= 1}
+                onClick={() => setAutoMatchPreviewPage((p) => Math.max(1, p - 1))}
+              >
+                이전
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2"
+                disabled={normalizedAutoMatchPreviewPage >= autoMatchPreviewPageCount}
+                onClick={() => setAutoMatchPreviewPage((p) => Math.min(autoMatchPreviewPageCount, p + 1))}
+              >
+                다음
+              </Button>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -4334,6 +4484,7 @@ export default function StatementReconciliationTab() {
                 setAutoMatchProposals([])
                 setAutoMatchSummaryHint(null)
                 setAutoMatchSelectedIds(new Set())
+                setAutoMatchPreviewPage(1)
                 setAutoMatchCandidateSelection({})
               }}
             >
@@ -5154,7 +5305,7 @@ export default function StatementReconciliationTab() {
               className="shrink-0"
               disabled={reconciliationLinesLoading || !filterAccountId}
               onClick={() => {
-                if (filterAccountId) void loadLinesAndMatchesForAccount(filterAccountId)
+                if (filterAccountId) void loadLinesAndMatchesForAccount(filterAccountId, { force: true })
               }}
             >
               <RefreshCw className={`h-4 w-4 mr-1 ${reconciliationLinesLoading ? 'animate-spin' : ''}`} />
@@ -6320,7 +6471,8 @@ export default function StatementReconciliationTab() {
             <div>
               <h3 className="text-sm font-semibold text-slate-900">운영 지출입 찾기</h3>
               <p className="mt-1 text-xs text-slate-600">
-                예약 지출, 회사 지출, payment_records, 티켓, 호텔 부킹을 날짜순으로 모아 보고 각 행을 카드/은행 명세에서 찾습니다.
+                예약 지출, 회사 지출, payment_records, 티켓, 호텔 부킹을 모아 보고 각 행을 카드/은행 명세에서 찾습니다.{' '}
+                <strong>결제수단에 금융 계정이 연결된 행</strong>을 먼저 보여 주며, 같은 그룹 안에서는 날짜·출처 순입니다.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">

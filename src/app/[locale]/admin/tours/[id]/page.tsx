@@ -37,10 +37,12 @@ import PickupScheduleEmailPreviewModal from '@/components/tour/modals/PickupSche
 import TourEditModal from '@/components/tour/modals/TourEditModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
+import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds } from '@/utils/tourUtils'
+import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { 
@@ -1038,7 +1040,56 @@ export default function TourDetailPage() {
     }
   }
 
+  const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
+  const [cancellationReasonSaving, setCancellationReasonSaving] = useState(false)
+  const [cancellationReasonValue, setCancellationReasonValue] = useState('')
+  const cancellationReasonResolveRef = useRef<((value: string | null) => void) | null>(null)
+
+  const requestCancellationReason = useCallback(() => {
+    setCancellationReasonValue('')
+    setCancellationReasonModalOpen(true)
+    return new Promise<string | null>((resolve) => {
+      cancellationReasonResolveRef.current = resolve
+    })
+  }, [])
+
+  const closeCancellationReasonModal = useCallback(() => {
+    setCancellationReasonModalOpen(false)
+    cancellationReasonResolveRef.current?.(null)
+    cancellationReasonResolveRef.current = null
+  }, [])
+
+  const submitCancellationReasonModal = useCallback(async (reason: string) => {
+    const trimmed = reason.trim()
+    if (!trimmed) return
+    setCancellationReasonSaving(true)
+    try {
+      setCancellationReasonValue(trimmed)
+      setCancellationReasonModalOpen(false)
+      cancellationReasonResolveRef.current?.(trimmed)
+      cancellationReasonResolveRef.current = null
+    } finally {
+      setCancellationReasonSaving(false)
+    }
+  }, [])
+
   const handleReservationStatusChange = async (reservationId: string, newStatus: string) => {
+    const normalized = (newStatus || '').toLowerCase()
+    if (normalized === 'cancelled' || normalized === 'canceled') {
+      const reason = await requestCancellationReason()
+      if (!reason) return
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: newStatus })
+        .eq('id', reservationId)
+      if (error) {
+        console.error('예약 상태 변경 오류:', error)
+        throw error
+      }
+      await upsertReservationCancellationReason(reservationId, reason, authUser?.email ?? null)
+      await tourData.refreshReservations()
+      return
+    }
     const { error } = await supabase
       .from('reservations')
       .update({ status: newStatus })
@@ -2461,6 +2512,14 @@ export default function TourDetailPage() {
           onSave={handleTourProductUpdate}
         />
       )}
+      <CancellationReasonModal
+        isOpen={cancellationReasonModalOpen}
+        locale={locale}
+        initialValue={cancellationReasonValue}
+        saving={cancellationReasonSaving}
+        onClose={closeCancellationReasonModal}
+        onSubmit={submitCancellationReasonModal}
+      />
     </div>
   )
 }

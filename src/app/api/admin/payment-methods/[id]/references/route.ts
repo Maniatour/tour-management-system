@@ -11,6 +11,27 @@ async function resolveId(params: RouteParams): Promise<string | undefined> {
   return resolved?.id?.trim() || undefined
 }
 
+async function resolveReferenceKeys(methodId: string): Promise<string[]> {
+  const keys = new Set<string>()
+  keys.add(methodId)
+  if (!supabaseAdmin) return [...keys]
+
+  const { data } = await supabaseAdmin
+    .from('payment_methods')
+    .select('id, method, display_name')
+    .eq('id', methodId)
+    .maybeSingle()
+
+  if (data) {
+    for (const v of [data.id, data.method, data.display_name]) {
+      if (v == null) continue
+      const k = String(v).trim()
+      if (k) keys.add(k)
+    }
+  }
+  return [...keys]
+}
+
 function tableSelect(table: (typeof PAYMENT_METHOD_REF_TABLES)[number]): string {
   switch (table) {
     case 'company_expenses':
@@ -61,7 +82,7 @@ async function attachReservationCustomers(rows: unknown[]): Promise<void> {
 }
 
 /**
- * GET: 해당 payment_methods.id를 payment_method 컬럼으로 참조하는 모든 행 (관리자·service_role)
+ * GET: 해당 결제방법(id/method/display_name)을 payment_method 컬럼으로 참조하는 모든 행
  */
 export async function GET(
   _request: NextRequest,
@@ -79,13 +100,14 @@ export async function GET(
     if (!methodId) {
       return NextResponse.json({ success: false, message: 'id가 필요합니다.' }, { status: 400 })
     }
+    const referenceKeys = await resolveReferenceKeys(methodId)
 
     const results = await Promise.all(
       PAYMENT_METHOD_REF_TABLES.map(async (table) => {
         const { data, error } = await supabaseAdmin
           .from(table)
           .select(tableSelect(table))
-          .eq('payment_method', methodId)
+          .in('payment_method', referenceKeys)
           .order('submit_on', { ascending: false, nullsFirst: false })
           .limit(PER_TABLE_LIMIT)
 
@@ -111,7 +133,7 @@ export async function GET(
 
     const total = groups.reduce((s, g) => s + g.count, 0)
 
-    return NextResponse.json({ success: true, methodId, groups, total })
+    return NextResponse.json({ success: true, methodId, referenceKeys, groups, total })
   } catch (e) {
     console.error('payment-methods references GET:', e)
     return NextResponse.json(

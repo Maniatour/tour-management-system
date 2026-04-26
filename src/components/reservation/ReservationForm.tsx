@@ -28,7 +28,9 @@ import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
+import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
+import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import {
@@ -5253,8 +5255,28 @@ export default function ReservationForm({
       })
       
       try {
+        const prevStatus = (reservation?.status || '').toLowerCase()
+        const nextStatus = (reservationPayload.status || '').toLowerCase()
+        const isMovingToCancelled =
+          !!reservation?.id &&
+          (nextStatus === 'cancelled' || nextStatus === 'canceled') &&
+          !(prevStatus === 'cancelled' || prevStatus === 'canceled')
+        let cancellationReasonForSave: string | null = null
+
+        if (isMovingToCancelled && reservation?.id) {
+          const reason = await requestCancellationReason()
+          if (!reason) {
+            setIsSubmitting(false)
+            return
+          }
+          cancellationReasonForSave = reason
+        }
+
         console.log('ReservationForm: onSubmit 호출 시작')
         await onSubmit(reservationPayload)
+        if (isMovingToCancelled && reservation?.id && cancellationReasonForSave) {
+          await upsertReservationCancellationReason(reservation.id, cancellationReasonForSave)
+        }
         console.log('ReservationForm: onSubmit 호출 완료')
       } catch (onSubmitError) {
         console.error('ReservationForm: onSubmit 호출 중 오류:', onSubmitError)
@@ -5267,6 +5289,36 @@ export default function ReservationForm({
       setIsSubmitting(false)
     }
   }
+
+  const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
+  const [cancellationReasonSaving, setCancellationReasonSaving] = useState(false)
+  const cancellationReasonResolveRef = useRef<((value: string | null) => void) | null>(null)
+
+  const requestCancellationReason = useCallback(() => {
+    setCancellationReasonModalOpen(true)
+    return new Promise<string | null>((resolve) => {
+      cancellationReasonResolveRef.current = resolve
+    })
+  }, [])
+
+  const closeCancellationReasonModal = useCallback(() => {
+    setCancellationReasonModalOpen(false)
+    cancellationReasonResolveRef.current?.(null)
+    cancellationReasonResolveRef.current = null
+  }, [])
+
+  const submitCancellationReasonModal = useCallback(async (reason: string) => {
+    const trimmed = reason.trim()
+    if (!trimmed) return
+    setCancellationReasonSaving(true)
+    try {
+      setCancellationReasonModalOpen(false)
+      cancellationReasonResolveRef.current?.(trimmed)
+      cancellationReasonResolveRef.current = null
+    } finally {
+      setCancellationReasonSaving(false)
+    }
+  }, [])
 
   // 고객 추가 함수
   const handleAddCustomer = useCallback(async (customerData: Database['public']['Tables']['customers']['Insert']) => {
@@ -6370,6 +6422,13 @@ export default function ReservationForm({
           </div>
         </div>
       )}
+      <CancellationReasonModal
+        isOpen={cancellationReasonModalOpen}
+        locale={locale}
+        saving={cancellationReasonSaving}
+        onClose={closeCancellationReasonModal}
+        onSubmit={submitCancellationReasonModal}
+      />
     </div>
   )
 }

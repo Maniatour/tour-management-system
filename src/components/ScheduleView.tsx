@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -13,6 +13,7 @@ import { isReservationCancelledStatus } from '@/utils/tourUtils'
 import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
 import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusLabel, tourStatusOptions } from '@/utils/tourStatusUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
+import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import ReactCountryFlag from 'react-country-flag'
 import DateNoteModal from './DateNoteModal'
 import dynamic from 'next/dynamic'
@@ -32,6 +33,7 @@ import {
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
+import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -348,6 +350,7 @@ export default function ScheduleView() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [products, setProducts] = useState<Product[]>([])
   const [teamMembers, setTeamMembers] = useState<Team[]>([])
+  const [inactiveTeamMembers, setInactiveTeamMembers] = useState<Team[]>([])
   const [tours, setTours] = useState<Tour[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -378,6 +381,8 @@ export default function ScheduleView() {
   const [loading, setLoading] = useState(true)
   const [showProductModal, setShowProductModal] = useState(false)
   const [showTeamModal, setShowTeamModal] = useState(false)
+  const [teamModalTab, setTeamModalTab] = useState<'active' | 'inactive'>('active')
+  const [activatingTeamMemberEmail, setActivatingTeamMemberEmail] = useState<string | null>(null)
   const [productColors, setProductColors] = useState<{ [productId: string]: string }>({})
   // const [currentUserId] = useState('admin') // 실제로는 인증된 사용자 ID를 사용해야 함
   const [draggedTour, setDraggedTour] = useState<Tour | null>(null)
@@ -738,7 +743,10 @@ export default function ScheduleView() {
   }, [])
 
   // 공유 설정 저장 (관리자만, 데이터베이스에 저장)
-  const saveSharedSetting = async (key: string, value: string[] | number | boolean) => {
+  const saveSharedSetting = async (
+    key: string,
+    value: string[] | number | boolean | Record<string, string[]>
+  ) => {
     if (!isSuperAdmin || !user?.id) return
     
     try {
@@ -789,7 +797,11 @@ export default function ScheduleView() {
   }
 
   // 사용자 설정 저장
-  const saveUserSetting = async (key: string, value: string[] | number | boolean, saveAsShared: boolean = false) => {
+  const saveUserSetting = async (
+    key: string,
+    value: string[] | number | boolean | Record<string, string[]>,
+    saveAsShared: boolean = false
+  ) => {
     try {
       // 빈 배열이나 유효하지 않은 값은 저장하지 않음
       if (Array.isArray(value) && value.length === 0) {
@@ -819,12 +831,13 @@ export default function ScheduleView() {
 
   // 사용자 설정 불러오기
   const loadUserSettings = useCallback(async () => {
+    const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
     try {
       // 먼저 데이터베이스에서 공유 설정 로드
       const { data: sharedSettings, error: sharedError } = await supabase
         .from('shared_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members', 'schedule_product_colors'])
+        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members', 'schedule_product_colors', 'schedule_vehicle_row_order'])
 
       if (sharedError) {
         console.warn('Error loading shared settings from database:', sharedError)
@@ -833,9 +846,9 @@ export default function ScheduleView() {
       // 공유 설정을 Map으로 변환
       type SharedSetting = {
         setting_key: string
-        setting_value: string[] | number | boolean
+        setting_value: string[] | number | boolean | Record<string, string[]>
       }
-      const sharedSettingsMap = new Map<string, string[] | number | boolean>()
+      const sharedSettingsMap = new Map<string, string[] | number | boolean | Record<string, string[]>>()
       if (sharedSettings) {
         (sharedSettings as SharedSetting[]).forEach(setting => {
           sharedSettingsMap.set(setting.setting_key, setting.setting_value)
@@ -894,6 +907,25 @@ export default function ScheduleView() {
           console.warn('Error parsing saved product colors:', parseError)
         }
       }
+
+      const sharedVehicleRowOrder = sharedSettingsMap.get('schedule_vehicle_row_order')
+        || (() => {
+          const cached = localStorage.getItem('shared_schedule_vehicle_row_order')
+          return cached ? JSON.parse(cached) : null
+        })()
+      const savedVehicleRowOrder = sharedVehicleRowOrder || localStorage.getItem('schedule_vehicle_row_order')
+      if (savedVehicleRowOrder) {
+        try {
+          const orderByMonth = typeof savedVehicleRowOrder === 'string'
+            ? JSON.parse(savedVehicleRowOrder)
+            : savedVehicleRowOrder
+          if (orderByMonth && typeof orderByMonth === 'object') {
+            setVehicleRowOrderForMonth((orderByMonth as Record<string, string[]>)[monthKey] ?? null)
+          }
+        } catch (parseError) {
+          console.warn('Error parsing saved vehicle row order:', parseError)
+        }
+      }
     } catch (error) {
       console.warn('Error in loadUserSettings, using localStorage fallback:', error)
       // localStorage에서 직접 로드
@@ -926,8 +958,20 @@ export default function ScheduleView() {
           console.warn('Error parsing saved product colors from localStorage:', parseError)
         }
       }
+
+      const savedVehicleRowOrder = localStorage.getItem('shared_schedule_vehicle_row_order') || localStorage.getItem('schedule_vehicle_row_order')
+      if (savedVehicleRowOrder) {
+        try {
+          const orderByMonth = JSON.parse(savedVehicleRowOrder)
+          if (orderByMonth && typeof orderByMonth === 'object') {
+            setVehicleRowOrderForMonth((orderByMonth as Record<string, string[]>)[monthKey] ?? null)
+          }
+        } catch (parseError) {
+          console.warn('Error parsing saved vehicle row order from localStorage:', parseError)
+        }
+      }
     }
-  }, [])
+  }, [currentDate])
 
   // 프리셋 id면 스타일 반환, 아니면 레거시 className (하위 호환)
   const getProductDisplayProps = (value: string | undefined): { style?: { backgroundColor: string; color: string }; className?: string } => {
@@ -1390,6 +1434,14 @@ export default function ScheduleView() {
         .eq('is_active', true)
         .order('name_ko')
 
+      // 비활성 팀원은 선택 모달에서 재활성화할 때만 사용합니다.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: inactiveTeamData } = await (supabase as any)
+        .from('team')
+        .select('*')
+        .eq('is_active', false)
+        .order('name_ko')
+
       // 투어·예약: 멀티데이 이전 달 꼬리(최대 3일) + 그리드 끝(익월 1일 컬럼)까지
       const startDate = firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
       const endDate = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
@@ -1407,7 +1459,8 @@ export default function ScheduleView() {
       const vehicleIds: string[] = Array.from(new Set(rawVehicleIds))
       let vehicleMap = new Map<string, string | null>()
       if (vehicleIds.length > 0) {
-        const { data: vehiclesData } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: vehiclesData } = await (supabase as any)
           .from('vehicles')
           .select('id, vehicle_number, nick')
           .in('id', vehicleIds)
@@ -1421,7 +1474,8 @@ export default function ScheduleView() {
       // 해당 월 사용 가능 차량 목록 (취소 제외, 렌터카는 렌트 기간이 월과 겹치는 것만)
       const monthStart = firstDayOfMonth.format('YYYY-MM-DD')
       const monthEnd = lastDayOfMonth.format('YYYY-MM-DD')
-      const { data: allVehiclesData } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: allVehiclesData } = await (supabase as any)
         .from('vehicles')
         .select('id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date')
       const isCancelled = (s: string | null | undefined) => {
@@ -1494,11 +1548,19 @@ export default function ScheduleView() {
             .select('reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)')
             .in('reservation_id', batchIds)
           if (rcData?.length) {
-            choicesFlat = choicesFlat.concat(rcData.map((row: { reservation_id: string; quantity?: number | null; choice_options?: { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null } | null }) => {
-              const opt = row.choice_options
-              const choiceKey = choiceLabelToKey(opt?.option_name_ko ?? null, opt?.option_name ?? null, opt?.option_key ?? null)
-              return { reservation_id: row.reservation_id, choiceKey, quantity: Number(row.quantity) || 1 }
-            }))
+            choicesFlat = choicesFlat.concat(
+              (rcData as Array<{
+                reservation_id: string | null
+                quantity?: number | null
+                choice_options?: { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null } | null
+              }>)
+                .filter((row) => Boolean(row.reservation_id))
+                .map((row) => {
+                  const opt = row.choice_options
+                  const choiceKey = choiceLabelToKey(opt?.option_name_ko ?? null, opt?.option_name ?? null, opt?.option_key ?? null)
+                  return { reservation_id: row.reservation_id as string, choiceKey, quantity: Number(row.quantity) || 1 }
+                })
+            )
           }
         }
       }
@@ -1594,12 +1656,14 @@ export default function ScheduleView() {
       console.log('=== ScheduleView 데이터 로딩 결과 ===')
       console.log('Loaded products:', productsData?.length || 0, productsData)
       console.log('Loaded team members:', teamData?.length || 0, teamData)
+      console.log('Loaded inactive team members:', inactiveTeamData?.length || 0, inactiveTeamData)
       console.log('Loaded tours:', toursData?.length || 0, toursData)
       console.log('Loaded reservations:', reservationsData?.length || 0, reservationsData)
       console.log('=====================================')
 
       setProducts(productsData || [])
       setTeamMembers(teamData || [])
+      setInactiveTeamMembers(inactiveTeamData || [])
       setTours(toursWithVehicles)
       setReservations(reservationsData || [])
       setCustomers((customersData || []) as Customer[])
@@ -1749,6 +1813,38 @@ export default function ScheduleView() {
   const productCellQuickStatusValues = ['pending', 'recruiting', 'confirmed', 'completed', 'cancelled', 'deleted'] as const
   const [productCellStatusSavingId, setProductCellStatusSavingId] = useState<string | null>(null)
   const [productCellCreateTourLoading, setProductCellCreateTourLoading] = useState(false)
+  const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
+  const [cancellationReasonSaving, setCancellationReasonSaving] = useState(false)
+  const [cancellationReasonValue, setCancellationReasonValue] = useState('')
+  const cancellationReasonResolveRef = useRef<((value: string | null) => void) | null>(null)
+
+  const requestCancellationReason = useCallback(() => {
+    setCancellationReasonValue('')
+    setCancellationReasonModalOpen(true)
+    return new Promise<string | null>((resolve) => {
+      cancellationReasonResolveRef.current = resolve
+    })
+  }, [])
+
+  const closeCancellationReasonModal = useCallback(() => {
+    setCancellationReasonModalOpen(false)
+    cancellationReasonResolveRef.current?.(null)
+    cancellationReasonResolveRef.current = null
+  }, [])
+
+  const submitCancellationReasonModal = useCallback(async (reason: string) => {
+    const trimmed = reason.trim()
+    if (!trimmed) return
+    setCancellationReasonSaving(true)
+    try {
+      setCancellationReasonValue(trimmed)
+      setCancellationReasonModalOpen(false)
+      cancellationReasonResolveRef.current?.(trimmed)
+      cancellationReasonResolveRef.current = null
+    } finally {
+      setCancellationReasonSaving(false)
+    }
+  }, [])
 
   const handleProductCellReservationStatusChange = useCallback(
     async (reservationId: string, newStatus: string) => {
@@ -1765,6 +1861,19 @@ export default function ScheduleView() {
         )
       )
       try {
+        let cancellationReasonForSave: string | null = null
+        if (next === 'cancelled' || next === 'canceled') {
+          const reason = await requestCancellationReason()
+          if (!reason) {
+            setReservations((prev) =>
+              (prev as Reservation[]).map((r) =>
+                String(r.id) === reservationId ? { ...r, status: prevStatus } : r
+              )
+            )
+            return
+          }
+          cancellationReasonForSave = reason
+        }
         const { error } = await supabase.from('reservations').update({ status: next }).eq('id', reservationId)
         if (error) {
           setReservations((prev) =>
@@ -1774,6 +1883,9 @@ export default function ScheduleView() {
           )
           showMessage(locale === 'ko' ? '오류' : 'Error', error.message, 'error')
           return
+        }
+        if (cancellationReasonForSave) {
+          await upsertReservationCancellationReason(reservationId, cancellationReasonForSave, user?.email ?? null)
         }
       } catch (e) {
         setReservations((prev) =>
@@ -1786,7 +1898,7 @@ export default function ScheduleView() {
         setProductCellStatusSavingId(null)
       }
     },
-    [reservations, locale, showMessage]
+    [reservations, locale, showMessage, requestCancellationReason, user?.email]
   )
 
   const productCellReservationList = useMemo(() => {
@@ -1913,7 +2025,8 @@ export default function ScheduleView() {
     async (vehicleId: string) => {
       if (!isSuperAdmin) return
       try {
-        const { data, error } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (supabase as any)
           .from('vehicles')
           .select(SCHEDULE_VEHICLE_EDIT_SELECT)
           .eq('id', vehicleId)
@@ -2706,6 +2819,14 @@ export default function ScheduleView() {
     setCurrentDate(new Date())
   }
 
+  const getTeamMemberDisplayName = (member: Team) => member.nick_name || member.name_ko || member.email
+
+  const sortTeamMembersByDisplayName = (members: Team[]) => {
+    return [...members].sort((a, b) =>
+      getTeamMemberDisplayName(a).localeCompare(getTeamMemberDisplayName(b), locale === 'ko' ? 'ko' : 'en')
+    )
+  }
+
   // 상품 선택 토글 (관리자는 항상 공유 설정 DB 저장 → 모든 사용자 동일 적용)
   const toggleProduct = async (productId: string) => {
     const newSelection = selectedProducts.includes(productId) 
@@ -2748,6 +2869,48 @@ export default function ScheduleView() {
     
     // 로컬 스토리지에는 항상 저장 (fallback)
     localStorage.setItem('schedule_selected_team_members', JSON.stringify(newSelection))
+  }
+
+  const activateTeamMemberForSchedule = async (member: Team) => {
+    if (!member.email || activatingTeamMemberEmail) return
+
+    try {
+      setActivatingTeamMemberEmail(member.email)
+      const nextStatus = member.status === 'inactive' ? 'active' : member.status
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('team')
+        .update({
+          is_active: true,
+          ...(nextStatus !== member.status ? { status: nextStatus } : {})
+        })
+        .eq('email', member.email)
+
+      if (error) throw error
+
+      const activatedMember = { ...member, is_active: true, status: nextStatus }
+      setInactiveTeamMembers(prev => prev.filter(item => item.email !== member.email))
+      setTeamMembers(prev => sortTeamMembersByDisplayName([
+        ...prev.filter(item => item.email !== member.email),
+        activatedMember
+      ]))
+
+      const newSelection = selectedTeamMembers.includes(member.email)
+        ? selectedTeamMembers
+        : [...selectedTeamMembers, member.email]
+      setSelectedTeamMembers(newSelection)
+      if (newSelection.length > 0) {
+        await saveUserSetting('schedule_selected_team_members', newSelection)
+      }
+      localStorage.setItem('schedule_selected_team_members', JSON.stringify(newSelection))
+      setTeamModalTab('active')
+      showMessage('팀원 활성화 완료', `${getTeamMemberDisplayName(member)} 팀원을 활성화하고 스케줄에 표시했습니다.`, 'success')
+    } catch (error) {
+      console.error('Error activating team member:', error)
+      showMessage('팀원 활성화 실패', '팀원을 활성화하는 중 오류가 발생했습니다.', 'error')
+    } finally {
+      setActivatingTeamMemberEmail(null)
+    }
   }
 
   // 상품 순서 변경 (관리자는 항상 공유 설정 DB 저장)
@@ -3890,7 +4053,9 @@ export default function ScheduleView() {
 
   useEffect(() => {
     try {
-      const raw = typeof window !== 'undefined' ? localStorage.getItem('schedule_vehicle_row_order') : null
+      const raw = typeof window !== 'undefined'
+        ? (localStorage.getItem('shared_schedule_vehicle_row_order') || localStorage.getItem('schedule_vehicle_row_order'))
+        : null
       if (!raw) {
         setVehicleRowOrderForMonth(null)
         return
@@ -3942,6 +4107,33 @@ export default function ScheduleView() {
     [draggedVehicleRowId, applyScheduleDragHighlight]
   )
 
+  const moveVehicleRow = useCallback(
+    (from: number, to: number) => {
+      if (from === to || from < 0 || to < 0) return
+      const ids = orderedVehiclesForScheduleTable.map((v) => v.id)
+      if (from >= ids.length || to >= ids.length) return
+      const sourceId = ids[from]
+      if (!sourceId) return
+      const next = [...ids]
+      next.splice(from, 1)
+      next.splice(to, 0, sourceId)
+      setVehicleRowOrderForMonth(next)
+      try {
+        const raw = localStorage.getItem('schedule_vehicle_row_order')
+        const all: Record<string, string[]> = raw ? JSON.parse(raw) : {}
+        all[vehicleScheduleMonthKey] = next
+        localStorage.setItem('schedule_vehicle_row_order', JSON.stringify(all))
+        if (isSuperAdmin) {
+          localStorage.setItem('shared_schedule_vehicle_row_order', JSON.stringify(all))
+          void saveSharedSetting('schedule_vehicle_row_order', all)
+        }
+      } catch {
+        /* ignore */
+      }
+    },
+    [orderedVehiclesForScheduleTable, vehicleScheduleMonthKey, isSuperAdmin]
+  )
+
   const handleVehicleRowDrop = useCallback(
     (e: React.DragEvent, targetVehicleId: string) => {
       e.preventDefault()
@@ -3958,21 +4150,10 @@ export default function ScheduleView() {
         setDraggedVehicleRowId(null)
         return
       }
-      const next = [...ids]
-      next.splice(from, 1)
-      next.splice(to, 0, sourceId)
-      setVehicleRowOrderForMonth(next)
-      try {
-        const raw = localStorage.getItem('schedule_vehicle_row_order')
-        const all: Record<string, string[]> = raw ? JSON.parse(raw) : {}
-        all[vehicleScheduleMonthKey] = next
-        localStorage.setItem('schedule_vehicle_row_order', JSON.stringify(all))
-      } catch {
-        /* ignore */
-      }
+      moveVehicleRow(from, to)
       setDraggedVehicleRowId(null)
     },
-    [orderedVehiclesForScheduleTable, vehicleScheduleMonthKey, clearScheduleDragHighlight]
+    [orderedVehiclesForScheduleTable, clearScheduleDragHighlight, moveVehicleRow]
   )
 
   const handleVehicleRowDragEnd = useCallback(() => {
@@ -4331,6 +4512,9 @@ export default function ScheduleView() {
               {Object.entries(productScheduleData).map(([productId, product], index) => {
                 const colorValue = productColors[productId] || defaultPresetIds[index % defaultPresetIds.length]
                 const displayProps = getProductDisplayProps(colorValue)
+                const selectedIndex = selectedProducts.indexOf(productId)
+                const canMoveUp = selectedIndex > 0
+                const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedProducts.length - 1
                 
                 return (
                   <tr 
@@ -4350,7 +4534,34 @@ export default function ScheduleView() {
                       onDragEnd={handleProductRowDragEnd}
                     >
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-500 hover:text-gray-700" title="드래그하여 순서 변경">⠿</span>
+                        <div className="flex flex-col items-center -my-0.5">
+                          <button
+                            type="button"
+                            draggable={false}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (canMoveUp) void moveProduct(selectedIndex, selectedIndex - 1)
+                            }}
+                            disabled={!canMoveUp}
+                            className="text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="위로 이동"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            draggable={false}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (canMoveDown) void moveProduct(selectedIndex, selectedIndex + 1)
+                            }}
+                            disabled={!canMoveDown}
+                            className="text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="아래로 이동"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </div>
                         {product.product_name}
                       </div>
                     </td>
@@ -4583,6 +4794,9 @@ export default function ScheduleView() {
 
               {/* 각 가이드별 데이터 */}
               {Object.entries(guideScheduleData).map(([teamMemberId, guide]) => {
+                const selectedIndex = selectedTeamMembers.indexOf(teamMemberId)
+                const canMoveUp = selectedIndex > 0
+                const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedTeamMembers.length - 1
                 // 멀티데이 투어 정보를 미리 계산
                 const multiDayTours: { [dateString: string]: { startDate: string; endDate: string; days: number; extendsToNextMonth: boolean; dayData: DailyData } } = {}
                 
@@ -4698,7 +4912,34 @@ export default function ScheduleView() {
                           ? 'text-blue-600 animate-pulse' 
                           : 'text-gray-900'
                       }`}>
-                        <span className="text-gray-400 hover:text-gray-600 text-[8px]" title="드래그하여 순서 변경">⠿</span>
+                        <div className="flex flex-col items-center -my-0.5">
+                          <button
+                            type="button"
+                            draggable={false}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (canMoveUp) void moveTeamMember(selectedIndex, selectedIndex - 1)
+                            }}
+                            disabled={!canMoveUp}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="위로 이동"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            draggable={false}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (canMoveDown) void moveTeamMember(selectedIndex, selectedIndex + 1)
+                            }}
+                            disabled={!canMoveDown}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="아래로 이동"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </div>
                         {guide.team_member_name}
                       </div>
                     </td>
@@ -4782,7 +5023,7 @@ export default function ScheduleView() {
                                       
                                       return (
                                         <div 
-                                          className="bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 py-0 text-[10px] font-bold flex items-center justify-center h-full cursor-pointer transition-colors select-none"
+                                          className="absolute inset-0 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 text-[10px] font-bold flex items-center justify-center leading-none cursor-pointer transition-colors select-none"
                                           onClick={() => {
                                             if (offSchedule) {
                                               openOffScheduleActionModal(offSchedule)
@@ -5163,7 +5404,7 @@ export default function ScheduleView() {
                                         
                                         return (
                                           <div 
-                                            className="bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 py-0 text-[10px] font-bold cursor-pointer transition-colors select-none"
+                                            className="absolute inset-0 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 text-[10px] font-bold flex items-center justify-center leading-none cursor-pointer transition-colors select-none"
                                             onClick={() => {
                                               if (offSchedule) {
                                                 openOffScheduleActionModal(offSchedule)
@@ -5463,7 +5704,9 @@ export default function ScheduleView() {
               <div className="mt-1 overflow-visible">
                 <table className="w-full" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
                   <tbody className="divide-y divide-gray-200">
-                    {orderedVehiclesForScheduleTable.map(({ id, label, colorClass, rental_start_date, rental_end_date }) => {
+                    {orderedVehiclesForScheduleTable.map(({ id, label, colorClass, rental_start_date, rental_end_date }, index) => {
+                      const canMoveUp = index > 0
+                      const canMoveDown = index < orderedVehiclesForScheduleTable.length - 1
                       const data = vehicleScheduleData[id]
                       if (!data) return null
                       const allNames = new Set<string>()
@@ -5487,8 +5730,11 @@ export default function ScheduleView() {
                           }`}
                         >
                           <td
-                            className="px-1 py-0.5 text-xs leading-tight text-gray-900 select-none"
+                            className="px-1 py-0.5 text-xs leading-tight text-gray-900 select-none cursor-grab active:cursor-grabbing"
                             style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
+                            draggable
+                            onDragStart={(e) => handleVehicleRowDragStart(e, id)}
+                            onDragEnd={handleVehicleRowDragEnd}
                             onDragOver={(e) => {
                               if (draggedVehicleRowId) {
                                 handleVehicleRowDragOver(e, id)
@@ -5502,15 +5748,34 @@ export default function ScheduleView() {
                             }}
                           >
                             <div className="flex items-center gap-0.5">
-                              <span
-                                className="cursor-grab text-[8px] text-gray-400 hover:text-gray-600 active:cursor-grabbing"
-                                title="드래그하여 차량 행 순서 변경"
-                                draggable
-                                onDragStart={(e) => handleVehicleRowDragStart(e, id)}
-                                onDragEnd={handleVehicleRowDragEnd}
-                              >
-                                ⠿
-                              </span>
+                              <div className="flex flex-col items-center -my-0.5">
+                                <button
+                                  type="button"
+                                  draggable={false}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (canMoveUp) moveVehicleRow(index, index - 1)
+                                  }}
+                                  disabled={!canMoveUp}
+                                  className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="위로 이동"
+                                >
+                                  <ChevronUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  draggable={false}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (canMoveDown) moveVehicleRow(index, index + 1)
+                                  }}
+                                  disabled={!canMoveDown}
+                                  className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="아래로 이동"
+                                >
+                                  <ChevronDown className="w-3 h-3" />
+                                </button>
+                              </div>
                               <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} />
                               <div
                                 className={`min-w-0 flex-1 truncate font-medium ${isSuperAdmin ? 'cursor-pointer hover:text-blue-700' : 'cursor-help'}`}
@@ -6323,52 +6588,111 @@ export default function ScheduleView() {
               <p className="text-sm text-gray-600 mb-3">
                 표시할 팀원을 선택하세요. ({selectedTeamMembers.length}개 선택됨)
               </p>
+              <div className="mb-3 grid grid-cols-2 rounded-lg bg-gray-100 p-1 text-sm font-medium">
+                <button
+                  type="button"
+                  onClick={() => setTeamModalTab('active')}
+                  className={`rounded-md px-3 py-2 transition-colors ${
+                    teamModalTab === 'active'
+                      ? 'bg-white text-green-700 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  활성화 된 팀원 ({teamMembers.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeamModalTab('inactive')}
+                  className={`rounded-md px-3 py-2 transition-colors ${
+                    teamModalTab === 'inactive'
+                      ? 'bg-white text-orange-700 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  비활성화 된 팀원 ({inactiveTeamMembers.length})
+                </button>
+              </div>
+
               <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                {teamMembers.map(member => {
-                  const isSelected = selectedTeamMembers.includes(member.email)
-                  const selectedIndex = selectedTeamMembers.indexOf(member.email)
-                  
-                  return (
-                    <div key={member.email} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <button
-                          onClick={() => toggleTeamMember(member.email)}
-                          className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                            isSelected
-                              ? 'bg-green-500 text-white'
-                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                          }`}
-                        >
-                          {(member as any).nick_name || member.name_ko} ({member.position})
-                        </button>
-                      </div>
+                {teamModalTab === 'active' ? (
+                  teamMembers.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500">
+                      활성화 된 팀원이 없습니다.
+                    </div>
+                  ) : (
+                    teamMembers.map(member => {
+                      const isSelected = selectedTeamMembers.includes(member.email)
+                      const selectedIndex = selectedTeamMembers.indexOf(member.email)
                       
-                      {isSelected && (
-                        <div className="flex items-center space-x-2">
-                          {/* 순서 변경 버튼들 */}
-                          <div className="flex flex-col space-y-1">
+                      return (
+                        <div key={member.email} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center space-x-3">
                             <button
-                              onClick={() => selectedIndex > 0 && moveTeamMember(selectedIndex, selectedIndex - 1)}
-                              disabled={selectedIndex === 0}
-                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="위로 이동"
+                              onClick={() => toggleTeamMember(member.email)}
+                              className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+                                isSelected
+                                  ? 'bg-green-500 text-white'
+                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                              }`}
                             >
-                              <ArrowUp className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => selectedIndex < selectedTeamMembers.length - 1 && moveTeamMember(selectedIndex, selectedIndex + 1)}
-                              disabled={selectedIndex === selectedTeamMembers.length - 1}
-                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="아래로 이동"
-                            >
-                              <ArrowDown className="w-3 h-3" />
+                              {getTeamMemberDisplayName(member)} ({member.position || '직책 없음'})
                             </button>
                           </div>
+                          
+                          {isSelected && (
+                            <div className="flex items-center space-x-2">
+                              {/* 순서 변경 버튼들 */}
+                              <div className="flex flex-col space-y-1">
+                                <button
+                                  onClick={() => selectedIndex > 0 && moveTeamMember(selectedIndex, selectedIndex - 1)}
+                                  disabled={selectedIndex === 0}
+                                  className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="위로 이동"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => selectedIndex < selectedTeamMembers.length - 1 && moveTeamMember(selectedIndex, selectedIndex + 1)}
+                                  disabled={selectedIndex === selectedTeamMembers.length - 1}
+                                  className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="아래로 이동"
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      )
+                    })
                   )
-                })}
+                ) : inactiveTeamMembers.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500">
+                    비활성화 된 팀원이 없습니다.
+                  </div>
+                ) : (
+                  inactiveTeamMembers.map(member => (
+                    <div key={member.email} className="flex flex-col gap-3 rounded-lg border border-orange-100 bg-orange-50/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {getTeamMemberDisplayName(member)}
+                          <span className="ml-2 text-xs font-normal text-gray-500">
+                            {member.position || '직책 없음'}
+                          </span>
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">{member.email}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => activateTeamMemberForSchedule(member)}
+                        disabled={activatingTeamMemberEmail === member.email}
+                        className="inline-flex items-center justify-center rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {activatingTeamMemberEmail === member.email ? '활성화 중...' : '활성화하고 표시'}
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -6729,7 +7053,7 @@ export default function ScheduleView() {
                   selected_option_prices: reservationData.selectedOptionPrices,
                   is_private_tour: reservationData.isPrivateTour || false
                 }
-                const { error } = await supabase.from('reservations').update(dbReservationData).eq('id', editingId)
+                const { error } = await (supabase as any).from('reservations').update(dbReservationData).eq('id', editingId)
                 if (error) {
                   showMessage(locale === 'ko' ? '오류' : 'Error', error.message, 'error')
                   return
@@ -7613,6 +7937,14 @@ export default function ScheduleView() {
           }}
         />
       )}
+      <CancellationReasonModal
+        isOpen={cancellationReasonModalOpen}
+        locale={locale}
+        initialValue={cancellationReasonValue}
+        saving={cancellationReasonSaving}
+        onClose={closeCancellationReasonModal}
+        onSubmit={submitCancellationReasonModal}
+      />
 
     </div>
   )

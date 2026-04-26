@@ -2,6 +2,7 @@ import React, { useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { normalizeReservationIds } from '@/utils/tourUtils'
 
 export function useTourHandlers() {
   // 단독투어 상태 업데이트 함수
@@ -231,9 +232,32 @@ export function useTourHandlers() {
   const handleAssignReservation = useCallback(async (tour: { id: string }, reservationId: string) => {
     if (!tour) return
 
+    const rid = String(reservationId).trim()
+    if (!rid) return
+
     try {
-      const currentReservationIds = (tour as { reservation_ids?: string[] }).reservation_ids || []
-      const updatedReservationIds = [...currentReservationIds, reservationId]
+      const { data: conflictRows, error: conflictErr } = await supabase
+        .from('tours')
+        .select('id')
+        .contains('reservation_ids', [rid])
+        .neq('id', tour.id)
+        .limit(1)
+
+      if (conflictErr) {
+        console.error('handleAssignReservation conflict check:', conflictErr)
+      } else if (conflictRows && conflictRows.length > 0) {
+        alert(
+          '이 예약은 이미 다른 투어에 배정되어 있습니다. 해당 투어에서 해제하거나, 이 화면에서 다른 투어에 배정된 예약을 이 투어로 옮기는 기능을 사용해 주세요.'
+        )
+        return
+      }
+
+      const currentReservationIds = normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)
+      if (currentReservationIds.includes(rid)) {
+        return currentReservationIds
+      }
+
+      const updatedReservationIds = [...currentReservationIds, rid]
 
       const { error } = await supabase
         .from('tours')
@@ -280,7 +304,8 @@ export function useTourHandlers() {
         const fromIds = normalizeIds(fromRow.reservation_ids)
         const toIds = normalizeIds(toRow.reservation_ids)
         const newFromIds = fromIds.filter((id) => id !== rid)
-        const newToIds = toIds.includes(rid) ? [...toIds] : [...toIds, rid]
+        const toUnique = [...new Set(toIds.filter((id) => id !== rid))]
+        const newToIds = [...toUnique, rid]
 
         const { error: e1 } = await supabase
           .from('tours')
@@ -322,8 +347,9 @@ export function useTourHandlers() {
     if (!tour) return
 
     try {
-      const currentReservationIds = tour.reservation_ids || []
-      const updatedReservationIds = currentReservationIds.filter((id: string) => id !== reservationId)
+      const rid = String(reservationId).trim()
+      const currentReservationIds = normalizeReservationIds(tour.reservation_ids)
+      const updatedReservationIds = currentReservationIds.filter((id: string) => id !== rid)
 
       const { error } = await supabase
         .from('tours')
@@ -346,9 +372,34 @@ export function useTourHandlers() {
     if (!tour || pendingReservations.length === 0) return
 
     try {
-      const currentReservationIds = tour.reservation_ids || []
-      const newReservationIds = pendingReservations.map((r) => r.id)
-      const updatedReservationIds = [...currentReservationIds, ...newReservationIds]
+      const currentReservationIds = normalizeReservationIds(tour.reservation_ids)
+      const pendingIds = [
+        ...new Set(pendingReservations.map((r) => String(r.id).trim()).filter(Boolean)),
+      ]
+      const toAdd = pendingIds.filter((id) => !currentReservationIds.includes(id))
+      const conflictIds: string[] = []
+      for (const pid of toAdd) {
+        const { data: rows, error: qErr } = await supabase
+          .from('tours')
+          .select('id')
+          .contains('reservation_ids', [pid])
+          .neq('id', tour.id)
+          .limit(1)
+        if (qErr) {
+          console.error('handleAssignAllReservations conflict check:', qErr)
+          continue
+        }
+        if (rows && rows.length > 0) conflictIds.push(pid)
+      }
+      const addable = toAdd.filter((id) => !conflictIds.includes(id))
+      if (conflictIds.length > 0) {
+        alert(
+          '일부 예약은 이미 다른 투어에 배정되어 있어 이 투어에는 추가하지 않았습니다. 필요하면 해당 투어에서 해제한 뒤 다시 시도해 주세요.'
+        )
+      }
+      if (addable.length === 0) return
+
+      const updatedReservationIds = [...currentReservationIds, ...addable]
 
       const { error } = await supabase
         .from('tours')

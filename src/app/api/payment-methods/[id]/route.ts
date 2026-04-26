@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
+
+function normalizedId(params: Promise<{ id: string }> | { id: string }): Promise<string> {
+  return Promise.resolve(params).then((resolved) => String(resolved.id ?? '').trim())
+}
 
 // GET: 특정 결제 방법 조회
 export async function GET(
@@ -7,8 +11,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const resolvedParams = await Promise.resolve(params)
-    const { id } = resolvedParams
+    const id = await normalizedId(params)
+    if (!id) {
+      return NextResponse.json({ success: false, message: 'ID is required' }, { status: 400 })
+    }
 
     const { data, error } = await supabase
       .from('payment_methods')
@@ -72,8 +78,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const resolvedParams = await Promise.resolve(params)
-    const { id } = resolvedParams
+    const id = await normalizedId(params)
+    if (!id) {
+      return NextResponse.json({ success: false, message: 'ID is required' }, { status: 400 })
+    }
     const body = await request.json()
 
     // 업데이트할 데이터 준비 (빈 문자열을 null로 변환)
@@ -257,19 +265,34 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const resolvedParams = await Promise.resolve(params)
-    const { id } = resolvedParams
+    const id = await normalizedId(params)
+    if (!id) {
+      return NextResponse.json({ success: false, message: 'ID is required' }, { status: 400 })
+    }
 
-    const { error } = await supabase
+    const client = supabaseAdmin ?? supabase
+    const { data: deletedRows, error } = await client
       .from('payment_methods')
       .delete()
       .eq('id', id)
+      .select('id')
 
     if (error) {
       console.error('Error deleting payment method:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to delete payment method' },
+        { success: false, message: `Failed to delete payment method: ${error.message}` },
         { status: 500 }
+      )
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            '삭제할 결제 방법이 없거나 권한/정책(RLS)으로 삭제되지 않았습니다. 참조 데이터가 남아있는지 확인해 주세요.',
+        },
+        { status: 409 }
       )
     }
 

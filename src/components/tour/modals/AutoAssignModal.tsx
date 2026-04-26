@@ -6,6 +6,7 @@ import { X, Users, User, Car, HelpCircle, ArrowRightCircle } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
+import { normalizeReservationIds } from '@/utils/tourUtils'
 
 type TourRow = {
   id: string
@@ -584,7 +585,7 @@ export default function AutoAssignModal({
     setApplying(true)
     try {
       for (const tour of displayTours) {
-        const arr = tour.reservation_ids || []
+        const arr = [...new Set(normalizeReservationIds(tour.reservation_ids))]
         const { error } = await supabase.from('tours').update({ reservation_ids: arr }).eq('id', tour.id)
         if (error) throw error
       }
