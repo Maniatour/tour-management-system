@@ -3,90 +3,179 @@
 import React, { useRef, useState, useCallback } from 'react'
 import { ChevronDown } from 'lucide-react'
 
+/** contentEditable 루트 안에서 커서가 ul/ol/li 안에 있는지 */
+function selectionInsideList(root: HTMLElement | null): boolean {
+  if (!root) return false
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return false
+  let node: Node | null = sel.anchorNode
+  if (node?.nodeType === Node.TEXT_NODE) node = (node as Text).parentElement
+  while (node && node !== root) {
+    if (node instanceof HTMLElement) {
+      const t = node.tagName.toLowerCase()
+      if (t === 'ul' || t === 'ol' || t === 'li') return true
+    }
+    node = node.parentNode
+  }
+  return false
+}
+
 // 마크다운을 HTML로 변환하는 함수
 export const markdownToHtml = (markdown: string): string => {
   if (!markdown) return ''
-  
-  let html = markdown
-  
+
+  let html = markdown.replace(/\r\n/g, '\n')
+
   // 이미지 변환: ![alt](src) -> <img src="src" alt="alt" />
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;" />')
-  
+
   // 굵게 변환: **text** -> <strong>text</strong>
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  
-  // 기울임 변환: *text* -> <em>text</em>
+
+  // 기울임 변환: *text* -> <em>text</em> (줄 맨앞 `* ` 목록과 구분: 한 글자 뒤 공백 없는 *만 이탤릭으로 처리하려면 복잡하므로 기존 규칙 유지)
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
-  
+
   // 링크 변환: [text](url) -> <a href="url" target="_blank">text</a>
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">$1</a>')
-  
-  // 단락 구분 처리: 연속된 줄바꿈(2개 이상)을 단락 구분으로 처리
-  // 먼저 연속된 줄바꿈을 단락 구분자로 정규화
+  html = html.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">$1</a>'
+  )
+
   html = html.replace(/\n\n+/g, '\n\n')
-  
-  // 단락으로 분리
   const paragraphs = html.split(/\n\n/)
-  
-  // 각 단락을 처리
-  html = paragraphs.map(paragraph => {
-    if (!paragraph.trim()) return ''
-    
-    // 목록 변환: - item -> <li>item</li> (단락 내에서 처리)
-    const hasListItems = /^- (.+)$/m.test(paragraph)
-    if (hasListItems) {
-      paragraph = paragraph.replace(/^- (.+)$/gm, '<li>$1</li>')
-      // 목록 단락은 <ul>로 감싸기
-      paragraph = `<ul style="margin: 0.5em 0; padding-left: 1.5em;">${paragraph}</ul>`
-      return paragraph
-    }
-    
-    // 단락 내의 단일 줄바꿈을 <br>로 변환
-    paragraph = paragraph.replace(/\n/g, '<br>')
-    
-    // 이미 HTML 태그가 있으면 그대로 반환
-    if (paragraph.trim().startsWith('<p') || paragraph.trim().startsWith('<div') || paragraph.trim().startsWith('<ul')) {
-      return paragraph
-    }
-    
-    // 일반 단락은 <p> 태그로 감싸기
-    return `<p style="margin-bottom: 1em; line-height: 1.6;">${paragraph}</p>`
-  }).filter(p => p).join('')
-  
+
+  /** `- ` / `* ` / `• ` / `1. ` 형태의 목록 줄 */
+  const listLineRe = /^(\s*)([-*•]|\d+\.)\s+(.+)$/
+
+  const renderBulletList = (nonEmpty: string[]): string => {
+    const lis = nonEmpty.map((line) => {
+      const m = line.trim().match(/^(\s*)([-*•])\s+(.+)$/)
+      return m ? `<li style="margin: 0.15em 0;">${m[3]}</li>` : ''
+    }).filter(Boolean)
+    if (!lis.length) return ''
+    return `<ul style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: disc;">${lis.join('')}</ul>`
+  }
+
+  const renderOrderedList = (nonEmpty: string[]): string => {
+    const lis = nonEmpty.map((line) => {
+      const m = line.trim().match(/^(\d+)\.\s+(.+)$/)
+      return m ? `<li style="margin: 0.15em 0;">${m[2]}</li>` : ''
+    }).filter(Boolean)
+    if (!lis.length) return ''
+    return `<ol style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: decimal;">${lis.join('')}</ol>`
+  }
+
+  html = paragraphs
+    .map((paragraph) => {
+      if (!paragraph.trim()) return ''
+
+      const lines = paragraph.split('\n')
+      const nonEmpty = lines.map((l) => l.trim()).filter(Boolean)
+      const allList = nonEmpty.length > 0 && nonEmpty.every((l) => listLineRe.test(l))
+      const allNumbered = nonEmpty.length > 0 && nonEmpty.every((l) => /^\d+\.\s+/.test(l.trim()))
+      const allBullet = nonEmpty.length > 0 && nonEmpty.every((l) => /^(\s*)([-*•])\s+/.test(l.trim()))
+
+      if (allList && allNumbered) {
+        return renderOrderedList(nonEmpty)
+      }
+      if (allList && allBullet) {
+        return renderBulletList(nonEmpty)
+      }
+      if (allList) {
+        const lis = nonEmpty
+          .map((line) => {
+            const t = line.trim()
+            const num = t.match(/^(\d+)\.\s+(.+)$/)
+            if (num) return `<li style="margin: 0.15em 0;">${num[1]}. ${num[2]}</li>`
+            const bu = t.match(/^(\s*)([-*•])\s+(.+)$/)
+            return bu ? `<li style="margin: 0.15em 0;">${bu[3]}</li>` : ''
+          })
+          .filter(Boolean)
+        return lis.length
+          ? `<ul style="margin: 0.5em 0; padding-left: 1.5em; list-style-type: disc;">${lis.join('')}</ul>`
+          : ''
+      }
+
+      let p = paragraph.replace(/\n/g, '<br>')
+      if (p.trim().startsWith('<p') || p.trim().startsWith('<div') || p.trim().startsWith('<ul') || p.trim().startsWith('<ol')) {
+        return p
+      }
+      return `<p style="margin-bottom: 1em; line-height: 1.6;">${p}</p>`
+    })
+    .filter(Boolean)
+    .join('')
+
   return html
+}
+
+/** li 내부 HTML을 마크다운 한 줄로 (중첩 블록 없다고 가정) */
+const liInnerToMarkdownLine = (inner: string): string => {
+  let t = inner
+  t = t.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**')
+  t = t.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**')
+  t = t.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*')
+  t = t.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*')
+  t = t.replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
+  t = t.replace(/<br\s*\/?>/gi, '\n')
+  t = t.replace(/<[^>]+>/g, '')
+  return t.replace(/\n+/g, ' ').trim()
 }
 
 // HTML을 마크다운으로 변환하는 함수
 const htmlToMarkdown = (html: string): string => {
   let markdown = html
-  
+
   // 이미지 변환: <img src="..." alt="..." /> -> ![alt](src)
   markdown = markdown.replace(/<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*\/?>/g, '![$2]($1)')
   markdown = markdown.replace(/<img[^>]+src="([^"]+)"[^>]*\/?>/g, '![]($1)')
-  
+
   // 굵게 변환: <strong>text</strong> -> **text**
   markdown = markdown.replace(/<strong[^>]*>(.*?)<\/strong>/g, '**$1**')
   markdown = markdown.replace(/<b[^>]*>(.*?)<\/b>/g, '**$1**')
-  
+
   // 기울임 변환: <em>text</em> -> *text*
   markdown = markdown.replace(/<em[^>]*>(.*?)<\/em>/g, '*$1*')
   markdown = markdown.replace(/<i[^>]*>(.*?)<\/i>/g, '*$1*')
-  
+
   // 링크 변환: <a href="url">text</a> -> [text](url)
   markdown = markdown.replace(/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/g, '[$2]($1)')
-  
-  // 목록 변환: <li>item</li> -> - item
-  markdown = markdown.replace(/<li[^>]*>(.*?)<\/li>/g, '- $1')
-  
+
+  // 순서 목록: <ol>…</ol> -> "1. …\n2. …"
+  markdown = markdown.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner: string) => {
+    const lines: string[] = []
+    const liRe = /<li[^>]*>([\s\S]*?)<\/li>/gi
+    let match: RegExpExecArray | null
+    let i = 1
+    while ((match = liRe.exec(inner)) !== null) {
+      lines.push(`${i}. ${liInnerToMarkdownLine(match[1])}`)
+      i += 1
+    }
+    return lines.length ? `${lines.join('\n')}\n\n` : ''
+  })
+
+  // 글머리 목록: <ul>…</ul> -> "- …\n- …"
+  markdown = markdown.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_m, inner: string) => {
+    const lines: string[] = []
+    const liRe = /<li[^>]*>([\s\S]*?)<\/li>/gi
+    let match: RegExpExecArray | null
+    while ((match = liRe.exec(inner)) !== null) {
+      lines.push(`- ${liInnerToMarkdownLine(match[1])}`)
+    }
+    return lines.length ? `${lines.join('\n')}\n\n` : ''
+  })
+
+  // 남은 단독 li (ul 밖) 처리
+  markdown = markdown.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner: string) => `- ${liInnerToMarkdownLine(inner)}\n`)
+
   // div, p 태그를 줄바꿈으로 변환 (블록 요소 처리)
   markdown = markdown.replace(/<\/div>/gi, '\n')
   markdown = markdown.replace(/<\/p>/gi, '\n')
   markdown = markdown.replace(/<div[^>]*>/gi, '')
   markdown = markdown.replace(/<p[^>]*>/gi, '')
-  
+
   // 줄바꿈 변환: <br> -> \n
   markdown = markdown.replace(/<br\s*\/?>/gi, '\n')
-  
+
   // HTML 태그 제거
   markdown = markdown.replace(/<[^>]*>/g, '')
   
@@ -275,11 +364,6 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       
       const htmlContent = editorRef.current.innerHTML
       const markdownContent = htmlToMarkdown(htmlContent)
-      console.log('LightRichEditor updateEditorContent:', {
-        htmlContent: htmlContent.substring(0, 100),
-        markdownContent: markdownContent.substring(0, 100),
-        markdownLength: markdownContent.length
-      })
       onChange(markdownContent)
     }
   }
@@ -297,7 +381,8 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   }
 
   const insertList = () => {
-    document.execCommand('insertUnorderedList')
+    editorRef.current?.focus()
+    document.execCommand('insertUnorderedList', false)
     setTimeout(updateEditorContent, 0)
   }
 
@@ -545,8 +630,11 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           }, 0)
         }}
         onKeyDown={(e) => {
-          // Enter 키: 명시적으로 <br> 태그 삽입
+          // 목록(ul/ol/li) 안에서는 브라우저 기본 Enter(다음 항목·분할) 유지
           if (e.key === 'Enter' && !e.shiftKey) {
+            if (selectionInsideList(editorRef.current)) {
+              return
+            }
             e.preventDefault()
             const selection = window.getSelection()
             if (selection && selection.rangeCount > 0) {
@@ -584,14 +672,14 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             setTimeout(updateEditorContent, 0)
           }
         }}
-        className="w-full p-4 focus:outline-none text-sm overflow-y-auto flex-shrink-0"
+        className="w-full p-4 focus:outline-none text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5"
         style={{ 
           height: `${currentHeight}px`,
           minHeight: `${minHeight}px`,
           maxHeight: `${maxHeight}px`,
           lineHeight: '1.6',
           fontFamily: 'system-ui, -apple-system, sans-serif',
-          whiteSpace: 'pre-wrap'
+          whiteSpace: 'normal'
         }}
         data-placeholder={placeholder}
       />

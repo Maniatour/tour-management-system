@@ -382,6 +382,7 @@ export default function ScheduleView() {
   const [showProductModal, setShowProductModal] = useState(false)
   const [showTeamModal, setShowTeamModal] = useState(false)
   const [teamModalTab, setTeamModalTab] = useState<'active' | 'inactive'>('active')
+  const [teamModalSearchQuery, setTeamModalSearchQuery] = useState('')
   const [activatingTeamMemberEmail, setActivatingTeamMemberEmail] = useState<string | null>(null)
   const [productColors, setProductColors] = useState<{ [productId: string]: string }>({})
   // const [currentUserId] = useState('admin') // 실제로는 인증된 사용자 ID를 사용해야 함
@@ -508,7 +509,7 @@ export default function ScheduleView() {
   const [selectedDateForNote, setSelectedDateForNote] = useState<string | null>(null)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
 
-  // 해당 월 사용 가능 차량 목록 (취소 제외, 렌터카는 렌트 기간이 월과 겹치는 것만)
+  // 해당 월 사용 가능 차량 목록 (취소·비활성 제외, 렌터카는 렌트 시작~종료가 해당 월과 겹치는 것만)
   const [scheduleVehicles, setScheduleVehicles] = useState<Array<{
     id: string
     label: string
@@ -1471,7 +1472,7 @@ export default function ScheduleView() {
         vehicle_number: t.tour_car_id ? (vehicleMap.get(String(t.tour_car_id).trim()) ?? null) : null
       }))
 
-      // 해당 월 사용 가능 차량 목록 (취소 제외, 렌터카는 렌트 기간이 월과 겹치는 것만)
+      // 해당 월 사용 가능 차량 목록 (취소·비활성 제외, 렌터카는 렌트 시작~종료가 해당 월과 겹치는 예약만)
       const monthStart = firstDayOfMonth.format('YYYY-MM-DD')
       const monthEnd = lastDayOfMonth.format('YYYY-MM-DD')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1483,13 +1484,19 @@ export default function ScheduleView() {
         const lower = String(s).toLowerCase().trim()
         return lower === 'cancelled' || lower === '취소됨' || lower.includes('취소') || lower.includes('cancel')
       }
+      const isInactiveStatus = (s: string | null | undefined) => {
+        if (!s) return false
+        const lower = String(s).toLowerCase().trim()
+        return lower === 'inactive' || lower.includes('inactive') || lower.includes('비활성')
+      }
       const availableInMonth = (allVehiclesData || []).filter((v: { vehicle_category?: string | null; status?: string | null; rental_start_date?: string | null; rental_end_date?: string | null }) => {
         if (isCancelled(v.status)) return false
+        if (isInactiveStatus(v.status)) return false
         const isRental = (v.vehicle_category || '').toString().toLowerCase() === 'rental'
         if (!isRental) return true
-        const start = (v.rental_start_date || '').toString().trim()
-        const end = (v.rental_end_date || '').toString().trim()
-        if (!start || !end) return true
+        const start = (v.rental_start_date || '').toString().trim().substring(0, 10)
+        const end = (v.rental_end_date || '').toString().trim().substring(0, 10)
+        if (!start || !end) return false
         return start <= monthEnd && end >= monthStart
       })
       const sorted = availableInMonth.sort((a: { vehicle_category?: string | null; vehicle_number?: string | null; nick?: string | null; id: string }, b: typeof a) => {
@@ -2821,6 +2828,35 @@ export default function ScheduleView() {
 
   const getTeamMemberDisplayName = (member: Team) => member.nick_name || member.name_ko || member.email
 
+  const teamModalSearchNormalized = teamModalSearchQuery.trim().toLowerCase()
+  const teamMembersFilteredForModal = useMemo(() => {
+    if (!teamModalSearchNormalized) return teamMembers
+    return teamMembers.filter((member) => {
+      const displayName = member.nick_name || member.name_ko || member.email
+      const hay = [displayName, member.name_ko, member.nick_name, member.name_en, member.email, member.position]
+        .filter((x): x is string => typeof x === 'string' && x.length > 0)
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(teamModalSearchNormalized)
+    })
+  }, [teamMembers, teamModalSearchNormalized])
+
+  const inactiveTeamMembersFilteredForModal = useMemo(() => {
+    if (!teamModalSearchNormalized) return inactiveTeamMembers
+    return inactiveTeamMembers.filter((member) => {
+      const displayName = member.nick_name || member.name_ko || member.email
+      const hay = [displayName, member.name_ko, member.nick_name, member.name_en, member.email, member.position]
+        .filter((x): x is string => typeof x === 'string' && x.length > 0)
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(teamModalSearchNormalized)
+    })
+  }, [inactiveTeamMembers, teamModalSearchNormalized])
+
+  useEffect(() => {
+    if (!showTeamModal) setTeamModalSearchQuery('')
+  }, [showTeamModal])
+
   const sortTeamMembersByDisplayName = (members: Team[]) => {
     return [...members].sort((a, b) =>
       getTeamMemberDisplayName(a).localeCompare(getTeamMemberDisplayName(b), locale === 'ko' ? 'ko' : 'en')
@@ -3944,7 +3980,7 @@ export default function ScheduleView() {
     return dailyTotals
   }, [guideScheduleData, monthDays])
 
-  // 해당 월 사용 가능 차량 목록 + 차량별 색상 (scheduleVehicles 기준, 취소 제외)
+  // 해당 월 사용 가능 차량 목록 + 차량별 색상 (scheduleVehicles 기준, 취소·비활성 제외)
   const VEHICLE_COLOR_PALETTE = [
     'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-violet-500',
     'bg-pink-500', 'bg-cyan-500', 'bg-orange-500', 'bg-teal-500', 'bg-indigo-500',
@@ -4067,12 +4103,14 @@ export default function ScheduleView() {
     }
   }, [vehicleScheduleMonthKey])
 
-  /** 해당 월에 투어가 1건이라도 배차된 차량만, 저장된 행 순서 적용 */
+  /** 회사차: 당월 배차가 있는 차량만. 렌터카: 당월과 렌트 기간이 겹치는 예약은 배차 없어도 표시. 저장된 행 순서 적용 */
   const orderedVehiclesForScheduleTable = useMemo(() => {
     type Veh = (typeof monthVehiclesWithColors.vehicleList)[number]
-    const assigned = monthVehiclesWithColors.vehicleList.filter(
-      (v) => vehicleScheduleData[v.id]?.hasAnyDayAssignment === true
-    )
+    const isRentalVehicle = (v: Veh) => (v.vehicle_category || '').toString().toLowerCase() === 'rental'
+    const assigned = monthVehiclesWithColors.vehicleList.filter((v) => {
+      if (isRentalVehicle(v)) return true
+      return vehicleScheduleData[v.id]?.hasAnyDayAssignment === true
+    })
     const assignedIds = assigned.map((v) => v.id)
     if (assignedIds.length === 0) return [] as Veh[]
 
@@ -5722,6 +5760,48 @@ export default function ScheduleView() {
                       const vehicleNameTooltip = sortedNames.length > 0
                         ? `${sortedNames.join(', ')}\n총 ${sortedNames.length}명`
                         : label
+                      /** 렌트 구간 ∩ (표시 중인 달 ~ 그 다음 달 말일) 안의 배정일. 다음 달 배차도 툴팁에 포함 */
+                      const rentalAssignedDaysCompactList = (() => {
+                        const rs = (rental_start_date || '').toString().substring(0, 10)
+                        const re = (rental_end_date || '').toString().substring(0, 10)
+                        if (!rs || !re) return ''
+                        const rentalStart = dayjs(rs)
+                        const rentalEnd = dayjs(re)
+                        if (!rentalStart.isValid() || !rentalEnd.isValid()) return ''
+
+                        const viewStart = dayjs(currentDate).startOf('month')
+                        const viewEnd = dayjs(currentDate).add(1, 'month').endOf('month')
+                        const rangeStart = rentalStart.isAfter(viewStart, 'day') ? rentalStart : viewStart
+                        const rangeEnd = rentalEnd.isBefore(viewEnd, 'day') ? rentalEnd : viewEnd
+                        if (rangeStart.isAfter(rangeEnd, 'day')) return ''
+
+                        const dateStrings: string[] = []
+                        for (let cur = rangeStart; !cur.isAfter(rangeEnd, 'day'); cur = cur.add(1, 'day')) {
+                          const dateString = cur.format('YYYY-MM-DD')
+                          const covered = tours.some(
+                            (t) =>
+                              t.tour_car_id &&
+                              String(t.tour_car_id).trim() === id &&
+                              tourCoversScheduleDate(t, dateString),
+                          )
+                          if (covered) dateStrings.push(dateString)
+                        }
+                        if (dateStrings.length === 0) return ''
+
+                        const viewYm = dayjs(currentDate).format('YYYY-MM')
+                        const allInViewMonth =
+                          dateStrings.length > 0 && dateStrings.every((s) => s.slice(0, 7) === viewYm)
+                        if (allInViewMonth) {
+                          return dateStrings.map((s) => String(Number(s.slice(8, 10)))).join(',')
+                        }
+                        return dateStrings
+                          .map((s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`)
+                          .join(',')
+                      })()
+                      const rentalPeriodTooltipLine = `렌트 기간: ${(rental_start_date || '').toString().substring(0, 10)} ~ ${(rental_end_date || '').toString().substring(0, 10)}`
+                      const rentalEmptyCellTooltip = rentalAssignedDaysCompactList
+                        ? `${rentalPeriodTooltipLine}\n${rentalAssignedDaysCompactList}`
+                        : rentalPeriodTooltipLine
                       return (
                         <tr
                           key={id}
@@ -5833,7 +5913,7 @@ export default function ScheduleView() {
                                 key={dateString}
                                 className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass}`}
                                 style={{ width: dayColumnWidthCalc, minWidth: '40px', boxSizing: 'border-box' }}
-                                title={count > 0 ? cellTooltip : (isInRentalPeriod ? `렌트 기간: ${(rental_start_date || '').toString().substring(0, 10)} ~ ${(rental_end_date || '').toString().substring(0, 10)}` : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동')}
+                                title={count > 0 ? cellTooltip : (isInRentalPeriod ? rentalEmptyCellTooltip : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동')}
                                 onClick={(e) => {
                                   if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
                                   setVehicleAssignTarget({ vehicleId: id, dateString })
@@ -6613,14 +6693,33 @@ export default function ScheduleView() {
                 </button>
               </div>
 
+              <div className="mb-3">
+                <label htmlFor="schedule-team-modal-search" className="sr-only">
+                  가이드·팀원 이름 검색
+                </label>
+                <input
+                  id="schedule-team-modal-search"
+                  type="search"
+                  value={teamModalSearchQuery}
+                  onChange={(e) => setTeamModalSearchQuery(e.target.value)}
+                  placeholder="가이드 이름, 닉네임, 이메일로 검색"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  autoComplete="off"
+                />
+              </div>
+
               <div className="space-y-3 max-h-[60vh] overflow-y-auto">
                 {teamModalTab === 'active' ? (
                   teamMembers.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500">
                       활성화 된 팀원이 없습니다.
                     </div>
+                  ) : teamMembersFilteredForModal.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500">
+                      검색과 일치하는 팀원이 없습니다.
+                    </div>
                   ) : (
-                    teamMembers.map(member => {
+                    teamMembersFilteredForModal.map(member => {
                       const isSelected = selectedTeamMembers.includes(member.email)
                       const selectedIndex = selectedTeamMembers.indexOf(member.email)
                       
@@ -6670,8 +6769,12 @@ export default function ScheduleView() {
                   <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500">
                     비활성화 된 팀원이 없습니다.
                   </div>
+                ) : inactiveTeamMembersFilteredForModal.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500">
+                    검색과 일치하는 팀원이 없습니다.
+                  </div>
                 ) : (
-                  inactiveTeamMembers.map(member => (
+                  inactiveTeamMembersFilteredForModal.map(member => (
                     <div key={member.email} className="flex flex-col gap-3 rounded-lg border border-orange-100 bg-orange-50/40 p-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-medium text-gray-900">

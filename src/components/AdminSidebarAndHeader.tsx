@@ -496,6 +496,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: tSidebar('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },
     { name: tSidebar('guideFeeManagement'), href: `/${locale}/admin/guide-costs`, icon: Calculator },
     { name: tSidebar('documents'), href: `/${locale}/admin/documents`, icon: FileText },
+    ...(userRole === 'admin' || userRole === 'manager'
+      ? [{ name: tSidebar('companySop'), href: `/${locale}/admin/sop`, icon: FileCheck }]
+      : []),
     { name: tSidebar('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: tSidebar('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     // 예약 통계는 Super 권한만 표시

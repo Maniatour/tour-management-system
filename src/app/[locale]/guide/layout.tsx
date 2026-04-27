@@ -19,6 +19,7 @@ import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
 import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
+import GuideTourChatNotificationModal from '@/components/guide/GuideTourChatNotificationModal'
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 
@@ -598,6 +599,12 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         isOpen={showDocumentUploadModal}
         onClose={() => setShowDocumentUploadModal(false)}
         documentType={documentUploadType}
+      />
+
+      {/* 가이드 배정 투어 채팅 실시간 알림 모달 */}
+      <GuideTourChatNotificationModal
+        userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
+        locale={locale === 'en' ? 'en' : 'ko'}
       />
       </div>
     </AudioPlayerProvider>
