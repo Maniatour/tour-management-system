@@ -14,12 +14,15 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 
-/** 직원(팀)이 최신 SOP에 서명하지 않은 경우 사이트 접속 시 안내 모달 */
+type GateKind = 'sop' | 'employee_contract'
+
+/** 직원(팀)이 최신 SOP 또는 직원 계약서에 서명하지 않은 경우 사이트 접속 시 안내 모달 */
 export default function SopComplianceGate() {
   const pathname = usePathname() || ''
   const router = useRouter()
   const { authUser, userRole, loading, isInitialized, isSimulating } = useAuth()
   const [blocked, setBlocked] = useState(false)
+  const [gateKind, setGateKind] = useState<GateKind>('sop')
   const [versionId, setVersionId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [versionNumber, setVersionNumber] = useState<number | null>(null)
@@ -34,6 +37,7 @@ export default function SopComplianceGate() {
   const shouldSkipPath =
     pathname.includes('/auth') ||
     pathname.includes('/sop/sign') ||
+    pathname.includes('/employee-contract/sign') ||
     pathname.includes('/embed') ||
     pathname.includes('/photos/')
 
@@ -48,34 +52,57 @@ export default function SopComplianceGate() {
       return
     }
 
-    const { data: latest, error: vErr } = await supabase
+    const { data: latestSop, error: sopVErr } = await supabase
       .from('company_sop_versions')
       .select('id, title, version_number')
       .order('published_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    if (vErr || !latest) {
-      setBlocked(false)
-      return
+    if (!sopVErr && latestSop) {
+      const { data: sopSig } = await supabase
+        .from('sop_signatures')
+        .select('id')
+        .eq('version_id', latestSop.id)
+        .eq('user_id', authUser.id)
+        .maybeSingle()
+
+      if (!sopSig) {
+        setGateKind('sop')
+        setVersionId(latestSop.id)
+        setTitle(latestSop.title)
+        setVersionNumber(latestSop.version_number)
+        setBlocked(true)
+        return
+      }
     }
 
-    const { data: sig } = await supabase
-      .from('sop_signatures')
-      .select('id')
-      .eq('version_id', latest.id)
-      .eq('user_id', authUser.id)
+    const { data: latestContract, error: cErr } = await supabase
+      .from('company_employee_contract_versions')
+      .select('id, title, version_number')
+      .order('published_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
-    if (sig) {
-      setBlocked(false)
-      return
+    if (!cErr && latestContract) {
+      const { data: cSig } = await supabase
+        .from('employee_contract_signatures')
+        .select('id')
+        .eq('version_id', latestContract.id)
+        .eq('user_id', authUser.id)
+        .maybeSingle()
+
+      if (!cSig) {
+        setGateKind('employee_contract')
+        setVersionId(latestContract.id)
+        setTitle(latestContract.title)
+        setVersionNumber(latestContract.version_number)
+        setBlocked(true)
+        return
+      }
     }
 
-    setVersionId(latest.id)
-    setTitle(latest.title)
-    setVersionNumber(latest.version_number)
-    setBlocked(true)
+    setBlocked(false)
   }, [
     authUser?.id,
     isInitialized,
@@ -91,7 +118,12 @@ export default function SopComplianceGate() {
   }, [check])
 
   const goSign = () => {
-    router.push(`/${locale}/sop/sign?version=${versionId}`)
+    if (!versionId) return
+    if (gateKind === 'sop') {
+      router.push(`/${locale}/sop/sign?version=${versionId}`)
+    } else {
+      router.push(`/${locale}/employee-contract/sign?version=${versionId}`)
+    }
   }
 
   const enablePush = async () => {
@@ -113,6 +145,8 @@ export default function SopComplianceGate() {
 
   if (!blocked || !versionId || versionNumber == null) return null
 
+  const isContract = gateKind === 'employee_contract'
+
   return (
     <Dialog open={blocked} modal onOpenChange={() => {}}>
       <DialogContent
@@ -123,13 +157,23 @@ export default function SopComplianceGate() {
       >
         <DialogHeader>
           <DialogTitle>
-            {isEn ? 'Action required: sign the company SOP' : '필수: 회사 SOP 서명이 필요합니다'}
+            {isContract
+              ? isEn
+                ? 'Action required: sign the employment contract'
+                : '필수: 직원 계약서 서명이 필요합니다'
+              : isEn
+                ? 'Action required: sign the company SOP'
+                : '필수: 회사 SOP 서명이 필요합니다'}
           </DialogTitle>
           <DialogDescription className="text-left space-y-2 pt-2">
             <span className="block text-gray-800">
-              {isEn
-                ? `Version ${versionNumber} is in effect. You must read and sign before using the system.`
-                : `현재 적용 중인 SOP는 제${versionNumber}판입니다. 내용을 확인하고 전자서명(PDF 보관)까지 완료해 주세요.`}
+              {isContract
+                ? isEn
+                  ? `Version ${versionNumber} is in effect. You must read and sign before using the system.`
+                  : `현재 적용 중인 직원 계약서는 제${versionNumber}판입니다. 내용을 확인하고 전자서명(PDF 보관)까지 완료해 주세요.`
+                : isEn
+                  ? `Version ${versionNumber} is in effect. You must read and sign before using the system.`
+                  : `현재 적용 중인 SOP는 제${versionNumber}판입니다. 내용을 확인하고 전자서명(PDF 보관)까지 완료해 주세요.`}
             </span>
             <span className="block font-medium text-gray-900">{title}</span>
           </DialogDescription>
@@ -145,7 +189,7 @@ export default function SopComplianceGate() {
                 : '처리 중…'
               : isEn
                 ? 'Enable update notifications (browser)'
-                : 'SOP 개정 시 브라우저 알림 받기'}
+                : '문서 개정 시 브라우저 알림 받기'}
           </Button>
           {pushMsg ? <p className="text-sm text-gray-600">{pushMsg}</p> : null}
         </div>

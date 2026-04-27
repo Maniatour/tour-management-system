@@ -6,7 +6,13 @@ import { Button } from '@/components/ui/button'
 import LightRichEditor from '@/components/LightRichEditor'
 import { Input } from '@/components/ui/input'
 import type { SopDocument, SopSection, SopCategory, SopChecklistItem, SopEditLocale } from '@/types/sopStructure'
-import { newSopId, orderedChecklistItems, prefillSortOrders, checklistItemDepth } from '@/types/sopStructure'
+import {
+  newSopId,
+  orderedChecklistItems,
+  prefillSortOrders,
+  checklistItemDepth,
+  splitRichContentToChecklistLines,
+} from '@/types/sopStructure'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -294,6 +300,41 @@ export default function SopStructureEditor({
       it.id === itemId ? { ...it, parent_id: prev.id, sort_order: nextOrder } : it
     )
     patchChecklistItems(sectionId, catId, items)
+  }
+
+  const importChecklistFromRichNotes = (sectionId: string, catId: string) => {
+    const sec = value.sections.find((x) => x.id === sectionId)
+    const cat = sec?.categories.find((x) => x.id === catId)
+    if (!cat) return
+    const raw = editLocale === 'ko' ? cat.content_ko : cat.content_en
+    const lines = splitRichContentToChecklistLines(raw)
+    if (lines.length === 0) return
+    const items: SopChecklistItem[] = lines.map((title, idx) => ({
+      id: newSopId(),
+      title_ko: editLocale === 'ko' ? title : '',
+      title_en: editLocale === 'en' ? title : '',
+      sort_order: idx,
+      parent_id: null,
+    }))
+    emit({
+      ...value,
+      sections: value.sections.map((s) =>
+        s.id !== sectionId
+          ? s
+          : {
+              ...s,
+              categories: s.categories.map((c) =>
+                c.id !== catId
+                  ? c
+                  : {
+                      ...c,
+                      checklist_items: items,
+                      ...(editLocale === 'ko' ? { content_ko: '' } : { content_en: '' }),
+                    }
+              ),
+            }
+      ),
+    })
   }
 
   const outdentChecklistItemRow = (sectionId: string, catId: string, itemId: string) => {
@@ -587,9 +628,29 @@ export default function SopStructureEditor({
                   ) : null}
                 </div>
 
-                <label className="text-xs text-gray-500">
-                  {isEn ? 'Extra notes (rich)' : '추가 설명(리치)'} ({editLocale === 'ko' ? 'KO' : 'EN'})
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs text-gray-500">
+                    {isEn ? 'Extra notes (rich)' : '추가 설명(리치)'} ({editLocale === 'ko' ? 'KO' : 'EN'})
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      disabled || splitRichContentToChecklistLines(catContentVal(cat)).length === 0
+                    }
+                    onClick={() => importChecklistFromRichNotes(section.id, cat.id)}
+                  >
+                    {isEn
+                      ? 'Split notes into checklist'
+                      : '추가 설명 → 체크 항목'}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-gray-500 -mt-1 mb-1">
+                  {isEn
+                    ? 'Uses line breaks, full-width 。, or a period followed by a space to split sentences. Replaces current checklist lines for this category.'
+                    : '줄바꿈, 전각 마침표(。), 또는 뒤에 공백이 오는 반각 마침표(.) 기준으로 문장을 나눕니다. 이 카테고리의 기존 체크 줄은 덮어씁니다.'}
+                </p>
                 <LightRichEditor
                   key={`cat-body-${cat.id}-${editLocale}`}
                   {...editorBodyProps}
@@ -597,8 +658,8 @@ export default function SopStructureEditor({
                   onChange={(v) => updateCategory(section.id, cat.id, catContentPatch(v))}
                   placeholder={
                     isEn
-                      ? 'Optional: intro or details (not each checklist line).'
-                      : '선택: 체크 줄 외 부가 설명·서두 등'
+                      ? 'Optional: paste multiple sentences here, then use the button above to turn them into checklist lines.'
+                      : '여러 문장을 붙여 넣은 뒤 위 버튼으로 체크 항목으로 나눌 수 있습니다.'
                   }
                   className="bg-white rounded-md border border-gray-200 overflow-hidden"
                 />

@@ -9139,6 +9139,36 @@ export type Database = {
         }
         Relationships: []
       },
+      company_employee_contract_versions: {
+        Row: {
+          id: string
+          version_number: number
+          title: string
+          body_md: string | null
+          body_structure: Json | null
+          published_at: string
+          published_by: string | null
+        }
+        Insert: {
+          id?: string
+          version_number: number
+          title?: string
+          body_md?: string | null
+          body_structure?: Json | null
+          published_at?: string
+          published_by?: string | null
+        }
+        Update: {
+          id?: string
+          version_number?: number
+          title?: string
+          body_md?: string | null
+          body_structure?: Json | null
+          published_at?: string
+          published_by?: string | null
+        }
+        Relationships: []
+      },
       company_sop_draft: {
         Row: {
           singleton: number
@@ -9166,7 +9196,64 @@ export type Database = {
         }
         Relationships: []
       },
+      company_employee_contract_draft: {
+        Row: {
+          singleton: number
+          body_structure: Json
+          paste_raw: string
+          edit_locale: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          singleton: number
+          body_structure: Json
+          paste_raw?: string
+          edit_locale?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          singleton?: number
+          body_structure?: Json
+          paste_raw?: string
+          edit_locale?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      },
       sop_signatures: {
+        Row: {
+          id: string
+          version_id: string
+          user_id: string
+          signer_email: string
+          signer_name: string
+          pdf_storage_path: string
+          signed_at: string
+        }
+        Insert: {
+          id?: string
+          version_id: string
+          user_id: string
+          signer_email: string
+          signer_name: string
+          pdf_storage_path: string
+          signed_at?: string
+        }
+        Update: {
+          id?: string
+          version_id?: string
+          user_id?: string
+          signer_email?: string
+          signer_name?: string
+          pdf_storage_path?: string
+          signed_at?: string
+        }
+        Relationships: []
+      },
+      employee_contract_signatures: {
         Row: {
           id: string
           version_id: string

@@ -137,6 +137,64 @@ export function allSopChecklistItemsForReuse(doc: SopDocument) {
   return rows
 }
 
+/** 리치/마크다운 조각 제거 후 문장 분리용으로만 사용 */
+function stripMarkupForChecklistSplit(raw: string): string {
+  let t = raw || ''
+  t = t.replace(/<[^>]+>/g, '\n')
+  t = t.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  t = t.replace(/\*\*([^*]+)\*\*/g, '$1')
+  t = t.replace(/\*([^*]+)\*/g, '$1')
+  t = t.replace(/^#+\s*/gm, '')
+  return t
+}
+
+/** 한 줄 안에서 `。` 또는 뒤에 공백·끝이 오는 `.` 기준으로 문장 분리 (예: `합니다.(SPRINTER` 는 `.` 뒤가 `(` 이라 분리 안 함) */
+function splitSingleLineBySentencePeriods(line: string): string[] {
+  const s = line.trim()
+  if (!s) return []
+  const out: string[] = []
+  let buf = ''
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    buf += ch
+    if (ch === '。') {
+      const piece = buf.trim()
+      if (piece) out.push(piece)
+      buf = ''
+    } else if (ch === '.') {
+      const next = s[i + 1]
+      if (next === undefined || /\s/.test(next)) {
+        const piece = buf.trim()
+        if (piece) out.push(piece)
+        buf = ''
+        while (i + 1 < s.length && /\s/.test(s[i + 1])) i++
+      }
+    }
+  }
+  const tail = buf.trim()
+  if (tail) out.push(tail)
+  return out.filter((x) => x.length > 0)
+}
+
+/**
+ * 카테고리 「추가 설명」에 붙여 넣은 여러 문장을 체크 줄 제목으로 쓸 문자열 배열로 변환합니다.
+ * - 줄바꿈이 있으면 각 줄을 먼저 나눈 뒤, 줄마다 `。` / 뒤에 공백인 `.` 기준으로 한 번 더 나눕니다.
+ * - 한 덩어리만 있으면 위 규칙만 적용합니다.
+ */
+export function splitRichContentToChecklistLines(raw: string): string[] {
+  const normalized = stripMarkupForChecklistSplit(raw).trim()
+  if (!normalized) return []
+  const rawLines = normalized
+    .split(/\n+/)
+    .map((l) => l.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+  if (rawLines.length > 1) {
+    return rawLines.flatMap((line) => splitSingleLineBySentencePeriods(line))
+  }
+  return splitSingleLineBySentencePeriods(rawLines[0] || normalized.replace(/\n/g, ' ').trim())
+}
+
 export function emptySopDocument(): SopDocument {
   return {
     title_ko: '',
