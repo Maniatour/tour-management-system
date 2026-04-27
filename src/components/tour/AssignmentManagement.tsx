@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
-import { ChevronDown, ChevronUp, Sparkles, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
@@ -128,12 +128,59 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [showAutoAssignModal, setShowAutoAssignModal] = useState(false)
+  const [assignedBalanceTotal, setAssignedBalanceTotal] = useState(0)
 
   const [moveToTourModalReservationId, setMoveToTourModalReservationId] = useState<string | null>(null)
   const [peerPickerRows, setPeerPickerRows] = useState<Array<{ id: string; label: string }>>([])
   const [peerPickerLoading, setPeerPickerLoading] = useState(false)
   const [selectedTargetTourId, setSelectedTargetTourId] = useState<string | null>(null)
   const [moveSubmitting, setMoveSubmitting] = useState(false)
+
+  useEffect(() => {
+    const loadAssignedBalanceTotal = async () => {
+      const reservationIds = [...new Set(assignedReservations.map((r) => String(r.id).trim()).filter(Boolean))]
+      if (reservationIds.length === 0) {
+        setAssignedBalanceTotal(0)
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('reservation_pricing')
+          .select('reservation_id, balance_amount')
+          .in('reservation_id', reservationIds)
+
+        if (error) {
+          console.error('배정 예약 잔금 합계 조회 오류:', error)
+          setAssignedBalanceTotal(0)
+          return
+        }
+
+        const total = (data || []).reduce((sum, row) => {
+          const raw = (row as { balance_amount?: number | string | null }).balance_amount
+          const amount =
+            raw === null || raw === undefined
+              ? 0
+              : typeof raw === 'string'
+                ? parseFloat(raw) || 0
+                : Number(raw) || 0
+          return amount > 0 ? sum + amount : sum
+        }, 0)
+
+        setAssignedBalanceTotal(total)
+      } catch (error) {
+        console.error('배정 예약 잔금 합계 조회 중 오류:', error)
+        setAssignedBalanceTotal(0)
+      }
+    }
+
+    void loadAssignedBalanceTotal()
+  }, [assignedReservations])
+
+  const formatBalanceBadge = (amount: number) => {
+    if (!Number.isFinite(amount) || amount <= 0) return '$0.00'
+    return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
 
   const peerIdsKey = React.useMemo(
     () => [...sameDayPeerTourIds].sort().join('|'),
@@ -435,6 +482,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               pickupHotels={pickupHotels}
               {...(onRefresh && { onRefresh })}
               getProductCodeForReservation={getProductCodeForReservation}
+              headerBadges={
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>{`잔금 ${formatBalanceBadge(assignedBalanceTotal)}`}</span>
+                </span>
+              }
             />
 
             {/* 2. 배정 대기 중인 예약 */}

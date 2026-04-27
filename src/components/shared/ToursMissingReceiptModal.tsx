@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Receipt } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
@@ -20,6 +20,12 @@ export type TourRowMissingReceipt = TourNeedCheckRow
 type TabKey = 'noReceipt' | 'balance' | 'duplicate' | 'unassigned'
 
 type DuplicateGroupFilter = 'all' | 'crossTour' | 'listInTour'
+type BalanceReservationItem = {
+  reservationId: string
+  displayLabel: string | null
+  totalPeople: number
+  balanceAmount: number
+}
 
 type Props = {
   isOpen: boolean
@@ -69,6 +75,10 @@ export function ToursNeedCheckModal({
   const [unassigningKey, setUnassigningKey] = useState<string | null>(null)
   const [deduping, setDeduping] = useState(false)
   const [unassignedAssigningKey, setUnassignedAssigningKey] = useState<string | null>(null)
+  const [expandedBalanceTourId, setExpandedBalanceTourId] = useState<string | null>(null)
+  const [balanceDetailsByTourId, setBalanceDetailsByTourId] = useState<Record<string, BalanceReservationItem[]>>({})
+  const [balanceDetailsLoadingTourId, setBalanceDetailsLoadingTourId] = useState<string | null>(null)
+  const [collectingBalanceKey, setCollectingBalanceKey] = useState<string | null>(null)
   const [previewReservationId, setPreviewReservationId] = useState<string | null>(null)
   const [previewTourId, setPreviewTourId] = useState<string | null>(null)
   const onDataLoadedRef = useRef(onDataLoaded)
@@ -145,6 +155,153 @@ export function ToursNeedCheckModal({
   useEffect(() => {
     if (!isOpen) setDuplicateGroupFilter('all')
   }, [isOpen])
+
+  const loadBalanceReservationsForTour = useCallback(
+    async (tourId: string) => {
+      const tid = String(tourId).trim()
+      if (!tid) return [] as BalanceReservationItem[]
+      setBalanceDetailsLoadingTourId(tid)
+      try {
+        const { data: tourRow, error: tourErr } = await supabase
+          .from('tours')
+          .select('reservation_ids')
+          .eq('id', tid)
+          .maybeSingle()
+        if (tourErr || !tourRow) {
+          if (tourErr) console.error('loadBalanceReservationsForTour tours', tourErr)
+          setBalanceDetailsByTourId((prev) => ({ ...prev, [tid]: [] }))
+          return []
+        }
+        const reservationIds = normalizeReservationIds((tourRow as { reservation_ids?: unknown }).reservation_ids)
+        if (reservationIds.length === 0) {
+          setBalanceDetailsByTourId((prev) => ({ ...prev, [tid]: [] }))
+          return []
+        }
+        const { data: pricingRows, error: pricingErr } = await supabase
+          .from('reservation_pricing')
+          .select('reservation_id, balance_amount')
+          .in('reservation_id', reservationIds)
+        if (pricingErr) {
+          console.error('loadBalanceReservationsForTour pricing', pricingErr)
+          setBalanceDetailsByTourId((prev) => ({ ...prev, [tid]: [] }))
+          return []
+        }
+        const balanceMap = new Map<string, number>()
+        for (const p of pricingRows || []) {
+          const row = p as { reservation_id: string; balance_amount?: number | string | null }
+          const rid = String(row.reservation_id).trim()
+          if (!rid) continue
+          const b =
+            row.balance_amount == null
+              ? 0
+              : typeof row.balance_amount === 'string'
+                ? parseFloat(row.balance_amount) || 0
+                : Number(row.balance_amount) || 0
+          balanceMap.set(rid, b)
+        }
+
+        const { data: reservRows, error: reservErr } = await supabase
+          .from('reservations')
+          .select('id, customer_id, channel_rn, total_people, adults, child, infant')
+          .in('id', reservationIds)
+        if (reservErr) {
+          console.error('loadBalanceReservationsForTour reservations', reservErr)
+          setBalanceDetailsByTourId((prev) => ({ ...prev, [tid]: [] }))
+          return []
+        }
+        const customerIds = [
+          ...new Set(
+            (reservRows || [])
+              .map((r) => (r as { customer_id?: string | null }).customer_id)
+              .filter((cid): cid is string => cid != null && String(cid).trim() !== '')
+              .map((cid) => String(cid).trim())
+          ),
+        ]
+        const customerNameById = new Map<string, string>()
+        if (customerIds.length > 0) {
+          const { data: customerRows } = await supabase.from('customers').select('id, name').in('id', customerIds)
+          for (const c of customerRows || []) {
+            const row = c as { id: string; name?: string | null }
+            customerNameById.set(String(row.id), String(row.name || '').trim())
+          }
+        }
+
+        const details: BalanceReservationItem[] = []
+        for (const r of reservRows || []) {
+          const row = r as {
+            id: string
+            customer_id?: string | null
+            channel_rn?: string | null
+            total_people?: number | null
+            adults?: number | null
+            child?: number | null
+            infant?: number | null
+          }
+          const rid = String(row.id).trim()
+          if (!rid) continue
+          const bal = balanceMap.get(rid) ?? 0
+          if (bal <= 0.009) continue
+          const custId = row.customer_id ? String(row.customer_id).trim() : ''
+          const label = (custId ? customerNameById.get(custId) : null) || String(row.channel_rn || '').trim() || null
+          const totalPeople =
+            Number(row.total_people) > 0
+              ? Number(row.total_people)
+              : (Number(row.adults) || 0) + (Number(row.child) || 0) + (Number(row.infant) || 0)
+          details.push({
+            reservationId: rid,
+            displayLabel: label,
+            totalPeople,
+            balanceAmount: bal,
+          })
+        }
+        details.sort((a, b) => b.balanceAmount - a.balanceAmount)
+        setBalanceDetailsByTourId((prev) => ({ ...prev, [tid]: details }))
+        return details
+      } finally {
+        setBalanceDetailsLoadingTourId((curr) => (curr === tid ? null : curr))
+      }
+    },
+    [supabase]
+  )
+
+  const handleToggleBalanceAccordion = useCallback(
+    async (tourId: string) => {
+      const tid = String(tourId).trim()
+      if (!tid) return
+      if (expandedBalanceTourId === tid) {
+        setExpandedBalanceTourId(null)
+        return
+      }
+      setExpandedBalanceTourId(tid)
+      if (!balanceDetailsByTourId[tid]) {
+        await loadBalanceReservationsForTour(tid)
+      }
+    },
+    [expandedBalanceTourId, balanceDetailsByTourId, loadBalanceReservationsForTour]
+  )
+
+  const handleCollectBalance = useCallback(
+    async (tourId: string, reservationId: string) => {
+      const tid = String(tourId).trim()
+      const rid = String(reservationId).trim()
+      if (!tid || !rid) return
+      if (!window.confirm(isKo ? '해당 예약의 잔액을 수령 처리할까요?' : 'Mark this reservation balance as received?')) return
+      const key = `${tid}:${rid}`
+      setCollectingBalanceKey(key)
+      try {
+        const { error } = await supabase.from('reservation_pricing').update({ balance_amount: 0 }).eq('reservation_id', rid)
+        if (error) {
+          alert(isKo ? `수령 처리 오류: ${error.message}` : error.message)
+          return
+        }
+        await loadBalanceReservationsForTour(tid)
+        await load()
+      } finally {
+        setCollectingBalanceKey((curr) => (curr === key ? null : curr))
+      }
+    },
+    [supabase, isKo, loadBalanceReservationsForTour, load]
+  )
 
   const visibleDuplicateRows = useMemo(() => {
     return duplicateByReservation.filter((r) => {
@@ -273,6 +430,7 @@ export function ToursNeedCheckModal({
   if (!isOpen) return null
 
   const rows = tab === 'noReceipt' ? noReceipt : tab === 'balance' ? balanceRemaining : null
+  const formatUsd = (v: number) => `$${v.toFixed(2)}`
   const previewSrc =
     previewReservationId != null
       ? `/${locale}/admin/reservations/${previewReservationId}`
@@ -679,6 +837,125 @@ export function ToursNeedCheckModal({
               </table>
                 )}
               </>
+            )
+          ) : tab === 'balance' ? (
+            balanceRemaining.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                {isKo ? '조건에 해당하는 투어가 없습니다.' : 'No tours match this filter.'}
+              </p>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-600 border-b">
+                    <th className="py-2 pr-2 w-8"></th>
+                    <th className="py-2 pr-2">{isKo ? '투어일' : 'Date'}</th>
+                    <th className="py-2 pr-2">{isKo ? '상품' : 'Product'}</th>
+                    <th className="py-2 pr-2">{isKo ? '가이드' : 'Guide'}</th>
+                    <th className="py-2 pr-2">{isKo ? '상태' : 'Status'}</th>
+                    <th className="py-2 pr-2 w-28">{isKo ? '상세' : 'Open'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {balanceRemaining.map((t) => {
+                    const isOpenRow = expandedBalanceTourId === t.id
+                    const detailRows = balanceDetailsByTourId[t.id] || []
+                    const loadingDetail = balanceDetailsLoadingTourId === t.id
+                    return (
+                      <Fragment key={t.id}>
+                        <tr className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-2 pr-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleBalanceAccordion(t.id)}
+                              className="w-6 h-6 inline-flex items-center justify-center rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-100"
+                              aria-label={isOpenRow ? 'collapse' : 'expand'}
+                            >
+                              {isOpenRow ? '−' : '+'}
+                            </button>
+                          </td>
+                          <td className="py-2 pr-2 whitespace-nowrap">{t.tour_date || '—'}</td>
+                          <td className="py-2 pr-2 truncate max-w-[200px]" title={t.product_name || t.product_id || ''}>
+                            {t.product_name || t.product_id || '—'}
+                          </td>
+                          <td className="py-2 pr-2 truncate max-w-[140px]">{t.guide_name || '—'}</td>
+                          <td className="py-2 pr-2">{(t.tour_status || '—').toString()}</td>
+                          <td className="py-2 pr-2">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewTourId(t.id)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                            >
+                              {isKo ? '투어 상세' : 'Tour detail'}
+                            </button>
+                          </td>
+                        </tr>
+                        {isOpenRow ? (
+                          <tr className="border-b border-gray-100 bg-gray-50/60">
+                            <td colSpan={6} className="py-2 px-3">
+                              {loadingDetail ? (
+                                <p className="text-xs text-gray-500">{isKo ? '예약 목록 조회 중…' : 'Loading reservations…'}</p>
+                              ) : detailRows.length === 0 ? (
+                                <p className="text-xs text-gray-500">
+                                  {isKo ? '잔액이 남은 예약이 없습니다.' : 'No reservations with remaining balance.'}
+                                </p>
+                              ) : (
+                                <table className="w-full text-xs border border-gray-200 rounded-md overflow-hidden bg-white">
+                                  <thead>
+                                    <tr className="bg-gray-50 text-gray-700 border-b border-gray-200">
+                                      <th className="py-1.5 px-2 text-left font-medium">{isKo ? '예약' : 'Reservation'}</th>
+                                      <th className="py-1.5 px-2 text-right font-medium w-28">{isKo ? '발란스' : 'Balance'}</th>
+                                      <th className="py-1.5 px-2 text-left font-medium w-44">{isKo ? '작업' : 'Action'}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {detailRows.map((r) => {
+                                      const busy = collectingBalanceKey === `${t.id}:${r.reservationId}`
+                                      const totalPeople = Number(r.totalPeople) || 0
+                                      return (
+                                        <tr key={r.reservationId} className="border-b border-gray-100 last:border-b-0">
+                                          <td className="py-1.5 px-2">
+                                            <div className="font-medium text-gray-900">{r.displayLabel || '—'}</div>
+                                            <div className="text-[10px] text-gray-600 mt-0.5">
+                                              {isKo ? `총 ${totalPeople}명` : `${totalPeople} pax`}
+                                            </div>
+                                            <div className="text-[10px] text-gray-500 font-mono mt-0.5 break-all">{r.reservationId}</div>
+                                          </td>
+                                          <td className="py-1.5 px-2 text-right tabular-nums text-gray-900">
+                                            {formatUsd(r.balanceAmount)}
+                                          </td>
+                                          <td className="py-1.5 px-2">
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                              <button
+                                                type="button"
+                                                disabled={collectingBalanceKey !== null}
+                                                onClick={() => void handleCollectBalance(t.id, r.reservationId)}
+                                                className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-900 text-[11px] font-medium hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                              >
+                                                {busy ? '…' : (isKo ? '수령' : 'Collect')}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setPreviewReservationId(r.reservationId)}
+                                                className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
+                                              >
+                                                {isKo ? '예약 상세' : 'Reservation detail'}
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              )}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
             )
           ) : rows && rows.length === 0 ? (
             <p className="text-sm text-gray-500">

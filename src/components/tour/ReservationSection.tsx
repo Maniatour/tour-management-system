@@ -45,6 +45,7 @@ interface ReservationSectionProps {
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   getProductCodeForReservation?: (reservation: Reservation) => string | null | undefined
+  headerBadges?: React.ReactNode
 }
 
 export const ReservationSection: React.FC<ReservationSectionProps> = ({
@@ -72,7 +73,8 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   safeJsonParse,
   pickupHotels = [],
   onRefresh,
-  getProductCodeForReservation
+  getProductCodeForReservation,
+  headerBadges
 }) => {
   // 중복 제거: 같은 ID를 가진 예약 중 첫 번째 것만 유지
   const uniqueReservations = React.useMemo(() => {
@@ -106,6 +108,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
               👥 <span>{totalPeople}</span>
             </span>
           )}
+          {headerBadges}
         </div>
       )}
       <div className="space-y-2">
