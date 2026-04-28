@@ -1692,17 +1692,40 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           const currency = reservationPricing.currency || 'USD'
           const currencySymbol = currency === 'KRW' ? '₩' : '$'
           const unitPrice = adultPrice + notIncludedPricePerPerson
+          const totalDiscount = couponDiscount + additionalDiscount
+          const formatCalcMoney = (amount: number): string => {
+            const rounded = Math.round((amount + Number.EPSILON) * 100) / 100
+            const isWhole = Math.abs(rounded % 1) < 1e-9
+            return isWhole
+              ? `${currencySymbol}${rounded.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+              : `${currencySymbol}${rounded.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          }
           let calculationString: string
           if (notIncludedPricePerPerson > 0 && adultPrice > 0 && totalPeople > 0) {
-            calculationString = `(${currencySymbol}${adultPrice.toFixed(0)} + ${currencySymbol}${notIncludedPricePerPerson.toFixed(0)}) = ${currencySymbol}${unitPrice.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
+            calculationString = `(${formatCalcMoney(adultPrice)} + ${formatCalcMoney(notIncludedPricePerPerson)}) = ${formatCalcMoney(unitPrice)} × ${totalPeople} = ${formatCalcMoney(subtotal)}`
           } else {
-            calculationString = `${currencySymbol}${subtotal.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
+            calculationString = `${formatCalcMoney(subtotal)} × ${totalPeople} = ${formatCalcMoney(subtotal)}`
           }
-          if (couponDiscount > 0 || additionalDiscount > 0) {
-            calculationString += ` - ${currencySymbol}${(couponDiscount + additionalDiscount).toFixed(2)} = ${currencySymbol}${customerTotalPayment.toFixed(2)}`
+          let runningTotal = subtotal
+          if (totalDiscount > 0) {
+            runningTotal -= totalDiscount
+            calculationString += ` - ${formatCalcMoney(totalDiscount)} = ${formatCalcMoney(runningTotal)}`
+          }
+          if (effectiveOptionsTotal > 0) {
+            runningTotal += effectiveOptionsTotal
+            calculationString += ` + ${formatCalcMoney(effectiveOptionsTotal)} = ${formatCalcMoney(runningTotal)}`
+          }
+          if (additionalCost > 0) {
+            runningTotal += additionalCost
+            calculationString += ` + ${formatCalcMoney(additionalCost)} = ${formatCalcMoney(runningTotal)}`
+          }
+          const extraFees = tax + cardFee + prepaymentCost + prepaymentTip
+          if (extraFees > 0) {
+            runningTotal += extraFees
+            calculationString += ` + ${formatCalcMoney(extraFees)} = ${formatCalcMoney(runningTotal)}`
           }
           if (commissionAmount > 0) {
-            calculationString += ` - ${currencySymbol}${commissionAmount.toFixed(2)} = ${currencySymbol}${totalRevenue.toFixed(2)}`
+            calculationString += ` - ${formatCalcMoney(commissionAmount)} = ${formatCalcMoney(totalRevenue)}`
           }
           return (
             <div className="mt-1 text-xs text-gray-700">

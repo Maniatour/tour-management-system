@@ -80,9 +80,19 @@ type Props = {
   rows: CompanyExpenseRow[]
   setRows: React.Dispatch<React.SetStateAction<CompanyExpenseRow[]>>
   onAfterSave?: () => void
+  vehicleMileage?: {
+    odometerStart: number | null
+    odometerEnd: number | null
+  }
 }
 
-export function VehicleExpenseDetailEditableTable({ vehicleId, rows, setRows, onAfterSave }: Props) {
+export function VehicleExpenseDetailEditableTable({
+  vehicleId,
+  rows,
+  setRows,
+  onAfterSave,
+  vehicleMileage
+}: Props) {
   const t = useTranslations('companyExpense.vehicleRepairReport')
   const tForm = useTranslations('companyExpense.form')
   const { user } = useAuth()
@@ -189,12 +199,14 @@ export function VehicleExpenseDetailEditableTable({ vehicleId, rows, setRows, on
 
   return (
     <div className="overflow-x-auto rounded-md border w-full -mx-0">
-      <Table className="w-full min-w-[900px] table-fixed sm:min-w-[1040px]">
+      <Table className="w-full min-w-[1060px] table-fixed sm:min-w-[1240px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-28 sm:w-32 font-medium text-xs sm:text-sm">{t('detailDate')}</TableHead>
             <TableHead className="w-[7.5rem] sm:w-32 font-medium text-xs sm:text-sm">{t('labelPaidTo')}</TableHead>
             <TableHead className="w-[7.5rem] sm:w-36 font-medium text-xs sm:text-sm">{t('labelPaidFor')}</TableHead>
+            <TableHead className="w-[7.5rem] sm:w-36 font-medium text-xs sm:text-sm">{t('labelStandardPaidFor')}</TableHead>
+            <TableHead className="w-[7rem] sm:w-32 font-medium text-xs sm:text-sm whitespace-nowrap">{t('colVehicleMileage')}</TableHead>
             <TableHead className="w-[20%] min-w-[7rem] font-medium text-xs sm:text-sm">{t('labelDescription')}</TableHead>
             <TableHead className="w-[16%] min-w-[5rem] font-medium text-xs sm:text-sm">{t('labelNotes')}</TableHead>
             <TableHead className="w-20 sm:w-24 text-right font-medium text-xs sm:text-sm whitespace-nowrap">
@@ -235,6 +247,16 @@ export function VehicleExpenseDetailEditableTable({ vehicleId, rows, setRows, on
                       onChange={(e) => setDraft({ ...draft, paid_for: e.target.value })}
                       rows={2}
                     />
+                  </TableCell>
+                  <TableCell className="text-xs sm:text-sm text-muted-foreground break-words max-w-0">
+                    <p className="line-clamp-3" title={r.standard_paid_for || undefined}>
+                      {r.standard_paid_for || '—'}
+                    </p>
+                  </TableCell>
+                  <TableCell className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
+                    {vehicleMileage?.odometerEnd != null
+                      ? t('mileageKm', { n: Math.round(vehicleMileage.odometerEnd).toLocaleString() })
+                      : '—'}
                   </TableCell>
                   <TableCell>
                     <Textarea
@@ -306,6 +328,16 @@ export function VehicleExpenseDetailEditableTable({ vehicleId, rows, setRows, on
                   <p className="line-clamp-3" title={r.paid_for || undefined}>
                     {r.paid_for || '—'}
                   </p>
+                </TableCell>
+                <TableCell className="text-xs sm:text-sm break-words max-w-0">
+                  <p className="line-clamp-3" title={r.standard_paid_for || undefined}>
+                    {r.standard_paid_for || '—'}
+                  </p>
+                </TableCell>
+                <TableCell className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
+                  {vehicleMileage?.odometerEnd != null
+                    ? t('mileageKm', { n: Math.round(vehicleMileage.odometerEnd).toLocaleString() })
+                    : '—'}
                 </TableCell>
                 <TableCell className="text-xs sm:text-sm break-words max-w-0">
                   <p className="line-clamp-4 whitespace-pre-wrap" title={r.description || undefined}>

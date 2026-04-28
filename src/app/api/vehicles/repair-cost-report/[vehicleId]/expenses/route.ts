@@ -22,7 +22,7 @@ export async function GET(
     const { data, error } = await supabase
       .from('company_expenses')
       .select(
-        'id, submit_on, amount, paid_to, paid_for, description, notes, status, category, subcategory, payment_method, submit_by, photo_url, attachments, expense_type, tax_deductible, vehicle_id, maintenance_type'
+        'id, submit_on, amount, paid_to, paid_for, standard_paid_for, paid_for_label_id, description, notes, status, category, subcategory, payment_method, submit_by, photo_url, attachments, expense_type, tax_deductible, vehicle_id, maintenance_type'
       )
       .eq('vehicle_id', vehicleId)
       .order('submit_on', { ascending: true, nullsFirst: false })

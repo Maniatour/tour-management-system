@@ -40,7 +40,7 @@ export function VehicleRepairCostReportModal({ open, onOpenChange }: Props) {
 
   const [detailFor, setDetailFor] = useState<Pick<
     VehicleRepairReportItem,
-    'vehicle_id' | 'vehicle_number' | 'vehicle_type'
+    'vehicle_id' | 'vehicle_number' | 'vehicle_type' | 'odometer_start' | 'odometer_end' | 'distance'
   > | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -116,7 +116,10 @@ export function VehicleRepairCostReportModal({ open, onOpenChange }: Props) {
     setDetailFor({
       vehicle_id: row.vehicle_id,
       vehicle_number: row.vehicle_number,
-      vehicle_type: row.vehicle_type
+      vehicle_type: row.vehicle_type,
+      odometer_start: row.odometer_start,
+      odometer_end: row.odometer_end,
+      distance: row.distance
     })
   }, [])
 
@@ -275,6 +278,20 @@ export function VehicleRepairCostReportModal({ open, onOpenChange }: Props) {
               <span className="block sm:inline sm:ml-1 font-medium text-foreground/90 text-sm sm:text-base">
                 — {detailFor.vehicle_number}{' '}
                 <span className="text-muted-foreground font-normal">({detailFor.vehicle_type})</span>
+                <span className="mt-0.5 block text-xs sm:text-sm text-muted-foreground font-normal">
+                  {t('detailMileage', {
+                    start:
+                      detailFor.odometer_start != null
+                        ? Math.round(detailFor.odometer_start).toLocaleString()
+                        : '—',
+                    end:
+                      detailFor.odometer_end != null
+                        ? Math.round(detailFor.odometer_end).toLocaleString()
+                        : '—',
+                    distance:
+                      detailFor.distance > 0 ? Math.round(detailFor.distance).toLocaleString() : '—'
+                  })}
+                </span>
               </span>
             ) : null}
           </DialogTitle>
@@ -283,6 +300,22 @@ export function VehicleRepairCostReportModal({ open, onOpenChange }: Props) {
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-4 sm:py-3">
+          {detailFor ? (
+            <div className="mb-3 rounded-md border bg-slate-50 px-3 py-2 text-xs sm:text-sm">
+              <div className="font-medium text-slate-700">{t('detailMileageTitle')}</div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-slate-700">
+                <span>
+                  {t('detailMileageStart')}: {detailFor.odometer_start != null ? Math.round(detailFor.odometer_start).toLocaleString() : '—'} km
+                </span>
+                <span>
+                  {t('detailMileageCurrent')}: {detailFor.odometer_end != null ? Math.round(detailFor.odometer_end).toLocaleString() : '—'} km
+                </span>
+                <span>
+                  {t('detailMileageDistance')}: {detailFor.distance > 0 ? Math.round(detailFor.distance).toLocaleString() : '—'} km
+                </span>
+              </div>
+            </div>
+          ) : null}
           {detailLoading && (
             <div className="py-12 text-center text-sm text-muted-foreground">{t('detailLoading')}</div>
           )}
@@ -295,6 +328,10 @@ export function VehicleRepairCostReportModal({ open, onOpenChange }: Props) {
           {!detailLoading && !detailError && detailFor && detailRows.length > 0 && (
             <VehicleExpenseDetailEditableTable
               vehicleId={detailFor.vehicle_id}
+              vehicleMileage={{
+                odometerStart: detailFor.odometer_start ?? null,
+                odometerEnd: detailFor.odometer_end ?? null
+              }}
               rows={detailRows}
               setRows={setDetailRows}
               onAfterSave={() => {
