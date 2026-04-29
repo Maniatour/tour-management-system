@@ -4,7 +4,10 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
-import { useReservationOptions } from '@/hooks/useReservationOptions'
+import {
+  useReservationOptions,
+  reservationOptionCountsTowardPricingTotal,
+} from '@/hooks/useReservationOptions'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import {
   computePricingSectionCustomerPaymentGrossLike,
@@ -619,7 +622,11 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   }, [editData, reservation, pricingAdultsVal])
 
   const reservationOptionsTotalUsd = useMemo(
-    () => reservationOptionsRows.reduce((sum, o) => sum + (o.total_price || 0), 0),
+    () =>
+      reservationOptionsRows.reduce((sum, o) => {
+        if (!reservationOptionCountsTowardPricingTotal(o.status)) return sum
+        return sum + (o.total_price || 0)
+      }, 0),
     [reservationOptionsRows]
   )
 

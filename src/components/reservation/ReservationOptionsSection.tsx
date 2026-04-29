@@ -3,7 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { useReservationOptions, type ReservationOption, type CreateReservationOptionData } from '@/hooks/useReservationOptions'
+import {
+  useReservationOptions,
+  type ReservationOption,
+  type CreateReservationOptionData,
+  reservationOptionCountsTowardPricingTotal,
+} from '@/hooks/useReservationOptions'
 
 /** 기존 옵션 목록(options 테이블) 항목 */
 type OptionListItem = {
@@ -207,7 +212,10 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
   const optionsForTotal = isPersisted ? reservationOptions : pendingOptions
   useEffect(() => {
     if (onTotalPriceChange) {
-      const totalPrice = optionsForTotal.reduce((sum, option) => sum + (option.total_price || 0), 0)
+      const totalPrice = optionsForTotal.reduce((sum, option) => {
+        if (!reservationOptionCountsTowardPricingTotal(option.status ?? 'active')) return sum
+        return sum + (option.total_price || 0)
+      }, 0)
       onTotalPriceChange(totalPrice)
     }
   }, [optionsForTotal, onTotalPriceChange, isPersisted])

@@ -764,19 +764,7 @@ export default function PricingSection({
       const totalPaid = depositTotalNet + balanceReceivedTotal
       const remainingBalance = roundUsd2(totalCustomerPayment - totalPaid)
 
-      // OTA 채널 여부 확인 (최신 formData/channels는 ref에서 참조)
       const fd = formDataRef.current
-      const chs = channelsRef.current
-      const selectedChannel = (Array.isArray(chs) ? chs : []).find((c: { id: string }) => c.id === fd.channelId)
-      const isOTAChannel = selectedChannel && (
-        (selectedChannel as any).type?.toLowerCase() === 'ota' || 
-        (selectedChannel as any).category === 'OTA' ||
-        (selectedChannel as any).name?.toLowerCase().includes('ota') ||
-        (selectedChannel as any).name?.toLowerCase().includes('expedia') ||
-        (selectedChannel as any).name?.toLowerCase().includes('booking') ||
-        (selectedChannel as any).name?.toLowerCase().includes('viator') ||
-        (selectedChannel as any).name?.toLowerCase().includes('getyourguide')
-      )
 
       // 입금 내역이 있을 때만 보증금·잔액을 입금 합계 기준으로 덮어씀.
       // 입금 내역이 없으면 DB/사용자가 입력한 보증금·잔액을 유지 (할인가로 덮어쓰면 저장값이 사라지는 버그 방지)
@@ -800,16 +788,13 @@ export default function PricingSection({
 
       if (paymentRecords.length > 0) {
         // 입금 반영은 폼 상태만 갱신. reservation_pricing 저장은 사용자가「가격 정보 저장」또는 전체 예약 저장 시에만 수행.
+        // OTA도 동일: 보증금 순액·Refunded 반영 후 잔액을 맞추지 않으면 DB 잔액이 남아 −잔액으로 보임.
         setFormData((prev: typeof formData) => ({
           ...prev,
           balanceReceivedTotal,
           depositAmount: depositToSave,
-          ...(isOTAChannel
-            ? {}
-            : {
-                onSiteBalanceAmount: remainingBalance,
-                balanceAmount: remainingBalance
-              })
+          onSiteBalanceAmount: remainingBalance,
+          balanceAmount: remainingBalance,
         }))
       } else {
         setFormData((prev: typeof formData) => ({
@@ -1211,6 +1196,8 @@ export default function PricingSection({
   /** 취소 후에도 OTA 부분 정산 시 `commission_amount` 그대로 반영 (미입력이면 0) */
   const effectiveCommissionAmount = Number(formData.commission_amount) || 0
   const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
+  /** 입력 환불 금액 − 입금 내역 Refunded 합 — 미지급 환불 표시용 */
+  const unpaidRefundOutstanding = Math.max(0, roundUsd2(manualRefundAmount - refundedAmount))
 
   // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (정산·채널 결제 UI에서 공통)
   const discountedProductPrice =
@@ -3178,6 +3165,25 @@ export default function PricingSection({
                   </div>
                 </div>
               </div>
+
+              {/* 입금 내역상 환불(Refunded) — 보증금 숫자는 이미 순액(환불 차감 후)으로 반영됨 */}
+              {refundedAmount > 0.005 && (
+                <div className="flex justify-between items-center mb-1.5">
+                  <span
+                    className="text-xs text-gray-700 cursor-help"
+                    title={
+                      isKorean
+                        ? '입금 내역 중 Refunded 상태 합계입니다. 위 보증금(고객 실제 지불액)은 이 금액을 뺀 순액입니다.'
+                        : 'Sum of Refunded lines on payment records. Deposit above is net of this amount.'
+                    }
+                  >
+                    {isKorean ? '− 입금 환불 (Refunded)' : '− Refunded (payment records)'}
+                  </span>
+                  <span className="text-xs font-medium text-red-600 tabular-nums">
+                    −${refundedAmount.toFixed(2)}
+                  </span>
+                </div>
+              )}
               
               {/* 잔금 수령 */}
               {calculatedBalanceReceivedTotal > 0 && (
@@ -3189,14 +3195,14 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 잔액 = 총 결제 예정 − 고객 실제 지불(보증금+잔금 수령) */}
+              {/* 잔액 = 총 결제 예정 − 고객 실제 지불(보증금+잔금 수령). 보증금은 입금 내역상 Refunded 차감 순액 */}
               <div className="flex justify-between items-center mb-1.5">
                 <span
                   className="text-xs text-gray-700 cursor-help"
                   title={
                     isKorean
-                      ? '총 결제 예정 금액(①, Returned 반영 순액) − (보증금 + 잔금 수령). 투어 당일 등 남은 부담금'
-                      : 'Total due (①, net of Returned) − (deposit + balance received). Typically on-site'
+                      ? '총 결제 예정 금액(①) − (보증금 순액 + 잔금 수령). 보증금은 Refunded를 반영한 금액입니다.'
+                      : 'Total due (①) − (net deposit + balance received). Deposit is net of Refunded.'
                   }
                 >
                   {isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}
@@ -3817,28 +3823,40 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 환불금 — 파트너 Returned는 위 채널 결제 금액(표시)에 이미 반영되어 이중 차감하지 않음 */}
-              {(() => {
-                if (refundedAmount <= 0 && manualRefundAmount <= 0) return null
-                const totalRefundAmount = refundedAmount + manualRefundAmount
-                return (
-                  <div className="flex justify-between items-center mb-1.5">
+              {/* 환불금 — 총 매출·운영 이익에는 입금 내역(Refunded)만 반영. 입력칸은 참고·미지급 표시용 */}
+              {(refundedAmount > 0.005 ||
+                manualRefundAmount > 0.005 ||
+                unpaidRefundOutstanding > 0.005) && (
+                <div className="flex justify-between items-start gap-2 mb-1.5">
+                  <div className="min-w-0">
                     <span
-                      className="text-xs font-medium text-red-700 cursor-help"
+                      className="text-xs font-medium text-red-700 cursor-help block"
                       title={
                         manualRefundAmount > 0 && formData.refundReason?.trim()
                           ? formData.refundReason.trim()
-                          : undefined
+                          : isKorean
+                            ? '왼쪽: 환불 금액 입력칸 · 오른쪽: 입금 내역 중 Refunded 합계'
+                            : 'Left: refund amount field · Right: Refunded total from payment records'
                       }
                     >
                       - {isKorean ? '환불금' : 'Refund'}
+                      <span className="text-[10px] font-normal text-gray-500 ml-1">
+                        {isKorean ? '(입력 / 실제 입금)' : '(entered / recorded)'}
+                      </span>
                     </span>
-                    <span className="text-xs font-medium text-red-600">
-                      -${totalRefundAmount.toFixed(2)}
-                    </span>
+                    {unpaidRefundOutstanding > 0.005 && (
+                      <span className="text-[10px] font-medium text-amber-700 mt-0.5 block">
+                        {isKorean
+                          ? `미지급 환불 약 $${unpaidRefundOutstanding.toFixed(2)} (입력 − 입금 Refunded)`
+                          : `Outstanding refund ~$${unpaidRefundOutstanding.toFixed(2)} (entered − recorded)`}
+                      </span>
+                    )}
                   </div>
-                )
-              })()}
+                  <span className="text-xs font-medium text-red-600 tabular-nums shrink-0 text-right">
+                    ${manualRefundAmount.toFixed(2)} / ${refundedAmount.toFixed(2)}
+                  </span>
+                </div>
+              )}
               
               <div className="border-t border-gray-200 my-1.5"></div>
               
@@ -3849,7 +3867,7 @@ export default function PricingSection({
                   ${(() => {
                     if (isReservationCancelled) {
                       if (isOTAChannel) {
-                        return (channelSettlementBeforePartnerReturn - refundedAmount - manualRefundAmount).toFixed(2)
+                        return (channelSettlementBeforePartnerReturn - refundedAmount).toFixed(2)
                       }
                       return '0.00'
                     }
@@ -3892,8 +3910,8 @@ export default function PricingSection({
                       totalRevenue += formData.prepaymentCost
                     }
                     
-                    // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
-                    totalRevenue -= refundedAmount + manualRefundAmount
+                    // 환불금 차감: 입금 내역 Refunded 합만 반영 (입력칸과 이중 차감하지 않음)
+                    totalRevenue -= refundedAmount
 
                     // 홈페이지: 추가비용은 회사 총 매출에 포함하지 않음(고객 결제·정산 소계에는 남을 수 있음)
                     if (isHomepageBooking && (formData.additionalCost || 0) > 0) {
@@ -3928,7 +3946,6 @@ export default function PricingSection({
                         return (
                           channelSettlementBeforePartnerReturn -
                           refundedAmount -
-                          manualRefundAmount -
                           (formData.prepaymentTip || 0)
                         ).toFixed(2)
                       }
@@ -3972,8 +3989,8 @@ export default function PricingSection({
                       totalRevenue += formData.prepaymentCost
                     }
                     
-                    // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
-                    totalRevenue -= refundedAmount + manualRefundAmount
+                    // 환불금 차감: 입금 내역 Refunded 합만 반영 (입력칸과 이중 차감하지 않음)
+                    totalRevenue -= refundedAmount
 
                     if (isHomepageBooking && (formData.additionalCost || 0) > 0) {
                       totalRevenue -= formData.additionalCost

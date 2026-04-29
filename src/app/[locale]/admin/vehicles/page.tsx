@@ -302,7 +302,11 @@ export default function VehiclesPage() {
                   .select('id, vehicle_id, photo_url, photo_name, is_primary, display_order, created_at, updated_at')
                   .in('vehicle_id', batchIds)
                   .limit(500)
-                if (photosError || !batchPhotos?.length) return
+                if (photosError) {
+                  console.warn('vehicle_photos 배치 조회 오류:', photosError.message, photosError)
+                  return
+                }
+                if (!batchPhotos?.length) return
                 batchPhotos
                   .sort((a, b) => {
                     if (a.vehicle_id !== b.vehicle_id) return a.vehicle_id.localeCompare(b.vehicle_id)

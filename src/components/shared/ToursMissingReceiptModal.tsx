@@ -1000,7 +1000,7 @@ export function ToursNeedCheckModal({
     </div>
     {previewSrc ? (
       <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/60">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-[1200px] h-[88vh] flex flex-col overflow-hidden">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-[90vw] h-[88vh] flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200">
             <div className="text-sm font-semibold text-gray-900">{previewTitle}</div>
             <div className="flex items-center gap-2">

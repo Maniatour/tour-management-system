@@ -187,7 +187,16 @@ export default function TourExpenseManager({
     custom_paid_for: ''
   })
 
-  const guideEmail = String(tourData?.tour_guide_id || '').trim().toLowerCase()
+  /** 투어에 배정된 가이드·어시스턴트(또는 2인 가이드) 이메일 — 본인 카드 탭에 모두 반영 */
+  const tourGuideEmails = useMemo(() => {
+    const set = new Set<string>()
+    const primary = String(tourData?.tour_guide_id || '').trim().toLowerCase()
+    const assistant = String(tourData?.assistant_id || '').trim().toLowerCase()
+    if (primary) set.add(primary)
+    if (assistant) set.add(assistant)
+    return set
+  }, [tourData?.tour_guide_id, tourData?.assistant_id])
+
   const activePaymentMethodOptions = useMemo(
     () => paymentMethodOptions.filter((option) => String(option.status || 'active').toLowerCase() === 'active'),
     [paymentMethodOptions]
@@ -197,9 +206,9 @@ export default function TourExpenseManager({
       activePaymentMethodOptions.filter((option) => {
         const optionOwner = String(option.user_email || '').trim().toLowerCase()
         const methodType = String(option.method_type || 'card').toLowerCase()
-        return !!guideEmail && optionOwner === guideEmail && methodType === 'card'
+        return tourGuideEmails.size > 0 && tourGuideEmails.has(optionOwner) && methodType === 'card'
       }),
-    [activePaymentMethodOptions, guideEmail]
+    [activePaymentMethodOptions, tourGuideEmails]
   )
   const guideCardPaymentMethodIds = useMemo(
     () => new Set(guideCardPaymentMethodOptions.map((option) => option.id)),
@@ -1241,7 +1250,7 @@ export default function TourExpenseManager({
       // 투어 기본 정보 로드
       const { data: tour, error: tourError } = await supabase
         .from('tours')
-        .select('id, product_id, team_type, guide_fee, assistant_fee, tour_status, tour_guide_id')
+        .select('id, product_id, team_type, guide_fee, assistant_fee, tour_status, tour_guide_id, assistant_id')
         .eq('id', tourId)
         .single()
 
@@ -2483,10 +2492,10 @@ export default function TourExpenseManager({
                         {t('otherPaymentMethods')}
                       </button>
                     </div>
-                    {paymentMethodTab === 'own' && !guideEmail && (
+                    {paymentMethodTab === 'own' && tourGuideEmails.size === 0 && (
                       <p className="text-xs text-amber-600">{t('noGuideAssignedForPaymentMethods')}</p>
                     )}
-                    {paymentMethodTab === 'own' && guideEmail && guideCardPaymentMethodOptions.length === 0 && (
+                    {paymentMethodTab === 'own' && tourGuideEmails.size > 0 && guideCardPaymentMethodOptions.length === 0 && (
                       <p className="text-xs text-amber-600">{t('noGuideCardPaymentMethods')}</p>
                     )}
                     {paymentMethodTab === 'other' && otherPaymentMethodOptions.length === 0 && (

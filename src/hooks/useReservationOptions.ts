@@ -27,6 +27,17 @@ export interface UpdateReservationOptionData extends CreateReservationOptionData
   id: string
 }
 
+/**
+ * 예약 옵션 금액 합계(가격 계산·잔액 표시 등)에 포함할 행인지.
+ * 취소·환불 행은 제외 — `aggregateReservationOptionSumsByReservationId` 와 동일 규칙.
+ */
+export function reservationOptionCountsTowardPricingTotal(
+  status: ReservationOption['status']
+): boolean {
+  const s = String(status || 'active').toLowerCase()
+  return s !== 'cancelled' && s !== 'refunded'
+}
+
 export function useReservationOptions(reservationId: string) {
   const [reservationOptions, setReservationOptions] = useState<ReservationOption[]>([])
   const [loading, setLoading] = useState(false)

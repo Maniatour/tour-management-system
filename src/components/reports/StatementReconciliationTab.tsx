@@ -850,6 +850,21 @@ function operationalLedgerKey(sourceTable: string, sourceId: string): string {
   return `${sourceTable}:${sourceId}`
 }
 
+/** 운영 지출입 원장 테이블별 금액 컬럼명 */
+function operationalLedgerDbAmountPayload(
+  sourceTable: OperationalLedgerSourceTable,
+  amount: number
+): Record<string, number> {
+  switch (sourceTable) {
+    case 'ticket_bookings':
+      return { expense: amount }
+    case 'tour_hotel_bookings':
+      return { total_price: amount }
+    default:
+      return { amount }
+  }
+}
+
 function todayYmd(): string {
   const d = new Date()
   const yyyy = d.getFullYear()
@@ -1057,6 +1072,8 @@ export default function StatementReconciliationTab() {
   const [operationalLedgerPage, setOperationalLedgerPage] = useState(1)
   const [statementCandidatesByLedgerKey, setStatementCandidatesByLedgerKey] = useState<Record<string, StatementLineCandidate[]>>({})
   const [statementCandidateLoadingKeys, setStatementCandidateLoadingKeys] = useState<Set<string>>(() => new Set())
+  const [operationalLedgerAmountSavingKey, setOperationalLedgerAmountSavingKey] = useState<string | null>(null)
+  const [operationalLedgerAmountInputRemount, setOperationalLedgerAmountInputRemount] = useState<Record<string, number>>({})
 
   /** 보정 지출 — 유형 선택 후 모달에서 실제 지출 입력 */
   const [adjustModalLine, setAdjustModalLine] = useState<StatementLine | null>(null)
@@ -3786,6 +3803,72 @@ export default function StatementReconciliationTab() {
       setOperationalLedgerLoading(false)
     }
   }, [operationalLedgerStart, operationalLedgerEnd])
+
+  const persistOperationalLedgerAmount = useCallback(
+    async (row: OperationalLedgerRow, rawInput: string) => {
+      if (row.already_matched) {
+        setMessage('이미 명세와 연결된 행은 금액을 바꿀 수 없습니다.')
+        setOperationalLedgerAmountInputRemount((prev) => ({
+          ...prev,
+          [row.key]: (prev[row.key] ?? 0) + 1
+        }))
+        return
+      }
+      const normalized = rawInput.replace(/,/g, '').trim()
+      const parsed = normalized === '' ? NaN : Number(normalized)
+      if (!Number.isFinite(parsed)) {
+        setMessage('금액을 숫자로 입력하세요.')
+        setOperationalLedgerAmountInputRemount((prev) => ({
+          ...prev,
+          [row.key]: (prev[row.key] ?? 0) + 1
+        }))
+        return
+      }
+      const rounded = Math.round(parsed * 100) / 100
+      if (rounded < 0) {
+        setMessage('금액은 0 이상이어야 합니다.')
+        setOperationalLedgerAmountInputRemount((prev) => ({
+          ...prev,
+          [row.key]: (prev[row.key] ?? 0) + 1
+        }))
+        return
+      }
+      if (Math.abs(rounded - row.amount) < 0.005) return
+
+      setOperationalLedgerAmountSavingKey(row.key)
+      setMessage(null)
+      try {
+        const payload = operationalLedgerDbAmountPayload(row.source_table, rounded)
+        const { error } = await (supabase as any).from(row.source_table).update(payload).eq('id', row.source_id)
+        if (error) throw error
+        setOperationalLedgerRows((prev) =>
+          prev.map((r) => (r.key === row.key ? { ...r, amount: rounded } : r))
+        )
+        setStatementCandidatesByLedgerKey((prev) => {
+          if (!(row.key in prev)) return prev
+          const next = { ...prev }
+          delete next[row.key]
+          return next
+        })
+        setStatementCandidateLoadingKeys((prev) => {
+          if (!prev.has(row.key)) return prev
+          const next = new Set(prev)
+          next.delete(row.key)
+          return next
+        })
+        setMessage('금액을 저장했습니다.')
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : '금액 저장에 실패했습니다.')
+        setOperationalLedgerAmountInputRemount((prev) => ({
+          ...prev,
+          [row.key]: (prev[row.key] ?? 0) + 1
+        }))
+      } finally {
+        setOperationalLedgerAmountSavingKey(null)
+      }
+    },
+    []
+  )
 
   /** 금융 계정이 연결된 결제수단 — DB에 저장될 수 있는 id·방법명·표시명 키 */
   const operationalLedgerLinkedPaymentKeys = useMemo(() => {
@@ -6607,8 +6690,28 @@ export default function StatementReconciliationTab() {
                             {row.source_id}
                           </code>
                         </td>
-                        <td className={`px-2 py-2 text-right tabular-nums font-medium ${row.direction === 'inflow' ? 'text-emerald-800' : 'text-rose-800'}`}>
-                          {formatMoneyUsd(row.amount)}
+                        <td
+                          className={`px-2 py-2 text-right tabular-nums font-medium ${row.direction === 'inflow' ? 'text-emerald-800' : 'text-rose-800'}`}
+                        >
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min={0}
+                            title="USD 금액 — 포커스를 벗어나면 저장됩니다"
+                            aria-label="금액 수정"
+                            disabled={row.already_matched || operationalLedgerAmountSavingKey === row.key}
+                            className={`w-[7.5rem] rounded border border-slate-200 bg-white px-1.5 py-0.5 text-right text-xs font-medium tabular-nums disabled:opacity-60 ${row.direction === 'inflow' ? 'text-emerald-800' : 'text-rose-800'}`}
+                            key={`ledger-amt-${row.key}-${row.amount}-${operationalLedgerAmountInputRemount[row.key] ?? 0}`}
+                            defaultValue={row.amount}
+                            onBlur={(e) => void persistOperationalLedgerAmount(row, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                ;(e.target as HTMLInputElement).blur()
+                              }
+                            }}
+                          />
                         </td>
                         <td className="px-2 py-2 text-slate-600">{pmLabel}</td>
                         <td className="px-2 py-2 text-slate-700">{row.party || '—'}</td>
