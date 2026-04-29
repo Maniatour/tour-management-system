@@ -38,6 +38,20 @@ export function reservationOptionCountsTowardPricingTotal(
   return s !== 'cancelled' && s !== 'refunded'
 }
 
+/** 취소·환불 처리된 예약 옵션 줄의 total_price 합 (가격 계산 ④ 환불 입력 합산 표시용) */
+export function sumReservationOptionCancelledRefundTotals(
+  options: Array<{ status?: string | null; total_price?: number | null }>
+): number {
+  let sum = 0
+  for (const option of options) {
+    const s = String(option.status || 'active').toLowerCase()
+    if (s === 'cancelled' || s === 'refunded') {
+      sum += Number(option.total_price) || 0
+    }
+  }
+  return Math.round(sum * 100) / 100
+}
+
 export function useReservationOptions(reservationId: string) {
   const [reservationOptions, setReservationOptions] = useState<ReservationOption[]>([])
   const [loading, setLoading] = useState(false)

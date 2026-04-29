@@ -8,6 +8,7 @@ import {
   type ReservationOption,
   type CreateReservationOptionData,
   reservationOptionCountsTowardPricingTotal,
+  sumReservationOptionCancelledRefundTotals,
 } from '@/hooks/useReservationOptions'
 
 /** 기존 옵션 목록(options 테이블) 항목 */
@@ -31,6 +32,8 @@ interface ReservationOptionsSectionProps {
   onPendingOptionsChange?: (options: CreateReservationOptionData[]) => void
   /** DB에 반영된 추가·수정·삭제 직후 (카드 뷰 집계 갱신 등) */
   onPersistedMutation?: () => void
+  /** 취소·환불 옵션 줄 합계 → 가격 계산 ④ 환불 입력 합산용 */
+  onCancelledRefundTotalChange?: (totalUsd: number) => void
   /** 부모 모달 위에 옵션 추가 오버레이를 올릴 때 z-index 클래스 (예: z-[110]) */
   addOptionModalZClass?: string
 }
@@ -47,7 +50,18 @@ const defaultFormData: CreateReservationOptionData = {
 /** 로컬 대기 옵션 (목록 key/삭제용 임시 id 포함) */
 type PendingOptionItem = CreateReservationOptionData & { _tempId?: string }
 
-export default function ReservationOptionsSection({ reservationId, onTotalPriceChange, hideTitle, title: titleProp, itemVariant = 'card', isPersisted = true, onPendingOptionsChange, onPersistedMutation, addOptionModalZClass }: ReservationOptionsSectionProps) {
+export default function ReservationOptionsSection({
+  reservationId,
+  onTotalPriceChange,
+  onCancelledRefundTotalChange,
+  hideTitle,
+  title: titleProp,
+  itemVariant = 'card',
+  isPersisted = true,
+  onPendingOptionsChange,
+  onPersistedMutation,
+  addOptionModalZClass,
+}: ReservationOptionsSectionProps) {
   const t = useTranslations('reservations.reservationOptions')
   const tCommon = useTranslations('common')
   
@@ -219,6 +233,12 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
       onTotalPriceChange(totalPrice)
     }
   }, [optionsForTotal, onTotalPriceChange, isPersisted])
+
+  useEffect(() => {
+    if (!onCancelledRefundTotalChange) return
+    const cancelledSum = sumReservationOptionCancelledRefundTotals(optionsForTotal)
+    onCancelledRefundTotalChange(cancelledSum)
+  }, [optionsForTotal, onCancelledRefundTotalChange, isPersisted])
 
   const isLine = itemVariant === 'line'
   const wrapperClass = isLine ? 'space-y-2' : 'bg-white rounded-lg shadow-sm border border-gray-200 p-3'

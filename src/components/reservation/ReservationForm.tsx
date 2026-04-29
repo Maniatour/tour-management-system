@@ -363,6 +363,8 @@ export default function ReservationForm({
   const [, setChannelAccordionExpanded] = useState(layout === 'modal')
   const [, setProductAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
+  /** 취소·환불된 예약 옵션 줄 합 — 가격 ④ 환불(입력)에 옵션 취소분 포함 */
+  const [reservationOptionsCancelledRefundTotal, setReservationOptionsCancelledRefundTotal] = useState(0)
   const [expenseUpdateTrigger, setExpenseUpdateTrigger] = useState(0)
   const [reservationDraftReady, setReservationDraftReady] = useState(false)
   const [reservationDraftError, setReservationDraftError] = useState<string | null>(null)
@@ -5932,6 +5934,7 @@ export default function ReservationForm({
                     <ReservationOptionsSection
                       reservationId={effectiveReservationId}
                       onTotalPriceChange={setReservationOptionsTotalPrice}
+                      onCancelledRefundTotalChange={setReservationOptionsCancelledRefundTotal}
                       title="예약 옵션"
                       itemVariant="line"
                       isPersisted={!isNewReservation}
@@ -6097,6 +6100,7 @@ export default function ReservationForm({
                     }
                   : {})}
                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
+                reservationOptionCancelledRefundTotal={reservationOptionsCancelledRefundTotal}
                 isExistingPricingLoaded={isExistingPricingLoaded}
                 pricingFieldsFromDb={pricingFieldsFromDb}
                 onPricingFieldEdited={(field) =>

@@ -181,6 +181,8 @@ interface PricingSectionProps {
   /** 쿠폰 `<select>` 사용자 조작 시(예: Viator 가져오기에서 자동 쿠폰 재적용 억제) */
   onCouponDropdownUserInput?: () => void
   reservationOptionsTotalPrice?: number
+  /** 취소·환불 처리된 예약 옵션 줄 total_price 합 — ④ 환불 입력 합에 포함 */
+  reservationOptionCancelledRefundTotal?: number
   isExistingPricingLoaded?: boolean
   /** DB에서 불러온 필드면 검은색, 계산값이면 빨간색 표시 */
   pricingFieldsFromDb?: Record<string, boolean>
@@ -202,6 +204,7 @@ export default function PricingSection({
   autoSelectCoupon,
   onCouponDropdownUserInput,
   reservationOptionsTotalPrice = 0,
+  reservationOptionCancelledRefundTotal = 0,
   isExistingPricingLoaded,
   pricingFieldsFromDb = {},
   priceCalculationPending = false,
@@ -1196,8 +1199,12 @@ export default function PricingSection({
   /** 취소 후에도 OTA 부분 정산 시 `commission_amount` 그대로 반영 (미입력이면 0) */
   const effectiveCommissionAmount = Number(formData.commission_amount) || 0
   const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
-  /** 입력 환불 금액 − 입금 내역 Refunded 합 — 미지급 환불 표시용 */
-  const unpaidRefundOutstanding = Math.max(0, roundUsd2(manualRefundAmount - refundedAmount))
+  /** 예약 옵션 취소·환불 줄 합(투어 환불 입력칸과 별도로 합산해 「입력」 총액 표시) */
+  const optionCancelRefundUsd = Math.max(0, Number(reservationOptionCancelledRefundTotal) || 0)
+  /** 투어(및 상품) 환불 입력 + 옵션 취소 환불 합 — 입금 Refunded와 대조 */
+  const totalRefundInputEntered = roundUsd2(manualRefundAmount + optionCancelRefundUsd)
+  /** 입력 총액 − 입금 내역 Refunded 합 — 미지급 환불 표시용 */
+  const unpaidRefundOutstanding = Math.max(0, roundUsd2(totalRefundInputEntered - refundedAmount))
 
   // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (정산·채널 결제 UI에서 공통)
   const discountedProductPrice =
@@ -2836,7 +2843,14 @@ export default function PricingSection({
             <h4 className="text-sm font-medium text-gray-900 mb-2">환불</h4>
             <div className="space-y-2">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">환불 금액</label>
+                <label className="block text-xs text-gray-600 mb-0.5">
+                  {isKorean ? '투어 환불 금액' : 'Tour refund amount'}
+                </label>
+                <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1 mb-1 leading-snug">
+                  {isKorean
+                    ? '예약 옵션 취소·환불 금액은 여기에 넣지 마세요. 옵션은 예약 옵션에서 상태를 바꾸면 ④ 최종 매출의 환불 입력 합에 따로 포함됩니다.'
+                    : 'Do not enter option cancellation refunds here. Mark options cancelled/refunded under Reservation options; section 4 adds them to the entered refund total.'}
+                </p>
                 <div className="relative">
                   <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                   <input
@@ -2990,9 +3004,14 @@ export default function PricingSection({
                 <div className="flex justify-between items-center mb-1.5 rounded px-1.5 py-1 bg-red-50 border border-red-100">
                   <span
                     className="text-[10px] text-red-800 cursor-help"
-                    title={formData.refundReason?.trim() || (isKorean ? '직접 입력한 환불 금액입니다.' : 'Manual refund amount.')}
+                    title={
+                      formData.refundReason?.trim() ||
+                      (isKorean
+                        ? '직접 입력한 투어·상품 환불 금액입니다. 옵션 취소분은 포함하지 않습니다.'
+                        : 'Tour/product refund entered here. Option cancellations are excluded.')
+                    }
                   >
-                    {isKorean ? '− 환불' : '− Refund'}
+                    {isKorean ? '− 투어 환불' : '− Tour refund'}
                     {formData.refundReason?.trim() ? `: ${formData.refundReason.trim()}` : ''}
                   </span>
                   <span className={`text-[10px] font-semibold text-red-700 ${priceTextClass('refundAmount')}`}>
@@ -3823,9 +3842,10 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 환불금 — 총 매출·운영 이익에는 입금 내역(Refunded)만 반영. 입력칸은 참고·미지급 표시용 */}
+              {/* 환불금 — 총 매출·운영 이익에는 입금 내역(Refunded)만 반영. 입력 = 투어 입력 + 옵션 취소 줄 합 */}
               {(refundedAmount > 0.005 ||
                 manualRefundAmount > 0.005 ||
+                optionCancelRefundUsd > 0.005 ||
                 unpaidRefundOutstanding > 0.005) && (
                 <div className="flex justify-between items-start gap-2 mb-1.5">
                   <div className="min-w-0">
@@ -3835,8 +3855,8 @@ export default function PricingSection({
                         manualRefundAmount > 0 && formData.refundReason?.trim()
                           ? formData.refundReason.trim()
                           : isKorean
-                            ? '왼쪽: 환불 금액 입력칸 · 오른쪽: 입금 내역 중 Refunded 합계'
-                            : 'Left: refund amount field · Right: Refunded total from payment records'
+                            ? '투어·상품 환불 입력 + 예약 옵션 중 취소·환불 줄 합 = 입력 총액. 오른쪽 아래 = 입금 Refunded 합계.'
+                            : 'Tour refund field + cancelled/refunded reservation option rows = entered total. Bottom right = Refunded from payment records.'
                       }
                     >
                       - {isKorean ? '환불금' : 'Refund'}
@@ -3847,14 +3867,36 @@ export default function PricingSection({
                     {unpaidRefundOutstanding > 0.005 && (
                       <span className="text-[10px] font-medium text-amber-700 mt-0.5 block">
                         {isKorean
-                          ? `미지급 환불 약 $${unpaidRefundOutstanding.toFixed(2)} (입력 − 입금 Refunded)`
-                          : `Outstanding refund ~$${unpaidRefundOutstanding.toFixed(2)} (entered − recorded)`}
+                          ? `미지급 환불 약 $${unpaidRefundOutstanding.toFixed(2)} (입력 합 − 입금 Refunded)`
+                          : `Outstanding refund ~$${unpaidRefundOutstanding.toFixed(2)} (entered total − recorded)`}
                       </span>
                     )}
                   </div>
-                  <span className="text-xs font-medium text-red-600 tabular-nums shrink-0 text-right">
-                    ${manualRefundAmount.toFixed(2)} / ${refundedAmount.toFixed(2)}
-                  </span>
+                  <div className="text-xs font-medium text-red-600 tabular-nums shrink-0 text-right leading-snug max-w-[min(100%,14rem)]">
+                    {optionCancelRefundUsd > 0.005 ? (
+                      <>
+                        <div>
+                          {isKorean ? '투어·상품' : 'Tour'}{' '}
+                          <span className="whitespace-nowrap">${manualRefundAmount.toFixed(2)}</span>
+                          <span className="text-gray-500 mx-0.5">+</span>
+                          {isKorean ? '옵션취소' : 'Opt.'}{' '}
+                          <span className="whitespace-nowrap">${optionCancelRefundUsd.toFixed(2)}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-700 mt-0.5">
+                          ={' '}
+                          <span className="font-semibold text-red-700 whitespace-nowrap">
+                            ${totalRefundInputEntered.toFixed(2)}
+                          </span>
+                          <span className="text-gray-500 mx-1">/</span>
+                          <span className="whitespace-nowrap">${refundedAmount.toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="whitespace-nowrap">
+                        ${manualRefundAmount.toFixed(2)} / ${refundedAmount.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
               
