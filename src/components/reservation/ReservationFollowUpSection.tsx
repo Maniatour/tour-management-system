@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { MessageSquare, Plus, Send, User, Clock, History } from 'lucide-react'
 import { useLocale } from 'next-intl'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 
@@ -192,7 +192,9 @@ export default function ReservationFollowUpSection({
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('reservation_follow_ups fetch error:', error)
+        if (!isAbortLikeError(error)) {
+          console.error('reservation_follow_ups fetch error:', error)
+        }
         setFollowUps([])
         return
       }

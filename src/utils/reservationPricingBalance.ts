@@ -16,6 +16,21 @@ export function pricingFieldToNumber(v: unknown): number {
   return Number(v) || 0
 }
 
+/**
+ * 배치 조회한 `reservation_options.total_price` 합이 있으면 `option_total`만 덮어써
+ * 가격 불일치 필터·잔액 테이블이 동일한 “라인 총액”을 보게 함.
+ */
+export function mergePricingWithLiveOptionTotal<P extends { option_total?: unknown }>(
+  p: P | null | undefined,
+  reservationId: string,
+  live?: Map<string, number>
+): P | null | undefined {
+  if (!p) return p
+  const v = live?.get(reservationId)
+  if (v === undefined) return p
+  return { ...p, option_total: v }
+}
+
 export type PartySizeSource = {
   adults?: number | null
   children?: number | null

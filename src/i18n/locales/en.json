@@ -2229,6 +2229,7 @@
           "prMismatchHint": "reservation_pricing differs from payment_records summary",
           "paymentRecordsAgg": "payment_records (per-row aggregate · payment_status, amount)",
           "totalComputedNotDb": "Computed (no single DB column · see formula in code)",
+          "totalStackHeaderHint": "Top: reservation_pricing.total_price · Bottom: product − discounts + options subtotal + extras (refund)",
           "discountSubtotalComputed": "Sum of multiple columns (display)",
           "optSumComputed": "required_option_total + option_total + not_included_price×pax (choices_total excluded)",
           "optionLiveFromRowsHint": "Live optional extras sum (reservation_options): {amount} — may differ from DB option_total",

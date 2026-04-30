@@ -12,7 +12,7 @@ import {
   mapSemanticVariantToChannelProductKey,
   canonicalVariantKey,
 } from '@/lib/resolveImportChannelVariant'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { generateCustomerId } from '@/lib/entityIds'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
@@ -1190,7 +1190,9 @@ export default function ReservationForm({
           setFormData(prev => (prev.addedBy === (user.email || '') ? prev : { ...prev, addedBy: user.email || '' }))
         }
       } catch (error) {
-        if (!cancelled) console.error('Error getting current user:', error)
+        if (!cancelled && !isAbortLikeError(error)) {
+          console.error('Error getting current user:', error)
+        }
       }
     }
     getCurrentUser()
@@ -1390,13 +1392,15 @@ export default function ReservationForm({
             console.log('ReservationForm: 예약 데이터가 없음 (새 예약 모드일 수 있음):', reservation.id)
             return
           }
-          console.error('ReservationForm: 예약 데이터 조회 오류:', reservationError)
-          console.log('예약 오류 상세:', {
-            message: reservationError.message,
-            details: reservationError.details,
-            hint: reservationError.hint,
-            code: reservationError.code
-          })
+          if (!isAbortLikeError(reservationError)) {
+            console.error('ReservationForm: 예약 데이터 조회 오류:', reservationError)
+            console.log('예약 오류 상세:', {
+              message: reservationError.message,
+              details: reservationError.details,
+              hint: reservationError.hint,
+              code: reservationError.code
+            })
+          }
           return
         }
 
@@ -1437,7 +1441,9 @@ export default function ReservationForm({
               })
             }
           } catch (rcError) {
-            console.error('ReservationForm: reservation_customers 조회 오류:', rcError)
+            if (!isAbortLikeError(rcError)) {
+              console.error('ReservationForm: reservation_customers 조회 오류:', rcError)
+            }
           }
           
           // customer_id로 customers 테이블에서 고객 정보 조회
@@ -1449,13 +1455,15 @@ export default function ReservationForm({
               .single()
 
             if (customerError) {
-              console.error('ReservationForm: 고객 데이터 조회 오류:', customerError)
-              console.log('고객 오류 상세:', {
-                message: customerError.message,
-                details: customerError.details,
-                hint: customerError.hint,
-                code: customerError.code
-              })
+              if (!isAbortLikeError(customerError)) {
+                console.error('ReservationForm: 고객 데이터 조회 오류:', customerError)
+                console.log('고객 오류 상세:', {
+                  message: customerError.message,
+                  details: customerError.details,
+                  hint: customerError.hint,
+                  code: customerError.code
+                })
+              }
             } else if (customerData) {
               console.log('ReservationForm: 고객 데이터 조회 성공:', customerData)
               
@@ -1626,7 +1634,9 @@ export default function ReservationForm({
           }
         }
       } catch (error) {
-        console.error('ReservationForm: 데이터 조회 중 예외 발생:', error)
+        if (!isAbortLikeError(error)) {
+          console.error('ReservationForm: 데이터 조회 중 예외 발생:', error)
+        }
       }
     }
 
@@ -1723,7 +1733,9 @@ export default function ReservationForm({
           .order('sort_order')
 
         if (productChoicesError) {
-          console.error('ReservationForm: 상품 초이스 로드 오류:', productChoicesError)
+          if (!isAbortLikeError(productChoicesError)) {
+            console.error('ReservationForm: 상품 초이스 로드 오류:', productChoicesError)
+          }
         } else {
           allProductChoices = productChoicesData || []
           console.log('ReservationForm: 상품 초이스 로드 완료:', allProductChoices.length, '개')
@@ -1795,7 +1807,9 @@ export default function ReservationForm({
           .order('sort_order')
 
         if (productChoicesError) {
-          console.error('ReservationForm: 상품 초이스 로드 오류:', productChoicesError)
+          if (!isAbortLikeError(productChoicesError)) {
+            console.error('ReservationForm: 상품 초이스 로드 오류:', productChoicesError)
+          }
         } else {
           allProductChoices = productChoicesData || []
           console.log('ReservationForm: 상품 초이스 로드 완료:', allProductChoices.length, '개')
@@ -1803,7 +1817,9 @@ export default function ReservationForm({
       }
 
       if (reservationChoicesError) {
-        console.error('ReservationForm: 예약 초이스 로드 오류:', reservationChoicesError)
+        if (!isAbortLikeError(reservationChoicesError)) {
+          console.error('ReservationForm: 예약 초이스 로드 오류:', reservationChoicesError)
+        }
       }
 
       console.log('ReservationForm: 예약 초이스 로드 완료:', reservationChoicesData?.length || 0, '개', {
@@ -2084,7 +2100,9 @@ export default function ReservationForm({
       })
 
     } catch (error) {
-      console.error('ReservationForm: 초이스 데이터 로드 중 예외:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('ReservationForm: 초이스 데이터 로드 중 예외:', error)
+      }
     } finally {
       if (
         reservationId &&
@@ -2134,7 +2152,9 @@ export default function ReservationForm({
         .maybeSingle();
 
       if (error) {
-        console.error('ReservationForm: 기존 products.choices 로드 오류:', error);
+        if (!isAbortLikeError(error)) {
+          console.error('ReservationForm: 기존 products.choices 로드 오류:', error);
+        }
         return;
       }
 
@@ -2265,7 +2285,9 @@ export default function ReservationForm({
         }));
       }
     } catch (error) {
-      console.error('ReservationForm: 기존 products.choices 로드 중 예외:', error);
+      if (!isAbortLikeError(error)) {
+        console.error('ReservationForm: 기존 products.choices 로드 중 예외:', error);
+      }
     }
   }, [])
 
@@ -2725,7 +2747,9 @@ export default function ReservationForm({
         setImportChoicesHydratedProductId(productId)
       }
     } catch (error) {
-      console.error('초이스 로드 오류:', error);
+      if (!isAbortLikeError(error)) {
+        console.error('초이스 로드 오류:', error);
+      }
       setFormData(prev => ({ ...prev, productChoices: [], selectedChoices: [], choicesTotal: 0 }));
       // 에러 발생 시 로드 상태 제거
       if (isEditModeForChoices) {

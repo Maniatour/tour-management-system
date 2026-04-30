@@ -73,15 +73,20 @@ const fetchWithRetry = async (
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
 
-      const isRetryableError = 
-        error instanceof Error && (
+      /** fetch 직후 던진 `Server error: 408|5xx` — Supabase/프록시 일시 504 등은 재시도 */
+      const isRetryableGatewayOrServerStatus =
+        error instanceof Error &&
+        /^Server error: (408|5\d{2})$/.test(error.message.trim())
+
+      const isRetryableError =
+        error instanceof Error &&
+        (isRetryableGatewayOrServerStatus ||
           error.message.includes('Failed to fetch') ||
           error.message.includes('ERR_CONNECTION_CLOSED') ||
           error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
           error.message.includes('network') ||
           error.message.includes('ECONNRESET') ||
-          error.message.includes('ETIMEDOUT')
-        )
+          error.message.includes('ETIMEDOUT'))
 
       // AbortError는 재시도하지 않음 (타임아웃 또는 컴포넌트 언마운트)
       const isAbortError = error instanceof Error && (

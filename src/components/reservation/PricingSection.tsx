@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import {
   Calculator,
   DollarSign,
@@ -260,6 +260,13 @@ export default function PricingSection({
   const otaChannelPaymentUserEditedRef = useRef(false)
   /** 홈페이지 등 비-OTA: 채널 결제 gross를 수동 입력한 뒤 상품가·보증금 effect가 덮어쓰지 않음 */
   const nonOtaChannelPaymentUserEditedRef = useRef(false)
+  /**
+   * 비-OTA: reservation_pricing에 채널 결제가 있었거나 사용자가 입력한 뒤에는
+   * `markPricingEdited`가 pricingFieldsFromDb 플래그를 끄더라도 할인 후 상품가 → online/commission_base 자동 동기화를 하지 않음.
+   */
+  const nonOtaChannelPaymentStopProductAutoSyncRef = useRef(false)
+  /** 채널 결제 금액 입력 포커스 중 — markPricingEdited로 DB 플래그가 꺼진 직후에도 자동 동기화가 덮어쓰지 않음 */
+  const channelPaymentAmountFieldFocusedRef = useRef(false)
   /** OTA: 마지막 자동 수수료 $ 기준(수수료 산출 base × %) — 이 키가 바뀌면 $를 다시 계산 */
   const otaCommissionAutoFingerprintRef = useRef<string>('')
   /** User edited deposit (including 0): skip product/discount auto-fill for deposit */
@@ -282,8 +289,25 @@ export default function PricingSection({
     otaCommissionAutoFingerprintRef.current = ''
     otaChannelPaymentUserEditedRef.current = false
     nonOtaChannelPaymentUserEditedRef.current = false
+    nonOtaChannelPaymentStopProductAutoSyncRef.current = false
+    channelPaymentAmountFieldFocusedRef.current = false
     depositAmountUserEditedRef.current = false
   }, [reservationId])
+
+  /** DB에 채널 결제(net/gross) 스냅샷이 있으면 비-OTA 상품가 자동 동기화를 영구히 잠금(플래그는 수정 시 꺼질 수 있음). */
+  useEffect(() => {
+    if (
+      isExistingPricingLoaded &&
+      (pricingFieldsFromDb.onlinePaymentAmount === true ||
+        pricingFieldsFromDb.commission_base_price === true)
+    ) {
+      nonOtaChannelPaymentStopProductAutoSyncRef.current = true
+    }
+  }, [
+    isExistingPricingLoaded,
+    pricingFieldsFromDb.onlinePaymentAmount,
+    pricingFieldsFromDb.commission_base_price,
+  ])
 
   /** 상품가·할인·인원이 바뀌면 OTA 채널 결제 자동 동기화를 다시 허용 */
   useEffect(() => {
@@ -364,10 +388,16 @@ export default function PricingSection({
         // 모든 상태의 지출을 포함 (rejected 제외)
         .not('status', 'eq', 'rejected')
 
-      console.log('PricingSection: 예약 지출 조회 결과:', { data, error })
+      if (process.env.NODE_ENV === 'development') {
+        if (!error || !isAbortLikeError(error)) {
+          console.log('PricingSection: 예약 지출 조회 결과:', { data, error })
+        }
+      }
 
       if (error) {
-        console.error('예약 지출 조회 오류:', error)
+        if (!isAbortLikeError(error)) {
+          console.error('예약 지출 조회 오류:', error)
+        }
         setReservationExpensesTotal(0)
         return
       }
@@ -376,6 +406,9 @@ export default function PricingSection({
       console.log('PricingSection: 계산된 지출 총합:', total, '개별 지출:', data?.map((e: { id: string; amount: number | null; paid_for: string | null; status: string | null }) => ({ id: e.id, amount: e.amount || 0, paid_for: e.paid_for || '', status: e.status || '' })))
       setReservationExpensesTotal(total)
     } catch (error) {
+      if (isAbortLikeError(error)) {
+        return
+      }
       console.error('예약 지출 조회 중 오류:', error)
       setReservationExpensesTotal(0)
     } finally {
@@ -409,10 +442,9 @@ export default function PricingSection({
         .select('tour_id')
         .eq('id', reservationId)
         .maybeSingle()
-
+      
       if (reservationError && (reservationError.message || reservationError.code)) {
-        const msg = String((reservationError as any)?.message ?? '')
-        if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+        if (!isAbortLikeError(reservationError)) {
           console.error('예약 조회 오류:', reservationError)
         }
         setTourExpensesTotal(0)
@@ -431,8 +463,7 @@ export default function PricingSection({
           .maybeSingle()
 
         if (tourByIdError && (tourByIdError.message || tourByIdError.code)) {
-          const msg = String((tourByIdError as any)?.message ?? '')
-          if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+          if (!isAbortLikeError(tourByIdError)) {
             console.error('tour_id로 투어 조회 오류:', tourByIdError)
           }
         } else if (tourById) {
@@ -454,8 +485,7 @@ export default function PricingSection({
 
         // 오류가 있고 실제 오류인 경우에만 처리 (빈 객체나 null이 아닌 경우)
         if (toursError && (toursError.message || toursError.code || Object.keys(toursError).length > 0)) {
-          const msg = String((toursError as any)?.message ?? '')
-          if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+          if (!isAbortLikeError(toursError)) {
             console.error('투어 조회 오류:', toursError)
           }
           setTourExpensesTotal(0)
@@ -515,8 +545,7 @@ export default function PricingSection({
         .not('status', 'eq', 'rejected')
 
       if (expensesError && (expensesError.message || expensesError.code || Object.keys(expensesError).length > 0)) {
-        const errMsg = String((expensesError as any)?.message ?? '')
-        if (!errMsg.includes('AbortError') && !errMsg.includes('aborted') && !errMsg.includes('signal is aborted')) {
+        if (!isAbortLikeError(expensesError)) {
           console.error('투어 지출 조회 오류:', expensesError)
         }
         setTourExpensesTotal(0)
@@ -533,7 +562,9 @@ export default function PricingSection({
       // 실제 오류인 경우에만 로그 출력 (빈 객체는 완전히 무시)
       // Supabase는 데이터가 없을 때 빈 객체를 반환할 수 있으므로, message나 code가 있는 경우에만 오류로 처리
       if (ticketBookingsError && (ticketBookingsError.message || ticketBookingsError.code)) {
-        console.error('입장권 부킹 조회 오류:', ticketBookingsError)
+        if (!isAbortLikeError(ticketBookingsError)) {
+          console.error('입장권 부킹 조회 오류:', ticketBookingsError)
+        }
         // 오류가 있어도 계속 진행
       }
       // 빈 객체 {}는 무시 (로그 출력 안 함)
@@ -547,7 +578,9 @@ export default function PricingSection({
       // 실제 오류인 경우에만 로그 출력 (빈 객체는 완전히 무시)
       // Supabase는 데이터가 없을 때 빈 객체를 반환할 수 있으므로, message나 code가 있는 경우에만 오류로 처리
       if (hotelBookingsError && (hotelBookingsError.message || hotelBookingsError.code)) {
-        console.error('호텔 부킹 조회 오류:', hotelBookingsError)
+        if (!isAbortLikeError(hotelBookingsError)) {
+          console.error('호텔 부킹 조회 오류:', hotelBookingsError)
+        }
         // 오류가 있어도 계속 진행
       }
       // 빈 객체 {}는 무시 (로그 출력 안 함)
@@ -586,7 +619,9 @@ export default function PricingSection({
           .in('id', reservationIds)
 
         if (reservationsError && (reservationsError.message || reservationsError.code || Object.keys(reservationsError).length > 0)) {
-          console.error('예약 인원수 조회 오류:', reservationsError)
+          if (!isAbortLikeError(reservationsError)) {
+            console.error('예약 인원수 조회 오류:', reservationsError)
+          }
           // 오류가 있어도 계속 진행 (인원수는 0으로 처리)
         } else if (reservationsData) {
           totalTourPeople = (reservationsData || []).reduce((sum: number, r: any) => sum + (r?.total_people || 0), 0)
@@ -610,6 +645,9 @@ export default function PricingSection({
 
       setTourExpensesTotal(tourExpensesForReservation)
     } catch (error) {
+      if (isAbortLikeError(error)) {
+        return
+      }
       console.error('투어 지출 조회 중 예외 발생:', error)
       setTourExpensesTotal(0)
     } finally {
@@ -850,6 +888,7 @@ export default function PricingSection({
         }))
       }
     } catch (error) {
+      if (isAbortLikeError(error)) return
       console.error('PricingSection: 입금 내역 조회 중 오류', error)
     }
   }, [reservationId, setFormData])
@@ -1031,7 +1070,10 @@ export default function PricingSection({
             ['cancelled', 'canceled'].includes(String(formData.status).toLowerCase().trim())
           /** 입금·상품가 effect가 채널 결제 입력을 덮어쓰지 않음 (수동 입력·취소 후 부분 정산·DB 저장값) */
           const skipOtaChannelPaymentAuto =
-            reservationCancelled || otaChannelPaymentUserEditedRef.current || channelPaymentLoadedFromDb
+            reservationCancelled ||
+            otaChannelPaymentUserEditedRef.current ||
+            channelPaymentLoadedFromDb ||
+            channelPaymentAmountFieldFocusedRef.current
 
           const resolveNextOtaCommissionAmount = (
             commissionCalcBase: number,
@@ -1642,6 +1684,7 @@ export default function PricingSection({
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
   useEffect(() => {
     if (otaChannelPaymentUserEditedRef.current) return
+    if (nonOtaChannelPaymentUserEditedRef.current) return
     if (returnedAmount <= 0.005) return
     const otaOrDeposit = !!isOTAChannel || (Number(formData.depositAmount) || 0) > 0
     if (!otaOrDeposit) return
@@ -1759,6 +1802,7 @@ export default function PricingSection({
 
   // OTA + 채널 수수료: 채널이 로드된 뒤 수수료 %와 $를 한 번에 설정 (채널 수수료 %가 채널 수수료 $보다 나중에 로드되어도 동작)
   useEffect(() => {
+    if (channelPaymentAmountFieldFocusedRef.current) return
     if (isReservationCancelled) return
     if (!formData.channelId || !channels?.length || isExistingPricingLoaded) return
     if (pricingFieldsFromDb.commission_amount) return
@@ -2083,7 +2127,9 @@ export default function PricingSection({
   // OTA는 쿠폰 시 할인 후 상품가, 비-OTA(홈페이지)는 할인 후 상품가. 0이 아닐 때 onlinePaymentAmount 자동 설정.
   // 취소 OTA·부분 정산은 수동 입력만 쓰므로 자동 덮어쓰기 안 함. 수동 입력 후 사용자 값 최우선.
   useEffect(() => {
+    if (channelPaymentAmountFieldFocusedRef.current) return
     if (channelPaymentLoadedFromDb) return
+    if (!isOTAChannel && nonOtaChannelPaymentStopProductAutoSyncRef.current) return
     if (isOTAChannel && isReservationCancelled) return
 
     const targetOnline = isOTAChannel
@@ -2232,6 +2278,7 @@ export default function PricingSection({
     if (formData.channelId !== prevChannelIdRef.current) {
       prevChannelIdRef.current = formData.channelId
       nonOtaChannelPaymentUserEditedRef.current = false
+      nonOtaChannelPaymentStopProductAutoSyncRef.current = false
       loadedCommissionAmountRef.current = null
       isCardFeeManuallyEdited.current = false
       otaCommissionAutoFingerprintRef.current = ''
@@ -2305,6 +2352,7 @@ export default function PricingSection({
     if (isOTAChannel) return
     if (isScenicProduct) return
     if (nonOtaChannelPaymentUserEditedRef.current) return
+    if (channelPaymentAmountFieldFocusedRef.current) return
     // DB에 commission이 있으면 계산하지 말고 그 값 유지
     if (hasDbCommissionRef.current || isExistingPricingLoaded) return
     if (isCardFeeManuallyEdited.current) return
@@ -2365,6 +2413,7 @@ export default function PricingSection({
     if (isOTAChannel) return // OTA 채널은 제외
     if (isScenicProduct) return
     if (nonOtaChannelPaymentUserEditedRef.current) return
+    if (channelPaymentAmountFieldFocusedRef.current) return
     if (isCardFeeManuallyEdited.current) return // 사용자가 수동으로 입력한 경우 자동 업데이트 안 함
     if (hasDbCommissionRef.current || isExistingPricingLoaded) return // DB에 값이 있으면 덮어쓰지 않음
     
@@ -3551,15 +3600,20 @@ export default function PricingSection({
                       }
                       onChange={(e) => {
                         const inputValue = e.target.value
+                        if (isOTAChannel) {
+                          otaChannelPaymentUserEditedRef.current = true
+                        } else {
+                          nonOtaChannelPaymentUserEditedRef.current = true
+                          nonOtaChannelPaymentStopProductAutoSyncRef.current = true
+                        }
                         setChannelPaymentAmountInput(inputValue)
                         markPricingEdited('onlinePaymentAmount', 'commission_base_price', 'commission_amount', 'channel_settlement_amount')
-                        
+
                         const numValue = Number(inputValue) || 0
                         // Returned를 고려한 실제 금액
                         const actualAmount = numValue + returnedAmount
                         
                         if (isOTAChannel) {
-                          if (numValue > 0.005) otaChannelPaymentUserEditedRef.current = true
                           const defaultBasePrice =
                             otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : formData.subtotal
                           const commissionBasePrice = formData.commission_base_price !== undefined
@@ -3583,26 +3637,26 @@ export default function PricingSection({
                             commission_amount: calculatedCommission,
                           }))
                         } else {
-                          if (inputValue !== '') nonOtaChannelPaymentUserEditedRef.current = true
-                          setFormData({
-                            ...omitChannelSettlementAmount(formData),
+                          setFormData((prev: typeof formData) => ({
+                            ...omitChannelSettlementAmount(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount,
-                          })
+                          }))
                         }
                       }}
                       onFocus={() => {
+                        channelPaymentAmountFieldFocusedRef.current = true
                         setIsChannelPaymentAmountFocused(true)
                         setChannelPaymentAmountInput(channelPaymentAmountAfterReturn.toString())
                       }}
                       onBlur={() => {
+                        channelPaymentAmountFieldFocusedRef.current = false
                         setIsChannelPaymentAmountFocused(false)
                         markPricingEdited('onlinePaymentAmount', 'commission_base_price', 'commission_amount', 'channel_settlement_amount')
                         const finalValue = Number(channelPaymentAmountInput) || 0
                         const actualAmount = finalValue + returnedAmount
                         
                         if (isOTAChannel) {
-                          if (finalValue > 0.005) otaChannelPaymentUserEditedRef.current = true
                           const notIncludedPrice = notIncludedBreakdown.totalUsd
                           const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                           const defaultBasePrice = discountedPrice > 0 ? discountedPrice : formData.subtotal
@@ -3628,11 +3682,12 @@ export default function PricingSection({
                           }))
                         } else {
                           nonOtaChannelPaymentUserEditedRef.current = true
-                          setFormData({
-                            ...omitChannelSettlementAmount(formData),
+                          nonOtaChannelPaymentStopProductAutoSyncRef.current = true
+                          setFormData((prev: typeof formData) => ({
+                            ...omitChannelSettlementAmount(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount,
-                          })
+                          }))
                         }
                         
                         setChannelPaymentAmountInput('')
@@ -3791,18 +3846,21 @@ export default function PricingSection({
                                 isCardFeeManuallyEdited.current = true
                                 markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
                                 const newPercent = Number(e.target.value) || 0
-                                const basePrice = formData.commission_base_price !== undefined 
-                                  ? formData.commission_base_price 
-                                  : (formData.depositAmount || 0)
-                                const newAmount =
-                                  newPercent > 0
-                                    ? Number((basePrice * (newPercent / 100) + 0.15).toFixed(2))
-                                    : 0
-                                setFormData({ 
-                                  ...omitChannelSettlementAmount(formData), 
-                                  commission_base_price: basePrice,
-                                  commission_percent: newPercent,
-                                  commission_amount: newAmount,
+                                setFormData((prev: typeof formData) => {
+                                  const bp =
+                                    prev.commission_base_price !== undefined
+                                      ? prev.commission_base_price
+                                      : (prev.depositAmount || 0)
+                                  const amt =
+                                    newPercent > 0
+                                      ? Number((bp * (newPercent / 100) + 0.15).toFixed(2))
+                                      : 0
+                                  return {
+                                    ...omitChannelSettlementAmount(prev),
+                                    commission_base_price: bp,
+                                    commission_percent: newPercent,
+                                    commission_amount: amt,
+                                  }
                                 })
                               }}
                               className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"

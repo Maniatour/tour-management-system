@@ -33,6 +33,23 @@ function calendarDayDistanceFromToday(dateStr: string, today: string): number {
   return Math.round((t(dateStr) - t(today)) / 86400000)
 }
 
+/** 느린 Supabase에 global fetch(60s+)가 두 번 연속이면 2분 가까이 걸릴 수 있어 상한 둠 */
+const WEATHER_DB_BUDGET_MS = Math.min(
+  25000,
+  Number(process.env.WEATHER_STATUS_DB_TIMEOUT_MS) > 0
+    ? Number(process.env.WEATHER_STATUS_DB_TIMEOUT_MS)
+    : 12000
+)
+
+async function raceQuery<T>(promise: Promise<T>, label: string): Promise<T> {
+  return await Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label}_timeout`)), WEATHER_DB_BUDGET_MS)
+    ),
+  ])
+}
+
 function evaluateTodayCoverage(rows: WeatherRow[] | null, today: string) {
   const missingTodayLocations: string[] = []
 
@@ -73,11 +90,35 @@ export async function GET() {
       addTourLocalCalendarDays(today, 1),
     ]
 
-    const { data: windowRows, error: todayErr } = await db
-      .from('weather_data')
-      .select('location_name, weather_main, temperature, updated_at, date')
-      .in('date', windowDates)
-      .in('location_name', [...GOBLIN_LOCATIONS])
+    let windowRows: WeatherRow[] | null = null
+    let todayErr: { message?: string } | null = null
+
+    try {
+      const res = await raceQuery(
+        db
+          .from('weather_data')
+          .select('location_name, weather_main, temperature, updated_at, date')
+          .in('date', windowDates)
+          .in('location_name', [...GOBLIN_LOCATIONS]),
+        'weather_window'
+      )
+      windowRows = res.data as WeatherRow[] | null
+      todayErr = res.error
+    } catch (e) {
+      if (e instanceof Error && e.message === 'weather_window_timeout') {
+        console.warn('[weather-status] window query timeout, returning fallback')
+        return NextResponse.json({
+          today,
+          todayComplete: false,
+          missingTodayLocations: [...GOBLIN_LOCATIONS],
+          lastUpdatedAt: null,
+          collectionStale: true,
+          needsReminder: true,
+          timedOut: true,
+        })
+      }
+      throw e
+    }
 
     if (todayErr) {
       console.error('[weather-status] window query:', todayErr)
@@ -92,12 +133,27 @@ export async function GET() {
       today
     )
 
-    const { data: lastRow, error: lastErr } = await db
-      .from('weather_data')
-      .select('updated_at')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    let lastRow: { updated_at: string | null } | null = null
+    let lastErr: { message?: string } | null = null
+    try {
+      const res = await raceQuery(
+        db
+          .from('weather_data')
+          .select('updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        'weather_last'
+      )
+      lastRow = res.data
+      lastErr = res.error
+    } catch (e) {
+      if (e instanceof Error && e.message === 'weather_last_timeout') {
+        console.warn('[weather-status] last-updated query timeout (ignored)')
+      } else {
+        throw e
+      }
+    }
 
     if (lastErr) {
       console.error('[weather-status] last updated query:', lastErr)

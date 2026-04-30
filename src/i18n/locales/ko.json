@@ -2238,6 +2238,7 @@
           "prMismatchHint": "reservation_pricing 저장값과 payment_records 집계가 다릅니다",
           "paymentRecordsAgg": "payment_records (행별 집계 · payment_status, amount)",
           "totalComputedNotDb": "계산값 (단일 DB 컬럼 없음 · 산식은 코드 참고)",
+          "totalStackHeaderHint": "위: reservation_pricing.total_price · 아래: 상품합−할인+옵션 Subtotal+부가(환불 반영)",
           "discountSubtotalComputed": "여러 컬럼 합산 (표시용)",
           "optSumComputed": "required_option_total + option_total + not_included_price×인원 (choices_total 제외)",
           "optionLiveFromRowsHint": "선택옵션 실제 합계(reservation_options): {amount} — DB option_total과 다를 수 있음",

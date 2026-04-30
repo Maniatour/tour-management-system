@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
@@ -222,7 +222,9 @@ export default function ReservationExpenseManager({
         setExpenses(result.data)
       }
     } catch (error) {
-      console.error('Error loading expenses:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading expenses:', error)
+      }
     } finally {
       setLoading(false)
     }
@@ -238,7 +240,9 @@ export default function ReservationExpenseManager({
       if (error) throw error
       setPaidToOptions(data?.map((v: ExpenseVendor) => v.name) || [])
     } catch (error) {
-      console.error('Error loading vendors:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading vendors:', error)
+      }
     }
   }
 
@@ -256,7 +260,9 @@ export default function ReservationExpenseManager({
       })
       setTeamMembers(membersMap)
     } catch (error) {
-      console.error('Error loading team members:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading team members:', error)
+      }
     }
   }
 

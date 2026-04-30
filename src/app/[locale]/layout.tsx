@@ -8,7 +8,7 @@ import { FloatingChatProvider } from "@/contexts/FloatingChatContext";
 import FloatingChatContainer from "@/components/FloatingChatContainer";
 import StripeErrorHandler from "@/components/StripeErrorHandler";
 import { NextIntlClientProvider } from 'next-intl';
-import { getMessages } from 'next-intl/server';
+import { getMessages, setRequestLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
 // duplicate import removed
 import { createServerSupabase } from '@/lib/supabase-server';
@@ -99,6 +99,7 @@ export default async function LocaleLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  setRequestLocale(locale);
   let messages;
   try {
     messages = await getMessages({ locale });

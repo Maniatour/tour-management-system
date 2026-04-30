@@ -36,6 +36,7 @@ import {
   balanceOutstandingTotalMinusDeposit,
   isStoredCustomerTotalMismatchWithFormula,
   summarizePaymentRecordsForBalance,
+  mergePricingWithLiveOptionTotal,
 } from '@/utils/reservationPricingBalance'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 
@@ -55,18 +56,6 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-/** `reservation_options` 배치 합계가 있으면 `option_total`만 덮어써 표시·산식을 실제 행과 맞춤 */
-function pricingWithLiveOptionTotal(
-  p: ReservationPricingMapValue | undefined,
-  reservationId: string,
-  live?: Map<string, number>
-): ReservationPricingMapValue | undefined {
-  if (!p) return undefined
-  const v = live?.get(reservationId)
-  if (v === undefined) return p
-  return { ...p, option_total: v }
-}
-
 type PricingApplyMode = 'total' | 'deposit' | 'balance' | 'all'
 
 /** 일괄 반영·행 단위 반영 공통 — reservation_pricing 업데이트 필드만 생성 */
@@ -78,8 +67,7 @@ function buildReservationPricingPatch(
   mode: PricingApplyMode
 ): Record<string, number> | null {
   const party = { adults: r.adults ?? 0, children: r.child ?? 0, infants: r.infant ?? 0 }
-  const ov = reservationOptionSumByReservationId?.get(r.id)
-  const pForGross = ov !== undefined ? { ...p, option_total: ov } : p
+  const pForGross = mergePricingWithLiveOptionTotal(p, r.id, reservationOptionSumByReservationId) ?? p
   const gross = computeCustomerPaymentTotalLineFormula(pForGross, party)
   const st = String(r.status || '').toLowerCase().trim()
   const isCancelled = st === 'cancelled' || st === 'canceled'
@@ -196,6 +184,29 @@ function notIncludedTotalForParty(p: ReservationPricingMapValue | undefined, r: 
 
 function partyFromReservation(r: Reservation) {
   return { adults: r.adults, children: r.child, infants: r.infant }
+}
+
+/** 고객 총액 라인 산식 문자열(표시용, 빨간색) */
+function lineFormulaExpressionText(
+  p: ReservationPricingMapValue | undefined,
+  party: ReturnType<typeof partyFromReservation>
+): string | null {
+  if (!p) return null
+  const productSum = effectiveProductPriceTotalForBalance(p, party)
+  const discount =
+    pricingFieldToNumber(p.coupon_discount) + pricingFieldToNumber(p.additional_discount)
+  const optionsSub =
+    pricingFieldToNumber(p.required_option_total) + pricingFieldToNumber(p.option_total)
+  const extras =
+    pricingFieldToNumber(p.additional_cost) +
+    pricingFieldToNumber(p.tax) +
+    pricingFieldToNumber(p.card_fee) +
+    pricingFieldToNumber(p.prepayment_cost) +
+    pricingFieldToNumber(p.prepayment_tip) +
+    pricingFieldToNumber(p.private_tour_additional_cost) -
+    pricingFieldToNumber(p.refund_amount)
+  const computed = round2(computeCustomerPaymentTotalLineFormula(p, party))
+  return `${fmtUsd(productSum)} − ${fmtUsd(discount)} + ${fmtUsd(optionsSub)} + ${fmtUsdSigned(extras)} = ${fmtUsd(computed)}`
 }
 
 /**
@@ -414,12 +425,16 @@ function BalanceRow(props: BalanceRowProps) {
 
   const p = reservationPricingMap.get(reservation.id)
   const pLine = useMemo(
-    () => pricingWithLiveOptionTotal(p, reservation.id, reservationOptionSumByReservationId),
+    () =>
+      mergePricingWithLiveOptionTotal(p, reservation.id, reservationOptionSumByReservationId) as
+        | ReservationPricingMapValue
+        | undefined,
     [p, reservation.id, reservationOptionSumByReservationId]
   )
   const party = partyFromReservation(reservation)
   const storedGross = customerPaymentStoredTotalDb(p)
   const computedGross = customerPaymentComputedGross(pLine, reservation)
+  const formulaExpression = lineFormulaExpressionText(pLine, party)
   const totalMismatch = pLine != null && isStoredCustomerTotalMismatchWithFormula(party, pLine)
   const lineGrossForPaymentCompare = computedGross ?? storedGross ?? 0
   const fromPayments = computeDepositBalanceFromPaymentRecordsForLineGross(lineGrossForPaymentCompare, paymentRecords)
@@ -659,35 +674,44 @@ function BalanceRow(props: BalanceRowProps) {
       </td>
 
       <td
-        className={`px-1.5 py-1.5 text-right tabular-nums font-semibold text-blue-900 border-r border-gray-100 ${
+        className={`px-1.5 py-1.5 text-right align-top tabular-nums border-r border-gray-100 ${
           totalMismatch ? 'bg-amber-50/90 ring-1 ring-inset ring-amber-200/80' : ''
         }`}
         title={dbTitle(
-          rpCol('total_price'),
+          [rpCol('total_price'), t('actionRequired.balanceTable.cols.totalComputedNotDb')].join(' · '),
           totalMismatch ? t('actionRequired.balanceTable.cols.totalMismatchHint') : undefined
         )}
       >
-        {storedGross == null ? '—' : fmtUsd(storedGross)}
-      </td>
-      <td
-        className={`px-1.5 py-1.5 text-right tabular-nums font-semibold text-sky-900 border-r border-gray-100 ${
-          totalMismatch ? 'bg-amber-50/90 ring-1 ring-inset ring-amber-200/80' : ''
-        }`}
-        title={dbTitle(
-          t('actionRequired.balanceTable.cols.totalComputedNotDb'),
-          totalMismatch ? t('actionRequired.balanceTable.cols.totalMismatchHint') : undefined
-        )}
-      >
-        <div className="flex items-center justify-end gap-0.5">
-          <span>{computedGross == null ? '—' : fmtUsd(computedGross)}</span>
-          <RowDbApplyButton
-            visible={Boolean(onApplyRowPatch && totalMismatch && computedGross != null)}
-            busy={applyRowBusyKey === `${reservation.id}:total`}
-            parentBusy={selectionDisabled}
-            title={t('actionRequired.balanceTable.rowApplyTotalTitle')}
-            onClick={() => onApplyRowPatch?.(reservation.id, 'total')}
-          />
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="w-full">
+            <div className="text-[9px] font-normal text-gray-500 leading-none mb-0.5">
+              {t('actionRequired.balanceTable.cols.totalDb')}
+            </div>
+            <div className="font-semibold text-blue-900">
+              {storedGross == null ? '—' : fmtUsd(storedGross)}
+            </div>
+          </div>
+          <div className="w-full border-t border-gray-200 pt-1 mt-0.5">
+            <div className="text-[9px] font-normal text-gray-500 leading-none mb-0.5">
+              {t('actionRequired.balanceTable.cols.totalComputed')}
+            </div>
+            <div className="flex items-center justify-end gap-0.5 font-semibold text-sky-900">
+              <span>{computedGross == null ? '—' : fmtUsd(computedGross)}</span>
+              <RowDbApplyButton
+                visible={Boolean(onApplyRowPatch && totalMismatch && computedGross != null)}
+                busy={applyRowBusyKey === `${reservation.id}:total`}
+                parentBusy={selectionDisabled}
+                title={t('actionRequired.balanceTable.rowApplyTotalTitle')}
+                onClick={() => onApplyRowPatch?.(reservation.id, 'total')}
+              />
+            </div>
+          </div>
         </div>
+        {formulaExpression ? (
+          <div className="text-red-600 text-[9px] font-normal leading-snug mt-1.5 text-right break-words max-w-[12rem] ml-auto">
+            {formulaExpression}
+          </div>
+        ) : null}
       </td>
       <td
         className={`px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100 ${
@@ -1207,7 +1231,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
             <th colSpan={3} className="px-1.5 py-1.5 text-center border-r border-gray-200">
               {sec('optionsSubtotal')}
             </th>
-            <th colSpan={7} className="px-1.5 py-1.5 text-center border-r border-gray-200 bg-blue-50/60">
+            <th colSpan={6} className="px-1.5 py-1.5 text-center border-r border-gray-200 bg-blue-50/60">
               {sec('customerPayment')}
             </th>
             <th colSpan={5} className="px-1.5 py-1.5 text-center border-r border-gray-200 bg-violet-50/50">
@@ -1333,11 +1357,18 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
               {s('optSum')}
             </th>
 
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('total_price')}>
-              {s('totalDb')}
-            </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={t('actionRequired.balanceTable.cols.totalComputedNotDb')}>
-              {s('totalComputed')}
+            <th
+              className="px-1.5 py-1 border-r border-gray-100 text-right align-top"
+              title={dbTitle(
+                [rpCol('total_price'), t('actionRequired.balanceTable.cols.totalComputedNotDb')].join(' · '),
+                t('actionRequired.balanceTable.cols.totalStackHeaderHint')
+              )}
+            >
+              <div className="flex flex-col items-end gap-0.5 font-normal normal-case tracking-normal">
+                <span>{s('totalDb')}</span>
+                <span className="text-gray-400">·</span>
+                <span>{s('totalComputed')}</span>
+              </div>
             </th>
             <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('deposit_amount')}>
               {s('depositDb')}

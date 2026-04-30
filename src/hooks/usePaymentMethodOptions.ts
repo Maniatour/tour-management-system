@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 
 type PmRow = {
   id: string
@@ -121,7 +121,9 @@ export function usePaymentMethodOptions() {
       setPaymentMethodMap(map)
       setPaymentMethodOptions(options)
     } catch (error) {
-      console.error('결제 방법 로드 오류:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('결제 방법 로드 오류:', error)
+      }
     }
   }, [])
 

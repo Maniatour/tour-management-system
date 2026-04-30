@@ -10,10 +10,10 @@ import {
   ReservationActionRequiredTable,
   type ActionRequiredTableVariant,
 } from '@/components/reservation/ReservationActionRequiredTable'
-import { calculateTotalPrice } from '@/utils/reservationUtils'
 import {
   computeRemainingBalanceAmount,
   isStoredCustomerTotalMismatchWithFormula,
+  mergePricingWithLiveOptionTotal,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
   type PricingBalanceFields,
@@ -321,11 +321,18 @@ export default function ReservationActionRequiredModal({
       const p = reservationPricingMap.get(r.id)
       return !!(p && (p.total_price != null && p.total_price > 0))
     }
-    const storedTotalMatchesDynamic = (r: Reservation) => {
-      const stored = reservationPricingMap.get(r.id)?.total_price
-      if (stored == null) return true
-      const calculated = calculateTotalPrice(r, products, optionChoices)
-      return Math.abs((stored ?? 0) - calculated) <= 0.01
+    /** 테이블과 동일: DB total_price vs computeCustomerPaymentTotalLineFormula(+실시간 옵션 합) */
+    const pricingParty = (r: Reservation) => ({
+      adults: r.adults,
+      children: r.child,
+      infants: r.infant,
+    })
+    const storedTotalMatchesLineFormula = (r: Reservation) => {
+      const raw = reservationPricingMap.get(r.id)
+      return !isStoredCustomerTotalMismatchWithFormula(
+        pricingParty(r),
+        mergePricingWithLiveOptionTotal(raw, r.id, reservationOptionSumByReservationId)
+      )
     }
     const getBalance = (r: Reservation) => {
       const p = reservationPricingMap.get(r.id)
@@ -364,8 +371,8 @@ export default function ReservationActionRequiredModal({
       statusConfirmed(r) && !hasTourAssigned(r) && isManiaTourOrService(r)
     )
     const noPricing = list.filter(r => !hasPricing(r) && isNotCancelled(r))
-    const pricingMismatch = list.filter(r =>
-      hasPricing(r) && !storedTotalMatchesDynamic(r) && isNotCancelled(r)
+    const pricingMismatch = list.filter(
+      (r) => hasPricing(r) && !storedTotalMatchesLineFormula(r) && isNotCancelled(r)
     )
     const pricingList = [...new Map([...noPricing.map(r => [r.id, r]), ...pricingMismatch.map(r => [r.id, r])]).values()]
     const depositNoTour = list.filter(r => hasPayment(r) && !hasTourAssigned(r))
@@ -444,6 +451,7 @@ export default function ReservationActionRequiredModal({
   }, [
     reservations,
     reservationPricingMap,
+    reservationOptionSumByReservationId,
     products,
     optionChoices,
     reservationIdsWithPayments,
@@ -490,7 +498,11 @@ export default function ReservationActionRequiredModal({
         list = list.filter((r) =>
           isStoredCustomerTotalMismatchWithFormula(
             { adults: r.adults, children: r.child, infants: r.infant },
-            reservationPricingMap.get(r.id)
+            mergePricingWithLiveOptionTotal(
+              reservationPricingMap.get(r.id),
+              r.id,
+              reservationOptionSumByReservationId
+            )
           )
         )
       }
@@ -504,6 +516,7 @@ export default function ReservationActionRequiredModal({
     balanceTotalFilter,
     filteredByTab,
     reservationPricingMap,
+    reservationOptionSumByReservationId,
   ])
 
   const balanceSubTabBaseList = useMemo(() => {
@@ -521,10 +534,14 @@ export default function ReservationActionRequiredModal({
     return balanceSubTabBaseList.filter((r) =>
       isStoredCustomerTotalMismatchWithFormula(
         { adults: r.adults, children: r.child, infants: r.infant },
-        reservationPricingMap.get(r.id)
+        mergePricingWithLiveOptionTotal(
+          reservationPricingMap.get(r.id),
+          r.id,
+          reservationOptionSumByReservationId
+        )
       )
     ).length
-  }, [balanceSubTabBaseList, reservationPricingMap])
+  }, [balanceSubTabBaseList, reservationPricingMap, reservationOptionSumByReservationId])
 
   useEffect(() => {
     if (activeTab !== 'balance') setBalanceTotalFilter('all')

@@ -30,9 +30,21 @@ export default getRequestConfig(async ({ locale }) => {
     // 1. 기본 JSON 파일 로드
     const fileMessages = (await import(`./locales/${locale}.json`)).default
     
-    // 2. DB에서 커스터마이징된 번역 가져오기 (PGRST002 스키마 캐시 재시도 등으로 수 분 걸릴 수 있어 상한 두고 파일만 사용)
+    // 2. DB에서 커스터마이징된 번역 가져오기 (느린 DB는 레이아웃·NextIntl 컨텍스트를 막으므로 짧은 상한 + 옵션으로 스킵)
     try {
-      const DB_TRANSLATIONS_TIMEOUT_MS = 8000
+      const skipDb =
+        process.env.I18N_SKIP_DB_TRANSLATIONS === '1' ||
+        process.env.I18N_SKIP_DB_TRANSLATIONS === 'true'
+      if (skipDb) {
+        return { locale, messages: fileMessages }
+      }
+
+      const defaultMs = process.env.NODE_ENV === 'development' ? 2000 : 8000
+      const DB_TRANSLATIONS_TIMEOUT_MS =
+        Number(process.env.I18N_DB_TRANSLATIONS_TIMEOUT_MS) > 0
+          ? Number(process.env.I18N_DB_TRANSLATIONS_TIMEOUT_MS)
+          : defaultMs
+
       const query = supabase
         .from('translation_values')
         .select(`

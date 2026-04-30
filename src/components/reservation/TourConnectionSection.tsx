@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { Plus, Calendar, Users, MapPin, Clock, CheckCircle, AlertCircle, X } from 'lucide-react'
@@ -188,6 +188,11 @@ export default function TourConnectionSection({
           .order('created_at', { ascending: true })
 
         if (error) {
+          if (isAbortLikeError(error)) {
+            setReservationPartyById(new Map())
+            setTours([])
+            return
+          }
           console.error('Error fetching tours:', {
             message: error.message,
             details: error.details,
@@ -234,7 +239,9 @@ export default function TourConnectionSection({
                 .select('id, adults, child, infant, total_people')
                 .in('id', chunk)
               if (resErr) {
-                console.error('TourConnectionSection: 예약 인원 조회 실패', resErr)
+                if (!isAbortLikeError(resErr)) {
+                  console.error('TourConnectionSection: 예약 인원 조회 실패', resErr)
+                }
                 continue
               }
               for (const row of rows || []) {
@@ -252,6 +259,11 @@ export default function TourConnectionSection({
           setTours([])
         }
       } catch (error) {
+        if (isAbortLikeError(error)) {
+          setReservationPartyById(new Map())
+          setTours([])
+          return
+        }
         console.error('Error fetching tours:', error)
         setError('투어 정보를 가져오는 중 오류가 발생했습니다.')
         setReservationPartyById(new Map())

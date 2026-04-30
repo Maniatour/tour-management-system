@@ -27,7 +27,7 @@ import {
   Link2,
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import PaymentMethodUsageModal from '@/components/PaymentMethodUsageModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
 import {
@@ -469,7 +469,9 @@ export default function PaymentMethodManager({
       setTeamMembers(membersMap)
       setTeamMembersWithStatus(membersWithStatus)
     } catch (error) {
-      console.error('Error loading team members:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading team members:', error)
+      }
     }
   }
 

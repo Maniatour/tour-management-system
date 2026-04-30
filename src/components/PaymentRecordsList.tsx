@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, CreditCard, AlertTriangle } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import PaymentRecordForm from './PaymentRecordForm'
 import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 import { displayPaymentRecordNote, fetchTeamDisplayNameMap } from '@/utils/paymentRecordNoteDisplay'
@@ -67,7 +67,9 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
       })
       setPaymentMethodMap(methodMap)
     } catch (error) {
-      console.error('결제 방법 정보 로드 오류:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('결제 방법 정보 로드 오류:', error)
+      }
     }
   }
 
@@ -99,8 +101,10 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
         setTeamDisplayByEmail({})
       }
     } catch (error) {
-      console.error('입금 내역 조회 오류:', error)
-      setError(error instanceof Error ? error.message : '입금 내역을 불러올 수 없습니다.')
+      if (!isAbortLikeError(error)) {
+        console.error('입금 내역 조회 오류:', error)
+        setError(error instanceof Error ? error.message : '입금 내역을 불러올 수 없습니다.')
+      }
       setTeamDisplayByEmail({})
     } finally {
       setLoading(false)
