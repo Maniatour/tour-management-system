@@ -25,10 +25,78 @@ import {
   ImageOff,
   Trash2,
   FileUp,
+  AlertTriangle,
 } from 'lucide-react';
+import TicketBookingsNeedCheckModal from './TicketBookingsNeedCheckModal';
+import {
+  getCancelDeadlineDays,
+  getCancelDueDateForTicketBooking,
+  isTicketBookingCancelDueStaleBeforeCheckIn,
+  type SeasonDate,
+} from '@/lib/ticketBookingCancelDue';
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
+import { isTourCancelled } from '@/utils/tourStatusUtils';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
+
+/** 로컬 달력 YYYY-MM-DD (달력 칸 기준과 투어 기간 교차 판별용) */
+function localYmdFromDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
+  const [yRaw, moRaw, dRaw] = ymd.split('-').map((x) => parseInt(x, 10));
+  const dt = new Date(yRaw || 1970, (moRaw || 1) - 1, dRaw || 1, 12, 0, 0);
+  dt.setDate(dt.getDate() + deltaDays);
+  return localYmdFromDate(dt);
+}
+
+function ymdFromDbDate(s: string | null | undefined): string {
+  if (!s) return '';
+  const m = String(s).trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+
+function localYmdFromTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return localYmdFromDate(d);
+}
+
+function tourCalendarSpanEndYmd(tour: { tour_date: string; tour_end_datetime?: string | null }): string {
+  const start = ymdFromDbDate(tour.tour_date);
+  if (!start) return '';
+  if (tour.tour_end_datetime) {
+    const end = localYmdFromTimestamp(String(tour.tour_end_datetime));
+    if (!end) return start;
+    return end < start ? start : end;
+  }
+  return start;
+}
+
+function tourOverlapsCalendarYmd(
+  tour: { tour_date: string; tour_end_datetime?: string | null },
+  dateYmd: string
+): boolean {
+  const start = ymdFromDbDate(tour.tour_date);
+  const end = tourCalendarSpanEndYmd(tour);
+  if (!start || !end || !dateYmd) return false;
+  return dateYmd >= start && dateYmd <= end;
+}
+
+function tourSpanIntersectsGrid(
+  tour: { tour_date: string; tour_end_datetime?: string | null },
+  gridStartYmd: string,
+  gridEndYmd: string
+): boolean {
+  const start = ymdFromDbDate(tour.tour_date);
+  const end = tourCalendarSpanEndYmd(tour);
+  if (!start || !end) return false;
+  return start <= gridEndYmd && end >= gridStartYmd;
+}
 
 /** 입장권 부킹 달력에 표시하는 투어(상품 product_id)만 */
 const TICKET_CALENDAR_TOUR_PRODUCT_IDS: string[] = [
@@ -125,6 +193,19 @@ interface TicketBooking {
       name_en?: string;
     } | undefined;
   } | undefined;
+}
+
+function bookingCheckInYmd(booking: TicketBooking): string {
+  const raw = (booking.check_in_date ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return localYmdFromDate(d);
+}
+
+function isTicketBookingCountingStatus(booking: TicketBooking): boolean {
+  const s = String(booking.status || '').toLowerCase();
+  return s !== 'cancelled' && s !== 'canceled';
 }
 
 /** company + Invoice# 로 인보이스 첨부를 묶는 키 */
@@ -253,6 +334,8 @@ function buildTicketRnGroups(bookings: TicketBooking[]): { key: string; label: s
 interface TourEvent {
   id: string;
   tour_date: string;
+  tour_end_datetime?: string | null;
+  tour_status?: string | null;
   product_id?: string | null;
   reservation_ids: string[];
   total_reservations: number;
@@ -297,7 +380,6 @@ export default function TicketBookingList() {
   const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
-  type SeasonDate = { start: string; end: string };
   const [supplierProductsMap, setSupplierProductsMap] = useState<Map<string, { season_dates: SeasonDate[] | null }>>(new Map());
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
@@ -403,6 +485,7 @@ export default function TicketBookingList() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
   const [showInvoiceUploadModal, setShowInvoiceUploadModal] = useState(false);
+  const [showNeedCheckModal, setShowNeedCheckModal] = useState(false);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
 
   const refreshInvoiceAttachmentMapForBookings = useCallback(
@@ -598,6 +681,7 @@ export default function TicketBookingList() {
           .select(`
             id,
             tour_date,
+            tour_status,
             reservation_ids,
             products (
               name,
@@ -609,7 +693,12 @@ export default function TicketBookingList() {
           console.warn('투어 정보 조회 오류:', batchError)
           break
         }
-        if (batchTours?.length) toursData = toursData.concat(batchTours)
+        if (batchTours?.length) {
+          const activeOnly = batchTours.filter(
+            (t: { tour_status?: string | null }) => !isTourCancelled(t.tour_status)
+          );
+          toursData = toursData.concat(activeOnly);
+        }
       }
       const toursError = null
 
@@ -737,18 +826,25 @@ export default function TicketBookingList() {
 
   const fetchTourEvents = useCallback(async () => {
     try {
-      // 현재 달력에 표시되는 월의 시작일과 종료일 계산
-      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-      
-      console.log('투어 이벤트 조회 기간:', startDate.toISOString().split('T')[0], '~', endDate.toISOString().split('T')[0]);
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth();
 
-      // 먼저 투어 데이터만 조회 (reservation_ids 포함)
-      const { data: toursData, error: toursError } = await supabase
+      const firstDayMonth = new Date(currentYear, currentMonth, 1);
+      const gridStart = new Date(firstDayMonth);
+      gridStart.setDate(gridStart.getDate() - firstDayMonth.getDay());
+      const gridEnd = new Date(gridStart);
+      gridEnd.setDate(gridEnd.getDate() + 41);
+      const gridStartStr = localYmdFromDate(gridStart);
+      const gridEndStr = localYmdFromDate(gridEnd);
+      const tourFetchFromYmd = addCalendarDaysYmd(gridStartStr, -90);
+
+      const { data: toursDataRaw, error: toursError } = await supabase
         .from('tours')
         .select(`
           id,
           tour_date,
+          tour_end_datetime,
+          tour_status,
           product_id,
           reservation_ids,
           products (
@@ -756,8 +852,8 @@ export default function TicketBookingList() {
           )
         `)
         .in('product_id', TICKET_CALENDAR_TOUR_PRODUCT_IDS)
-        .gte('tour_date', startDate.toISOString().split('T')[0])
-        .lte('tour_date', endDate.toISOString().split('T')[0])
+        .gte('tour_date', tourFetchFromYmd)
+        .lte('tour_date', gridEndStr)
         .order('tour_date', { ascending: true });
 
       if (toursError) {
@@ -765,10 +861,16 @@ export default function TicketBookingList() {
         throw toursError;
       }
 
+      const toursData = (toursDataRaw || [])
+        .filter((row: { tour_status?: string | null }) => !isTourCancelled(row.tour_status))
+        .filter((row: { tour_date: string; tour_end_datetime?: string | null }) =>
+          tourSpanIntersectsGrid(row, gridStartStr, gridEndStr)
+        ) as TourEvent[];
+
       console.log('투어 데이터:', toursData);
       console.log('투어 데이터 상세:', JSON.stringify(toursData, null, 2));
 
-      if (!toursData || toursData.length === 0) {
+      if (toursData.length === 0) {
         console.log('투어 데이터가 없음');
         setTourEvents([]);
         return;
@@ -832,13 +934,19 @@ export default function TicketBookingList() {
               }
               
               console.log(`투어 ${tour.id} fallback 조회 성공:`, fallbackReservations);
-              const fallbackTotalPeople = fallbackReservations?.reduce((sum: number, reservation: { total_people?: number }) => {
-                return sum + (reservation.total_people || 0);
-              }, 0) || 0;
-              
+              const fallbackActive =
+                fallbackReservations?.filter(
+                  (r: { status?: string | null }) => !isReservationCancelledStatus(r.status)
+                ) || [];
+              const fallbackTotalPeople = fallbackActive.reduce(
+                (sum: number, reservation: { total_people?: number | null }) =>
+                  sum + (Number(reservation.total_people) || 0),
+                0
+              );
+
               return {
                 ...tour,
-                total_reservations: fallbackReservations?.length || 0,
+                total_reservations: fallbackActive.length,
                 total_people: fallbackTotalPeople,
                 adults: 0,
                 child: 0,
@@ -846,28 +954,41 @@ export default function TicketBookingList() {
               };
             }
 
-            const totalReservations = reservationsData?.length || 0;
-            
+            const activeReservations =
+              reservationsData?.filter(
+                (r: { status?: string | null }) => !isReservationCancelledStatus(r.status)
+              ) || [];
+
+            const totalReservations = activeReservations.length;
+
             console.log(`투어 ${tour.id} 예약 데이터 상세:`, reservationsData);
-            
-            // reservation_ids에 있는 예약들의 total_people 합산
-            const totalPeople = reservationsData?.reduce((sum: number, reservation: { id: string; total_people?: number }) => {
-              console.log(`예약 ${reservation.id} total_people:`, reservation.total_people);
-              return sum + (reservation.total_people || 0);
-            }, 0) || 0;
-            
-            // adults, child, infant도 계산 (상세 정보용)
-            const totalAdults = reservationsData?.reduce((sum: number, reservation: { adults?: number }) => {
-              return sum + (reservation.adults || 0);
-            }, 0) || 0;
-            
-            const totalChild = reservationsData?.reduce((sum: number, reservation: { child?: number }) => {
-              return sum + (reservation.child || 0);
-            }, 0) || 0;
-            
-            const totalInfant = reservationsData?.reduce((sum: number, reservation: { infant?: number }) => {
-              return sum + (reservation.infant || 0);
-            }, 0) || 0;
+
+            // 취소되지 않은 예약만 인원 합산
+            const totalPeople = activeReservations.reduce(
+              (sum: number, reservation: { id: string; total_people?: number | null }) => {
+                console.log(`예약 ${reservation.id} total_people:`, reservation.total_people);
+                return sum + (Number(reservation.total_people) || 0);
+              },
+              0
+            );
+
+            const totalAdults = activeReservations.reduce(
+              (sum: number, reservation: { adults?: number | null }) =>
+                sum + (Number(reservation.adults) || 0),
+              0
+            );
+
+            const totalChild = activeReservations.reduce(
+              (sum: number, reservation: { child?: number | null }) =>
+                sum + (Number(reservation.child) || 0),
+              0
+            );
+
+            const totalInfant = activeReservations.reduce(
+              (sum: number, reservation: { infant?: number | null }) =>
+                sum + (Number(reservation.infant) || 0),
+              0
+            );
 
             console.log(`투어 ${tour.id} 인원 정보 (reservation_ids 사용):`, {
               reservation_ids: tour.reservation_ids,
@@ -1531,59 +1652,29 @@ export default function TicketBookingList() {
     setBookings((prev) => prev.map((b) => (b.id === u.id ? { ...b, note: u.note ?? null } : b)));
   }, []);
 
-  // 시즌 여부 확인 함수 (check_in_date 기준)
-  const checkIfSeason = (checkInDate: string, supplierProduct?: { season_dates: SeasonDate[] | null }): boolean => {
-    if (!checkInDate || !supplierProduct?.season_dates) return false;
-    
-    const seasonDates = supplierProduct.season_dates;
-    if (!Array.isArray(seasonDates)) return false;
-    
-    const checkIn = new Date(checkInDate);
-    checkIn.setHours(0, 0, 0, 0);
-    
-    return seasonDates.some((period: { start: string; end: string }) => {
-      const start = new Date(period.start);
-      const end = new Date(period.end);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(0, 0, 0, 0);
-      return checkIn >= start && checkIn <= end;
-    });
-  };
+  const getCancelDueDate = useCallback(
+    (booking: TicketBooking): string | null =>
+      getCancelDueDateForTicketBooking(
+        { check_in_date: booking.check_in_date, company: booking.company },
+        supplierProductsMap.get(booking.id)
+      ),
+    [supplierProductsMap]
+  );
 
-  // 취소 기한 계산 함수
-  const getCancelDeadlineDays = (company: string, checkInDate: string, supplierProduct?: { season_dates: SeasonDate[] | null }): number => {
-    const isSeason = checkIfSeason(checkInDate, supplierProduct);
-    
-    switch (company) {
-      case 'Antelope X':
-        return 4; // 시즌과 상관없이 4일전
-      case 'SEE CANYON':
-        return isSeason ? 5 : 4; // 시즌 = 5일전, 시즌이 아니면 4일전
-      case 'Mei Tour':
-        return isSeason ? 8 : 5; // 시즌 = 8일전, 시즌이 아니면 5일전
-      default:
-        return 0; // 알 수 없는 공급업체
+  const ticketNeedCheckUnionCount = useMemo(() => {
+    const ids = new Set<string>();
+    for (const b of bookings) {
+      if (String(b.status || '').toLowerCase() === 'cancelled') continue;
+      const noTour = b.tour_id == null || String(b.tour_id).trim() === '';
+      if (noTour) ids.add(b.id);
     }
-  };
-
-  // Cancel Due 날짜 계산 함수
-  const getCancelDueDate = (booking: TicketBooking): string | null => {
-    if (!booking.check_in_date || !booking.company) return null;
-    
-    const supplierProduct = supplierProductsMap.get(booking.id);
-    const cancelDeadlineDays = getCancelDeadlineDays(booking.company, booking.check_in_date, supplierProduct);
-    
-    if (cancelDeadlineDays === 0) return null;
-    
-    const checkInDate = new Date(booking.check_in_date);
-    checkInDate.setHours(0, 0, 0, 0);
-    
-    const cancelDueDate = new Date(checkInDate);
-    cancelDueDate.setDate(cancelDueDate.getDate() - cancelDeadlineDays);
-    
-    return cancelDueDate.toISOString().split('T')[0];
-  };
-
+    for (const b of bookings) {
+      if (String(b.status || '').toLowerCase() === 'cancelled') continue;
+      const sp = supplierProductsMap.get(b.id);
+      if (isTicketBookingCancelDueStaleBeforeCheckIn(b, sp)) ids.add(b.id);
+    }
+    return ids.size;
+  }, [bookings, supplierProductsMap]);
 
   // Future Event 필터: 체크인 날짜가 오늘 이후인 예약만 표시
   const matchesFutureEvent = (booking: TicketBooking): boolean => {
@@ -1996,6 +2087,21 @@ export default function TicketBookingList() {
               <Table size={16} className="sm:w-3.5 sm:h-3.5" />
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowNeedCheckModal(true)}
+            className="relative inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-amber-50 border border-amber-200 text-amber-950 rounded-lg hover:bg-amber-100 text-sm font-medium transition-colors flex-shrink-0"
+            title={t('ticketNeedCheckButtonTitle')}
+          >
+            <AlertTriangle size={16} className="text-amber-700 shrink-0" />
+            <span className="hidden sm:inline">{t('ticketNeedCheckButton')}</span>
+            <span className="sm:hidden">{t('ticketNeedCheckButtonShort')}</span>
+            {ticketNeedCheckUnionCount > 0 ? (
+              <span className="min-w-[1.25rem] rounded-full bg-amber-600 px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-white tabular-nums sm:text-xs">
+                {ticketNeedCheckUnionCount > 99 ? '99+' : ticketNeedCheckUnionCount}
+              </span>
+            ) : null}
+          </button>
           <button
             type="button"
             onClick={() => setShowInvoiceUploadModal(true)}
@@ -2733,10 +2839,9 @@ export default function TicketBookingList() {
                 console.log('필터된 부킹 데이터:', filteredBookings);
                 console.log('부킹 개수:', filteredBookings.length);
                 
-                // 체크인 날짜별로 그룹화 (날짜 형식 변환)
+                // 체크인 날짜별로 그룹화 (달력 칸의 로컬 YMD와 일치)
                 const groupedByDate = filteredBookings.reduce((groups, booking) => {
-                  // check_in_date를 YYYY-MM-DD 형식으로 변환
-                  const date = new Date(booking.check_in_date).toISOString().split('T')[0];
+                  const date = bookingCheckInYmd(booking);
                   if (!groups[date]) {
                     groups[date] = [];
                   }
@@ -2750,7 +2855,6 @@ export default function TicketBookingList() {
 
                 // 선택된 월 기준으로 달력 생성
                 const now = new Date();
-                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 
                 const calendarDays: Date[] = [];
                 
@@ -2822,31 +2926,72 @@ export default function TicketBookingList() {
                     {/* 달력 그리드 - 모바일 작은 셀 */}
                     <div className="grid gap-0.5 sm:gap-1 grid-cols-7">
                       {calendarDays.map((date, index) => {
-                        const dateString = date.toISOString().split('T')[0];
+                        const dateString = localYmdFromDate(date);
                         const isCurrentMonth = date.getMonth() === currentMonth;
                         const isToday = date.toDateString() === now.toDateString();
                         const dayBookings = groupedByDate[dateString] || [];
                         const totalQuantity = dayBookings.reduce((sum, booking) => sum + booking.ea, 0);
-                        
-                        // 해당 날짜의 투어 이벤트 조회
-                        const dayTours = tourEvents.filter(tour => tour.tour_date === dateString);
-                        
+
+                        const dayBookingsEaNonCancelled = dayBookings
+                          .filter(isTicketBookingCountingStatus)
+                          .reduce((sum, booking) => sum + (Number(booking.ea) || 0), 0);
+
+                        const dayTours = tourEvents
+                          .filter((tour) => tourOverlapsCalendarYmd(tour, dateString))
+                          .sort(
+                            (a, b) =>
+                              String(a.tour_date).localeCompare(String(b.tour_date)) ||
+                              String(a.id).localeCompare(String(b.id))
+                          );
+
+                        const toursStartingThisDay = dayTours.filter(
+                          (tour) => ymdFromDbDate(tour.tour_date) === dateString
+                        );
+                        const spanningContinuationOnly =
+                          dayTours.length > 0 && toursStartingThisDay.length === 0;
+
+                        const sumTourPeopleStartsToday = toursStartingThisDay.reduce(
+                          (sum, tour) => sum + (Number(tour.total_people) || 0),
+                          0
+                        );
+
+                        let tourBookingHeadcountMismatch = false;
+                        if (!spanningContinuationOnly) {
+                          if (
+                            toursStartingThisDay.length > 0 &&
+                            sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
+                          ) {
+                            tourBookingHeadcountMismatch = true;
+                          } else if (
+                            toursStartingThisDay.length === 0 &&
+                            dayTours.length === 0 &&
+                            dayBookingsEaNonCancelled > 0
+                          ) {
+                            tourBookingHeadcountMismatch = true;
+                          }
+                        }
+
                         // 디버깅: 해당 날짜에 부킹이 있는지 확인
                         if (dayBookings.length > 0) {
                           console.log(`${dateString}에 부킹 ${dayBookings.length}개:`, dayBookings);
                         }
-                        
+
                         // 디버깅: 해당 날짜에 투어가 있는지 확인
                         if (dayTours.length > 0) {
                           console.log(`${dateString}에 투어 ${dayTours.length}개:`, dayTours);
                         }
 
+                        const cellOutlineClass =
+                          tourBookingHeadcountMismatch ?
+                            'border-2 border-red-500 shadow-sm shadow-red-200/70'
+                          : 'border border-gray-200';
+
                         return (
                           <div
                             key={`cal-${dateString}-${index}`}
-                            className={`min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] p-1 sm:p-2 border border-gray-200 ${
+                            className={`min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] p-1 sm:p-2 rounded-sm ${cellOutlineClass} ${
                               isCurrentMonth ? 'bg-white' : 'bg-gray-50'
-                            } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
+                            } ${isToday ? 'ring-2 ring-blue-500 ring-offset-0' : ''}`}
                           >
                             <div className={`text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
                               isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
@@ -2965,6 +3110,7 @@ export default function TicketBookingList() {
 
                     {/* 범례 - 모바일 컴팩트 */}
                     <div className="mt-3 sm:mt-4 p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-3 leading-relaxed">{t('ticketCalendarHeadcountMismatchHint')}</p>
                       <div className="text-xs sm:text-sm font-medium text-gray-700 mb-2">{t('statusLegend')}</div>
                       <div className="flex flex-wrap gap-1.5 sm:gap-2">
                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
@@ -3309,6 +3455,14 @@ export default function TicketBookingList() {
           }}
         />
       )}
+
+      <TicketBookingsNeedCheckModal
+        open={showNeedCheckModal}
+        onClose={() => setShowNeedCheckModal(false)}
+        bookings={bookings}
+        supplierProductsMap={supplierProductsMap}
+        onEdit={(b) => handleEdit(b as TicketBooking)}
+      />
 
       <TicketInvoiceUploadModal
         open={showInvoiceUploadModal}

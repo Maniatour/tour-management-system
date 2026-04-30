@@ -134,6 +134,45 @@ export function summarizePaymentRecordsForBalance(records: PaymentRecordLike[]):
 }
 
 /**
+ * 「총 결제 예정」과 보증금·잔금 수령 간 잔액 산출용: 고객이 이미 확정 적용된 지불(+) 합 추정.
+ * - 폼 보증금이 입금(Refunded) 반영 순액이면 `deposit + balanceReceived` 가 총액과 맞음
+ * - 보증금이 입금 차감 전 총액으로 남아 있으면 `deposit + balance − Refunded 합` 이 맞음
+ * - 입금 환불 없이 「가격 정보」환불만 있으면 `deposit + balance − manualRefund` 가 맞음 (총액은 이미 환불 반영됨)
+ * 위 세 가지 중 어느 하나가 현재 총액(`totalDue`)에 가장 가까운 값을 사용한다 (이중 카운팅 회피).
+ */
+export function computeEffectiveCustomerPaidTowardDue(
+  totalDue: number,
+  depositAmount: number,
+  balanceReceived: number,
+  refundedFromRecords: number,
+  manualRefundFromPricing: number
+): number {
+  const d = Math.max(0, roundUsd2(Number(totalDue) || 0))
+  const dep = Number(depositAmount) || 0
+  const bal = Number(balanceReceived) || 0
+  const rec = Math.max(0, Number(refundedFromRecords) || 0)
+  const man = Math.max(0, Number(manualRefundFromPricing) || 0)
+
+  const candRaw = roundUsd2(dep + bal)
+  const candMinusRec = roundUsd2(dep + bal - rec)
+  const candMinusMan = roundUsd2(dep + bal - man)
+  const candidates = [candRaw, candMinusRec, candMinusMan]
+
+  let best = candRaw
+  let bestErr = Math.abs(d - candRaw)
+  for (let i = 1; i < candidates.length; i++) {
+    const v = candidates[i]
+    const err = Math.abs(d - v)
+    if (err + 1e-9 < bestErr) {
+      best = v
+      bestErr = err
+    }
+  }
+
+  return Math.max(0, roundUsd2(best))
+}
+
+/**
  * Balance 테이블과 동일한 라인 총액(computeCustomerPaymentTotalLineFormula)을 기준으로
  * payment_records 집계와 비교할 보증금 순액·잔액(미수)을 계산한다.
  * - 입금 기록이 없으면 hasRecords: false (UI에서 — 표시용)

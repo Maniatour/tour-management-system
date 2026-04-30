@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fetchUploadApi } from '@/lib/uploadClient';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { isTourCancelled } from '@/utils/tourStatusUtils';
 
 /** 원격 DB에 ticket_bookings.zelle_confirmation_number 가 아직 없을 때 PostgREST PGRST204 */
 function isMissingZelleConfirmationColumnError(err: unknown): boolean {
@@ -21,6 +22,111 @@ function isMissingZelleConfirmationColumnError(err: unknown): boolean {
  * (매 저장마다 400 → 재시도 PATCH가 나가는 것을 막음. 마이그레이션 적용 후에는 새로고침하면 다시 전송됨.)
  */
 let omitZelleConfirmationInTicketBookingsPayload = false;
+
+/** YYYY-MM-DD 기준으로 달력 일수 더하기 (DST 피하려고 정오 기준) */
+function addCalendarDays(isoDate: string, deltaDays: number): string {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 멀티데이 투어: 시작일이 체크인보다 이만큼 이전이면 DB 후보에 포함 */
+const TICKET_FORM_TOUR_LOOKBACK_DAYS = 45;
+
+function ymdFromDbDate(s: string | null | undefined): string {
+  if (!s) return '';
+  const m = String(s).trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+
+/** 타임스탬프 → 로컬 달력 YYYY-MM-DD (종료일 표시용) */
+function localYmdFromTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+/** 투어 달력 구간 [시작일, 종료일] (종료일 미입력 시 당일만) */
+function getTourCalendarEndYmd(tour: {
+  tour_date: string;
+  tour_end_datetime?: string | null;
+}): string {
+  const start = ymdFromDbDate(tour.tour_date);
+  if (!start) return '';
+  if (tour.tour_end_datetime) {
+    const end = localYmdFromTimestamp(String(tour.tour_end_datetime));
+    if (!end) return start;
+    if (end < start) return start;
+    return end;
+  }
+  return start;
+}
+
+/** 체크인 날짜(YYYY-MM-DD)가 투어 시작~종료 달력 구간 안에 있는지 */
+function checkInWithinTourCalendarSpan(
+  checkInYmd: string,
+  tour: { tour_date: string; tour_end_datetime?: string | null }
+): boolean {
+  const start = ymdFromDbDate(tour.tour_date);
+  const end = getTourCalendarEndYmd(tour);
+  if (!checkInYmd || !start || !end) return false;
+  return checkInYmd >= start && checkInYmd <= end;
+}
+
+function parseStaffEmails(raw: string | null | undefined): string[] {
+  if (!raw || typeof raw !== 'string') return [];
+  const parts = raw
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [...new Set(parts)];
+}
+
+async function fetchTeamDisplayMap(
+  supabaseClient: typeof supabase,
+  emails: string[]
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (emails.length === 0) return map;
+  const chunkSize = 100;
+  for (let i = 0; i < emails.length; i += chunkSize) {
+    const chunk = emails.slice(i, i + chunkSize);
+    const { data, error } = await (supabaseClient as any)
+      .from('team')
+      .select('email, name_ko, nick_name, name_en')
+      .in('email', chunk);
+    if (error) {
+      console.warn('팀(가이드/어시) 이름 조회 경고:', error);
+      continue;
+    }
+    for (const row of (data || []) as Array<{
+      email: string;
+      name_ko?: string | null;
+      nick_name?: string | null;
+      name_en?: string | null;
+    }>) {
+      const display =
+        (row.nick_name && String(row.nick_name).trim()) ||
+        (row.name_ko && String(row.name_ko).trim()) ||
+        (row.name_en && String(row.name_en).trim()) ||
+        row.email;
+      map.set(row.email.toLowerCase(), display);
+    }
+  }
+  return map;
+}
+
+function staffFieldToDisplay(raw: string | null | undefined, teamMap: Map<string, string>): string {
+  const emails = parseStaffEmails(raw);
+  if (emails.length === 0) return '';
+  return emails
+    .map((e) => teamMap.get(e.toLowerCase()) || e.split('@')[0] || e)
+    .filter(Boolean)
+    .join(', ');
+}
 
 interface TicketBooking {
   id?: string;
@@ -92,6 +198,7 @@ export default function TicketBookingForm({
   tourId 
 }: TicketBookingFormProps) {
   const t = useTranslations('booking.ticketBooking');
+  const locale = useLocale();
   const [formData, setFormData] = useState<TicketBooking>(() => {
     console.log('편집 모드 - 전달받은 booking 데이터:', booking);
     
@@ -178,10 +285,17 @@ export default function TicketBookingForm({
   interface Tour {
     id: string;
     tour_date: string;
+    tour_end_datetime?: string | null;
+    tour_status?: string | null;
     product_id: string | null;
+    tour_guide_id?: string | null;
+    assistant_id?: string | null;
     products?: {
       name: string;
     };
+    /** 드롭다운 표시용 (team 조회 후 채움) */
+    guide_display?: string;
+    assistant_display?: string;
   }
 
   interface Reservation {
@@ -214,13 +328,20 @@ export default function TicketBookingForm({
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
-    fetchTours();
     fetchReservations();
     fetchCategories();
     fetchCompanies();
     fetchPaymentMethods();
     fetchSupplierProducts();
   }, []);
+
+  /** 체크인이 투어 달력 구간(시작~종료일)에 포함되는 투어 (선택 tour는 구간 밖이어도 병합) */
+  useEffect(() => {
+    const tourIdToMerge = formData.tour_id ?? null;
+    void fetchTours(formData.check_in_date, tourIdToMerge);
+    // 투어 드롭다운 값만 바꿀 때는 재조회하지 않음
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formData.tour_id 제외
+  }, [formData.check_in_date]);
 
   // 제출자 이메일: 새 부킹일 때만 로그인 사용자 이메일로 자동 설정
   useEffect(() => {
@@ -275,80 +396,96 @@ export default function TicketBookingForm({
     }
   };
 
-  const fetchTours = async () => {
+  const fetchTours = async (checkInDate: string, tourIdToMerge: string | null) => {
     try {
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD 형식
-      
-      console.log('투어 목록 조회 시작...');
-      
-      // 먼저 tours만 조회
-      const { data: toursData, error: toursError } = await (supabase as any)
-        .from('tours')
-        .select('id, tour_date, product_id')
-        .gte('tour_date', today) // 오늘 날짜 이후의 투어만
-        .order('tour_date', { ascending: true });
-
-      if (toursError) {
-        console.error('투어 목록 조회 오류:', toursError);
-        throw toursError;
-      }
-
-      console.log('투어 데이터:', toursData);
-
-      if (!toursData || toursData.length === 0) {
+      if (!checkInDate || !String(checkInDate).trim()) {
         setTours([]);
         return;
       }
 
-      // 타입 단언
-      const typedToursData = toursData as Tour[];
+      const lookbackStart = addCalendarDays(checkInDate, -TICKET_FORM_TOUR_LOOKBACK_DAYS);
 
-      // product_id가 있는 투어들만 필터링
+      const { data: rangeData, error: rangeError } = await (supabase as any)
+        .from('tours')
+        .select(
+          'id, tour_date, tour_end_datetime, tour_status, product_id, tour_guide_id, assistant_id'
+        )
+        .lte('tour_date', checkInDate)
+        .gte('tour_date', lookbackStart)
+        .order('tour_date', { ascending: true });
+
+      if (rangeError) {
+        console.error('투어 목록 조회 오류:', rangeError);
+        throw rangeError;
+      }
+
+      let typedToursData = ((rangeData || []) as Tour[]).filter(
+        (t) =>
+          !isTourCancelled(t.tour_status) &&
+          checkInWithinTourCalendarSpan(String(checkInDate).trim(), t)
+      );
+      const idsInRange = new Set(typedToursData.map((x) => x.id));
+
+      if (tourIdToMerge && !idsInRange.has(tourIdToMerge)) {
+        const { data: extra, error: extraErr } = await (supabase as any)
+          .from('tours')
+          .select(
+            'id, tour_date, tour_end_datetime, tour_status, product_id, tour_guide_id, assistant_id'
+          )
+          .eq('id', tourIdToMerge)
+          .maybeSingle();
+        if (!extraErr && extra) {
+          typedToursData = [...typedToursData, extra as Tour];
+          typedToursData.sort((a, b) =>
+            String(a.tour_date).localeCompare(String(b.tour_date))
+          );
+        }
+      }
+
+      if (typedToursData.length === 0) {
+        setTours([]);
+        return;
+      }
+
       const toursWithProductId = typedToursData.filter((tour: Tour) => tour.product_id);
-      
-      if (toursWithProductId.length === 0) {
-        setTours(typedToursData);
-        return;
-      }
+      const productIds = [
+        ...new Set(toursWithProductId.map((tour: Tour) => tour.product_id).filter(Boolean)),
+      ] as string[];
 
-      // 모든 product_id를 한 번에 조회
-      const productIds = [...new Set(toursWithProductId.map((tour: Tour) => tour.product_id).filter(Boolean))] as string[];
-      
-      const { data: productsData, error: productsError } = await (supabase as any)
-        .from('products')
-        .select(`
-          id,
-          name
-        `)
-        .in('id', productIds);
-
-      if (productsError) {
-        console.warn('상품 정보 조회 오류:', productsError);
-        setTours(typedToursData);
-        return;
-      }
-
-      // products 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
       const productsMap = new Map<string, { id: string; name: string }>();
-      ((productsData || []) as Array<{ id: string; name: string }>).forEach((product: { id: string; name: string }) => {
-        productsMap.set(product.id, product);
-      });
+      if (productIds.length > 0) {
+        const { data: productsData, error: productsError } = await (supabase as any)
+          .from('products')
+          .select('id, name')
+          .in('id', productIds);
 
-      // 투어 데이터에 상품 정보 추가
+        if (productsError) {
+          console.warn('상품 정보 조회 오류:', productsError);
+        } else {
+          ((productsData || []) as Array<{ id: string; name: string }>).forEach((product) => {
+            productsMap.set(product.id, product);
+          });
+        }
+      }
+
+      const emailSet = new Set<string>();
+      for (const tour of typedToursData) {
+        parseStaffEmails(tour.tour_guide_id).forEach((e) => emailSet.add(e));
+        parseStaffEmails(tour.assistant_id).forEach((e) => emailSet.add(e));
+      }
+      const teamMap = await fetchTeamDisplayMap(supabase, [...emailSet]);
+
       const toursWithProducts = typedToursData.map((tour: Tour) => {
+        const base: Tour = { ...tour };
         if (tour.product_id && productsMap.has(tour.product_id)) {
           const product = productsMap.get(tour.product_id)!;
-          return {
-            ...tour,
-            products: {
-              name: product.name
-            }
-          };
+          base.products = { name: product.name };
         }
-        return tour;
+        base.guide_display = staffFieldToDisplay(tour.tour_guide_id, teamMap);
+        base.assistant_display = staffFieldToDisplay(tour.assistant_id, teamMap);
+        return base;
       });
 
-      console.log('투어 목록 조회 성공:', toursWithProducts);
       setTours(toursWithProducts);
     } catch (error) {
       console.error('투어 목록 조회 오류:', error);
@@ -903,66 +1040,9 @@ export default function TicketBookingForm({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            {/* 공급업체 티켓 선택 - 모바일 최적화 */}
-            {useSupplierTicket && (
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  공급업체 티켓 선택 *
-                </label>
-                <select
-                  name="supplier_product_id"
-                  value={formData.supplier_product_id || ''}
-                  onChange={(e) => {
-                    const selectedProduct = supplierProducts.find(p => p.id === e.target.value);
-                    if (selectedProduct) {
-                      setFormData(prev => ({
-                        ...prev,
-                        supplier_product_id: e.target.value,
-                        category: selectedProduct.ticket_name,
-                        company: selectedProduct.suppliers.name,
-                        time: selectedProduct.entry_times && selectedProduct.entry_times.length > 0 ? selectedProduct.entry_times[0] : prev.time,
-                        expense: selectedProduct.supplier_price,
-                        income: selectedProduct.regular_price
-                      }));
-                    } else {
-                      setFormData(prev => ({ ...prev, supplier_product_id: e.target.value }));
-                    }
-                  }}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">공급업체 티켓을 선택하세요</option>
-                  {supplierProducts.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.suppliers.name} - {product.ticket_name} 
-                      (정가: ${product.regular_price} → 제공가: ${product.supplier_price})
-                      {product.entry_times && product.entry_times.length > 0 && ` - 입장시간: ${product.entry_times.join(', ')}`}
-                    </option>
-                  ))}
-                </select>
-                {formData.supplier_product_id && (
-                  <div className="mt-2 p-3 bg-green-50 rounded-lg">
-                    <div className="text-sm text-green-800">
-                      <p><strong>선택된 티켓:</strong> {supplierProducts.find(p => p.id === formData.supplier_product_id)?.ticket_name}</p>
-                      <p><strong>공급업체:</strong> {supplierProducts.find(p => p.id === formData.supplier_product_id)?.suppliers.name}</p>
-                      <p><strong>정가:</strong> ${supplierProducts.find(p => p.id === formData.supplier_product_id)?.regular_price}</p>
-                      <p><strong>제공가:</strong> ${supplierProducts.find(p => p.id === formData.supplier_product_id)?.supplier_price}</p>
-                      {(() => {
-                        const entryTimes = supplierProducts.find(p => p.id === formData.supplier_product_id)?.entry_times
-                        return Array.isArray(entryTimes) && entryTimes.length > 0 ? (
-                          <p><strong>입장시간:</strong> {entryTimes.join(', ')}</p>
-                        ) : null
-                      })()}
-                      {supplierProducts.find(p => p.id === formData.supplier_product_id)?.season_price && (
-                        <p><strong>시즌가:</strong> ${supplierProducts.find(p => p.id === formData.supplier_product_id)?.season_price}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
+          <div className="space-y-2 sm:space-y-3">
+            {/* ① 카테고리 | 공급업체 */}
+            <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('category')} *
@@ -1034,7 +1114,139 @@ export default function TicketBookingForm({
               )}
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('supplier')} *
+              </label>
+              {showNewCompanyInput ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCompanyValue}
+                    onChange={(e) => setNewCompanyValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = newCompanyValue.trim();
+                        if (v) {
+                          if (!companies.includes(v)) setCompanies(prev => [...prev].concat(v).sort());
+                          setFormData(prev => ({ ...prev, company: v }));
+                          setNewCompanyValue('');
+                          setShowNewCompanyInput(false);
+                        }
+                      }
+                      if (e.key === 'Escape') setShowNewCompanyInput(false);
+                    }}
+                    placeholder={t('supplierPlaceholder')}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                    disabled={useSupplierTicket}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const v = newCompanyValue.trim();
+                      if (v) {
+                        if (!companies.includes(v)) setCompanies(prev => [...prev].concat(v).sort());
+                        setFormData(prev => ({ ...prev, company: v }));
+                        setNewCompanyValue('');
+                        setShowNewCompanyInput(false);
+                      }
+                    }}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    {t('add')}
+                  </button>
+                  <button type="button" onClick={() => setShowNewCompanyInput(false)} className="px-3 py-2 border rounded-md text-sm">
+                    {t('cancel')}
+                  </button>
+                </div>
+              ) : (
+                <select
+                  name="company"
+                  value={formData.company}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '__new__') {
+                      setShowNewCompanyInput(true);
+                      return;
+                    }
+                    setFormData(prev => ({ ...prev, company: v }));
+                  }}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={useSupplierTicket}
+                >
+                  <option value="">{t('selectCompany')}</option>
+                  {companies.map((comp) => (
+                    <option key={comp} value={comp}>{comp}</option>
+                  ))}
+                  <option value="__new__">➕ {t('addNew')}</option>
+                </select>
+              )}
+            </div>
+            </div>
 
+            {/* 카탈로그 티켓 선택 (전체 너비) */}
+            {useSupplierTicket && (
+              <div className="w-full">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  공급업체 티켓 선택 *
+                </label>
+                <select
+                  name="supplier_product_id"
+                  value={formData.supplier_product_id || ''}
+                  onChange={(e) => {
+                    const selectedProduct = supplierProducts.find(p => p.id === e.target.value);
+                    if (selectedProduct) {
+                      setFormData(prev => ({
+                        ...prev,
+                        supplier_product_id: e.target.value,
+                        category: selectedProduct.ticket_name,
+                        company: selectedProduct.suppliers.name,
+                        time: selectedProduct.entry_times && selectedProduct.entry_times.length > 0 ? selectedProduct.entry_times[0] : prev.time,
+                        expense: selectedProduct.supplier_price,
+                        income: selectedProduct.regular_price
+                      }));
+                    } else {
+                      setFormData(prev => ({ ...prev, supplier_product_id: e.target.value }));
+                    }
+                  }}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">공급업체 티켓을 선택하세요</option>
+                  {supplierProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.suppliers.name} - {product.ticket_name} 
+                      (정가: ${product.regular_price} → 제공가: ${product.supplier_price})
+                      {product.entry_times && product.entry_times.length > 0 && ` - 입장시간: ${product.entry_times.join(', ')}`}
+                    </option>
+                  ))}
+                </select>
+                {formData.supplier_product_id && (
+                  <div className="mt-2 p-3 bg-green-50 rounded-lg">
+                    <div className="text-sm text-green-800">
+                      <p><strong>선택된 티켓:</strong> {supplierProducts.find(p => p.id === formData.supplier_product_id)?.ticket_name}</p>
+                      <p><strong>공급업체:</strong> {supplierProducts.find(p => p.id === formData.supplier_product_id)?.suppliers.name}</p>
+                      <p><strong>정가:</strong> ${supplierProducts.find(p => p.id === formData.supplier_product_id)?.regular_price}</p>
+                      <p><strong>제공가:</strong> ${supplierProducts.find(p => p.id === formData.supplier_product_id)?.supplier_price}</p>
+                      {(() => {
+                        const entryTimes = supplierProducts.find(p => p.id === formData.supplier_product_id)?.entry_times
+                        return Array.isArray(entryTimes) && entryTimes.length > 0 ? (
+                          <p><strong>입장시간:</strong> {entryTimes.join(', ')}</p>
+                        ) : null
+                      })()}
+                      {supplierProducts.find(p => p.id === formData.supplier_product_id)?.season_price && (
+                        <p><strong>시즌가:</strong> ${supplierProducts.find(p => p.id === formData.supplier_product_id)?.season_price}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ② 체크인 | 시간 | 수량 */}
+            <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('checkInDate')} *
@@ -1187,77 +1399,6 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('supplier')} *
-              </label>
-              {showNewCompanyInput ? (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newCompanyValue}
-                    onChange={(e) => setNewCompanyValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const v = newCompanyValue.trim();
-                        if (v) {
-                          if (!companies.includes(v)) setCompanies(prev => [...prev].concat(v).sort());
-                          setFormData(prev => ({ ...prev, company: v }));
-                          setNewCompanyValue('');
-                          setShowNewCompanyInput(false);
-                        }
-                      }
-                      if (e.key === 'Escape') setShowNewCompanyInput(false);
-                    }}
-                    placeholder={t('supplierPlaceholder')}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    autoFocus
-                    disabled={useSupplierTicket}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const v = newCompanyValue.trim();
-                      if (v) {
-                        if (!companies.includes(v)) setCompanies(prev => [...prev].concat(v).sort());
-                        setFormData(prev => ({ ...prev, company: v }));
-                        setNewCompanyValue('');
-                        setShowNewCompanyInput(false);
-                      }
-                    }}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    {t('add')}
-                  </button>
-                  <button type="button" onClick={() => setShowNewCompanyInput(false)} className="px-3 py-2 border rounded-md text-sm">
-                    {t('cancel')}
-                  </button>
-                </div>
-              ) : (
-                <select
-                  name="company"
-                  value={formData.company}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === '__new__') {
-                      setShowNewCompanyInput(true);
-                      return;
-                    }
-                    setFormData(prev => ({ ...prev, company: v }));
-                  }}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={useSupplierTicket}
-                >
-                  <option value="">{t('selectCompany')}</option>
-                  {companies.map((comp) => (
-                    <option key={comp} value={comp}>{comp}</option>
-                  ))}
-                  <option value="__new__">➕ {t('addNew')}</option>
-                </select>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('quantity')} *
               </label>
               <input
@@ -1270,7 +1411,10 @@ export default function TicketBookingForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            </div>
 
+            {/* ③ 비용 | 수입 | 결제 방법 */}
+            <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('costUsd')}
@@ -1355,23 +1499,10 @@ export default function TicketBookingForm({
                 </select>
               )}
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('zelleConfirmationNumber')}
-              </label>
-              <input
-                type="text"
-                name="zelle_confirmation_number"
-                value={formData.zelle_confirmation_number || ''}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t('zelleConfirmationPlaceholder')}
-                autoComplete="off"
-              />
-              <p className="text-xs text-gray-500 mt-1">{t('zelleConfirmationHint')}</p>
             </div>
 
+            {/* ④ RN# | Invoice# | Zelle 확인 번호 */}
+            <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 RN#
@@ -1401,6 +1532,25 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('zelleConfirmationNumber')}
+              </label>
+              <input
+                type="text"
+                name="zelle_confirmation_number"
+                value={formData.zelle_confirmation_number || ''}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={t('zelleConfirmationPlaceholder')}
+                autoComplete="off"
+              />
+              <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">{t('zelleConfirmationHint')}</p>
+            </div>
+            </div>
+
+            {/* ⑤a 투어 선택 | 예약 선택 */}
+            <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('selectTourOptional')}
               </label>
               <select
@@ -1410,53 +1560,73 @@ export default function TicketBookingForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">{t('selectTourPlaceholder')}</option>
-                {tours.length > 0 ? (
-                  tours.map(tour => (
-                    <option key={tour.id} value={tour.id}>
-                      {tour.tour_date} - {tour.products?.name || '상품명 없음'}
-                    </option>
-                  ))
+                {!formData.check_in_date?.trim() ? (
+                  <option value="" disabled>
+                    {t('enterCheckInToLoadTours')}
+                  </option>
+                ) : tours.length > 0 ? (
+                  tours.map((tour) => {
+                    const productName =
+                      tour.products?.name ||
+                      (locale === 'ko' ? '상품명 없음' : 'No product');
+                    const g = tour.guide_display?.trim();
+                    const a = tour.assistant_display?.trim();
+                    const nameParts = [g, a].filter(Boolean) as string[];
+                    const label =
+                      nameParts.length > 0
+                        ? `${tour.tour_date} ${productName}, ${nameParts.join(', ')}`
+                        : `${tour.tour_date} ${productName}`;
+                    return (
+                      <option key={tour.id} value={tour.id}>
+                        {label}
+                      </option>
+                    );
+                  })
                 ) : (
                   <option value="" disabled>
-                    예정된 투어가 없습니다
+                    {t('noToursInCheckInWindow')}
                   </option>
                 )}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2 leading-snug">
                 {t('selectTourHelpText')}
               </p>
             </div>
 
-            {!formData.tour_id && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('selectReservationOptional')}
-                </label>
-                <select
-                  name="reservation_id"
-                  value={formData.reservation_id || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">{t('selectReservationPlaceholder')}</option>
-                  {reservations.length > 0 ? (
-                      reservations.map(reservation => (
-                        <option key={reservation.id} value={reservation.id}>
-                          {reservation.id} - {reservation.tour_date} - {reservation.products?.name || '상품명 없음'} ({reservation.status})
-                        </option>
-                      ))
-                  ) : (
-                    <option value="" disabled>
-                      예정된 예약이 없습니다
-                    </option>
-                  )}
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  {t('selectReservationHelpText')}
-                </p>
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('selectReservationOptional')}
+              </label>
+              <select
+                name="reservation_id"
+                value={formData.reservation_id || ''}
+                onChange={handleChange}
+                disabled={Boolean(formData.tour_id)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+              >
+                <option value="">{t('selectReservationPlaceholder')}</option>
+                {reservations.length > 0 ? (
+                    reservations.map(reservation => (
+                      <option key={reservation.id} value={reservation.id}>
+                        {reservation.id} - {reservation.tour_date} - {reservation.products?.name || '상품명 없음'} ({reservation.status})
+                      </option>
+                    ))
+                ) : (
+                  <option value="" disabled>
+                    예정된 예약이 없습니다
+                  </option>
+                )}
+              </select>
+              <p className="text-[11px] mt-0.5 leading-snug text-gray-500">
+                {!formData.tour_id
+                  ? t('selectReservationHelpText')
+                  : t('selectReservationDisabledWhenTour')}
+              </p>
+            </div>
+            </div>
 
+            {/* ⑤b 상태 | 시즌 */}
+            <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('status')}
@@ -1478,23 +1648,6 @@ export default function TicketBookingForm({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('season')}
-                {formData.check_in_date && formData.company && (() => {
-                  const cancelDueDate = getCancelDueDate();
-                  if (cancelDueDate) {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const dueDate = new Date(cancelDueDate);
-                    dueDate.setHours(0, 0, 0, 0);
-                    const isOverdue = dueDate < today;
-                    
-                    return (
-                      <span className={`ml-2 text-xs font-normal ${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
-                        (Cancel Due: {cancelDueDate})
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
               </label>
               <select
                 name="season"
@@ -1506,29 +1659,30 @@ export default function TicketBookingForm({
                 <option value="yes">{t('seasonYes')}</option>
               </select>
             </div>
-          </div>
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('memo')}
-            </label>
-            <textarea
-              name="note"
-              value={formData.note}
-              onChange={handleChange}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={t('memoPlaceholder')}
-            />
-          </div>
+            {/* ⑥ 메모 | 관련 문서 첨부 */}
+            <div className="ticket-form-row grid grid-cols-1 gap-2 lg:grid-cols-2 lg:gap-3 lg:items-stretch">
+            <div className="flex flex-col min-h-0">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('memo')}
+              </label>
+              <textarea
+                name="note"
+                value={formData.note}
+                onChange={handleChange}
+                className="w-full min-h-[12rem] flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y box-border"
+                placeholder={t('memoPlaceholder')}
+              />
+            </div>
 
-          {/* 파일 업로드 섹션 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {t('attachDocuments')}
-            </label>
+            {/* 파일 업로드 섹션 */}
+            <div className="flex flex-col min-h-0">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('attachDocuments')}
+              </label>
             <div 
-              className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
+              className={`min-h-[12rem] flex flex-col border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
                 isUploading 
                   ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
                   : isDragOver 
@@ -1543,7 +1697,7 @@ export default function TicketBookingForm({
               tabIndex={!isUploading ? 0 : -1}
               onClick={!isUploading ? () => document.getElementById('ticket_file_upload')?.click() : undefined}
             >
-              <div className="flex flex-col items-center space-y-2">
+              <div className="flex flex-1 flex-col items-center justify-center space-y-2">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                   isUploading 
                     ? 'bg-blue-100' 
@@ -1637,6 +1791,8 @@ export default function TicketBookingForm({
                   </div>
                 </div>
               )}
+            </div>
+            </div>
             </div>
           </div>
 

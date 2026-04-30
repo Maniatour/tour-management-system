@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocale } from 'next-intl'
 import { ListPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatStatementLineDescription } from '@/lib/statement-display'
@@ -12,6 +13,12 @@ import {
   type CompanyExpenseHistoryHint,
   type StatementAutofillRuleRow
 } from '@/lib/statement-bulk-expense-autofill'
+import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
+import {
+  applyStandardLeafToCompanyExpense,
+  buildUnifiedStandardLeafGroups,
+  flattenUnifiedLeaves
+} from '@/lib/companyExpenseStandardUnified'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -92,6 +99,27 @@ const KIND_LABEL: Record<BulkExpenseKind, string> = {
   tour_expenses: '투어 지출',
   reservation_expenses: '예약 지출',
   ticket_bookings: '입장권(티켓)'
+}
+
+/** 표준 리프 선택 UI용: 현재 paid_for·category에 가장 잘 맞는 리프 id (카테고리 열 전용, paid_for는 별도 셀렉트) */
+function matchStandardLeafIdForRow(
+  paid_for: string,
+  category: string,
+  cats: ExpenseStandardCategoryPickRow[],
+  locale: string
+): string {
+  if (cats.length === 0) return ''
+  const byId = new Map(cats.map((c) => [c.id, c]))
+  const leaves = flattenUnifiedLeaves(buildUnifiedStandardLeafGroups(cats, locale, { includeInactive: true }))
+  const pf = paid_for.trim()
+  const cat = (category || '').trim()
+  const appliedFor = (id: string) => applyStandardLeafToCompanyExpense(id, byId)
+
+  const byCat = leaves.filter((l) => appliedFor(l.id)?.category === cat)
+  if (byCat.length === 0) return ''
+  if (byCat.length === 1) return byCat[0].id
+  const byBoth = byCat.find((l) => appliedFor(l.id)?.paid_for === pf)
+  return byBoth?.id ?? byCat[0].id
 }
 
 type Props = {
@@ -214,6 +242,7 @@ export default function StatementBulkExpenseModal({
   email,
   onCompleted
 }: Props) {
+  const locale = useLocale()
   const [expenseKind, setExpenseKind] = useState<BulkExpenseKind>('company_expenses')
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -240,7 +269,73 @@ export default function StatementBulkExpenseModal({
   const [newScopeThisAccount, setNewScopeThisAccount] = useState(true)
   const [addingRule, setAddingRule] = useState(false)
 
+  const [expenseStandardCategories, setExpenseStandardCategories] = useState<ExpenseStandardCategoryPickRow[]>([])
+  const [paidForFromDb, setPaidForFromDb] = useState<string[]>([])
+
   const selectAllRef = useRef<HTMLInputElement>(null)
+
+  const unifiedStandardGroups = useMemo(
+    () => buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, { includeInactive: true }),
+    [expenseStandardCategories, locale]
+  )
+
+  const standardCatsById = useMemo(
+    () => new Map(expenseStandardCategories.map((c) => [c.id, c])),
+    [expenseStandardCategories]
+  )
+
+  const paidForSelectOptions = useMemo(() => {
+    const s = new Set<string>()
+    for (const x of paidForFromDb) {
+      const t = x.trim()
+      if (t) s.add(t)
+    }
+    for (const r of rules) {
+      const t = (r.paid_for ?? '').trim()
+      if (t) s.add(t)
+    }
+    for (const p of companyProposals) {
+      const t = p.paid_for.trim()
+      if (t) s.add(t)
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [paidForFromDb, rules, companyProposals])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const [sJson, catRes] = await Promise.all([
+          fetch('/api/company-expenses/suggestions').then((r) => r.json()),
+          supabase
+            .from('expense_standard_categories')
+            .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
+            .or('is_active.is.null,is_active.eq.true')
+            .order('display_order', { ascending: true })
+        ])
+        if (cancelled) return
+        const raw = sJson as { paid_for?: unknown }
+        const pf = Array.isArray(raw?.paid_for)
+          ? raw.paid_for.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+          : []
+        setPaidForFromDb(pf)
+        if (!catRes.error && Array.isArray(catRes.data)) {
+          setExpenseStandardCategories(catRes.data as ExpenseStandardCategoryPickRow[])
+        } else {
+          setExpenseStandardCategories([])
+        }
+      } catch {
+        if (!cancelled) {
+          setPaidForFromDb([])
+          setExpenseStandardCategories([])
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   const activeProposalsLength = useMemo(() => {
     if (expenseKind === 'company_expenses') return companyProposals.length
@@ -674,7 +769,7 @@ export default function StatementBulkExpenseModal({
       }}
     >
       <DialogContent
-        className="max-w-5xl w-[calc(100vw-1rem)] max-h-[min(92vh,900px)] flex flex-col gap-0 p-0"
+        className="max-w-[min(96rem,calc(100vw-1.5rem))] w-[calc(100vw-1rem)] max-h-[min(92vh,900px)] flex flex-col gap-0 p-0"
         onPointerDownOutside={(e) => {
           if (applying) e.preventDefault()
         }}
@@ -748,7 +843,14 @@ export default function StatementBulkExpenseModal({
           {expenseKind === 'company_expenses' ? (
             <section className="rounded-md border border-slate-200 bg-slate-50/80 p-2 space-y-2">
               <h3 className="text-xs font-semibold text-slate-800">규칙(템플릿) — 회사 지출만</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 items-end">
+              <p className="text-[10px] text-slate-600 leading-snug">
+                <strong>설정 방법:</strong> 명세 줄에 자주 나오는 문자열을 <strong>패턴</strong>에 넣습니다(가맹점·적요 일부).{' '}
+                <strong>포함</strong>은 그 문자열이 들어가면, <strong>접두</strong>는 줄 맨 앞부터 일치할 때만 적용됩니다. 같은
+                줄에 규칙이 여러 개 맞으면 <strong>우선순위</strong>가 큰 것이 먼저 적용되고, 그다음 &quot;이 금융 계정에만
+                적용&quot; 규칙이 전체(계정 무관) 규칙보다 우선합니다. 아래 표는 규칙 → 과거 승인 지출 설명 순으로 paid
+                for·카테고리를 채웁니다.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 items-end">
                 <div className="space-y-1">
                   <Label className="text-[10px] text-slate-600">패턴</Label>
                   <Input
@@ -779,13 +881,47 @@ export default function StatementBulkExpenseModal({
                     onChange={(e) => setNewPriority(e.target.value)}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-slate-600">paid for</Label>
-                  <Input className="h-8 text-xs" value={newPaidFor} onChange={(e) => setNewPaidFor(e.target.value)} />
+                <div className="space-y-1 sm:col-span-1 min-w-0">
+                  <Label className="text-[10px] text-slate-600">paid for (기존 지출에서 선택)</Label>
+                  <select
+                    className="h-8 text-xs w-full rounded-md border border-slate-200 bg-white px-2"
+                    value={newPaidFor}
+                    onChange={(e) => setNewPaidFor(e.target.value)}
+                  >
+                    <option value="">선택…</option>
+                    {paidForSelectOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt.length > 48 ? `${opt.slice(0, 48)}…` : opt}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-slate-600">카테고리</Label>
-                  <Input className="h-8 text-xs" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} />
+                <div className="space-y-1 sm:col-span-1 min-w-0">
+                  <Label className="text-[10px] text-slate-600">카테고리 (표준 카테고리)</Label>
+                  <select
+                    className="h-8 text-xs w-full rounded-md border border-slate-200 bg-white px-2"
+                    value={matchStandardLeafIdForRow(newPaidFor, newCategory, expenseStandardCategories, locale)}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      if (!id) {
+                        setNewCategory('')
+                        return
+                      }
+                      const applied = applyStandardLeafToCompanyExpense(id, standardCatsById)
+                      if (applied) setNewCategory(applied.category)
+                    }}
+                  >
+                    <option value="">표준 선택…</option>
+                    {unifiedStandardGroups.map((g) => (
+                      <optgroup key={g.rootId} label={g.groupLabel}>
+                        {g.items.map((it) => (
+                          <option key={it.id} value={it.id}>
+                            {it.displayLabel}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] text-slate-600">paid to (선택)</Label>
@@ -861,7 +997,7 @@ export default function StatementBulkExpenseModal({
           ) : (
             <div className="overflow-x-auto border border-slate-200 rounded-md">
               {expenseKind === 'company_expenses' ? (
-                <table className="w-full text-[10px] sm:text-[11px] border-collapse min-w-[56rem]">
+                <table className="w-full text-[10px] sm:text-[11px] border-collapse min-w-[72rem]">
                   <thead>
                     <tr className="border-b text-left text-slate-500 bg-slate-50">
                       <th className="py-1.5 px-1 w-8 text-center">
@@ -915,19 +1051,47 @@ export default function StatementBulkExpenseModal({
                             onChange={(e) => updateCompanyProposal(p.statement_line_id, { paid_to: e.target.value })}
                           />
                         </td>
-                        <td className="py-1 px-1">
-                          <Input
-                            className="h-7 text-[10px] px-1"
+                        <td className="py-1 px-1 min-w-[9rem] max-w-[14rem]">
+                          <select
+                            className="h-7 text-[10px] px-1 w-full rounded border border-slate-200 bg-white"
                             value={p.paid_for}
                             onChange={(e) => updateCompanyProposal(p.statement_line_id, { paid_for: e.target.value })}
-                          />
+                          >
+                            <option value="">선택…</option>
+                            {paidForSelectOptions.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt.length > 40 ? `${opt.slice(0, 40)}…` : opt}
+                              </option>
+                            ))}
+                          </select>
                         </td>
-                        <td className="py-1 px-1">
-                          <Input
-                            className="h-7 text-[10px] px-1"
-                            value={p.category}
-                            onChange={(e) => updateCompanyProposal(p.statement_line_id, { category: e.target.value })}
-                          />
+                        <td className="py-1 px-1 min-w-[10rem] max-w-[18rem]">
+                          <select
+                            className="h-7 text-[10px] px-1 w-full rounded border border-slate-200 bg-white"
+                            value={matchStandardLeafIdForRow(p.paid_for, p.category, expenseStandardCategories, locale)}
+                            onChange={(e) => {
+                              const id = e.target.value
+                              if (!id) {
+                                updateCompanyProposal(p.statement_line_id, { category: '' })
+                                return
+                              }
+                              const applied = applyStandardLeafToCompanyExpense(id, standardCatsById)
+                              if (applied) {
+                                updateCompanyProposal(p.statement_line_id, { category: applied.category })
+                              }
+                            }}
+                          >
+                            <option value="">표준 선택…</option>
+                            {unifiedStandardGroups.map((g) => (
+                              <optgroup key={g.rootId} label={g.groupLabel}>
+                                {g.items.map((it) => (
+                                  <option key={it.id} value={it.id}>
+                                    {it.displayLabel}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
                         </td>
                         <td className="py-1 px-1">
                           <Input
