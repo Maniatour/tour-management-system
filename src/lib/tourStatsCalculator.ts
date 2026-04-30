@@ -2,6 +2,14 @@
  * 투어별 재무 통계 계산 (서버/클라이언트 공용)
  * 사전 조회된 데이터만 사용하며 DB 호출 없음.
  */
+
+/** 투어 정산 Operating Profit·고객 입금 합 등에서 제외 — 예약은 취소됐거나 환불 처리된 경우 */
+export function reservationExcludedFromTourSettlementAggregates(
+  status: string | null | undefined
+): boolean {
+  const lower = String(status ?? '').toLowerCase().trim()
+  return lower === 'cancelled' || lower === 'canceled' || lower === 'refunded'
+}
 export type ReservationPricingRow = {
   reservation_id: string
   total_price?: number | null

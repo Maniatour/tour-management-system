@@ -393,7 +393,8 @@ export async function updateReservation(
         additional_cost: toNum(pricingInfo.additionalCost),
         refund_reason: String(pricingInfo.refundReason ?? '').trim() || null,
         refund_amount: toNum(pricingInfo.refundAmount),
-        card_fee: keep(toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee), existingRow?.card_fee),
+        /** 0으로 초기화 허용 — card_fee만 keep 제외(의도적 0 저장 시 이전 금액 복원 방지) */
+        card_fee: Math.round(toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee) * 100) / 100,
         tax: keep(toNum(pricingInfo.tax), existingRow?.tax),
         prepayment_cost: keep(toNum(pricingInfo.prepaymentCost), existingRow?.prepayment_cost),
         prepayment_tip: keep(toNum(pricingInfo.prepaymentTip), existingRow?.prepayment_tip),

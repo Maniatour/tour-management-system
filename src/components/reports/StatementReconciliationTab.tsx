@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  CreditCard,
   FileText,
   Link2,
   Lock,
@@ -72,6 +73,8 @@ import {
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import StatementAdjustmentExpenseModal from '@/components/reconciliation/StatementAdjustmentExpenseModal'
 import StatementBulkExpenseModal from '@/components/reconciliation/StatementBulkExpenseModal'
+import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
+import FinancialAccountLinkedCardsModal from '@/components/reconciliation/FinancialAccountLinkedCardsModal'
 import {
   hashStatementCsvContent,
   makeDedupeKey,
@@ -344,8 +347,6 @@ const PICKER_SEARCH_MIN_CHARS = 2
 const PICKER_QUICK_DATE_WINDOW_DAYS = 21
 /** 지출 연결 모달 — 테이블 탐색 시 페이지당 행 수 (다음 페이지 여부 판별용 +1건 조회) */
 const PICKER_BROWSE_PAGE_SIZE = 40
-/** 결제수단 ↔ 금융계정 모달: 한 번에 렌더링할 결제수단 행 수 */
-const PAYMENT_LINK_RENDER_LIMIT = 150
 /** 자동 매칭 미리보기: 한 명세 줄당 표시할 후보 수 */
 const AUTO_MATCH_CANDIDATE_LIMIT = 8
 /** 자동 매칭 미리보기: 한 번에 렌더링할 행 수(체크 토글 버벅임 완화) */
@@ -931,8 +932,6 @@ export default function StatementReconciliationTab() {
   const [isTeamSuperForStatements, setIsTeamSuperForStatements] = useState(false)
 
   const [accounts, setAccounts] = useState<FinancialAccount[]>([])
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([])
-  const [paymentMethodsError, setPaymentMethodsError] = useState<string | null>(null)
   const [imports, setImports] = useState<StatementImport[]>([])
   const [lines, setLines] = useState<StatementLine[]>([])
   const [matches, setMatches] = useState<ReconciliationMatchRow[]>([])
@@ -1006,14 +1005,9 @@ export default function StatementReconciliationTab() {
   const [importCsvFeedback, setImportCsvFeedback] = useState<string | null>(null)
   const [accountActionError, setAccountActionError] = useState<string | null>(null)
   const [accountsListError, setAccountsListError] = useState<string | null>(null)
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([])
   const [paymentLinkModalOpen, setPaymentLinkModalOpen] = useState(false)
-  /** 모달: 행별 선택 금융계정 (저장 전까지 서버와 다를 수 있음) */
-  const [paymentLinkDraft, setPaymentLinkDraft] = useState<Record<string, string | null>>({})
-  /** true면 목록 새로고침 시 draft 덮어쓰기 안 함 */
-  const [paymentLinkDirty, setPaymentLinkDirty] = useState(false)
-  const [savingPaymentLinks, setSavingPaymentLinks] = useState(false)
-  /** 결제수단 ↔ 금융계정 연결 모달: 카드·방법명·ID 등 검색 */
-  const [paymentLinkMethodSearch, setPaymentLinkMethodSearch] = useState('')
+  const [linkedCardsModalOpen, setLinkedCardsModalOpen] = useState(false)
   const [helpModalOpen, setHelpModalOpen] = useState(false)
   const [securityModalOpen, setSecurityModalOpen] = useState(false)
   const [accountsModalOpen, setAccountsModalOpen] = useState(false)
@@ -1131,7 +1125,6 @@ export default function StatementReconciliationTab() {
   /** 결제 방법 관리 페이지와 동일 API — 클라이언트 직접 조회보다 스키마·한도 일치, 실패 시 메시지 표시 */
   const loadPaymentMethods = useCallback(async (force = false) => {
     if (!force && paymentMethodsLoadedRef.current) return
-    setPaymentMethodsError(null)
     try {
       const res = await fetch('/api/payment-methods?limit=5000')
       const json = (await res.json()) as {
@@ -1151,7 +1144,7 @@ export default function StatementReconciliationTab() {
       if (!res.ok || json.success === false) {
         setPaymentMethods([])
         paymentMethodsLoadedRef.current = false
-        setPaymentMethodsError(
+        setMessage(
           json.message || `결제수단 목록을 불러오지 못했습니다. (${res.status})`
         )
         return
@@ -1174,7 +1167,7 @@ export default function StatementReconciliationTab() {
       console.error(e)
       setPaymentMethods([])
       paymentMethodsLoadedRef.current = false
-      setPaymentMethodsError(e instanceof Error ? e.message : '결제수단을 불러오는 중 오류가 났습니다.')
+      setMessage(e instanceof Error ? e.message : '결제수단을 불러오는 중 오류가 났습니다.')
     }
   }, [])
 
@@ -1322,14 +1315,6 @@ export default function StatementReconciliationTab() {
     if (authUser?.email) void loadTeamDisplayNames()
   }, [authUser?.email, loadTeamDisplayNames])
 
-  /** 결제수단 목록은 연결 모달·미매칭 지출 결제방법 표시에 필요 */
-  useEffect(() => {
-    if (paymentLinkModalOpen || filterAccountId) {
-      void loadPaymentMethods()
-    }
-  }, [paymentLinkModalOpen, filterAccountId, loadPaymentMethods])
-
-  /** 금융 계정 API는 Bearer 필요 — Auth 준비 후 호출 (마운트 직전 빈 토큰으로 목록이 비는 것 방지) */
   useEffect(() => {
     if (authUser?.email) {
       loadAccounts()
@@ -1371,33 +1356,6 @@ export default function StatementReconciliationTab() {
     }
   }, [paymentPickerLineId, lines])
 
-  /** 모달이 열려 있고 편집 중이 아니면 서버 목록과 draft 동기화 */
-  useEffect(() => {
-    if (!paymentLinkModalOpen) return
-    if (paymentLinkDirty) return
-    const next: Record<string, string | null> = {}
-    for (const pm of paymentMethods) {
-      next[pm.id] = pm.financial_account_id ?? null
-    }
-    setPaymentLinkDraft(next)
-  }, [paymentLinkModalOpen, paymentMethods, paymentLinkDirty])
-
-  const paymentLinkHasChanges = useMemo(() => {
-    if (!paymentLinkModalOpen) return false
-    return paymentMethods.some((pm) => {
-      const cur =
-        paymentLinkDraft[pm.id] !== undefined ? paymentLinkDraft[pm.id] : pm.financial_account_id ?? null
-      const base = pm.financial_account_id ?? null
-      return cur !== base
-    })
-  }, [paymentLinkModalOpen, paymentMethods, paymentLinkDraft])
-
-  const deferredPaymentLinkMethodSearch = useDeferredValue(paymentLinkMethodSearch)
-
-  const accountsById = useMemo(() => {
-    return new Map(accounts.map((a) => [a.id, a]))
-  }, [accounts])
-
   const paymentMethodFinancialAccountById = useMemo(() => {
     return new Map(paymentMethods.map((pm) => [pm.id, pm.financial_account_id ?? null]))
   }, [paymentMethods])
@@ -1419,39 +1377,6 @@ export default function StatementReconciliationTab() {
       return 0
     },
     [expenseMatchesSelectedFinancialAccount]
-  )
-
-  const paymentLinkModalFilteredMethods = useMemo(() => {
-    if (!paymentLinkModalOpen) return []
-    const q = deferredPaymentLinkMethodSearch.trim().toLowerCase()
-    if (!q) return paymentMethods
-    return paymentMethods.filter((pm) => {
-      const fa = pm.financial_account_id ? accountsById.get(pm.financial_account_id) : undefined
-      const chunks: (string | null | undefined)[] = [
-        pm.id,
-        pm.method,
-        pm.display_name,
-        pm.notes,
-        pm.user_email,
-        pm.card_number_last4,
-        pm.team?.name_ko ?? undefined,
-        pm.team?.name_en ?? undefined,
-        pm.financial_account_id ?? undefined,
-        fa?.name,
-        fa?.account_type
-      ]
-      return chunks.some((c) => c && String(c).toLowerCase().includes(q))
-    })
-  }, [paymentLinkModalOpen, paymentMethods, deferredPaymentLinkMethodSearch, accountsById])
-
-  const paymentLinkModalVisibleMethods = useMemo(
-    () => paymentLinkModalFilteredMethods.slice(0, PAYMENT_LINK_RENDER_LIMIT),
-    [paymentLinkModalFilteredMethods]
-  )
-
-  const paymentLinkHiddenCount = Math.max(
-    0,
-    paymentLinkModalFilteredMethods.length - paymentLinkModalVisibleMethods.length
   )
 
   const importsForAccount = useMemo(
@@ -1731,6 +1656,17 @@ export default function StatementReconciliationTab() {
       .filter((a) => a.is_active)
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [accounts])
+
+  const reconciliationAccountIdsKey = useMemo(
+    () => accountsForReconciliation.map((a) => a.id).sort().join(','),
+    [accountsForReconciliation]
+  )
+
+  /** 활성 금융 계정이 있으면 결제수단 목록 로드(명세 대조·미매칭 등) */
+  useEffect(() => {
+    if (!reconciliationAccountIdsKey) return
+    void loadPaymentMethods()
+  }, [reconciliationAccountIdsKey, loadPaymentMethods])
 
   /** CSV 가져오기 모달: 선택 계정의 반전 규칙 + 파싱 미리보기(상위 N행) */
   const csvImportParsePreview = useMemo(() => {
@@ -2686,75 +2622,6 @@ export default function StatementReconciliationTab() {
       }
     } finally {
       setFlippingStatementDirectionsFor(null)
-    }
-  }
-
-  const saveAllPaymentMethodLinks = async () => {
-    const token = getStoredAccessToken()
-    if (!token) {
-      const msg = '로그인이 필요합니다. 다시 로그인한 뒤 시도하세요.'
-      setMessage(msg)
-      setPaymentMethodsError(msg)
-      return
-    }
-    const changes: { id: string; faId: string | null }[] = []
-    for (const pm of paymentMethods) {
-      const cur =
-        paymentLinkDraft[pm.id] !== undefined ? paymentLinkDraft[pm.id] : pm.financial_account_id ?? null
-      const base = pm.financial_account_id ?? null
-      if (cur !== base) {
-        changes.push({ id: pm.id, faId: cur })
-      }
-    }
-    if (changes.length === 0) {
-      setMessage('변경된 내용이 없습니다.')
-      return
-    }
-    setSavingPaymentLinks(true)
-    setMessage(null)
-    setPaymentMethodsError(null)
-    try {
-      const results = await Promise.allSettled(
-        changes.map(({ id, faId }) =>
-          fetch(`/api/payment-methods/${encodeURIComponent(id)}/financial-account`, {
-            method: 'PATCH',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ financial_account_id: faId }),
-            credentials: 'same-origin',
-          }).then(async (res) => {
-            const json = (await res.json()) as { error?: string; message?: string }
-            if (!res.ok) {
-              throw new Error(json.error || json.message || `HTTP ${res.status}`)
-            }
-            return id
-          })
-        )
-      )
-      const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[]
-      if (failed.length > 0) {
-        const errText =
-          failed.length === 1
-            ? String(failed[0].reason instanceof Error ? failed[0].reason.message : failed[0].reason)
-            : `${failed.length}건 저장에 실패했습니다. ${failed
-                .map((f) => (f.reason instanceof Error ? f.reason.message : String(f.reason)))
-                .slice(0, 3)
-                .join(' / ')}`
-        setMessage(errText)
-        setPaymentMethodsError(errText)
-        return
-      }
-      setPaymentLinkDirty(false)
-      await loadPaymentMethods(true)
-      setMessage(`${changes.length}건의 연결을 저장했습니다.`)
-    } catch (e) {
-      const errText = e instanceof Error ? e.message : '저장 중 오류가 났습니다.'
-      setMessage(errText)
-      setPaymentMethodsError(errText)
-    } finally {
-      setSavingPaymentLinks(false)
     }
   }
 
@@ -4189,6 +4056,23 @@ export default function StatementReconciliationTab() {
         <p className="text-xs text-slate-600 w-full">
           계정별로 업로드된 명세를 고릅니다. 탭을 바꾸면 해당 레지스터로 가져온 명세·거래가 불러와집니다.
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            disabled={accountsForReconciliation.length === 0}
+            onClick={() => setLinkedCardsModalOpen(true)}
+            aria-label="계정별 연결 카드 보기 및 연결 편집"
+          >
+            <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
+            계정별 연결 카드
+          </Button>
+          <span className="text-[11px] text-slate-500">
+            활성 금융 계정마다 어떤 카드가 연결됐는지 모달에서 보고, 연결을 바로 바꿀 수 있습니다.
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2">
@@ -4245,9 +4129,7 @@ export default function StatementReconciliationTab() {
             size="sm"
             className="shrink-0 gap-1.5"
             onClick={() => {
-              setPaymentLinkDirty(false)
               setPaymentLinkModalOpen(true)
-              void loadPaymentMethods()
             }}
             aria-label="결제수단과 금융 계정 연결 열기"
           >
@@ -5123,239 +5005,28 @@ export default function StatementReconciliationTab() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <PaymentMethodFinancialAccountLinkModal
         open={paymentLinkModalOpen}
-        onOpenChange={(open) => {
-          setPaymentLinkModalOpen(open)
-          if (!open) {
-            setPaymentLinkDirty(false)
-            setPaymentLinkMethodSearch('')
-          }
+        onOpenChange={setPaymentLinkModalOpen}
+        locale={locale}
+        onSaved={() => {
+          void loadPaymentMethods(true)
+          setMessage('결제수단–금융 계정 연결을 저장했습니다.')
         }}
-      >
-        <DialogContent className="max-w-5xl w-[calc(100vw-1.25rem)] p-0 gap-0 flex flex-col max-h-[min(92vh,920px)] sm:max-h-[90vh]">
-          <DialogHeader className="px-4 pt-5 pb-3 pr-12 border-b border-gray-100 shrink-0 text-left space-y-0">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <DialogTitle className="text-base sm:text-lg pr-2">
-                <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
-                  <AccountingTerm termKey="결제수단">결제수단</AccountingTerm>
-                  <span className="font-normal text-gray-600">↔</span>
-                  <AccountingTerm termKey="금융계정">금융 계정</AccountingTerm>
-                  <span className="font-normal text-gray-600">연결</span>
-                </span>
-              </DialogTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => {
-                  setPaymentLinkDirty(false)
-                  void loadPaymentMethods(true)
-                }}
-                title="목록 새로고침 (서버 기준으로 다시 불러와 선택 초기화)"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-          </DialogHeader>
-          <div className="px-4 py-3 overflow-y-auto flex-1 min-h-0">
-            <p className="text-xs text-gray-500 mb-3">
-              직원 카드·계좌는{' '}
-              <Link
-                href={`/${locale}/admin/payment-methods`}
-                className="text-blue-600 underline hover:text-blue-800"
-                onClick={() => setPaymentLinkModalOpen(false)}
-              >
-                결제 방법 관리
-              </Link>
-              에서 등록합니다. 가이드 이름은 팀 테이블 기준, 메모는 결제수단 메모입니다. 각 행에서 금융 계정을 고른 뒤{' '}
-              <strong>아래 저장</strong>을 누르면 한꺼번에 반영됩니다.
-            </p>
-            {paymentMethodsError && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 mb-3">
-                {paymentMethodsError}
-              </div>
-            )}
-            <div className="mb-3">
-              <label className="text-xs font-medium text-gray-600 block mb-1">
-                카드·방법 검색 (이름, ID, 가이드, 메모, 끝자리, 연결 계정명)
-              </label>
-              <div className="relative max-w-md">
-                <Search
-                  className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none"
-                  aria-hidden
-                />
-                <input
-                  type="search"
-                  value={paymentLinkMethodSearch}
-                  onChange={(e) => setPaymentLinkMethodSearch(e.target.value)}
-                  placeholder="검색어 입력…"
-                  autoComplete="off"
-                  className="w-full border border-gray-300 rounded-md py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                  aria-label="결제수단 검색"
-                />
-              </div>
-              {paymentLinkMethodSearch.trim() ? (
-                <p className="text-xs text-gray-500 mt-1.5">
-                  표시 {paymentLinkModalFilteredMethods.length}건 / 전체 {paymentMethods.length}건
-                </p>
-              ) : null}
-            </div>
-            <div className="overflow-x-auto -mx-1 px-1">
-              <table className="w-full text-sm min-w-[720px]">
-                <thead>
-                  <tr className="border-b text-left text-gray-500">
-                    <th className="py-2 pr-3">카드/방법</th>
-                    <th className="py-2 pr-3 min-w-[7rem]">가이드(이름)</th>
-                    <th className="py-2 pr-3 min-w-[10rem]">메모</th>
-                    <th className="py-2 pr-2 whitespace-nowrap">끝 4자리</th>
-                    <th className="py-2 min-w-[14rem]">
-                      <AccountingTerm termKey="금융계정">금융 계정</AccountingTerm>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paymentMethods.length === 0 && !paymentMethodsError && (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-gray-600 text-sm">
-                        등록된 결제수단이 없습니다.{' '}
-                        <Link
-                          href={`/${locale}/admin/payment-methods`}
-                          className="text-blue-600 font-medium underline hover:text-blue-800"
-                          onClick={() => setPaymentLinkModalOpen(false)}
-                        >
-                          결제 방법 관리
-                        </Link>
-                        에서 추가하세요.
-                      </td>
-                    </tr>
-                  )}
-                  {paymentMethods.length > 0 &&
-                    paymentLinkModalFilteredMethods.length === 0 &&
-                    !paymentMethodsError && (
-                      <tr>
-                        <td colSpan={5} className="py-6 text-center text-gray-600 text-sm">
-                          검색 조건에 맞는 결제수단이 없습니다.
-                        </td>
-                      </tr>
-                    )}
-                  {paymentLinkModalVisibleMethods.map((pm) => {
-                    const linked =
-                      paymentLinkDraft[pm.id] !== undefined
-                        ? paymentLinkDraft[pm.id]
-                        : pm.financial_account_id ?? null
-                    const label =
-                      (pm.display_name && pm.display_name.trim()) ||
-                      (pm.method && pm.method.trim()) ||
-                      pm.id
-                    const guidePrimary = pm.team?.name_ko?.trim() || pm.team?.name_en?.trim() || ''
-                    const guideSub =
-                      pm.team?.name_ko && pm.team?.name_en && pm.team.name_ko !== pm.team.name_en
-                        ? pm.team.name_en
-                        : ''
-                    return (
-                      <tr key={pm.id} className="border-b border-gray-100 align-top">
-                        <td className="py-2 pr-3">
-                          <div className="font-medium text-gray-900">{label}</div>
-                          {pm.method && pm.method !== label ? (
-                            <div className="text-xs text-gray-500 mt-0.5 line-clamp-2" title={pm.method}>
-                              {pm.method}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="py-2 pr-3">
-                          {guidePrimary ? (
-                            <>
-                              <div className="font-medium text-gray-900">{guidePrimary}</div>
-                              {guideSub ? (
-                                <div className="text-xs text-gray-600">{guideSub}</div>
-                              ) : null}
-                              {pm.user_email ? (
-                                <div className="text-xs text-gray-500 mt-0.5">{pm.user_email}</div>
-                              ) : null}
-                            </>
-                          ) : pm.user_email ? (
-                            <div className="text-xs text-gray-600">{pm.user_email}</div>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-3 max-w-[18rem]">
-                          {pm.notes?.trim() ? (
-                            <div
-                              className="text-xs text-gray-800 whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
-                              title={pm.notes}
-                            >
-                              {pm.notes}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-2 tabular-nums">{pm.card_number_last4 || '—'}</td>
-                        <td className="py-2">
-                          {accounts.length === 0 ? (
-                            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 max-w-[20rem]">
-                              상단 <strong>금융 계정</strong>에서 먼저 추가한 뒤 연결할 수 있습니다.
-                            </p>
-                          ) : (
-                            <div className="max-w-[22rem]">
-                              <select
-                                disabled={savingPaymentLinks}
-                                value={linked ?? ''}
-                                onChange={(e) => {
-                                  const next = e.target.value || null
-                                  if (next === linked) return
-                                  setPaymentLinkDraft((prev) => ({ ...prev, [pm.id]: next }))
-                                  setPaymentLinkDirty(true)
-                                }}
-                                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 disabled:opacity-50"
-                              >
-                                <option value="">없음</option>
-                                {accounts.map((a) => (
-                                  <option key={a.id} value={a.id}>
-                                    {a.name} ({a.account_type})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {paymentLinkHiddenCount > 0 && (
-                    <tr>
-                      <td colSpan={5} className="py-3 text-center text-xs text-gray-500">
-                        렌더링 성능을 위해 상위 {PAYMENT_LINK_RENDER_LIMIT}건만 표시 중입니다. 나머지{' '}
-                        {paymentLinkHiddenCount}건은 검색어를 더 좁혀서 표시하세요.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div className="px-4 py-3 border-t border-gray-100 shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50/90">
-            <p className="text-xs text-gray-600">
-              {paymentLinkHasChanges ? (
-                <span className="text-amber-800 font-medium">저장하지 않은 변경이 있습니다.</span>
-              ) : (
-                '변경 사항이 없거나 서버와 동일합니다.'
-              )}
-            </p>
-            <Button
-              type="button"
-              className="shrink-0 w-full sm:w-auto"
-              disabled={!paymentLinkHasChanges || savingPaymentLinks}
-              onClick={() => void saveAllPaymentMethodLinks()}
-            >
-              {savingPaymentLinks ? '저장 중…' : '변경 사항 저장'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      />
+
+      <FinancialAccountLinkedCardsModal
+        open={linkedCardsModalOpen}
+        onOpenChange={setLinkedCardsModalOpen}
+        locale={locale}
+        reconciliationAccounts={accountsForReconciliation}
+        initialAccountId={filterAccountId}
+        onOpenFlatLinkModal={() => setPaymentLinkModalOpen(true)}
+        onSaved={() => {
+          void loadPaymentMethods(true)
+          setMessage('계정별 연결 카드를 저장했습니다.')
+        }}
+      />
 
       {reconciliationViewTab === 'statements' ? (
         <>

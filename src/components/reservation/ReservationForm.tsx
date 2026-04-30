@@ -4875,7 +4875,8 @@ export default function ReservationForm({
         additional_cost: Number(fd.additionalCost) || 0,
         refund_reason: String(fd.refundReason ?? '').trim() || null,
         refund_amount: Number(fd.refundAmount) || 0,
-        card_fee: keep(Number(fd.cardFee) || 0, (existing as any)?.card_fee),
+        /** 카드 수수료는 0 초기화를 허용 — `keep`으로 이전 DB값을 유지하면 사용자가 0으로 저장해도 반영되지 않음 */
+        card_fee: Math.round(toNum(fd.cardFee) * 100) / 100,
         tax: keep(Number(fd.tax) || 0, (existing as any)?.tax),
         prepayment_cost: keep(Number(fd.prepaymentCost) || 0, (existing as any)?.prepayment_cost),
         prepayment_tip: keep(Number(fd.prepaymentTip) || 0, (existing as any)?.prepayment_tip),
@@ -5224,7 +5225,7 @@ export default function ReservationForm({
           selectedOptionalOptions: fd.selectedOptionalOptions,
           optionTotal: toNum(fd.optionTotal),
           totalPrice: toNum(fd.totalPrice),
-          // DB deposit_amount = 고객 실제 지불액(보증금)만. 잔금 수령은 payment_records·balanceReceivedTotal, 잔액은 balance_amount
+          // DB deposit_amount = 입금 보증 버킷 합(파트너 수령 등, Refunded·Returned 별도). 잔금 수령은 payment_records·balanceReceivedTotal, 잔액은 balance_amount
           depositAmount: toNum(fd.depositAmount),
           balanceAmount: toNum(fd.onSiteBalanceAmount ?? fd.balanceAmount ?? 0),
           isPrivateTour: fd.isPrivateTour,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
 
 function normalizedId(params: Promise<{ id: string }> | { id: string }): Promise<string> {
   return Promise.resolve(params).then((resolved) => String(resolved.id ?? '').trim())
@@ -256,6 +257,186 @@ export async function PUT(
       { success: false, message: 'Internal server error', error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * Bearer + Super — 명세 대조 연결 모달 등에서 카드명·가이드(팀)·메모·금융계정 한 번에 갱신
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> | { id: string } }
+) {
+  try {
+    const auth = await resolveFinancialApiAuth(request)
+    if (!auth.ok) return auth.response
+
+    const gate = await assertSuper(auth.supabase, auth.userEmail)
+    if (!gate.ok) {
+      return NextResponse.json({ success: false, error: gate.message }, { status: gate.status })
+    }
+
+    const id = await normalizedId(params)
+    if (!id) {
+      return NextResponse.json({ success: false, error: '결제수단 ID가 필요합니다.' }, { status: 400 })
+    }
+
+    const body = (await request.json()) as {
+      method?: unknown
+      user_email?: unknown
+      notes?: unknown
+      financial_account_id?: unknown
+    }
+
+    const hasAny =
+      'method' in body ||
+      'user_email' in body ||
+      'notes' in body ||
+      'financial_account_id' in body
+    if (!hasAny) {
+      return NextResponse.json({ success: false, error: '수정할 필드가 없습니다.' }, { status: 400 })
+    }
+
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    }
+
+    if ('method' in body) {
+      const method = typeof body.method === 'string' ? body.method.trim() : ''
+      if (!method) {
+        return NextResponse.json({ success: false, error: '카드·방법(이름)을 입력하세요.' }, { status: 400 })
+      }
+      updateData.method = method
+      updateData.display_name = id.startsWith('PAYM') ? `${id} - ${method}` : method
+    }
+
+    if ('user_email' in body) {
+      const raw = body.user_email
+      const emailNorm =
+        raw === null || raw === undefined || raw === ''
+          ? null
+          : String(raw).trim().toLowerCase()
+      if (emailNorm) {
+        const rawStr = typeof raw === 'string' ? raw.trim() : ''
+        let { data: teamRow } = await auth.supabase
+          .from('team')
+          .select('email')
+          .eq('email', emailNorm)
+          .maybeSingle()
+        if (!teamRow && rawStr) {
+          teamRow = (
+            await auth.supabase.from('team').select('email').eq('email', rawStr).maybeSingle()
+          ).data
+        }
+        if (!teamRow) {
+          const { data: ilikeRows } = await auth.supabase
+            .from('team')
+            .select('email')
+            .ilike('email', emailNorm)
+            .limit(2)
+          if (ilikeRows?.length === 1) teamRow = { email: ilikeRows[0].email }
+        }
+        if (!teamRow) {
+          return NextResponse.json(
+            { success: false, error: '가이드(팀)에 등록된 이메일이 아닙니다.' },
+            { status: 400 }
+          )
+        }
+        updateData.user_email = teamRow.email
+      } else {
+        updateData.user_email = null
+      }
+    }
+
+    if ('notes' in body) {
+      const raw = body.notes
+      updateData.notes =
+        raw === null || raw === undefined || raw === ''
+          ? null
+          : String(raw)
+    }
+
+    if ('financial_account_id' in body) {
+      const raw = body.financial_account_id
+      const faId =
+        raw === null || raw === undefined || raw === '' ? null : String(raw).trim()
+
+      if (faId) {
+        const { data: fa, error: faErr } = await auth.supabase
+          .from('financial_accounts')
+          .select('id')
+          .eq('id', faId)
+          .maybeSingle()
+
+        if (faErr) {
+          console.error('financial_accounts lookup:', faErr)
+          return NextResponse.json(
+            { success: false, error: faErr.message || '금융 계정 확인 실패' },
+            { status: 500 }
+          )
+        }
+        if (!fa) {
+          return NextResponse.json({ success: false, error: '유효하지 않은 금융 계정입니다.' }, { status: 400 })
+        }
+      }
+      updateData.financial_account_id = faId
+    }
+
+    const { data, error } = await auth.supabase
+      .from('payment_methods')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .maybeSingle()
+
+    if (error) {
+      console.error('payment_methods PATCH:', error)
+      return NextResponse.json(
+        { success: false, error: error.message || '저장에 실패했습니다.' },
+        { status: 500 }
+      )
+    }
+    if (!data) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: '결제수단을 찾았지만 수정할 수 없습니다. 권한·RLS를 확인하세요.',
+        },
+        { status: 404 }
+      )
+    }
+
+    let team = null as {
+      email: string
+      name_ko: string | null | undefined
+      name_en: string | null | undefined
+    } | null
+    if (data.user_email) {
+      const { data: teamData } = await auth.supabase
+        .from('team')
+        .select('email, name_ko, name_en')
+        .eq('email', data.user_email)
+        .maybeSingle()
+
+      if (teamData) {
+        team = {
+          email: teamData.email,
+          name_ko: teamData.name_ko,
+          name_en: teamData.name_en,
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...data,
+        team,
+      },
+    })
+  } catch (e) {
+    console.error(e)
+    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 })
   }
 }
 

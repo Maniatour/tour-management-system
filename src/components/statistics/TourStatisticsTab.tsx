@@ -31,6 +31,7 @@ import {
   ticketEaAsNumber,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
+import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import TourExpenseManager from '../TourExpenseManager'
 import {
   Dialog,
@@ -339,10 +340,8 @@ async function getTourFinancialStats(tourId: string) {
     console.log(`투어 ${tourId}의 전체 지출 개수:`, allExpenses?.length || 0)
 
     // 예약 데이터: tour.reservation_ids 기준 (인원 합은 취소·환불 제외 — 투어 통계 API와 동일)
-    const excludeReservationPeople = (s: string | null | undefined) => {
-      const lower = (s || '').toLowerCase().trim()
-      return lower === 'cancelled' || lower === 'refunded'
-    }
+    const excludeReservationPeople = (s: string | null | undefined) =>
+      reservationExcludedFromTourSettlementAggregates(s)
     let reservations: any[] = []
     if (tourRow?.reservation_ids && Array.isArray(tourRow.reservation_ids) && tourRow.reservation_ids.length > 0) {
       const { data: reservationsData, error: reservationsError } = await supabase
@@ -590,13 +589,18 @@ async function getTourFinancialStats(tourId: string) {
       ? reservationPricing.filter(p => reservationIdsArray.includes(p.reservation_id))
       : reservationPricing
 
-    // 총 Operating Profit 계산 (각 예약의 Operating Profit 합산) - reservation_ids에 있는 예약만
-    const totalOperatingProfit = filteredReservationPricing.reduce((sum, pricing) => {
+    const reservationStatusById = new Map((reservations || []).map((r: { id: string; status?: string }) => [r.id, r.status]))
+    const pricingForSettlementTotals = filteredReservationPricing.filter(
+      (p) => !reservationExcludedFromTourSettlementAggregates(reservationStatusById.get(p.reservation_id))
+    )
+
+    // 총 Operating Profit — 취소·환불 완료 예약 제외 (배정은 남아 있어도 정산 매출 아님)
+    const totalOperatingProfit = pricingForSettlementTotals.reduce((sum, pricing) => {
       return sum + calculateOperatingProfit(pricing, pricing.reservation_id)
     }, 0)
     
-    // 추가비용 계산 ($100 단위로 내림한 후 합산) - reservation_ids에 있는 예약만
-    const totalAdditionalCostRounded = filteredReservationPricing.reduce((sum, pricing) => {
+    // 추가비용 ($100 단위 내림 합산) — 동일 기준으로만 집계
+    const totalAdditionalCostRounded = pricingForSettlementTotals.reduce((sum, pricing) => {
       const additionalCost = pricing.additional_cost || 0
       const rounded = Math.floor(additionalCost / 100) * 100
       return sum + rounded
@@ -660,7 +664,7 @@ async function getTourFinancialStats(tourId: string) {
     }, 0)
     const totalNotIncludedPrice = totalNotIncludedPriceFromOptions > 0 ? totalNotIncludedPriceFromOptions : totalNotIncludedPriceFromPricing
     
-    const totalPayments = filteredReservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
+    const totalPayments = pricingForSettlementTotals?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
     const totalTicketCosts =

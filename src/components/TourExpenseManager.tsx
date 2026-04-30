@@ -15,6 +15,7 @@ import {
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 
 interface TourExpense {
   id: string
@@ -88,6 +89,8 @@ interface Reservation {
   adults: number
   children: number
   infants: number
+  /** 예약 상태 — 취소·환불 시 정산 Operating Profit 합계에서 제외 */
+  status?: string | null
 }
 
 interface TourExpenseManagerProps {
@@ -268,7 +271,7 @@ export default function TourExpenseManager({
         console.log('📋 Loading assigned reservations:', reservationIds)
         const { data, error } = await supabase
           .from('reservations')
-          .select('id, customer_id, adults, child, infant')
+          .select('id, customer_id, adults, child, infant, status')
           .in('id', reservationIds)
 
         if (error) {
@@ -317,7 +320,8 @@ export default function TourExpenseManager({
           customer_name: customer?.name || 'Unknown',
           adults: reservation.adults || 0,
           children: reservation.child || 0,
-          infants: reservation.infant || 0
+          infants: reservation.infant || 0,
+          status: reservation.status ?? undefined
         }
       })
       
@@ -1410,10 +1414,15 @@ export default function TourExpenseManager({
     const filteredPricing = reservationIds && reservationIds.length > 0
       ? reservationPricing.filter(p => reservationIds.includes(p.reservation_id))
       : reservationPricing
-    const totalPayments = filteredPricing.reduce((sum, pricing) => sum + pricing.total_price, 0)
-    
-    // 총 Operating Profit 계산 (각 예약의 Operating Profit 합산)
-    const totalOperatingProfit = filteredPricing.reduce((sum, pricing) => {
+
+    const pricingForSettlementTotals = filteredPricing.filter((p) => {
+      const r = reservations.find((x) => x.id === p.reservation_id)
+      return !reservationExcludedFromTourSettlementAggregates(r?.status)
+    })
+
+    const totalPayments = pricingForSettlementTotals.reduce((sum, pricing) => sum + pricing.total_price, 0)
+
+    const totalOperatingProfit = pricingForSettlementTotals.reduce((sum, pricing) => {
       return sum + calculateOperatingProfit(pricing, pricing.reservation_id)
     }, 0)
     
@@ -1592,7 +1601,12 @@ export default function TourExpenseManager({
                   .map((reservation) => {
                     const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
                     const totalPeople = reservation.adults + reservation.children + reservation.infants
-                    const operatingProfit = pricing ? calculateOperatingProfit(pricing, reservation.id) : 0
+                    const operatingProfit =
+                      reservationExcludedFromTourSettlementAggregates(reservation.status)
+                        ? 0
+                        : pricing
+                          ? calculateOperatingProfit(pricing, reservation.id)
+                          : 0
                     console.log('💰 Operating Profit display:', {
                       reservationId: reservation.id,
                       customerName: reservation.customer_name,

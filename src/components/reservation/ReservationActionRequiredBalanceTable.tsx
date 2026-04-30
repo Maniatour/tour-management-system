@@ -83,8 +83,8 @@ function buildReservationPricingPatch(
   const gross = computeCustomerPaymentTotalLineFormula(pForGross, party)
   const st = String(r.status || '').toLowerCase().trim()
   const isCancelled = st === 'cancelled' || st === 'canceled'
-  const depositNet = summarizePaymentRecordsForBalance(records).depositTotalNet
-  /** 총액(산식) − 보증금(입금 집계 또는 DB 보증금). 잔금 수령 합은 차감하지 않음 */
+  const { depositBucketGross } = summarizePaymentRecordsForBalance(records)
+  /** 총액(산식) − 보증금(입금 집계 순효과 또는 DB 보증금). 잔금 수령 합은 차감하지 않음 */
   const remainingPay = balanceOutstandingTotalMinusDeposit(
     gross,
     records,
@@ -93,7 +93,7 @@ function buildReservationPricingPatch(
   )
   const patch: Record<string, number> = {}
   if (mode === 'total' || mode === 'all') patch.total_price = gross
-  if (mode === 'deposit' || mode === 'all') patch.deposit_amount = depositNet
+  if (mode === 'deposit' || mode === 'all') patch.deposit_amount = depositBucketGross
   if (mode === 'balance' || mode === 'all') patch.balance_amount = remainingPay
   if (Object.keys(patch).length === 0) return null
   return patch
@@ -434,7 +434,7 @@ function BalanceRow(props: BalanceRowProps) {
     isCancelledRsv
   )
   const depositPrMismatch =
-    fromPayments.hasRecords && Math.abs(depositDb - fromPayments.depositTotalNet) > 0.01
+    fromPayments.hasRecords && Math.abs(depositDb - fromPayments.depositBucketGross) > 0.01
   const balancePrMismatch =
     p != null && Math.abs(balanceDb - balanceComputedOutstanding) > 0.01
   const productSumDisplay = productPriceTotalForDisplay(p, reservation)
@@ -710,7 +710,7 @@ function BalanceRow(props: BalanceRowProps) {
         )}
       >
         <div className="flex items-center justify-end gap-0.5">
-          <span>{fromPayments.hasRecords ? fmtUsd(fromPayments.depositTotalNet) : '—'}</span>
+          <span>{fromPayments.hasRecords ? fmtUsd(fromPayments.depositBucketGross) : '—'}</span>
           <RowDbApplyButton
             visible={Boolean(onApplyRowPatch && depositPrMismatch && fromPayments.hasRecords)}
             busy={applyRowBusyKey === `${reservation.id}:deposit`}

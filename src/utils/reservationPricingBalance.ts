@@ -174,7 +174,9 @@ export function computeEffectiveCustomerPaidTowardDue(
 
 /**
  * Balance 테이블과 동일한 라인 총액(computeCustomerPaymentTotalLineFormula)을 기준으로
- * payment_records 집계와 비교할 보증금 순액·잔액(미수)을 계산한다.
+ * payment_records 집계와 비교할 보증금(버킷 총액·순액)·잔액(미수)을 계산한다.
+ * - `depositBucketGross`: reservation_pricing.deposit_amount(입금 보증 버킷 합)과 비교용
+ * - `depositTotalNet`: 잔액·순유입 추정에 사용
  * - 입금 기록이 없으면 hasRecords: false (UI에서 — 표시용)
  */
 export function computeDepositBalanceFromPaymentRecordsForLineGross(
@@ -183,16 +185,30 @@ export function computeDepositBalanceFromPaymentRecordsForLineGross(
 ): {
   hasRecords: boolean
   depositTotalNet: number
+  depositBucketGross: number
   balanceReceivedTotal: number
   remainingAfterPayments: number
 } {
   if (!records || records.length === 0) {
-    return { hasRecords: false, depositTotalNet: 0, balanceReceivedTotal: 0, remainingAfterPayments: 0 }
+    return {
+      hasRecords: false,
+      depositTotalNet: 0,
+      depositBucketGross: 0,
+      balanceReceivedTotal: 0,
+      remainingAfterPayments: 0,
+    }
   }
-  const { depositTotalNet, balanceReceivedTotal, returnedTotal } = summarizePaymentRecordsForBalance(records)
+  const { depositTotalNet, depositBucketGross, balanceReceivedTotal, returnedTotal } =
+    summarizePaymentRecordsForBalance(records)
   const customerNet = Math.max(0, roundUsd2(lineGross - returnedTotal))
   const remainingAfterPayments = Math.max(0, roundUsd2(customerNet - depositTotalNet - balanceReceivedTotal))
-  return { hasRecords: true, depositTotalNet, balanceReceivedTotal, remainingAfterPayments }
+  return {
+    hasRecords: true,
+    depositTotalNet,
+    depositBucketGross,
+    balanceReceivedTotal,
+    remainingAfterPayments,
+  }
 }
 
 /**

@@ -23,11 +23,13 @@ import {
   ArrowUp,
   ArrowDown,
   GitMerge,
-  ChevronDown
+  ChevronDown,
+  Link2,
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import PaymentMethodUsageModal from '@/components/PaymentMethodUsageModal'
+import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
 import {
   Dialog,
   DialogContent,
@@ -237,6 +239,8 @@ export default function PaymentMethodManager({
   const [mergeSubmitting, setMergeSubmitting] = useState(false)
   /** 방법명 클릭 시 — 해당 ID를 참조하는 지출·부킹·입금 행 조회·수정 */
   const [usageModalMethod, setUsageModalMethod] = useState<PaymentMethod | null>(null)
+  /** 명세 대조와 동일: 결제수단 ↔ 금융 계정 일괄 연결 모달 */
+  const [paymentFinancialLinkModalOpen, setPaymentFinancialLinkModalOpen] = useState(false)
   const [bulkEditRows, setBulkEditRows] = useState<Array<{
     id: string
     method: string
@@ -1637,6 +1641,15 @@ export default function PaymentMethodManager({
             >
               <Edit size={14} className="sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">일괄 수정</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentFinancialLinkModalOpen(true)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm border border-slate-400 bg-white text-slate-800 rounded-lg hover:bg-slate-50 transition-colors"
+              title="명세 대조용 — 결제수단과 금융 계정 연결"
+            >
+              <Link2 size={14} className="sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">금융 계정 연결</span>
             </button>
             {listViewMode === 'table' && (
               <button
@@ -3532,6 +3545,17 @@ export default function PaymentMethodManager({
         methodId={usageModalMethod?.id ?? ''}
         methodLabel={usageModalMethod?.method ?? ''}
         paymentMethodOptions={paymentMethodSelectOptions}
+        onSaved={() => {
+          void loadMethods()
+          onMethodUpdated?.()
+        }}
+      />
+
+      <PaymentMethodFinancialAccountLinkModal
+        open={paymentFinancialLinkModalOpen}
+        onOpenChange={setPaymentFinancialLinkModalOpen}
+        locale={locale}
+        fromPaymentMethodsPage
         onSaved={() => {
           void loadMethods()
           onMethodUpdated?.()

@@ -4,6 +4,7 @@ import { createServerSupabase } from '@/lib/supabase-server'
 import type { Database } from '@/lib/database.types'
 import {
   calculateOperatingProfit,
+  reservationExcludedFromTourSettlementAggregates,
   type ReservationPricingRow
 } from '@/lib/tourStatsCalculator'
 import {
@@ -20,8 +21,7 @@ const NON_RESIDENT_OPTION_ID = '6941b5d0'
 const VALID_TOUR_STATUSES = ['Recruiting', 'Confirmed', 'Completed']
 
 function excludeStatus(s: string) {
-  const lower = (s || '').toLowerCase().trim()
-  return lower === 'cancelled' || lower === 'refunded'
+  return reservationExcludedFromTourSettlementAggregates(s)
 }
 
 /** 예약 인원 집계에 포함 (취소·환불 제외) */
@@ -338,21 +338,21 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    const pricingByReservation = reservationPricing.reduce((acc, p) => {
-      acc[p.reservation_id] = p
-      return acc
-    }, {} as Record<string, ReservationPricingRow>)
+    const reservationStatusById = new Map(reservations.map((r) => [r.id, r.status]))
 
     for (const tour of validTours) {
       const tid = tour.id
       const reservationIdsArray = Array.isArray(tour.reservation_ids) ? tour.reservation_ids : []
       const tourReservations = reservations.filter(r => reservationIdsArray.includes(r.id))
       const filteredPricing = reservationPricing.filter(p => reservationIdsArray.includes(p.reservation_id))
+      const pricingForOperatingTotals = filteredPricing.filter(
+        (p) => !reservationExcludedFromTourSettlementAggregates(reservationStatusById.get(p.reservation_id))
+      )
 
-      const totalOperatingProfit = filteredPricing.reduce((sum, pricing) => {
+      const totalOperatingProfit = pricingForOperatingTotals.reduce((sum, pricing) => {
         return sum + calculateOperatingProfit(pricing, pricing.reservation_id, reservationExpensesMap, reservationChannels)
       }, 0)
-      const totalAdditionalCostRounded = filteredPricing.reduce((sum, pricing) => {
+      const totalAdditionalCostRounded = pricingForOperatingTotals.reduce((sum, pricing) => {
         const additionalCost = pricing.additional_cost || 0
         return sum + Math.floor(additionalCost / 100) * 100
       }, 0)

@@ -1,6 +1,6 @@
 /**
  * reservation_options 합계 → reservation_pricing.option_total
- * payment_records 집계 → reservation_pricing.deposit_amount, balance_amount
+ * payment_records 집계 → reservation_pricing.deposit_amount(입금 보증 버킷 합), balance_amount
  * (Balance 테이블·reservationPricingBalance.ts 와 동일한 라인 총액·입금 집계 규칙)
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -124,15 +124,16 @@ export async function syncReservationPricingAggregates(
     let balance_amount: number
 
     if (isCancelled) {
-      const { depositTotalNet } = summarizePaymentRecordsForBalance(records)
-      deposit_amount = depositTotalNet
+      const { depositBucketGross } = summarizePaymentRecordsForBalance(records)
+      deposit_amount = depositBucketGross
       balance_amount = 0
     } else {
       const lineGross = computeCustomerPaymentTotalLineFormula(pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0], party)
-      const { depositTotalNet, balanceReceivedTotal, returnedTotal } = summarizePaymentRecordsForBalance(records)
+      const { depositTotalNet, depositBucketGross, balanceReceivedTotal, returnedTotal } =
+        summarizePaymentRecordsForBalance(records)
       const customerNet = Math.max(0, roundUsd2(lineGross - returnedTotal))
       balance_amount = roundUsd2(customerNet - depositTotalNet - balanceReceivedTotal)
-      deposit_amount = depositTotalNet
+      deposit_amount = depositBucketGross
     }
 
     const { error: upErr } = await supabase
