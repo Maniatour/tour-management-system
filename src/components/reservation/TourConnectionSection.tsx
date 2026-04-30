@@ -1,10 +1,12 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
-import { Plus, Calendar, Users, MapPin, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { Plus, Calendar, Users, MapPin, Clock, CheckCircle, AlertCircle, X } from 'lucide-react'
 import type { Reservation } from '@/types/reservation'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 
@@ -92,6 +94,9 @@ export default function TourConnectionSection({
   onTourCreated,
   variant = 'full',
 }: TourConnectionSectionProps) {
+  const locale = useLocale()
+  const t = useTranslations('reservations')
+  const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
   const [tours, setTours] = useState<Tour[]>([])
   const [loading, setLoading] = useState(true)
   const [creatingTour, setCreatingTour] = useState(false)
@@ -517,9 +522,14 @@ export default function TourConnectionSection({
             return (
                 <div
                 key={tour.id}
-                onClick={() => {
-                  const locale = window.location.pathname.split('/')[1]
-                  window.location.href = `/${locale}/admin/tours/${tour.id}`
+                role="button"
+                tabIndex={0}
+                onClick={() => setTourDetailModalTourId(tour.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setTourDetailModalTourId(tour.id)
+                  }
                 }}
                 className={`border rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow ${
                   isAssignedToThisTour 
@@ -608,6 +618,58 @@ export default function TourConnectionSection({
           })}
         </div>
       )}
+      {tourDetailModalTourId &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-2 sm:p-3"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tour-connection-tour-detail-modal-title"
+            onClick={() => setTourDetailModalTourId(null)}
+          >
+            <div
+              className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                <h3
+                  id="tour-connection-tour-detail-modal-title"
+                  className="text-lg font-semibold text-gray-900 truncate pr-2"
+                >
+                  {t('card.tourDetailModalTitle')}
+                </h3>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a
+                    href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                  >
+                    {t('card.openTourInNewTab')}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setTourDetailModalTourId(null)}
+                    className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                    aria-label={t('card.close')}
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 bg-gray-50">
+                <iframe
+                  key={tourDetailModalTourId}
+                  title={t('card.tourDetailModalTitle')}
+                  src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                  className="h-full w-full min-h-0 border-0"
+                />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

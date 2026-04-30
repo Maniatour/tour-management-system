@@ -4,6 +4,12 @@ import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
 import { ChevronDown, ChevronUp, Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
+import {
+  getBalanceAmountForDisplay,
+  type PartySizeSource,
+  type PricingBalanceFields,
+  type PaymentRecordLike,
+} from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
 
@@ -145,27 +151,83 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
       }
 
       try {
-        const { data, error } = await supabase
-          .from('reservation_pricing')
-          .select('reservation_id, balance_amount')
-          .in('reservation_id', reservationIds)
+        const [{ data: pricingRows, error: pErr }, { data: payRows, error: payErr }, { data: optRows, error: oErr }] =
+          await Promise.all([
+            supabase.from('reservation_pricing').select('*').in('reservation_id', reservationIds),
+            supabase
+              .from('payment_records')
+              .select('reservation_id, payment_status, amount')
+              .in('reservation_id', reservationIds),
+            supabase.from('reservation_options').select('reservation_id, total_price').in('reservation_id', reservationIds),
+          ])
 
-        if (error) {
-          console.error('배정 예약 잔금 합계 조회 오류:', error)
+        if (pErr || payErr || oErr) {
+          console.error('배정 예약 잔금 합계 조회 오류:', pErr || payErr || oErr)
           setAssignedBalanceTotal(0)
           return
         }
 
-        const total = (data || []).reduce((sum, row) => {
-          const raw = (row as { balance_amount?: number | string | null }).balance_amount
-          const amount =
-            raw === null || raw === undefined
-              ? 0
-              : typeof raw === 'string'
-                ? parseFloat(raw) || 0
-                : Number(raw) || 0
-          return amount > 0 ? sum + amount : sum
-        }, 0)
+        const pricingById = new Map<string, Record<string, unknown>>()
+        for (const row of pricingRows || []) {
+          const id = String((row as { reservation_id: string }).reservation_id)
+          pricingById.set(id, row as Record<string, unknown>)
+        }
+
+        const paymentsById = new Map<string, PaymentRecordLike[]>()
+        for (const row of payRows || []) {
+          const id = String((row as { reservation_id: string }).reservation_id)
+          const list = paymentsById.get(id) || []
+          list.push({
+            payment_status: String((row as { payment_status?: string | null }).payment_status || ''),
+            amount: Number((row as { amount?: unknown }).amount) || 0,
+          })
+          paymentsById.set(id, list)
+        }
+
+        const optSumById = new Map<string, number>()
+        const optCountById = new Map<string, number>()
+        for (const row of optRows || []) {
+          const id = String((row as { reservation_id: string }).reservation_id)
+          const tp = Number((row as { total_price?: unknown }).total_price) || 0
+          optSumById.set(id, (optSumById.get(id) || 0) + tp)
+          optCountById.set(id, (optCountById.get(id) || 0) + 1)
+        }
+
+        const resById = new Map(assignedReservations.map((r) => [String(r.id), r]))
+
+        let total = 0
+        for (const id of reservationIds) {
+          const pricing = pricingById.get(id)
+          const res = resById.get(id)
+          if (!pricing || !res) continue
+
+          const paRaw = pricing.pricing_adults
+          const hasPa =
+            paRaw !== undefined &&
+            paRaw !== null &&
+            paRaw !== '' &&
+            Number.isFinite(Number(paRaw)) &&
+            Math.floor(Number(paRaw)) >= 0
+          const party: PartySizeSource = {
+            adults: hasPa ? Math.floor(Number(paRaw)) : (res.adults ?? null),
+            children: res.children ?? null,
+            infants: res.infants ?? null,
+          }
+
+          const nOpts = optCountById.get(id) ?? 0
+          const optionsTotalFromOptions = nOpts > 0 ? (optSumById.get(id) || 0) : null
+
+          const b = getBalanceAmountForDisplay(
+            pricing as PricingBalanceFields,
+            optionsTotalFromOptions,
+            party,
+            {
+              paymentRecords: paymentsById.get(id) || [],
+              reservationStatus: res.status ?? null,
+            }
+          )
+          if (b > 0) total += b
+        }
 
         setAssignedBalanceTotal(total)
       } catch (error) {

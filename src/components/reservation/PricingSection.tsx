@@ -3374,6 +3374,16 @@ export default function PricingSection({
                 </div>
               </div>
 
+              {/* 잔금 수령 — 보증금 다음, 환불 라인보다 앞 */}
+              {calculatedBalanceReceivedTotal > 0 && (
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs text-gray-700">{isKorean ? '잔금 수령' : 'Balance Received'}</span>
+                  <span className={`text-xs font-medium text-green-600 ${priceTextClass('')}`}>
+                    ${calculatedBalanceReceivedTotal.toFixed(2)}
+                  </span>
+                </div>
+              )}
+
               {/* 입금 내역상 환불(Refunded) */}
               {refundedAmount > 0.005 && (
                 <div className="flex justify-between items-center mb-1.5">
@@ -3406,16 +3416,6 @@ export default function PricingSection({
                   </span>
                   <span className="text-xs font-medium text-amber-800 tabular-nums">
                     −${(Number(returnedAmount) || 0).toFixed(2)}
-                  </span>
-                </div>
-              )}
-
-              {/* 잔금 수령 */}
-              {calculatedBalanceReceivedTotal > 0 && (
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-xs text-gray-700">{isKorean ? '잔금 수령' : 'Balance Received'}</span>
-                  <span className={`text-xs font-medium text-green-600 ${priceTextClass('')}`}>
-                    ${calculatedBalanceReceivedTotal.toFixed(2)}
                   </span>
                 </div>
               )}

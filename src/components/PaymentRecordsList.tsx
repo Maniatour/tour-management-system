@@ -173,6 +173,12 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
     if (normalizedStatus?.includes('received') || normalizedStatus?.includes('charged')) {
       return <CheckCircle size={16} className="text-green-500" />
     }
+    if (normalizedStatus === 'returned') {
+      return <XCircle size={16} className="text-rose-600" />
+    }
+    if (normalizedStatus === 'refunded') {
+      return <XCircle size={16} className="text-red-600" />
+    }
     if (normalizedStatus?.includes('refund') || normalizedStatus?.includes('returned') || normalizedStatus?.includes('deleted')) {
       return <XCircle size={16} className="text-red-500" />
     }
@@ -210,13 +216,29 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
     if (!status) return 'bg-gray-100 text-gray-800'
     
     const normalizedStatus = status.toLowerCase()
+
+    // 파트너 수령 / 잔금 수령 — 입금 내역에서 시각적 구분
+    if (normalizedStatus === 'partner received') {
+      return 'bg-teal-100 text-teal-800'
+    }
+    if (normalizedStatus === 'balance received') {
+      return 'bg-violet-100 text-violet-800'
+    }
     
     // 수령/완료 상태 (녹색)
     if (normalizedStatus.includes('received') || normalizedStatus.includes('charged')) {
       return 'bg-green-100 text-green-800'
     }
-    
-    // 환불/삭제 상태 (빨간색)
+
+    // 환불 조치 완료 — 우리(적색) / 파트너(로즈) 붉은 계열 구분
+    if (normalizedStatus === 'refunded') {
+      return 'bg-red-100 text-red-800'
+    }
+    if (normalizedStatus === 'returned') {
+      return 'bg-rose-100 text-rose-800'
+    }
+
+    // 기타 환불·삭제 (붉은 계열)
     if (normalizedStatus.includes('refund') || normalizedStatus.includes('returned') || normalizedStatus.includes('deleted')) {
       return 'bg-red-100 text-red-800'
     }

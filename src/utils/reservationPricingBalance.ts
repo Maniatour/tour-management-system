@@ -172,6 +172,78 @@ export function computeEffectiveCustomerPaidTowardDue(
   return Math.max(0, roundUsd2(best))
 }
 
+/** `PricingSection`의 depositAmountNetOfPartnerReturnedOverlap와 동일 */
+export function depositAmountNetOfPartnerReturnedOverlapForBalance(
+  totalDue: number,
+  depositAmount: number,
+  returnedTotal: number
+): number {
+  const ret = Math.max(0, Number(returnedTotal) || 0)
+  const dep = Math.max(0, Number(depositAmount) || 0)
+  const due = Math.max(0, Number(totalDue) || 0)
+  const excessDepositOverDue = Math.max(0, roundUsd2(dep - due))
+  const overlap = Math.min(ret, excessDepositOverDue)
+  return Math.max(0, roundUsd2(dep - overlap))
+}
+
+/**
+ * `PricingSection` **displayedOnSiteBalance** / ② 잔액(계산)과 동일:
+ * - 총액(gross) = `computeCustomerPaymentTotalLineFormula`(옵션 합은 `reservation_options` 합이 있으면 그걸로만 쓰고 `required_option_total`은 0으로 막아 이중 가산 방지)
+ * - `totalCustomerPayment` = gross − max(0, Returned − 가격 환불) (`calculateTotalCustomerPayment`)
+ * - 보증금·`computeEffectiveCustomerPaidTowardDue`로 순 지불 추정 후 잔액
+ */
+export function computeDisplayedOnSiteBalanceLikePricingSection(
+  pricing: PricingBalanceFields & {
+    required_option_total?: unknown
+    choices_total?: unknown
+    private_tour_additional_cost?: unknown
+  },
+  optionsTotalFromOptions: number | null,
+  party: PartySizeSource,
+  records: PaymentRecordLike[]
+): number {
+  if (!records.length) {
+    return computeRemainingBalanceAmount(pricing, optionsTotalFromOptions, party)
+  }
+
+  const optsOnly =
+    optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
+
+  const pricingForGross = {
+    ...pricing,
+    required_option_total: optsOnly ? 0 : pricing.required_option_total,
+    option_total: optsOnly ? optionsTotalFromOptions : pricing.option_total,
+  } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
+
+  const grossDue = roundUsd2(computeCustomerPaymentTotalLineFormula(pricingForGross, party))
+
+  const { depositBucketGross, balanceReceivedTotal, returnedTotal, refundedTotal } =
+    summarizePaymentRecordsForBalance(records)
+
+  const manualRefund = Math.max(0, pricingFieldToNumber(pricing.refund_amount))
+  const returnedSurplus = Math.max(0, roundUsd2(returnedTotal - manualRefund))
+  const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedSurplus))
+
+  const depositInput =
+    depositBucketGross > 0 ? depositBucketGross : pricingFieldToNumber(pricing.deposit_amount)
+
+  const depositForDue = depositAmountNetOfPartnerReturnedOverlapForBalance(
+    totalCustomerPayment,
+    depositInput,
+    returnedTotal
+  )
+
+  const totalPaid = computeEffectiveCustomerPaidTowardDue(
+    totalCustomerPayment,
+    depositForDue,
+    balanceReceivedTotal,
+    refundedTotal,
+    manualRefund
+  )
+
+  return roundUsd2(totalCustomerPayment - totalPaid)
+}
+
 /**
  * Balance 테이블과 동일한 라인 총액(computeCustomerPaymentTotalLineFormula)을 기준으로
  * payment_records 집계와 비교할 보증금(버킷 총액·순액)·잔액(미수)을 계산한다.
@@ -384,14 +456,26 @@ export function isStoredCustomerTotalMismatchWithFormula(
 }
 
 /**
- * 입금 내역 없음: Grand Total − 보증금 (옵션 합 있으면 option_total 대신 사용)
+ * 입금 내역 없음: 라인 산식 총액 − 보증금(DB). 옵션 행 합이 있으면 option_total 대신 사용.
+ * (`computeCustomerTotalDueGross`와 라인 산식 불일치로 배정 카드 잔금이 어긋나는 경우 방지)
  */
 export function computeRemainingBalanceAmount(
   pricing: PricingBalanceFields,
   optionsTotalFromOptions: number | null,
   party: PartySizeSource
 ): number {
-  const customerTotal = computeCustomerTotalDueGross(pricing, optionsTotalFromOptions, party)
+  const pricingForLine = {
+    ...(pricing as PricingBalanceFields & {
+      required_option_total?: unknown
+      choices_total?: unknown
+      private_tour_additional_cost?: unknown
+    }),
+    option_total:
+      optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
+        ? optionsTotalFromOptions
+        : pricing.option_total,
+  } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
+  const customerTotal = roundUsd2(computeCustomerPaymentTotalLineFormula(pricingForLine, party))
   return Math.max(0, roundUsd2(customerTotal - pricingFieldToNumber(pricing.deposit_amount)))
 }
 
@@ -402,11 +486,9 @@ export type GetBalanceDisplayOpts = {
 }
 
 /**
- * 잔액 표시: DB balance_amount(사용자가 저장한 비영 잔액) 최우선, 그 외는 계산값.
- * - 취소 → 0
- * - `balance_amount` 컬럼은 스키마 기본값이 0.00이라, 숫자 0은 "미동기화/미입력"과 구분 불가 →
- *   절댓값이 0.5센트 미만이면 명시 저장으로 보지 않고 산출 경로 사용
- * - null/undefined/빈 문자열 → 순 총액 − (보증금 순 + 잔금 수령) 또는 총액 − 보증금
+ * 잔액 표시: 입금이 있으면 가격 정보 탭 `displayedOnSiteBalance`와 같은 식(`computeDisplayedOnSiteBalanceLikePricingSection`).
+ * `balance_amount`(DB)는 `displayedOnSiteBalance`와 같이: 비어 있으면 계산값만; 0인데 계산이 더 크면 계산값;
+ * 양수인데 계산이 ~0이면 정산 완료로 계산값; 그 외 양수는 사용자 저장값.
  */
 export function getBalanceAmountForDisplay(
   pricing: PricingBalanceFields | null | undefined,
@@ -421,24 +503,45 @@ export function getBalanceAmountForDisplay(
     st != null && ['cancelled', 'canceled'].includes(String(st).toLowerCase().trim())
   if (cancelled) return 0
 
-  const rawStored = pricing.balance_amount
-  const storedNum = pricingFieldToNumber(rawStored)
-  const hasExplicitBalance =
-    rawStored !== undefined &&
-    rawStored !== null &&
-    rawStored !== '' &&
-    Math.abs(storedNum) >= 0.005
-  if (hasExplicitBalance) {
-    return roundUsd2(storedNum)
-  }
+  const optsOnly =
+    optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
 
-  const gross = computeCustomerTotalDueGross(pricing, optionsTotalFromOptions, party)
+  const pricingForLine = {
+    ...(pricing as PricingBalanceFields & {
+      required_option_total?: unknown
+      choices_total?: unknown
+      private_tour_additional_cost?: unknown
+    }),
+    required_option_total: optsOnly ? 0 : (pricing as { required_option_total?: unknown }).required_option_total,
+    option_total:
+      optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
+        ? optionsTotalFromOptions
+        : pricing.option_total,
+  } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
+
   const records = opts?.paymentRecords
-
   if (records && records.length > 0) {
-    const { depositTotalNet, balanceReceivedTotal, returnedTotal } = summarizePaymentRecordsForBalance(records)
-    const customerNet = Math.max(0, roundUsd2(gross - returnedTotal))
-    return Math.max(0, roundUsd2(customerNet - depositTotalNet - balanceReceivedTotal))
+    const defaultBalance = computeDisplayedOnSiteBalanceLikePricingSection(
+      pricingForLine,
+      optionsTotalFromOptions,
+      party,
+      records
+    )
+
+    const rawStored = pricing.balance_amount
+    if (rawStored === undefined || rawStored === null || rawStored === '') {
+      return defaultBalance
+    }
+    const storedNum = pricingFieldToNumber(rawStored)
+    if (Math.abs(storedNum) < 0.005) {
+      if (Math.abs(defaultBalance) > 0.01) return defaultBalance
+      return roundUsd2(storedNum)
+    }
+    if (storedNum > 0.005) {
+      if (defaultBalance <= 0.02) return roundUsd2(defaultBalance)
+      return roundUsd2(storedNum)
+    }
+    return roundUsd2(storedNum)
   }
 
   return computeRemainingBalanceAmount(pricing, optionsTotalFromOptions, party)

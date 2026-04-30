@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare, ArrowRightLeft, Import, Send, HandCoins } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
@@ -8,7 +8,7 @@ import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
-import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
+import { getBalanceAmountForDisplay, type PartySizeSource } from '@/utils/reservationPricingBalance'
 import {
   displayPaymentRecordNote,
   fetchTeamDisplayNameByEmail,
@@ -71,6 +71,8 @@ interface ReservationPricing {
   prepayment_tip?: number | string | null
   commission_percent?: number | string | null
   commission_amount?: number | string | null
+  /** 가격 탭 성인 인원 — 라인 총액·잔액 산식과 동일하게 맞춤 */
+  pricing_adults?: number | string | null
 }
 
 interface ReservationCardProps {
@@ -171,6 +173,27 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     choice_group?: string
     choice_group_ko?: string
   }>>([])
+
+  /** 잔액·투어 봉투 등 라인 산식: DB `pricing_adults` 우선 (예약 카드 adults와 불일치 시 방지) */
+  const balanceParty: PartySizeSource = useMemo(() => {
+    const raw = reservationPricing?.pricing_adults
+    const hasPa =
+      raw !== undefined &&
+      raw !== null &&
+      raw !== '' &&
+      Number.isFinite(Number(raw)) &&
+      Math.floor(Number(raw)) >= 0
+    return {
+      adults: hasPa ? Math.floor(Number(raw)) : (reservation.adults ?? null),
+      children: reservation.children ?? null,
+      infants: reservation.infants ?? null,
+    }
+  }, [
+    reservationPricing?.pricing_adults,
+    reservation.adults,
+    reservation.children,
+    reservation.infants,
+  ])
 
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
@@ -1131,13 +1154,29 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     if (!status) return 'bg-gray-100 text-gray-800'
     
     const normalizedStatus = status.toLowerCase()
+
+    // 파트너 수령 / 잔금 수령 — 입금 내역에서 시각적 구분
+    if (normalizedStatus === 'partner received') {
+      return 'bg-teal-100 text-teal-800'
+    }
+    if (normalizedStatus === 'balance received') {
+      return 'bg-violet-100 text-violet-800'
+    }
     
     // 수령/완료 상태 (녹색)
     if (normalizedStatus.includes('received') || normalizedStatus.includes('charged')) {
       return 'bg-green-100 text-green-800'
     }
-    
-    // 환불/삭제 상태 (빨간색)
+
+    // 환불 조치 완료 — 우리(적색) / 파트너(로즈) 붉은 계열 구분
+    if (normalizedStatus === 'refunded') {
+      return 'bg-red-100 text-red-800'
+    }
+    if (normalizedStatus === 'returned') {
+      return 'bg-rose-100 text-rose-800'
+    }
+
+    // 기타 환불·삭제 (붉은 계열)
     if (normalizedStatus.includes('refund') || normalizedStatus.includes('returned') || normalizedStatus.includes('deleted')) {
       return 'bg-red-100 text-red-800'
     }
@@ -1234,7 +1273,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     const balanceAmount = getBalanceAmountForDisplay(
       reservationPricing,
       optionsTotalFromOptions,
-      reservation,
+      balanceParty,
       { paymentRecords, reservationStatus: reservation.status ?? null }
     )
     
@@ -1328,7 +1367,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     const balanceAmount = getBalanceAmountForDisplay(
       reservationPricing,
       optionsTotalFromOptions,
-      reservation,
+      balanceParty,
       { paymentRecords, reservationStatus: reservation.status ?? null }
     )
     const refundAmount = Math.abs(balanceAmount)
@@ -1749,7 +1788,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               const displayBalanceBadge = getBalanceAmountForDisplay(
                 reservationPricing,
                 optionsTotalFromOptions,
-                reservation,
+                balanceParty,
                 { paymentRecords, reservationStatus: reservation.status ?? null }
               )
               if (displayBalanceBadge > 0) {
