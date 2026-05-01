@@ -1,12 +1,13 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Upload, X, Check, Eye, DollarSign, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Search, Calendar, Filter, Download } from 'lucide-react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { Plus, Upload, X, Check, Eye, DollarSign, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Search, Calendar, Filter, Download, Wallet } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
+import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 
 interface TourExpense {
   id: string
@@ -28,6 +29,9 @@ interface TourExpense {
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
   updated_at: string
+  reimbursed_amount?: number | null
+  reimbursed_on?: string | null
+  reimbursement_note?: string | null
   // 조인된 데이터
   tours?: {
     id: string
@@ -47,7 +51,15 @@ export default function AllTourExpensesManager() {
   const locale = useLocale()
   const { user, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
-  const { paymentMethodMap } = usePaymentMethodOptions()
+  const { paymentMethodMap, paymentMethodOptions } = usePaymentMethodOptions()
+
+  const employeeLinkedPaymentMethodIds = useMemo(() => {
+    const set = new Set<string>()
+    paymentMethodOptions.forEach((pm) => {
+      if (String(pm.user_email || '').trim()) set.add(pm.id)
+    })
+    return set
+  }, [paymentMethodOptions])
 
   const [expenses, setExpenses] = useState<TourExpense[]>([])
   const [loading, setLoading] = useState(false)
@@ -61,6 +73,14 @@ export default function AllTourExpensesManager() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [tourIdFilter, setTourIdFilter] = useState('')
+  const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
+  const [reimburseModal, setReimburseModal] = useState<TourExpense | null>(null)
+  const [reimburseForm, setReimburseForm] = useState({
+    reimbursed_amount: '',
+    reimbursed_on: '',
+    reimbursement_note: ''
+  })
+  const [reimburseSaving, setReimburseSaving] = useState(false)
 
   // 팀 멤버 정보 로드
   const loadTeamMembers = async () => {
@@ -196,7 +216,7 @@ export default function AllTourExpensesManager() {
   }, [loadExpenses])
 
   // 검색 필터 적용 (결제방법: 저장 ID + 결제 방법 관리 표시명)
-  const filteredExpenses = expenses.filter((expense) => {
+  const searchFilteredExpenses = expenses.filter((expense) => {
     if (!searchTerm) return true
 
     const searchLower = searchTerm.toLowerCase()
@@ -214,6 +234,61 @@ export default function AllTourExpensesManager() {
       (pmLabel && pmLabel.toLowerCase().includes(searchLower))
     )
   })
+
+  const filteredExpenses = searchFilteredExpenses.filter((e) => {
+    if (reimbursementFilter === 'employee_card') {
+      const pm = e.payment_method?.trim()
+      if (!pm || !employeeLinkedPaymentMethodIds.has(pm)) return false
+    }
+    if (reimbursementFilter === 'outstanding') {
+      if ((e.amount || 0) <= 0) return false
+      if (reimbursementOutstanding(e.amount, e.reimbursed_amount) <= 0.009) return false
+    }
+    return true
+  })
+
+  const persistReimbursement = async () => {
+    if (!reimburseModal) return
+    const amountNum = reimburseModal.amount
+    const reimb = parseFloat(String(reimburseForm.reimbursed_amount ?? '').trim() || '0')
+    if (!Number.isFinite(reimb) || reimb < 0) {
+      alert(t('reimbursementInvalidNonNegative'))
+      return
+    }
+    if (amountNum > 0 && reimb > amountNum + 0.001) {
+      alert(t('reimbursementExceedsAmount'))
+      return
+    }
+    const reimbursedOnVal = reimburseForm.reimbursed_on?.trim() || null
+    const payload =
+      amountNum > 0
+        ? {
+            reimbursed_amount: reimb,
+            reimbursed_on: reimbursedOnVal,
+            reimbursement_note: reimburseForm.reimbursement_note?.trim() || null,
+            updated_at: new Date().toISOString()
+          }
+        : {
+            reimbursed_amount: 0,
+            reimbursed_on: null,
+            reimbursement_note: null,
+            updated_at: new Date().toISOString()
+          }
+    setReimburseSaving(true)
+    try {
+      const { error } = await supabase.from('tour_expenses').update(payload).eq('id', reimburseModal.id)
+      if (error) throw error
+      setExpenses((prev) =>
+        prev.map((row) => (row.id === reimburseModal.id ? { ...row, ...payload } : row))
+      )
+      setReimburseModal(null)
+    } catch (err) {
+      console.error(err)
+      alert(t('saveError'))
+    } finally {
+      setReimburseSaving(false)
+    }
+  }
 
   // 상태별 색상
   const getStatusColor = (status: string) => {
@@ -264,6 +339,15 @@ export default function AllTourExpensesManager() {
   const approvedAmount = filteredExpenses
     .filter(e => e.status === 'approved')
     .reduce((sum, expense) => sum + expense.amount, 0)
+
+  const reimbursedTotalFiltered = filteredExpenses.reduce(
+    (sum, expense) => sum + parseReimbursedAmount(expense.reimbursed_amount),
+    0
+  )
+  const outstandingTotalFiltered = filteredExpenses.reduce((sum, expense) => {
+    if ((expense.amount || 0) <= 0) return sum
+    return sum + reimbursementOutstanding(expense.amount, expense.reimbursed_amount)
+  }, 0)
 
   return (
     <div className="space-y-3 sm:space-y-4">
@@ -336,8 +420,23 @@ export default function AllTourExpensesManager() {
           </div>
         </div>
 
+        <div className="max-w-md">
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{t('reimbursementFilterLabel')}</label>
+          <select
+            value={reimbursementFilter}
+            onChange={(e) =>
+              setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
+            }
+            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="all">{t('reimbursementFilterAll')}</option>
+            <option value="employee_card">{t('reimbursementFilterEmployeeCard')}</option>
+            <option value="outstanding">{t('reimbursementFilterOutstanding')}</option>
+          </select>
+        </div>
+
         {/* 통계 - 모바일 컴팩트 */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t">
           <div className="bg-white rounded-lg p-2 sm:p-3">
             <div className="text-xs sm:text-sm text-gray-600">{t('totalExpenseSum')}</div>
             <div className="text-base sm:text-2xl font-bold text-gray-900 truncate">{formatCurrency(totalAmount)}</div>
@@ -349,6 +448,18 @@ export default function AllTourExpensesManager() {
           <div className="bg-green-50 rounded-lg p-2 sm:p-3">
             <div className="text-xs sm:text-sm text-gray-600">{t('approvedSum')}</div>
             <div className="text-base sm:text-2xl font-bold text-green-600 truncate">{formatCurrency(approvedAmount)}</div>
+          </div>
+          <div className="bg-slate-50 rounded-lg p-2 sm:p-3 border border-slate-100">
+            <div className="text-xs sm:text-sm text-gray-600">{t('reimbursedTotalLabel')}</div>
+            <div className="text-base sm:text-2xl font-bold text-slate-800 truncate">
+              {formatCurrency(reimbursedTotalFiltered)}
+            </div>
+          </div>
+          <div className="bg-amber-50 rounded-lg p-2 sm:p-3 border border-amber-100 col-span-2 sm:col-span-1 lg:col-span-1">
+            <div className="text-xs sm:text-sm text-gray-600">{t('outstandingTotalLabel')}</div>
+            <div className="text-base sm:text-2xl font-bold text-amber-800 truncate">
+              {formatCurrency(outstandingTotalFiltered)}
+            </div>
           </div>
         </div>
       </div>
@@ -394,8 +505,41 @@ export default function AllTourExpensesManager() {
                       {getStatusText(expense.status)}
                     </span>
                   </span>
+                  {expense.amount > 0 && (
+                    <>
+                      <span className="text-gray-400">{t('reimbursedShort')}</span>
+                      <span>{formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}</span>
+                      <span className="text-gray-400">{t('outstandingShort')}</span>
+                      <span
+                        className={
+                          reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009
+                            ? 'font-semibold text-amber-800'
+                            : 'text-green-700'
+                        }
+                      >
+                        {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
+                      </span>
+                    </>
+                  )}
                 </div>
-                <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
+                <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100 flex-wrap">
+                  {expense.amount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReimburseModal(expense)
+                        setReimburseForm({
+                          reimbursed_amount: String(parseReimbursedAmount(expense.reimbursed_amount)),
+                          reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
+                          reimbursement_note: expense.reimbursement_note || ''
+                        })
+                      }}
+                      className="inline-flex items-center gap-1 text-amber-800 text-xs font-medium py-2 px-3 rounded-lg hover:bg-amber-50 min-h-[44px] border border-amber-200"
+                    >
+                      <Wallet className="w-4 h-4" />
+                      {t('editReimbursement')}
+                    </button>
+                  )}
                   {expense.image_url && expense.image_url.trim() !== '' && (
                     <button
                       type="button"
@@ -424,6 +568,8 @@ export default function AllTourExpensesManager() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paymentDetails')}</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidTo')}</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('amount')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('reimbursedShort')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('outstandingShort')}</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('submitter')}</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('statusLabel')}</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('receipt')}</th>
@@ -445,6 +591,24 @@ export default function AllTourExpensesManager() {
                   <td className="px-4 py-3 text-sm text-gray-900">{expense.paid_to}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600 text-right">
                     {formatCurrency(expense.amount)}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-700">
+                    {expense.amount > 0 ? formatCurrency(parseReimbursedAmount(expense.reimbursed_amount)) : '—'}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
+                    {expense.amount > 0 ? (
+                      <span
+                        className={
+                          reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009
+                            ? 'font-semibold text-amber-700'
+                            : 'text-green-700'
+                        }
+                      >
+                        {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {teamMembers[expense.submitted_by] || expense.submitted_by}
@@ -473,6 +637,23 @@ export default function AllTourExpensesManager() {
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-center">
                     <div className="flex items-center justify-center gap-1">
+                      {expense.amount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReimburseModal(expense)
+                            setReimburseForm({
+                              reimbursed_amount: String(parseReimbursedAmount(expense.reimbursed_amount)),
+                              reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
+                              reimbursement_note: expense.reimbursement_note || ''
+                            })
+                          }}
+                          className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded"
+                          title={t('editReimbursement')}
+                        >
+                          <Wallet className="w-4 h-4" />
+                        </button>
+                      )}
                       <a
                         href={`/${locale}/admin/tours/${expense.tour_id}`}
                         target="_blank"
@@ -494,6 +675,79 @@ export default function AllTourExpensesManager() {
         <div className="text-center py-8 sm:py-12 text-gray-500 text-sm">
           <Receipt className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 text-gray-300" />
           <p>조건에 맞는 지출이 없습니다.</p>
+        </div>
+      )}
+
+      {reimburseModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{t('editReimbursement')}</h3>
+                <p className="text-sm text-gray-600 mt-1 line-clamp-2">{reimburseModal.paid_for}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {t('amount')}: {formatCurrency(reimburseModal.amount)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReimburseModal(null)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedAmount')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={reimburseForm.reimbursed_amount}
+                  onChange={(e) => setReimburseForm((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedOn')}</label>
+                <input
+                  type="date"
+                  value={reimburseForm.reimbursed_on}
+                  onChange={(e) => setReimburseForm((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursementNote')}</label>
+                <input
+                  type="text"
+                  value={reimburseForm.reimbursement_note}
+                  onChange={(e) => setReimburseForm((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
+                  placeholder={t('reimbursementNotePlaceholder')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setReimburseModal(null)}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={reimburseSaving}
+                onClick={() => void persistReimbursement()}
+                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+              >
+                {reimburseSaving ? '…' : t('saveReimbursement')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

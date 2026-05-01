@@ -69,6 +69,8 @@ export interface Reservation {
   infant: number
   totalPeople: number
   channelId: string
+  /** 목록 쿼리 `channels(name)` embed 등으로 채운 표시용 이름(마스터 배열과 무관) */
+  channelNameSnapshot?: string | null
   /** reservations.variant_key (동적가격·채널 상품 variant) */
   variantKey?: string
   channelRN: string

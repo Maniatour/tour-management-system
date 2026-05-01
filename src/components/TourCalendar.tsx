@@ -31,12 +31,12 @@ interface OffSchedule {
   id: string
   team_email: string
   off_date: string
-  reason: string
+  reason: string | null
   status: string
   approved_by?: string | null
   approved_at?: string | null
-  created_at: string
-  updated_at: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 interface TourCalendarProps {
@@ -46,12 +46,32 @@ interface TourCalendarProps {
   reservationPricingMap?: Map<string, Database['public']['Tables']['reservation_pricing']['Row']>
   offSchedules?: OffSchedule[]
   onOffScheduleChange?: () => void
+  /** 달력에 보이는 첫날·마지막날(패딩 포함) — 오프 스케줄 조회 범위용 */
+  onVisibleCalendarRangeChange?: (startDateISO: string, endDateISO: string) => void
+  /** 관리자·매니저·OP: 타인의 대기 중 오프 스케줄 승인/거절 */
+  viewerCanApproveOffSchedules?: boolean
+  approverEmail?: string | null
+  teamMemberNameLookup?: Record<string, string>
   onTourStatusUpdate?: (tourId: string, newStatus: string) => Promise<void>
   userRole?: string | undefined
   userPosition?: string | null | undefined
 }
 
-const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [], reservationPricingMap = new Map(), offSchedules = [], onOffScheduleChange, onTourStatusUpdate, userRole, userPosition }: TourCalendarProps) {
+const TourCalendar = memo(function TourCalendar({
+  tours,
+  onTourClick,
+  allReservations = [],
+  reservationPricingMap = new Map(),
+  offSchedules = [],
+  onOffScheduleChange,
+  onVisibleCalendarRangeChange,
+  viewerCanApproveOffSchedules = false,
+  approverEmail = null,
+  teamMemberNameLookup = {},
+  onTourStatusUpdate,
+  userRole,
+  userPosition,
+}: TourCalendarProps) {
   const { user, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('tours.calendar')
   const locale = useLocale()
@@ -120,6 +140,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     end_date: ''
   })
   const [updatingTourStatus, setUpdatingTourStatus] = useState<string | null>(null)
+  const [offDecisionLoading, setOffDecisionLoading] = useState(false)
   
   // 투어 상태 옵션
   const tourStatusOptions = [
@@ -315,6 +336,36 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     }
   }, [selectedOffSchedule, currentUserEmail, closeOffScheduleModal, onOffScheduleChange])
 
+  const normalizeEmail = useCallback((e: string | null | undefined) => (e || '').trim().toLowerCase(), [])
+
+  const handleAdminOffDecision = useCallback(
+    async (decision: 'approved' | 'rejected') => {
+      if (!selectedOffSchedule?.id || !approverEmail) return
+      setOffDecisionLoading(true)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          .from('off_schedules')
+          .update({
+            status: decision,
+            approved_by: approverEmail,
+          })
+          .eq('id', selectedOffSchedule.id)
+
+        if (error) throw error
+        alert(decision === 'approved' ? t('offSchedule.approveSuccess') : t('offSchedule.rejectSuccess'))
+        closeOffScheduleModal()
+        onOffScheduleChange?.()
+      } catch (error) {
+        console.error('Admin off schedule decision:', error)
+        alert(t('offSchedule.adminUpdateError'))
+      } finally {
+        setOffDecisionLoading(false)
+      }
+    },
+    [selectedOffSchedule, approverEmail, closeOffScheduleModal, onOffScheduleChange, t]
+  )
+
   // 현재 월의 첫 번째 날 계산 (메모이제이션)
   const firstDayOfMonth = useMemo(() => {
     return new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
@@ -334,6 +385,17 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     
     return days
   }, [firstDayOfMonth])
+
+  useEffect(() => {
+    if (!onVisibleCalendarRangeChange || calendarDays.length === 0) return
+    const fmt = (d: Date) => {
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+    onVisibleCalendarRangeChange(fmt(calendarDays[0]), fmt(calendarDays[calendarDays.length - 1]))
+  }, [currentDate, calendarDays, onVisibleCalendarRangeChange])
 
   // 특정 날짜의 예약들 가져오기 (메모이제이션)
   const getToursForDate = useCallback((date: Date) => {
@@ -954,13 +1016,17 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 
                 {/* 오프 스케줄 라벨들 */}
                 {dayOffSchedules.map((schedule, scheduleIndex) => {
-                  const statusColor = schedule.status === 'approved' ? 'bg-green-500' : 
-                                    schedule.status === 'pending' ? 'bg-yellow-500' : 
+                  const statusColor = schedule.status === 'approved' ? 'bg-green-600' : 
+                                    schedule.status === 'pending' ? 'bg-amber-500 ring-2 ring-amber-200 ring-inset' : 
                                     schedule.status === 'rejected' ? 'bg-red-500' : 'bg-gray-500'
                   
                   const statusText = schedule.status?.toLowerCase() === 'approved' ? t('offSchedule.status.approved') : 
                                    schedule.status?.toLowerCase() === 'pending' ? t('offSchedule.status.pending') : 
                                    schedule.status?.toLowerCase() === 'rejected' ? t('offSchedule.status.rejected') : schedule.status
+
+                  const applicantLabel =
+                    teamMemberNameLookup[schedule.team_email.trim().toLowerCase()] ||
+                    schedule.team_email.split('@')[0]
                   
                   return (
                     <div
@@ -969,11 +1035,12 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                         e.stopPropagation() // 부모 요소의 클릭 이벤트 방지
                         openOffScheduleModal(date, schedule)
                       }}
-                      className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${statusColor}`}
-                      title={`오프 스케줄: ${schedule.reason} (${statusText})`}
+                      className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-90 transition-opacity ${statusColor}`}
+                      title={`${applicantLabel} · ${schedule.reason ?? ''} (${statusText})`}
                     >
                       <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
-                        <span className="font-medium">🏖️ {statusText}</span>
+                        <span className="font-medium">🏖️ {applicantLabel}</span>
+                        <span className="opacity-90"> · {statusText}</span>
                       </div>
                     </div>
                   )
@@ -1257,12 +1324,39 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       })()}
 
       {/* 오프 스케줄 모달 */}
-      {showOffScheduleModal && (
+      {showOffScheduleModal && (() => {
+        const applicantSelf =
+          !selectedOffSchedule ||
+          normalizeEmail(selectedOffSchedule.team_email) === normalizeEmail(currentUserEmail)
+        const showStaffReviewPanel =
+          Boolean(
+            selectedOffSchedule &&
+              viewerCanApproveOffSchedules &&
+              !applicantSelf &&
+              selectedOffSchedule.status === 'pending'
+          )
+        const showReadOnlyOtherStaff =
+          Boolean(
+            selectedOffSchedule &&
+              viewerCanApproveOffSchedules &&
+              !applicantSelf &&
+              selectedOffSchedule.status !== 'pending'
+          )
+        const applicantDisplay =
+          selectedOffSchedule &&
+          (teamMemberNameLookup[selectedOffSchedule.team_email.trim().toLowerCase()] ||
+            selectedOffSchedule.team_email)
+
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-1 sm:p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-xs w-full max-h-[75vh] overflow-y-auto relative top-0 left-0 right-0 bottom-0 m-auto">
             <div className="flex items-center justify-between p-3 sm:p-6 border-b">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900">
-                {selectedOffSchedule ? t('offSchedule.editTitle') : t('offSchedule.addTitle')}
+                {showStaffReviewPanel || showReadOnlyOtherStaff
+                  ? t('offSchedule.adminReviewTitle')
+                  : selectedOffSchedule
+                    ? t('offSchedule.editTitle')
+                    : t('offSchedule.addTitle')}
               </h3>
               <button
                 onClick={closeOffScheduleModal}
@@ -1271,7 +1365,92 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 <XIcon className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
-            
+
+            {showStaffReviewPanel && selectedOffSchedule ? (
+              <div className="p-3 sm:p-6 space-y-3">
+                <div className="text-sm space-y-2">
+                  <div>
+                    <span className="font-medium text-gray-700">{t('offSchedule.applicant')}:</span>{' '}
+                    <span className="text-gray-900">{applicantDisplay}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">{t('offSchedule.offDate')}:</span>{' '}
+                    <span className="text-gray-900">{selectedOffSchedule.off_date}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">{t('offSchedule.reason')}:</span>
+                    <p className="text-gray-900 mt-1 whitespace-pre-wrap">{selectedOffSchedule.reason ?? ''}</p>
+                  </div>
+                  <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-900`}>
+                    {t('offSchedule.status.pending')}
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={offDecisionLoading || !approverEmail}
+                    onClick={() => void handleAdminOffDecision('approved')}
+                    className="flex-1 bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-medium"
+                  >
+                    {t('offSchedule.approve')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={offDecisionLoading || !approverEmail}
+                    onClick={() => void handleAdminOffDecision('rejected')}
+                    className="flex-1 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+                  >
+                    {t('offSchedule.reject')}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeOffScheduleModal}
+                  className="w-full px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm"
+                >
+                  {t('cancel')}
+                </button>
+              </div>
+            ) : showReadOnlyOtherStaff && selectedOffSchedule ? (
+              <div className="p-3 sm:p-6 space-y-3">
+                <div className="text-sm space-y-2">
+                  <div>
+                    <span className="font-medium text-gray-700">{t('offSchedule.applicant')}:</span>{' '}
+                    <span className="text-gray-900">{applicantDisplay}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">{t('offSchedule.offDate')}:</span>{' '}
+                    <span className="text-gray-900">{selectedOffSchedule.off_date}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">{t('offSchedule.reason')}:</span>
+                    <p className="text-gray-900 mt-1 whitespace-pre-wrap">{selectedOffSchedule.reason ?? ''}</p>
+                  </div>
+                  <div
+                    className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      selectedOffSchedule.status === 'approved'
+                        ? 'bg-green-100 text-green-800'
+                        : selectedOffSchedule.status === 'rejected'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {selectedOffSchedule.status === 'approved'
+                      ? t('offSchedule.status.approved')
+                      : selectedOffSchedule.status === 'rejected'
+                        ? t('offSchedule.status.rejected')
+                        : selectedOffSchedule.status}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeOffScheduleModal}
+                  className="w-full px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm"
+                >
+                  {t('cancel')}
+                </button>
+              </div>
+            ) : (
             <form onSubmit={handleOffScheduleSubmit} className="p-3 sm:p-6 space-y-3">
               {/* 현재 상태 표시 (수정 모드일 때만) */}
               {selectedOffSchedule && (
@@ -1382,9 +1561,11 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* 투어 상태 변경 컨텍스트 메뉴 */}
       {contextMenu && (

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useLocale, useTranslations } from 'next-intl';
 import { isTourCancelled } from '@/utils/tourStatusUtils';
@@ -360,15 +361,54 @@ export default function TicketBookingForm({
     try {
       const { data, error } = await (supabase as any)
         .from('payment_methods')
-        .select('id, method, display_name')
+        .select('id, method, display_name, card_holder_name, user_email')
         .eq('status', 'active')
         .order('display_name');
       if (error) throw error;
-      setPaymentMethodsList((data || []).map((r: any) => ({
-        id: r.id,
-        method: r.method,
-        display_name: r.display_name ?? r.method
-      })));
+      const rows = data || [];
+      const emails = [
+        ...new Set(rows.map((r: any) => String(r.user_email || '').toLowerCase()).filter(Boolean)),
+      ];
+      let teamMap = new Map<
+        string,
+        { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }
+      >();
+      if (emails.length > 0) {
+        const { data: teams } = await (supabase as any)
+          .from('team')
+          .select('email, nick_name, name_en, name_ko')
+          .in('email', emails);
+        teamMap = new Map(
+          (teams || []).map((t: any) => [String(t.email).toLowerCase(), t])
+        );
+      }
+      setPaymentMethodsList(
+        rows.map((r: any) => {
+          const em = r.user_email ? String(r.user_email).toLowerCase() : '';
+          const team = em ? teamMap.get(em) : undefined;
+          const label = formatPaymentMethodDisplay(
+            {
+              id: r.id,
+              method: r.method,
+              display_name: r.display_name,
+              user_email: r.user_email,
+              card_holder_name: r.card_holder_name,
+            },
+            team
+              ? {
+                  nick_name: team.nick_name ?? null,
+                  name_en: team.name_en ?? null,
+                  name_ko: team.name_ko ?? null,
+                }
+              : undefined
+          );
+          return {
+            id: r.id,
+            method: r.method,
+            display_name: label,
+          };
+        })
+      );
     } catch (error) {
       console.error('결제 방법 목록 조회 오류:', error);
     }

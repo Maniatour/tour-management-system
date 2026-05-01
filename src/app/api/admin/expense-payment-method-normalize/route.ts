@@ -76,7 +76,7 @@ export async function GET() {
 
     const { data: pmData, error: pmErr } = await supabaseAdmin
       .from('payment_methods')
-      .select('id, method, display_name')
+      .select('id, method, display_name, card_holder_name, user_email')
       .order('method')
 
     if (pmErr) {

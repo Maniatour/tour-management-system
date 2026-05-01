@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { Database } from '@/lib/database.types'
 
-type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
-type CompanyExpenseUpdate = Database['public']['Tables']['company_expenses']['Update']
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +19,8 @@ export async function GET(request: NextRequest) {
     const paidFor = searchParams.get('paid_for')
     /** all 외: set = standard_paid_for 있음, unset = 없음(null) */
     const standardPaidFor = searchParams.get('standard_paid_for')
+    /** all | employee_card | outstanding */
+    const reimbursement = (searchParams.get('reimbursement') || 'all').toLowerCase()
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
     const from = (page - 1) * limit
@@ -88,6 +88,23 @@ export async function GET(request: NextRequest) {
     if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
       query = query.lte('submit_on', `${dateTo}T23:59:59.999Z`)
     }
+
+    if (reimbursement === 'employee_card') {
+      const { data: pmRows } = await supabase
+        .from('payment_methods')
+        .select('id')
+        .not('user_email', 'is', null)
+      const pmIds = [...new Set((pmRows || []).map((r: { id: string }) => r.id).filter(Boolean))]
+      if (pmIds.length === 0) {
+        return NextResponse.json({
+          data: [],
+          pagination: { page, limit, total: 0, totalPages: 1 },
+        })
+      }
+      query = query.in('payment_method', pmIds)
+    } else if (reimbursement === 'outstanding') {
+      query = query.gt('reimbursement_outstanding', 0.009)
+    }
     
     const { data, error, count } = await query
     
@@ -138,6 +155,9 @@ export async function POST(request: NextRequest) {
       expense_type,
       tax_deductible,
       paid_for_label_id,
+      reimbursed_amount: reimbursedAmountBody,
+      reimbursed_on: reimbursedOnBody,
+      reimbursement_note: reimbursementNoteBody,
     } = body
     
     // 필수: 결제처·금액·제출자·결제수단 (paid_for는 선택 — 빈 문자열 저장 가능)
@@ -151,13 +171,36 @@ export async function POST(request: NextRequest) {
     const submitOnIso =
       typeof submit_on === 'string' && submit_on.trim() !== '' ? submit_on.trim() : undefined
 
+    const amountNum = parseFloat(amount)
+    if (!Number.isFinite(amountNum)) {
+      return NextResponse.json({ error: '금액이 올바르지 않습니다.' }, { status: 400 })
+    }
+    const reimbNum =
+      reimbursedAmountBody === undefined || reimbursedAmountBody === null || reimbursedAmountBody === ''
+        ? 0
+        : parseFloat(String(reimbursedAmountBody))
+    if (!Number.isFinite(reimbNum) || reimbNum < 0) {
+      return NextResponse.json({ error: '환급액이 올바르지 않습니다.' }, { status: 400 })
+    }
+    if (amountNum > 0 && reimbNum > amountNum + 0.001) {
+      return NextResponse.json({ error: '환급액은 지출 금액을 초과할 수 없습니다.' }, { status: 400 })
+    }
+    const reimbursedOnNorm =
+      typeof reimbursedOnBody === 'string' && reimbursedOnBody.trim() !== ''
+        ? reimbursedOnBody.trim().slice(0, 10)
+        : null
+    const reimbursementNoteNorm =
+      typeof reimbursementNoteBody === 'string' && reimbursementNoteBody.trim() !== ''
+        ? reimbursementNoteBody.trim()
+        : null
+
     const expenseData: CompanyExpenseInsert = {
       // ID는 자동 생성되므로 제공되지 않은 경우 undefined로 설정
       ...(id && { id }),
       paid_to,
       paid_for: paidForTrimmed,
       description: description || null,
-      amount: parseFloat(amount),
+      amount: amountNum,
       payment_method: paymentMethodTrimmed,
       submit_by,
       ...(submitOnIso !== undefined && { submit_on: submitOnIso }),
@@ -174,6 +217,9 @@ export async function POST(request: NextRequest) {
       ...(paid_for_label_id !== undefined &&
         paid_for_label_id !== null &&
         paid_for_label_id !== '' && { paid_for_label_id: String(paid_for_label_id) }),
+      reimbursed_amount: amountNum > 0 ? reimbNum : 0,
+      reimbursed_on: amountNum > 0 ? reimbursedOnNorm : null,
+      reimbursement_note: amountNum > 0 ? reimbursementNoteNorm : null,
     }
     
     const { data, error } = await supabase
@@ -199,15 +245,40 @@ export async function PUT(request: NextRequest) {
     const supabase = await createClient()
     const body = await request.json()
     
-    const { id, ...updateData } = body
+    const { id, ...rest } = body
     
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
     }
+
+    const updateData: Record<string, unknown> = { ...rest }
+    delete updateData.reimbursement_outstanding
     
     // 금액이 있으면 숫자로 변환
-    if (updateData.amount) {
-      updateData.amount = parseFloat(updateData.amount)
+    if (updateData.amount !== undefined && updateData.amount !== null && updateData.amount !== '') {
+      updateData.amount = parseFloat(String(updateData.amount))
+    }
+
+    const amt =
+      updateData.amount !== undefined && updateData.amount !== null && updateData.amount !== ''
+        ? Number(updateData.amount)
+        : NaN
+    if (
+      updateData.reimbursed_amount !== undefined &&
+      updateData.reimbursed_amount !== null &&
+      updateData.reimbursed_amount !== ''
+    ) {
+      const r =
+        typeof updateData.reimbursed_amount === 'number'
+          ? updateData.reimbursed_amount
+          : parseFloat(String(updateData.reimbursed_amount))
+      if (!Number.isFinite(r) || r < 0) {
+        return NextResponse.json({ error: '환급액이 올바르지 않습니다.' }, { status: 400 })
+      }
+      if (Number.isFinite(amt) && amt > 0 && r > amt + 0.001) {
+        return NextResponse.json({ error: '환급액은 지출 금액을 초과할 수 없습니다.' }, { status: 400 })
+      }
+      updateData.reimbursed_amount = r
     }
     
     const { data, error } = await supabase

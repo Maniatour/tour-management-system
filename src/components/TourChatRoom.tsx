@@ -152,7 +152,7 @@ export default function TourChatRoom({
   const [teamMembersDetail, setTeamMembersDetail] = useState<Map<string, {
     name_ko?: string
     name_en?: string
-    display_name?: string | null
+    nick_name?: string | null
     position?: string
     email?: string
     languages?: string[]
@@ -168,8 +168,9 @@ export default function TourChatRoom({
       guideEmail,
       member
         ? {
-            display_name: member.display_name ?? null,
-            name_ko: member.name_ko ?? null
+            nick_name: member.nick_name ?? null,
+            name_ko: member.name_ko ?? null,
+            name_en: member.name_en ?? null
           }
         : null
     )
@@ -181,8 +182,9 @@ export default function TourChatRoom({
       const labels: Record<string, string> = {}
       teamMembersDetail.forEach((info, email) => {
         labels[email.toLowerCase()] = formatTourChatStaffDisplayName(email, {
-          display_name: info.display_name ?? null,
-          name_ko: info.name_ko ?? null
+          nick_name: info.nick_name ?? null,
+          name_ko: info.name_ko ?? null,
+          name_en: info.name_en ?? null
         })
       })
       const needTeamLookup = new Set<string>()
@@ -199,11 +201,14 @@ export default function TourChatRoom({
         const arr = [...needTeamLookup]
         const { data: rows } = await supabase
           .from('team')
-          .select('email, display_name, name_ko')
+          .select('email, name_ko, name_en, nick_name')
           .in('email', arr)
-        for (const row of rows || []) {
-          const r = row as { email: string; display_name: string | null; name_ko: string | null }
-          labels[r.email.toLowerCase()] = formatTourChatStaffDisplayName(r.email, r)
+        for (const row of rows ?? []) {
+          labels[row.email.toLowerCase()] = formatTourChatStaffDisplayName(row.email, {
+            name_ko: row.name_ko ?? null,
+            name_en: row.name_en ?? null,
+            nick_name: row.nick_name ?? null
+          })
         }
         for (const e of arr) {
           const k = e.toLowerCase()
@@ -1094,7 +1099,7 @@ export default function TourChatRoom({
       const membersDetailMap = new Map<string, {
         name_ko?: string
         name_en?: string
-        display_name?: string | null
+        nick_name?: string | null
         position?: string
         email?: string
         languages?: string[]
@@ -1104,9 +1109,9 @@ export default function TourChatRoom({
       if (tour.tour_guide_id) {
         const { data: guideData } = await supabase
           .from('team')
-          .select('name_ko, name_en, display_name, phone, position, languages')
+          .select('name_ko, name_en, nick_name, phone, position, languages')
           .eq('email', tour.tour_guide_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; display_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; nick_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (guideData) {
           const guide: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
@@ -1122,8 +1127,8 @@ export default function TourChatRoom({
           membersDetailMap.set(tour.tour_guide_id, {
             ...(guideData.name_ko ? { name_ko: guideData.name_ko } : {}),
             ...(guideData.name_en ? { name_en: guideData.name_en } : {}),
-            ...(guideData.display_name != null && guideData.display_name !== ''
-              ? { display_name: guideData.display_name }
+            ...(guideData.nick_name != null && guideData.nick_name !== ''
+              ? { nick_name: guideData.nick_name }
               : {}),
             ...(guideData.position ? { position: guideData.position } : {}),
             email: tour.tour_guide_id,
@@ -1136,9 +1141,9 @@ export default function TourChatRoom({
       if (tour.assistant_id) {
         const { data: assistantData } = await supabase
           .from('team')
-          .select('name_ko, name_en, display_name, phone, position, languages')
+          .select('name_ko, name_en, nick_name, phone, position, languages')
           .eq('email', tour.assistant_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; display_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; nick_name: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (assistantData) {
           const assistant: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
@@ -1154,8 +1159,8 @@ export default function TourChatRoom({
           membersDetailMap.set(tour.assistant_id, {
             ...(assistantData.name_ko ? { name_ko: assistantData.name_ko } : {}),
             ...(assistantData.name_en ? { name_en: assistantData.name_en } : {}),
-            ...(assistantData.display_name != null && assistantData.display_name !== ''
-              ? { display_name: assistantData.display_name }
+            ...(assistantData.nick_name != null && assistantData.nick_name !== ''
+              ? { nick_name: assistantData.nick_name }
               : {}),
             ...(assistantData.position ? { position: assistantData.position } : {}),
             email: tour.assistant_id,
@@ -2436,8 +2441,9 @@ export default function TourChatRoom({
               m.sender_email,
               mem
                 ? {
-                    display_name: mem.display_name ?? null,
-                    name_ko: mem.name_ko ?? null
+                    nick_name: mem.nick_name ?? null,
+                    name_ko: mem.name_ko ?? null,
+                    name_en: mem.name_en ?? null
                   }
                 : null
             )

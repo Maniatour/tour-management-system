@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { RefreshCw, ArrowRight, CreditCard, AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react'
 import type { NormalizePreviewRow, ExpenseTableName } from '@/lib/expensePaymentMethodNormalize'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 type ApiPreview = NormalizePreviewRow
 
@@ -13,6 +14,8 @@ type PaymentMethodOpt = {
   id: string
   method: string
   display_name: string | null
+  card_holder_name?: string | null
+  user_email?: string | null
 }
 
 const TABLE_LABEL: Record<ExpenseTableName, string> = {
@@ -103,8 +106,13 @@ export default function ExpensePaymentMethodNormalizePage() {
   const pmLabel = (id: string) => {
     const p = paymentMethods.find((x) => x.id === id)
     if (!p) return id
-    const raw = (p.display_name && p.display_name.trim()) || p.method
-    return raw.includes(' - ') ? raw.split(' - ').pop()!.trim() : raw
+    return formatPaymentMethodDisplay({
+      id: p.id,
+      method: p.method,
+      display_name: p.display_name,
+      card_holder_name: p.card_holder_name ?? null,
+      user_email: p.user_email ?? null,
+    })
   }
 
   const applyMapping = async (r: ApiPreview) => {
@@ -348,15 +356,11 @@ export default function ExpensePaymentMethodNormalizePage() {
                         }
                       >
                         <option value="">{t('selectPlaceholder')}</option>
-                        {paymentMethods.map((p) => {
-                          const raw = (p.display_name && p.display_name.trim()) || p.method
-                          const label = raw.includes(' - ') ? raw.split(' - ').pop()!.trim() : raw
-                          return (
-                            <option key={p.id} value={p.id}>
-                              {label} ({p.id})
-                            </option>
-                          )
-                        })}
+                        {paymentMethods.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {pmLabel(p.id)} ({p.id})
+                          </option>
+                        ))}
                       </select>
                       {r.displayNameForTarget && (
                         <div className="mt-0.5 text-[10px] text-gray-500">

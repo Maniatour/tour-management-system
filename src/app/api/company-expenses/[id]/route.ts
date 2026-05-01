@@ -81,6 +81,9 @@ export async function PUT(
       status: statusBody,
       paid_for_label_id: paidForLabelIdBody,
       standard_paid_for: standardPaidForBody,
+      reimbursed_amount: reimbursedAmountBody,
+      reimbursed_on: reimbursedOnBody,
+      reimbursement_note: reimbursementNoteBody,
     } = body
 
     const paymentMethodTrimmed =
@@ -105,6 +108,27 @@ export async function PUT(
 
     const submitOnIso =
       typeof submit_on === 'string' && submit_on.trim() !== '' ? submit_on.trim() : undefined
+
+    const reimbNum =
+      reimbursedAmountBody === undefined || reimbursedAmountBody === null || reimbursedAmountBody === ''
+        ? 0
+        : typeof reimbursedAmountBody === 'number'
+          ? reimbursedAmountBody
+          : parseFloat(String(reimbursedAmountBody))
+    if (!Number.isFinite(reimbNum) || reimbNum < 0) {
+      return NextResponse.json({ error: '환급액이 올바르지 않습니다.' }, { status: 400 })
+    }
+    if (parsedAmount > 0 && reimbNum > parsedAmount + 0.001) {
+      return NextResponse.json({ error: '환급액은 지출 금액을 초과할 수 없습니다.' }, { status: 400 })
+    }
+    const reimbursedOnNorm =
+      typeof reimbursedOnBody === 'string' && reimbursedOnBody.trim() !== ''
+        ? reimbursedOnBody.trim().slice(0, 10)
+        : null
+    const reimbursementNoteNorm =
+      typeof reimbursementNoteBody === 'string' && reimbursementNoteBody.trim() !== ''
+        ? reimbursementNoteBody.trim()
+        : null
 
     const updatePayload: CompanyExpenseUpdate = {
       paid_to,
@@ -136,6 +160,9 @@ export async function PUT(
             ? null
             : String(standardPaidForBody),
       }),
+      reimbursed_amount: parsedAmount > 0 ? reimbNum : 0,
+      reimbursed_on: parsedAmount > 0 ? reimbursedOnNorm : null,
+      reimbursement_note: parsedAmount > 0 ? reimbursementNoteNorm : null,
     }
 
     const { data, error } = await supabase

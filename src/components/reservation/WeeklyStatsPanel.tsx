@@ -1,9 +1,27 @@
 'use client'
 
-import React from 'react'
-import { useTranslations } from 'next-intl'
+import React, { useMemo } from 'react'
+import { useLocale, useTranslations } from 'next-intl'
 import Image from 'next/image'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { getStatusLabel } from '@/utils/reservationUtils'
+
+export type WeeklyRegCancelDayRow = {
+  dateKey: string
+  registeredPeople: number
+  registeredCount: number
+  cancelledPeople: number
+  cancelledCount: number
+}
 
 interface WeeklyStatsPanelProps {
   currentWeek: number
@@ -22,6 +40,8 @@ interface WeeklyStatsPanelProps {
     totalReservations: number
     totalPeople: number
   }
+  /** 일별 등록·취소 인원 차트 (현재 주간 구간) */
+  weeklyRegCancelByDay?: WeeklyRegCancelDayRow[]
   isWeeklyStatsCollapsed: boolean
   onToggleStatsCollapsed: () => void
   groupedReservations: Record<string, unknown[]>
@@ -34,12 +54,26 @@ export default function WeeklyStatsPanel({
   onInitialLoadChange,
   isInitialLoad,
   weeklyStats,
+  weeklyRegCancelByDay = [],
   isWeeklyStatsCollapsed,
   onToggleStatsCollapsed,
   groupedReservations,
   formatWeekRange
 }: WeeklyStatsPanelProps) {
   const t = useTranslations('reservations')
+  const locale = useLocale()
+
+  const regCancelChartData = useMemo(() => {
+    const tag = locale === 'ko' ? 'ko-KR' : 'en-US'
+    return weeklyRegCancelByDay.map((row) => ({
+      ...row,
+      shortLabel: new Date(`${row.dateKey}T12:00:00`).toLocaleDateString(tag, {
+        weekday: 'short',
+        month: 'numeric',
+        day: 'numeric',
+      }),
+    }))
+  }, [weeklyRegCancelByDay, locale])
 
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg">
@@ -135,6 +169,72 @@ export default function WeeklyStatsPanel({
       {/* 주간 통계 아코디언 - 초컴팩트 모바일 최적화 */}
       {weeklyStats.totalReservations > 0 && !isWeeklyStatsCollapsed && (
         <div className="p-2 sm:p-4">
+          {regCancelChartData.length > 0 && (
+            <div className="mb-3 sm:mb-4 rounded-lg border border-blue-200 bg-white p-2 sm:p-3 shadow-sm">
+              <h5 className="text-xs font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                {t('stats.weeklyRegCancelChartTitle')}
+              </h5>
+              <div className="h-[220px] w-full min-h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={regCancelChartData}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+                    barCategoryGap="18%"
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
+                    <XAxis
+                      dataKey="shortLabel"
+                      tick={{ fontSize: 10 }}
+                      interval={0}
+                      height={48}
+                    />
+                    <YAxis tick={{ fontSize: 10 }} width={36} allowDecimals={false} />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null
+                        const d = payload[0].payload as WeeklyRegCancelDayRow & { shortLabel: string }
+                        return (
+                          <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs shadow-md">
+                            <p className="font-semibold text-gray-900 mb-1">{d.shortLabel}</p>
+                            <p className="text-blue-700">
+                              {t('stats.weeklyChartTooltipReg', {
+                                count: d.registeredCount,
+                                people: d.registeredPeople,
+                              })}
+                            </p>
+                            <p className="text-rose-700">
+                              {t('stats.weeklyChartTooltipCancel', {
+                                count: d.cancelledCount,
+                                people: d.cancelledPeople,
+                              })}
+                            </p>
+                          </div>
+                        )
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                    <Bar
+                      dataKey="registeredPeople"
+                      name={t('stats.weeklyChartRegisteredPeople')}
+                      fill="#2563eb"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={44}
+                    />
+                    <Bar
+                      dataKey="cancelledPeople"
+                      name={t('stats.weeklyChartCancelledPeople')}
+                      fill="#e11d48"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={44}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
             {/* 상품별 인원 통계 */}
             <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">

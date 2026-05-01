@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useLocale } from 'next-intl'
 import { X, Receipt, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle, Edit, Clock, Upload, Camera, Folder } from 'lucide-react'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
+import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -296,7 +297,9 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
   const handleFileUpload = async (file: File) => {
     try {
       setUploading(true)
-      
+
+      await ensureFreshAuthSessionForUpload()
+
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
       const filePath = `receipts/${fileName}`

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import PaymentMethodManager from '@/components/PaymentMethodManager'
 import { 
@@ -38,6 +39,8 @@ interface PaymentMethodStats {
 }
 
 export default function PaymentMethodsPage() {
+  const searchParams = useSearchParams()
+  const filterUserEmail = searchParams.get('user_email')?.trim() || undefined
   const t = useTranslations('paymentMethod')
   const [stats, setStats] = useState<PaymentMethodStats>({
     total: 0,
@@ -341,7 +344,7 @@ export default function PaymentMethodsPage() {
       {/* 결제 방법 관리 컴포넌트 */}
       <div className="bg-white rounded-lg shadow">
         <div className="p-3 sm:p-4 lg:p-6">
-          <PaymentMethodManager />
+          <PaymentMethodManager userEmail={filterUserEmail} />
         </div>
       </div>
     </div>

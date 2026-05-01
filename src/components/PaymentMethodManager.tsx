@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentMethodUsageModal from '@/components/PaymentMethodUsageModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
 import {
@@ -89,8 +90,8 @@ function MergeMethodDetailCells({
   return (
     <>
       <td className="px-2 py-1.5 align-top text-gray-900 max-w-[11rem] border-b border-gray-100">
-        <div className="font-medium truncate" title={method.method}>
-          {method.method}
+        <div className="font-medium truncate" title={paymentMethodUiLabel(method)}>
+          {paymentMethodUiLabel(method)}
         </div>
         <div className="text-[11px] font-mono text-gray-500 truncate" title={method.id}>
           {method.id}
@@ -177,7 +178,28 @@ interface PaymentMethod {
     email: string
     name_ko: string
     name_en: string
+    nick_name?: string | null
   } | null
+}
+
+function paymentMethodUiLabel(m: PaymentMethod): string {
+  return formatPaymentMethodDisplay(
+    {
+      id: m.id,
+      method: m.method,
+      display_name: m.display_name ?? null,
+      user_email: m.user_email,
+      card_holder_name: m.card_holder_name,
+    },
+    m.team
+      ? {
+          email: m.team.email,
+          name_ko: m.team.name_ko,
+          name_en: m.team.name_en,
+          nick_name: m.team.nick_name ?? null,
+        }
+      : undefined
+  )
 }
 
 interface PaymentMethodManagerProps {
@@ -3027,13 +3049,13 @@ export default function PaymentMethodManager({
                       <td className="px-2 py-2 sm:px-3 align-middle font-mono text-xs text-gray-600 max-w-[140px] truncate" title={method.id}>
                         {method.id}
                       </td>
-                      <td className="px-2 py-2 sm:px-3 align-middle max-w-[160px] truncate" title={method.method}>
+                      <td className="px-2 py-2 sm:px-3 align-middle max-w-[160px] truncate" title={paymentMethodUiLabel(method)}>
                         <button
                           type="button"
                           onClick={() => setUsageModalMethod(method)}
                           className="font-medium text-left text-blue-700 hover:text-blue-900 hover:underline truncate max-w-full"
                         >
-                          {method.method}
+                          {paymentMethodUiLabel(method)}
                         </button>
                       </td>
                       <td
@@ -3153,7 +3175,7 @@ export default function PaymentMethodManager({
                       onClick={() => setUsageModalMethod(method)}
                       className="font-semibold text-xs sm:text-sm text-left text-blue-700 hover:text-blue-900 hover:underline truncate"
                     >
-                      {method.method}
+                      {paymentMethodUiLabel(method)}
                     </button>
                   </div>
                   <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">

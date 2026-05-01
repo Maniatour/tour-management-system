@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
-import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, XCircle, LayoutGrid, Table2 } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, XCircle, LayoutGrid, Table2, GalleryHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -12,13 +13,16 @@ import {
 } from '@/components/reservation/ReservationActionRequiredTable'
 import {
   computeRemainingBalanceAmount,
-  isStoredCustomerTotalMismatchWithFormula,
-  mergePricingWithLiveOptionTotal,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
   type PricingBalanceFields,
 } from '@/utils/reservationPricingBalance'
+import {
+  reservationMatchesExtendedPricingMismatchCriteria,
+  type BalanceChannelRowInput,
+} from '@/utils/balanceChannelRevenue'
 import type { Reservation, Customer } from '@/types/reservation'
+import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 
 export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'balance' | 'followUpCancel'
 export type PricingSubTabId = 'noPrice' | 'mismatch'
@@ -31,7 +35,14 @@ export interface ReservationActionRequiredModalProps {
   reservations: Reservation[]
   customers: Customer[]
   products: Array<{ id: string; name: string; sub_category?: string; base_price?: number }>
-  channels: Array<{ id: string; name: string; favicon_url?: string | null }>
+  channels: Array<{
+    id: string
+    name: string
+    favicon_url?: string | null
+    type?: string | null
+    category?: string | null
+    commission_percent?: number | null
+  }>
   pickupHotels: Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null; address?: string | null }>
   productOptions: Array<{ id: string; name: string; is_required?: boolean }>
   optionChoices: Array<{ id: string; name: string; option_id?: string; adult_price?: number; child_price?: number; infant_price?: number }>
@@ -83,6 +94,8 @@ export interface ReservationActionRequiredModalProps {
   onEmailLogsClick: (reservationId: string) => void
   onEmailDropdownToggle: (reservationId: string) => void
   onEditClick: (reservationId: string) => void
+  /** 한 건씩(가격 불일치) 모드 종료 시 예약 수정 폼 닫기 — admin에서 setEditingReservation(null) 등 */
+  onExitOneByOneEdit?: () => void
   onCustomerClick: (customer: Customer) => void
   onRefreshReservations: () => void
   /** pricing 행만 갱신 — 전체 목록 재조회 없이 reservation_pricing 맵 병합(모달 리셋 방지) */
@@ -147,6 +160,7 @@ export default function ReservationActionRequiredModal({
   onEmailLogsClick,
   onEmailDropdownToggle,
   onEditClick,
+  onExitOneByOneEdit,
   onCustomerClick,
   onRefreshReservations,
   onRefreshReservationPricing,
@@ -168,7 +182,7 @@ export default function ReservationActionRequiredModal({
   const [balanceTotalFilter, setBalanceTotalFilter] = useState<BalanceTotalFilterId>('all')
   const [page, setPage] = useState(1)
   const [tableRowsPerPage, setTableRowsPerPage] = useState<TablePageSize>(50)
-  const [listViewMode, setListViewMode] = useState<'card' | 'table'>('table')
+  const [listViewMode, setListViewMode] = useState<'card' | 'table' | 'detail'>('table')
   const [manualOpen, setManualOpen] = useState(false)
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
   const [paymentRecordsByReservationId, setPaymentRecordsByReservationId] = useState<
@@ -193,6 +207,28 @@ export default function ReservationActionRequiredModal({
   useEffect(() => {
     setPage(1)
   }, [tableRowsPerPage])
+
+  /** ② 불일치 탭 전용 '한 건씩' 모드 — 다른 탭으로 나가면 테이블로 복귀 */
+  useEffect(() => {
+    if (listViewMode !== 'detail') return
+    if (activeTab !== 'pricing' || pricingSubTab !== 'mismatch') {
+      setListViewMode('table')
+    }
+  }, [activeTab, pricingSubTab, listViewMode])
+
+  const prevListViewModeRef = useRef(listViewMode)
+  useEffect(() => {
+    const prev = prevListViewModeRef.current
+    prevListViewModeRef.current = listViewMode
+    if (prev === 'detail' && listViewMode !== 'detail') {
+      onExitOneByOneEdit?.()
+    }
+  }, [listViewMode, onExitOneByOneEdit])
+
+  const detailSwipeStartX = useRef<number | null>(null)
+
+  const pricingMismatchDetailMode =
+    activeTab === 'pricing' && pricingSubTab === 'mismatch' && listViewMode === 'detail'
 
   const renderManualText = (text: string) => {
     const parts = text.split(/\*\*(.*?)\*\*/g)
@@ -321,19 +357,6 @@ export default function ReservationActionRequiredModal({
       const p = reservationPricingMap.get(r.id)
       return !!(p && (p.total_price != null && p.total_price > 0))
     }
-    /** 테이블과 동일: DB total_price vs computeCustomerPaymentTotalLineFormula(+실시간 옵션 합) */
-    const pricingParty = (r: Reservation) => ({
-      adults: r.adults,
-      children: r.child,
-      infants: r.infant,
-    })
-    const storedTotalMatchesLineFormula = (r: Reservation) => {
-      const raw = reservationPricingMap.get(r.id)
-      return !isStoredCustomerTotalMismatchWithFormula(
-        pricingParty(r),
-        mergePricingWithLiveOptionTotal(raw, r.id, reservationOptionSumByReservationId)
-      )
-    }
     const getBalance = (r: Reservation) => {
       const p = reservationPricingMap.get(r.id)
       const b = p?.balance_amount
@@ -372,7 +395,16 @@ export default function ReservationActionRequiredModal({
     )
     const noPricing = list.filter(r => !hasPricing(r) && isNotCancelled(r))
     const pricingMismatch = list.filter(
-      (r) => hasPricing(r) && !storedTotalMatchesLineFormula(r) && isNotCancelled(r)
+      (r) =>
+        hasPricing(r) &&
+        isNotCancelled(r) &&
+        reservationMatchesExtendedPricingMismatchCriteria(
+          r,
+          reservationPricingMap as Map<string, ReservationPricingMapValue>,
+          channels as BalanceChannelRowInput[],
+          paymentRecordsByReservationId,
+          reservationOptionSumByReservationId
+        )
     )
     const pricingList = [...new Map([...noPricing.map(r => [r.id, r]), ...pricingMismatch.map(r => [r.id, r])]).values()]
     const depositNoTour = list.filter(r => hasPayment(r) && !hasTourAssigned(r))
@@ -458,7 +490,8 @@ export default function ReservationActionRequiredModal({
     todayStr,
     sevenDaysLaterStr,
     hasTourAssigned,
-    paymentRecordsByReservationId
+    paymentRecordsByReservationId,
+    channels
   ])
 
   const counts = useMemo(() => ({
@@ -496,13 +529,12 @@ export default function ReservationActionRequiredModal({
         ]
       if (balanceTotalFilter === 'totalMismatch') {
         list = list.filter((r) =>
-          isStoredCustomerTotalMismatchWithFormula(
-            { adults: r.adults, children: r.child, infants: r.infant },
-            mergePricingWithLiveOptionTotal(
-              reservationPricingMap.get(r.id),
-              r.id,
-              reservationOptionSumByReservationId
-            )
+          reservationMatchesExtendedPricingMismatchCriteria(
+            r,
+            reservationPricingMap as Map<string, ReservationPricingMapValue>,
+            channels as BalanceChannelRowInput[],
+            paymentRecordsByReservationId,
+            reservationOptionSumByReservationId
           )
         )
       }
@@ -517,6 +549,8 @@ export default function ReservationActionRequiredModal({
     filteredByTab,
     reservationPricingMap,
     reservationOptionSumByReservationId,
+    channels,
+    paymentRecordsByReservationId,
   ])
 
   const balanceSubTabBaseList = useMemo(() => {
@@ -532,28 +566,47 @@ export default function ReservationActionRequiredModal({
 
   const balanceTotalMismatchCount = useMemo(() => {
     return balanceSubTabBaseList.filter((r) =>
-      isStoredCustomerTotalMismatchWithFormula(
-        { adults: r.adults, children: r.child, infants: r.infant },
-        mergePricingWithLiveOptionTotal(
-          reservationPricingMap.get(r.id),
-          r.id,
-          reservationOptionSumByReservationId
-        )
+      reservationMatchesExtendedPricingMismatchCriteria(
+        r,
+        reservationPricingMap as Map<string, ReservationPricingMapValue>,
+        channels as BalanceChannelRowInput[],
+        paymentRecordsByReservationId,
+        reservationOptionSumByReservationId
       )
     ).length
-  }, [balanceSubTabBaseList, reservationPricingMap, reservationOptionSumByReservationId])
+  }, [
+    balanceSubTabBaseList,
+    reservationPricingMap,
+    reservationOptionSumByReservationId,
+    channels,
+    paymentRecordsByReservationId,
+  ])
 
   useEffect(() => {
     if (activeTab !== 'balance') setBalanceTotalFilter('all')
   }, [activeTab])
 
-  const pageSize = listViewMode === 'table' ? tableRowsPerPage : CARDS_PER_PAGE
+  const pageSize =
+    listViewMode === 'detail' ? 1 : listViewMode === 'table' ? tableRowsPerPage : CARDS_PER_PAGE
   const totalPages = Math.max(1, Math.ceil(currentList.length / pageSize))
   const safePage = Math.min(page, totalPages)
   const paginatedList = useMemo(
     () => currentList.slice((safePage - 1) * pageSize, safePage * pageSize),
     [currentList, safePage, pageSize]
   )
+
+  /** 한 건씩: 현재 예약에 대해 상위의 예약 수정 모달(ReservationForm) 열기 */
+  useEffect(() => {
+    if (!pricingMismatchDetailMode || !paginatedList[0]) return
+    onEditClick(paginatedList[0].id)
+  }, [pricingMismatchDetailMode, paginatedList[0]?.id, onEditClick])
+
+  const handleCloseModal = useCallback(() => {
+    if (listViewMode === 'detail') {
+      setListViewMode('table')
+    }
+    onClose()
+  }, [listViewMode, onClose])
 
   const actionRequiredTableVariant = useMemo((): ActionRequiredTableVariant => {
     if (activeTab === 'balance') return 'balance'
@@ -571,6 +624,45 @@ export default function ReservationActionRequiredModal({
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [totalPages, page])
+
+  const onDetailTouchStart = useCallback((e: React.TouchEvent) => {
+    detailSwipeStartX.current = e.targetTouches[0]?.clientX ?? null
+  }, [])
+
+  const onDetailTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      const start = detailSwipeStartX.current
+      detailSwipeStartX.current = null
+      if (start == null || totalPages <= 1) return
+      const end = e.changedTouches[0]?.clientX
+      if (end == null) return
+      const delta = end - start
+      if (Math.abs(delta) < 56) return
+      if (delta < 0) setPage((p) => Math.min(totalPages, p + 1))
+      else setPage((p) => Math.max(1, p - 1))
+    },
+    [totalPages]
+  )
+
+  useEffect(() => {
+    if (!isOpen || !pricingMismatchDetailMode || currentList.length <= 1) return
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target
+      if (el instanceof HTMLElement) {
+        const name = el.tagName
+        if (name === 'INPUT' || name === 'TEXTAREA' || el.isContentEditable) return
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        setPage((p) => Math.max(1, p - 1))
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        setPage((p) => Math.min(totalPages, p + 1))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, pricingMismatchDetailMode, currentList.length, totalPages])
 
   if (!isOpen) return null
 
@@ -602,7 +694,11 @@ export default function ReservationActionRequiredModal({
               <div
                 className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50"
                 role="group"
-                aria-label={`${t('actionRequired.viewCard')} / ${t('actionRequired.viewTable')}`}
+                aria-label={`${t('actionRequired.viewCard')} / ${t('actionRequired.viewTable')}${
+                  activeTab === 'pricing' && pricingSubTab === 'mismatch'
+                    ? ` / ${t('actionRequired.viewDetail')}`
+                    : ''
+                }`}
               >
                 <button
                   type="button"
@@ -630,6 +726,21 @@ export default function ReservationActionRequiredModal({
                   <Table2 className="w-4 h-4" />
                   <span className="hidden sm:inline">{t('actionRequired.viewTable')}</span>
                 </button>
+                {activeTab === 'pricing' && pricingSubTab === 'mismatch' && (
+                  <button
+                    type="button"
+                    onClick={() => setListViewMode('detail')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      listViewMode === 'detail'
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                    title={t('actionRequired.viewDetailTooltip')}
+                  >
+                    <GalleryHorizontal className="w-4 h-4" />
+                    <span className="hidden sm:inline">{t('actionRequired.viewDetail')}</span>
+                  </button>
+                )}
               </div>
             )}
             {showCardTableToggle && listViewMode === 'table' && (
@@ -651,7 +762,7 @@ export default function ReservationActionRequiredModal({
             )}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCloseModal}
               className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
               aria-label="닫기"
             >
@@ -842,7 +953,57 @@ export default function ReservationActionRequiredModal({
             </div>
           ) : (
             <>
-              {listViewMode === 'card' ? (
+              {listViewMode === 'detail' && paginatedList[0] ? (
+                <>
+                  {typeof document !== 'undefined' &&
+                    createPortal(
+                      <div
+                        className="fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-[105] flex -translate-x-1/2 flex-col items-center gap-1.5 pointer-events-none"
+                        aria-live="polite"
+                      >
+                        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur-sm sm:gap-2 sm:px-3 sm:py-2">
+                          <button
+                            type="button"
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={safePage <= 1}
+                            className="rounded-full p-2 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            aria-label={t('actionRequired.detailPrevReservation')}
+                          >
+                            <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+                          </button>
+                          <span className="min-w-[5rem] text-center text-xs font-medium tabular-nums text-gray-800 sm:text-sm">
+                            {safePage} / {totalPages}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={safePage >= totalPages}
+                            className="rounded-full p-2 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            aria-label={t('actionRequired.detailNextReservation')}
+                          >
+                            <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+                          </button>
+                        </div>
+                        {totalPages > 1 && (
+                          <p className="pointer-events-none max-w-[min(90vw,20rem)] text-center text-[10px] text-gray-600 sm:text-xs">
+                            {t('actionRequired.detailSwipeHint')}
+                          </p>
+                        )}
+                      </div>,
+                      document.body
+                    )}
+                  <div
+                    className="flex min-h-[4rem] flex-col items-center justify-center py-4 text-center text-xs text-gray-500"
+                    onTouchStart={onDetailTouchStart}
+                    onTouchEnd={onDetailTouchEnd}
+                  >
+                    <p className="max-w-md text-sm text-gray-700">{t('actionRequired.detailEditFormHint')}</p>
+                    <p className="mt-1 max-w-md text-[11px] leading-relaxed text-gray-500">
+                      {t('actionRequired.detailEditFormSubHint')}
+                    </p>
+                  </div>
+                </>
+              ) : listViewMode === 'card' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {paginatedList.map((reservation) => (
                     <ReservationCardItem
@@ -925,7 +1086,8 @@ export default function ReservationActionRequiredModal({
                   balanceReservationsForApply={activeTab === 'balance' ? currentList : undefined}
                 />
               )}
-              {((listViewMode === 'table' && currentList.length > 0) ||
+              {((listViewMode === 'detail' && currentList.length > 0) ||
+                (listViewMode === 'table' && currentList.length > 0) ||
                 (listViewMode === 'card' && currentList.length > pageSize)) && (
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t border-gray-200">
                   <div className="flex flex-wrap items-center gap-3 min-w-0">

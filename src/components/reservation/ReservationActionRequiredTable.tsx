@@ -48,7 +48,14 @@ export interface ReservationActionRequiredTableProps {
   reservations: Reservation[]
   customers: Customer[]
   products: Array<{ id: string; name: string; sub_category?: string; product_code?: string | null }>
-  channels: Array<{ id: string; name: string; favicon_url?: string | null }>
+  channels: Array<{
+    id: string
+    name: string
+    favicon_url?: string | null
+    type?: string | null
+    category?: string | null
+    commission_percent?: number | null
+  }>
   pickupHotels: Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>
   productOptions: Array<{ id: string; name: string; is_required?: boolean }>
   optionChoices: Array<{ id: string; name: string; option_id?: string; adult_price?: number; child_price?: number; infant_price?: number }>
@@ -903,7 +910,6 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
             tableVariant === 'balance' ? rest.balanceReservationsForApply : undefined
           }
           actionsColumnEditOnly
-          enablePricingDbApply={tableVariant === 'balance'}
         />
         {followUpReservation && <FollowUpModal followUpReservation={followUpReservation} onClose={() => setFollowUpReservation(null)} />}
       </>

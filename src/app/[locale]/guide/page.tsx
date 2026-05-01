@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History, MessageSquare, MessageCircle, Search as SearchIcon, RefreshCw } from 'lucide-react'
+import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History, MessageSquare, MessageCircle, Search as SearchIcon } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -48,7 +48,7 @@ interface TeamChatRoom {
     sender_name: string
     sender_position?: string
     created_at: string
-  }
+  } | null
 }
 
 interface TeamChatMessage {
@@ -93,7 +93,7 @@ interface TourChatRoom {
     message: string
     sender_name: string
     created_at: string
-  }
+  } | null
   unread_count: number
 }
 
@@ -217,9 +217,8 @@ export default function GuideDashboard() {
   const [newChatMessage, setNewChatMessage] = useState('')
   const [chatSending, setChatSending] = useState(false)
   const [chatSearchTerm, setChatSearchTerm] = useState('')
-  const [chatFilterType, setChatFilterType] = useState('all')
+  const [chatFilterType] = useState('all')
   const [showChatSection, setShowChatSection] = useState(false)
-  const [chatRefreshing, setChatRefreshing] = useState(false)
 
   // 시간 포맷팅 함수
   const formatChatTime = (dateString: string) => {
@@ -238,7 +237,7 @@ export default function GuideDashboard() {
   }
 
   // 팀 채팅방 데이터 로딩
-  const { data: teamChatRoomsData, loading: teamChatLoading, refetch: refetchTeamChatRooms } = useOptimizedData<TeamChatRoom[]>({
+  const { data: teamChatRoomsData, refetch: refetchTeamChatRooms } = useOptimizedData<TeamChatRoom[]>({
     fetchFn: async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -321,7 +320,7 @@ export default function GuideDashboard() {
   })
 
   // 투어 채팅방 데이터 로딩
-  const { data: tourChatRoomsData, loading: tourChatLoading, refetch: refetchTourChatRooms } = useOptimizedData<TourChatRoom[]>({
+  const { data: tourChatRoomsData, refetch: refetchTourChatRooms } = useOptimizedData<TourChatRoom[]>({
     fetchFn: async () => {
       try {
         if (!currentUserEmail) return []
@@ -345,7 +344,7 @@ export default function GuideDashboard() {
         }
 
         // 상품 정보 가져오기
-        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
+        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter((id): id is string => Boolean(id)))]
         let productMap = new Map()
         let productEnMap = new Map()
         
@@ -360,8 +359,8 @@ export default function GuideDashboard() {
         }
 
         // 팀원 정보 가져오기
-        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter(Boolean))]
-        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter(Boolean))]
+        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter((e): e is string => Boolean(e)))]
+        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter((e): e is string => Boolean(e)))]
         const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
         
         let teamMap = new Map()
@@ -377,7 +376,7 @@ export default function GuideDashboard() {
         }
 
         // 차량 정보 가져오기
-        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter(Boolean))]
+        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter((id): id is string => Boolean(id)))]
         
         let vehicleMap = new Map()
         if (vehicleIds.length > 0) {
@@ -435,7 +434,6 @@ export default function GuideDashboard() {
             guide_name: guideName,
             assistant_name: assistantName,
             vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id) : null,
-            last_message: null,
             unread_count: 0
           }
         })
@@ -560,9 +558,6 @@ export default function GuideDashboard() {
     return true
   })
 
-  const teamChatRooms = teamChatRoomsData || []
-  const tourChatRooms = tourChatRoomsData || []
-  
   const [showOffScheduleModal, setShowOffScheduleModal] = useState(false)
   const [offScheduleForm, setOffScheduleForm] = useState({
     off_date: '',
@@ -641,7 +636,7 @@ export default function GuideDashboard() {
         })))
 
         // 상품 정보 가져오기
-        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
+        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter((id): id is string => Boolean(id)))]
         let productMap = new Map()
         let productEnMap = new Map()
         let productInternalKoMap = new Map()
@@ -670,8 +665,8 @@ export default function GuideDashboard() {
         }
 
         // 팀원 정보 가져오기
-        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter(Boolean))]
-        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter(Boolean))]
+        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter((e): e is string => Boolean(e)))]
+        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter((e): e is string => Boolean(e)))]
         const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
         
         let teamMap = new Map()
@@ -712,7 +707,7 @@ export default function GuideDashboard() {
         }
 
         // 차량 정보 가져오기
-        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter(Boolean))]
+        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter((id): id is string => Boolean(id)))]
         
         let vehicleMap = new Map()
         if (vehicleIds.length > 0) {
@@ -1012,7 +1007,8 @@ export default function GuideDashboard() {
           .insert({
             team_email: currentUserEmail,
             off_date: date,
-            reason: offScheduleForm.reason.trim()
+            reason: offScheduleForm.reason.trim(),
+            status: 'pending'
           })
       )
 
@@ -1273,7 +1269,7 @@ export default function GuideDashboard() {
                 onClick={() => {
                   setOffScheduleForm({ 
                     off_date: schedule.off_date, 
-                    reason: schedule.reason,
+                    reason: schedule.reason ?? '',
                     is_multi_day: false,
                     end_date: ''
                   })
@@ -1789,7 +1785,6 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
               <Users className="w-3 h-3 mr-1" />
               <span>
                 {(() => {
-                  const adults = tour.assigned_adults || 0
                   const children = tour.assigned_children || 0
                   const infants = tour.assigned_infants || 0
                   const total = tour.assigned_people || 0

@@ -7,6 +7,7 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
+import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 
 interface ReservationExpense {
   id: string
@@ -27,6 +28,9 @@ interface ReservationExpense {
   checked_on: string | null
   created_at: string
   updated_at: string
+  reimbursed_amount?: number | null
+  reimbursed_on?: string | null
+  reimbursement_note?: string | null
   reservations?: {
     id: string
     customer_name?: string
@@ -165,6 +169,13 @@ export default function ReservationExpenseManager({
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
   const [reservations, setReservations] = useState<Reservation[]>([])
   const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
+  const employeeLinkedPaymentMethodIds = useMemo(() => {
+    const set = new Set<string>()
+    paymentMethodOptions.forEach((pm) => {
+      if (String(pm.user_email || '').trim()) set.add(pm.id)
+    })
+    return set
+  }, [paymentMethodOptions])
   const [showAddForm, setShowAddForm] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ReservationExpense | null>(null)
@@ -177,6 +188,7 @@ export default function ReservationExpenseManager({
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; paidFor: string } | null>(null)
 
   // 폼 데이터
@@ -190,7 +202,10 @@ export default function ReservationExpenseManager({
     file_path: '',
     custom_paid_to: '',
     reservation_id: reservationId || '',
-    uploaded_files: [] as File[]
+    uploaded_files: [] as File[],
+    reimbursed_amount: '',
+    reimbursed_on: '',
+    reimbursement_note: ''
   })
 
   // 데이터 로드
@@ -418,6 +433,9 @@ export default function ReservationExpenseManager({
           reservation_id: resLinkReservation,
           event_id: null,
           status: 'pending',
+          reimbursed_amount: 0,
+          reimbursed_on: null,
+          reimbursement_note: null,
         }),
       })
 
@@ -439,7 +457,10 @@ export default function ReservationExpenseManager({
         file_path: '',
         custom_paid_to: '',
         reservation_id: reservationId || '',
-        uploaded_files: []
+        uploaded_files: [],
+        reimbursed_amount: '',
+        reimbursed_on: '',
+        reimbursement_note: ''
       })
       setShowCustomPaidTo(false)
       onExpenseUpdated?.()
@@ -457,6 +478,30 @@ export default function ReservationExpenseManager({
   const handleUpdateExpense = async () => {
     
     if (!editingExpense) return
+
+    const amountNum = parseFloat(formData.amount)
+    const reimb = parseFloat(String(formData.reimbursed_amount ?? '').trim() || '0')
+    if (!Number.isFinite(reimb) || reimb < 0) {
+      alert(tTour('reimbursementInvalidNonNegative'))
+      return
+    }
+    if (amountNum > 0 && reimb > amountNum + 0.001) {
+      alert(tTour('reimbursementExceedsAmount'))
+      return
+    }
+
+    const reimbPayload =
+      amountNum > 0
+        ? {
+            reimbursed_amount: reimb,
+            reimbursed_on: formData.reimbursed_on?.trim() || null,
+            reimbursement_note: formData.reimbursement_note?.trim() || null
+          }
+        : {
+            reimbursed_amount: 0,
+            reimbursed_on: null,
+            reimbursement_note: null
+          }
     
     try {
       setUploading(true)
@@ -469,13 +514,14 @@ export default function ReservationExpenseManager({
         body: JSON.stringify({
           paid_to: formData.custom_paid_to || formData.paid_to,
           paid_for: (formData.paid_for || '').trim(),
-          amount: parseFloat(formData.amount),
+          amount: amountNum,
           payment_method: formData.payment_method || null,
           note: formData.note || null,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
           reservation_id: (reservationId || formData.reservation_id || '').trim() || null,
           event_id: null,
+          ...reimbPayload
         })
       })
 
@@ -534,7 +580,11 @@ export default function ReservationExpenseManager({
       file_path: expense.file_path || '',
       custom_paid_to: '',
       reservation_id: expense.reservation_id || '',
-      uploaded_files: []
+      uploaded_files: [],
+      reimbursed_amount:
+        expense.amount > 0 ? String(parseReimbursedAmount(expense.reimbursed_amount)) : '',
+      reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
+      reimbursement_note: expense.reimbursement_note || ''
     })
     setShowEditModal(true)
   }
@@ -552,7 +602,10 @@ export default function ReservationExpenseManager({
       file_path: '',
       custom_paid_to: '',
       reservation_id: reservationId || '',
-      uploaded_files: []
+      uploaded_files: [],
+      reimbursed_amount: '',
+      reimbursed_on: '',
+      reimbursement_note: ''
     })
     setShowCustomPaidTo(false)
   }
@@ -662,6 +715,14 @@ export default function ReservationExpenseManager({
       const subYmd = e.submit_on ? e.submit_on.slice(0, 10) : ''
       if (dateFrom && subYmd && subYmd < dateFrom) return false
       if (dateTo && subYmd && subYmd > dateTo) return false
+      if (reimbursementFilter === 'employee_card') {
+        const pm = e.payment_method?.trim()
+        if (!pm || !employeeLinkedPaymentMethodIds.has(pm)) return false
+      }
+      if (reimbursementFilter === 'outstanding') {
+        if ((e.amount || 0) <= 0) return false
+        if (reimbursementOutstanding(e.amount, e.reimbursed_amount) <= 0.009) return false
+      }
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase()
         const pmId = e.payment_method?.trim() || ''
@@ -684,7 +745,17 @@ export default function ReservationExpenseManager({
       }
       return true
     })
-  }, [adminList, expenses, searchTerm, statusFilter, dateFrom, dateTo, paymentMethodMap])
+  }, [
+    adminList,
+    expenses,
+    searchTerm,
+    statusFilter,
+    dateFrom,
+    dateTo,
+    paymentMethodMap,
+    reimbursementFilter,
+    employeeLinkedPaymentMethodIds,
+  ])
 
   const totalFiltered = useMemo(
     () => filteredExpenses.reduce((s, e) => s + e.amount, 0),
@@ -701,6 +772,24 @@ export default function ReservationExpenseManager({
     [filteredExpenses]
   )
 
+  const reimbursedTotalFiltered = useMemo(
+    () =>
+      adminList
+        ? filteredExpenses.reduce((s, e) => s + parseReimbursedAmount(e.reimbursed_amount), 0)
+        : 0,
+    [adminList, filteredExpenses]
+  )
+  const outstandingTotalFiltered = useMemo(
+    () =>
+      adminList
+        ? filteredExpenses.reduce((s, e) => {
+            if ((e.amount || 0) <= 0) return s
+            return s + reimbursementOutstanding(e.amount, e.reimbursed_amount)
+          }, 0)
+        : 0,
+    [adminList, filteredExpenses]
+  )
+
   const displayExpenses = adminList ? filteredExpenses : expenses
 
   const reservationCustomerLabel = (expense: ReservationExpense) => {
@@ -715,6 +804,7 @@ export default function ReservationExpenseManager({
     setStatusFilter('all')
     setDateFrom('')
     setDateTo('')
+    setReimbursementFilter('all')
   }
 
   const showTitle = !hideTitle || titleProp
@@ -758,6 +848,9 @@ export default function ReservationExpenseManager({
                   custom_paid_to: '',
                   reservation_id: reservationId || '',
                   uploaded_files: [],
+                  reimbursed_amount: '',
+                  reimbursed_on: '',
+                  reimbursement_note: ''
                 })
               }}
               className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1.5 sm:gap-2 text-sm w-full sm:w-auto shrink-0 disabled:opacity-50 disabled:pointer-events-none"
@@ -808,7 +901,23 @@ export default function ReservationExpenseManager({
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">
+          <div className="max-w-md">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
+              {tTour('reimbursementFilterLabel')}
+            </label>
+            <select
+              value={reimbursementFilter}
+              onChange={(e) =>
+                setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
+              }
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{tTour('reimbursementFilterAll')}</option>
+              <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
+              <option value="outstanding">{tTour('reimbursementFilterOutstanding')}</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">
             <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-100/80">
               <div className="text-xs sm:text-sm text-gray-600">{tTour('totalExpenseSum')}</div>
               <div className="text-base sm:text-2xl font-bold text-gray-900 truncate">{formatCurrency(totalFiltered)}</div>
@@ -820,6 +929,18 @@ export default function ReservationExpenseManager({
             <div className="bg-green-50 rounded-lg p-2 sm:p-3 border border-green-100/80">
               <div className="text-xs sm:text-sm text-gray-600">{tTour('approvedSum')}</div>
               <div className="text-base sm:text-2xl font-bold text-green-600 truncate">{formatCurrency(approvedFiltered)}</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-2 sm:p-3 border border-slate-100">
+              <div className="text-xs sm:text-sm text-gray-600">{tTour('reimbursedTotalLabel')}</div>
+              <div className="text-base sm:text-2xl font-bold text-slate-800 truncate">
+                {formatCurrency(reimbursedTotalFiltered)}
+              </div>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-2 sm:p-3 border border-amber-100 col-span-2 sm:col-span-1 lg:col-span-1">
+              <div className="text-xs sm:text-sm text-gray-600">{tTour('outstandingTotalLabel')}</div>
+              <div className="text-base sm:text-2xl font-bold text-amber-800 truncate">
+                {formatCurrency(outstandingTotalFiltered)}
+              </div>
             </div>
           </div>
         </div>
@@ -856,7 +977,10 @@ export default function ReservationExpenseManager({
                 file_path: '',
                 custom_paid_to: '',
                 reservation_id: reservationId || '',
-                uploaded_files: []
+                uploaded_files: [],
+                reimbursed_amount: '',
+                reimbursed_on: '',
+                reimbursement_note: ''
               })
             }}
             className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:bg-blue-600"
@@ -891,7 +1015,10 @@ export default function ReservationExpenseManager({
                   file_path: '',
                   custom_paid_to: '',
                   reservation_id: reservationId || '',
-                  uploaded_files: []
+                  uploaded_files: [],
+                  reimbursed_amount: '',
+                  reimbursed_on: '',
+                  reimbursement_note: ''
                 })
               }}
               className="text-gray-400 hover:text-gray-600"
@@ -1171,7 +1298,10 @@ export default function ReservationExpenseManager({
                     file_path: '',
                     custom_paid_to: '',
                     reservation_id: reservationId || '',
-                    uploaded_files: []
+                    uploaded_files: [],
+                    reimbursed_amount: '',
+                    reimbursed_on: '',
+                    reimbursement_note: ''
                   })
                 }}
                 className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -1229,6 +1359,22 @@ export default function ReservationExpenseManager({
                         <span className="truncate">{reservationCustomerLabel(expense)}</span>
                       </>
                     )}
+                    {expense.amount > 0 && (
+                      <>
+                        <span className="text-gray-400">{tTour('reimbursedShort')}</span>
+                        <span>{formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}</span>
+                        <span className="text-gray-400">{tTour('outstandingShort')}</span>
+                        <span
+                          className={
+                            reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009
+                              ? 'font-semibold text-amber-800'
+                              : 'text-green-700'
+                          }
+                        >
+                          {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
+                        </span>
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
                     {expense.image_url && expense.image_url.trim() !== '' && (
@@ -1264,6 +1410,8 @@ export default function ReservationExpenseManager({
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidTo')}</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('form.reservationId')}</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('amount')}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('reimbursedShort')}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('outstandingShort')}</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('submitter')}</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('statusLabel')}</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('receipt')}</th>
@@ -1283,6 +1431,24 @@ export default function ReservationExpenseManager({
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600 text-right">
                         {formatCurrency(expense.amount)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 text-right">
+                        {expense.amount > 0 ? formatCurrency(parseReimbursedAmount(expense.reimbursed_amount)) : '—'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
+                        {expense.amount > 0 ? (
+                          <span
+                            className={
+                              reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009
+                                ? 'font-semibold text-amber-700'
+                                : 'text-green-700'
+                            }
+                          >
+                            {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
                         {teamMembers[expense.submitted_by] || expense.submitted_by}
@@ -1389,6 +1555,16 @@ export default function ReservationExpenseManager({
               {expense.note && (
                 <p className="mt-0.5 text-[10px] text-gray-500 truncate max-w-full" title={expense.note}>{expense.note}</p>
               )}
+              {expense.amount > 0 &&
+                (parseReimbursedAmount(expense.reimbursed_amount) > 0 ||
+                  reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009) && (
+                  <p className="mt-0.5 text-[10px] text-amber-900/90 truncate max-w-full">
+                    {tTour('reimbursedShort')}: {formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}
+                    <span className="text-gray-400 mx-1">·</span>
+                    {tTour('outstandingShort')}:{' '}
+                    {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
+                  </p>
+                )}
             </div>
           ))}
         </div>
@@ -1513,6 +1689,44 @@ export default function ReservationExpenseManager({
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+              {parseFloat(formData.amount || '0') > 0 && (
+                <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 p-3 space-y-3">
+                  <p className="text-xs font-medium text-amber-900">{tTour('reimbursementSectionTitle')}</p>
+                  <p className="text-[11px] text-amber-800/90">{tTour('reimbursementSectionHint')}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursedAmount')}</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.reimbursed_amount}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursedOn')}</label>
+                      <input
+                        type="date"
+                        value={formData.reimbursed_on}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursementNote')}</label>
+                    <input
+                      type="text"
+                      value={formData.reimbursement_note}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
+                      placeholder={tTour('reimbursementNotePlaceholder')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
                 </div>
               )}
               <div>

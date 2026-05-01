@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { PAYMENT_METHOD_REF_TABLES } from '@/lib/paymentMethodRefTables'
+import { buildPaymentMethodStoredDisplayName } from '@/lib/paymentMethodDisplay'
 
 const REFERENCE_COUNT_BATCH_SIZE = 1000
 
@@ -100,9 +101,14 @@ export async function GET(request: NextRequest) {
     const userEmails = [...new Set(paymentMethods.map((pm: any) => pm.user_email).filter(Boolean))]
     const neededLower = new Set(userEmails.map((e: string) => String(e).toLowerCase()))
 
-    let teamMap: Record<string, { email: string; name_ko: string | null; name_en: string | null }> = {}
+    let teamMap: Record<
+      string,
+      { email: string; name_ko: string | null; name_en: string | null; nick_name: string | null }
+    > = {}
     if (neededLower.size > 0) {
-      const { data: teamData } = await supabase.from('team').select('email, name_ko, name_en')
+      const { data: teamData } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en, nick_name')
 
       teamData?.forEach((team) => {
         const k = String(team.email).toLowerCase()
@@ -111,6 +117,7 @@ export async function GET(request: NextRequest) {
             email: team.email,
             name_ko: team.name_ko,
             name_en: team.name_en,
+            nick_name: team.nick_name,
           }
         }
       })
@@ -223,10 +230,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // display_name 자동 생성 (ID가 PAYM으로 시작하는 경우만 ID 포함)
-    const displayName = id && id.startsWith('PAYM') 
-      ? `${id} - ${method}`
-      : method
+    const displayName = buildPaymentMethodStoredDisplayName({
+      method,
+      card_holder_name: card_holder_name || null,
+    })
 
     const { data, error } = await supabase
       .from('payment_methods')
@@ -326,22 +333,31 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // method나 id가 변경되면 display_name 자동 업데이트
-    if (updateData.method !== undefined || updateData.id !== undefined) {
-      // 기존 데이터 조회
+    // method·id·카드소유자 변경 시 display_name 갱신 (PAYM 접두 없이 «CC 0602 (Joey)» 형태)
+    if (
+      updateData.method !== undefined ||
+      updateData.id !== undefined ||
+      updateData.card_holder_name !== undefined
+    ) {
       const { data: existingData } = await supabase
         .from('payment_methods')
-        .select('id, method')
+        .select('method, card_holder_name')
         .eq('id', id)
         .single()
-      
-      const finalId = updateData.id || existingData?.id || id
-      const finalMethod = updateData.method || existingData?.method || ''
-      
-      // display_name 자동 생성
-      updateData.display_name = finalId && finalId.startsWith('PAYM')
-        ? `${finalId} - ${finalMethod}`
-        : finalMethod
+
+      const finalMethod = updateData.method ?? existingData?.method ?? ''
+      let finalHolder: string | null = existingData?.card_holder_name ?? null
+      if (updateData.card_holder_name !== undefined) {
+        finalHolder =
+          updateData.card_holder_name === '' || updateData.card_holder_name === null
+            ? null
+            : String(updateData.card_holder_name)
+      }
+
+      updateData.display_name = buildPaymentMethodStoredDisplayName({
+        method: finalMethod || '',
+        card_holder_name: finalHolder,
+      })
     }
 
     const { data, error } = await supabase

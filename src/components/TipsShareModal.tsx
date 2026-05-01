@@ -3,6 +3,53 @@
 import React, { useState, useEffect } from 'react'
 import { X, DollarSign, Calendar, User, Save, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
+
+async function teamMapForPaymentMethodEmails(
+  rows: Array<{ user_email?: string | null }>
+): Promise<Map<string, { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }>> {
+  const map = new Map<string, { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }>()
+  const emails = [
+    ...new Set(rows.map((m) => String(m.user_email || '').toLowerCase()).filter(Boolean)),
+  ]
+  if (emails.length === 0) return map
+  const { data: teams } = await supabase
+    .from('team')
+    .select('email, nick_name, name_en, name_ko')
+    .in('email', emails)
+  for (const t of teams || []) {
+    map.set(String((t as { email: string }).email).toLowerCase(), t as { nick_name?: string | null; name_en?: string | null; name_ko?: string | null })
+  }
+  return map
+}
+
+function formatTipsPaymentMethodLabel(
+  pm:
+    | {
+        id: string
+        method: string
+        display_name?: string | null
+        card_holder_name?: string | null
+        user_email?: string | null
+      }
+    | undefined,
+  teamByEmail: Map<string, { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }>,
+  fallback: string
+): string {
+  if (!pm) return fallback
+  const em = pm.user_email ? String(pm.user_email).toLowerCase() : ''
+  const team = em ? teamByEmail.get(em) : undefined
+  return formatPaymentMethodDisplay(
+    {
+      id: pm.id,
+      method: pm.method,
+      display_name: pm.display_name ?? null,
+      user_email: pm.user_email ?? null,
+      card_holder_name: pm.card_holder_name ?? null,
+    },
+    team ? { nick_name: team.nick_name, name_en: team.name_en, name_ko: team.name_ko } : undefined
+  )
+}
 
 /** 결제 기록에서 수수료 적용·강조 대상 (Square Invoice, Wix Website) */
 const CARD_FEE_PAYMENT_METHOD_IDS = ['PAYM027', 'PAYM030'] as const
@@ -299,17 +346,17 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId,
               }
               const { data: methods } = await supabase
                 .from('payment_methods')
-                .select('id, method, display_name, deduct_card_fee_for_tips')
+                .select('id, method, display_name, card_holder_name, user_email, deduct_card_fee_for_tips')
                 .eq('status', 'active')
 
-              const methodById = new Map((methods || []).map((m: any) => [m.id, m]))
-              const methodByMethod = new Map((methods || []).map((m: any) => [m.method, m]))
+              const pmRows = methods || []
+              const teamByEmail = await teamMapForPaymentMethodEmails(pmRows as { user_email?: string | null }[])
+              const methodById = new Map(pmRows.map((m: any) => [m.id, m]))
+              const methodByMethod = new Map(pmRows.map((m: any) => [m.method, m]))
 
               for (const [methodKey, amount] of Object.entries(byMethod)) {
                 const pm = methodById.get(methodKey) || methodByMethod.get(methodKey)
-                const display = pm
-                  ? (pm.display_name || pm.method || methodKey)
-                  : methodKey
+                const display = formatTipsPaymentMethodLabel(pm, teamByEmail, methodKey)
                 const has_card_fee = pm?.deduct_card_fee_for_tips === true
                 payment_breakdown.push({ method_display: display, amount, has_card_fee })
               }
@@ -331,14 +378,16 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId,
                 }
                 const { data: methods } = await supabase
                   .from('payment_methods')
-                  .select('id, method, display_name')
+                  .select('id, method, display_name, card_holder_name, user_email')
                   .eq('status', 'active')
-                const methodById = new Map((methods || []).map((m: any) => [m.id, m]))
-                const methodByMethod = new Map((methods || []).map((m: any) => [m.method, m]))
+                const pmRows = methods || []
+                const teamByEmail = await teamMapForPaymentMethodEmails(pmRows as { user_email?: string | null }[])
+                const methodById = new Map(pmRows.map((m: any) => [m.id, m]))
+                const methodByMethod = new Map(pmRows.map((m: any) => [m.method, m]))
                 for (const [methodKey, amount] of Object.entries(byMethod)) {
                   const pm = methodById.get(methodKey) || methodByMethod.get(methodKey)
                   payment_breakdown.push({
-                    method_display: pm ? (pm.display_name || pm.method || methodKey) : methodKey,
+                    method_display: formatTipsPaymentMethodLabel(pm, teamByEmail, methodKey),
                     amount,
                     has_card_fee: false
                   })
@@ -361,15 +410,17 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId,
 
               const { data: methods } = await supabase
                 .from('payment_methods')
-                .select('id, method, display_name')
+                .select('id, method, display_name, card_holder_name, user_email')
                 .eq('status', 'active')
-              const methodById = new Map((methods || []).map((m: any) => [m.id, m]))
-              const methodByMethod = new Map((methods || []).map((m: any) => [m.method, m]))
+              const pmRows = methods || []
+              const teamByEmail = await teamMapForPaymentMethodEmails(pmRows as { user_email?: string | null }[])
+              const methodById = new Map(pmRows.map((m: any) => [m.id, m]))
+              const methodByMethod = new Map(pmRows.map((m: any) => [m.method, m]))
 
               const getMethodDisplay = (key: string | null) => {
                 if (!key) return '—'
                 const pm = methodById.get(key) || methodByMethod.get(key)
-                return pm ? (pm.display_name || pm.method || key) : key
+                return formatTipsPaymentMethodLabel(pm, teamByEmail, key)
               }
 
               for (const row of reservationsWithTip) {

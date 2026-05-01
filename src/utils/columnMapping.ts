@@ -340,6 +340,9 @@ export const getFallbackColumns = (tableName: string): ColumnInfo[] => {
       { name: 'checked_by', type: 'text', nullable: true, default: null },
       { name: 'checked_on', type: 'timestamp', nullable: true, default: null },
       { name: 'status', type: 'text', nullable: true, default: 'pending' },
+      { name: 'reimbursed_amount', type: 'numeric', nullable: false, default: '0' },
+      { name: 'reimbursed_on', type: 'date', nullable: true, default: null },
+      { name: 'reimbursement_note', type: 'text', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
     ],
@@ -383,6 +386,9 @@ export const getFallbackColumns = (tableName: string): ColumnInfo[] => {
       { name: 'audited_by', type: 'text', nullable: true, default: null },
       { name: 'checked_by', type: 'text', nullable: true, default: null },
       { name: 'checked_on', type: 'timestamp', nullable: true, default: null },
+      { name: 'reimbursed_amount', type: 'numeric', nullable: false, default: '0' },
+      { name: 'reimbursed_on', type: 'date', nullable: true, default: null },
+      { name: 'reimbursement_note', type: 'text', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
     ],
@@ -503,6 +509,10 @@ export const getFallbackColumns = (tableName: string): ColumnInfo[] => {
       { name: 'attachments', type: 'text[]', nullable: true, default: null },
       { name: 'created_by', type: 'character varying(255)', nullable: true, default: null },
       { name: 'updated_by', type: 'character varying(255)', nullable: true, default: null },
+      { name: 'reimbursed_amount', type: 'numeric', nullable: false, default: '0' },
+      { name: 'reimbursed_on', type: 'date', nullable: true, default: null },
+      { name: 'reimbursement_note', type: 'text', nullable: true, default: null },
+      { name: 'reimbursement_outstanding', type: 'numeric', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ],

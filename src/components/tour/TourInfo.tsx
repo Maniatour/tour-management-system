@@ -18,6 +18,8 @@ interface TourInfoProps {
   onTourDateChange?: (date: string) => Promise<void>
   onTourTimeChange?: (datetime: string) => Promise<void>
   onProductChange?: (productId: string) => Promise<void>
+  /** 투어 최대 수용 인원 수동 저장 (미지정 시 기본 정보에 필드 숨김) */
+  onMaxParticipantsChange?: (value: number) => Promise<void>
   getStatusColor: (status: string | null) => string
   getStatusText: (status: string | null, locale: string) => string
   getAssignmentStatusColor: (tour: any) => string
@@ -48,6 +50,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   onTourDateChange,
   onTourTimeChange,
   onProductChange,
+  onMaxParticipantsChange,
   getStatusColor,
   getStatusText,
   getAssignmentStatusColor,
@@ -159,6 +162,8 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   }, [assignedReservations])
   const [editingDate, setEditingDate] = useState(false)
   const [editingTime, setEditingTime] = useState(false)
+  const [editingMaxParticipants, setEditingMaxParticipants] = useState(false)
+  const [maxParticipantsInput, setMaxParticipantsInput] = useState('12')
   const [products, setProducts] = useState<Product[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState(tour.product_id || '')
@@ -168,6 +173,18 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   useEffect(() => {
     if (!editingTime) setTimeValue(defaultTimeStr)
   }, [defaultTimeStr, editingTime])
+
+  const defaultMaxParticipants = 12
+  const resolvedMaxParticipants =
+    typeof tour?.max_participants === 'number' && Number.isFinite(tour.max_participants)
+      ? tour.max_participants
+      : defaultMaxParticipants
+
+  useEffect(() => {
+    if (!editingMaxParticipants) {
+      setMaxParticipantsInput(String(resolvedMaxParticipants))
+    }
+  }, [tour?.id, tour?.max_participants, resolvedMaxParticipants, editingMaxParticipants])
 
   // 상품 목록 로드
   useEffect(() => {
@@ -237,6 +254,21 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const handleTimeCancel = () => {
     setTimeValue(defaultTimeStr)
     setEditingTime(false)
+  }
+
+  const handleMaxParticipantsSave = async () => {
+    if (!onMaxParticipantsChange) return
+    const parsed = parseInt(String(maxParticipantsInput).trim(), 10)
+    const n = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(500, parsed))
+      : defaultMaxParticipants
+    await onMaxParticipantsChange(n)
+    setEditingMaxParticipants(false)
+  }
+
+  const handleMaxParticipantsCancel = () => {
+    setMaxParticipantsInput(String(resolvedMaxParticipants))
+    setEditingMaxParticipants(false)
   }
   
   return (
@@ -433,6 +465,61 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               {isPrivateTour ? t('privateTour') : t('regularTour')}
             </button>
           </div>
+          {onMaxParticipantsChange && (
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center sm:gap-2">
+              <span className="text-gray-600 text-sm flex-shrink-0">{t('maxParticipants')}:</span>
+              {editingMaxParticipants ? (
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  <input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={maxParticipantsInput}
+                    onChange={(e) => setMaxParticipantsInput(e.target.value)}
+                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-500">{params.locale === 'ko' ? '명' : tCommon('people')}</span>
+                  <button
+                    type="button"
+                    onClick={handleMaxParticipantsSave}
+                    className="p-1 text-green-600 hover:bg-green-50 rounded"
+                    title={params.locale === 'ko' ? '저장' : 'Save'}
+                  >
+                    <Check size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMaxParticipantsCancel}
+                    className="p-1 text-red-600 hover:bg-red-50 rounded"
+                    title={params.locale === 'ko' ? '취소' : 'Cancel'}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                  <span className="font-medium text-sm">
+                    {resolvedMaxParticipants}
+                    {params.locale === 'ko' ? '명' : ` ${tCommon('people')}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMaxParticipantsInput(String(resolvedMaxParticipants))
+                      setEditingMaxParticipants(true)
+                    }}
+                    className="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0"
+                    title={params.locale === 'ko' ? '편집' : 'Edit'}
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {onMaxParticipantsChange && (
+            <p className="text-xs text-gray-500 -mt-1 sm:pl-0">{t('maxParticipantsHint')}</p>
+          )}
         </div>
         
         {/* 거주 상태별 인원 수 합산 */}

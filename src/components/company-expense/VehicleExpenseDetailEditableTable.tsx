@@ -60,7 +60,7 @@ function rowToDraft(r: CompanyExpenseRow): Draft {
     paid_for: r.paid_for ?? '',
     description: r.description ?? '',
     notes: r.notes ?? '',
-    amount: r.amount != null && r.amount !== '' ? String(r.amount) : '',
+    amount: r.amount != null ? String(r.amount) : '',
     payment_method: r.payment_method?.trim() ?? '',
     category: r.category ?? '',
     subcategory: r.subcategory ?? '',
@@ -141,6 +141,7 @@ export function VehicleExpenseDetailEditableTable({
         toast.error(t('saveError'))
         return
       }
+      const existing = rows.find((r) => r.id === editingId)
       const res = await fetch(`/api/company-expenses/${encodeURIComponent(editingId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -158,10 +159,16 @@ export function VehicleExpenseDetailEditableTable({
           vehicle_id: vehicleId,
           maintenance_type: draft.maintenance_type || null,
           notes: draft.notes || null,
-          attachments: rows.find((r) => r.id === editingId)?.attachments ?? null,
+          attachments: existing?.attachments ?? null,
           expense_type: draft.expense_type || null,
           tax_deductible: draft.tax_deductible,
-          paid_for_label_id: rows.find((r) => r.id === editingId)?.paid_for_label_id ?? null
+          paid_for_label_id: existing?.paid_for_label_id ?? null,
+          standard_paid_for: existing?.standard_paid_for ?? null,
+          status: existing?.status || 'pending',
+          reimbursed_amount:
+            existing?.reimbursed_amount != null ? Number(existing.reimbursed_amount) : 0,
+          reimbursed_on: existing?.reimbursed_on ?? null,
+          reimbursement_note: existing?.reimbursement_note ?? null,
         })
       })
       const json = (await res.json()) as { data?: CompanyExpenseRow; error?: string }

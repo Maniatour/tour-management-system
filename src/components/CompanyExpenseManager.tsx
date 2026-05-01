@@ -65,6 +65,7 @@ import {
   standardLeafRequiresDoubleCheck,
   type StandardLeafDoubleCheckId,
 } from '@/lib/companyExpenseStandardLeafDoubleCheck'
+import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 import { cn } from '@/lib/utils'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
@@ -94,6 +95,14 @@ function submitOnIsoFromYmd(ymd: string): string {
   return `${ymd}T12:00:00.000Z`
 }
 
+/** DB reimbursed_on(DATE 또는 ISO) → date input */
+function ymdFromReimbursedOn(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const s = String(raw).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  return s.slice(0, 10)
+}
+
 interface CompanyExpenseFormData {
   id: string
   /** YYYY-MM-DD — 표시·편집용 */
@@ -115,6 +124,9 @@ interface CompanyExpenseFormData {
   uploaded_files: File[]
   /** 표준 결제 내용 라벨 UUID (없으면 빈 문자열) */
   paid_for_label_id: string
+  reimbursed_amount: string
+  reimbursed_on: string
+  reimbursement_note: string
 }
 
 /** GET /api/vehicle-maintenance/integration 응답 한 행 */
@@ -160,6 +172,8 @@ export default function CompanyExpenseManager() {
   const [paidForFilter, setPaidForFilter] = useState('all')
   /** 표준 결제내용(standard_paid_for) 저장 여부: all | set | unset */
   const [standardPaidForFilter, setStandardPaidForFilter] = useState<'all' | 'set' | 'unset'>('all')
+  /** 환급 목록 필터 — API `reimbursement` 쿼리와 동일 */
+  const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
@@ -234,7 +248,10 @@ export default function CompanyExpenseManager() {
     expense_type: '',
     tax_deductible: true,
     uploaded_files: [],
-    paid_for_label_id: ''
+    paid_for_label_id: '',
+    reimbursed_amount: '',
+    reimbursed_on: '',
+    reimbursement_note: ''
   })
 
   const isAbortError = (err: unknown) => {
@@ -259,6 +276,9 @@ export default function CompanyExpenseManager() {
       if (standardPaidForFilter === 'set' || standardPaidForFilter === 'unset') {
         params.append('standard_paid_for', standardPaidForFilter)
       }
+      if (reimbursementFilter !== 'all') {
+        params.append('reimbursement', reimbursementFilter)
+      }
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
       
@@ -278,7 +298,18 @@ export default function CompanyExpenseManager() {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, paidForFilter, standardPaidForFilter, dateFrom, dateTo, page])
+  }, [
+    searchTerm,
+    categoryFilter,
+    statusFilter,
+    vehicleFilter,
+    paidForFilter,
+    standardPaidForFilter,
+    reimbursementFilter,
+    dateFrom,
+    dateTo,
+    page,
+  ])
 
   useEffect(() => {
     const ids = expenses.map((e) => e.id)
@@ -352,7 +383,17 @@ export default function CompanyExpenseManager() {
   // 필터 변경 시 1페이지로
   useEffect(() => {
     setPage(1)
-  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, paidForFilter, standardPaidForFilter, dateFrom, dateTo])
+  }, [
+    searchTerm,
+    categoryFilter,
+    statusFilter,
+    vehicleFilter,
+    paidForFilter,
+    standardPaidForFilter,
+    reimbursementFilter,
+    dateFrom,
+    dateTo,
+  ])
 
   const loadExpenseStandardCategories = useCallback(async () => {
     try {
@@ -729,6 +770,17 @@ export default function CompanyExpenseManager() {
       return
     }
 
+    const amtNum = parseFloat(formData.amount)
+    const reimbNum = parseReimbursedAmount(formData.reimbursed_amount)
+    if (!Number.isFinite(reimbNum)) {
+      toast.error(tTour('reimbursementInvalidNonNegative'))
+      return
+    }
+    if (Number.isFinite(amtNum) && amtNum > 0 && reimbNum > amtNum + 0.001) {
+      toast.error(tTour('reimbursementExceedsAmount'))
+      return
+    }
+
     try {
       setSaving(true)
       
@@ -780,7 +832,17 @@ export default function CompanyExpenseManager() {
         photo_url: formData.photo_url || uploadedFileUrls[0] || '', // 첫 번째 파일을 메인 이미지로
         attachments: attachmentsPayload,
         uploaded_files: undefined, // 서버로 전송하지 않음
-        paid_for_label_id: formData.paid_for_label_id?.trim() || null
+        paid_for_label_id: formData.paid_for_label_id?.trim() || null,
+        reimbursed_amount:
+          Number.isFinite(amtNum) && amtNum > 0 ? reimbNum : 0,
+        reimbursed_on:
+          Number.isFinite(amtNum) && amtNum > 0 && formData.reimbursed_on.trim()
+            ? formData.reimbursed_on.trim().slice(0, 10)
+            : null,
+        reimbursement_note:
+          Number.isFinite(amtNum) && amtNum > 0 && formData.reimbursement_note.trim()
+            ? formData.reimbursement_note.trim()
+            : null,
       }
       
       const url = editingExpense ? `/api/company-expenses/${editingExpense.id}` : '/api/company-expenses'
@@ -836,7 +898,10 @@ export default function CompanyExpenseManager() {
       expense_type: expense.expense_type ?? '',
       tax_deductible: expense.tax_deductible ?? true,
       uploaded_files: [], // 기존 데이터에는 없으므로 빈 배열
-      paid_for_label_id: expense.paid_for_label_id ? String(expense.paid_for_label_id) : ''
+      paid_for_label_id: expense.paid_for_label_id ? String(expense.paid_for_label_id) : '',
+      reimbursed_amount: expense.reimbursed_amount != null ? String(expense.reimbursed_amount) : '',
+      reimbursed_on: ymdFromReimbursedOn(expense.reimbursed_on),
+      reimbursement_note: expense.reimbursement_note ?? ''
     })
     const groups = buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, { includeInactive: true })
     setStandardHierarchyLeafId('')
@@ -913,7 +978,10 @@ export default function CompanyExpenseManager() {
       expense_type: '',
       tax_deductible: true,
       uploaded_files: [],
-      paid_for_label_id: ''
+      paid_for_label_id: '',
+      reimbursed_amount: '',
+      reimbursed_on: '',
+      reimbursement_note: ''
     })
     setStandardHierarchyLeafId('')
     setStandardLeafConfirmOpen(false)
@@ -990,6 +1058,19 @@ export default function CompanyExpenseManager() {
       expenses.filter((e) => e.status === 'approved').reduce((sum, e) => sum + parseExpenseAmount(e), 0),
     [expenses]
   )
+  const reimbursedPageTotal = useMemo(
+    () => expenses.reduce((sum, e) => sum + parseReimbursedAmount(e.reimbursed_amount), 0),
+    [expenses]
+  )
+  const outstandingPageTotal = useMemo(
+    () =>
+      expenses.reduce((sum, e) => {
+        const a = parseExpenseAmount(e)
+        if (a <= 0) return sum
+        return sum + reimbursementOutstanding(a, e.reimbursed_amount)
+      }, 0),
+    [expenses]
+  )
 
   const resetFilters = () => {
     setSearchTerm('')
@@ -998,6 +1079,7 @@ export default function CompanyExpenseManager() {
     setVehicleFilter('all')
     setPaidForFilter('all')
     setStandardPaidForFilter('all')
+    setReimbursementFilter('all')
     setDateFrom('')
     setDateTo('')
   }
@@ -1105,6 +1187,10 @@ export default function CompanyExpenseManager() {
           overrides.standard_paid_for !== undefined
             ? overrides.standard_paid_for
             : (expense.standard_paid_for ?? null),
+        reimbursed_amount:
+          expense.reimbursed_amount != null ? Number(expense.reimbursed_amount) : 0,
+        reimbursed_on: expense.reimbursed_on ?? null,
+        reimbursement_note: expense.reimbursement_note ?? null,
       }
       const res = await fetch(`/api/company-expenses/${encodeURIComponent(expense.id)}`, {
         method: 'PUT',
@@ -1406,6 +1492,55 @@ export default function CompanyExpenseManager() {
                   </div>
                 )}
               </div>
+
+              {parseFloat(formData.amount || '0') > 0 && (
+                <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 p-3 space-y-3">
+                  <p className="text-xs font-medium text-amber-900">{tTour('reimbursementSectionTitle')}</p>
+                  <p className="text-[11px] text-amber-800/90">{tTour('reimbursementSectionHint')}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="co_reimbursed_amount" className="text-xs">
+                        {tTour('reimbursedAmount')}
+                      </Label>
+                      <Input
+                        id="co_reimbursed_amount"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={formData.reimbursed_amount}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                        placeholder="0"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="co_reimbursed_on" className="text-xs">
+                        {tTour('reimbursedOn')}
+                      </Label>
+                      <Input
+                        id="co_reimbursed_on"
+                        type="date"
+                        value={formData.reimbursed_on}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="co_reimbursement_note" className="text-xs">
+                      {tTour('reimbursementNote')}
+                    </Label>
+                    <Input
+                      id="co_reimbursement_note"
+                      type="text"
+                      value={formData.reimbursement_note}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
+                      placeholder={tTour('reimbursementNotePlaceholder')}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              )}
               
               {unifiedStandardGroups.length > 0 && (
                 <UnifiedStandardLeafPicker
@@ -1949,7 +2084,28 @@ export default function CompanyExpenseManager() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">
+        <div className="max-w-md pt-1">
+          <label
+            className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
+            htmlFor="co-filter-reimbursement"
+          >
+            {tTour('reimbursementFilterLabel')}
+          </label>
+          <select
+            id="co-filter-reimbursement"
+            value={reimbursementFilter}
+            onChange={(e) =>
+              setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
+            }
+            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="all">{tTour('reimbursementFilterAll')}</option>
+            <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
+            <option value="outstanding">{tTour('reimbursementFilterOutstanding')}</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">
           <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-100/80">
             <div className="text-xs sm:text-sm text-gray-600">{tTour('totalExpenseSum')}</div>
             <div className="text-base sm:text-2xl font-bold text-gray-900 truncate">{formatCurrency(totalAmount)}</div>
@@ -1961,6 +2117,18 @@ export default function CompanyExpenseManager() {
           <div className="bg-green-50 rounded-lg p-2 sm:p-3 border border-green-100/80">
             <div className="text-xs sm:text-sm text-gray-600">{tTour('approvedSum')}</div>
             <div className="text-base sm:text-2xl font-bold text-green-600 truncate">{formatCurrency(approvedAmount)}</div>
+          </div>
+          <div className="bg-slate-50 rounded-lg p-2 sm:p-3 border border-slate-100">
+            <div className="text-xs sm:text-sm text-gray-600">{tTour('reimbursedTotalLabel')}</div>
+            <div className="text-base sm:text-2xl font-bold text-slate-800 truncate">
+              {formatCurrency(reimbursedPageTotal)}
+            </div>
+          </div>
+          <div className="bg-amber-50 rounded-lg p-2 sm:p-3 border border-amber-100 col-span-2 sm:col-span-1 lg:col-span-1">
+            <div className="text-xs sm:text-sm text-gray-600">{tTour('outstandingTotalLabel')}</div>
+            <div className="text-base sm:text-2xl font-bold text-amber-800 truncate">
+              {formatCurrency(outstandingPageTotal)}
+            </div>
           </div>
         </div>
         <p className="text-[10px] sm:text-xs text-gray-500">{t('statsPageNote')}</p>
@@ -2175,6 +2343,16 @@ export default function CompanyExpenseManager() {
                           </Button>
                         )}
                       </div>
+                      <span className="text-gray-400">{tTour('reimbursedShort')}</span>
+                      <span>
+                        {formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}
+                      </span>
+                      <span className="text-gray-400">{tTour('outstandingShort')}</span>
+                      <span>
+                        {formatCurrency(
+                          reimbursementOutstanding(parseExpenseAmount(expense), expense.reimbursed_amount)
+                        )}
+                      </span>
                       <span className="text-gray-400">상태</span>
                       <span>{getStatusBadge(expense.status || 'pending')}</span>
                     </div>
@@ -2183,7 +2361,7 @@ export default function CompanyExpenseManager() {
               </div>
               {/* 데스크톱: 테이블 */}
               <div className="hidden md:block overflow-x-auto">
-              <Table className="min-w-[1320px]">
+              <Table className="min-w-[1480px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="py-2 w-10 text-center">
@@ -2204,6 +2382,8 @@ export default function CompanyExpenseManager() {
                     </TableHead>
                     <TableHead className="py-2">설명</TableHead>
                     <TableHead className="py-2">금액</TableHead>
+                    <TableHead className="py-2 whitespace-nowrap">{tTour('reimbursedShort')}</TableHead>
+                    <TableHead className="py-2 whitespace-nowrap">{tTour('outstandingShort')}</TableHead>
                     <TableHead className="py-2">결제방법</TableHead>
                     <TableHead className="w-32 py-2">카테고리</TableHead>
                     <TableHead className="w-40 py-2 min-w-[7rem] max-w-[12rem]">{t('filters.vehicle')}</TableHead>
@@ -2235,6 +2415,7 @@ export default function CompanyExpenseManager() {
                   onOpenQuickStandard={openListQuickStandard}
                   onOpenQuickPayment={openListQuickPayment}
                   onOpenQuickVehicle={openListQuickVehicle}
+                  formatCurrency={formatCurrency}
                 />
               </Table>
               </div>

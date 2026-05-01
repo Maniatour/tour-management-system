@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
 import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
-import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusLabel, tourStatusOptions } from '@/utils/tourStatusUtils'
+import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusLabel, isTourCancelled, tourStatusOptions } from '@/utils/tourStatusUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import ReactCountryFlag from 'react-country-flag'
@@ -33,6 +33,7 @@ import {
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
+import { generateTourId } from '@/lib/entityIds'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
@@ -285,6 +286,13 @@ function aggregateTicketDetailsForScheduleDisplay(
   })
 }
 
+/** 부킹 상세 뱃지 표기: 공급사 첫글자 S → L 로 표시 (데이터·집계 키는 그대로 S) */
+function scheduleBookingSupplierTagDisplay(tag: string): string {
+  const t = tag.trim()
+  const u = t.length === 1 && /[a-zA-Z]/.test(t) ? t.toUpperCase() : t
+  return u === 'S' ? 'L' : t
+}
+
 function scheduleBookingSupplierTagBadgeClass(tag: string): string {
   const t = tag.trim()
   const u = t.length === 1 && /[a-zA-Z]/.test(t) ? t.toUpperCase() : t
@@ -345,6 +353,7 @@ export default function ScheduleView() {
   const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
+  const tTourCal = useTranslations('tours.calendar')
   const { user, userRole, hasPermission } = useAuth()
   const tourHandlers = useTourHandlers()
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -601,8 +610,10 @@ export default function ScheduleView() {
     [batchOffPeriods, collectBatchOffDatesFromPeriods]
   )
 
-  // 상품별 스케줄 셀 호버 툴팁 (국기 아이콘 표시용)
-  const [scheduleCellTooltip, setScheduleCellTooltip] = useState<{ productId: string; dateString: string } | null>(null)
+  /** 정원 초과(배정 > 수용) 안내 모달 — 월 변경 시 다시 표시 가능 */
+  const [capacityOverflowModalOpen, setCapacityOverflowModalOpen] = useState(false)
+  const [capacityOverflowModalDismissed, setCapacityOverflowModalDismissed] = useState(false)
+  const [capacityOverflowCreatingKey, setCapacityOverflowCreatingKey] = useState<string | null>(null)
 
   /** 스케쥴뷰(상품별 인원) 셀 클릭 → 해당일·상품 예약 목록 */
   const [productCellReservationsModal, setProductCellReservationsModal] = useState<{
@@ -1208,6 +1219,18 @@ export default function ScheduleView() {
     // 기존 오프 스케줄이 있고 삭제 예정이 아니거나, 승인 예정인 경우
     return (existingOffSchedule && !isPendingDelete) || isPendingApprove
   }, [teamMembers, offSchedules, pendingOffScheduleChanges])
+
+  /** 배정 그리드 OFF 셀: 대기(amber)·승인(teal) 등 상태별 색 구분 */
+  const offScheduleAssignmentCellClass = useCallback((status: string | undefined) => {
+    const s = (status || '').toLowerCase()
+    if (s === 'pending') {
+      return 'absolute inset-0 bg-amber-500 text-amber-950 hover:bg-amber-400 rounded px-1 text-[10px] font-bold flex items-center justify-center leading-none cursor-pointer transition-colors select-none ring-2 ring-amber-400 ring-inset'
+    }
+    if (s === 'approved') {
+      return 'absolute inset-0 bg-teal-900 text-teal-50 hover:bg-teal-800 rounded px-1 text-[10px] font-bold flex items-center justify-center leading-none cursor-pointer transition-colors select-none'
+    }
+    return 'absolute inset-0 bg-gray-600 text-gray-200 hover:bg-gray-500 rounded px-1 text-[10px] font-bold flex items-center justify-center leading-none cursor-pointer transition-colors select-none'
+  }, [])
 
   // 상품 ID에 따른 멀티데이 투어 일수 계산
   const getMultiDayTourDays = useCallback((productId: string): number => {
@@ -2028,6 +2051,43 @@ export default function ScheduleView() {
     checkScheduleTourExistsForProductDate,
   ])
 
+  /** 정원 초과 시 같은 날짜에 빈 투어(2팀 등) 추가 — 예약 없이 투어 행만 생성 */
+  const handleCreateEmptyTourFromOverflow = useCallback(
+    async (productId: string, dateString: string) => {
+      const key = `${productId}__${dateString}`
+      setCapacityOverflowCreatingKey(key)
+      try {
+        const tourId = generateTourId()
+        const { error } = await (supabase as any).from('tours').insert({
+          id: tourId,
+          product_id: productId,
+          tour_date: dateString,
+          reservation_ids: [],
+          tour_status: 'scheduled',
+          is_private_tour: false,
+        })
+        if (error) throw error
+        try {
+          await createTourPhotosBucket()
+        } catch {
+          /* 버킷 실패해도 투어는 유지 */
+        }
+        showMessage(
+          locale === 'ko' ? '완료' : 'Done',
+          locale === 'ko' ? '투어가 추가되었습니다.' : 'Tour added.',
+          'success'
+        )
+        await fetchData()
+      } catch (e) {
+        console.error('handleCreateEmptyTourFromOverflow', e)
+        showMessage(locale === 'ko' ? '오류' : 'Error', String(e), 'error')
+      } finally {
+        setCapacityOverflowCreatingKey(null)
+      }
+    },
+    [fetchData, locale, showMessage]
+  )
+
   const openVehicleEditFromSchedule = useCallback(
     async (vehicleId: string) => {
       if (!isSuperAdmin) return
@@ -2238,7 +2298,7 @@ export default function ScheduleView() {
           const { error } = await (supabase as any)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .from('off_schedules' as any)
-            .update({ status: 'approved' })
+            .update({ status: 'approved', approved_by: user?.email ?? null })
             .eq('team_email', change.team_email)
             .eq('off_date', change.off_date)
           if (error) {
@@ -2251,7 +2311,7 @@ export default function ScheduleView() {
           const { error } = await (supabase as any)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .from('off_schedules' as any)
-            .update({ status: 'rejected' })
+            .update({ status: 'rejected', approved_by: user?.email ?? null })
             .eq('team_email', change.team_email)
             .eq('off_date', change.off_date)
           if (error) {
@@ -2289,7 +2349,7 @@ export default function ScheduleView() {
       showMessage('오류', '변경사항 저장 중 오류가 발생했습니다.', 'error')
       return false
     }
-  }, [pendingChanges, pendingOffScheduleChanges, fetchData, fetchUnassignedTours, showMessage])
+  }, [pendingChanges, pendingOffScheduleChanges, fetchData, fetchUnassignedTours, showMessage, user?.email])
 
   /** 상단 취소와 동일: 서버 기준으로 되돌림(미저장 변경 폐기) */
   const discardPendingScheduleChanges = useCallback(async () => {
@@ -2488,6 +2548,21 @@ export default function ScheduleView() {
             privateTourPeople: number
             /** 비단독 투어·동행모집 쪽 확정·모집 인원 */
             companionTourPeople: number
+            /** 해당일 투어별 정원(배정 인원 / 최대) — 스케줄 셀 툴팁용 */
+            tourCapacityBreakdown: {
+              rows: Array<{
+                tourId: string
+                teamIndex: number
+                guideName: string
+                assistantName: string
+                assigned: number
+                max: number
+                spotsLeft: number
+              }>
+              totalAssigned: number
+              totalMax: number
+              totalSpotsLeft: number
+            } | null
           }
         }
         totalPeople: number
@@ -2515,10 +2590,34 @@ export default function ScheduleView() {
           toursChoiceCounts: Array<{ tourId: string; label: string; choiceCounts: Record<string, number> }>
           privateTourPeople: number
           companionTourPeople: number
+          tourCapacityBreakdown: {
+            rows: Array<{
+              tourId: string
+              teamIndex: number
+              guideName: string
+              assistantName: string
+              assigned: number
+              max: number
+              spotsLeft: number
+            }>
+            totalAssigned: number
+            totalMax: number
+            totalSpotsLeft: number
+          } | null
         }
       } = {}
       let totalPeople = 0
       let totalTours = 0
+
+      const resolveMemberDisplay = (email: string | null | undefined) => {
+        if (!email) return '—'
+        const m =
+          teamMembers.find((t) => t.email === email) ||
+          inactiveTeamMembers.find((t) => t.email === email)
+        if (!m) return String(email).split('@')[0] || '—'
+        const nick = (m as { nick_name?: string | null }).nick_name
+        return (typeof nick === 'string' && nick.trim() ? nick.trim() : '') || m.name_ko || m.email || '—'
+      }
 
       // 각 날짜별로 데이터 계산 (우측 합계는 당월 컬럼만 포함)
       monthDays.forEach(({ dateString, isEdgePadding }) => {
@@ -2607,6 +2706,50 @@ export default function ScheduleView() {
           toursChoiceCounts.push({ tourId: tour.id, label, choiceCounts: byKey })
         })
 
+        const sortedDayTours = [...dayTours]
+          .filter((t) => !isTourCancelled(t.tour_status))
+          .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+        const tourCapacityRows = sortedDayTours.map((tour, idx) => {
+          const assignedIds = new Set(
+            tour.reservation_ids && Array.isArray(tour.reservation_ids) ? (tour.reservation_ids as string[]) : []
+          )
+          const assigned = dayReservations
+            .filter((r) => assignedIds.has(r.id))
+            .reduce((s, r) => s + (r.total_people || 0), 0)
+          const max =
+            typeof tour.max_participants === 'number' && Number.isFinite(tour.max_participants)
+              ? tour.max_participants
+              : 12
+          const spotsLeft = Math.max(0, max - assigned)
+          const teamTypeStr = (tour.team_type || '').toString()
+          const guideName = resolveMemberDisplay(tour.tour_guide_id)
+          const assistantName =
+            teamTypeStr === '1guide' || !tour.assistant_id
+              ? '—'
+              : resolveMemberDisplay(tour.assistant_id)
+          return {
+            tourId: String(tour.id),
+            teamIndex: idx + 1,
+            guideName,
+            assistantName,
+            assigned,
+            max,
+            spotsLeft
+          }
+        })
+        const capTotalAssigned = tourCapacityRows.reduce((s, r) => s + r.assigned, 0)
+        const capTotalMax = tourCapacityRows.reduce((s, r) => s + r.max, 0)
+        const capTotalSpotsLeft = Math.max(0, capTotalMax - capTotalAssigned)
+        const tourCapacityBreakdown =
+          sortedDayTours.length === 0
+            ? null
+            : {
+                rows: tourCapacityRows,
+                totalAssigned: capTotalAssigned,
+                totalMax: capTotalMax,
+                totalSpotsLeft: capTotalSpotsLeft
+              }
+
         // 멀티데이 투어 처리: 시작일에만 인원 표시
         if (!dailyData[dateString]) {
           dailyData[dateString] = {
@@ -2621,7 +2764,8 @@ export default function ScheduleView() {
             choiceCounts: {},
             toursChoiceCounts: [],
             privateTourPeople: 0,
-            companionTourPeople: 0
+            companionTourPeople: 0,
+            tourCapacityBreakdown: null
           }
         }
         // 멀티데이든 1일 투어든, 해당 날짜(시작일)에만 합산
@@ -2639,6 +2783,7 @@ export default function ScheduleView() {
           dailyData[dateString].choiceCounts[k] = (dailyData[dateString].choiceCounts[k] || 0) + v
         })
         dailyData[dateString].toursChoiceCounts = toursChoiceCounts
+        dailyData[dateString].tourCapacityBreakdown = tourCapacityBreakdown
 
         if (!isEdgePadding) {
           totalPeople += dayTotalPeople
@@ -2655,7 +2800,7 @@ export default function ScheduleView() {
     })
 
     return data
-  }, [tours, reservations, customers, products, selectedProducts, monthDays, reservationChoices])
+  }, [tours, reservations, customers, products, selectedProducts, monthDays, reservationChoices, teamMembers, inactiveTeamMembers])
 
   // 가이드별 스케줄 데이터 계산
   const guideScheduleData = useMemo(() => {
@@ -3831,6 +3976,52 @@ export default function ScheduleView() {
     return dailyTotals
   }, [productScheduleData, monthDays])
 
+  const scheduleMonthKey = useMemo(
+    () => `${currentDate.getFullYear()}-${currentDate.getMonth()}`,
+    [currentDate]
+  )
+
+  /** 해당 월·상품·날짜 중 배정 인원 합이 수용 합을 넘는 셀 목록 */
+  const scheduleCapacityOverflowItems = useMemo(() => {
+    const items: Array<{
+      productId: string
+      dateString: string
+      productName: string
+      assigned: number
+      max: number
+    }> = []
+    const todayStr = dayjs().format('YYYY-MM-DD')
+    for (const [productId, prod] of Object.entries(productScheduleData)) {
+      for (const { dateString, isEdgePadding } of monthDays) {
+        if (isEdgePadding) continue
+        if (dateString < todayStr) continue
+        const dd = prod.dailyData[dateString]
+        const br = dd?.tourCapacityBreakdown
+        if (br && br.totalAssigned > br.totalMax) {
+          items.push({
+            productId,
+            dateString,
+            productName: prod.product_name || productId,
+            assigned: br.totalAssigned,
+            max: br.totalMax
+          })
+        }
+      }
+    }
+    items.sort((a, b) => a.dateString.localeCompare(b.dateString) || a.productName.localeCompare(b.productName))
+    return items
+  }, [productScheduleData, monthDays])
+
+  useEffect(() => {
+    setCapacityOverflowModalDismissed(false)
+  }, [scheduleMonthKey])
+
+  useEffect(() => {
+    if (capacityOverflowModalDismissed) return
+    if (scheduleCapacityOverflowItems.length > 0) setCapacityOverflowModalOpen(true)
+    else setCapacityOverflowModalOpen(false)
+  }, [scheduleCapacityOverflowItems, capacityOverflowModalDismissed])
+
   // 공급업체 이름 변환 함수
   const getCompanyDisplayName = (company: string): string => {
     if (company === 'SEE Canyon') {
@@ -4635,12 +4826,12 @@ export default function ScheduleView() {
                                     .join(' / ')
                                 })()
                               : null
-                            const showTooltip = scheduleCellTooltip?.productId === productId && scheduleCellTooltip?.dateString === dateString
+                            /** 항상 셀 아래에 표시 — 위쪽(bottom-full)은 sticky 날짜 헤더에 가려짐 */
                             return (
                               <div
                                 role="button"
                                 tabIndex={0}
-                                className={`${todayWrapClass} px-1 py-0.5 relative overflow-visible cursor-pointer`}
+                                className={`group ${todayWrapClass} px-1 py-0.5 relative overflow-visible cursor-pointer`}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   openProductCellReservationsModal(productId, dateString, product.product_name)
@@ -4652,25 +4843,35 @@ export default function ScheduleView() {
                                     openProductCellReservationsModal(productId, dateString, product.product_name)
                                   }
                                 }}
-                                onMouseEnter={() => setScheduleCellTooltip({ productId, dateString })}
-                                onMouseLeave={() => setScheduleCellTooltip(null)}
                               >
                                 {dayData ? (
                                   <div
                                     className={(() => {
+                                      const br = dayData.tourCapacityBreakdown
+                                      const isCapacityOverfull =
+                                        br != null && br.totalAssigned > br.totalMax
                                       const confirmed = dayData.totalPeople
                                       const waiting = dayData.waitingPeople ?? 0
                                       const onlyWaiting = confirmed === 0 && waiting > 0
-                                      if (onlyWaiting) {
-                                        return `font-medium leading-tight whitespace-nowrap ${isToday(dateString) ? 'text-blue-700' : 'text-blue-600'}`
+                                      if (isCapacityOverfull) {
+                                        return `font-bold leading-tight whitespace-nowrap ${
+                                          isToday(dateString) ? 'text-red-700' : 'text-red-600'
+                                        }`
                                       }
-                                      return `font-medium leading-tight whitespace-nowrap ${
-                                        confirmed === 0
-                                          ? 'text-gray-300'
-                                          : confirmed < 4
-                                            ? 'text-blue-600'
-                                            : 'text-red-600'
-                                      } ${isToday(dateString) ? 'text-red-700' : ''}`
+                                      if (onlyWaiting) {
+                                        return `font-medium leading-tight whitespace-nowrap ${
+                                          isToday(dateString) ? 'text-blue-700' : 'text-blue-600'
+                                        }`
+                                      }
+                                      if (confirmed === 0) {
+                                        return 'font-medium leading-tight whitespace-nowrap text-gray-300'
+                                      }
+                                      if (confirmed < 4) {
+                                        return `font-medium leading-tight whitespace-nowrap ${
+                                          isToday(dateString) ? 'text-blue-700' : 'text-blue-600'
+                                        }`
+                                      }
+                                      return 'font-medium leading-tight whitespace-nowrap text-gray-900'
                                     })()}
                                   >
                                     {formatProductScheduleCellPeopleWithPrivateSplit(
@@ -4683,8 +4884,10 @@ export default function ScheduleView() {
                                 ) : (
                                   <div className="text-gray-300">-</div>
                                 )}
-                                {showTooltip && dayData && (
-                                  <div className="absolute z-50 left-1/2 -translate-x-1/2 bottom-full mb-1 min-w-[240px] w-max max-w-[90vw] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left">
+                                {dayData && (
+                                  <div
+                                    className="absolute z-[1020] left-1/2 -translate-x-1/2 top-full mt-1 min-w-[260px] w-max max-w-[min(90vw,420px)] px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none overflow-visible text-left opacity-0 transition-none group-hover:opacity-100 group-focus-within:opacity-100"
+                                  >
                                     <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
                                       <span className="inline-flex items-center gap-1 shrink-0">
                                         <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
@@ -4701,6 +4904,35 @@ export default function ScheduleView() {
                                         {choiceLine}
                                       </div>
                                     )}
+                                    {dayData.tourCapacityBreakdown && dayData.tourCapacityBreakdown.rows.length > 0 && (
+                                      <div className="mt-2 pt-2 border-t border-gray-600 space-y-1.5">
+                                        {dayData.tourCapacityBreakdown.rows.map((row) => (
+                                          <div key={row.tourId} className="space-y-0.5">
+                                            <div className="text-[11px] text-gray-200 leading-snug">
+                                              {tTourCal('scheduleCellCapacityTeam', {
+                                                n: row.teamIndex,
+                                                guide: row.guideName,
+                                                assistant: row.assistantName
+                                              })}
+                                            </div>
+                                            <div className="text-[11px] text-gray-100 font-medium tabular-nums">
+                                              {tTourCal('scheduleCellCapacityPerTour', {
+                                                assigned: row.assigned,
+                                                max: row.max,
+                                                spots: row.spotsLeft
+                                              })}
+                                            </div>
+                                          </div>
+                                        ))}
+                                        <div className="text-[11px] text-amber-200 font-semibold pt-0.5 tabular-nums border-t border-gray-700 mt-1.5">
+                                          {tTourCal('scheduleCellCapacityTotal', {
+                                            assigned: dayData.tourCapacityBreakdown.totalAssigned,
+                                            max: dayData.tourCapacityBreakdown.totalMax,
+                                            spots: dayData.tourCapacityBreakdown.totalSpotsLeft
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -4715,14 +4947,19 @@ export default function ScheduleView() {
                       (s, d) => s + (product.dailyData[d.dateString]?.waitingPeople ?? 0),
                       0
                     )
+                    const rowOverflow = monthDaysCore.some((d) => {
+                      const br = product.dailyData[d.dateString]?.tourCapacityBreakdown
+                      return br != null && br.totalAssigned > br.totalMax
+                    })
                     const onlyWaitingTotal = product.totalPeople === 0 && rowWaiting > 0
+                    if (rowOverflow) return 'font-bold text-red-600'
                     if (onlyWaitingTotal) return 'font-medium text-blue-600'
                     return `font-medium ${
                       product.totalPeople === 0
                         ? 'text-gray-300'
                         : product.totalPeople < 4
                           ? 'text-blue-600'
-                          : 'text-red-600'
+                          : 'text-gray-900'
                     }`
                   })()}>{product.totalPeople}</div>
                 </td>
@@ -4737,6 +4974,10 @@ export default function ScheduleView() {
                 </td>
                 {monthDays.map(({ dateString }) => {
                   const dayTotal = productTotals[dateString]
+                  const dayColOverflow = Object.values(productScheduleData).some((p) => {
+                    const br = p.dailyData[dateString]?.tourCapacityBreakdown
+                    return br != null && br.totalAssigned > br.totalMax
+                  })
                   return (
                     <td 
                       key={dateString} 
@@ -4748,6 +4989,9 @@ export default function ScheduleView() {
                           const confirmed = dayTotal.totalPeople
                           const waiting = dayTotal.waitingPeople ?? 0
                           const onlyWaiting = confirmed === 0 && waiting > 0
+                          if (dayColOverflow) {
+                            return `font-bold ${isToday(dateString) ? 'text-red-700' : 'text-red-600'}`
+                          }
                           if (onlyWaiting) {
                             return `font-medium ${isToday(dateString) ? 'text-blue-700' : 'text-blue-600'}`
                           }
@@ -4756,8 +5000,8 @@ export default function ScheduleView() {
                               ? 'text-gray-300'
                               : confirmed < 4
                                 ? 'text-blue-600'
-                                : 'text-red-600'
-                          } ${isToday(dateString) ? 'text-red-700' : ''}`
+                                : 'text-gray-900'
+                          }`
                         })()}>{dayTotal.totalPeople}</div>
                       </div>
                     </td>
@@ -5061,13 +5305,17 @@ export default function ScheduleView() {
                                       
                                       return (
                                         <div 
-                                          className="absolute inset-0 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 text-[10px] font-bold flex items-center justify-center leading-none cursor-pointer transition-colors select-none"
+                                          className={offScheduleAssignmentCellClass(offSchedule?.status)}
                                           onClick={() => {
                                             if (offSchedule) {
                                               openOffScheduleActionModal(offSchedule)
                                             }
                                           }}
-                                          title={guide.team_member_name}
+                                          title={
+                                            offSchedule
+                                              ? `${offSchedule.reason || ''} (${offSchedule.status})`
+                                              : guide.team_member_name
+                                          }
                                           >
                                             OFF
                                           </div>
@@ -5442,13 +5690,17 @@ export default function ScheduleView() {
                                         
                                         return (
                                           <div 
-                                            className="absolute inset-0 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded px-1 text-[10px] font-bold flex items-center justify-center leading-none cursor-pointer transition-colors select-none"
+                                            className={offScheduleAssignmentCellClass(offSchedule?.status)}
                                             onClick={() => {
                                               if (offSchedule) {
                                                 openOffScheduleActionModal(offSchedule)
                                               }
                                             }}
-                                            title={guide.team_member_name}
+                                            title={
+                                              offSchedule
+                                                ? `${offSchedule.reason || ''} (${offSchedule.status})`
+                                                : guide.team_member_name
+                                            }
                                           >
                                             OFF
                                           </div>
@@ -5714,7 +5966,7 @@ export default function ScheduleView() {
                                       <span
                                         className={`inline-flex min-w-[0.95rem] items-center justify-center rounded px-1 py-0.5 text-[8px] font-bold leading-none shadow-sm ${scheduleBookingSupplierTagBadgeClass(row.tag)}`}
                                       >
-                                        {row.tag}
+                                        {scheduleBookingSupplierTagDisplay(row.tag)}
                                       </span>
                                       <span className="text-[9px] tabular-nums font-semibold text-gray-800 shrink-0">
                                         {row.ea}
@@ -6910,6 +7162,78 @@ export default function ScheduleView() {
       )}
 
       {/* 날짜 노트 모달 */}
+      {/* 정원 초과: 배정 인원 > 수용 합 — 추가 투어 생성 안내 */}
+      <Dialog
+        open={capacityOverflowModalOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCapacityOverflowModalOpen(false)
+            setCapacityOverflowModalDismissed(true)
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base text-red-700">
+              {locale === 'ko' ? '투어 정원 초과' : 'Tour capacity exceeded'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 -mt-1 mb-3">
+            {locale === 'ko'
+              ? '이번 달 일정 중 배정 인원이 투어 수용 인원 합보다 많은 날이 있습니다. 팀을 나누려면 투어를 추가로 만드세요.'
+              : 'Some days this month have more assigned guests than total tour capacity. Create an additional tour to split groups.'}
+          </p>
+          <ul className="space-y-2 max-h-[min(50vh,360px)] overflow-y-auto pr-1">
+            {scheduleCapacityOverflowItems.map((item) => {
+              const ck = `${item.productId}__${item.dateString}`
+              const busy = capacityOverflowCreatingKey === ck
+              return (
+                <li
+                  key={ck}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-100 bg-red-50/40 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-gray-900 truncate">{item.productName}</div>
+                    <div className="text-xs text-gray-500">{item.dateString}</div>
+                    <div className="text-sm font-bold text-red-600 tabular-nums mt-0.5">
+                      {item.assigned} / {item.max}
+                      {locale === 'ko' ? '명' : ' pax'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleCreateEmptyTourFromOverflow(item.productId, item.dateString)}
+                    disabled={busy}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden />
+                    {busy
+                      ? locale === 'ko'
+                        ? '생성 중…'
+                        : 'Creating…'
+                      : locale === 'ko'
+                        ? '투어 추가'
+                        : 'Add tour'}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          <div className="flex justify-end mt-4 pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => {
+                setCapacityOverflowModalOpen(false)
+                setCapacityOverflowModalDismissed(true)
+              }}
+              className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              {locale === 'ko' ? '닫기' : 'Close'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* 스케쥴뷰 셀: 해당일·상품 예약 목록 → 행 클릭 시 예약 수정 */}
       <Dialog
         open={!!productCellReservationsModal}

@@ -4,6 +4,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { X, Receipt } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
+import { generateTourId } from '@/lib/entityIds'
+import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { dedupeReservationIdsPreservingOrder, normalizeReservationIds } from '@/utils/tourUtils'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import {
@@ -75,6 +77,7 @@ export function ToursNeedCheckModal({
   const [unassigningKey, setUnassigningKey] = useState<string | null>(null)
   const [deduping, setDeduping] = useState(false)
   const [unassignedAssigningKey, setUnassignedAssigningKey] = useState<string | null>(null)
+  const [unassignedCreatingReservationId, setUnassignedCreatingReservationId] = useState<string | null>(null)
   const [expandedBalanceTourId, setExpandedBalanceTourId] = useState<string | null>(null)
   const [balanceDetailsByTourId, setBalanceDetailsByTourId] = useState<Record<string, BalanceReservationItem[]>>({})
   const [balanceDetailsLoadingTourId, setBalanceDetailsLoadingTourId] = useState<string | null>(null)
@@ -427,6 +430,83 @@ export function ToursNeedCheckModal({
     [supabase, load, isKo, t, handleAssignReservation]
   )
 
+  const handleCreateTourForUnassignedReservation = useCallback(
+    async (r: UnassignedReservationNeedCheckRow) => {
+      if (!window.confirm(t('needCheckUnassignedCreateTourConfirm'))) return
+      const rid = String(r.reservationId).trim()
+      const pid = String(r.productId).trim()
+      const tourDate = String(r.tourDate ?? '')
+        .trim()
+        .slice(0, 10)
+      if (!rid || !pid || !tourDate) {
+        alert(isKo ? '예약 정보가 불완전합니다.' : 'Incomplete reservation data.')
+        return
+      }
+      setUnassignedCreatingReservationId(rid)
+      try {
+        const { data: conflictRows, error: conflictErr } = await supabase
+          .from('tours')
+          .select('id')
+          .contains('reservation_ids', [rid])
+          .limit(1)
+        if (conflictErr) {
+          alert(isKo ? `조회 오류: ${conflictErr.message}` : conflictErr.message)
+          return
+        }
+        if (conflictRows && conflictRows.length > 0) {
+          alert(
+            isKo
+              ? '이 예약은 이미 다른 투어에 배정되어 있습니다. 목록을 새로고침합니다.'
+              : 'This reservation is already on a tour. Refreshing the list.'
+          )
+          await load()
+          return
+        }
+
+        const tourId = generateTourId()
+        const { data: newTour, error: insertErr } = await supabase
+          .from('tours')
+          .insert({
+            id: tourId,
+            product_id: pid,
+            tour_date: tourDate,
+            reservation_ids: [rid],
+            tour_status: 'scheduled',
+            is_private_tour: false,
+          })
+          .select()
+          .single()
+
+        if (insertErr || !newTour) {
+          alert(
+            isKo
+              ? `투어 생성 오류: ${insertErr?.message ?? '알 수 없음'}`
+              : `Could not create tour: ${insertErr?.message ?? 'unknown'}`
+          )
+          return
+        }
+
+        const newId = String((newTour as { id: string }).id)
+        const { error: resErr } = await supabase.from('reservations').update({ tour_id: newId }).eq('id', rid)
+        if (resErr) {
+          alert(
+            isKo
+              ? `투어는 만들었으나 예약 연결에 실패했습니다(${resErr.message}). 투어 ID: ${newId}`
+              : `Tour created but linking the reservation failed (${resErr.message}). Tour ID: ${newId}`
+          )
+          return
+        }
+
+        void createTourPhotosBucket()
+        alert(t('needCheckUnassignedCreateTourSuccess'))
+        await load()
+      } finally {
+        setUnassignedCreatingReservationId(null)
+      }
+    },
+    [supabase, load, isKo, t]
+  )
+
   if (!isOpen) return null
 
   const rows = tab === 'noReceipt' ? noReceipt : tab === 'balance' ? balanceRemaining : null
@@ -556,13 +636,23 @@ export function ToursNeedCheckModal({
                         <div className="text-xs text-gray-500 mt-0.5">
                           {t('needCheckUnassignedStatusPeople', { status: r.status || '—', n: r.totalPeople })}
                         </div>
-                        <div className="mt-1">
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => setPreviewReservationId(r.reservationId)}
                             className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
                           >
                             {isKo ? '예약 상세' : 'Reservation detail'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={unassignedAssigningKey !== null || unassignedCreatingReservationId !== null}
+                            onClick={() => void handleCreateTourForUnassignedReservation(r)}
+                            className="px-2 py-0.5 rounded border border-emerald-400 bg-emerald-50 text-emerald-900 text-[11px] font-medium hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {unassignedCreatingReservationId === r.reservationId
+                              ? '…'
+                              : t('needCheckUnassignedCreateTour')}
                           </button>
                         </div>
                       </td>
@@ -602,7 +692,9 @@ export function ToursNeedCheckModal({
                                   <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                                     <button
                                       type="button"
-                                      disabled={unassignedAssigningKey !== null}
+                                      disabled={
+                                        unassignedAssigningKey !== null || unassignedCreatingReservationId !== null
+                                      }
                                       onClick={() => void handleAssignUnassignedToTour(r.reservationId, c.tourId)}
                                       className="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-900 text-[11px] font-medium hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >

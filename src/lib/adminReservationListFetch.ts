@@ -121,11 +121,11 @@ export async function fetchAdminReservationList(
   args: FetchAdminReservationListArgs
 ): Promise<{ data: Record<string, unknown>[] | null; count: number | null; error: Error | null }> {
   try {
-    let selectFields = '*, choices'
+    let selectFields = '*, choices, channels(name)'
     if (args.sortBy === 'customer_name') {
-      selectFields = '*, choices, customers(name)'
+      selectFields = '*, choices, channels(name), customers(name)'
     } else if (args.sortBy === 'product_name') {
-      selectFields = '*, choices, products(name, name_ko, name_en)'
+      selectFields = '*, choices, channels(name), products(name, name_ko, name_en)'
     }
 
     let q = supabase.from('reservations').select(selectFields, { count: 'exact' })

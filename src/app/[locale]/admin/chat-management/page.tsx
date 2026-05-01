@@ -10,7 +10,10 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { PickupSchedule } from '@/components/tour/PickupSchedule'
-import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
+import {
+  formatTourChatStaffDisplayName,
+  type TourChatStaffTeamFields
+} from '@/lib/tourChatStaffDisplay'
 import {
   ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY,
   ADMIN_TOUR_CHAT_PENDING_ROOM_KEY
@@ -226,10 +229,7 @@ export default function ChatManagementPage() {
   const router = useRouter()
   const { openChat } = useFloatingChat()
   const { user } = useAuth()
-  const [myTeamProfile, setMyTeamProfile] = useState<{
-    display_name: string | null
-    name_ko: string | null
-  } | null>(null)
+  const [myTeamProfile, setMyTeamProfile] = useState<TourChatStaffTeamFields | null>(null)
   const [staffChatLabelsByEmail, setStaffChatLabelsByEmail] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -241,13 +241,14 @@ export default function ChatManagementPage() {
     ;(async () => {
       const { data } = await supabase
         .from('team')
-        .select('display_name, name_ko')
+        .select('name_ko, name_en, nick_name')
         .eq('email', user.email)
         .maybeSingle()
       if (!cancelled && data) {
         setMyTeamProfile({
-          display_name: (data as { display_name?: string | null }).display_name ?? null,
-          name_ko: (data as { name_ko?: string | null }).name_ko ?? null
+          name_ko: data.name_ko ?? null,
+          name_en: data.name_en ?? null,
+          nick_name: data.nick_name ?? null
         })
       }
     })()
@@ -331,11 +332,14 @@ export default function ChatManagementPage() {
         const arr = [...needTeamLookup]
         const { data: rows } = await supabase
           .from('team')
-          .select('email, display_name, name_ko')
+          .select('email, name_ko, name_en, nick_name')
           .in('email', arr)
-        for (const row of rows || []) {
-          const r = row as { email: string; display_name: string | null; name_ko: string | null }
-          labels[r.email.toLowerCase()] = formatTourChatStaffDisplayName(r.email, r)
+        for (const row of rows ?? []) {
+          labels[row.email.toLowerCase()] = formatTourChatStaffDisplayName(row.email, {
+            name_ko: row.name_ko ?? null,
+            name_en: row.name_en ?? null,
+            nick_name: row.nick_name ?? null
+          })
         }
         for (const e of arr) {
           const k = e.toLowerCase()
@@ -1147,8 +1151,10 @@ export default function ChatManagementPage() {
       }
     }
 
-    // 60초마다 자동 새로고침 (투어 정보 최신화) - 간격을 늘려서 로딩 화면이 자주 나타나지 않도록
+    // 탭이 보일 때만 주기 새로고침 (백그라운드 탭에서 DB/연결 낭비 방지). 간격 2분.
+    const POLL_MS = 120 * 1000
     const intervalId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
       if (!isRefreshing && !loading) {
         isRefreshing = true
         invalidateCache()
@@ -1156,7 +1162,7 @@ export default function ChatManagementPage() {
           isRefreshing = false
         })
       }
-    }, 60 * 1000) // 30초에서 60초로 변경
+    }, POLL_MS)
 
     // 페이지 포커스 시 새로고침
     document.addEventListener('visibilitychange', handleVisibilityChange)

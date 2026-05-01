@@ -21,6 +21,8 @@ export interface ReservationPricingMapValue {
   choices_total?: number
   not_included_price?: number
   private_tour_additional_cost?: number
+  /** 가격 정보 환불 금액(차감) — 라인 총액 산식에 반영 */
+  refund_amount?: number
   commission_percent?: number
   commission_amount?: number
   commission_base_price?: number

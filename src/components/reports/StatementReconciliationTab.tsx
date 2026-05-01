@@ -44,6 +44,7 @@ import {
   X
 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 /** getSession()은 세션 갱신·Strict Mode 등으로 Abort 되어 "signal is aborted"가 날 수 있음 — 저장된 JWT 우선 */
 function getStoredAccessToken(): string | null {
@@ -156,11 +157,17 @@ type PaymentMethodRow = {
   id: string
   method: string
   display_name?: string | null
+  card_holder_name?: string | null
   card_number_last4: string | null
   financial_account_id: string | null
   user_email?: string | null
   notes?: string | null
-  team?: { email?: string; name_ko?: string | null; name_en?: string | null } | null
+  team?: {
+    email?: string
+    name_ko?: string | null
+    name_en?: string | null
+    nick_name?: string | null
+  } | null
 }
 
 type ReconciliationMatchRow = {
@@ -559,11 +566,24 @@ function paymentMethodLabelFromRows(id: string | null | undefined, rows: Payment
   if (!raw) return '—'
   const pm = rows.find((p) => p.id === raw)
   if (!pm) return raw.length > 14 ? `${raw.slice(0, 10)}…` : raw
-  const dn = pm.display_name?.trim()
-  if (dn) return dn
-  const last = pm.card_number_last4 ? ` ·${pm.card_number_last4}` : ''
-  const base = (pm.method || '결제').trim()
-  return `${base}${last}`.trim() || raw
+  const formatted = formatPaymentMethodDisplay(
+    {
+      id: pm.id,
+      method: pm.method,
+      display_name: pm.display_name ?? null,
+      user_email: pm.user_email ?? null,
+      card_holder_name: pm.card_holder_name ?? null,
+    },
+    pm.team
+      ? {
+          nick_name: pm.team.nick_name ?? null,
+          name_en: pm.team.name_en ?? null,
+          name_ko: pm.team.name_ko ?? null,
+        }
+      : undefined
+  )
+  if (!pm.card_number_last4) return formatted
+  return `${formatted} ·${pm.card_number_last4}`
 }
 
 function recordToExpenseOption(
@@ -1134,11 +1154,17 @@ export default function StatementReconciliationTab() {
           id: string
           method?: string
           display_name?: string | null
+          card_holder_name?: string | null
           card_number_last4?: string | null
           financial_account_id?: string | null
           user_email?: string | null
           notes?: string | null
-          team?: { email?: string; name_ko?: string | null; name_en?: string | null } | null
+          team?: {
+            email?: string
+            name_ko?: string | null
+            name_en?: string | null
+            nick_name?: string | null
+          } | null
         }>
       }
       if (!res.ok || json.success === false) {
@@ -1155,6 +1181,7 @@ export default function StatementReconciliationTab() {
           id: pm.id,
           method: pm.method ?? '',
           display_name: pm.display_name ?? null,
+          card_holder_name: pm.card_holder_name ?? null,
           card_number_last4: pm.card_number_last4 ?? null,
           financial_account_id: pm.financial_account_id ?? null,
           user_email: pm.user_email ?? null,

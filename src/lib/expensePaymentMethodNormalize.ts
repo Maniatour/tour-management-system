@@ -5,10 +5,13 @@ export type ExpenseTableName =
 
 export type NormalizePreviewStatus = 'registered' | 'alias_suggested' | 'unregistered'
 
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
+
 export interface PaymentMethodRow {
   id: string
   method: string
   display_name: string | null
+  card_holder_name?: string | null
 }
 
 export interface NormalizePreviewRow {
@@ -21,9 +24,13 @@ export interface NormalizePreviewRow {
   displayNameForTarget: string | null
 }
 
-function shortDisplay(displayName: string | null, method: string): string {
-  const raw = (displayName && displayName.trim()) || method
-  return raw.includes(' - ') ? raw.split(' - ').pop()!.trim() : raw
+function shortDisplay(row: PaymentMethodRow): string {
+  return formatPaymentMethodDisplay({
+    id: row.id,
+    method: row.method,
+    display_name: row.display_name,
+    card_holder_name: row.card_holder_name ?? null,
+  })
 }
 
 /**
@@ -54,7 +61,7 @@ export function resolvePaymentMethodTarget(
       status: 'registered',
       suggestedTargetId: byId.id,
       matchReason: 'id_match',
-      displayNameForTarget: shortDisplay(byId.display_name, byId.method),
+      displayNameForTarget: shortDisplay(byId),
     }
   }
 
@@ -65,7 +72,7 @@ export function resolvePaymentMethodTarget(
       status: 'alias_suggested',
       suggestedTargetId: byMethod.id,
       matchReason: 'method_name_eq',
-      displayNameForTarget: shortDisplay(byMethod.display_name, byMethod.method),
+      displayNameForTarget: shortDisplay(byMethod),
     }
   }
 
@@ -78,7 +85,7 @@ export function resolvePaymentMethodTarget(
         status: 'alias_suggested',
         suggestedTargetId: p.id,
         matchReason: 'display_name_eq',
-        displayNameForTarget: shortDisplay(p.display_name, p.method),
+        displayNameForTarget: shortDisplay(p),
       }
     }
   }
@@ -96,7 +103,7 @@ export function resolvePaymentMethodTarget(
         status: 'alias_suggested',
         suggestedTargetId: hint.id,
         matchReason: 'legacy_keyword',
-        displayNameForTarget: shortDisplay(hint.display_name, hint.method),
+        displayNameForTarget: shortDisplay(hint),
       }
     }
   }
@@ -117,6 +124,7 @@ export function buildNormalizePreview(
     id: r.id,
     method: r.method,
     display_name: r.display_name,
+    card_holder_name: r.card_holder_name ?? null,
   }))
 
   return stats.map((s) => {

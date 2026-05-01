@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { CreditCard, DollarSign, TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 interface DepositReportTabProps {
   dateRange: { start: string; end: string }
@@ -56,16 +57,47 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       const paymentMethodIds = [...new Set(deposits.map(d => d.payment_method).filter(Boolean))]
       const { data: paymentMethods } = await supabase
         .from('payment_methods')
-        .select('id, method, display_name')
+        .select('id, method, display_name, card_holder_name, user_email')
         .in('id', paymentMethodIds)
 
-      // 결제 방법 ID -> 방법명 매핑 생성 (method 컬럼 우선 사용)
       const methodNameMap = new Map<string, string>()
-      if (paymentMethods) {
-        paymentMethods.forEach(pm => {
-          // payment_methods 테이블의 method 컬럼 값을 사용
-          // method가 없으면 display_name, 그것도 없으면 id 사용
-          const methodName = pm.method || pm.display_name || pm.id
+      if (paymentMethods && paymentMethods.length > 0) {
+        const emails = [
+          ...new Set(
+            paymentMethods
+              .map((pm) => String(pm.user_email || '').toLowerCase())
+              .filter(Boolean)
+          ),
+        ]
+        let teamMap = new Map<
+          string,
+          { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }
+        >()
+        if (emails.length > 0) {
+          const { data: teams } = await supabase
+            .from('team')
+            .select('email, nick_name, name_en, name_ko')
+            .in('email', emails)
+          teamMap = new Map(
+            (teams || []).map((t) => [
+              String((t as { email: string }).email).toLowerCase(),
+              t as { nick_name?: string | null; name_en?: string | null; name_ko?: string | null },
+            ])
+          )
+        }
+        paymentMethods.forEach((pm) => {
+          const em = pm.user_email ? String(pm.user_email).toLowerCase() : ''
+          const team = em ? teamMap.get(em) : undefined
+          const methodName = formatPaymentMethodDisplay(
+            {
+              id: pm.id,
+              method: pm.method,
+              display_name: pm.display_name,
+              user_email: pm.user_email,
+              card_holder_name: pm.card_holder_name,
+            },
+            team ? { nick_name: team.nick_name, name_en: team.name_en, name_ko: team.name_ko } : undefined
+          )
           methodNameMap.set(pm.id, methodName)
         })
       }

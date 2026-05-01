@@ -916,16 +916,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession()
         if (error || !session?.user?.email) return
 
-        persistSupabaseSessionToStorage(session)
-        updateSupabaseToken(session.access_token)
+        const nowSec = Math.floor(Date.now() / 1000)
+        const exp = session.expires_at ?? 0
+        const skewSec = 300
+        let activeSession = session
+
+        if (
+          session.refresh_token &&
+          (!session.expires_at || exp <= nowSec + skewSec)
+        ) {
+          const { data: refData, error: refErr } =
+            await supabase.auth.refreshSession({
+              refresh_token: session.refresh_token,
+            })
+          if (!refErr && refData.session?.user?.email) {
+            activeSession = refData.session
+          }
+        }
+
+        persistSupabaseSessionToStorage(activeSession)
+        updateSupabaseToken(activeSession.access_token)
+
+        const resumedEmail = activeSession.user.email
+        if (!resumedEmail) return
 
         const prev = userRef.current
-        if (prev?.email === session.user.email) return
+        if (prev?.email === resumedEmail) return
 
-        const authUserData = authUserFromSupabaseSessionUser(session.user)
+        const authUserData = authUserFromSupabaseSessionUser(activeSession.user)
         setUser(authUserData)
         setAuthUser(authUserData)
-        void checkUserRole(session.user.email).catch((err) => {
+        void checkUserRole(resumedEmail).catch((err) => {
           console.error('AuthContext: Team check failed on resume:', err)
           setUserRole('customer')
           setUserPosition(null)

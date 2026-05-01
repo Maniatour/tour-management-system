@@ -340,6 +340,9 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'exclude_from_pnl', type: 'boolean', nullable: false, default: 'false' },
       { name: 'is_personal', type: 'boolean', nullable: false, default: 'false' },
       { name: 'personal_partner', type: 'text', nullable: true, default: null },
+      { name: 'reimbursed_amount', type: 'numeric', nullable: false, default: '0' },
+      { name: 'reimbursed_on', type: 'date', nullable: true, default: null },
+      { name: 'reimbursement_note', type: 'text', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ],
@@ -469,6 +472,9 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'exclude_from_pnl', type: 'boolean', nullable: false, default: 'false' },
       { name: 'is_personal', type: 'boolean', nullable: false, default: 'false' },
       { name: 'personal_partner', type: 'text', nullable: true, default: null },
+      { name: 'reimbursed_amount', type: 'numeric', nullable: false, default: '0' },
+      { name: 'reimbursed_on', type: 'date', nullable: true, default: null },
+      { name: 'reimbursement_note', type: 'text', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ],
@@ -505,6 +511,10 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'is_personal', type: 'boolean', nullable: false, default: 'false' },
       { name: 'personal_partner', type: 'text', nullable: true, default: null },
       { name: 'reconciliation_status', type: 'text', nullable: true, default: null },
+      { name: 'reimbursed_amount', type: 'numeric', nullable: false, default: '0' },
+      { name: 'reimbursed_on', type: 'date', nullable: true, default: null },
+      { name: 'reimbursement_note', type: 'text', nullable: true, default: null },
+      { name: 'reimbursement_outstanding', type: 'numeric', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ],

@@ -732,15 +732,17 @@ export default function TourDetailPage() {
         updateData.assistant_id = null
       }
 
-      // 차량 배정
-      if (tourData.selectedVehicleId) {
-        updateData.tour_car_id = tourData.selectedVehicleId
-      }
+      // 차량 배정 (비우면 해제 — 해제 시 DB 트리거로 max_participants → 12)
+      updateData.tour_car_id = tourData.selectedVehicleId
+        ? tourData.selectedVehicleId
+        : null
 
-      const { error } = await (supabase as any)
+      const { data: savedTourRow, error } = await (supabase as any)
         .from('tours')
         .update(updateData)
         .eq('id', tourData.tour.id)
+        .select()
+        .maybeSingle()
 
       if (error) {
         console.error('팀 구성 및 차량 배정 저장 오류:', error)
@@ -754,13 +756,41 @@ export default function TourDetailPage() {
       setIsGuideFeeFromDefault(false)
       setIsAssistantFeeFromDefault(false)
 
-      // 투어 데이터 업데이트
-      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, ...updateData } : null)
+      // 투어 데이터 업데이트 (트리거로 조정된 max_participants 등 반영)
+      tourData.setTour((prev: TourRow | null) => {
+        if (!prev) return null
+        if (savedTourRow && typeof savedTourRow === 'object') {
+          return { ...prev, ...savedTourRow }
+        }
+        return { ...prev, ...updateData }
+      })
 
       console.log('팀 구성 및 차량 배정 저장 완료:', updateData)
       alert(t('detail.saveSuccess'))
     } catch (error) {
       console.error('팀 구성 및 차량 배정 저장 오류:', error)
+      alert(t('detail.saveError'))
+    }
+  }
+
+  const handleMaxParticipantsChange = async (value: number) => {
+    if (!tourData.tour?.id) return
+    try {
+      const { data, error } = await supabase
+        .from('tours')
+        .update({ max_participants: value } satisfies Database['public']['Tables']['tours']['Update'])
+        .eq('id', tourData.tour.id)
+        .select()
+        .maybeSingle()
+
+      if (error) throw error
+      tourData.setTour((prev: TourRow | null) => {
+        if (!prev) return null
+        if (data && typeof data === 'object') return { ...prev, ...data }
+        return { ...prev, max_participants: value }
+      })
+    } catch (e) {
+      console.error('최대 수용 인원 저장 오류:', e)
       alert(t('detail.saveError'))
     }
   }
@@ -1793,6 +1823,7 @@ export default function TourDetailPage() {
               onTourDateChange={handleTourDateChange}
               onTourTimeChange={handleTourTimeChange}
               onProductChange={handleTourProductUpdate}
+              onMaxParticipantsChange={handleMaxParticipantsChange}
               getStatusColor={getStatusColor}
               getStatusText={getStatusText}
               getAssignmentStatusColor={getAssignmentStatusColor}

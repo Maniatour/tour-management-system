@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 function getStoredAccessToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -30,10 +31,16 @@ type PaymentMethodRow = {
   id: string
   method: string
   display_name?: string | null
+  card_holder_name?: string | null
   card_number_last4: string | null
   financial_account_id: string | null
   user_email?: string | null
-  team?: { email?: string; name_ko?: string | null; name_en?: string | null } | null
+  team?: {
+    email?: string
+    name_ko?: string | null
+    name_en?: string | null
+    nick_name?: string | null
+  } | null
 }
 
 function normalizeFa(v: string | null | undefined): string | null {
@@ -42,11 +49,24 @@ function normalizeFa(v: string | null | undefined): string | null {
 }
 
 function paymentMethodShortLabel(pm: PaymentMethodRow): string {
-  const dn = pm.display_name?.trim()
-  if (dn) return dn
+  const formatted = formatPaymentMethodDisplay(
+    {
+      id: pm.id,
+      method: pm.method,
+      display_name: pm.display_name ?? null,
+      user_email: pm.user_email ?? null,
+      card_holder_name: pm.card_holder_name ?? null,
+    },
+    pm.team
+      ? {
+          nick_name: pm.team.nick_name ?? null,
+          name_en: pm.team.name_en ?? null,
+          name_ko: pm.team.name_ko ?? null,
+        }
+      : undefined
+  )
   const last = pm.card_number_last4 ? ` ·${pm.card_number_last4}` : ''
-  const base = (pm.method || '결제').trim()
-  return `${base}${last}`.trim() || pm.id
+  return `${formatted}${last}`.trim() || pm.id
 }
 
 export type FinancialAccountLinkedCardsModalProps = {
@@ -142,10 +162,16 @@ export default function FinancialAccountLinkedCardsModal({
           id: string
           method?: string
           display_name?: string | null
+          card_holder_name?: string | null
           card_number_last4?: string | null
           financial_account_id?: string | null
           user_email?: string | null
-          team?: { email?: string; name_ko?: string | null; name_en?: string | null } | null
+          team?: {
+            email?: string
+            name_ko?: string | null
+            name_en?: string | null
+            nick_name?: string | null
+          } | null
         }>
       }
       if (!res.ok || json.success === false) {
@@ -160,6 +186,7 @@ export default function FinancialAccountLinkedCardsModal({
           id: pm.id,
           method: pm.method ?? '',
           display_name: pm.display_name ?? null,
+          card_holder_name: pm.card_holder_name ?? null,
           card_number_last4: pm.card_number_last4 ?? null,
           financial_account_id: pm.financial_account_id ?? null,
           user_email: pm.user_email ?? null,

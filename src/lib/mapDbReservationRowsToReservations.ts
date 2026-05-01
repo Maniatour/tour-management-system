@@ -1,4 +1,5 @@
 import type { Reservation } from '@/types/reservation'
+import { parseEmbeddedChannelNameFromReservationRow } from '@/utils/reservationUtils'
 
 const toNumber = (val: number | null | undefined): number => {
   if (val === null || val === undefined) return 0
@@ -30,6 +31,7 @@ export function mapDbReservationRowsToReservations(
       infant: toNumber(item.infant as number | undefined),
       totalPeople: toNumber(item.total_people as number | undefined),
       channelId: (item.channel_id as string) || '',
+      channelNameSnapshot: parseEmbeddedChannelNameFromReservationRow(item) ?? null,
       variantKey: (item.variant_key as string) || 'default',
       channelRN: (item.channel_rn as string) || '',
       addedBy: (item.added_by as string) || '',

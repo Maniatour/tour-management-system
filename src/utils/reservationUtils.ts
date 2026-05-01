@@ -126,9 +126,28 @@ export const getProductNameForLocale = (
   return product.name || 'Unknown'
 }
 
+/** PostgREST 예약 행에 붙는 `channels(name)` embed 파싱 */
+export function parseEmbeddedChannelNameFromReservationRow(item: Record<string, unknown>): string | undefined {
+  const raw = item.channels
+  if (raw == null) return undefined
+  if (Array.isArray(raw)) {
+    const first = raw[0] as { name?: string | null } | undefined
+    const n = first?.name
+    return n != null && String(n).trim() !== '' ? String(n).trim() : undefined
+  }
+  if (typeof raw === 'object') {
+    const n = (raw as { name?: string | null }).name
+    return n != null && String(n).trim() !== '' ? String(n).trim() : undefined
+  }
+  return undefined
+}
+
 // 채널 이름 가져오기 (id, name만 있으면 동작)
 export const getChannelName = (channelId: string, channels: Array<{ id: string; name?: string | null }> | null) => {
-  return channels?.find(c => c.id === channelId)?.name || 'Unknown'
+  const id = String(channelId ?? '').trim()
+  if (!id) return 'Unknown'
+  const ch = channels?.find((c) => String(c.id ?? '').trim() === id)
+  return ch?.name?.trim() || 'Unknown'
 }
 
 /** reservations.variant_key / 클라이언트 variantKey */
@@ -141,18 +160,29 @@ export function getReservationVariantKey(reservation: {
   return s || 'default'
 }
 
-/** 표시: `채널명 - variant_key` */
+/** 표시: `채널명` 또는 `채널명 - variant` (variant 없음·기본값은 생략) */
 export function formatChannelDashVariant(
   channelId: string,
   channels: Array<{ id: string; name?: string | null }> | null,
-  reservation: { variantKey?: string | null; variant_key?: string | null }
+  reservation: {
+    variantKey?: string | null
+    variant_key?: string | null
+    channelNameSnapshot?: string | null
+  }
 ): string {
-  return `${getChannelName(channelId, channels)} - ${getReservationVariantKey(reservation)}`
+  const id = String(channelId ?? '').trim()
+  const snap = reservation.channelNameSnapshot?.trim()
+  const name = snap || getChannelName(id, channels)
+  const v = reservation.variantKey ?? reservation.variant_key
+  const vs = v != null ? String(v).trim() : ''
+  const variantLabel = vs && vs !== 'default' ? vs : ''
+  return variantLabel ? `${name} - ${variantLabel}` : name
 }
 
 // 채널 정보 가져오기 (이름과 파비콘)
 export const getChannelInfo = (channelId: string, channels: Channel[] | null) => {
-  const channel = channels?.find(c => c.id === channelId)
+  const id = String(channelId ?? '').trim()
+  const channel = channels?.find((c) => String(c.id ?? '').trim() === id)
   return {
     name: channel?.name || 'Unknown',
     favicon_url: (channel as any)?.favicon_url || null

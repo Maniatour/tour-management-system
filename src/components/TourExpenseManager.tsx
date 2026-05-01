@@ -16,6 +16,8 @@ import {
 } from '@/lib/bookingSettlement'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
+import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
+import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 
 interface TourExpense {
   id: string
@@ -37,6 +39,9 @@ interface TourExpense {
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
   updated_at: string
+  reimbursed_amount?: number | null
+  reimbursed_on?: string | null
+  reimbursement_note?: string | null
 }
 
 interface ExpenseCategory {
@@ -187,7 +192,10 @@ export default function TourExpenseManager({
     image_url: '',
     file_path: '',
     custom_paid_to: '',
-    custom_paid_for: ''
+    custom_paid_for: '',
+    reimbursed_amount: '',
+    reimbursed_on: '',
+    reimbursement_note: ''
   })
 
   /** 투어에 배정된 가이드·어시스턴트(또는 2인 가이드) 이메일 — 본인 카드 탭에 모두 반영 */
@@ -631,6 +639,8 @@ export default function TourExpenseManager({
   // 영수증 이미지 업로드
   const handleImageUpload = async (file: File) => {
     try {
+      await ensureFreshAuthSessionForUpload()
+
       // 파일 크기 체크 (5MB)
       if (file.size > 5 * 1024 * 1024) {
         throw new Error('파일 크기가 너무 큽니다 (최대 5MB)')
@@ -765,7 +775,10 @@ export default function TourExpenseManager({
         image_url: '',
         file_path: '',
         custom_paid_to: '',
-        custom_paid_for: ''
+        custom_paid_for: '',
+        reimbursed_amount: '',
+        reimbursed_on: '',
+        reimbursement_note: ''
       })
       setShowCustomPaidFor(false)
       setShowCustomPaidTo(false)
@@ -977,7 +990,11 @@ export default function TourExpenseManager({
       image_url: expense.image_url || '',
       file_path: expense.file_path || '',
       custom_paid_to: isPaidToInOptions ? '' : expense.paid_to,
-      custom_paid_for: !isPaidForInOptions && !isReceiptOnlyPending ? expense.paid_for : ''
+      custom_paid_for: !isPaidForInOptions && !isReceiptOnlyPending ? expense.paid_for : '',
+      reimbursed_amount:
+        expense.amount > 0 ? String(parseReimbursedAmount(expense.reimbursed_amount)) : '',
+      reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
+      reimbursement_note: expense.reimbursement_note || ''
     })
     setPaymentMethodTab(
       expense.payment_method && guideCardPaymentMethodIds.has(expense.payment_method) ? 'own' : 'other'
@@ -1061,7 +1078,11 @@ export default function TourExpenseManager({
       image_url: expense.image_url || '',
       file_path: expense.file_path || '',
       custom_paid_to: isPaidToInOptions ? '' : draft.paid_to,
-      custom_paid_for: ''
+      custom_paid_for: '',
+      reimbursed_amount:
+        expense.amount > 0 ? String(parseReimbursedAmount(expense.reimbursed_amount)) : '',
+      reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
+      reimbursement_note: expense.reimbursement_note || ''
     })
     setPaymentMethodTab(
       draft.payment_method && guideCardPaymentMethodIds.has(draft.payment_method) ? 'own' : 'other'
@@ -1087,7 +1108,10 @@ export default function TourExpenseManager({
       image_url: '',
       file_path: '',
       custom_paid_to: '',
-      custom_paid_for: ''
+      custom_paid_for: '',
+      reimbursed_amount: '',
+      reimbursed_on: '',
+      reimbursement_note: ''
     })
     setPaymentMethodTab('own')
   }
@@ -1111,6 +1135,17 @@ export default function TourExpenseManager({
       return
     }
 
+    const amountNum = parseFloat(formData.amount)
+    const reimbNum = parseFloat(String(formData.reimbursed_amount ?? '').trim() || '0')
+    if (!Number.isFinite(reimbNum) || reimbNum < 0) {
+      alert(t('reimbursementInvalidNonNegative'))
+      return
+    }
+    if (amountNum > 0 && reimbNum > amountNum + 0.001) {
+      alert(t('reimbursementExceedsAmount'))
+      return
+    }
+
     try {
       // 지급 대상 값 확인
       const finalPaidTo = formData.custom_paid_to || formData.paid_to || null
@@ -1121,17 +1156,32 @@ export default function TourExpenseManager({
         showCustomPaidTo: showCustomPaidTo
       })
 
+      const reimbursedOnVal = formData.reimbursed_on?.trim() || null
+      const reimbPayload =
+        amountNum > 0
+          ? {
+              reimbursed_amount: reimbNum,
+              reimbursed_on: reimbursedOnVal,
+              reimbursement_note: formData.reimbursement_note?.trim() || null
+            }
+          : {
+              reimbursed_amount: 0,
+              reimbursed_on: null,
+              reimbursement_note: null
+            }
+
       const { error } = await supabase
         .from('tour_expenses')
         .update({
           paid_to: finalPaidTo,
           paid_for: formData.custom_paid_for || formData.paid_for,
-          amount: parseFloat(formData.amount),
+          amount: amountNum,
           payment_method: formData.payment_method || null,
           note: formData.note || null,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          ...reimbPayload
         })
         .eq('id', editingExpense.id)
 
@@ -1144,9 +1194,10 @@ export default function TourExpenseManager({
               ...expense,
               paid_to: finalPaidTo,
               paid_for: formData.custom_paid_for || formData.paid_for,
-              amount: parseFloat(formData.amount),
+              amount: amountNum,
               payment_method: formData.payment_method || null,
               note: formData.note || null,
+              ...reimbPayload
             }
           : expense
       ))
@@ -1992,6 +2043,25 @@ export default function TourExpenseManager({
                   </div>
                 </div>
               </div>
+              {expense.amount > 0 &&
+                (parseReimbursedAmount(expense.reimbursed_amount) > 0 ||
+                  reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009) && (
+                  <div className="mt-1.5 text-[10px] text-gray-600 border-t border-gray-100 pt-1.5">
+                    <span className="text-gray-500">{t('reimbursedShort')}:</span>{' '}
+                    <span className="font-medium">{formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}</span>
+                    <span className="mx-1.5 text-gray-300">·</span>
+                    <span className="text-gray-500">{t('outstandingShort')}:</span>{' '}
+                    <span
+                      className={
+                        reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009
+                          ? 'font-semibold text-amber-700'
+                          : 'font-medium text-green-700'
+                      }
+                    >
+                      {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
+                    </span>
+                  </div>
+                )}
             </div>
           ))}
         </div>
@@ -2538,6 +2608,46 @@ export default function TourExpenseManager({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {parseFloat(formData.amount || '0') > 0 && (
+                <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 p-3 space-y-3">
+                  <p className="text-xs font-medium text-amber-900">{t('reimbursementSectionTitle')}</p>
+                  <p className="text-[11px] text-amber-800/90">{t('reimbursementSectionHint')}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedAmount')}</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.reimbursed_amount}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                        placeholder="0"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedOn')}</label>
+                      <input
+                        type="date"
+                        value={formData.reimbursed_on}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursementNote')}</label>
+                    <input
+                      type="text"
+                      value={formData.reimbursement_note}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
+                      placeholder={t('reimbursementNotePlaceholder')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* 영수증 이미지 업로드 */}
               <div>

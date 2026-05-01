@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import Image from 'next/image'
 import {
   Calendar,
@@ -39,6 +39,10 @@ import {
   mergePricingWithLiveOptionTotal,
 } from '@/utils/reservationPricingBalance'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import {
+  computeBalanceChannelMetrics,
+  findChannelRowForBalance,
+} from '@/utils/balanceChannelRevenue'
 
 function fmtUsd(v: number | undefined | null): string {
   if (v == null || (typeof v === 'number' && Number.isNaN(v))) return '—'
@@ -52,11 +56,22 @@ function fmtCoupon(v: number | undefined | null): string {
   return `-$${Math.abs(n).toFixed(2)}`
 }
 
+function fmtPct(v: number | undefined | null): string {
+  if (v == null || (typeof v === 'number' && Number.isNaN(v))) return '—'
+  return `${Number(v).toFixed(2)}%`
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-type PricingApplyMode = 'total' | 'deposit' | 'balance' | 'all'
+type PricingApplyMode =
+  | 'total'
+  | 'deposit'
+  | 'balance'
+  | 'channelPayment'
+  | 'channelSettlement'
+  | 'all'
 
 /** 일괄 반영·행 단위 반영 공통 — reservation_pricing 업데이트 필드만 생성 */
 function buildReservationPricingPatch(
@@ -64,7 +79,19 @@ function buildReservationPricingPatch(
   p: ReservationPricingMapValue,
   reservationOptionSumByReservationId: Map<string, number> | undefined,
   records: PaymentRecordLike[],
-  mode: PricingApplyMode
+  mode: PricingApplyMode,
+  channels:
+    | Array<{
+        id: string
+        type?: string | null
+        category?: string | null
+        name?: string | null
+        commission_percent?: number | null
+        commission_rate?: number | null
+        commission?: number | null
+        sub_channels?: string[] | null
+      }>
+    | undefined
 ): Record<string, number> | null {
   const party = { adults: r.adults ?? 0, children: r.child ?? 0, infants: r.infant ?? 0 }
   const pForGross = mergePricingWithLiveOptionTotal(p, r.id, reservationOptionSumByReservationId) ?? p
@@ -83,6 +110,16 @@ function buildReservationPricingPatch(
   if (mode === 'total' || mode === 'all') patch.total_price = gross
   if (mode === 'deposit' || mode === 'all') patch.deposit_amount = depositBucketGross
   if (mode === 'balance' || mode === 'all') patch.balance_amount = remainingPay
+  if (mode === 'channelPayment') {
+    const m = computeBalanceChannelMetrics(p, r, channels ?? [], records, reservationOptionSumByReservationId)
+    if (m == null) return null
+    patch.commission_base_price = round2(m.channelPaymentFromFormula)
+  }
+  if (mode === 'channelSettlement') {
+    const m = computeBalanceChannelMetrics(p, r, channels ?? [], records, reservationOptionSumByReservationId)
+    if (m == null) return null
+    patch.channel_settlement_amount = round2(m.channelSettlementFromFormula)
+  }
   if (Object.keys(patch).length === 0) return null
   return patch
 }
@@ -98,6 +135,169 @@ function rsvCol(column: string): string {
 
 function dbTitle(tableCol: string, extra?: string | null): string {
   return extra ? `${tableCol}\n${extra}` : tableCol
+}
+
+/** 인라인: 윗줄 DB값 더블클릭 → reservation_pricing 패치 */
+type DbFormulaInlineEdit = {
+  reservationId: string
+  columnKey: string
+  buildPatch: (n: number) => Record<string, number>
+  canEdit: boolean
+  inlineBusyKey: string | null
+  onCommit: (reservationId: string, patch: Record<string, number>, columnKey: string) => Promise<void>
+  editTitle: string
+}
+
+/** 금액·퍼센트: 윗줄 DB값 · 아랫줄 산식 — 가로줄 구분, 불일치 시 아랫줄만 빨간색. 윗줄 더블클릭 시 DB 인라인 수정 */
+function DbFormulaMoneyCell(props: {
+  dbVal: number | null | undefined
+  computedVal: number | null | undefined
+  format?: 'usd' | 'coupon' | 'percent'
+  className?: string
+  inlineEdit?: DbFormulaInlineEdit
+}) {
+  const { dbVal, computedVal, format = 'usd', className = '', inlineEdit } = props
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const committingRef = useRef(false)
+  /** blur 핸들러가 배치된 state보다 먼저 실행되는 경우 커밋 방지 */
+  const editingRef = useRef(false)
+
+  const nDb = dbVal == null || Number.isNaN(Number(dbVal)) ? null : Number(dbVal)
+  const nCo =
+    computedVal == null || Number.isNaN(Number(computedVal)) ? null : Number(computedVal)
+  const tol = format === 'percent' ? 0.05 : 0.01
+  const mismatch = nDb != null && nCo != null && Math.abs(nDb - nCo) > tol
+  const top =
+    format === 'coupon'
+      ? fmtCoupon(nDb ?? undefined)
+      : format === 'percent'
+        ? fmtPct(nDb ?? undefined)
+        : fmtUsd(nDb ?? undefined)
+  const bot =
+    format === 'coupon'
+      ? fmtCoupon(nCo ?? undefined)
+      : format === 'percent'
+        ? fmtPct(nCo ?? undefined)
+        : fmtUsd(nCo ?? undefined)
+
+  const busy =
+    inlineEdit?.canEdit &&
+    inlineEdit.inlineBusyKey === `${inlineEdit.reservationId}:inline:${inlineEdit.columnKey}`
+
+  const openEditor = () => {
+    if (!inlineEdit?.canEdit || busy || editingRef.current) return
+    const base = nDb ?? 0
+    if (format === 'percent') {
+      setDraft(Number(base).toFixed(2))
+    } else if (format === 'coupon') {
+      setDraft(Math.abs(base) < 0.005 ? '' : Math.abs(base).toFixed(2))
+    } else {
+      setDraft(Number(base).toFixed(2))
+    }
+    editingRef.current = true
+    setEditing(true)
+  }
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  const commitEdit = async () => {
+    if (!inlineEdit?.canEdit || !editingRef.current || committingRef.current) return
+    const raw = draft.trim()
+    if (raw === '' || raw === '-') {
+      editingRef.current = false
+      setEditing(false)
+      return
+    }
+    let n = parseFloat(raw)
+    if (!Number.isFinite(n)) {
+      editingRef.current = false
+      setEditing(false)
+      return
+    }
+    if (format === 'coupon') {
+      n = Math.abs(n)
+    }
+    n = round2(n)
+    committingRef.current = true
+    try {
+      const patch = inlineEdit.buildPatch(n)
+      await inlineEdit.onCommit(inlineEdit.reservationId, patch, inlineEdit.columnKey)
+    } finally {
+      committingRef.current = false
+      editingRef.current = false
+      setEditing(false)
+    }
+  }
+
+  const cancelEdit = () => {
+    committingRef.current = false
+    editingRef.current = false
+    setEditing(false)
+    setDraft('')
+  }
+
+  const topEl =
+    editing && inlineEdit?.canEdit ? (
+      <input
+        ref={inputRef}
+        type="number"
+        step={format === 'percent' ? '0.01' : '0.01'}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            void commitEdit()
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            cancelEdit()
+          }
+        }}
+        onBlur={() => void commitEdit()}
+        disabled={busy}
+        className="w-full min-w-[2.75rem] max-w-[4.5rem] ml-auto block tabular-nums text-[10px] text-right border border-blue-400 rounded px-0.5 py-px bg-white"
+      />
+    ) : (
+      <div
+        role={inlineEdit?.canEdit ? 'button' : undefined}
+        tabIndex={inlineEdit?.canEdit ? 0 : undefined}
+        title={inlineEdit?.canEdit ? inlineEdit.editTitle : undefined}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          openEditor()
+        }}
+        onKeyDown={(e) => {
+          if (!inlineEdit?.canEdit || busy) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            openEditor()
+          }
+        }}
+        className={`tabular-nums leading-tight text-right text-gray-900 ${
+          inlineEdit?.canEdit && !busy ? 'cursor-cell hover:bg-blue-50/80 rounded px-0.5 -mx-0.5' : ''
+        }`}
+      >
+        {busy ? <span className="opacity-50">{top}</span> : top}
+      </div>
+    )
+
+  return (
+    <div className={`flex flex-col items-stretch min-w-[3.25rem] py-0.5 ${className}`}>
+      {topEl}
+      <div className="mt-0.5 border-t border-gray-200/90 pt-0.5">
+        <div className={`tabular-nums leading-tight text-right ${mismatch ? 'font-semibold text-red-600' : 'text-gray-800'}`}>
+          {bot}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function RowDbApplyButton(props: {
@@ -127,24 +327,6 @@ function RowDbApplyButton(props: {
   )
 }
 
-/**
- * 할인·추가비용 섹션 소계 — 상품가 이후 반영분 합산(잔액 산식과 동일 부호)
- * - 쿠폰·추가할인은 차감, 그 외 비용·수수료·단독추가 등은 가산
- */
-function discountExtraSectionSubtotal(p: ReservationPricingMapValue | undefined): number {
-  if (!p) return 0
-  return round2(
-    -pricingFieldToNumber(p.coupon_discount) -
-      pricingFieldToNumber(p.additional_discount) +
-      pricingFieldToNumber(p.additional_cost) +
-      pricingFieldToNumber(p.tax) +
-      pricingFieldToNumber(p.card_fee) +
-      pricingFieldToNumber(p.prepayment_cost) +
-      pricingFieldToNumber(p.prepayment_tip) +
-      pricingFieldToNumber(p.private_tour_additional_cost)
-  )
-}
-
 function fmtUsdSigned(v: number): string {
   if (v == null || Number.isNaN(v)) return '—'
   const n = Number(v)
@@ -153,10 +335,10 @@ function fmtUsdSigned(v: number): string {
   return `${sign}$${Math.abs(n).toFixed(2)}`
 }
 
-/** 가로 스크롤 시 예약 영역 열 고정 — 대략 열 폭 기준 left 누적 */
+/** 가로 스크롤 시 예약 영역 열 고정 — 대략 열 폭 기준 left 누적(패딩·max-w 축소와 맞춤) */
 const RES_LEFT: Record<'sel' | 'nosel', readonly [string, string, string, string, string]> = {
-  nosel: ['left-0', 'left-[7.5rem]', 'left-[17rem]', 'left-[23.5rem]', 'left-[29.5rem]'],
-  sel: ['left-8', 'left-[9.5rem]', 'left-[19rem]', 'left-[25.5rem]', 'left-[32rem]'],
+  nosel: ['left-0', 'left-[6.25rem]', 'left-[13.75rem]', 'left-[18.75rem]', 'left-[23.75rem]'],
+  sel: ['left-7', 'left-[8rem]', 'left-[15.5rem]', 'left-[20.5rem]', 'left-[25.5rem]'],
 }
 
 const RES_Z = ['z-[30]', 'z-[29]', 'z-[28]', 'z-[27]', 'z-[26]'] as const
@@ -239,7 +421,7 @@ function customerPaymentStoredTotalDb(
   p: ReservationPricingMapValue | undefined
 ): number | null {
   if (!p) return null
-  if (p.total_price == null || p.total_price === '') return null
+  if (p.total_price == null) return null
   return round2(pricingFieldToNumber(p.total_price))
 }
 
@@ -256,7 +438,17 @@ type BalanceProps = {
   reservations: Reservation[]
   customers: Customer[]
   products: Array<{ id: string; name: string; sub_category?: string; product_code?: string | null }>
-  channels: Array<{ id: string; name: string; favicon_url?: string | null }>
+  channels: Array<{
+    id: string
+    name: string
+    favicon_url?: string | null
+    type?: string | null
+    category?: string | null
+    commission_percent?: number | null
+    commission_rate?: number | null
+    commission?: number | null
+    sub_channels?: string[] | null
+  }>
   reservationPricingMap: Map<string, ReservationPricingMapValue>
   /** 예약별 입금 내역 — DB 보증금·잔액과 비교 표시 */
   paymentRecordsByReservationId?: Map<string, PaymentRecordLike[]>
@@ -288,7 +480,7 @@ type BalanceProps = {
   balanceReservationsForApply?: Reservation[]
   /** 작업 열에 가격·결제·메일 등 숨기고 수정만 표시 */
   actionsColumnEditOnly?: boolean
-  /** 총액·보증금·잔액 일괄/행 DB 반영(체크·행 버튼) — 예약 가격 탭에서는 false */
+  /** 총액·보증금·잔액 일괄/행 DB 반영(체크·행 버튼). 예약 처리 필요 모달의 예약 가격·밸런스 탭 공통 */
   enablePricingDbApply?: boolean
 }
 
@@ -372,19 +564,32 @@ function StatusDropdown({
   )
 }
 
-export type BalanceSectionViewMode = 'detail' | 'subtotal'
+/** 가격 정보 흐름: 상품합(DB·effective) ~ 옵션 Subtotal(DB·실시간) */
+const PRICING_FLOW_COLUMN_COUNT = 15
+/** 고객 결제: 총액·보증금·잔액 등 */
+const PAYMENT_COLUMN_COUNT = 5
+/** 채널 결제·수수료·정산·총매출·운영이익 (보증금은 고객 결제 열과 중복이므로 제외) */
+const CHANNEL_COLUMN_COUNT = 6
 
-type BalanceRowProps = Omit<BalanceProps, 'reservations'> & {
+export type BalanceRowProps = Omit<BalanceProps, 'reservations'> & {
   reservation: Reservation
   paymentRecords: PaymentRecordLike[]
-  productPriceMode: BalanceSectionViewMode
-  discountExtraMode: BalanceSectionViewMode
   selectionEnabled: boolean
   rowChecked: boolean
   onRowCheckChange: (reservationId: string, checked: boolean) => void
   selectionDisabled: boolean
-  onApplyRowPatch?: (reservationId: string, mode: 'total' | 'deposit' | 'balance') => Promise<void>
+  onApplyRowPatch?: (
+    reservationId: string,
+    mode: 'total' | 'deposit' | 'balance' | 'channelPayment' | 'channelSettlement'
+  ) => Promise<void>
   applyRowBusyKey?: string | null
+  /** 윗줄 DB값 더블클릭 인라인 저장 → reservation_pricing.update */
+  onInlinePricingCommit?: (
+    reservationId: string,
+    patch: Record<string, number>,
+    columnKey: string
+  ) => Promise<void>
+  inlineEditBusyKey?: string | null
 }
 
 function BalanceRow(props: BalanceRowProps) {
@@ -412,14 +617,14 @@ function BalanceRow(props: BalanceRowProps) {
     onFollowUpClick,
     paymentRecords,
     reservationOptionSumByReservationId,
-    productPriceMode,
-    discountExtraMode,
     selectionEnabled,
     rowChecked,
     onRowCheckChange,
     selectionDisabled,
     onApplyRowPatch,
     applyRowBusyKey,
+    onInlinePricingCommit,
+    inlineEditBusyKey,
     actionsColumnEditOnly = false,
   } = props
 
@@ -454,6 +659,23 @@ function BalanceRow(props: BalanceRowProps) {
     p != null && Math.abs(balanceDb - balanceComputedOutstanding) > 0.01
   const productSumDisplay = productPriceTotalForDisplay(p, reservation)
 
+  const rawProductStored = p != null ? pricingFieldToNumber(p.product_price_total) : null
+  const effectiveProduct = p != null ? effectiveProductPriceTotalForBalance(p, party) : null
+  const couponN = pricingFieldToNumber(p?.coupon_discount)
+  const addDiscN = pricingFieldToNumber(p?.additional_discount)
+  const dbAfterDiscountProduct =
+    p != null && rawProductStored != null ? round2(rawProductStored - couponN - addDiscN) : null
+  const computedAfterDiscountProduct =
+    p != null && effectiveProduct != null ? round2(effectiveProduct - couponN - addDiscN) : null
+  const notInclTotal = notIncludedTotalForParty(p, reservation)
+  const optDbOnly = pricingFieldToNumber(p?.option_total)
+  const optLineMerged = pLine != null ? pricingFieldToNumber(pLine.option_total) : null
+  const optSubDb = p != null ? optionsLineItemsSum(p, reservation) : null
+  const optSubLine = pLine != null ? optionsLineItemsSum(pLine, reservation) : null
+  const depositComputedCompare = fromPayments.hasRecords
+    ? fromPayments.depositBucketGross
+    : depositDb
+
   /** 잔금 수령(입금) 금액 ≠ 잔액(계산) 표시값 — 두 열 강조 */
   const highlightReceivedVsBalanceComputed =
     fromPayments.hasRecords &&
@@ -464,12 +686,68 @@ function BalanceRow(props: BalanceRowProps) {
   const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
   const showCreateTour = isManiaTour && !reservation.hasExistingTour
   const showResidentInquiryEmail = productShowsResidentStatusSectionByCode(product?.product_code ?? null)
-  const channel = channels?.find((c) => c.id === reservation.channelId)
+  const cid = String(reservation.channelId ?? '').trim()
+  const channel = cid ? findChannelRowForBalance(cid, channels ?? []) : undefined
+
+  const channelMetrics = useMemo(
+    () =>
+      computeBalanceChannelMetrics(
+        p,
+        reservation,
+        channels || [],
+        paymentRecords,
+        reservationOptionSumByReservationId
+      ),
+    [p, reservation, channels, paymentRecords, reservationOptionSumByReservationId]
+  )
+
+  const dbChannelSettlement =
+    p != null &&
+    p.channel_settlement_amount != null &&
+    Number.isFinite(Number(p.channel_settlement_amount))
+      ? pricingFieldToNumber(p.channel_settlement_amount)
+      : null
+  const channelSettlementFormula = channelMetrics?.channelSettlementFromFormula ?? null
+  const channelSettlementMismatch =
+    channelSettlementFormula != null &&
+    p != null &&
+    (dbChannelSettlement == null ||
+      Math.abs(dbChannelSettlement - channelSettlementFormula) > 0.01)
+
+  const channelPaymentFormula =
+    channelMetrics != null ? channelMetrics.channelPaymentFromFormula : null
+  const dbChannelPayment = channelMetrics?.channelPaymentDb ?? null
+  const channelPaymentMismatch =
+    channelPaymentFormula != null &&
+    p != null &&
+    (dbChannelPayment == null ||
+      Math.abs(dbChannelPayment - channelPaymentFormula) > 0.01)
+
+  const inlineEditHint = t('actionRequired.balanceTable.inlineEditDbHint')
+  const rowPatchBusy =
+    applyRowBusyKey != null && applyRowBusyKey.startsWith(`${reservation.id}:`)
+  const inlineEditBlocked = selectionDisabled || rowPatchBusy
+
+  function pricingInline(
+    columnKey: string,
+    buildPatch: (n: number) => Record<string, number>
+  ): DbFormulaInlineEdit | undefined {
+    if (!onInlinePricingCommit || !p || inlineEditBlocked) return undefined
+    return {
+      reservationId: reservation.id,
+      columnKey,
+      buildPatch,
+      canEdit: true,
+      inlineBusyKey: inlineEditBusyKey ?? null,
+      onCommit: onInlinePricingCommit,
+      editTitle: inlineEditHint,
+    }
+  }
 
   return (
-    <tr className="group border-b border-gray-100 hover:bg-gray-50/80 align-top text-[11px]">
+    <tr className="group border-b border-gray-100 hover:bg-gray-50/80 align-top text-[10px]">
       {selectionEnabled && (
-        <td className="sticky left-0 z-[32] px-1 py-1.5 w-8 border-r border-gray-200 align-middle text-center bg-white shadow-[2px_0_8px_-2px_rgba(0,0,0,0.08)] group-hover:bg-gray-50/80">
+        <td className="sticky left-0 z-[32] px-0.5 py-1 w-7 border-r border-gray-200 align-middle text-center bg-white shadow-[2px_0_8px_-2px_rgba(0,0,0,0.08)] group-hover:bg-gray-50/80">
           <input
             type="checkbox"
             className="rounded border-gray-300"
@@ -481,7 +759,7 @@ function BalanceRow(props: BalanceRowProps) {
         </td>
       )}
       <td
-        className={`px-1.5 py-1.5 max-w-[7rem] ${reservationColSticky(0, selectionEnabled, 'tbody')}`}
+        className={`px-0.5 py-1 max-w-[5.75rem] ${reservationColSticky(0, selectionEnabled, 'tbody')}`}
         title={rsvCol('customer_id')}
       >
         <button
@@ -501,7 +779,7 @@ function BalanceRow(props: BalanceRowProps) {
         </div>
       </td>
       <td
-        className={`px-1.5 py-1.5 max-w-[9rem] ${reservationColSticky(1, selectionEnabled, 'tbody')}`}
+        className={`px-0.5 py-1 max-w-[7.25rem] ${reservationColSticky(1, selectionEnabled, 'tbody')}`}
         title={rsvCol('product_id')}
       >
         <div className="font-medium text-gray-900 leading-tight line-clamp-3">
@@ -509,7 +787,7 @@ function BalanceRow(props: BalanceRowProps) {
         </div>
       </td>
       <td
-        className={`px-1.5 py-1.5 whitespace-nowrap text-gray-800 ${reservationColSticky(2, selectionEnabled, 'tbody')}`}
+        className={`px-0.5 py-1 whitespace-nowrap text-gray-800 ${reservationColSticky(2, selectionEnabled, 'tbody')}`}
         title={rsvCol('tour_date')}
       >
         <div className="flex items-center gap-0.5">
@@ -518,13 +796,16 @@ function BalanceRow(props: BalanceRowProps) {
         </div>
       </td>
       <td
-        className={`px-1.5 py-1.5 ${reservationColSticky(3, selectionEnabled, 'tbody')}`}
+        className={`px-0.5 py-1 ${reservationColSticky(3, selectionEnabled, 'tbody')}`}
         title={rsvCol('status')}
       >
-        <StatusDropdown reservation={reservation} onStatusChange={onStatusChange} />
+        <StatusDropdown
+          reservation={reservation}
+          {...(onStatusChange ? { onStatusChange } : {})}
+        />
       </td>
       <td
-        className={`px-1.5 py-1.5 max-w-[10rem] align-top ${reservationColSticky(4, selectionEnabled, 'tbody')}`}
+        className={`px-0.5 py-1 max-w-[7.75rem] align-top ${reservationColSticky(4, selectionEnabled, 'tbody')}`}
         title={dbTitle(
           rsvCol('channel_id'),
           [rsvCol('channel_rn'), rsvCol('variant_key'), formatChannelDashVariant(reservation.channelId, channels || [], reservation)].join('\n')
@@ -545,114 +826,116 @@ function BalanceRow(props: BalanceRowProps) {
         </div>
       </td>
 
-      {productPriceMode === 'detail' ? (
-        <>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('adult_product_price')}>
-            {fmtUsd(p?.adult_product_price)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('child_product_price')}>
-            {fmtUsd(p?.child_product_price)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('infant_product_price')}>
-            {fmtUsd(p?.infant_product_price)}
-          </td>
-          <td
-            className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100 bg-gray-50/50"
-            title={dbTitle(
-              rpCol('not_included_price'),
-              p != null && p.not_included_price != null && Math.abs(pricingFieldToNumber(p.not_included_price)) >= 0.005
-                ? `${fmtUsd(pricingFieldToNumber(p.not_included_price))} × ${totalBillingPax(reservation)}`
-                : undefined
-            )}
-          >
-            {p == null || p.not_included_price == null ? '—' : fmtUsd(notIncludedTotalForParty(p, reservation))}
-          </td>
-          <td
-            className="px-1.5 py-1.5 text-right tabular-nums font-medium text-blue-800 border-r border-gray-200 bg-blue-50/30"
-            title={dbTitle(
-              rpCol('product_price_total'),
-              productSumDisplay.correctedFromDb
-                ? `DB 저장값은 단가×인원만인 경우가 있어, 표시는 단가×인원+미포함(1인당×청구인원)으로 보정`
-                : undefined
-            )}
-          >
-            {fmtUsd(productSumDisplay.amount ?? undefined)}
-          </td>
-        </>
-      ) : (
-        <>
-          <td
-            className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100 bg-gray-50/50"
-            title={dbTitle(
-              rpCol('not_included_price'),
-              p != null && p.not_included_price != null && Math.abs(pricingFieldToNumber(p.not_included_price)) >= 0.005
-                ? `${fmtUsd(pricingFieldToNumber(p.not_included_price))} × ${totalBillingPax(reservation)}`
-                : undefined
-            )}
-          >
-            {p == null || p.not_included_price == null ? '—' : fmtUsd(notIncludedTotalForParty(p, reservation))}
-          </td>
-          <td
-            className="px-1.5 py-1.5 text-right tabular-nums font-medium text-blue-800 border-r border-gray-200 bg-blue-50/30"
-            title={dbTitle(
-              rpCol('product_price_total'),
-              productSumDisplay.correctedFromDb
-                ? `DB 저장값은 단가×인원만인 경우가 있어, 표시는 단가×인원+미포함(1인당×청구인원)으로 보정`
-                : undefined
-            )}
-          >
-            {fmtUsd(productSumDisplay.amount ?? undefined)}
-          </td>
-        </>
-      )}
-
-      {discountExtraMode === 'detail' ? (
-        <>
-          <td className="px-1.5 py-1.5 text-right tabular-nums text-green-800 border-r border-gray-100" title={rpCol('coupon_discount')}>
-            {fmtCoupon(p?.coupon_discount)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('additional_discount')}>
-            {fmtUsd(p?.additional_discount)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('additional_cost')}>
-            {fmtUsd(p?.additional_cost)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('tax')}>
-            {fmtUsd(p?.tax)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('card_fee')}>
-            {fmtUsd(p?.card_fee)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('prepayment_cost')}>
-            {fmtUsd(p?.prepayment_cost)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('prepayment_tip')}>
-            {fmtUsd(p?.prepayment_tip)}
-          </td>
-          <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100 bg-gray-50/50" title={rpCol('private_tour_additional_cost')}>
-            {fmtUsd(p?.private_tour_additional_cost)}
-          </td>
-          <td
-            className="px-1.5 py-1.5 text-right tabular-nums font-semibold text-orange-900 border-r border-gray-200 bg-orange-50/40"
-            title={t('actionRequired.balanceTable.cols.discountSubtotalComputed')}
-          >
-            {fmtUsdSigned(discountExtraSectionSubtotal(p))}
-          </td>
-        </>
-      ) : (
-        <td
-          className="px-1.5 py-1.5 text-right tabular-nums font-semibold text-orange-900 border-r border-gray-200 bg-orange-50/40"
-          title={t('actionRequired.balanceTable.cols.discountSubtotalComputed')}
-        >
-          {fmtUsdSigned(discountExtraSectionSubtotal(p))}
-        </td>
-      )}
-
-      <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('required_option_total')}>
-        {fmtUsd(p?.required_option_total)}
+      <td
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-blue-50/25"
+        title={dbTitle(
+          rpCol('product_price_total'),
+          productSumDisplay.correctedFromDb
+            ? t('actionRequired.balanceTable.cols.flowProductSumHint')
+            : undefined
+        )}
+      >
+        <DbFormulaMoneyCell
+          dbVal={rawProductStored}
+          computedVal={effectiveProduct}
+          inlineEdit={pricingInline('product_price_total', (n) => ({ product_price_total: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={t('actionRequired.balanceTable.cols.flowAfterDiscountHint')}>
+        <DbFormulaMoneyCell dbVal={dbAfterDiscountProduct} computedVal={computedAfterDiscountProduct} />
       </td>
       <td
-        className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100"
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-gray-50/50"
+        title={dbTitle(
+          rpCol('not_included_price'),
+          p != null && p.not_included_price != null && Math.abs(pricingFieldToNumber(p.not_included_price)) >= 0.005
+            ? `${fmtUsd(pricingFieldToNumber(p.not_included_price))} × ${totalBillingPax(reservation)}`
+            : undefined
+        )}
+      >
+        <DbFormulaMoneyCell
+          dbVal={notInclTotal}
+          computedVal={notInclTotal}
+          inlineEdit={pricingInline('not_included_price', (n) => ({
+            not_included_price: round2(n / Math.max(1, totalBillingPax(reservation))),
+          }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums text-green-900 border-r border-gray-100" title={rpCol('coupon_discount')}>
+        <DbFormulaMoneyCell
+          dbVal={couponN}
+          computedVal={couponN}
+          format="coupon"
+          inlineEdit={pricingInline('coupon_discount', (n) => ({ coupon_discount: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('additional_discount')}>
+        <DbFormulaMoneyCell
+          dbVal={addDiscN}
+          computedVal={addDiscN}
+          inlineEdit={pricingInline('additional_discount', (n) => ({ additional_discount: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('additional_cost')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.additional_cost)}
+          computedVal={pricingFieldToNumber(p?.additional_cost)}
+          inlineEdit={pricingInline('additional_cost', (n) => ({ additional_cost: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('tax')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.tax)}
+          computedVal={pricingFieldToNumber(p?.tax)}
+          inlineEdit={pricingInline('tax', (n) => ({ tax: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('card_fee')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.card_fee)}
+          computedVal={pricingFieldToNumber(p?.card_fee)}
+          inlineEdit={pricingInline('card_fee', (n) => ({ card_fee: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('prepayment_cost')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.prepayment_cost)}
+          computedVal={pricingFieldToNumber(p?.prepayment_cost)}
+          inlineEdit={pricingInline('prepayment_cost', (n) => ({ prepayment_cost: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('prepayment_tip')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.prepayment_tip)}
+          computedVal={pricingFieldToNumber(p?.prepayment_tip)}
+          inlineEdit={pricingInline('prepayment_tip', (n) => ({ prepayment_tip: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-gray-50/50" title={rpCol('private_tour_additional_cost')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.private_tour_additional_cost)}
+          computedVal={pricingFieldToNumber(p?.private_tour_additional_cost)}
+          inlineEdit={pricingInline('private_tour_additional_cost', (n) => ({
+            private_tour_additional_cost: n,
+          }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('refund_amount')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.refund_amount)}
+          computedVal={pricingFieldToNumber(p?.refund_amount)}
+          inlineEdit={pricingInline('refund_amount', (n) => ({ refund_amount: n }))}
+        />
+      </td>
+      <td className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100" title={rpCol('required_option_total')}>
+        <DbFormulaMoneyCell
+          dbVal={pricingFieldToNumber(p?.required_option_total)}
+          computedVal={pricingFieldToNumber(p?.required_option_total)}
+          inlineEdit={pricingInline('required_option_total', (n) => ({ required_option_total: n }))}
+        />
+      </td>
+      <td
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100"
         title={dbTitle(
           rpCol('option_total'),
           reservationOptionSumByReservationId?.has(reservation.id) &&
@@ -664,17 +947,21 @@ function BalanceRow(props: BalanceRowProps) {
             : undefined
         )}
       >
-        {fmtUsd(pLine?.option_total)}
+        <DbFormulaMoneyCell
+          dbVal={optDbOnly}
+          computedVal={optLineMerged}
+          inlineEdit={pricingInline('option_total', (n) => ({ option_total: n }))}
+        />
       </td>
       <td
-        className="px-1.5 py-1.5 text-right tabular-nums font-semibold text-emerald-900 border-r border-gray-200 bg-emerald-50/40"
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-200 bg-emerald-50/30"
         title={t('actionRequired.balanceTable.cols.optSumComputed')}
       >
-        {fmtUsd(optionsLineItemsSum(pLine, reservation))}
+        <DbFormulaMoneyCell dbVal={optSubDb} computedVal={optSubLine} />
       </td>
 
       <td
-        className={`px-1.5 py-1.5 text-right align-top tabular-nums border-r border-gray-100 ${
+        className={`px-0.5 py-1 text-right align-top tabular-nums border-r border-gray-100 ${
           totalMismatch ? 'bg-amber-50/90 ring-1 ring-inset ring-amber-200/80' : ''
         }`}
         title={dbTitle(
@@ -682,39 +969,28 @@ function BalanceRow(props: BalanceRowProps) {
           totalMismatch ? t('actionRequired.balanceTable.cols.totalMismatchHint') : undefined
         )}
       >
-        <div className="flex flex-col items-end gap-0.5">
-          <div className="w-full">
-            <div className="text-[9px] font-normal text-gray-500 leading-none mb-0.5">
-              {t('actionRequired.balanceTable.cols.totalDb')}
-            </div>
-            <div className="font-semibold text-blue-900">
-              {storedGross == null ? '—' : fmtUsd(storedGross)}
-            </div>
-          </div>
-          <div className="w-full border-t border-gray-200 pt-1 mt-0.5">
-            <div className="text-[9px] font-normal text-gray-500 leading-none mb-0.5">
-              {t('actionRequired.balanceTable.cols.totalComputed')}
-            </div>
-            <div className="flex items-center justify-end gap-0.5 font-semibold text-sky-900">
-              <span>{computedGross == null ? '—' : fmtUsd(computedGross)}</span>
-              <RowDbApplyButton
-                visible={Boolean(onApplyRowPatch && totalMismatch && computedGross != null)}
-                busy={applyRowBusyKey === `${reservation.id}:total`}
-                parentBusy={selectionDisabled}
-                title={t('actionRequired.balanceTable.rowApplyTotalTitle')}
-                onClick={() => onApplyRowPatch?.(reservation.id, 'total')}
-              />
-            </div>
-          </div>
+        <div className="flex flex-row items-start justify-end gap-1">
+          <RowDbApplyButton
+            visible={Boolean(onApplyRowPatch && totalMismatch && computedGross != null)}
+            busy={applyRowBusyKey === `${reservation.id}:total`}
+            parentBusy={selectionDisabled}
+            title={t('actionRequired.balanceTable.rowApplyTotalTitle')}
+            onClick={() => onApplyRowPatch?.(reservation.id, 'total')}
+          />
+          <DbFormulaMoneyCell
+            dbVal={storedGross}
+            computedVal={computedGross}
+            inlineEdit={pricingInline('total_price', (n) => ({ total_price: n }))}
+          />
         </div>
         {formulaExpression ? (
-          <div className="text-red-600 text-[9px] font-normal leading-snug mt-1.5 text-right break-words max-w-[12rem] ml-auto">
+          <div className="text-red-600 text-[8px] font-normal leading-snug mt-1 text-right break-words max-w-[9rem] ml-auto">
             {formulaExpression}
           </div>
         ) : null}
       </td>
       <td
-        className={`px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100 ${
+        className={`px-0.5 py-1 text-right tabular-nums border-r border-gray-100 ${
           depositPrMismatch ? 'bg-amber-50/90 ring-1 ring-inset ring-amber-200/80' : ''
         }`}
         title={dbTitle(
@@ -722,10 +998,14 @@ function BalanceRow(props: BalanceRowProps) {
           depositPrMismatch ? t('actionRequired.balanceTable.cols.prMismatchHint') : undefined
         )}
       >
-        {fmtUsd(p?.deposit_amount)}
+        <DbFormulaMoneyCell
+          dbVal={depositDb}
+          computedVal={depositComputedCompare}
+          inlineEdit={pricingInline('deposit_amount', (n) => ({ deposit_amount: n }))}
+        />
       </td>
       <td
-        className={`px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100 bg-slate-50/60 ${
+        className={`px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-slate-50/60 ${
           depositPrMismatch ? 'ring-1 ring-inset ring-amber-200/80' : ''
         }`}
         title={dbTitle(
@@ -733,8 +1013,7 @@ function BalanceRow(props: BalanceRowProps) {
           depositPrMismatch ? t('actionRequired.balanceTable.cols.prMismatchHint') : undefined
         )}
       >
-        <div className="flex items-center justify-end gap-0.5">
-          <span>{fromPayments.hasRecords ? fmtUsd(fromPayments.depositBucketGross) : '—'}</span>
+        <div className="flex flex-row items-start justify-end gap-1">
           <RowDbApplyButton
             visible={Boolean(onApplyRowPatch && depositPrMismatch && fromPayments.hasRecords)}
             busy={applyRowBusyKey === `${reservation.id}:deposit`}
@@ -742,10 +1021,14 @@ function BalanceRow(props: BalanceRowProps) {
             title={t('actionRequired.balanceTable.rowApplyDepositTitle')}
             onClick={() => onApplyRowPatch?.(reservation.id, 'deposit')}
           />
+          <DbFormulaMoneyCell
+            dbVal={fromPayments.hasRecords ? fromPayments.depositBucketGross : null}
+            computedVal={fromPayments.hasRecords ? fromPayments.depositBucketGross : null}
+          />
         </div>
       </td>
       <td
-        className={`px-1.5 py-1.5 text-right tabular-nums font-medium border-r border-gray-100 bg-amber-50/40 ${
+        className={`px-0.5 py-1 text-right tabular-nums font-medium border-r border-gray-100 bg-amber-50/40 ${
           balancePrMismatch ? 'ring-1 ring-inset ring-amber-200/80' : ''
         }`}
         title={dbTitle(
@@ -753,10 +1036,23 @@ function BalanceRow(props: BalanceRowProps) {
           balancePrMismatch ? t('actionRequired.balanceTable.cols.prMismatchHint') : undefined
         )}
       >
-        {fmtUsd(p?.balance_amount)}
+        <div className="flex flex-row items-start justify-end gap-1">
+          <RowDbApplyButton
+            visible={Boolean(onApplyRowPatch && balancePrMismatch && p)}
+            busy={applyRowBusyKey === `${reservation.id}:balance`}
+            parentBusy={selectionDisabled}
+            title={t('actionRequired.balanceTable.rowApplyBalanceTitle')}
+            onClick={() => onApplyRowPatch?.(reservation.id, 'balance')}
+          />
+          <DbFormulaMoneyCell
+            dbVal={balanceDb}
+            computedVal={balanceComputedOutstanding}
+            inlineEdit={pricingInline('balance_amount', (n) => ({ balance_amount: n }))}
+          />
+        </div>
       </td>
       <td
-        className={`px-1.5 py-1.5 text-right tabular-nums font-medium border-r border-gray-100 bg-amber-50/40 ${
+        className={`px-0.5 py-1 text-right tabular-nums font-medium border-r border-gray-100 bg-amber-50/40 ${
           highlightReceivedVsBalanceComputed
             ? 'ring-2 ring-inset ring-rose-400/90 bg-rose-50/50'
             : balancePrMismatch
@@ -765,65 +1061,116 @@ function BalanceRow(props: BalanceRowProps) {
         }`}
         title={dbTitle(
           t('actionRequired.balanceTable.cols.balanceReceivedRecordsHint'),
-          [t('actionRequired.balanceTable.cols.paymentRecordsAgg'), t('actionRequired.balanceTable.rowApplyBalanceTitle')].join('\n')
+          t('actionRequired.balanceTable.cols.balanceReceivedVsOutstandingHint')
         )}
       >
-        <div className="flex items-center justify-end gap-0.5">
-          <span>{fromPayments.hasRecords ? fmtUsd(fromPayments.balanceReceivedTotal) : '—'}</span>
+        <DbFormulaMoneyCell
+          dbVal={fromPayments.hasRecords ? fromPayments.balanceReceivedTotal : null}
+          computedVal={fromPayments.hasRecords ? fromPayments.balanceReceivedTotal : null}
+        />
+      </td>
+
+      <td
+        className={`px-0.5 py-1 text-right tabular-nums text-[10px] border-r border-gray-100 ${
+          channelPaymentMismatch ? 'ring-1 ring-inset ring-amber-200/80' : ''
+        }`}
+        title={dbTitle(
+          rpCol('commission_base_price'),
+          t('actionRequired.balanceTable.cols.channelOtaBaseFormulaHint')
+        )}
+      >
+        <div className="flex flex-row items-start justify-end gap-1">
           <RowDbApplyButton
-            visible={Boolean(onApplyRowPatch && balancePrMismatch && p)}
-            busy={applyRowBusyKey === `${reservation.id}:balance`}
+            visible={Boolean(
+              onApplyRowPatch && channelPaymentMismatch && channelPaymentFormula != null && p
+            )}
+            busy={applyRowBusyKey === `${reservation.id}:channelPayment`}
             parentBusy={selectionDisabled}
-            title={t('actionRequired.balanceTable.rowApplyBalanceTitle')}
-            onClick={() => onApplyRowPatch?.(reservation.id, 'balance')}
+            title={t('actionRequired.balanceTable.rowApplyChannelPaymentTitle')}
+            onClick={() => onApplyRowPatch?.(reservation.id, 'channelPayment')}
+          />
+          <DbFormulaMoneyCell
+            dbVal={channelMetrics?.channelPaymentDb ?? null}
+            computedVal={channelMetrics != null ? channelMetrics.channelPaymentFromFormula : null}
+            inlineEdit={pricingInline('commission_base_price', (n) => ({ commission_base_price: n }))}
           />
         </div>
       </td>
       <td
-        className={`px-1.5 py-1.5 text-right tabular-nums font-medium border-r border-gray-100 bg-amber-50/50 ${
-          highlightReceivedVsBalanceComputed
-            ? 'ring-2 ring-inset ring-rose-400/90 bg-rose-50/50'
-            : balancePrMismatch
-              ? 'ring-1 ring-inset ring-amber-200/80'
-              : ''
-        }`}
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100"
         title={dbTitle(
-          t('actionRequired.balanceTable.cols.balanceComputedOutstandingHint'),
-          [
-            fromPayments.hasRecords
-              ? t('actionRequired.balanceTable.cols.balanceReceivedSupplement', {
-                  received: fmtUsd(fromPayments.balanceReceivedTotal),
-                })
-              : '',
-            highlightReceivedVsBalanceComputed
-              ? t('actionRequired.balanceTable.cols.balanceReceivedVsComputedHint')
-              : '',
-            balancePrMismatch ? t('actionRequired.balanceTable.cols.prMismatchHint') : '',
-          ]
-            .filter(Boolean)
-            .join('\n') || undefined
+          rpCol('commission_percent'),
+          t('actionRequired.balanceTable.cols.commPctFormulaHint')
         )}
       >
-        {p == null ? '—' : fmtUsd(balanceComputedOutstanding)}
+        <DbFormulaMoneyCell
+          format="percent"
+          dbVal={channelMetrics?.commissionPercentDb ?? null}
+          computedVal={channelMetrics?.commissionPercentFromChannel ?? null}
+          inlineEdit={pricingInline('commission_percent', (n) => ({ commission_percent: n }))}
+        />
+      </td>
+      <td
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100"
+        title={dbTitle(
+          rpCol('commission_amount'),
+          t('actionRequired.balanceTable.cols.commAmtFormulaHint')
+        )}
+      >
+        <DbFormulaMoneyCell
+          dbVal={channelMetrics?.commissionAmountDb ?? null}
+          computedVal={channelMetrics != null ? channelMetrics.commissionAmountFromFormula : null}
+          inlineEdit={pricingInline('commission_amount', (n) => ({ commission_amount: n }))}
+        />
+      </td>
+      <td
+        className={`px-0.5 py-1 text-right tabular-nums font-medium border-r border-gray-100 bg-violet-50/25 ${
+          channelSettlementMismatch ? 'ring-1 ring-inset ring-amber-200/80' : ''
+        }`}
+        title={dbTitle(
+          rpCol('channel_settlement_amount'),
+          t('actionRequired.balanceTable.cols.channelSettlementFormulaHint')
+        )}
+      >
+        <div className="flex flex-row items-start justify-end gap-1">
+          <RowDbApplyButton
+            visible={Boolean(
+              onApplyRowPatch && channelSettlementMismatch && channelSettlementFormula != null && p
+            )}
+            busy={applyRowBusyKey === `${reservation.id}:channelSettlement`}
+            parentBusy={selectionDisabled}
+            title={t('actionRequired.balanceTable.rowApplyChannelSettlementTitle')}
+            onClick={() => onApplyRowPatch?.(reservation.id, 'channelSettlement')}
+          />
+          <DbFormulaMoneyCell
+            dbVal={dbChannelSettlement}
+            computedVal={channelSettlementFormula}
+            inlineEdit={pricingInline('channel_settlement_amount', (n) => ({
+              channel_settlement_amount: n,
+            }))}
+          />
+        </div>
+      </td>
+      <td
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-emerald-50/20"
+        title={t('actionRequired.balanceTable.cols.companyTotalRevenueHint')}
+      >
+        <DbFormulaMoneyCell
+          dbVal={null}
+          computedVal={channelMetrics?.companyTotalRevenue ?? null}
+        />
+      </td>
+      <td
+        className="px-0.5 py-1 text-right tabular-nums border-r border-gray-200 bg-teal-50/25"
+        title={t('actionRequired.balanceTable.cols.operatingProfitHint')}
+      >
+        <DbFormulaMoneyCell
+          dbVal={null}
+          computedVal={channelMetrics?.operatingProfit ?? null}
+        />
       </td>
 
-      <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100 font-medium text-violet-900" title={rpCol('deposit_amount')}>
-        {fmtUsd(p?.deposit_amount)}
-      </td>
-      <td className="px-1.5 py-1.5 text-right tabular-nums text-[10px] border-r border-gray-100" title={rpCol('commission_base_price')}>
-        {fmtUsd(p?.commission_base_price)}
-      </td>
-      <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('commission_percent')}>
-        {p?.commission_percent != null && Math.abs(p.commission_percent) > 0.005 ? `${Number(p.commission_percent).toFixed(2)}%` : '—'}
-      </td>
-      <td className="px-1.5 py-1.5 text-right tabular-nums border-r border-gray-100" title={rpCol('commission_amount')}>
-        {fmtUsd(p?.commission_amount)}
-      </td>
-      <td className="px-1.5 py-1.5 text-right tabular-nums font-medium border-r border-gray-200 bg-violet-50/30" title={rpCol('channel_settlement_amount')}>
-        {fmtUsd(p?.channel_settlement_amount)}
-      </td>
-
-      <td className="px-1.5 py-1.5 bg-white">
+      <td className="px-0.5 py-1 bg-white">
         {actionsColumnEditOnly ? (
           <div className="flex flex-wrap gap-0.5 justify-end">
             <button
@@ -957,15 +1304,15 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
     reservationPricingMap,
     paymentRecordsByReservationId,
     reservationOptionSumByReservationId,
+    channels,
     actionsColumnEditOnly = false,
     enablePricingDbApply = true,
     ...rest
   } = props
-  const [productPriceMode, setProductPriceMode] = useState<BalanceSectionViewMode>('detail')
-  const [discountExtraMode, setDiscountExtraMode] = useState<BalanceSectionViewMode>('detail')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [applySyncing, setApplySyncing] = useState(false)
   const [applyRowBusyKey, setApplyRowBusyKey] = useState<string | null>(null)
+  const [inlineEditBusyKey, setInlineEditBusyKey] = useState<string | null>(null)
   const selectAllRef = useRef<HTMLInputElement>(null)
 
   const selectionEnabled =
@@ -1008,7 +1355,10 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
   type ApplyMode = 'total' | 'deposit' | 'balance' | 'all'
 
   const applySingleRow = useCallback(
-    async (reservationId: string, mode: 'total' | 'deposit' | 'balance') => {
+    async (
+      reservationId: string,
+      mode: 'total' | 'deposit' | 'balance' | 'channelPayment' | 'channelSettlement'
+    ) => {
       if (!onRefreshReservations && !onRefreshReservationPricing) return
       const r = reservationLookup.get(reservationId)
       const p = reservationPricingMap.get(reservationId)
@@ -1017,7 +1367,14 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
       setApplyRowBusyKey(key)
       try {
         const records = paymentRecordsByReservationId?.get(reservationId) ?? []
-        const patch = buildReservationPricingPatch(r, p, reservationOptionSumByReservationId, records, mode)
+        const patch = buildReservationPricingPatch(
+          r,
+          p,
+          reservationOptionSumByReservationId,
+          records,
+          mode,
+          channels
+        )
         if (!patch) return
         const { error } = await supabase.from('reservation_pricing').update(patch).eq('reservation_id', r.id)
         if (error) {
@@ -1040,7 +1397,36 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
       reservationPricingMap,
       paymentRecordsByReservationId,
       reservationOptionSumByReservationId,
+      channels,
     ]
+  )
+
+  const commitInlinePricing = useCallback(
+    async (reservationId: string, patch: Record<string, number>, columnKey: string) => {
+      if (!onRefreshReservations && !onRefreshReservationPricing) return
+      const r = reservationLookup.get(reservationId)
+      if (!r || Object.keys(patch).length === 0) return
+      const key = `${reservationId}:inline:${columnKey}`
+      setInlineEditBusyKey(key)
+      try {
+        const { error } = await supabase
+          .from('reservation_pricing')
+          .update(patch)
+          .eq('reservation_id', r.id)
+        if (error) {
+          console.error('inline reservation_pricing', columnKey, reservationId, error)
+          return
+        }
+        if (onRefreshReservationPricing) {
+          await onRefreshReservationPricing([reservationId])
+        } else {
+          onRefreshReservations?.()
+        }
+      } finally {
+        setInlineEditBusyKey(null)
+      }
+    },
+    [onRefreshReservations, onRefreshReservationPricing, reservationLookup]
   )
 
   const runApplySelected = useCallback(
@@ -1055,7 +1441,14 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           if (!r || !p) continue
           const records = paymentRecordsByReservationId?.get(id) ?? []
           const patchMode: PricingApplyMode = mode === 'all' ? 'all' : mode
-          const patch = buildReservationPricingPatch(r, p, reservationOptionSumByReservationId, records, patchMode)
+          const patch = buildReservationPricingPatch(
+            r,
+            p,
+            reservationOptionSumByReservationId,
+            records,
+            patchMode,
+            channels
+          )
           if (!patch) continue
 
           const { error } = await supabase.from('reservation_pricing').update(patch).eq('reservation_id', r.id)
@@ -1083,35 +1476,20 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
       reservationPricingMap,
       paymentRecordsByReservationId,
       reservationOptionSumByReservationId,
+      channels,
     ]
   )
 
   const s = (k: string) => t(`actionRequired.balanceTable.cols.${k}` as Parameters<typeof t>[0])
   const sec = (k: string) => t(`actionRequired.balanceTable.sections.${k}` as Parameters<typeof t>[0])
-  const vm = (k: string) => t(`actionRequired.balanceTable.${k}` as Parameters<typeof t>[0])
-
-  /** 상세: 성인·아동·유아·미포함·상품합 / 요약: 미포함·상품합 */
-  const productColSpan = productPriceMode === 'detail' ? 5 : 2
-  const discountColSpan = discountExtraMode === 'detail' ? 9 : 1
 
   /** 일괄 반영 행 colspan = 1행(섹션) 열 수와 동일 — 가로 스크롤·freeze와 정렬 */
   const totalTableColSpan = useMemo(() => {
     const sel = selectionEnabled ? 1 : 0
-    return sel + 5 + productColSpan + discountColSpan + 3 + 7 + 5 + 1
-  }, [selectionEnabled, productColSpan, discountColSpan])
+    return sel + 5 + PRICING_FLOW_COLUMN_COUNT + PAYMENT_COLUMN_COUNT + CHANNEL_COLUMN_COUNT + 1
+  }, [selectionEnabled])
 
-  const tableMinWClass =
-    productPriceMode === 'detail' && discountExtraMode === 'detail'
-      ? selectionEnabled
-        ? 'min-w-[2730px]'
-        : 'min-w-[2670px]'
-      : productPriceMode === 'subtotal' && discountExtraMode === 'subtotal'
-        ? selectionEnabled
-          ? 'min-w-[1590px]'
-          : 'min-w-[1530px]'
-        : selectionEnabled
-          ? 'min-w-[2190px]'
-          : 'min-w-[2130px]'
+  const tableMinWClass = selectionEnabled ? 'min-w-[2760px]' : 'min-w-[2700px]'
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white">
@@ -1170,11 +1548,27 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
               </th>
             </tr>
           )}
+          <tr className="border-b border-gray-200 bg-white">
+            <th
+              colSpan={totalTableColSpan}
+              className="px-3 py-2.5 text-left text-[11px] font-normal leading-snug text-gray-800"
+            >
+              <span className="font-semibold text-slate-900">{t('actionRequired.balanceTable.formulaExplainerTitle')}</span>
+              <span className="mx-1.5 text-gray-300">·</span>
+              <span className="text-gray-700">{t('actionRequired.balanceTable.formulaExplainerBody')}</span>
+              {(onRefreshReservationPricing || onRefreshReservations) && (
+                <>
+                  <span className="mx-1.5 text-gray-300">·</span>
+                  <span className="text-sky-900/90">{t('actionRequired.balanceTable.inlineEditDbHint')}</span>
+                </>
+              )}
+            </th>
+          </tr>
           <tr className="bg-slate-100 border-b border-gray-200 text-[10px] font-semibold text-slate-700">
             {selectionEnabled && (
               <th
                 rowSpan={2}
-                className="sticky left-0 z-[35] px-1 py-1.5 w-8 text-center border-r border-gray-200 align-middle bg-slate-100 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.08)]"
+                className="sticky left-0 z-[35] px-0.5 py-1 w-7 text-center border-r border-gray-200 align-middle bg-slate-100 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.08)]"
               >
                 <input
                   ref={selectAllRef}
@@ -1190,222 +1584,188 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
             )}
             <th
               colSpan={5}
-              className={`px-1.5 py-1.5 text-center border-r border-gray-200 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.08)] bg-slate-100 ${
-                selectionEnabled ? 'sticky left-8 z-[34]' : 'sticky left-0 z-[34]'
+              className={`px-0.5 py-1 text-center border-r border-gray-200 shadow-[2px_0_8px_-2px_rgba(0,0,0,0.08)] bg-slate-100 ${
+                selectionEnabled ? 'sticky left-7 z-[34]' : 'sticky left-0 z-[34]'
               }`}
             >
               {sec('reservation')}
             </th>
             <th
-              colSpan={productColSpan}
-              className="p-0 text-center border-r border-gray-200 bg-blue-50/80 align-stretch"
+              colSpan={PRICING_FLOW_COLUMN_COUNT}
+              className="px-0.5 py-1 text-center border-r border-gray-200 bg-blue-50/80"
             >
-              <button
-                type="button"
-                onClick={() => setProductPriceMode((m) => (m === 'detail' ? 'subtotal' : 'detail'))}
-                title={
-                  productPriceMode === 'detail' ? vm('switchToSubtotalTitle') : vm('switchToDetailTitle')
-                }
-                aria-pressed={productPriceMode === 'subtotal'}
-                className="w-full h-full min-h-[2.25rem] px-1.5 py-2 flex items-center justify-center hover:bg-blue-100/70 active:bg-blue-100 transition-colors cursor-pointer"
-              >
-                {sec('productPrice')}
-              </button>
+              {sec('pricingFlow')}
             </th>
-            <th
-              colSpan={discountColSpan}
-              className="p-0 text-center border-r border-gray-200 bg-orange-50/50 align-stretch"
-            >
-              <button
-                type="button"
-                onClick={() => setDiscountExtraMode((m) => (m === 'detail' ? 'subtotal' : 'detail'))}
-                title={
-                  discountExtraMode === 'detail' ? vm('switchToSubtotalTitle') : vm('switchToDetailTitle')
-                }
-                aria-pressed={discountExtraMode === 'subtotal'}
-                className="w-full h-full min-h-[2.25rem] px-1.5 py-2 flex items-center justify-center hover:bg-orange-100/70 active:bg-orange-100 transition-colors cursor-pointer"
-              >
-                {sec('discountExtra')}
-              </button>
-            </th>
-            <th colSpan={3} className="px-1.5 py-1.5 text-center border-r border-gray-200">
-              {sec('optionsSubtotal')}
-            </th>
-            <th colSpan={6} className="px-1.5 py-1.5 text-center border-r border-gray-200 bg-blue-50/60">
+            <th colSpan={PAYMENT_COLUMN_COUNT} className="px-0.5 py-1 text-center border-r border-gray-200 bg-sky-50/70">
               {sec('customerPayment')}
             </th>
-            <th colSpan={5} className="px-1.5 py-1.5 text-center border-r border-gray-200 bg-violet-50/50">
+            <th
+              colSpan={CHANNEL_COLUMN_COUNT}
+              className="px-0.5 py-1 text-center border-r border-gray-200 bg-violet-50/50"
+              title={t('actionRequired.balanceTable.channelSectionHint')}
+            >
               {sec('channel')}
             </th>
-            <th rowSpan={2} className="px-1.5 py-1.5 text-center align-bottom bg-slate-100 min-w-[3rem] border-l border-gray-200">
+            <th rowSpan={2} className="px-0.5 py-1 text-center align-bottom bg-slate-100 min-w-[2.25rem] border-l border-gray-200">
               {sec('actions')}
             </th>
           </tr>
-          <tr className="bg-gray-50 border-b border-gray-200 text-[9px] font-medium text-gray-600 uppercase tracking-wide">
+          <tr className="bg-gray-50 border-b border-gray-200 text-[8px] font-medium text-gray-600 uppercase tracking-wide">
             <th
-              className={`px-1.5 py-1 ${reservationColSticky(0, selectionEnabled, 'theadSub')}`}
+              className={`px-0.5 py-0.5 ${reservationColSticky(0, selectionEnabled, 'theadSub')}`}
               title={rsvCol('customer_id')}
             >
               {s('customer')}
             </th>
             <th
-              className={`px-1.5 py-1 ${reservationColSticky(1, selectionEnabled, 'theadSub')}`}
+              className={`px-0.5 py-0.5 ${reservationColSticky(1, selectionEnabled, 'theadSub')}`}
               title={rsvCol('product_id')}
             >
               {s('product')}
             </th>
             <th
-              className={`px-1.5 py-1 whitespace-nowrap ${reservationColSticky(2, selectionEnabled, 'theadSub')}`}
+              className={`px-0.5 py-0.5 whitespace-nowrap ${reservationColSticky(2, selectionEnabled, 'theadSub')}`}
               title={rsvCol('tour_date')}
             >
               {s('tourDate')}
             </th>
             <th
-              className={`px-1.5 py-1 ${reservationColSticky(3, selectionEnabled, 'theadSub')}`}
+              className={`px-0.5 py-0.5 ${reservationColSticky(3, selectionEnabled, 'theadSub')}`}
               title={rsvCol('status')}
             >
               {s('status')}
             </th>
             <th
-              className={`px-1.5 py-1 text-left max-w-[8rem] ${reservationColSticky(4, selectionEnabled, 'theadSub')}`}
+              className={`px-0.5 py-0.5 text-left max-w-[6.25rem] ${reservationColSticky(4, selectionEnabled, 'theadSub')}`}
               title={[rsvCol('channel_id'), rsvCol('channel_rn'), rsvCol('variant_key')].join('\n')}
             >
               {s('channelVariant')}
             </th>
 
-            {productPriceMode === 'detail' ? (
-              <>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('adult_product_price')}>
-                  {s('adult')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('child_product_price')}>
-                  {s('child')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('infant_product_price')}>
-                  {s('infant')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right bg-gray-50/50" title={rpCol('not_included_price')}>
-                  {s('notIncluded')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-200 text-right bg-blue-50/40" title={rpCol('product_price_total')}>
-                  {s('productSum')}
-                </th>
-              </>
-            ) : (
-              <>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right bg-gray-50/50" title={rpCol('not_included_price')}>
-                  {s('notIncluded')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-200 text-right bg-blue-50/40" title={rpCol('product_price_total')}>
-                  {s('productSum')}
-                </th>
-              </>
-            )}
-
-            {discountExtraMode === 'detail' ? (
-              <>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('coupon_discount')}>
-                  {s('coupon')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('additional_discount')}>
-                  {s('addDiscount')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('additional_cost')}>
-                  {s('addCost')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('tax')}>
-                  {s('tax')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('card_fee')}>
-                  {s('cardFee')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('prepayment_cost')}>
-                  {s('prepayCost')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('prepayment_tip')}>
-                  {s('prepayTip')}
-                </th>
-                <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('private_tour_additional_cost')}>
-                  {s('privateTour')}
-                </th>
-                <th
-                  className="px-1.5 py-1 border-r border-gray-200 text-right bg-orange-50/40"
-                  title={t('actionRequired.balanceTable.cols.discountSubtotalComputed')}
-                >
-                  {s('discountExtraSubtotal')}
-                </th>
-              </>
-            ) : (
-              <th
-                className="px-1.5 py-1 border-r border-gray-200 text-right bg-orange-50/40"
-                title={t('actionRequired.balanceTable.cols.discountSubtotalComputed')}
-              >
-                {s('discountExtraSubtotal')}
-              </th>
-            )}
-
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('required_option_total')}>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-blue-50/40"
+              title={dbTitle(rpCol('product_price_total'), t('actionRequired.balanceTable.cols.flowOtaProductSumHint'))}
+            >
+              {s('flowOtaProductSum')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={t('actionRequired.balanceTable.cols.flowAfterDiscountHint')}>
+              {s('flowAfterDiscount')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-gray-50/50" title={rpCol('not_included_price')}>
+              {s('notIncluded')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('coupon_discount')}>
+              {s('coupon')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('additional_discount')}>
+              {s('addDiscount')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('additional_cost')}>
+              {s('addCost')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('tax')}>
+              {s('tax')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('card_fee')}>
+              {s('cardFee')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('prepayment_cost')}>
+              {s('prepayCost')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('prepayment_tip')}>
+              {s('prepayTip')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-gray-50/50" title={rpCol('private_tour_additional_cost')}>
+              {s('privateTour')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('refund_amount')}>
+              {s('refundDeduction')}
+            </th>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('required_option_total')}>
               {s('requiredOpt')}
             </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('option_total')}>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('option_total')}>
               {s('option')}
             </th>
             <th
-              className="px-1.5 py-1 border-r border-gray-200 text-right bg-emerald-50/50"
+              className="px-0.5 py-0.5 border-r border-gray-200 text-right bg-emerald-50/50"
               title={t('actionRequired.balanceTable.cols.optSumComputed')}
             >
               {s('optSum')}
             </th>
 
             <th
-              className="px-1.5 py-1 border-r border-gray-100 text-right align-top"
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right"
               title={dbTitle(
                 [rpCol('total_price'), t('actionRequired.balanceTable.cols.totalComputedNotDb')].join(' · '),
                 t('actionRequired.balanceTable.cols.totalStackHeaderHint')
               )}
             >
-              <div className="flex flex-col items-end gap-0.5 font-normal normal-case tracking-normal">
-                <span>{s('totalDb')}</span>
-                <span className="text-gray-400">·</span>
-                <span>{s('totalComputed')}</span>
-              </div>
+              {s('total')}
             </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('deposit_amount')}>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('deposit_amount')}>
               {s('depositDb')}
             </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right bg-slate-50/80" title={t('actionRequired.balanceTable.cols.paymentRecordsAgg')}>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-slate-50/80" title={t('actionRequired.balanceTable.cols.paymentRecordsAgg')}>
               {s('depositFromRecords')}
             </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('balance_amount')}>
+            <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('balance_amount')}>
               {s('balanceDb')}
             </th>
             <th
-              className="px-1.5 py-1 border-r border-gray-100 text-right bg-amber-50/40"
-              title={t('actionRequired.balanceTable.cols.balanceReceivedRecordsHint')}
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-amber-50/40"
+              title={t('actionRequired.balanceTable.cols.balanceReceivedVsOutstandingHint')}
             >
               {s('balanceReceivedRecords')}
             </th>
-            <th
-              className="px-1.5 py-1 border-r border-gray-100 text-right bg-amber-50/50"
-              title={t('actionRequired.balanceTable.cols.balanceComputedOutstandingHint')}
-            >
-              {s('balanceComputedOutstanding')}
-            </th>
 
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('deposit_amount')}>
-              {s('channelDeposit')}
-            </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('commission_base_price')}>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right"
+              title={dbTitle(
+                rpCol('commission_base_price'),
+                t('actionRequired.balanceTable.cols.channelOtaBaseFormulaHint')
+              )}
+            >
               {s('channelOtaBase')}
             </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('commission_percent')}>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right"
+              title={dbTitle(
+                rpCol('commission_percent'),
+                t('actionRequired.balanceTable.cols.commPctFormulaHint')
+              )}
+            >
               {s('commPct')}
             </th>
-            <th className="px-1.5 py-1 border-r border-gray-100 text-right" title={rpCol('commission_amount')}>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right"
+              title={dbTitle(
+                rpCol('commission_amount'),
+                t('actionRequired.balanceTable.cols.commAmtFormulaHint')
+              )}
+            >
               {s('commAmt')}
             </th>
-            <th className="px-1.5 py-1 border-r border-gray-200 text-right" title={rpCol('channel_settlement_amount')}>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-violet-50/30"
+              title={dbTitle(
+                rpCol('channel_settlement_amount'),
+                t('actionRequired.balanceTable.cols.channelSettlementFormulaHint')
+              )}
+            >
               {s('settlement')}
+            </th>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-emerald-50/30"
+              title={t('actionRequired.balanceTable.cols.companyTotalRevenueHint')}
+            >
+              {s('companyTotalRevenue')}
+            </th>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-200 text-right bg-teal-50/30"
+              title={t('actionRequired.balanceTable.cols.operatingProfitHint')}
+            >
+              {s('operatingProfit')}
             </th>
           </tr>
         </thead>
@@ -1413,20 +1773,26 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           {reservations.map((reservation) => (
             <BalanceRow
               key={reservation.id}
-              {...rest}
-              actionsColumnEditOnly={actionsColumnEditOnly}
-              reservationPricingMap={reservationPricingMap}
-              reservationOptionSumByReservationId={reservationOptionSumByReservationId}
-              reservation={reservation}
-              paymentRecords={paymentRecordsByReservationId?.get(reservation.id) ?? []}
-              productPriceMode={productPriceMode}
-              discountExtraMode={discountExtraMode}
-              selectionEnabled={selectionEnabled}
-              rowChecked={selectedIds.has(reservation.id)}
-              onRowCheckChange={onRowCheckChange}
-              selectionDisabled={applySyncing}
-              onApplyRowPatch={selectionEnabled ? applySingleRow : undefined}
-              applyRowBusyKey={applyRowBusyKey}
+              {...({
+                ...rest,
+                actionsColumnEditOnly,
+                reservationPricingMap,
+                reservationOptionSumByReservationId,
+                reservation,
+                paymentRecords: paymentRecordsByReservationId?.get(reservation.id) ?? [],
+                selectionEnabled,
+                rowChecked: selectedIds.has(reservation.id),
+                onRowCheckChange,
+                selectionDisabled: applySyncing,
+                ...(selectionEnabled ? { onApplyRowPatch: applySingleRow } : {}),
+                applyRowBusyKey,
+                ...(onRefreshReservationPricing || onRefreshReservations
+                  ? {
+                      onInlinePricingCommit: commitInlinePricing,
+                      inlineEditBusyKey,
+                    }
+                  : {}),
+              } as BalanceRowProps)}
             />
           ))}
         </tbody>

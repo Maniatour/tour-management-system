@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
+import { buildPaymentMethodStoredDisplayName } from '@/lib/paymentMethodDisplay'
 
 function normalizedId(params: Promise<{ id: string }> | { id: string }): Promise<string> {
   return Promise.resolve(params).then((resolved) => String(resolved.id ?? '').trim())
@@ -43,7 +44,7 @@ export async function GET(
     if (data.user_email) {
       const { data: teamData } = await supabase
         .from('team')
-        .select('email, name_ko, name_en')
+        .select('email, name_ko, name_en, nick_name')
         .eq('email', data.user_email)
         .maybeSingle()
       
@@ -51,7 +52,8 @@ export async function GET(
         team = {
           email: teamData.email,
           name_ko: teamData.name_ko,
-          name_en: teamData.name_en
+          name_en: teamData.name_en,
+          nick_name: teamData.nick_name,
         }
       }
     }
@@ -98,22 +100,30 @@ export async function PUT(
     }
     if (body.status !== undefined) updateData.status = body.status
     
-    // method나 id가 변경되면 display_name 자동 업데이트
-    if (body.method !== undefined || body.id !== undefined) {
-      // 기존 데이터 조회
+    if (
+      body.method !== undefined ||
+      body.id !== undefined ||
+      body.card_holder_name !== undefined
+    ) {
       const { data: existingData } = await supabase
         .from('payment_methods')
-        .select('id, method')
+        .select('method, card_holder_name')
         .eq('id', id)
         .maybeSingle()
-      
-      const finalId = body.id || existingData?.id || id
-      const finalMethod = body.method || existingData?.method || ''
-      
-      // display_name 자동 생성
-      updateData.display_name = finalId && finalId.startsWith('PAYM')
-        ? `${finalId} - ${finalMethod}`
-        : finalMethod
+
+      const finalMethod = body.method ?? existingData?.method ?? ''
+      let finalHolder: string | null = existingData?.card_holder_name ?? null
+      if (body.card_holder_name !== undefined) {
+        finalHolder =
+          body.card_holder_name === '' || body.card_holder_name === null
+            ? null
+            : String(body.card_holder_name)
+      }
+
+      updateData.display_name = buildPaymentMethodStoredDisplayName({
+        method: finalMethod || '',
+        card_holder_name: finalHolder,
+      })
     }
     
     // 금액 필드 처리 (빈 문자열이나 0은 null로 변환)
@@ -230,7 +240,7 @@ export async function PUT(
     if (data.user_email) {
       const { data: teamData } = await supabase
         .from('team')
-        .select('email, name_ko, name_en')
+        .select('email, name_ko, name_en, nick_name')
         .eq('email', data.user_email)
         .maybeSingle()
       
@@ -238,7 +248,8 @@ export async function PUT(
         team = {
           email: teamData.email,
           name_ko: teamData.name_ko,
-          name_en: teamData.name_en
+          name_en: teamData.name_en,
+          nick_name: teamData.nick_name,
         }
       }
     }
@@ -307,7 +318,15 @@ export async function PATCH(
         return NextResponse.json({ success: false, error: '카드·방법(이름)을 입력하세요.' }, { status: 400 })
       }
       updateData.method = method
-      updateData.display_name = id.startsWith('PAYM') ? `${id} - ${method}` : method
+      const { data: holderRow } = await auth.supabase
+        .from('payment_methods')
+        .select('card_holder_name')
+        .eq('id', id)
+        .maybeSingle()
+      updateData.display_name = buildPaymentMethodStoredDisplayName({
+        method,
+        card_holder_name: holderRow?.card_holder_name ?? null,
+      })
     }
 
     if ('user_email' in body) {
@@ -410,11 +429,12 @@ export async function PATCH(
       email: string
       name_ko: string | null | undefined
       name_en: string | null | undefined
+      nick_name: string | null | undefined
     } | null
     if (data.user_email) {
       const { data: teamData } = await auth.supabase
         .from('team')
-        .select('email, name_ko, name_en')
+        .select('email, name_ko, name_en, nick_name')
         .eq('email', data.user_email)
         .maybeSingle()
 
@@ -423,6 +443,7 @@ export async function PATCH(
           email: teamData.email,
           name_ko: teamData.name_ko,
           name_en: teamData.name_en,
+          nick_name: teamData.nick_name,
         }
       }
     }

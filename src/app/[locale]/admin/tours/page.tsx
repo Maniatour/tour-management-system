@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2, Receipt } from 'lucide-react'
+import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2, Receipt, CalendarOff, Bell } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
@@ -14,6 +14,7 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
 import { isReservationCancelledStatus, isReservationDeletedStatus, isTourDeletedStatus } from '@/utils/tourUtils'
 import { DeletedToursTableModal } from '@/components/shared/DeletedToursTableModal'
+import { PendingOffSchedulesModal } from '@/components/shared/PendingOffSchedulesModal'
 import { ToursNeedCheckModal } from '@/components/shared/ToursMissingReceiptModal'
 import { fetchToursNeedCheckData } from '@/lib/toursNeedCheckStats'
 
@@ -39,6 +40,9 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
 
 type Employee = Database['public']['Tables']['team']['Row']
 type Product = Database['public']['Tables']['products']['Row']
+type OffScheduleRow = Database['public']['Tables']['off_schedules']['Row']
+
+const PENDING_OFF_ENTRY_NOTIFY_SKIP_KEY = 'admin-tours-skip-pending-off-entry-notify'
 
 function toursDefaultGridMonthKey() {
   const d = new Date()
@@ -60,6 +64,39 @@ export default function AdminTours() {
   const supabase = createClientSupabase()
   const { userRole, authUser, simulatedUser, isSimulating, user } = useAuth()
   const adminUserEmail = (isSimulating && simulatedUser?.email) || authUser?.email || user?.email || null
+
+  const calendarOffRangeRef = useRef({ start: '', end: '' })
+  const [calendarOffSchedules, setCalendarOffSchedules] = useState<OffScheduleRow[]>([])
+
+  const loadCalendarOffSchedules = useCallback(
+    async (start: string, end: string) => {
+      const { data, error } = await supabase
+        .from('off_schedules')
+        .select('*')
+        .gte('off_date', start)
+        .lte('off_date', end)
+        .in('status', ['pending', 'approved'])
+      if (error) {
+        console.error('loadCalendarOffSchedules', error)
+        return
+      }
+      setCalendarOffSchedules(data || [])
+    },
+    [supabase]
+  )
+
+  const handleCalendarVisibleRangeChange = useCallback(
+    (start: string, end: string) => {
+      calendarOffRangeRef.current = { start, end }
+      void loadCalendarOffSchedules(start, end)
+    },
+    [loadCalendarOffSchedules]
+  )
+
+  const refreshCalendarOffSchedules = useCallback(() => {
+    const { start, end } = calendarOffRangeRef.current
+    if (start && end) void loadCalendarOffSchedules(start, end)
+  }, [loadCalendarOffSchedules])
   
   // 사용자 position 가져오기
   const [userPosition, setUserPosition] = useState<string | null>(null)
@@ -90,6 +127,66 @@ export default function AdminTours() {
   
   // 직원 데이터 (Supabase에서 가져옴)
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [showPendingOffModal, setShowPendingOffModal] = useState(false)
+  const [pendingOffCount, setPendingOffCount] = useState(0)
+  const [showPendingOffEntryNotify, setShowPendingOffEntryNotify] = useState(false)
+  const [pendingOffNotifyBusy, setPendingOffNotifyBusy] = useState(false)
+
+  const viewerCanApproveOffSchedules = useMemo(() => {
+    const p = (userPosition || '').toLowerCase()
+    return userRole === 'admin' || userRole === 'manager' || p === 'op'
+  }, [userRole, userPosition])
+
+  const teamMemberNameLookup = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const e of employees) {
+      const email = e.email
+      if (!email) continue
+      const label = ((e as { name_ko?: string | null }).name_ko || (e as { name?: string | null }).name || email).trim()
+      m[email.toLowerCase()] = label
+    }
+    return m
+  }, [employees])
+
+  const refreshPendingOffCount = useCallback(async () => {
+    if (!viewerCanApproveOffSchedules) {
+      setPendingOffCount(0)
+      return
+    }
+    const { count, error } = await supabase
+      .from('off_schedules')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+    if (!error) setPendingOffCount(count ?? 0)
+  }, [viewerCanApproveOffSchedules, supabase])
+
+  const handlePendingOffAfterChange = useCallback(() => {
+    void refreshPendingOffCount()
+    refreshCalendarOffSchedules()
+  }, [refreshPendingOffCount, refreshCalendarOffSchedules])
+
+  const bulkApproveAllPendingOffSchedules = useCallback(async () => {
+    if (!adminUserEmail) return
+    const { data: rows, error: fetchErr } = await supabase.from('off_schedules').select('id').eq('status', 'pending')
+    if (fetchErr) throw fetchErr
+    const ids = (rows || []).map((r) => r.id)
+    if (ids.length === 0) return
+    const chunkSize = 100
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize)
+      const { error } = await supabase
+        .from('off_schedules')
+        .update({ status: 'approved', approved_by: adminUserEmail })
+        .eq('status', 'pending')
+        .in('id', chunk)
+      if (error) throw error
+    }
+  }, [supabase, adminUserEmail])
+
+  useEffect(() => {
+    void refreshPendingOffCount()
+  }, [refreshPendingOffCount])
+
   const [, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [deletedToursBin, setDeletedToursBin] = useState<ExtendedTour[]>([])
@@ -101,6 +198,17 @@ export default function AdminTours() {
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
   const [tourUi, setTourUi, tourUiHydrated] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
   const { viewMode, listViewDateFilter, searchTerm, selectedStatuses } = tourUi
+
+  useEffect(() => {
+    if (!tourUiHydrated || !viewerCanApproveOffSchedules) return
+    if (pendingOffCount <= 0) return
+    if (typeof window !== 'undefined' && sessionStorage.getItem(PENDING_OFF_ENTRY_NOTIFY_SKIP_KEY)) return
+    setShowPendingOffEntryNotify(true)
+  }, [tourUiHydrated, viewerCanApproveOffSchedules, pendingOffCount])
+
+  useEffect(() => {
+    if (pendingOffCount <= 0) setShowPendingOffEntryNotify(false)
+  }, [pendingOffCount])
 
   const refreshNeedCheckStats = useCallback(async () => {
     setNeedCheckStatsLoading(true)
@@ -697,6 +805,23 @@ export default function AdminTours() {
 
   // 삭제 기능은 카드뷰 간소화 요구에 따라 제거됨
 
+  const handlePendingEntryNotifyApproveAll = async () => {
+    if (!adminUserEmail) return
+    const msg = t('calendar.offSchedule.pendingEntryNotifyBulkConfirm', { count: pendingOffCount })
+    if (!confirm(msg)) return
+    setPendingOffNotifyBusy(true)
+    try {
+      await bulkApproveAllPendingOffSchedules()
+      handlePendingOffAfterChange()
+      setShowPendingOffEntryNotify(false)
+    } catch (e) {
+      console.error('Bulk approve from entry notify:', e)
+      alert(t('calendar.offSchedule.adminUpdateError'))
+    } finally {
+      setPendingOffNotifyBusy(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -748,6 +873,19 @@ export default function AdminTours() {
               <CalendarDays size={16} />
               <span className="hidden sm:inline">{t('calendar.scheduleView')}</span>
             </button>
+            {viewerCanApproveOffSchedules && (
+              <button
+                type="button"
+                onClick={() => setShowPendingOffModal(true)}
+                title={t('calendar.offSchedule.pendingQueueButton')}
+                aria-label={t('calendar.offSchedule.pendingQueueButton')}
+                className="px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium bg-amber-500 text-white hover:bg-amber-600"
+              >
+                <CalendarOff size={16} className="shrink-0" aria-hidden />
+                <span className="hidden sm:inline">{t('calendar.offSchedule.pendingQueueButton')}</span>
+                <span className="text-xs opacity-95 tabular-nums">({pendingOffCount})</span>
+              </button>
+            )}
             <button
               onClick={() => router.push('/ko/admin/tours/new')}
               className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
@@ -936,6 +1074,12 @@ export default function AdminTours() {
                 onTourClick={handleTourClick} 
                 allReservations={allReservations}
                 reservationPricingMap={reservationPricingMap}
+                offSchedules={calendarOffSchedules}
+                onOffScheduleChange={refreshCalendarOffSchedules}
+                onVisibleCalendarRangeChange={handleCalendarVisibleRangeChange}
+                viewerCanApproveOffSchedules={viewerCanApproveOffSchedules}
+                approverEmail={adminUserEmail}
+                teamMemberNameLookup={teamMemberNameLookup}
                 onTourStatusUpdate={handleTourStatusUpdate}
                 userRole={userRole ? String(userRole) : undefined}
                 userPosition={userPosition || undefined}
@@ -1072,6 +1216,68 @@ export default function AdminTours() {
         </>
       )}
 
+      {viewerCanApproveOffSchedules && showPendingOffEntryNotify && (
+        <div className="fixed inset-0 z-[1150] flex items-center justify-center p-4 bg-black/50">
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pending-off-entry-notify-title"
+          >
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 rounded-full bg-amber-100 p-2">
+                <Bell className="w-6 h-6 text-amber-700" aria-hidden />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 id="pending-off-entry-notify-title" className="text-lg font-semibold text-gray-900">
+                  {t('calendar.offSchedule.pendingEntryNotifyTitle')}
+                </h2>
+                <p className="mt-2 text-sm text-gray-700">
+                  {t('calendar.offSchedule.pendingEntryNotifyDescription', { count: pendingOffCount })}
+                </p>
+                <ul className="mt-3 text-xs text-gray-500 space-y-1 list-disc pl-4">
+                  <li>{t('calendar.offSchedule.pendingEntryNotifyApproveHint')}</li>
+                  <li>{t('calendar.offSchedule.pendingEntryNotifyRejectHint')}</li>
+                  <li>{t('calendar.offSchedule.pendingEntryNotifyLaterHint')}</li>
+                </ul>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end gap-2">
+              <button
+                type="button"
+                disabled={pendingOffNotifyBusy}
+                onClick={() => {
+                  sessionStorage.setItem(PENDING_OFF_ENTRY_NOTIFY_SKIP_KEY, '1')
+                  setShowPendingOffEntryNotify(false)
+                }}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-800 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                {t('calendar.offSchedule.pendingEntryNotifyLater')}
+              </button>
+              <button
+                type="button"
+                disabled={pendingOffNotifyBusy}
+                onClick={() => {
+                  setShowPendingOffEntryNotify(false)
+                  setShowPendingOffModal(true)
+                }}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-red-300 text-red-800 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+              >
+                {t('calendar.offSchedule.pendingEntryNotifyReject')}
+              </button>
+              <button
+                type="button"
+                disabled={pendingOffNotifyBusy || !adminUserEmail}
+                onClick={() => void handlePendingEntryNotifyApproveAll()}
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {t('calendar.offSchedule.pendingEntryNotifyApprove')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ToursNeedCheckModal
         isOpen={showNeedCheckModal}
         onClose={() => {
@@ -1092,6 +1298,16 @@ export default function AdminTours() {
           router.push(`/${locale}/admin/tours/${tourId}`)
         }}
       />
+
+      {viewerCanApproveOffSchedules && (
+        <PendingOffSchedulesModal
+          isOpen={showPendingOffModal}
+          onClose={() => setShowPendingOffModal(false)}
+          approverEmail={adminUserEmail}
+          teamMemberNameLookup={teamMemberNameLookup}
+          onAfterChange={handlePendingOffAfterChange}
+        />
+      )}
 
       <DeletedToursTableModal
         isOpen={showDeletedToursModal}

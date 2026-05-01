@@ -1031,6 +1031,10 @@ export type Database = {
           paid_by: string | null
           paid_for: string | null
           paid_for_label_id: string | null
+          reimbursement_note: string | null
+          reimbursed_amount: number
+          reimbursed_on: string | null
+          reimbursement_outstanding: number
           standard_paid_for: string | null
           paid_on: string | null
           paid_to: string | null
@@ -1062,6 +1066,9 @@ export type Database = {
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
+          reimbursed_amount?: number
+          reimbursed_on?: string | null
+          reimbursement_note?: string | null
           standard_paid_for?: string | null
           paid_on?: string | null
           paid_to?: string | null
@@ -1093,6 +1100,9 @@ export type Database = {
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
+          reimbursed_amount?: number
+          reimbursed_on?: string | null
+          reimbursement_note?: string | null
           standard_paid_for?: string | null
           paid_on?: string | null
           paid_to?: string | null
@@ -5294,6 +5304,9 @@ export type Database = {
           paid_for: string | null
           paid_to: string | null
           payment_method: string | null
+          reimbursed_amount: number
+          reimbursed_on: string | null
+          reimbursement_note: string | null
           reservation_id: string | null
           status: string | null
           submit_on: string | null
@@ -5314,6 +5327,9 @@ export type Database = {
           paid_for?: string | null
           paid_to?: string | null
           payment_method?: string | null
+          reimbursed_amount?: number
+          reimbursed_on?: string | null
+          reimbursement_note?: string | null
           reservation_id?: string | null
           status?: string | null
           submit_on?: string | null
@@ -5334,6 +5350,9 @@ export type Database = {
           paid_for?: string | null
           paid_to?: string | null
           payment_method?: string | null
+          reimbursed_amount?: number
+          reimbursed_on?: string | null
+          reimbursement_note?: string | null
           reservation_id?: string | null
           status?: string | null
           submit_on?: string | null
@@ -6450,6 +6469,7 @@ export type Database = {
           email: string
           emergency_contact: string | null
           hire_date: string | null
+          home_address: string | null
           is_active: boolean | null
           languages: string[] | null
           medical_acquired: string | null
@@ -6482,6 +6502,7 @@ export type Database = {
           email: string
           emergency_contact?: string | null
           hire_date?: string | null
+          home_address?: string | null
           is_active?: boolean | null
           languages?: string[] | null
           medical_acquired?: string | null
@@ -6514,6 +6535,7 @@ export type Database = {
           email?: string
           emergency_contact?: string | null
           hire_date?: string | null
+          home_address?: string | null
           is_active?: boolean | null
           languages?: string[] | null
           medical_acquired?: string | null
@@ -7703,6 +7725,9 @@ export type Database = {
           paid_to: string | null
           payment_method: string | null
           product_id: string | null
+          reimbursed_amount: number
+          reimbursed_on: string | null
+          reimbursement_note: string | null
           status: string | null
           submit_on: string | null
           submitted_by: string
@@ -7724,6 +7749,9 @@ export type Database = {
           paid_to?: string | null
           payment_method?: string | null
           product_id?: string | null
+          reimbursed_amount?: number
+          reimbursed_on?: string | null
+          reimbursement_note?: string | null
           status?: string | null
           submit_on?: string | null
           submitted_by: string
@@ -7745,6 +7773,9 @@ export type Database = {
           paid_to?: string | null
           payment_method?: string | null
           product_id?: string | null
+          reimbursed_amount?: number
+          reimbursed_on?: string | null
+          reimbursement_note?: string | null
           status?: string | null
           submit_on?: string | null
           submitted_by?: string
@@ -8362,6 +8393,7 @@ export type Database = {
           guide_fee: number | null
           id: string
           is_private_tour: boolean | null
+          max_participants: number
           photos_extended_access: boolean | null
           product_id: string | null
           reservation_ids: string[] | null
@@ -8383,6 +8415,7 @@ export type Database = {
           guide_fee?: number | null
           id?: string
           is_private_tour?: boolean | null
+          max_participants?: number
           photos_extended_access?: boolean | null
           product_id?: string | null
           reservation_ids?: string[] | null
@@ -8404,6 +8437,7 @@ export type Database = {
           guide_fee?: number | null
           id?: string
           is_private_tour?: boolean | null
+          max_participants?: number
           photos_extended_access?: boolean | null
           product_id?: string | null
           reservation_ids?: string[] | null

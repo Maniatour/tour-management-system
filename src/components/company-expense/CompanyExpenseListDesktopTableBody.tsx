@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Wrench } from 'lucide-react'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 import { Database } from '@/lib/database.types'
+import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type TeamMember = Database['public']['Tables']['team']['Row']
@@ -67,6 +68,7 @@ type Props = {
   onOpenQuickStandard: (e: CompanyExpense) => void
   onOpenQuickPayment: (e: CompanyExpense) => void
   onOpenQuickVehicle: (e: CompanyExpense) => void
+  formatCurrency: (amount: number) => string
 }
 
 const cellClickableCls =
@@ -92,6 +94,7 @@ export function CompanyExpenseListDesktopTableBody({
   onOpenQuickStandard,
   onOpenQuickPayment,
   onOpenQuickVehicle,
+  formatCurrency,
 }: Props) {
   return (
     <TableBody>
@@ -136,6 +139,14 @@ export function CompanyExpenseListDesktopTableBody({
           <TableCell className="max-w-xs truncate py-2">{expense.description || '-'}</TableCell>
           <TableCell className="font-medium py-2">
             ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
+          </TableCell>
+          <TableCell className="py-2 text-sm tabular-nums">
+            {formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}
+          </TableCell>
+          <TableCell className="py-2 text-sm tabular-nums">
+            {formatCurrency(
+              reimbursementOutstanding(expense.amount ?? 0, expense.reimbursed_amount)
+            )}
           </TableCell>
           <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
             <button

@@ -1,6 +1,8 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useTranslations } from 'next-intl'
 import ReactCountryFlag from 'react-country-flag'
@@ -18,13 +20,37 @@ import {
   FileText,
   Grid,
   List,
-  Download
+  Download,
+  ImagePlus,
 } from 'lucide-react'
 import type { Database } from '@/lib/supabase'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 type TeamMember = Database['public']['Tables']['team']['Row']
 type TeamMemberInsert = Database['public']['Tables']['team']['Insert']
 type TeamMemberUpdate = Database['public']['Tables']['team']['Update']
+type TeamCardPaymentMethodRow = Pick<
+  Database['public']['Tables']['payment_methods']['Row'],
+  'id' | 'method' | 'display_name' | 'status' | 'method_type' | 'user_email' | 'card_holder_name'
+>
+
+/** Supabase public URL → documents 버킷 객체 경로 (관리형 프로필 삭제용) */
+function documentsBucketPathFromPublicUrl(publicUrl: string): string | null {
+  const u = publicUrl.trim()
+  const markers = ['/object/public/documents/', '/storage/v1/object/public/documents/']
+  for (const m of markers) {
+    const i = u.indexOf(m)
+    if (i !== -1) {
+      const raw = u.slice(i + m.length).split('?')[0]
+      try {
+        return decodeURIComponent(raw || '')
+      } catch {
+        return raw || null
+      }
+    }
+  }
+  return null
+}
 
 const TEAM_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -36,6 +62,8 @@ const TEAM_LIST_UI_DEFAULT = {
 
 export default function AdminTeam() {
   const t = useTranslations('team')
+  const params = useParams()
+  const locale = (params?.locale as string) || 'ko'
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const [listUi, setListUi] = useRoutePersistedState('team-list', TEAM_LIST_UI_DEFAULT)
@@ -50,10 +78,59 @@ export default function AdminTeam() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
   const [memberDocuments, setMemberDocuments] = useState<{[email: string]: {[type: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>}}>({})
-  
+  const [paymentMethodsByUserEmail, setPaymentMethodsByUserEmail] = useState<
+    Record<string, TeamCardPaymentMethodRow[]>
+  >({})
+
   // 인라인 편집 상태
   const [inlineEditing, setInlineEditing] = useState<{ email: string; field: string } | null>(null)
   const [inlineEditValue, setInlineEditValue] = useState<string>('')
+
+  const teamMemberEmailsKey = useMemo(
+    () => teamMembers.map((m) => m.email.toLowerCase()).sort().join('|'),
+    [teamMembers]
+  )
+
+  // 카드뷰: 팀원 이메일 기준 연결 결제수단 일괄 조회 (payment_methods.user_email)
+  useEffect(() => {
+    if (viewMode !== 'card' || teamMembers.length === 0) {
+      setPaymentMethodsByUserEmail({})
+      return
+    }
+
+    let cancelled = false
+    const emails = [...new Set(teamMembers.map((m) => m.email.toLowerCase()))]
+    const chunkSize = 80
+
+    ;(async () => {
+      const map: Record<string, TeamCardPaymentMethodRow[]> = {}
+      for (let i = 0; i < emails.length; i += chunkSize) {
+        const chunk = emails.slice(i, i + chunkSize)
+        const { data, error } = await supabase
+          .from('payment_methods')
+          .select('id, method, display_name, status, method_type, user_email, card_holder_name')
+          .in('user_email', chunk)
+          .order('method', { ascending: true })
+
+        if (cancelled) return
+        if (error) {
+          console.error('팀 카드뷰 결제수단 조회 오류:', error)
+          continue
+        }
+        for (const row of data || []) {
+          const key = (row.user_email || '').toLowerCase()
+          if (!key) continue
+          if (!map[key]) map[key] = []
+          map[key].push(row as TeamCardPaymentMethodRow)
+        }
+      }
+      if (!cancelled) setPaymentMethodsByUserEmail(map)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [viewMode, teamMemberEmailsKey])
 
   // 팀원 목록 불러오기
   const fetchTeamMembers = async () => {
@@ -138,9 +215,9 @@ export default function AdminTeam() {
     }
   }
 
-  // 팀원 삭제
-  const handleDeleteMember = async (email: string) => {
-    if (!confirm(t('deleteConfirm'))) return
+  // 팀원 삭제 — 성공 시 true (모달 닫기 등에 사용)
+  const handleDeleteMember = async (email: string): Promise<boolean> => {
+    if (!confirm(t('deleteConfirm'))) return false
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -152,14 +229,16 @@ export default function AdminTeam() {
       if (error) {
         console.error('Error deleting team member:', error)
         alert('팀원 삭제 중 오류가 발생했습니다.')
-        return
+        return false
       }
 
       alert('팀원이 성공적으로 삭제되었습니다!')
       fetchTeamMembers()
+      return true
     } catch (error) {
       console.error('Error deleting team member:', error)
       alert('팀원 삭제 중 오류가 발생했습니다.')
+      return false
     }
   }
 
@@ -371,6 +450,7 @@ export default function AdminTeam() {
       member.nick_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.home_address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (String(member.is_active).toLowerCase() === 'true' ? '활성' : '비활성').includes(searchTerm.toLowerCase())
     )
   })
@@ -788,7 +868,14 @@ export default function AdminTeam() {
             /* 카드뷰 - 모바일 최적화 */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
               {sortedMembers.map((member) => (
-                <div key={member.email} className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+                <div
+                  key={member.email}
+                  className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => {
+                    setEditingMember(member)
+                    setShowForm(true)
+                  }}
+                >
                   <div className="p-4 sm:p-6">
                     {/* 카드 헤더 */}
                     <div className="flex items-start justify-between mb-4">
@@ -807,15 +894,17 @@ export default function AdminTeam() {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 min-w-0">
                             <h3 className="text-lg font-semibold text-gray-900 truncate">
                               {member.name_ko}
                               {member.nick_name && (
                                 <span className="ml-1.5 text-sm font-normal text-blue-600">({member.nick_name})</span>
                               )}
                             </h3>
-                            {member.languages && member.languages.length > 0 && (
-                              <div className="flex space-x-1">
+                          </div>
+                          <p className="text-sm text-gray-600 mt-0.5 flex items-center gap-2 min-w-0">
+                            {member.languages && member.languages.length > 0 ? (
+                              <span className="flex flex-shrink-0 items-center gap-1" aria-hidden>
                                 {member.languages.map((lang: string, index: number) => (
                                   <ReactCountryFlag
                                     key={index}
@@ -829,16 +918,15 @@ export default function AdminTeam() {
                                     title={lang}
                                   />
                                 ))}
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 truncate">
-                            {member.name_en || '영문명 없음'}
+                              </span>
+                            ) : null}
+                            <span className="truncate min-w-0">{member.name_en || '영문명 없음'}</span>
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 flex-shrink-0">
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation()
                             handleToggleActive(member.email, member.is_active ?? true)
@@ -846,6 +934,7 @@ export default function AdminTeam() {
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                             member.is_active ? 'bg-green-600' : 'bg-gray-200'
                           }`}
+                          aria-label={member.is_active ? '비활성화' : '활성화'}
                         >
                           <span
                             className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -853,25 +942,6 @@ export default function AdminTeam() {
                             }`}
                           />
                         </button>
-                        <div className="flex space-x-1">
-                          <button
-                            onClick={() => {
-                              setEditingMember(member)
-                              setShowForm(true)
-                            }}
-                            className="p-1.5 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors"
-                            title="편집"
-                          >
-                            <Edit size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteMember(member.email)}
-                            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                            title="삭제"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
                       </div>
                     </div>
 
@@ -891,8 +961,24 @@ export default function AdminTeam() {
                         <span className="text-gray-500">전화번호</span>
                         <span className="font-medium">{member.phone || '미등록'}</span>
                       </div>
-                      
 
+                      {member.home_address?.trim() ? (
+                        <div className="text-sm">
+                          <span className="text-gray-500 block mb-0.5">집주소</span>
+                          <p className="font-medium text-gray-800 line-clamp-2 break-words" title={member.home_address}>
+                            {member.home_address}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      <TeamMemberCardLinkedPaymentMethods
+                        memberEmail={member.email}
+                        memberNickName={member.nick_name}
+                        memberNameEn={member.name_en}
+                        memberNameKo={member.name_ko}
+                        methods={paymentMethodsByUserEmail[member.email.toLowerCase()] ?? []}
+                        manageHref={`/${locale}/admin/payment-methods?user_email=${encodeURIComponent(member.email)}`}
+                      />
 
                       {/* 특별 자격사항 */}
                       <div className="border-t pt-3">
@@ -958,6 +1044,17 @@ export default function AdminTeam() {
             setShowForm(false)
             setEditingMember(null)
           }}
+          {...(editingMember
+            ? {
+                onDelete: async () => {
+                  const deleted = await handleDeleteMember(editingMember.email)
+                  if (deleted) {
+                    setShowForm(false)
+                    setEditingMember(null)
+                  }
+                },
+              }
+            : {})}
           onDocumentChange={(email) => {
             // 문서 변경 시 해당 팀원의 문서 목록 다시 로드
             if (email) {
@@ -986,13 +1083,18 @@ function TeamMemberForm({
   member, 
   onSubmit, 
   onCancel,
+  onDelete,
   onDocumentChange
 }: { 
   member: TeamMember | null
   onSubmit: (data: TeamMemberInsert) => void
   onCancel: () => void
+  /** 수정 모달에서만 — 카드뷰 삭제 버튼 대체 */
+  onDelete?: () => void | Promise<void>
   onDocumentChange?: (email: string) => void
 }) {
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
   // 문서 타입별 문서 목록을 관리
   type DocumentItem = {
     id: string
@@ -1254,7 +1356,7 @@ function TeamMemberForm({
     avatar_url: member?.avatar_url || '',
     is_active: member?.is_active ?? true,
     hire_date: member?.hire_date || '',
-    // address: member?.address || '', // 데이터베이스에 address 컬럼이 없음
+    home_address: member?.home_address || '',
     emergency_contact: member?.emergency_contact || '',
     date_of_birth: member?.date_of_birth || '',
     ssn: member?.ssn || '',
@@ -1272,6 +1374,79 @@ function TeamMemberForm({
     medical_acquired: member?.medical_acquired || '',
     medical_expired: member?.medical_expired || ''
   })
+
+  const removeStoredTeamAvatarIfManaged = async (publicUrl: string | null | undefined) => {
+    const url = publicUrl?.trim()
+    if (!url) return
+    const path = documentsBucketPathFromPublicUrl(url)
+    if (!path || !path.startsWith('team-avatars/')) return
+    try {
+      await supabase.storage.from('documents').remove([path])
+    } catch {
+      /* 스토리지 정리 실패는 무시 */
+    }
+  }
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    const email = formData.email.trim().toLowerCase()
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      alert('프로필 사진을 올리려면 먼저 유효한 이메일을 입력해주세요.')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      alert('이미지 파일만 업로드할 수 있습니다.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('이미지 크기는 5MB 이하여야 합니다.')
+      return
+    }
+
+    setAvatarUploading(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').replace(/[^a-zA-Z0-9]/g, '') || 'jpg'
+      const objectPath = `team-avatars/${email}/avatar-${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('documents').upload(objectPath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      })
+      if (uploadError) throw uploadError
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('documents').getPublicUrl(objectPath)
+
+      const previous = formData.avatar_url?.trim()
+      if (previous && previous !== publicUrl) {
+        await removeStoredTeamAvatarIfManaged(previous)
+      }
+
+      setFormData((prev) => ({ ...prev, avatar_url: publicUrl }))
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '알 수 없는 오류'
+      console.error('프로필 사진 업로드 오류:', err)
+      alert(`프로필 사진을 올리지 못했습니다.\n${msg}`)
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  const handleAvatarRemove = async () => {
+    const url = formData.avatar_url?.trim()
+    if (!url) return
+    setAvatarUploading(true)
+    try {
+      await removeStoredTeamAvatarIfManaged(url)
+      setFormData((prev) => ({ ...prev, avatar_url: '' }))
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1298,7 +1473,9 @@ function TeamMemberForm({
       cpr_expired: formData.cpr_expired || null,
       medical_acquired: formData.medical_acquired || null,
       medical_expired: formData.medical_expired || null,
-      phone: formData.phone || null
+      phone: formData.phone || null,
+      home_address: formData.home_address?.trim() || null,
+      avatar_url: formData.avatar_url?.trim() || null,
     }
 
     onSubmit(processedData)
@@ -1312,6 +1489,57 @@ function TeamMemberForm({
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 프로필 사진 — 카드·목록 왼쪽 원형 영역 */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 pb-4 border-b border-gray-100">
+            <div className="flex items-center gap-4">
+              <div className="h-20 w-20 rounded-full bg-gray-100 border-2 border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                {formData.avatar_url?.trim() ? (
+                  <img
+                    src={formData.avatar_url.trim()}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <User className="h-10 w-10 text-gray-400" aria-hidden />
+                )}
+              </div>
+              <div className="space-y-2 min-w-0">
+                <span className="block text-sm font-medium text-gray-700">프로필 사진</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={avatarUploading}
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <ImagePlus className="w-4 h-4 flex-shrink-0" />
+                    {avatarUploading ? '업로드 중…' : '사진 선택'}
+                  </button>
+                  {formData.avatar_url?.trim() ? (
+                    <button
+                      type="button"
+                      disabled={avatarUploading}
+                      onClick={() => void handleAvatarRemove()}
+                      className="text-sm text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                    >
+                      사진 제거
+                    </button>
+                  ) : null}
+                </div>
+                <p className="text-xs text-gray-500">
+                  이메일을 입력한 뒤 JPG·PNG·WebP·GIF 이미지를 올릴 수 있습니다. (최대 5MB)
+                </p>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={(ev) => void handleAvatarFileChange(ev)}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* 기본 정보 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -1388,17 +1616,16 @@ function TeamMemberForm({
             </div>
             
             <div>
-              {/* 주소 필드 제거 - 데이터베이스에 address 컬럼이 없음 */}
-              {/* <label className="block text-sm font-medium text-gray-700 mb-1">
-                주소
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                집주소
               </label>
-              <input
-                type="text"
-                value={formData.address || ''}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
-                placeholder="주소를 입력하세요"
-              /> */}
+              <textarea
+                value={formData.home_address || ''}
+                onChange={(e) => setFormData({ ...formData, home_address: e.target.value })}
+                rows={3}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm resize-y min-h-[4rem]"
+                placeholder="자택 주소를 입력하세요"
+              />
             </div>
           </div>
 
@@ -1831,23 +2058,118 @@ function TeamMemberForm({
           </div>
 
           {/* 버튼 */}
-          <div className="flex justify-end space-x-3 pt-4 border-t">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm"
-            >
-              취소
-            </button>
-            <button
-              type="submit"
-              className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-            >
-              {member ? '수정' : '추가'}
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t">
+            <div>
+              {member && onDelete ? (
+                <button
+                  type="button"
+                  onClick={() => void onDelete()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-red-200 rounded-md text-red-700 hover:bg-red-50 text-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  삭제
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+              >
+                {member ? '수정' : '추가'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+function teamCardPaymentMethodBadgeClass(status: string | null): string {
+  const isActive = (status || '').trim().toLowerCase() === 'active'
+  if (isActive) {
+    return 'bg-green-100 text-green-900 border-green-300'
+  }
+  return 'bg-pink-100 text-pink-900 border-pink-300'
+}
+
+/** 팀 카드뷰: 해당 이메일(payment_methods.user_email)에 연결된 결제수단 요약 + 관리 페이지 링크 */
+function TeamMemberCardLinkedPaymentMethods({
+  memberEmail: _memberEmail,
+  memberNickName,
+  memberNameEn,
+  memberNameKo,
+  methods,
+  manageHref,
+}: {
+  memberEmail: string
+  memberNickName: string | null
+  memberNameEn: string | null
+  memberNameKo: string
+  methods: TeamCardPaymentMethodRow[]
+  manageHref: string
+}) {
+  const displayLimit = 12
+
+  return (
+    <div className="border-t pt-3" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-sm text-gray-500 flex items-center gap-1.5 min-w-0">
+          <CreditCard size={14} className="flex-shrink-0" />
+          <span className="truncate">연결 결제수단</span>
+        </span>
+        <Link
+          href={manageHref}
+          onClick={(e) => e.stopPropagation()}
+          className="text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap"
+        >
+          관리
+        </Link>
+      </div>
+      {methods.length === 0 ? (
+        <p className="text-xs text-gray-400">등록된 결제수단이 없습니다.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+          {methods.slice(0, displayLimit).map((m) => {
+            const label = formatPaymentMethodDisplay(
+              {
+                id: m.id,
+                method: m.method,
+                display_name: m.display_name,
+                user_email: m.user_email,
+                card_holder_name: m.card_holder_name,
+              },
+              {
+                nick_name: memberNickName,
+                name_en: memberNameEn,
+                name_ko: memberNameKo,
+              }
+            )
+            const st = (m.status || '').trim()
+            const badgeCls = teamCardPaymentMethodBadgeClass(m.status)
+            return (
+              <span
+                key={m.id}
+                className={`inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-tight ${badgeCls}`}
+                title={st ? `${label} (${st})` : label}
+              >
+                <span className="truncate">{label}</span>
+              </span>
+            )
+          })}
+        </div>
+      )}
+      {methods.length > displayLimit ? (
+        <p className="text-[11px] text-gray-400 mt-1">외 {methods.length - displayLimit}건 · 관리에서 전체 보기</p>
+      ) : null}
     </div>
   )
 }
@@ -1884,8 +2206,9 @@ function TeamMemberDocuments({
 
   if (totalDocuments === 0 && !isExpanded) {
     return (
-      <div className="border-t pt-3">
+      <div className="border-t pt-3" onClick={(e) => e.stopPropagation()}>
         <button
+          type="button"
           onClick={() => setIsExpanded(true)}
           className="flex items-center justify-between w-full text-sm text-gray-600 hover:text-gray-900"
         >
@@ -1900,8 +2223,9 @@ function TeamMemberDocuments({
   }
 
   return (
-    <div className="border-t pt-3">
+    <div className="border-t pt-3" onClick={(e) => e.stopPropagation()}>
       <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center justify-between w-full text-sm text-gray-700 hover:text-gray-900 mb-2"
       >
@@ -2033,13 +2357,12 @@ function TeamMemberDetailModal({
                   <p className="text-gray-900">{member.hire_date}</p>
                 </div>
               )}
-              {/* 주소 정보 제거 - 데이터베이스에 address 컬럼이 없음 */}
-              {/* {member.address && (
+              {member.home_address?.trim() ? (
                 <div>
-                  <span className="text-sm font-medium text-gray-500">주소</span>
-                  <p className="text-gray-900">{member.address}</p>
+                  <span className="text-sm font-medium text-gray-500">집주소</span>
+                  <p className="text-gray-900 whitespace-pre-wrap">{member.home_address}</p>
                 </div>
-              )} */}
+              ) : null}
             </div>
           </div>
 

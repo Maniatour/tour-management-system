@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, CreditCard, AlertTriangle } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentRecordForm from './PaymentRecordForm'
 import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 import { displayPaymentRecordNote, fetchTeamDisplayNameMap } from '@/utils/paymentRecordNoteDisplay'
@@ -54,16 +55,44 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
     try {
       const { data, error } = await supabase
         .from('payment_methods')
-        .select('id, method')
-      
+        .select('id, method, display_name, card_holder_name, user_email')
+
       if (error) throw error
-      
+
+      const rows = data || []
+      const emails = [
+        ...new Set(rows.map((pm) => String(pm.user_email || '').toLowerCase()).filter(Boolean)),
+      ]
+      let teamMap = new Map<
+        string,
+        { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }
+      >()
+      if (emails.length > 0) {
+        const { data: teams } = await supabase
+          .from('team')
+          .select('email, nick_name, name_en, name_ko')
+          .in('email', emails)
+        teamMap = new Map(
+          (teams || []).map((t) => [String((t as { email: string }).email).toLowerCase(), t as { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }])
+        )
+      }
+
       const methodMap: Record<string, string> = {}
-      data?.forEach(pm => {
-        // ID로 조회 시 방법명(method)만 반환
-        methodMap[pm.id] = pm.method
-        // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
-        methodMap[pm.method] = pm.method
+      rows.forEach((pm) => {
+        const em = pm.user_email ? String(pm.user_email).toLowerCase() : ''
+        const team = em ? teamMap.get(em) : undefined
+        const label = formatPaymentMethodDisplay(
+          {
+            id: pm.id,
+            method: pm.method,
+            display_name: pm.display_name,
+            user_email: pm.user_email,
+            card_holder_name: pm.card_holder_name,
+          },
+          team ? { nick_name: team.nick_name, name_en: team.name_en, name_ko: team.name_ko } : undefined
+        )
+        methodMap[pm.id] = label
+        methodMap[pm.method] = label
       })
       setPaymentMethodMap(methodMap)
     } catch (error) {

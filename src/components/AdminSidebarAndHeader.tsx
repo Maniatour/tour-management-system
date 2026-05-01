@@ -412,9 +412,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     fetchTeamBoardCount()
     fetchExpiringDocumentsCount()
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
       fetchTeamBoardCount()
       fetchExpiringDocumentsCount()
-    }, 60_000)
+    }, 120_000)
     return () => clearInterval(interval)
   }, [fetchTeamBoardCount, fetchExpiringDocumentsCount])
 

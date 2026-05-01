@@ -520,6 +520,9 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   <span className="text-sm text-red-600">{vehiclesError}</span>
                 )}
               </div>
+              <p className="text-xs text-gray-500 pl-0 sm:pl-[calc(4.5rem+0.5rem)] -mt-1">
+                {t('maxCapacityHint')}
+              </p>
 
               {/* 마일리지 입력 */}
               {selectedVehicleId && (

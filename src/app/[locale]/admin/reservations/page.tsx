@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { X, Search, SlidersHorizontal, Printer, Archive } from 'lucide-react'
+import { X, Search, SlidersHorizontal, Printer, Archive, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
@@ -51,7 +51,11 @@ import {
   isoToLocalCalendarDateKey,
   getStatusLabel
 } from '@/utils/reservationUtils'
-import { isTourDeletedStatus } from '@/utils/tourUtils'
+import {
+  isTourDeletedStatus,
+  isReservationCancelledStatus,
+  isReservationDeletedStatus,
+} from '@/utils/tourUtils'
 import type { 
   Customer, 
   Reservation,
@@ -63,6 +67,10 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
 import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
 import { describeError, serializeError } from '@/lib/errorSerialization'
+import {
+  reservationMatchesExtendedPricingMismatchCriteria,
+  type BalanceChannelRowInput,
+} from '@/utils/balanceChannelRevenue'
 
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -148,6 +156,16 @@ function simpleCardStatusTransitionSortIndex(from: string, to: string) {
   return (
     SIMPLE_CARD_STATUS_TRANSITION_ORDER.get(`${from.toLowerCase()}:${to.toLowerCase()}`) ?? 1000
   )
+}
+
+/** 심플 카드 상태변경 소그룹: 대기중→취소(영·미 철자)만 기본 펼침 대상 */
+function isPendingToCancelledTransitionBucket(bucketKey: string): boolean {
+  if (bucketKey === '__unknown__') return false
+  const sep = bucketKey.indexOf('\0')
+  if (sep === -1) return false
+  const from = bucketKey.slice(0, sep).toLowerCase()
+  const to = bucketKey.slice(sep + 1).toLowerCase()
+  return from === 'pending' && (to === 'cancelled' || to === 'canceled')
 }
 
 interface AdminReservationsProps {
@@ -482,6 +500,31 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     Record<string, { from: string; to: string }>
   >({})
   const [simpleCardStatusTransitionLoading, setSimpleCardStatusTransitionLoading] = useState(false)
+  /**
+   * 심플 카드 아코디언: 맵에만 사용자 오버라이드 저장.
+   * 키 없음 → defaultOpen (등록·상태변경 상위=열림, 소그룹=대기→취소만 열림·수정됨·그 외=접힘).
+   */
+  const [simpleCardAccordionOverride, setSimpleCardAccordionOverride] = useState<Map<string, boolean>>(
+    () => new Map()
+  )
+  const resolveSimpleCardAccordionOpen = useCallback(
+    (key: string, defaultOpen: boolean) => {
+      const v = simpleCardAccordionOverride.get(key)
+      if (v !== undefined) return v
+      return defaultOpen
+    },
+    [simpleCardAccordionOverride]
+  )
+  const toggleSimpleCardAccordion = useCallback((key: string, defaultOpen: boolean) => {
+    setSimpleCardAccordionOverride((prev) => {
+      const next = new Map(prev)
+      const current = prev.has(key) ? prev.get(key)! : defaultOpen
+      const newVal = !current
+      if (newVal === defaultOpen) next.delete(key)
+      else next.set(key, newVal)
+      return next
+    })
+  }, [])
   const [filterModalOpen, setFilterModalOpen] = useState(false) // ??? ?? ??? ???
   const [showDeletedReservationsModal, setShowDeletedReservationsModal] = useState(false)
   const [deletedModalReservations, setDeletedModalReservations] = useState<Reservation[]>([])
@@ -1013,11 +1056,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       const p = reservationPricingMap.get(r.id)
       return !!(p && (p.total_price != null && p.total_price > 0))
     }
-    const storedTotalMatchesDynamic = (r: Reservation) => {
-      const stored = reservationPricingMap.get(r.id)?.total_price
-      if (stored == null) return true
-      const calculated = calculateTotalPrice(r, products || [], optionChoices || [])
-      return Math.abs((stored ?? 0) - calculated) <= 0.01
+    const isNotCancelledPricing = (r: Reservation) => {
+      const s = (r.status as string)?.trim?.() ?? ''
+      return !s.toLowerCase().startsWith('cancelled')
     }
     const getBalance = (r: Reservation) => {
       const p = reservationPricingMap.get(r.id)
@@ -1034,7 +1075,17 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const statusList = arReservations.filter(r => tourDateWithin7Days(r) && statusPending(r))
     const tourList = arReservations.filter(r => statusConfirmed(r) && !hasTourAssigned(r))
     const noPricing = arReservations.filter(r => !hasPricing(r))
-    const pricingMismatch = arReservations.filter(r => hasPricing(r) && !storedTotalMatchesDynamic(r))
+    const pricingMismatch = arReservations.filter(
+      (r) =>
+        isNotCancelledPricing(r) &&
+        reservationMatchesExtendedPricingMismatchCriteria(
+          r,
+          reservationPricingMap,
+          (channels || []) as BalanceChannelRowInput[],
+          new Map(),
+          undefined
+        )
+    )
     const depositNoTour = arReservations.filter(r => hasPayment(r) && !hasTourAssigned(r))
     const confirmedNoDeposit = arReservations.filter(r => statusConfirmed(r) && !hasPayment(r))
     const balanceList = arReservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
@@ -1047,14 +1098,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     confirmedNoDeposit.forEach(r => allIds.add(r.id))
     balanceList.forEach(r => allIds.add(r.id))
     return allIds.size
-  }, [
-    reservations,
-    reservationPricingMap,
-    reservationIdsWithPayments,
-    products,
-    optionChoices,
-    tourIdByReservationId,
-  ])
+  }, [reservations, reservationPricingMap, reservationIdsWithPayments, tourIdByReservationId, channels])
 
   /** 서버에서 필터·검색·정렬·페이지 반영된 목록 */
   const filteredAndSortedReservations = useMemo(
@@ -1296,6 +1340,64 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     
     return sortedGroups
   }, [filteredReservations, groupByDate, currentWeek, getWeekStartDate, getWeekEndDate])
+
+  /** 주간(화면 상단 7일 구간) 일자별 등록 인원·건수 / 취소 인원·건수 — WeeklyStatsPanel 차트용 */
+  const weeklyRegCancelByDay = useMemo(() => {
+    const weekStart = getWeekStartDate(currentWeek)
+    const weekEnd = getWeekEndDate(currentWeek)
+    const startDay = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate())
+    const endDay = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate())
+
+    const rows: Array<{
+      dateKey: string
+      registeredPeople: number
+      registeredCount: number
+      cancelledPeople: number
+      cancelledCount: number
+    }> = []
+    const rowByKey = new Map<string, (typeof rows)[number]>()
+
+    for (let cur = new Date(startDay); cur.getTime() <= endDay.getTime(); cur.setDate(cur.getDate() + 1)) {
+      const y = cur.getFullYear()
+      const m = String(cur.getMonth() + 1).padStart(2, '0')
+      const d = String(cur.getDate()).padStart(2, '0')
+      const dateKey = `${y}-${m}-${d}`
+      const row = {
+        dateKey,
+        registeredPeople: 0,
+        registeredCount: 0,
+        cancelledPeople: 0,
+        cancelledCount: 0,
+      }
+      rows.push(row)
+      rowByKey.set(dateKey, row)
+    }
+
+    const isCancelledLike = (status: string | undefined) =>
+      isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
+
+    for (const r of filteredReservations) {
+      const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+      const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+      if (createdKey) {
+        const row = rowByKey.get(createdKey)
+        if (row) {
+          row.registeredCount += 1
+          row.registeredPeople += p
+        }
+      }
+      const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+      if (updatedKey && isCancelledLike(r.status)) {
+        const row = rowByKey.get(updatedKey)
+        if (row) {
+          row.cancelledCount += 1
+          row.cancelledPeople += p
+        }
+      }
+    }
+
+    return rows
+  }, [filteredReservations, currentWeek, getWeekStartDate, getWeekEndDate])
 
   // ??????????????????? ????????
   useEffect(() => {
@@ -2717,6 +2819,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           onInitialLoadChange={setIsInitialLoad}
           isInitialLoad={isInitialLoad}
           weeklyStats={weeklyStats}
+          weeklyRegCancelByDay={weeklyRegCancelByDay}
           isWeeklyStatsCollapsed={isWeeklyStatsCollapsed}
           onToggleStatsCollapsed={() => setIsWeeklyStatsCollapsed(!isWeeklyStatsCollapsed)}
           groupedReservations={groupedReservations}
@@ -2903,55 +3006,137 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                     />
 
                     {cardLayout === 'simple' ? (
-                      <div className="space-y-8">
-                        <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-gray-900 px-1 flex items-baseline gap-2">
-                            <span>{t('groupingLabels.simpleCardGroupRegistration')}</span>
-                            <span className="text-xs font-normal text-gray-500 tabular-nums">
-                              {regList.length}
-                            </span>
-                          </h4>
-                          {regList.length > 0 ? (
-                            <div className={gridClass}>{regList.map(renderReservationCard)}</div>
-                          ) : (
-                            <p className="text-xs text-gray-400 px-1 py-1">
-                              {t('groupingLabels.simpleCardGroupEmpty')}
-                            </p>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-gray-900 px-1 flex items-baseline gap-2">
-                            <span>{t('groupingLabels.simpleCardGroupStatusChange')}</span>
-                            <span className="text-xs font-normal text-gray-500 tabular-nums">
-                              {statusList.length}
-                            </span>
-                          </h4>
-                          {statusList.length > 0 ? (
-                            simpleCardStatusTransitionLoading ? (
-                              <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
-                            ) : simpleCardStatusSubgroups ? (
-                              <div className="space-y-6">
-                                {simpleCardStatusSubgroups.map((g) => (
-                                  <div key={g.bucketKey} className="space-y-2">
-                                    <h5 className="text-xs font-semibold text-gray-700 px-1 flex items-baseline gap-2">
-                                      <span>{g.title}</span>
-                                      <span className="text-xs font-normal text-gray-500 tabular-nums">
-                                        {g.items.length}
-                                      </span>
-                                    </h5>
-                                    <div className={gridClass}>{g.items.map(renderReservationCard)}</div>
+                      <div className="space-y-4">
+                        {(() => {
+                          const accRegKey = `${date}|simple-acc-reg`
+                          const accStatusKey = `${date}|simple-acc-status`
+                          const defaultRegOpen = true
+                          /** 상태변경 상위도 기본 펼침 → 안에서 대기중→취소 소그룹만 기본 펼침, 수정됨·그 외 소그룹은 기본 접힘. */
+                          const defaultStatusOpen = true
+                          const regOpen = resolveSimpleCardAccordionOpen(accRegKey, defaultRegOpen)
+                          const statusOpen = resolveSimpleCardAccordionOpen(accStatusKey, defaultStatusOpen)
+                          const regPeopleTotal = regList.reduce(
+                            (sum, r) =>
+                              sum + getReservationPartySize(r as unknown as Record<string, unknown>),
+                            0
+                          )
+                          return (
+                            <>
+                              <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                                  onClick={() => toggleSimpleCardAccordion(accRegKey, defaultRegOpen)}
+                                  aria-expanded={regOpen}
+                                >
+                                  <span className="text-sm font-semibold text-gray-900 flex items-baseline gap-2 min-w-0 flex-wrap">
+                                    <span>{t('groupingLabels.simpleCardGroupRegistration')}</span>
+                                    <span className="text-xs font-normal text-gray-500 tabular-nums">
+                                      {t('groupingLabels.simpleCardRegistrationSummary', {
+                                        count: regList.length,
+                                        people: regPeopleTotal,
+                                      })}
+                                    </span>
+                                  </span>
+                                  <ChevronDown
+                                    className={`h-4 w-4 flex-shrink-0 text-gray-500 transition-transform ${regOpen ? 'rotate-180' : ''}`}
+                                    aria-hidden
+                                  />
+                                </button>
+                                {regOpen && (
+                                  <div className="border-t border-gray-100 px-2 pb-3 pt-2">
+                                    {regList.length > 0 ? (
+                                      <div className={gridClass}>{regList.map(renderReservationCard)}</div>
+                                    ) : (
+                                      <p className="text-xs text-gray-400 px-1 py-1">
+                                        {t('groupingLabels.simpleCardGroupEmpty')}
+                                      </p>
+                                    )}
                                   </div>
-                                ))}
+                                )}
                               </div>
-                            ) : (
-                              <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
-                            )
-                          ) : (
-                            <p className="text-xs text-gray-400 px-1 py-1">
-                              {t('groupingLabels.simpleCardGroupEmpty')}
-                            </p>
-                          )}
-                        </div>
+
+                              <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                                  onClick={() => toggleSimpleCardAccordion(accStatusKey, defaultStatusOpen)}
+                                  aria-expanded={statusOpen}
+                                >
+                                  <span className="text-sm font-semibold text-gray-900 flex items-baseline gap-2 min-w-0">
+                                    <span>{t('groupingLabels.simpleCardGroupStatusChange')}</span>
+                                    <span className="text-xs font-normal text-gray-500 tabular-nums">
+                                      {statusList.length}
+                                    </span>
+                                  </span>
+                                  <ChevronDown
+                                    className={`h-4 w-4 flex-shrink-0 text-gray-500 transition-transform ${statusOpen ? 'rotate-180' : ''}`}
+                                    aria-hidden
+                                  />
+                                </button>
+                                {statusOpen && (
+                                  <div className="border-t border-gray-100 px-2 pb-3 pt-2 space-y-3">
+                                    {statusList.length > 0 ? (
+                                      simpleCardStatusTransitionLoading ? (
+                                        <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
+                                      ) : simpleCardStatusSubgroups ? (
+                                        simpleCardStatusSubgroups.map((g, subIdx) => {
+                                          const subKey = `${date}|simple-acc-status-sub|${subIdx}`
+                                          const defaultSubOpen = isPendingToCancelledTransitionBucket(g.bucketKey)
+                                          const subOpen = resolveSimpleCardAccordionOpen(subKey, defaultSubOpen)
+                                          const subPeopleTotal = g.items.reduce(
+                                            (sum, r) =>
+                                              sum +
+                                              getReservationPartySize(r as unknown as Record<string, unknown>),
+                                            0
+                                          )
+                                          return (
+                                            <div
+                                              key={`${date}-sub-${subIdx}-${g.bucketKey}`}
+                                              className="rounded-md border border-gray-100 bg-gray-50/80 overflow-hidden"
+                                            >
+                                              <button
+                                                type="button"
+                                                className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left hover:bg-gray-100/80 transition-colors"
+                                                onClick={() => toggleSimpleCardAccordion(subKey, defaultSubOpen)}
+                                                aria-expanded={subOpen}
+                                              >
+                                                <span className="text-xs font-semibold text-gray-800 flex items-baseline gap-2 min-w-0 flex-wrap">
+                                                  <span className="truncate">{g.title}</span>
+                                                  <span className="text-xs font-normal text-gray-500 tabular-nums flex-shrink-0">
+                                                    {t('groupingLabels.simpleCardRegistrationSummary', {
+                                                      count: g.items.length,
+                                                      people: subPeopleTotal,
+                                                    })}
+                                                  </span>
+                                                </span>
+                                                <ChevronDown
+                                                  className={`h-3.5 w-3.5 flex-shrink-0 text-gray-500 transition-transform ${subOpen ? 'rotate-180' : ''}`}
+                                                  aria-hidden
+                                                />
+                                              </button>
+                                              {subOpen && (
+                                                <div className="border-t border-gray-100 bg-white px-2 pb-2 pt-2">
+                                                  <div className={gridClass}>{g.items.map(renderReservationCard)}</div>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )
+                                        })
+                                      ) : (
+                                        <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
+                                      )
+                                    ) : (
+                                      <p className="text-xs text-gray-400 px-1 py-1">
+                                        {t('groupingLabels.simpleCardGroupEmpty')}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )
+                        })()}
                       </div>
                     ) : (
                       <div className={gridClass}>{dayReservations.map(renderReservationCard)}</div>
@@ -3210,7 +3395,16 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         reservations={reservations}
         customers={(customers as Customer[]) || []}
         products={(products as Array<{ id: string; name: string; sub_category?: string; base_price?: number }>) || []}
-        channels={(channels as Array<{ id: string; name: string; favicon_url?: string | null }>) || []}
+        channels={
+          (channels as Array<{
+            id: string
+            name: string
+            favicon_url?: string | null
+            type?: string | null
+            category?: string | null
+            commission_percent?: number | null
+          }>) || []
+        }
         pickupHotels={(pickupHotels as Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>) || []}
         productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
         optionChoices={(optionChoices as Array<{ id: string; name: string; option_id?: string; adult_price?: number; child_price?: number; infant_price?: number }>) || []}
@@ -3228,6 +3422,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         onEmailLogsClick={handleEmailLogsClick}
         onEmailDropdownToggle={(id) => handleEmailDropdownToggle(id)}
         onEditClick={handleEditClick}
+        onExitOneByOneEdit={() => {
+          setEditingReservation(null)
+        }}
         onCustomerClick={handleCustomerClick}
         onRefreshReservations={refreshReservations}
         onRefreshReservationPricing={refreshReservationPricingForIds}

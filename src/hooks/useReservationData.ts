@@ -20,6 +20,35 @@ import {
   aggregateReservationOptionSumsByReservationId,
   type ReservationOptionSumRow,
 } from '@/lib/syncReservationPricingAggregates'
+import { parseEmbeddedChannelNameFromReservationRow } from '@/utils/reservationUtils'
+
+/** 예약 목록용: mapRawToReservation 에 필요한 컬럼만 (전체 행 스캔·전송량 감소) + 채널명 embed */
+const RESERVATION_LIST_SELECT =
+  [
+    'id',
+    'customer_id',
+    'product_id',
+    'tour_date',
+    'tour_time',
+    'event_note',
+    'pickup_hotel',
+    'pickup_time',
+    'adults',
+    'child',
+    'infant',
+    'total_people',
+    'channel_id',
+    'variant_key',
+    'channel_rn',
+    'added_by',
+    'created_at',
+    'tour_id',
+    'status',
+    'updated_at',
+    'selected_options',
+    'selected_option_prices',
+    'choices',
+  ].join(',') + ',channels(name)'
 
 /** PostgREST or= 필터용: 큰 OFFSET 대신 (created_at DESC, id DESC) 키셋 페이지네이션 */
 function customersCreatedAtDescKeysetOr(created_at: string, id: string): string {
@@ -148,7 +177,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('channels')
-        .select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission')
+        .select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission, sub_channels')
         .order('name', { ascending: true })
 
       if (error) {
@@ -341,6 +370,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         infant: (item.infant as number) || 0,
         totalPeople: (item.total_people as number) || 0,
         channelId: (item.channel_id as string) || '',
+        channelNameSnapshot: parseEmbeddedChannelNameFromReservationRow(item) ?? null,
         variantKey: (item.variant_key as string) || 'default',
         channelRN: (item.channel_rn as string) || '',
         addedBy: (item.added_by as string) || '',
@@ -362,7 +392,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   const fetchPricingMap = async (reservationIds: string[]) => {
     const map = new Map<string, ReservationPricingMapValue>()
     const PRICING_SELECT =
-      'reservation_id, id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, option_total, choices_total, not_included_price, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, deposit_amount'
+      'reservation_id, id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, option_total, choices_total, not_included_price, private_tour_additional_cost, refund_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, deposit_amount'
     for (let i = 0; i < reservationIds.length; i += CHUNK_SIZE) {
       const chunk = reservationIds.slice(i, i + CHUNK_SIZE)
       const { data } = await supabase.from('reservation_pricing').select(PRICING_SELECT).in('reservation_id', chunk)
@@ -390,7 +420,11 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
             choices_total: toNumber(p.choices_total),
             not_included_price: toNumber(p.not_included_price),
             private_tour_additional_cost: toNumber(p.private_tour_additional_cost),
-            commission_percent: toNumber(p.commission_percent),
+            refund_amount: toNumber(p.refund_amount),
+            commission_percent:
+              p.commission_percent === null || p.commission_percent === undefined
+                ? undefined
+                : toNumber(p.commission_percent),
             commission_amount: toNumber(p.commission_amount),
             commission_base_price: toNumber(p.commission_base_price),
             channel_settlement_amount: toNumber(p.channel_settlement_amount),
@@ -513,7 +547,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       // 1) count 쿼리 생략 → 첫 배치만 먼저 로드해 빠르게 표시
       const { data: firstBatchRaw, error: firstError } = await supabase
         .from('reservations')
-        .select('*, choices')
+        .select(RESERVATION_LIST_SELECT)
         .order('created_at', { ascending: false })
         .range(0, FIRST_BATCH_SIZE - 1)
 
@@ -583,7 +617,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       while (hasMore) {
         const { data: page, error } = await supabase
           .from('reservations')
-          .select('*, choices')
+          .select(RESERVATION_LIST_SELECT)
           .order('created_at', { ascending: false })
           .range(from, from + PAGE_SIZE - 1)
         if (error) break

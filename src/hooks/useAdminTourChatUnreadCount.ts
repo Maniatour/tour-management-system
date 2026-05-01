@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
 const ROOM_BATCH = 50
@@ -9,8 +9,11 @@ const ROOM_BATCH = 50
  * 관리자 헤더용: 활성 투어 채팅방에서 고객이 보낸 미읽음 메시지 총합.
  * 채팅 관리 페이지의 unread_count 집계와 동일 (customer + is_read false + 활성 방만).
  */
+const REALTIME_REFRESH_DEBOUNCE_MS = 1200
+
 export function useAdminTourChatUnreadCount(enabled: boolean): number {
   const [count, setCount] = useState(0)
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refresh = useCallback(async () => {
     if (!enabled) {
@@ -40,7 +43,7 @@ export function useAdminTourChatUnreadCount(enabled: boolean): number {
         const batch = ids.slice(i, i + ROOM_BATCH)
         const { count: batchCount, error } = await supabase
           .from('chat_messages')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .in('room_id', batch)
           .eq('sender_type', 'customer')
           .eq('is_read', false)
@@ -58,6 +61,14 @@ export function useAdminTourChatUnreadCount(enabled: boolean): number {
     }
   }, [enabled])
 
+  const scheduleRefreshDebounced = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null
+      void refresh()
+    }, REALTIME_REFRESH_DEBOUNCE_MS)
+  }, [refresh])
+
   useEffect(() => {
     if (!enabled) {
       setCount(0)
@@ -72,14 +83,14 @@ export function useAdminTourChatUnreadCount(enabled: boolean): number {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_messages' },
         () => {
-          void refresh()
+          scheduleRefreshDebounced()
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_rooms' },
         () => {
-          void refresh()
+          scheduleRefreshDebounced()
         }
       )
       .subscribe()
@@ -89,10 +100,14 @@ export function useAdminTourChatUnreadCount(enabled: boolean): number {
     }, 300_000)
 
     return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+        debounceTimerRef.current = null
+      }
       void supabase.removeChannel(channel)
       clearInterval(interval)
     }
-  }, [enabled, refresh])
+  }, [enabled, refresh, scheduleRefreshDebounced])
 
   return count
 }
