@@ -910,6 +910,7 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
             tableVariant === 'balance' ? rest.balanceReservationsForApply : undefined
           }
           actionsColumnEditOnly
+          enableMismatchFormulaBundleApply={tableVariant === 'pricingMismatch'}
         />
         {followUpReservation && <FollowUpModal followUpReservation={followUpReservation} onClose={() => setFollowUpReservation(null)} />}
       </>

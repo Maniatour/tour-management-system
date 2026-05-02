@@ -1,4 +1,8 @@
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import {
+  isReservationStatusConfirmed,
+  isWithin48HoursBeforeTourStartLocal,
+} from '@/utils/reservationUtils'
 
 /** 이메일 로그에서 성공으로 간주되는 상태 */
 export function emailLogStatusSuccess(status: string | null | undefined): boolean {
@@ -75,6 +79,28 @@ export function reservationNeedsPickupNotification(
 ): boolean {
   if (reservationExcludedFromFollowUpPipeline(status)) return false
   if (!prerequisitesMetForPickup(s)) return false
+  return !s.pickupSent
+}
+
+/** Follow-up 모달「출발 확정」탭: 예약 확정 + 출발 확정 메일 미발송 */
+export function followUpModalMatchesDepartureTab(
+  status: string | null | undefined,
+  s: ReservationFollowUpPipelineSnapshot
+): boolean {
+  if (reservationExcludedFromFollowUpPipeline(status)) return false
+  if (!isReservationStatusConfirmed(status)) return false
+  return !s.departureSent
+}
+
+/** Follow-up 모달「픽업」탭: 투어 시작 48시간 이내 + 픽업 노티 미발송 */
+export function followUpModalMatchesPickupTab(
+  tourDate: string | null | undefined,
+  tourTime: string | null | undefined,
+  status: string | null | undefined,
+  s: ReservationFollowUpPipelineSnapshot
+): boolean {
+  if (reservationExcludedFromFollowUpPipeline(status)) return false
+  if (!isWithin48HoursBeforeTourStartLocal({ tourDate, tourTime })) return false
   return !s.pickupSent
 }
 

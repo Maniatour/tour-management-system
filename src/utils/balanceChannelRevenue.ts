@@ -9,6 +9,7 @@ import {
   mergePricingWithLiveOptionTotal,
   summarizePaymentRecordsForBalance,
   isStoredCustomerTotalMismatchWithFormula,
+  computeCustomerPaymentTotalLineFormula,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import {
@@ -68,7 +69,7 @@ export function findChannelRowForBalance(
 }
 
 /** PricingSection과 동일: `commission_percent` 우선, 없으면 `commission_rate`·`commission`(레거시 %) */
-function commissionPercentFromChannelMaster(
+export function commissionPercentFromChannelMaster(
   ch:
     | {
         commission_percent?: number | null
@@ -286,6 +287,61 @@ export function computeBalanceChannelMetrics(
     commissionAmountDb,
     commissionAmountFromFormula,
   }
+}
+
+/**
+ * 예약 처리 필요「② 총액·채널 결제·정산 불일치」탭 — 고객 총액·채널 결제·수수료·정산을 가격 정보와 동일 산식으로 한 번에 DB 반영.
+ * 최종 매출·운영이익은 저장 컬럼이 없으며, 반영 후 산식 표시와 일치한다.
+ */
+export function buildReservationPricingMismatchFormulaPatch(
+  r: Reservation,
+  p: ReservationPricingMapValue,
+  reservationOptionSumByReservationId: Map<string, number> | undefined,
+  records: PaymentRecordLike[],
+  channels: BalanceChannelRowInput[]
+): Record<string, number> | null {
+  const party = { adults: r.adults, children: r.child, infants: r.infant }
+  const pForGross =
+    (mergePricingWithLiveOptionTotal(p, r.id, reservationOptionSumByReservationId) as
+      | ReservationPricingMapValue
+      | undefined) ?? p
+
+  const m = computeBalanceChannelMetrics(p, r, channels, records, reservationOptionSumByReservationId)
+  if (!m) return null
+
+  const gross = round2(computeCustomerPaymentTotalLineFormula(pForGross, party))
+  const pay = m.channelPaymentFromFormula
+
+  const cid = String(r.channelId ?? '').trim()
+  const chRow = findChannelRowForBalance(cid, channels)
+  const masterPct = commissionPercentFromChannelMaster(chRow)
+
+  let feeUsd: number
+  if (masterPct != null) {
+    feeUsd = round2(pay * (masterPct / 100))
+  } else if (m.commissionAmountFromFormula != null) {
+    feeUsd = round2(m.commissionAmountFromFormula)
+  } else {
+    feeUsd = pricingFieldToNumber(p.commission_amount)
+  }
+
+  const settlement = round2(Math.max(0, pay - feeUsd))
+
+  const patch: Record<string, number> = {
+    total_price: gross,
+    commission_base_price: round2(pay),
+    channel_settlement_amount: settlement,
+  }
+
+  if (masterPct != null) {
+    patch.commission_percent = round2(masterPct)
+  }
+
+  if (masterPct != null || m.commissionAmountFromFormula != null) {
+    patch.commission_amount = feeUsd
+  }
+
+  return patch
 }
 
 const PRICING_LINE_MISMATCH_TOL = 0.01

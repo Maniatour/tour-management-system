@@ -40,6 +40,7 @@ import {
 } from '@/utils/reservationPricingBalance'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
+  buildReservationPricingMismatchFormulaPatch,
   computeBalanceChannelMetrics,
   findChannelRowForBalance,
 } from '@/utils/balanceChannelRevenue'
@@ -72,6 +73,7 @@ type PricingApplyMode =
   | 'channelPayment'
   | 'channelSettlement'
   | 'all'
+  | 'mismatchFormulaBundle'
 
 /** 일괄 반영·행 단위 반영 공통 — reservation_pricing 업데이트 필드만 생성 */
 function buildReservationPricingPatch(
@@ -93,6 +95,15 @@ function buildReservationPricingPatch(
       }>
     | undefined
 ): Record<string, number> | null {
+  if (mode === 'mismatchFormulaBundle') {
+    return buildReservationPricingMismatchFormulaPatch(
+      r,
+      p,
+      reservationOptionSumByReservationId,
+      records,
+      channels ?? []
+    )
+  }
   const party = { adults: r.adults ?? 0, children: r.child ?? 0, infants: r.infant ?? 0 }
   const pForGross = mergePricingWithLiveOptionTotal(p, r.id, reservationOptionSumByReservationId) ?? p
   const gross = computeCustomerPaymentTotalLineFormula(pForGross, party)
@@ -482,6 +493,8 @@ type BalanceProps = {
   actionsColumnEditOnly?: boolean
   /** 총액·보증금·잔액 일괄/행 DB 반영(체크·행 버튼). 예약 처리 필요 모달의 예약 가격·밸런스 탭 공통 */
   enablePricingDbApply?: boolean
+  /** ② 산식 불일치 탭: 고객 총액·채널 결제·수수료·정산 계산식 일괄 반영 버튼 */
+  enableMismatchFormulaBundleApply?: boolean
 }
 
 function StatusDropdown({
@@ -580,7 +593,13 @@ export type BalanceRowProps = Omit<BalanceProps, 'reservations'> & {
   selectionDisabled: boolean
   onApplyRowPatch?: (
     reservationId: string,
-    mode: 'total' | 'deposit' | 'balance' | 'channelPayment' | 'channelSettlement'
+    mode:
+      | 'total'
+      | 'deposit'
+      | 'balance'
+      | 'channelPayment'
+      | 'channelSettlement'
+      | 'mismatchFormulaBundle'
   ) => Promise<void>
   applyRowBusyKey?: string | null
   /** 윗줄 DB값 더블클릭 인라인 저장 → reservation_pricing.update */
@@ -626,6 +645,7 @@ function BalanceRow(props: BalanceRowProps) {
     onInlinePricingCommit,
     inlineEditBusyKey,
     actionsColumnEditOnly = false,
+    enableMismatchFormulaBundleApply = false,
   } = props
 
   const p = reservationPricingMap.get(reservation.id)
@@ -722,6 +742,25 @@ function BalanceRow(props: BalanceRowProps) {
     p != null &&
     (dbChannelPayment == null ||
       Math.abs(dbChannelPayment - channelPaymentFormula) > 0.01)
+
+  const commPctMismatch =
+    channelMetrics?.commissionPercentDb != null &&
+    channelMetrics?.commissionPercentFromChannel != null &&
+    Math.abs(channelMetrics.commissionPercentDb - channelMetrics.commissionPercentFromChannel) > 0.05
+
+  const commAmtMismatch =
+    channelMetrics?.commissionAmountDb != null &&
+    channelMetrics.commissionAmountFromFormula != null &&
+    Math.abs(channelMetrics.commissionAmountDb - channelMetrics.commissionAmountFromFormula) > 0.01
+
+  const needsMismatchFormulaBundleRow =
+    enableMismatchFormulaBundleApply &&
+    p != null &&
+    (totalMismatch ||
+      channelPaymentMismatch ||
+      channelSettlementMismatch ||
+      commPctMismatch ||
+      commAmtMismatch)
 
   const inlineEditHint = t('actionRequired.balanceTable.inlineEditDbHint')
   const rowPatchBusy =
@@ -969,7 +1008,14 @@ function BalanceRow(props: BalanceRowProps) {
           totalMismatch ? t('actionRequired.balanceTable.cols.totalMismatchHint') : undefined
         )}
       >
-        <div className="flex flex-row items-start justify-end gap-1">
+        <div className="flex flex-row flex-wrap items-start justify-end gap-1">
+          <RowDbApplyButton
+            visible={Boolean(onApplyRowPatch && needsMismatchFormulaBundleRow)}
+            busy={applyRowBusyKey === `${reservation.id}:mismatchFormulaBundle`}
+            parentBusy={selectionDisabled}
+            title={t('actionRequired.balanceTable.rowApplyMismatchFormulaBundleTitle')}
+            onClick={() => onApplyRowPatch?.(reservation.id, 'mismatchFormulaBundle')}
+          />
           <RowDbApplyButton
             visible={Boolean(onApplyRowPatch && totalMismatch && computedGross != null)}
             busy={applyRowBusyKey === `${reservation.id}:total`}
@@ -1307,6 +1353,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
     channels,
     actionsColumnEditOnly = false,
     enablePricingDbApply = true,
+    enableMismatchFormulaBundleApply = false,
     ...rest
   } = props
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -1352,12 +1399,18 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
     })
   }, [])
 
-  type ApplyMode = 'total' | 'deposit' | 'balance' | 'all'
+  type ApplyMode = 'total' | 'deposit' | 'balance' | 'all' | 'mismatchFormulaBundle'
 
   const applySingleRow = useCallback(
     async (
       reservationId: string,
-      mode: 'total' | 'deposit' | 'balance' | 'channelPayment' | 'channelSettlement'
+      mode:
+        | 'total'
+        | 'deposit'
+        | 'balance'
+        | 'channelPayment'
+        | 'channelSettlement'
+        | 'mismatchFormulaBundle'
     ) => {
       if (!onRefreshReservations && !onRefreshReservationPricing) return
       const r = reservationLookup.get(reservationId)
@@ -1372,7 +1425,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           p,
           reservationOptionSumByReservationId,
           records,
-          mode,
+          mode as PricingApplyMode,
           channels
         )
         if (!patch) return
@@ -1440,7 +1493,8 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           const p = reservationPricingMap.get(id)
           if (!r || !p) continue
           const records = paymentRecordsByReservationId?.get(id) ?? []
-          const patchMode: PricingApplyMode = mode === 'all' ? 'all' : mode
+          const patchMode: PricingApplyMode =
+            mode === 'all' ? 'all' : mode === 'mismatchFormulaBundle' ? 'mismatchFormulaBundle' : mode
           const patch = buildReservationPricingPatch(
             r,
             p,
@@ -1543,6 +1597,20 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
                       {applySyncing ? t('actionRequired.balanceTable.applySelectedRunning') : t('actionRequired.balanceTable.applyAll')}
                       {!applySyncing && selectedIds.size > 0 ? ` (${selectedIds.size})` : null}
                     </button>
+                    {enableMismatchFormulaBundleApply ? (
+                      <button
+                        type="button"
+                        title={t('actionRequired.balanceTable.applyMismatchFormulaBundleTitle')}
+                        disabled={applySyncing || selectedIds.size === 0}
+                        onClick={() => runApplySelected('mismatchFormulaBundle')}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-indigo-400 bg-indigo-50 text-indigo-950 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {applySyncing
+                          ? t('actionRequired.balanceTable.applySelectedRunning')
+                          : t('actionRequired.balanceTable.applyMismatchFormulaBundle')}
+                        {!applySyncing && selectedIds.size > 0 ? ` (${selectedIds.size})` : null}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </th>
@@ -1786,6 +1854,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
                 selectionDisabled: applySyncing,
                 ...(selectionEnabled ? { onApplyRowPatch: applySingleRow } : {}),
                 applyRowBusyKey,
+                enableMismatchFormulaBundleApply,
                 ...(onRefreshReservationPricing || onRefreshReservations
                   ? {
                       onInlinePricingCommit: commitInlinePricing,

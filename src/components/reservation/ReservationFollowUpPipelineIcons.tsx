@@ -6,6 +6,12 @@ import { Mail, ClipboardCheck, Plane, MapPin, Minus } from 'lucide-react'
 import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
 import { prerequisitesMetForDeparture, prerequisitesMetForPickup } from '@/lib/reservationFollowUpPipeline'
 
+export type FollowUpPipelineEmailType =
+  | 'confirmation'
+  | 'resident_inquiry'
+  | 'departure'
+  | 'pickup'
+
 type StepVisual = 'done' | 'action' | 'upcoming' | 'na'
 
 function stepClasses(v: StepVisual): string {
@@ -42,13 +48,27 @@ function resolveSteps(s: ReservationFollowUpPipelineSnapshot): {
   return { confirm, resident, departure, pickup }
 }
 
+function emailTypeForStepKey(
+  key: string,
+  residentVisual: StepVisual
+): FollowUpPipelineEmailType | null {
+  if (key === 'c') return 'confirmation'
+  if (key === 'r') return residentVisual === 'na' ? null : 'resident_inquiry'
+  if (key === 'd') return 'departure'
+  if (key === 'p') return 'pickup'
+  return null
+}
+
 export function ReservationFollowUpPipelineIcons({
   snapshot,
   disabled,
+  onEmailPreviewClick,
 }: {
   snapshot: ReservationFollowUpPipelineSnapshot | null | undefined
   /** 취소·삭제 등 파이프라인 비적용 */
   disabled?: boolean
+  /** 단계별 이메일 미리보기 (거주 미해당 상품은 거주 아이콘 비활성) */
+  onEmailPreviewClick?: (emailType: FollowUpPipelineEmailType) => void
 }) {
   const t = useTranslations('reservations')
 
@@ -79,18 +99,38 @@ export function ReservationFollowUpPipelineIcons({
   return (
     <div
       className="inline-flex items-center gap-0.5"
-      role="img"
+      role="group"
       aria-label={t('followUpPipeline.ariaPipelineStatus')}
     >
-      {items.map(({ key, Icon, visual, label }) => (
-        <span
-          key={key}
-          title={label}
-          className={`inline-flex h-6 w-6 items-center justify-center rounded border ${stepClasses(visual)}`}
-        >
-          <Icon className="h-3 w-3 shrink-0" aria-hidden />
-        </span>
-      ))}
+      {items.map(({ key, Icon, visual, label }) => {
+        const emailType = emailTypeForStepKey(key, resident)
+        const interactive = !!onEmailPreviewClick && emailType != null
+        const boxClass = `inline-flex h-6 w-6 items-center justify-center rounded border ${stepClasses(visual)}`
+
+        if (interactive) {
+          return (
+            <button
+              key={key}
+              type="button"
+              title={label}
+              aria-label={label}
+              className={`${boxClass} cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onEmailPreviewClick(emailType)
+              }}
+            >
+              <Icon className="h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
+            </button>
+          )
+        }
+
+        return (
+          <span key={key} title={label} className={boxClass}>
+            <Icon className="h-3 w-3 shrink-0" aria-hidden />
+          </span>
+        )
+      })}
     </div>
   )
 }

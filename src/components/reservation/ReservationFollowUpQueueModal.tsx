@@ -8,10 +8,10 @@ import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollo
 import {
   reservationNeedsConfirmationMail,
   reservationNeedsResidentPipelineAttention,
-  reservationNeedsDepartureMail,
-  reservationNeedsPickupNotification,
   reservationExcludedFromFollowUpPipeline,
   reservationNeedsAnyFollowUpAttention,
+  followUpModalMatchesDepartureTab,
+  followUpModalMatchesPickupTab,
 } from '@/lib/reservationFollowUpPipeline'
 import { getCustomerName, isReservationTourDatePastLocal, isReservationAddedStrictlyBeforeTodayLocal } from '@/utils/reservationUtils'
 
@@ -31,6 +31,7 @@ export interface ReservationFollowUpQueueModalProps {
 
 function tabFilter(
   tab: FollowUpQueueTabId,
+  reservation: Reservation,
   status: string | undefined,
   snap: ReservationFollowUpPipelineSnapshot | undefined
 ): boolean {
@@ -41,9 +42,14 @@ function tabFilter(
     case 'resident':
       return reservationNeedsResidentPipelineAttention(status, snap)
     case 'departure':
-      return reservationNeedsDepartureMail(status, snap)
+      return followUpModalMatchesDepartureTab(status, snap)
     case 'pickup':
-      return reservationNeedsPickupNotification(status, snap)
+      return followUpModalMatchesPickupTab(
+        reservation.tourDate,
+        reservation.tourTime,
+        status,
+        snap
+      )
     default:
       return false
   }
@@ -88,8 +94,8 @@ export default function ReservationFollowUpQueueModal({
       if (!snap) continue
       if (reservationNeedsConfirmationMail(st, snap)) counts.confirm += 1
       if (reservationNeedsResidentPipelineAttention(st, snap)) counts.resident += 1
-      if (reservationNeedsDepartureMail(st, snap)) counts.departure += 1
-      if (reservationNeedsPickupNotification(st, snap)) counts.pickup += 1
+      if (followUpModalMatchesDepartureTab(st, snap)) counts.departure += 1
+      if (followUpModalMatchesPickupTab(r.tourDate, r.tourTime, st, snap)) counts.pickup += 1
     }
     const filtered = reservations.filter((r) => {
       if (isReservationTourDatePastLocal(r.tourDate)) return false
@@ -97,7 +103,7 @@ export default function ReservationFollowUpQueueModal({
       const st = r.status as string | undefined
       const snap = snapshotsByReservationId.get(r.id)
       if (!snap) return false
-      return tabFilter(tab, st, snap)
+      return tabFilter(tab, r, st, snap)
     })
     filtered.sort((a, b) => {
       const da = String(a.tourDate ?? '')

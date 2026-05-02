@@ -498,6 +498,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <ReservationFollowUpPipelineIcons
                 snapshot={followUpPipelineSnapshot}
                 disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
+                onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
               />
             </div>
           </div>
@@ -506,7 +507,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           {(() => {
             if (hideAssignedTourUi) {
               return (
-                <div className="flex items-start gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-800 min-w-0 flex-1">
                     <span className="text-xs font-medium text-gray-600 shrink-0">{t('card.registrationDateLabel')}</span>
                     <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
@@ -535,8 +536,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             const v = tourInfo?.vehicleName && tourInfo.vehicleName !== '-' ? tourInfo.vehicleName : '-'
             const assignedN = tourInfo?.totalPeople ?? null
             return (
-              <div className="flex items-start gap-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-tight text-gray-800 min-w-0 flex-1">
+              <div className="flex items-center gap-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-none text-gray-800 min-w-0 flex-1">
                   <button
                     type="button"
                     disabled={!effectiveTourId}
@@ -558,13 +559,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     {guideAssistantLine}
                   </span>
                   <span className="inline-flex max-w-[7rem] items-center gap-0.5 text-gray-800 min-w-0" title={v}>
-                    <span className="shrink-0 text-[13px] leading-none select-none" aria-hidden>
-                      🚗
+                    <span className="inline-flex shrink-0 items-center text-[13px] select-none" aria-hidden>
+                      🚌
                     </span>
-                    <span className="min-w-0 truncate">{v}</span>
+                    <span className="min-w-0 truncate leading-snug">{v}</span>
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-0.5 tabular-nums text-gray-700" title={t('card.assignedTourBasic')}>
-                    <span className="shrink-0 text-[13px] leading-none select-none" aria-hidden>
+                    <span className="inline-flex shrink-0 items-center text-[13px] select-none" aria-hidden>
                       👥
                     </span>
                     {assignedN != null ? assignedN : '-'}
@@ -1070,6 +1071,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             <ReservationFollowUpPipelineIcons
               snapshot={followUpPipelineSnapshot}
               disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
+              onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
             />
           </div>
           </div>

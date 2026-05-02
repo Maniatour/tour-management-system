@@ -335,6 +335,52 @@ export function isReservationTourDatePastLocal(d: string | null | undefined): bo
   return tour.getTime() < todayStart.getTime()
 }
 
+/** 예약 상태가 확정(confirmed)인지 */
+export function isReservationStatusConfirmed(status: string | null | undefined): boolean {
+  const s = String(status ?? '').trim().toLowerCase()
+  return s === 'confirmed'
+}
+
+/**
+ * 투어 시작 시각(로컬) epoch ms. tourDate YYYY-MM-DD + tourTime `HH:MM`(선택).
+ * 시간이 없으면 해당일 00:00 로컬.
+ */
+export function reservationTourStartTimestampMsLocal(input: {
+  tourDate?: string | null
+  tourTime?: string | null
+}): number | null {
+  const dk = normalizeTourDateKey(input.tourDate)
+  const m = dk.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  const tt = String(input.tourTime ?? '').trim()
+  let hh = 0
+  let mm = 0
+  const tm = tt.match(/^(\d{1,2}):(\d{2})/)
+  if (tm) {
+    hh = Math.min(23, Math.max(0, parseInt(tm[1], 10)))
+    mm = Math.min(59, Math.max(0, parseInt(tm[2], 10)))
+  }
+  const dt = new Date(y, mo - 1, d, hh, mm, 0, 0)
+  if (Number.isNaN(dt.getTime())) return null
+  return dt.getTime()
+}
+
+/** 투어 시작 전이며, 지금부터 투어 시작까지가 48시간 이내인지(로컬 시각 기준). */
+export function isWithin48HoursBeforeTourStartLocal(input: {
+  tourDate?: string | null
+  tourTime?: string | null
+}): boolean {
+  const start = reservationTourStartTimestampMsLocal(input)
+  if (start == null) return false
+  const now = Date.now()
+  const ms48h = 48 * 60 * 60 * 1000
+  if (start <= now) return false
+  return start - now <= ms48h
+}
+
 /** 로컬 달력 기준 오늘 날짜 YYYY-MM-DD */
 export function localCalendarDateKeyToday(): string {
   const now = new Date()
