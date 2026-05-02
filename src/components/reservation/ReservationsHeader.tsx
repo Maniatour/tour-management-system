@@ -2,7 +2,7 @@
 
 import React from "react"
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Archive } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Archive, ListChecks } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
 
@@ -23,6 +23,9 @@ interface ReservationsHeaderProps {
   onCardLayoutChange?: (layout: 'standard' | 'simple') => void
   /** soft-delete(status=deleted) 예약 목록 모달 */
   onOpenDeletedReservations?: () => void
+  /** Follow-up 단계별 대기 예약 모달 */
+  onOpenFollowUpQueue?: () => void
+  followUpQueueCount?: number
 }
 
 export default function ReservationsHeader({
@@ -39,6 +42,8 @@ export default function ReservationsHeader({
   cardLayout = 'standard',
   onCardLayoutChange,
   onOpenDeletedReservations,
+  onOpenFollowUpQueue,
+  followUpQueueCount = 0,
 }: ReservationsHeaderProps) {
   const t = useTranslations('reservations')
 
@@ -146,6 +151,26 @@ export default function ReservationsHeader({
               {actionRequiredCount > 0 && (
                 <span className="inline-flex items-center justify-center min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-xs bg-white/20">
                   {actionRequiredCount}
+                </span>
+              )}
+            </button>
+          )}
+          {typeof onOpenFollowUpQueue === 'function' && (
+            <button
+              type="button"
+              onClick={onOpenFollowUpQueue}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium flex-shrink-0 ${
+                followUpQueueCount > 0
+                  ? 'bg-teal-600 text-white hover:bg-teal-700'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              title={t('followUpPipeline.headerButton')}
+            >
+              <ListChecks size={16} />
+              <span className="hidden sm:inline">{t('followUpPipeline.headerButton')}</span>
+              {followUpQueueCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-xs bg-white/20 tabular-nums">
+                  {followUpQueueCount}
                 </span>
               )}
             </button>

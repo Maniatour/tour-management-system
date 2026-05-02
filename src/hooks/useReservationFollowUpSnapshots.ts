@@ -1,0 +1,157 @@
+'use client'
+
+import { useState, useEffect, useMemo } from 'react'
+import { supabase } from '@/lib/supabase'
+import {
+  computeNeedsResidentFlow,
+  emailLogStatusSuccess,
+  type ReservationFollowUpPipelineSnapshot,
+} from '@/lib/reservationFollowUpPipeline'
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+const CHUNK = 100
+
+type ReservationLite = { id: string; productId: string }
+
+/**
+ * 예약 카드 Follow-up 파이프라인 표시용: email_logs + (해당 시) 거주 확인 토큰/제출.
+ */
+export function useReservationFollowUpSnapshots(
+  reservations: ReservationLite[],
+  products: Array<{ id: string; product_code?: string | null }>
+): {
+  snapshotsByReservationId: Map<string, ReservationFollowUpPipelineSnapshot>
+  loading: boolean
+} {
+  const idsKey = useMemo(() => {
+    const ids = [...new Set(reservations.map((r) => String(r.id ?? '').trim()).filter(Boolean))]
+    ids.sort()
+    return ids.join('\u001f')
+  }, [reservations])
+
+  const productFingerprint = useMemo(() => {
+    return reservations
+      .map((r) => {
+        const pid = String(r.productId ?? '').trim()
+        const p = products.find((x) => x.id === pid)
+        return `${r.id}:${p?.product_code ?? ''}`
+      })
+      .sort()
+      .join('|')
+  }, [reservations, products])
+
+  const [snapshotsByReservationId, setSnapshotsByReservationId] = useState<
+    Map<string, ReservationFollowUpPipelineSnapshot>
+  >(new Map())
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const ids = idsKey.split('\u001f').filter(Boolean)
+    if (ids.length === 0) {
+      setSnapshotsByReservationId(new Map())
+      return
+    }
+
+    const productCodeByReservationId = new Map<string, string | null>()
+    for (const r of reservations) {
+      const pid = String(r.productId ?? '').trim()
+      const p = products.find((x) => x.id === pid)
+      productCodeByReservationId.set(r.id, p?.product_code ?? null)
+    }
+
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      try {
+        const confirmationSent = new Set<string>()
+        const residentInquirySent = new Set<string>()
+        const departureSent = new Set<string>()
+        const pickupSent = new Set<string>()
+
+        for (const part of chunk(ids, CHUNK)) {
+          const { data: logs, error } = await supabase
+            .from('email_logs')
+            .select('reservation_id,email_type,status')
+            .in('reservation_id', part)
+
+          if (error) throw error
+          for (const row of logs || []) {
+            const rid = String((row as { reservation_id?: string }).reservation_id ?? '')
+            if (!rid || !emailLogStatusSuccess((row as { status?: string }).status)) continue
+            const t = String((row as { email_type?: string }).email_type ?? '')
+            if (t === 'confirmation') confirmationSent.add(rid)
+            if (t === 'resident_inquiry') residentInquirySent.add(rid)
+            if (t === 'departure') departureSent.add(rid)
+            if (t === 'pickup') pickupSent.add(rid)
+          }
+        }
+
+        const guestDone = new Set<string>()
+        for (const part of chunk(ids, CHUNK)) {
+          const { data: tokens, error: tokErr } = await supabase
+            .from('resident_check_tokens')
+            .select('id,reservation_id,completed_at')
+            .in('reservation_id', part)
+
+          if (tokErr) throw tokErr
+          const tokenRows = (tokens || []) as Array<{
+            id: string
+            reservation_id: string
+            completed_at: string | null
+          }>
+          const tokenIds = tokenRows.map((t) => t.id).filter(Boolean)
+          const agreedTokenIds = new Set<string>()
+          if (tokenIds.length > 0) {
+            for (const tp of chunk(tokenIds, CHUNK)) {
+              const { data: subs, error: subErr } = await supabase
+                .from('resident_check_submissions')
+                .select('token_id, agreed')
+                .in('token_id', tp)
+              if (subErr) throw subErr
+              for (const s of subs || []) {
+                const row = s as { token_id?: string; agreed?: boolean }
+                if (row.agreed && row.token_id) agreedTokenIds.add(row.token_id)
+              }
+            }
+          }
+          for (const t of tokenRows) {
+            const rid = t.reservation_id
+            if (t.completed_at) guestDone.add(rid)
+            else if (agreedTokenIds.has(t.id)) guestDone.add(rid)
+          }
+        }
+
+        const next = new Map<string, ReservationFollowUpPipelineSnapshot>()
+        for (const rid of ids) {
+          const code = productCodeByReservationId.get(rid) ?? null
+          const needs = computeNeedsResidentFlow(code)
+          next.set(rid, {
+            confirmationSent: confirmationSent.has(rid),
+            residentInquirySent: residentInquirySent.has(rid),
+            guestResidentFlowCompleted: guestDone.has(rid),
+            departureSent: departureSent.has(rid),
+            pickupSent: pickupSent.has(rid),
+            needsResidentFlow: needs,
+          })
+        }
+        if (!cancelled) setSnapshotsByReservationId(next)
+      } catch (e) {
+        console.error('useReservationFollowUpSnapshots:', e)
+        if (!cancelled) setSnapshotsByReservationId(new Map())
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [idsKey, productFingerprint, reservations, products])
+
+  return { snapshotsByReservationId, loading }
+}

@@ -320,6 +320,42 @@ export function normalizeTourDateKey(d: string | null | undefined): string {
   return s.split('T')[0] ?? ''
 }
 
+/** 로컬 자정 기준으로 투어일이 오늘보다 이전이면 true(당일 제외). 파싱 불가·빈 값은 false. */
+export function isReservationTourDatePastLocal(d: string | null | undefined): boolean {
+  const key = normalizeTourDateKey(d)
+  const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return false
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const day = Number(m[3])
+  const tour = new Date(y, mo - 1, day)
+  if (Number.isNaN(tour.getTime())) return false
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return tour.getTime() < todayStart.getTime()
+}
+
+/** 로컬 달력 기준 오늘 날짜 YYYY-MM-DD */
+export function localCalendarDateKeyToday(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const mo = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${y}-${mo}-${day}`
+}
+
+/**
+ * 예약 등록 시각(예: created_at)의 로컬 날짜가 오늘보다 이전이면 true.
+ * 파싱 불가·빈 값은 false(목록에서 숨기지 않음).
+ */
+export function isReservationAddedStrictlyBeforeTodayLocal(
+  addedAt: string | null | undefined
+): boolean {
+  const addedKey = isoToLocalCalendarDateKey(addedAt)
+  if (!addedKey) return false
+  return addedKey < localCalendarDateKeyToday()
+}
+
 export function isoToLocalCalendarDateKey(iso: string | null | undefined): string | null {
   if (iso == null || String(iso).trim() === '') return null
   const date = new Date(iso)

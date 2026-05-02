@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { X, Search, SlidersHorizontal, Printer, Archive, ChevronDown } from 'lucide-react'
+import { X, Search, SlidersHorizontal, Printer, Archive, ChevronDown, ListChecks } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
@@ -19,6 +19,7 @@ import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import ReservationCalendar from '@/components/ReservationCalendar'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import { useReservationData } from '@/hooks/useReservationData'
+import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
@@ -34,6 +35,7 @@ import { DateGroupHeader } from '@/components/reservation/DateGroupHeader'
 import ReservationsEmptyState from '@/components/reservation/ReservationsEmptyState'
 import ReservationsPagination from '@/components/reservation/ReservationsPagination'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
+import ReservationFollowUpQueueModal from '@/components/reservation/ReservationFollowUpQueueModal'
 import ReservationActionRequiredModal from '@/components/reservation/ReservationActionRequiredModal'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
@@ -50,7 +52,9 @@ import {
   getReservationPartySize,
   normalizeTourDateKey,
   isoToLocalCalendarDateKey,
-  getStatusLabel
+  getStatusLabel,
+  isReservationTourDatePastLocal,
+  isReservationAddedStrictlyBeforeTodayLocal,
 } from '@/utils/reservationUtils'
 import {
   isTourDeletedStatus,
@@ -72,6 +76,7 @@ import {
   reservationMatchesExtendedPricingMismatchCriteria,
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
+import { reservationNeedsAnyFollowUpAttention } from '@/lib/reservationFollowUpPipeline'
 
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -555,6 +560,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   // ??? ?? ??? ?? ????? ???????? ?????)
   const [showActionRequiredModal, setShowActionRequiredModal] = useState(false)
+  const [followUpQueueModalOpen, setFollowUpQueueModalOpen] = useState(false)
   const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
 
@@ -1108,6 +1114,28 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   )
   
   const filteredReservations = filteredAndSortedReservations
+
+  const reservationsLiteForFollowUp = useMemo(
+    () => filteredReservations.map((r) => ({ id: r.id, productId: r.productId })),
+    [filteredReservations]
+  )
+
+  const { snapshotsByReservationId: followUpSnapshotsByReservationId, loading: followUpSnapshotsLoading } =
+    useReservationFollowUpSnapshots(
+      reservationsLiteForFollowUp,
+      (products as Array<{ id: string; product_code?: string | null }>) || []
+    )
+
+  const followUpQueueUnionCount = useMemo(() => {
+    let n = 0
+    for (const r of filteredReservations) {
+      if (isReservationTourDatePastLocal(r.tourDate)) continue
+      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
+      const snap = followUpSnapshotsByReservationId.get(r.id)
+      if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
+    }
+    return n
+  }, [filteredReservations, followUpSnapshotsByReservationId])
   
   // 7????? ?????????? ??? ????? ?????(??? ???)
   const getWeekStartDate = useCallback((weekOffset: number) => {
@@ -2752,6 +2780,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         actionRequiredCount={actionRequiredCount}
         onOpenFilter={() => setFilterModalOpen(true)}
         onOpenDeletedReservations={() => setShowDeletedReservationsModal(true)}
+        onOpenFollowUpQueue={() => setFollowUpQueueModalOpen(true)}
+        followUpQueueCount={followUpQueueUnionCount}
         cardLayout={cardLayout}
         onCardLayoutChange={setCardLayout}
       />
@@ -2778,6 +2808,19 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         >
           <SlidersHorizontal className="w-4 h-4" />
           <span>???</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFollowUpQueueModalOpen(true)}
+          className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium flex-shrink-0 ${
+            followUpQueueUnionCount > 0 ? 'bg-teal-600 text-white hover:bg-teal-700' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+          }`}
+          title={t('followUpPipeline.headerButton')}
+        >
+          <ListChecks className="w-4 h-4 shrink-0" />
+          {followUpQueueUnionCount > 0 ? (
+            <span className="tabular-nums">{followUpQueueUnionCount}</span>
+          ) : null}
         </button>
         <button
           type="button"
@@ -2972,6 +3015,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                     onReservationOptionsMutated={handleReservationOptionsMutated}
                     reshowPickupSummaryRequest={pickupSummaryReshowRequest}
                     onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+                    followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
                   />
                 )
 
@@ -3229,6 +3273,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                         onReservationOptionsMutated={handleReservationOptionsMutated}
                         reshowPickupSummaryRequest={pickupSummaryReshowRequest}
                         onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+                    followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
                   />
                 ))}
               </div>
@@ -3460,6 +3505,69 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         tourIdByReservationId={tourIdByReservationId}
         reshowPickupSummaryRequest={pickupSummaryReshowRequest}
         onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+      />
+
+      <ReservationFollowUpQueueModal
+        isOpen={followUpQueueModalOpen}
+        onClose={() => setFollowUpQueueModalOpen(false)}
+        reservations={filteredReservations as Reservation[]}
+        customers={(customers as Customer[]) || []}
+        snapshotsByReservationId={followUpSnapshotsByReservationId}
+        loadingSnapshots={followUpSnapshotsLoading}
+        renderSimpleReservationCard={(reservation) => (
+          <ReservationCardItem
+            reservation={reservation}
+            customers={(customers as Customer[]) || []}
+            products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
+            channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+            pickupHotels={
+              (pickupHotels as Array<{
+                id: string
+                hotel?: string | null
+                name?: string | null
+                name_ko?: string | null
+                pick_up_location?: string | null
+              }>) || []
+            }
+            productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+            optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
+            tourInfoMap={tourInfoMap}
+            reservationPricingMap={reservationPricingMap}
+            locale={locale}
+            emailDropdownOpen={emailDropdownOpen}
+            sendingEmail={sendingEmail}
+            onPricingInfoClick={handlePricingInfoClick}
+            onCreateTour={handleCreateTour}
+            onPickupTimeClick={handlePickupTimeClick}
+            onPickupHotelClick={handlePickupHotelClick}
+            onPaymentClick={handlePaymentClick}
+            onDetailClick={handleDetailClick}
+            onReceiptClick={handleReceiptClick}
+            onReviewClick={handleReviewClick}
+            onEmailPreview={handleOpenEmailPreview}
+            onEmailLogsClick={handleEmailLogsClick}
+            onEmailDropdownToggle={handleEmailDropdownToggle}
+            onEditClick={(id) => {
+              handleEditClick(id)
+              setFollowUpQueueModalOpen(false)
+            }}
+            onCustomerClick={handleCustomerClick}
+            onRefreshReservations={refreshReservations}
+            onStatusChange={handleStatusChange}
+            generatePriceCalculation={generatePriceCalculation}
+            getGroupColorClasses={getGroupColorClasses}
+            getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
+            choicesCacheRef={choicesCacheRef}
+            linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
+            cardLayout="simple"
+            onOpenTourDetailModal={handleOpenTourDetailModal}
+            reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
+            onReservationOptionsMutated={handleReservationOptionsMutated}
+            reshowPickupSummaryRequest={pickupSummaryReshowRequest}
+            onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+            followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+          />
+        )}
       />
 
       {/* ??? ??? ??? ?? */}
@@ -3729,6 +3837,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             onReservationOptionsMutated={handleReservationOptionsMutated}
             reshowPickupSummaryRequest={pickupSummaryReshowRequest}
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
+            followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
           />
         )}
       />

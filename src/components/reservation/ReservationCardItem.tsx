@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound } from 'lucide-react'
+import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound, CheckCircle2, CircleCheck, XCircle, HelpCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -24,6 +24,9 @@ import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
+import { ReservationFollowUpPipelineIcons } from '@/components/reservation/ReservationFollowUpPipelineIcons'
+import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
+import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
 import type { Reservation, Customer } from '@/types/reservation'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
@@ -60,6 +63,15 @@ function formatTourDateMmDdYyyy(tourDate: string | null | undefined): string {
     return `${mm}/${dd}/${d.getFullYear()}`
   }
   return raw
+}
+
+function simpleCardTourStatusGlyph(statusRaw: string): React.ReactNode {
+  const x = statusRaw.trim().toLowerCase()
+  const cls = 'h-3.5 w-3.5 shrink-0'
+  if (x === 'confirmed') return <CheckCircle2 className={`${cls} text-emerald-600`} aria-hidden />
+  if (x === 'completed') return <CircleCheck className={`${cls} text-blue-600`} aria-hidden />
+  if (x === 'cancelled' || x === 'canceled') return <XCircle className={`${cls} text-red-600`} aria-hidden />
+  return <HelpCircle className={`${cls} text-gray-400`} aria-hidden />
 }
 
 function formatRegistrationDateForCard(reservation: Reservation, locale: string): string {
@@ -176,7 +188,9 @@ interface ReservationCardItemProps {
   onOpenTourDetailModal?: (tourId: string) => void
   reservationOptionsPresenceByReservationId?: Map<string, boolean>
   onReservationOptionsMutated?: (reservationId: string) => void
-  /** ?? ?? ? ?? ?? ?? ?? ? ??? ?? ? ? ??? nonce? ?? */
+  /** 이메일 Follow-up 파이프라인(컨펌·거주·출발·픽업) 표시용 스냅샷 */
+  followUpPipelineSnapshot?: ReservationFollowUpPipelineSnapshot | null
+  /** 픽업 요약 모달 재표시 요청 */
   reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
   onReshowPickupSummaryConsumed?: () => void
 }
@@ -237,7 +251,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   reservationOptionsPresenceByReservationId: _reservationOptionsPresence,
   onReservationOptionsMutated: _onReservationOptionsMutated,
   reshowPickupSummaryRequest = null,
-  onReshowPickupSummaryConsumed
+  onReshowPickupSummaryConsumed,
+  followUpPipelineSnapshot = null
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -459,23 +474,31 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             </div>
           </div>
 
-          {/* Row 2: tour date + product name (products.name) with choice badges inline — 취소 예약도 동일 */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-            <span className="shrink-0 text-sm font-medium text-gray-900">
-              {formatTourDateMmDdYyyy(reservation.tourDate)}
-            </span>
-            <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-1 text-sm font-medium text-gray-900">
-              <span className="min-w-0 max-w-full break-words line-clamp-2">
-                {getProductName(reservation.productId, products as any || [])}
+          {/* Row 2: 투어일·상품 + Follow-up 아이콘(오른쪽 정렬) — 한 줄 우선 */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-2 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium text-gray-900 tabular-nums">
+                {formatTourDateMmDdYyyy(reservation.tourDate)}
               </span>
-              <span className="inline-flex flex-wrap items-center gap-1 text-sm font-normal">
-                <ChoicesDisplay
-                  reservation={reservation}
-                  getGroupColorClasses={getGroupColorClasses}
-                  getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
-                  choicesCacheRef={choicesCacheRef}
-                />
-              </span>
+              <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-1 overflow-hidden text-xs font-medium text-gray-900">
+                <span className="min-w-0 truncate">
+                  {getProductName(reservation.productId, products as any || [])}
+                </span>
+                <span className="inline-flex shrink-0 flex-nowrap items-center gap-1 font-normal [&>span]:!px-1.5 [&>span]:!py-0.5 [&>span]:!text-[11px] [&>span]:!leading-tight">
+                  <ChoicesDisplay
+                    reservation={reservation}
+                    getGroupColorClasses={getGroupColorClasses}
+                    getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                    choicesCacheRef={choicesCacheRef}
+                  />
+                </span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center">
+              <ReservationFollowUpPipelineIcons
+                snapshot={followUpPipelineSnapshot}
+                disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
+              />
             </div>
           </div>
 
@@ -505,20 +528,15 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             }
             const tourInfo = effectiveTourId ? tourInfoMap.get(effectiveTourId) : undefined
             const tourStatusLabel = tourInfo?.status ?? '-'
-            const tourStatusTone = (st: string) => {
-              const x = st.toLowerCase()
-              if (x === 'confirmed') return 'bg-green-100 text-green-800'
-              if (x === 'completed') return 'bg-blue-100 text-blue-800'
-              if (x === 'cancelled' || x === 'canceled') return 'bg-red-100 text-red-800'
-              return 'bg-gray-100 text-gray-800'
-            }
-            const g = tourInfo?.guideName && tourInfo.guideName !== '-' ? tourInfo.guideName : '-'
-            const a = tourInfo?.assistantName && tourInfo.assistantName !== '-' ? tourInfo.assistantName : '-'
+            const g = tourInfo?.guideName && tourInfo.guideName !== '-' ? tourInfo.guideName.trim() : ''
+            const a = tourInfo?.assistantName && tourInfo.assistantName !== '-' ? tourInfo.assistantName.trim() : ''
+            const guideAssistantLine =
+              g && a ? `${g} / ${a}` : g || a || '-'
             const v = tourInfo?.vehicleName && tourInfo.vehicleName !== '-' ? tourInfo.vehicleName : '-'
             const assignedN = tourInfo?.totalPeople ?? null
             return (
               <div className="flex items-start gap-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-800 min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-tight text-gray-800 min-w-0 flex-1">
                   <button
                     type="button"
                     disabled={!effectiveTourId}
@@ -533,18 +551,30 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   >
                     <Flag className="h-4 w-4" />
                   </button>
-                  <span className="max-w-[4.5rem] truncate" title={g}>{g}</span>
-                  <span className="text-gray-300">·</span>
-                  <span className="max-w-[4.5rem] truncate" title={a}>{a}</span>
-                  <span className="text-gray-300">·</span>
-                  <span className="max-w-[5rem] truncate" title={v}>{v}</span>
-                  <span className="text-gray-300">·</span>
-                  <span className="inline-flex items-center gap-0.5 tabular-nums text-gray-700" title={t('card.assignedTourBasic')}>
-                    <Users className="h-3 w-3 shrink-0 text-gray-500" aria-hidden />
+                  <span
+                    className="max-w-[11rem] truncate tracking-tight"
+                    title={guideAssistantLine}
+                  >
+                    {guideAssistantLine}
+                  </span>
+                  <span className="inline-flex max-w-[7rem] items-center gap-0.5 text-gray-800 min-w-0" title={v}>
+                    <span className="shrink-0 text-[13px] leading-none select-none" aria-hidden>
+                      🚗
+                    </span>
+                    <span className="min-w-0 truncate">{v}</span>
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-0.5 tabular-nums text-gray-700" title={t('card.assignedTourBasic')}>
+                    <span className="shrink-0 text-[13px] leading-none select-none" aria-hidden>
+                      👥
+                    </span>
                     {assignedN != null ? assignedN : '-'}
                   </span>
-                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${tourStatusTone(tourStatusLabel)}`}>
-                    {tourStatusLabel}
+                  <span
+                    className="inline-flex shrink-0 items-center"
+                    title={tourStatusLabel}
+                    aria-label={tourStatusLabel}
+                  >
+                    {simpleCardTourStatusGlyph(tourStatusLabel)}
                   </span>
                 </div>
                 <button
@@ -952,11 +982,12 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             })()}
           </div>
         </div>
-        
-        {/* ?? ?? */}
+
+        {/* 두 번째 줄: 고객 요약 + Follow-up 아이콘(오른쪽) */}
         <div className="mb-2">
+          <div className="flex items-start justify-between gap-2">
           <div 
-            className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
+            className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2 min-w-0 flex-1"
             onClick={(e) => {
               e.stopPropagation()
               const customer = customers.find(c => c.id === reservation.customerId)
@@ -1034,6 +1065,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 </span>
               )
             })()}
+          </div>
+          <div className="shrink-0 pt-0.5">
+            <ReservationFollowUpPipelineIcons
+              snapshot={followUpPipelineSnapshot}
+              disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
+            />
+          </div>
           </div>
           <a 
             href={`mailto:${customers.find(c => c.id === reservation.customerId)?.email || ''}`}
@@ -1487,7 +1525,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     </div>
   )
 }, (prevProps, nextProps) => {
-  // ?????? ??: reservation.id? ?? props? ???? ???? ???? ??
+  const pa = prevProps.followUpPipelineSnapshot
+  const na = nextProps.followUpPipelineSnapshot
+  const snapSame =
+    (!pa && !na) ||
+    (!!pa &&
+      !!na &&
+      pa.confirmationSent === na.confirmationSent &&
+      pa.residentInquirySent === na.residentInquirySent &&
+      pa.guestResidentFlowCompleted === na.guestResidentFlowCompleted &&
+      pa.departureSent === na.departureSent &&
+      pa.pickupSent === na.pickupSent &&
+      pa.needsResidentFlow === na.needsResidentFlow)
+
   return (
     prevProps.reservation.id === nextProps.reservation.id &&
     prevProps.cardLayout === nextProps.cardLayout &&
@@ -1497,6 +1547,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     prevProps.reservation.tourId === nextProps.reservation.tourId &&
     prevProps.linkedTourId === nextProps.linkedTourId &&
     prevProps.tourInfoMap === nextProps.tourInfoMap &&
-    prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id)
+    prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id) &&
+    snapSame
   )
 })
