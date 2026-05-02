@@ -14,6 +14,8 @@ type Props = {
   sentBy: string | null
   uiLocale?: 'ko' | 'en'
   className?: string
+  /** 발송 성공 알림 직후 (예: 폼 내 Follow-up 파이프라인 갱신) */
+  onSendSuccess?: () => void
 }
 
 export function ReservationFormEmailSendButtons({
@@ -22,6 +24,7 @@ export function ReservationFormEmailSendButtons({
   sentBy,
   uiLocale = 'ko',
   className = '',
+  onSendSuccess,
 }: Props) {
   const [sending, setSending] = useState<ReservationFormEmailSendKind | null>(null)
   const [previewKind, setPreviewKind] = useState<ReservationFormEmailSendKind | null>(null)
@@ -108,8 +111,18 @@ export function ReservationFormEmailSendButtons({
         )
       }
       alert(uiLocale === 'en' ? 'Email sent successfully.' : '이메일이 발송되었습니다.')
+      onSendSuccess?.()
     },
-    [customers, reservation.id, reservation.pickUpTime, reservation.tourDate, reservation.customerId, sentBy, uiLocale]
+    [
+      customers,
+      reservation.id,
+      reservation.pickUpTime,
+      reservation.tourDate,
+      reservation.customerId,
+      sentBy,
+      uiLocale,
+      onSendSuccess,
+    ]
   )
 
   const btnClass =

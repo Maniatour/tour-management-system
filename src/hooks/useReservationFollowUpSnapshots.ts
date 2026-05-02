@@ -19,11 +19,13 @@ const CHUNK = 100
 type ReservationLite = { id: string; productId: string }
 
 /**
- * 예약 카드 Follow-up 파이프라인 표시용: email_logs + (해당 시) 거주 확인 토큰/제출.
+ * 예약 카드 Follow-up 파이프라인 표시용: email_logs + (해당 시) 거주 확인 토큰/제출 + 수동 완료(다른 채널).
  */
 export function useReservationFollowUpSnapshots(
   reservations: ReservationLite[],
-  products: Array<{ id: string; product_code?: string | null }>
+  products: Array<{ id: string; product_code?: string | null }>,
+  /** 수동 완료 저장 후 스냅샷 재조회 */
+  refreshToken = 0
 ): {
   snapshotsByReservationId: Map<string, ReservationFollowUpPipelineSnapshot>
   loading: boolean
@@ -92,6 +94,33 @@ export function useReservationFollowUpSnapshots(
         }
 
         const guestDone = new Set<string>()
+        const manualByReservationId = new Map<
+          string,
+          {
+            confirmation_manual: boolean
+            resident_manual: boolean
+            departure_manual: boolean
+            pickup_manual: boolean
+          }
+        >()
+        for (const part of chunk(ids, CHUNK)) {
+          const { data: manualRows, error: manErr } = await supabase
+            .from('reservation_follow_up_pipeline_manual')
+            .select('reservation_id, confirmation_manual, resident_manual, departure_manual, pickup_manual')
+            .in('reservation_id', part)
+          if (manErr) throw manErr
+          for (const row of manualRows || []) {
+            const rid = String((row as { reservation_id?: string }).reservation_id ?? '')
+            if (!rid) continue
+            manualByReservationId.set(rid, {
+              confirmation_manual: !!(row as { confirmation_manual?: boolean }).confirmation_manual,
+              resident_manual: !!(row as { resident_manual?: boolean }).resident_manual,
+              departure_manual: !!(row as { departure_manual?: boolean }).departure_manual,
+              pickup_manual: !!(row as { pickup_manual?: boolean }).pickup_manual,
+            })
+          }
+        }
+
         for (const part of chunk(ids, CHUNK)) {
           const { data: tokens, error: tokErr } = await supabase
             .from('resident_check_tokens')
@@ -130,13 +159,22 @@ export function useReservationFollowUpSnapshots(
         for (const rid of ids) {
           const code = productCodeByReservationId.get(rid) ?? null
           const needs = computeNeedsResidentFlow(code)
+          const m = manualByReservationId.get(rid)
+          const mc = m?.confirmation_manual ?? false
+          const mr = m?.resident_manual ?? false
+          const md = m?.departure_manual ?? false
+          const mp = m?.pickup_manual ?? false
           next.set(rid, {
-            confirmationSent: confirmationSent.has(rid),
-            residentInquirySent: residentInquirySent.has(rid),
-            guestResidentFlowCompleted: guestDone.has(rid),
-            departureSent: departureSent.has(rid),
-            pickupSent: pickupSent.has(rid),
+            confirmationSent: confirmationSent.has(rid) || mc,
+            residentInquirySent: residentInquirySent.has(rid) || (needs && mr),
+            guestResidentFlowCompleted: guestDone.has(rid) || (needs && mr),
+            departureSent: departureSent.has(rid) || md,
+            pickupSent: pickupSent.has(rid) || mp,
             needsResidentFlow: needs,
+            manualConfirmation: mc,
+            manualResident: mr,
+            manualDeparture: md,
+            manualPickup: mp,
           })
         }
         if (!cancelled) setSnapshotsByReservationId(next)
@@ -151,7 +189,7 @@ export function useReservationFollowUpSnapshots(
     return () => {
       cancelled = true
     }
-  }, [idsKey, productFingerprint, reservations, products])
+  }, [idsKey, productFingerprint, reservations, products, refreshToken])
 
   return { snapshotsByReservationId, loading }
 }

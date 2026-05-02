@@ -25,7 +25,7 @@ import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusS
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import { ReservationFollowUpPipelineIcons } from '@/components/reservation/ReservationFollowUpPipelineIcons'
-import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
+import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
 import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
 import type { Reservation, Customer } from '@/types/reservation'
 
@@ -190,6 +190,12 @@ interface ReservationCardItemProps {
   onReservationOptionsMutated?: (reservationId: string) => void
   /** 이메일 Follow-up 파이프라인(컨펌·거주·출발·픽업) 표시용 스냅샷 */
   followUpPipelineSnapshot?: ReservationFollowUpPipelineSnapshot | null
+  /** 간단 카드: 파이프라인 아이콘 우클릭 시 다른 채널 완료 표시 */
+  onFollowUpPipelineManualChange?: (
+    reservationId: string,
+    step: FollowUpPipelineStepKey,
+    action: 'mark' | 'clear'
+  ) => void | Promise<void>
   /** 픽업 요약 모달 재표시 요청 */
   reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
   onReshowPickupSummaryConsumed?: () => void
@@ -252,7 +258,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onReservationOptionsMutated: _onReservationOptionsMutated,
   reshowPickupSummaryRequest = null,
   onReshowPickupSummaryConsumed,
-  followUpPipelineSnapshot = null
+  followUpPipelineSnapshot = null,
+  onFollowUpPipelineManualChange
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -499,6 +506,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 snapshot={followUpPipelineSnapshot}
                 disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
                 onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
+                {...(onFollowUpPipelineManualChange
+                  ? {
+                      allowManualCompletion: true as const,
+                      onManualStepChange: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') =>
+                        onFollowUpPipelineManualChange(reservation.id, step, action),
+                    }
+                  : {})}
               />
             </div>
           </div>
@@ -1072,6 +1086,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               snapshot={followUpPipelineSnapshot}
               disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
               onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
+              {...(onFollowUpPipelineManualChange
+                ? {
+                    allowManualCompletion: true as const,
+                    onManualStepChange: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') =>
+                      onFollowUpPipelineManualChange(reservation.id, step, action),
+                  }
+                : {})}
             />
           </div>
           </div>
@@ -1538,7 +1559,11 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
       pa.guestResidentFlowCompleted === na.guestResidentFlowCompleted &&
       pa.departureSent === na.departureSent &&
       pa.pickupSent === na.pickupSent &&
-      pa.needsResidentFlow === na.needsResidentFlow)
+      pa.needsResidentFlow === na.needsResidentFlow &&
+      pa.manualConfirmation === na.manualConfirmation &&
+      pa.manualResident === na.manualResident &&
+      pa.manualDeparture === na.manualDeparture &&
+      pa.manualPickup === na.manualPickup)
 
   return (
     prevProps.reservation.id === nextProps.reservation.id &&
@@ -1550,6 +1575,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     prevProps.linkedTourId === nextProps.linkedTourId &&
     prevProps.tourInfoMap === nextProps.tourInfoMap &&
     prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id) &&
+    prevProps.onFollowUpPipelineManualChange === nextProps.onFollowUpPipelineManualChange &&
     snapSame
   )
 })

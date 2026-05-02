@@ -2062,7 +2062,13 @@
       "step2IconTitle": "거주·패스 안내 및 고객 응답",
       "step2SkipTitle": "거주 안내 해당 없음",
       "step3IconTitle": "출발 확정 메일",
-      "step4IconTitle": "픽업 노티피케이션"
+      "step4IconTitle": "픽업 노티피케이션",
+      "manualBadgeTitle": "수동 완료",
+      "pipelineHintManual": "좌클릭: 이메일 미리보기 · 우클릭: 다른 채널로 완료 표시",
+      "contextEmailPreview": "이메일 미리보기",
+      "contextMarkManualOtherChannel": "다른 채널로 완료 표시",
+      "contextClearManualMark": "수동 완료 취소",
+      "contextNoActions": "이 단계에서 선택할 작업이 없습니다."
     },
     "paginationDisplay": "총 {total}개 예약 중 {start}-{end}개 표시",
     "viewCard": "카드",

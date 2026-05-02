@@ -2053,7 +2053,13 @@
       "step2IconTitle": "Residency/pass email & guest response",
       "step2SkipTitle": "No residency flow for this product",
       "step3IconTitle": "Departure confirmation email",
-      "step4IconTitle": "Pickup notification email"
+      "step4IconTitle": "Pickup notification email",
+      "manualBadgeTitle": "Marked manually",
+      "pipelineHintManual": "Left-click: email preview · Right-click: mark done via another channel",
+      "contextEmailPreview": "Email preview",
+      "contextMarkManualOtherChannel": "Mark done (non-email channel)",
+      "contextClearManualMark": "Clear manual mark",
+      "contextNoActions": "No actions for this step."
     },
     "paginationDisplay": "Showing {start}-{end} of {total} reservations",
     "viewCard": "Card",

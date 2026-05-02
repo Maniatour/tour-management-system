@@ -76,7 +76,10 @@ import {
   reservationMatchesExtendedPricingMismatchCriteria,
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
-import { reservationNeedsAnyFollowUpAttention } from '@/lib/reservationFollowUpPipeline'
+import {
+  reservationNeedsAnyFollowUpAttention,
+  type FollowUpPipelineStepKey,
+} from '@/lib/reservationFollowUpPipeline'
 
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -561,6 +564,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   // ??? ?? ??? ?? ????? ???????? ?????)
   const [showActionRequiredModal, setShowActionRequiredModal] = useState(false)
   const [followUpQueueModalOpen, setFollowUpQueueModalOpen] = useState(false)
+  const [followUpPipelineManualRefresh, setFollowUpPipelineManualRefresh] = useState(0)
+  const [followUpFormPipelineRefresh, setFollowUpFormPipelineRefresh] = useState(0)
   const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
 
@@ -1123,8 +1128,76 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   const { snapshotsByReservationId: followUpSnapshotsByReservationId, loading: followUpSnapshotsLoading } =
     useReservationFollowUpSnapshots(
       reservationsLiteForFollowUp,
-      (products as Array<{ id: string; product_code?: string | null }>) || []
+      (products as Array<{ id: string; product_code?: string | null }>) || [],
+      followUpPipelineManualRefresh
     )
+
+  const handleFollowUpPipelineManualChange = useCallback(
+    async (reservationId: string, step: FollowUpPipelineStepKey, action: 'mark' | 'clear') => {
+      const col =
+        step === 'confirmation'
+          ? 'confirmation_manual'
+          : step === 'resident'
+            ? 'resident_manual'
+            : step === 'departure'
+              ? 'departure_manual'
+              : 'pickup_manual'
+
+      const { data: existing, error: selErr } = await supabase
+        .from('reservation_follow_up_pipeline_manual')
+        .select('confirmation_manual, resident_manual, departure_manual, pickup_manual')
+        .eq('reservation_id', reservationId)
+        .maybeSingle()
+
+      if (selErr) {
+        console.error(selErr)
+        alert(locale === 'ko' ? `저장 실패: ${selErr.message}` : `Save failed: ${selErr.message}`)
+        return
+      }
+
+      const base = {
+        confirmation_manual: !!(existing as { confirmation_manual?: boolean } | null)?.confirmation_manual,
+        resident_manual: !!(existing as { resident_manual?: boolean } | null)?.resident_manual,
+        departure_manual: !!(existing as { departure_manual?: boolean } | null)?.departure_manual,
+        pickup_manual: !!(existing as { pickup_manual?: boolean } | null)?.pickup_manual,
+      }
+      base[col as keyof typeof base] = action === 'mark'
+
+      const anyTrue =
+        base.confirmation_manual || base.resident_manual || base.departure_manual || base.pickup_manual
+
+      if (!anyTrue) {
+        if (existing) {
+          const { error } = await supabase
+            .from('reservation_follow_up_pipeline_manual')
+            .delete()
+            .eq('reservation_id', reservationId)
+          if (error) {
+            console.error(error)
+            alert(locale === 'ko' ? `저장 실패: ${error.message}` : `Save failed: ${error.message}`)
+            return
+          }
+        }
+      } else {
+        const { error } = await supabase.from('reservation_follow_up_pipeline_manual').upsert(
+          {
+            reservation_id: reservationId,
+            ...base,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'reservation_id' }
+        )
+        if (error) {
+          console.error(error)
+          alert(locale === 'ko' ? `저장 실패: ${error.message}` : `Save failed: ${error.message}`)
+          return
+        }
+      }
+
+      setFollowUpPipelineManualRefresh((n) => n + 1)
+    },
+    [locale]
+  )
 
   const followUpQueueUnionCount = useMemo(() => {
     let n = 0
@@ -3016,6 +3089,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                     reshowPickupSummaryRequest={pickupSummaryReshowRequest}
                     onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
                     followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+                    {...(cardLayout === 'simple'
+                      ? { onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange }
+                      : {})}
                   />
                 )
 
@@ -3274,6 +3350,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                         reshowPickupSummaryRequest={pickupSummaryReshowRequest}
                         onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
                     followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+                    {...(cardLayout === 'simple'
+                      ? { onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange }
+                      : {})}
                   />
                 ))}
               </div>
@@ -3317,6 +3396,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           onDelete={handleDeleteReservation}
           layout="modal"
           allowPastDateEdit={isSuper}
+          followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
           titleAction={
             editingReservation ? (
               <div className="flex flex-wrap items-center gap-1 sm:gap-2">
@@ -3334,6 +3414,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                   customers={(customers || []) as Customer[]}
                   sentBy={user?.email ?? null}
                   uiLocale={locale === 'en' ? 'en' : 'ko'}
+                  onSendSuccess={() => setFollowUpFormPipelineRefresh((n) => n + 1)}
                 />
               </div>
             ) : undefined
@@ -3566,6 +3647,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             reshowPickupSummaryRequest={pickupSummaryReshowRequest}
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
             followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+            onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
           />
         )}
       />
@@ -3838,6 +3920,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             reshowPickupSummaryRequest={pickupSummaryReshowRequest}
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
             followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
+            onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
           />
         )}
       />

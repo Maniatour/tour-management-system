@@ -5670,6 +5670,41 @@ export type Database = {
           },
         ]
       }
+      reservation_follow_up_pipeline_manual: {
+        Row: {
+          confirmation_manual: boolean
+          departure_manual: boolean
+          pickup_manual: boolean
+          resident_manual: boolean
+          reservation_id: string
+          updated_at: string
+        }
+        Insert: {
+          confirmation_manual?: boolean
+          departure_manual?: boolean
+          pickup_manual?: boolean
+          resident_manual?: boolean
+          reservation_id: string
+          updated_at?: string
+        }
+        Update: {
+          confirmation_manual?: boolean
+          departure_manual?: boolean
+          pickup_manual?: boolean
+          resident_manual?: boolean
+          reservation_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'reservation_follow_up_pipeline_manual_reservation_id_fkey'
+            columns: ['reservation_id']
+            isOneToOne: true
+            referencedRelation: 'reservations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       resident_check_submissions: {
         Row: {
           agreed: boolean

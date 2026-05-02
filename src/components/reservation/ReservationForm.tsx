@@ -253,6 +253,8 @@ interface ReservationFormProps {
   formTitle?: string
   /** 예약 가져오기: 이미 confirmed 등 처리된 항목은 저장만 막고 UI는 동일하게 유지 */
   importSubmitDisabled?: boolean
+  /** Follow-up 파이프라인(컨펌·거주·출발·픽업) 스냅샷 재조회 트리거 — 예: 상단 이메일 발송 성공 시 증가 */
+  followUpPipelineSnapshotRefreshToken?: number
 }
 
 /** 이메일에서 파싱한 금액 문자열 → 숫자 (Price $ 319.41 등) */
@@ -335,6 +337,7 @@ export default function ReservationForm({
   initialNotIncludedAmountFromImport: _initialNotIncludedAmountFromImport,
   formTitle: formTitleOverride,
   importSubmitDisabled = false,
+  followUpPipelineSnapshotRefreshToken = 0,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -4029,6 +4032,29 @@ export default function ReservationForm({
     return Math.max(0, formData.totalPrice - formData.depositAmount)
   }, [formData.totalPrice, formData.depositAmount])
 
+  /** Follow-up 파이프라인·이메일 미리보기용: 폼에 수정 중인 값 반영 */
+  const followUpPipelineReservationMerged = useMemo((): Reservation | null => {
+    if (!reservation || !effectiveReservationId) return null
+    return {
+      ...reservation,
+      status: formData.status as Reservation['status'],
+      productId: formData.productId,
+      tourDate: formData.tourDate,
+      pickUpTime: formData.pickUpTime,
+      channelRN: formData.channelRN,
+      customerId: formData.customerId || reservation.customerId,
+    }
+  }, [
+    reservation,
+    effectiveReservationId,
+    formData.status,
+    formData.productId,
+    formData.tourDate,
+    formData.pickUpTime,
+    formData.channelRN,
+    formData.customerId,
+  ])
+
   // 쿠폰 할인 계산 함수
   const calculateCouponDiscount = useCallback((coupon: CouponRow, subtotal: number) => {
     if (!coupon) return 0
@@ -5787,7 +5813,15 @@ export default function ReservationForm({
             {/* Follow up - 1열 고객 정보 아래 (상세 페이지·예약 수정 모달 공통) */}
             {reservation && effectiveReservationId && (
               <div className="max-lg:order-9 max-lg:mt-4 lg:shrink-0">
-                <ReservationFollowUpSection reservationId={effectiveReservationId} status={formData.status as string} />
+                <ReservationFollowUpSection
+                  reservationId={effectiveReservationId}
+                  status={formData.status as string}
+                  followUpPipelineProductId={formData.productId}
+                  followUpPipelineProducts={products}
+                  followUpPipelineReservation={followUpPipelineReservationMerged}
+                  followUpPipelineCustomers={customers}
+                  followUpPipelineRefreshToken={followUpPipelineSnapshotRefreshToken}
+                />
               </div>
             )}
 

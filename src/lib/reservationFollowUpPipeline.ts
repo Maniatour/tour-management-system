@@ -19,7 +19,14 @@ export type ReservationFollowUpPipelineSnapshot = {
   departureSent: boolean
   pickupSent: boolean
   needsResidentFlow: boolean
+  /** 이메일/거주 양식 없이 직원이 수동으로 완료로 표시한 단계 */
+  manualConfirmation: boolean
+  manualResident: boolean
+  manualDeparture: boolean
+  manualPickup: boolean
 }
+
+export type FollowUpPipelineStepKey = 'confirmation' | 'resident' | 'departure' | 'pickup'
 
 export function reservationExcludedFromFollowUpPipeline(status: string | null | undefined): boolean {
   const s = String(status ?? '').toLowerCase()
@@ -116,4 +123,33 @@ export function reservationNeedsAnyFollowUpAttention(
     reservationNeedsDepartureMail(status, s) ||
     reservationNeedsPickupNotification(status, s)
   )
+}
+
+/** 수동 완료 표시 가능: 해당 단계가 아직 시스템상 완료가 아니고, 선행 조건 충족 */
+export function followUpPipelineStepCanMarkManual(
+  s: ReservationFollowUpPipelineSnapshot,
+  step: FollowUpPipelineStepKey
+): boolean {
+  if (step === 'confirmation') {
+    return !s.confirmationSent
+  }
+  if (step === 'resident') {
+    if (!s.needsResidentFlow) return false
+    const done = s.residentInquirySent && s.guestResidentFlowCompleted
+    return !done
+  }
+  if (step === 'departure') {
+    return prerequisitesMetForDeparture(s) && !s.departureSent
+  }
+  return prerequisitesMetForPickup(s) && !s.pickupSent
+}
+
+export function followUpPipelineStepCanClearManual(
+  s: ReservationFollowUpPipelineSnapshot,
+  step: FollowUpPipelineStepKey
+): boolean {
+  if (step === 'confirmation') return s.manualConfirmation
+  if (step === 'resident') return s.manualResident
+  if (step === 'departure') return s.manualDeparture
+  return s.manualPickup
 }

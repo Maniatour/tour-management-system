@@ -1,11 +1,32 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { MessageSquare, Plus, Send, User, Clock, History } from 'lucide-react'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
+import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
+import { ReservationFollowUpPipelineIcons } from '@/components/reservation/ReservationFollowUpPipelineIcons'
+import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
+import ResidentInquiryEmailPreviewModal from '@/components/reservation/ResidentInquiryEmailPreviewModal'
+import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import { getCustomerName, getProductName } from '@/utils/reservationUtils'
+import type { FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
+import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
+import type { Reservation, Customer, Product } from '@/types/reservation'
+
+type PipelineEmailPreviewState = {
+  reservationId: string
+  emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
+  customerEmail: string
+  pickupTime?: string | null
+  tourDate?: string | null
+  customerName?: string | null
+  productName?: string | null
+  channelRN?: string | null
+  customerLanguage?: string | null
+}
 
 export type FollowUpType = 'cancellation_reason' | 'contact'
 
@@ -21,6 +42,21 @@ export interface ReservationFollowUpRow {
 interface ReservationFollowUpSectionProps {
   reservationId: string
   status: string
+  /** 예약 폼과 동일: 컨펌·거주·출발·픽업 파이프라인 표시 */
+  followUpPipelineProductId?: string | null
+  followUpPipelineProducts?: Array<{
+    id: string
+    product_code?: string | null
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+  }>
+  followUpPipelineReservation?: Reservation | null
+  followUpPipelineCustomers?: Customer[]
+  /** 상단 이메일 버튼 발송 성공 시 부모에서 증가 → 파이프라인 재조회 */
+  followUpPipelineRefreshToken?: number
 }
 
 function formatDateTime(iso: string, locale: string = 'ko') {
@@ -147,12 +183,248 @@ function formatAuditValueWithLookups(
 
 export default function ReservationFollowUpSection({
   reservationId,
-  status
+  status,
+  followUpPipelineProductId,
+  followUpPipelineProducts,
+  followUpPipelineReservation,
+  followUpPipelineCustomers,
+  followUpPipelineRefreshToken = 0,
 }: ReservationFollowUpSectionProps) {
   const locale = useLocale()
+  const tRes = useTranslations('reservations')
   const { user } = useAuth()
   const userEmail = user?.email ?? ''
   const isEn = locale === 'en'
+
+  const showFollowUpPipeline =
+    !!followUpPipelineReservation &&
+    !!String(followUpPipelineProductId ?? '').trim() &&
+    (followUpPipelineProducts?.length ?? 0) > 0
+
+  const reservationsLiteForPipeline = useMemo(
+    () =>
+      showFollowUpPipeline && reservationId
+        ? [{ id: reservationId, productId: String(followUpPipelineProductId ?? '').trim() }]
+        : [],
+    [showFollowUpPipeline, reservationId, followUpPipelineProductId]
+  )
+
+  const [pipelineLocalRevision, setPipelineLocalRevision] = useState(0)
+  const pipelineRefreshCombined = followUpPipelineRefreshToken + pipelineLocalRevision
+
+  const { snapshotsByReservationId: pipelineSnapshots, loading: pipelineSnapshotsLoading } =
+    useReservationFollowUpSnapshots(
+      reservationsLiteForPipeline,
+      (followUpPipelineProducts ?? []) as Array<{ id: string; product_code?: string | null }>,
+      pipelineRefreshCombined
+    )
+
+  const pipelineSnapshot = pipelineSnapshots.get(reservationId) ?? null
+
+  const [pipelineEmailPreview, setPipelineEmailPreview] = useState<PipelineEmailPreviewState | null>(
+    null
+  )
+
+  const openPipelineEmailPreview = useCallback(
+    (
+      emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
+    ) => {
+      const res = followUpPipelineReservation
+      const customers = followUpPipelineCustomers ?? []
+      if (!res) return
+      const customer = customers.find((c) => c.id === res.customerId)
+      if (!customer?.email) {
+        alert(tRes('messages.noCustomerEmail'))
+        return
+      }
+
+      if (emailType === 'pickup' && (!res.pickUpTime || !res.tourDate)) {
+        alert(tRes('messages.pickupAndTourDateRequired'))
+        return
+      }
+
+      if (emailType === 'resident_inquiry') {
+        const prod = followUpPipelineProducts?.find((p) => p.id === res.productId)
+        const emailIsEn = resolveReservationEmailIsEnglish(customer.language ?? null, null)
+        const productNameForEmail =
+          prod != null
+            ? emailIsEn
+              ? String(prod.customer_name_en || prod.name_en || prod.name || '').trim()
+              : String(prod.customer_name_ko || prod.name_ko || prod.name || '').trim()
+            : ''
+        setPipelineEmailPreview({
+          reservationId: res.id,
+          emailType: 'resident_inquiry',
+          customerEmail: customer.email,
+          pickupTime: null,
+          tourDate: res.tourDate,
+          customerName:
+            getCustomerName(res.customerId, customers) || customer.name || '',
+          productName:
+            productNameForEmail ||
+            getProductName(res.productId, (followUpPipelineProducts ?? []) as Product[]),
+          channelRN: res.channelRN ?? null,
+          customerLanguage: customer.language ?? null,
+        })
+        return
+      }
+
+      setPipelineEmailPreview({
+        reservationId: res.id,
+        emailType,
+        customerEmail: customer.email,
+        pickupTime: res.pickUpTime,
+        tourDate: res.tourDate,
+      })
+    },
+    [followUpPipelineReservation, followUpPipelineCustomers, followUpPipelineProducts, tRes]
+  )
+
+  const sendPipelineEmailFromPreview = useCallback(async () => {
+    if (!pipelineEmailPreview) return
+    const customers = followUpPipelineCustomers ?? []
+    const customer = customers.find((c) => c.id === followUpPipelineReservation?.customerId)
+    const customerLanguage = customer?.language?.toLowerCase() || 'ko'
+    const sendLocale =
+      customerLanguage === 'en' || customerLanguage === 'english' ? 'en' : 'ko'
+
+    let response: Response
+    if (pipelineEmailPreview.emailType === 'resident_inquiry') {
+      response = await fetch('/api/send-resident-inquiry-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: pipelineEmailPreview.reservationId,
+          locale: sendLocale,
+          sentBy: userEmail || null,
+        }),
+      })
+    } else if (pipelineEmailPreview.emailType === 'confirmation') {
+      response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: pipelineEmailPreview.reservationId,
+          email: pipelineEmailPreview.customerEmail,
+          type: 'both',
+          locale: sendLocale,
+          sentBy: userEmail || null,
+        }),
+      })
+    } else if (pipelineEmailPreview.emailType === 'departure') {
+      response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: pipelineEmailPreview.reservationId,
+          email: pipelineEmailPreview.customerEmail,
+          type: 'voucher',
+          locale: sendLocale,
+          sentBy: userEmail || null,
+        }),
+      })
+    } else if (pipelineEmailPreview.emailType === 'pickup') {
+      if (!pipelineEmailPreview.pickupTime || !pipelineEmailPreview.tourDate) {
+        throw new Error(tRes('messages.pickupAndTourDateRequired'))
+      }
+      const pt = pipelineEmailPreview.pickupTime.trim()
+      response = await fetch('/api/send-pickup-schedule-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: pipelineEmailPreview.reservationId,
+          pickupTime: pt.includes(':') ? pt : `${pt}:00`,
+          tourDate: pipelineEmailPreview.tourDate,
+          locale: sendLocale,
+          sentBy: userEmail || null,
+        }),
+      })
+    } else {
+      throw new Error(tRes('messages.emailSendError'))
+    }
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(typeof data?.error === 'string' ? data.error : tRes('messages.emailSendError'))
+    }
+
+    alert(tRes('messages.emailSendSuccess'))
+    setPipelineEmailPreview(null)
+    setPipelineLocalRevision((x) => x + 1)
+  }, [
+    pipelineEmailPreview,
+    followUpPipelineCustomers,
+    followUpPipelineReservation?.customerId,
+    userEmail,
+    tRes,
+  ])
+
+  const handlePipelineManualStep = useCallback(
+    async (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') => {
+      const col =
+        step === 'confirmation'
+          ? 'confirmation_manual'
+          : step === 'resident'
+            ? 'resident_manual'
+            : step === 'departure'
+              ? 'departure_manual'
+              : 'pickup_manual'
+
+      const { data: existing, error: selErr } = await supabase
+        .from('reservation_follow_up_pipeline_manual')
+        .select('confirmation_manual, resident_manual, departure_manual, pickup_manual')
+        .eq('reservation_id', reservationId)
+        .maybeSingle()
+
+      if (selErr) {
+        console.error(selErr)
+        alert(isEn ? `Save failed: ${selErr.message}` : `저장 실패: ${selErr.message}`)
+        return
+      }
+
+      const base = {
+        confirmation_manual: !!(existing as { confirmation_manual?: boolean } | null)?.confirmation_manual,
+        resident_manual: !!(existing as { resident_manual?: boolean } | null)?.resident_manual,
+        departure_manual: !!(existing as { departure_manual?: boolean } | null)?.departure_manual,
+        pickup_manual: !!(existing as { pickup_manual?: boolean } | null)?.pickup_manual,
+      }
+      base[col as keyof typeof base] = action === 'mark'
+
+      const anyTrue =
+        base.confirmation_manual || base.resident_manual || base.departure_manual || base.pickup_manual
+
+      if (!anyTrue) {
+        if (existing) {
+          const { error } = await supabase
+            .from('reservation_follow_up_pipeline_manual')
+            .delete()
+            .eq('reservation_id', reservationId)
+          if (error) {
+            console.error(error)
+            alert(isEn ? `Save failed: ${error.message}` : `저장 실패: ${error.message}`)
+            return
+          }
+        }
+      } else {
+        const { error } = await supabase.from('reservation_follow_up_pipeline_manual').upsert(
+          {
+            reservation_id: reservationId,
+            ...base,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'reservation_id' }
+        )
+        if (error) {
+          console.error(error)
+          alert(isEn ? `Save failed: ${error.message}` : `저장 실패: ${error.message}`)
+          return
+        }
+      }
+
+      setPipelineLocalRevision((x) => x + 1)
+    },
+    [reservationId, isEn]
+  )
 
   const [followUps, setFollowUps] = useState<ReservationFollowUpRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -449,6 +721,36 @@ export default function ReservationFollowUpSection({
         {title}
       </h3>
 
+      {showFollowUpPipeline ? (
+        <div className="rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2.5 space-y-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-medium text-gray-800">{tRes('followUpPipeline.rowTitle')}</span>
+            {pipelineSnapshotsLoading ? (
+              <span className="text-[11px] text-gray-500">{tRes('followUpPipeline.loadingSnapshots')}</span>
+            ) : (
+              <ReservationFollowUpPipelineIcons
+                snapshot={pipelineSnapshot}
+                disabled={reservationExcludedFromFollowUpPipeline(
+                  followUpPipelineReservation?.status ?? status
+                )}
+                onEmailPreviewClick={(emailType) => {
+                  const map = {
+                    confirmation: 'confirmation',
+                    resident_inquiry: 'resident_inquiry',
+                    departure: 'departure',
+                    pickup: 'pickup',
+                  } as const
+                  openPipelineEmailPreview(map[emailType])
+                }}
+                allowManualCompletion
+                onManualStepChange={handlePipelineManualStep}
+              />
+            )}
+          </div>
+          <p className="text-[11px] text-gray-600 leading-snug">{tRes('followUpPipeline.pipelineHintManual')}</p>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="text-sm text-gray-500 py-2">
           {isEn ? 'Loading...' : '불러오는 중...'}
@@ -659,6 +961,34 @@ export default function ReservationFollowUpSection({
           </div>
         </>
       )}
+
+      {pipelineEmailPreview && pipelineEmailPreview.emailType === 'resident_inquiry' ? (
+        <ResidentInquiryEmailPreviewModal
+          isOpen
+          onClose={() => setPipelineEmailPreview(null)}
+          reservationId={pipelineEmailPreview.reservationId}
+          customerEmail={pipelineEmailPreview.customerEmail}
+          customerName={pipelineEmailPreview.customerName || ''}
+          customerLanguage={pipelineEmailPreview.customerLanguage}
+          tourDate={pipelineEmailPreview.tourDate}
+          productName={pipelineEmailPreview.productName || ''}
+          channelRN={pipelineEmailPreview.channelRN}
+          onSend={sendPipelineEmailFromPreview}
+        />
+      ) : null}
+
+      {pipelineEmailPreview && pipelineEmailPreview.emailType !== 'resident_inquiry' ? (
+        <EmailPreviewModal
+          isOpen
+          onClose={() => setPipelineEmailPreview(null)}
+          reservationId={pipelineEmailPreview.reservationId}
+          emailType={pipelineEmailPreview.emailType}
+          customerEmail={pipelineEmailPreview.customerEmail}
+          pickupTime={pipelineEmailPreview.pickupTime ?? null}
+          tourDate={pipelineEmailPreview.tourDate ?? null}
+          onSend={sendPipelineEmailFromPreview}
+        />
+      ) : null}
     </div>
   )
 }

@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
-import type { Reservation, Customer } from '@/types/reservation'
+import type { Reservation, Customer, Channel, PickupHotel } from '@/types/reservation'
 import { useAuth } from '@/contexts/AuthContext'
 import { X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare, Printer } from 'lucide-react'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
@@ -147,6 +147,7 @@ export default function ReservationDetailsPage() {
   const [showFloatingMenu, setShowFloatingMenu] = useState(false)
   const [activeSection, setActiveSection] = useState<string>('')
   const [showReceiptModal, setShowReceiptModal] = useState(false)
+  const [followUpFormPipelineRefresh, setFollowUpFormPipelineRefresh] = useState(0)
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   // useMemo로 안정적으로 계산하여 불필요한 재계산 방지
@@ -396,11 +397,18 @@ export default function ReservationDetailsPage() {
           reservation={reservation}
           customers={(customers as Customer[]) || []}
           products={products || []}
-          channels={channels || []}
+          channels={(channels || []) as Channel[]}
           productOptions={productOptions || []}
           options={options || []}
-          pickupHotels={pickupHotels || []}
-          coupons={coupons || []}
+          pickupHotels={(pickupHotels || []) as PickupHotel[]}
+          coupons={
+            (coupons || []) as {
+              id: string
+              coupon_code: string
+              discount_type: 'percentage' | 'fixed'
+              [key: string]: unknown
+            }[]
+          }
           onSubmit={handleSubmit}
           onCancel={() => router.push(`/${params?.locale || 'ko'}/admin/reservations`)}
           onRefreshCustomers={refreshCustomers}
@@ -408,6 +416,7 @@ export default function ReservationDetailsPage() {
           layout="page"
           onViewCustomer={() => setShowReservationDetailModal(true)}
           allowPastDateEdit={isSuper || !!reservation}
+          followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
           titleAction={
             <div className="flex flex-wrap items-center gap-1 sm:gap-2">
               <button
@@ -424,6 +433,7 @@ export default function ReservationDetailsPage() {
                 customers={(customers as Customer[]) || []}
                 sentBy={user?.email ?? null}
                 uiLocale={params?.locale === 'en' ? 'en' : 'ko'}
+                onSendSuccess={() => setFollowUpFormPipelineRefresh((n) => n + 1)}
               />
             </div>
           }
@@ -449,6 +459,7 @@ export default function ReservationDetailsPage() {
     user?.email,
     t,
     isSuper,
+    followUpFormPipelineRefresh,
   ])
 
   return (
