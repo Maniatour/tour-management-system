@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   computeNeedsResidentFlow,
@@ -16,6 +16,21 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 const CHUNK = 100
 
+/** productFingerprint 문자열 → 예약별 product_code (안정 키용, effect 의존성에서 배열 참조 제거) */
+function productCodeMapFromFingerprint(fp: string): Map<string, string | null> {
+  const m = new Map<string, string | null>()
+  if (!fp) return m
+  for (const segment of fp.split('|')) {
+    if (!segment) continue
+    const colon = segment.indexOf(':')
+    if (colon < 0) continue
+    const id = segment.slice(0, colon)
+    const raw = segment.slice(colon + 1)
+    m.set(id, raw === '' ? null : raw)
+  }
+  return m
+}
+
 type ReservationLite = { id: string; productId: string }
 
 /**
@@ -29,6 +44,12 @@ export function useReservationFollowUpSnapshots(
 ): {
   snapshotsByReservationId: Map<string, ReservationFollowUpPipelineSnapshot>
   loading: boolean
+  /** 취소 Follow-up 수동 저장 직후 UI 반영(재조회 전·레이스 완화) */
+  patchCancelManualFlags: (
+    reservationId: string,
+    cancelFollowUpManual: boolean,
+    cancelRebookingOutreachManual: boolean
+  ) => void
 } {
   const idsKey = useMemo(() => {
     const ids = [...new Set(reservations.map((r) => String(r.id ?? '').trim()).filter(Boolean))]
@@ -52,19 +73,35 @@ export function useReservationFollowUpSnapshots(
   >(new Map())
   const [loading, setLoading] = useState(false)
 
+  const patchCancelManualFlags = useCallback(
+    (reservationId: string, cancelFollowUpManual: boolean, cancelRebookingOutreachManual: boolean) => {
+      const rid = String(reservationId ?? '').trim()
+      if (!rid) return
+      setSnapshotsByReservationId((prev) => {
+        const cur = prev.get(rid)
+        if (!cur) return prev
+        if (
+          cur.cancelFollowUpManual === cancelFollowUpManual &&
+          cur.cancelRebookingOutreachManual === cancelRebookingOutreachManual
+        ) {
+          return prev
+        }
+        const next = new Map(prev)
+        next.set(rid, { ...cur, cancelFollowUpManual, cancelRebookingOutreachManual })
+        return next
+      })
+    },
+    []
+  )
+
   useEffect(() => {
     const ids = idsKey.split('\u001f').filter(Boolean)
     if (ids.length === 0) {
-      setSnapshotsByReservationId(new Map())
+      setSnapshotsByReservationId((prev) => (prev.size === 0 ? prev : new Map()))
       return
     }
 
-    const productCodeByReservationId = new Map<string, string | null>()
-    for (const r of reservations) {
-      const pid = String(r.productId ?? '').trim()
-      const p = products.find((x) => x.id === pid)
-      productCodeByReservationId.set(r.id, p?.product_code ?? null)
-    }
+    const productCodeByReservationId = productCodeMapFromFingerprint(productFingerprint)
 
     let cancelled = false
     ;(async () => {
@@ -202,7 +239,7 @@ export function useReservationFollowUpSnapshots(
     return () => {
       cancelled = true
     }
-  }, [idsKey, productFingerprint, reservations, products, refreshToken])
+  }, [idsKey, productFingerprint, refreshToken])
 
-  return { snapshotsByReservationId, loading }
+  return { snapshotsByReservationId, loading, patchCancelManualFlags }
 }

@@ -1,6 +1,29 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { useTranslations } from 'next-intl'
-import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare, ArrowRightLeft, Import, Send, HandCoins } from 'lucide-react'
+import { useTranslations, useLocale } from 'next-intl'
+import {
+  Check,
+  X,
+  Users,
+  Clock,
+  Building,
+  DollarSign,
+  Wallet,
+  Home,
+  Plane,
+  PlaneTakeoff,
+  HelpCircle,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  Circle,
+  MessageSquare,
+  ArrowRightLeft,
+  Import,
+  Send,
+  HandCoins,
+  CalendarPlus,
+  CalendarX,
+} from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -8,6 +31,7 @@ import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import { isReservationCancelledStatus } from '@/utils/tourUtils'
 import { getBalanceAmountForDisplay, type PartySizeSource } from '@/utils/reservationPricingBalance'
 import {
   displayPaymentRecordNote,
@@ -127,6 +151,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   productCode = null
 }) => {
   const tCard = useTranslations('reservations.card')
+  const locale = useLocale()
   const showResidentStatusUi = productShowsResidentStatusSectionByCode(productCode)
   /** 요청 중단(AbortError) 여부 — 컴포넌트 언마운트/의존성 변경 시 정상 취소이므로 로그 생략 */
   const isAbortError = useCallback((err: unknown): boolean => {
@@ -140,6 +165,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
   const customerName = getCustomerName(reservation.customer_id || '')
   const customerLanguage = getCustomerLanguage(reservation.customer_id || '')
+  const isReservationCancelled = isReservationCancelledStatus(reservation.status)
   
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([])
   const [teamDisplayByEmail, setTeamDisplayByEmail] = useState<Record<string, string>>({})
@@ -1264,6 +1290,17 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     })
   }
 
+  const formatCalendarDay = (value: string | null | undefined) => {
+    if (value == null || String(value).trim() === '') return '—'
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return '—'
+    return d.toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+  }
+
   // Balance 수령 핸들러 (영수증과 동일: Grand Total - 입금액)
   const handleReceiveBalance = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1518,7 +1555,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           )}
           
           {/* 고객 이름 */}
-          <p className="font-medium text-sm text-gray-900">{customerName}</p>
+          <p
+            className={`font-medium text-sm ${isReservationCancelled ? 'text-gray-400' : 'text-gray-900'}`}
+          >
+            {customerName}
+          </p>
           
           {/* 총 인원수 뱃지 - 숫자만 표시 */}
           <div className="flex items-center space-x-1 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
@@ -1618,58 +1659,89 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         </div>
       </div>
 
-      {/* 픽업 정보 섹션 */}
+      {/* 픽업 정보 섹션 — 취소 예약은 등록일·취소일만 표시 */}
       <div className="mt-2 text-xs text-gray-500">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-             {/* 픽업 시간 수정 버튼 */}
-             {isStaff && (
-               <button
-                 onClick={(e) => {
-                   e.stopPropagation()
-                   setShowSimplePickupModal(true)
-                 }}
-                 className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                 title="픽업 시간 수정"
-               >
-                 <Clock size={12} />
-               </button>
-             )}
-             <span 
-               onClick={(e) => {
-                 if (isStaff) {
-                   e.stopPropagation()
-                   setShowSimplePickupModal(true)
-                 }
-               }}
-               className={isStaff ? "cursor-pointer hover:text-blue-700" : ""}
-             >
-               {getPickupTime()}
-             </span>
-             {/* 픽업 호텔 수정 버튼 */}
-             {isStaff && (
-               <button
-                 onClick={(e) => {
-                   e.stopPropagation()
-                   setShowSimplePickupModal(true)
-                 }}
-                 className="p-1 text-green-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
-                 title="픽업 호텔 수정"
-               >
-                 <Building size={12} />
-               </button>
-             )}
-            <span 
-              onClick={(e) => {
-                if (isStaff) {
-                  e.stopPropagation()
-                  setShowSimplePickupModal(true)
-                }
-              }}
-              className={isStaff ? "cursor-pointer hover:text-green-700" : ""}
-            >
-              {getPickupHotelName()}
-            </span>
+          <div className="flex items-center space-x-2 flex-wrap min-w-0">
+            {isReservationCancelled ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-700 min-w-0">
+                <span
+                  className="inline-flex items-center gap-1 min-w-0"
+                  title={tCard('registrationDateIconTitle')}
+                >
+                  <CalendarPlus className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-hidden />
+                  <span className="tabular-nums">
+                    {formatCalendarDay(
+                      (reservation as { created_at?: string | null }).created_at ?? null
+                    )}
+                  </span>
+                </span>
+                <span
+                  className="inline-flex items-center gap-1 min-w-0"
+                  title={tCard('cancellationDateIconTitle')}
+                >
+                  <CalendarX className="w-3.5 h-3.5 text-red-600 shrink-0" aria-hidden />
+                  <span className="tabular-nums">
+                    {formatCalendarDay(
+                      (reservation as { cancellation_recorded_at?: string | null }).cancellation_recorded_at ??
+                        (reservation as { updated_at?: string | null }).updated_at ??
+                        null
+                    )}
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <>
+                {/* 픽업 시간 수정 버튼 */}
+                {isStaff && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowSimplePickupModal(true)
+                    }}
+                    className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                    title="픽업 시간 수정"
+                  >
+                    <Clock size={12} />
+                  </button>
+                )}
+                <span
+                  onClick={(e) => {
+                    if (isStaff) {
+                      e.stopPropagation()
+                      setShowSimplePickupModal(true)
+                    }
+                  }}
+                  className={isStaff ? 'cursor-pointer hover:text-blue-700' : ''}
+                >
+                  {getPickupTime()}
+                </span>
+                {/* 픽업 호텔 수정 버튼 */}
+                {isStaff && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowSimplePickupModal(true)
+                    }}
+                    className="p-1 text-green-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                    title="픽업 호텔 수정"
+                  >
+                    <Building size={12} />
+                  </button>
+                )}
+                <span
+                  onClick={(e) => {
+                    if (isStaff) {
+                      e.stopPropagation()
+                      setShowSimplePickupModal(true)
+                    }
+                  }}
+                  className={isStaff ? 'cursor-pointer hover:text-green-700' : ''}
+                >
+                  {getPickupHotelName()}
+                </span>
+              </>
+            )}
           </div>
           
           {/* 채널 정보 - 두 번째 줄 오른쪽 끝 */}
@@ -1778,9 +1850,22 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         {/* 3번째 줄 - pickup_location과 잔액 정보, 액션 버튼들 */}
         <div className="flex items-center justify-between mt-1">
           <div className="flex items-center space-x-3">
-            {/* 픽업 위치 */}
+            {/* 픽업 위치 — 취소 예약은 취소 사유 */}
             <div className="text-xs text-gray-400">
-              {getPickupLocation() || ''}
+              {isReservationCancelled ? (
+                <span className="text-gray-600 break-words font-medium">
+                  {(() => {
+                    const reason = String(
+                      (reservation as { cancellation_reason?: string | null }).cancellation_reason ?? ''
+                    ).trim()
+                    return reason
+                      ? `${tCard('cancellationReasonLabel')}: ${reason}`
+                      : tCard('noCancellationReasonShort')
+                  })()}
+                </span>
+              ) : (
+                getPickupLocation() || ''
+              )}
             </div>
             
             {/* 잔액/환불 뱃지 및 처리 버튼 - reservation_pricing.balance_amount 사용(실제 예약 잔금과 일치) */}

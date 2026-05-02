@@ -2055,7 +2055,20 @@
       "editPickupTimeButton": "픽업 시간 수정",
       "editPickupHotelButton": "픽업 호텔 변경",
       "registrationDateLabel": "등록일",
-      "prepaidTipBadgeTitle": "선불 팁(Prepaid tip) — 예약 가격에 반영된 팁 선결제 금액"
+      "prepaidTipBadgeTitle": "선불 팁(Prepaid tip) — 예약 가격에 반영된 팁 선결제 금액",
+      "cancellationReasonLabel": "취소 사유",
+      "noCancellationReasonShort": "(취소 사유 없음)",
+      "registrationDateIconTitle": "등록일",
+      "cancellationDateIconTitle": "취소일",
+      "cancelAfterProcessShort": "취소 후",
+      "cancellationReasonButtonTitle": "취소 사유·메모 (reservation_follow_ups)",
+      "cancellationReasonModalTitle": "취소 사유 / 메모",
+      "cancellationReasonPlaceholder": "취소 사유 또는 내부 메모를 입력하세요.",
+      "cancellationReasonPlaceholderOptional": "또는 취소 사유를 직접 입력 (선택)",
+      "cancellationReasonSave": "저장",
+      "cancellationReasonCancel": "닫기",
+      "cancellationReasonNeedLogin": "로그인 후 저장할 수 있습니다.",
+      "cancellationReasonSaveFailed": "저장에 실패했습니다."
     },
     "followUpPipeline": {
       "headerButton": "Follow-up 단계",

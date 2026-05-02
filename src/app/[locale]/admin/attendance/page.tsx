@@ -259,7 +259,12 @@ export default function AttendancePage() {
           supabase.from('channels').select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission').order('name', { ascending: true }),
           supabase.from('product_options').select('*').order('name', { ascending: true }),
           supabase.from('options').select('*').order('name', { ascending: true }),
-          supabase.from('pickup_hotels').select('*').eq('is_active', true).order('hotel', { ascending: true }),
+          supabase
+            .from('pickup_hotels')
+            .select('*')
+            .eq('use_for_pickup', true)
+            .or('is_active.is.null,is_active.eq.true')
+            .order('hotel', { ascending: true }),
           supabase.from('coupons').select('*').eq('status', 'active').order('coupon_code', { ascending: true })
         ])
         if (cancelled) return

@@ -97,7 +97,7 @@ function CancelFollowUpToolbarForReservation({
         })
 
   const btnClass = (done: boolean) =>
-    `inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm transition-colors disabled:opacity-50 ${
+    `inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border text-sm transition-colors disabled:opacity-50 ${
       done
         ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
         : 'border-gray-200 bg-white text-gray-400 hover:border-amber-300 hover:bg-amber-50/60 hover:text-amber-900'
@@ -115,7 +115,7 @@ function CancelFollowUpToolbarForReservation({
         className={btnClass(fu)}
         onClick={() => onToggle('cancel_follow_up', fu ? 'clear' : 'mark')}
       >
-        <PhoneForwarded className="h-4 w-4" aria-hidden />
+        <PhoneForwarded className="h-3 w-3" aria-hidden />
       </button>
       <button
         type="button"
@@ -126,7 +126,7 @@ function CancelFollowUpToolbarForReservation({
         className={btnClass(re)}
         onClick={() => onToggle('cancel_rebooking', re ? 'clear' : 'mark')}
       >
-        <Globe className="h-4 w-4" aria-hidden />
+        <Globe className="h-3 w-3" aria-hidden />
       </button>
       <span className="min-w-0 flex-1 text-[11px] text-slate-600">
         <span className="font-medium text-slate-700">{t('cancelDateApproxLabel')}:</span> {approxLabel}

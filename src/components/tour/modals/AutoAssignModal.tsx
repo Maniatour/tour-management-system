@@ -424,7 +424,11 @@ export default function AutoAssignModal({
           supabase.from('team').select('email, languages, name_ko, nick_name'),
           supabase.from('vehicles').select('id, capacity, nick, vehicle_number, vehicle_type, vehicle_category, rental_company, rental_start_date, rental_end_date'),
           supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id').eq('product_id', productId).eq('tour_date', tourDate),
-          supabase.from('pickup_hotels').select('id, hotel, pick_up_location'),
+          supabase
+            .from('pickup_hotels')
+            .select('id, hotel, pick_up_location')
+            .eq('use_for_pickup', true)
+            .or('is_active.is.null,is_active.eq.true'),
           // name_ko만 지정하면 컬럼이 없는 DB에서 전체 조회가 실패할 수 있어 * 사용 (useTourDetailData와 동일)
           supabase.from('channels').select('*').order('name')
         ])

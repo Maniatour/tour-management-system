@@ -53,10 +53,10 @@ import {
   calculateTotalPrice,
   getReservationPartySize,
   normalizeTourDateKey,
-  isoToLocalCalendarDateKey,
+  isoToLasVegasCalendarDateKey,
   getStatusLabel,
-  isReservationTourDatePastLocal,
-  isReservationAddedStrictlyBeforeTodayLocal,
+  isReservationTourDatePastLasVegas,
+  isReservationAddedStrictlyBeforeTodayLasVegas,
 } from '@/utils/reservationUtils'
 import {
   isTourDeletedStatus,
@@ -73,6 +73,7 @@ import type {
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
 import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
+import { formatLvYmdRangeDisplay, lvInclusiveDateKeys, lvWeekRangeFromOffset } from '@/lib/lasVegasCalendar'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import {
   reservationMatchesExtendedPricingMismatchCriteria,
@@ -100,20 +101,31 @@ const RESERVATIONS_LIST_UI_DEFAULT = {
   isWeeklyStatsCollapsed: true,
 }
 
-/** 그룹 날짜 기준: 해당일 등록(addedTime) vs 다른 날 등록 후 해당일 수정(updated_at) */
+/** 당일 등록 직후에도 수정이 한 번이라도 더 있으면 true (등록 시각과 동일한 updated_at은 false) */
+function isReservationUpdatedStrictlyAfterAdded(r: Reservation): boolean {
+  const a = r.addedTime?.trim() ? new Date(r.addedTime).getTime() : NaN
+  const u = r.updated_at?.trim() ? new Date(r.updated_at).getTime() : NaN
+  return Number.isFinite(a) && Number.isFinite(u) && u > a
+}
+
+/** 그룹 날짜 기준: 해당일 등록(addedTime) vs 해당일 수정(updated_at) — 당일 등록+당일 상태변경은 둘 다에 포함 */
 function splitReservationsByActivityForDate(date: string, reservations: Reservation[]) {
   const registration: Reservation[] = []
   const statusChange: Reservation[] = []
   const seenReg = new Set<string>()
   const seenStatus = new Set<string>()
   for (const r of reservations) {
-    const createdKey = isoToLocalCalendarDateKey(r.addedTime)
-    const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+    const createdKey = isoToLasVegasCalendarDateKey(r.addedTime)
+    const updatedKey = isoToLasVegasCalendarDateKey(r.updated_at ?? null)
     if (createdKey === date && !seenReg.has(r.id)) {
       seenReg.add(r.id)
       registration.push(r)
     }
-    if (updatedKey === date && createdKey !== date && !seenStatus.has(r.id)) {
+    if (
+      updatedKey === date &&
+      !seenStatus.has(r.id) &&
+      (createdKey !== date || isReservationUpdatedStrictlyAfterAdded(r))
+    ) {
       seenStatus.add(r.id)
       statusChange.push(r)
     }
@@ -140,7 +152,7 @@ function pickReservationStatusTransitionForDay(
   dateKey: string
 ): { from: string; to: string } | null {
   const candidates = rows
-    .filter((r) => isoToLocalCalendarDateKey(r.created_at) === dateKey)
+    .filter((r) => isoToLasVegasCalendarDateKey(r.created_at) === dateKey)
     .filter((r) => Array.isArray(r.changed_fields) && r.changed_fields.includes('status'))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   for (const row of candidates) {
@@ -1128,12 +1140,15 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     [filteredReservations]
   )
 
-  const { snapshotsByReservationId: followUpSnapshotsByReservationId, loading: followUpSnapshotsLoading } =
-    useReservationFollowUpSnapshots(
-      reservationsLiteForFollowUp,
-      (products as Array<{ id: string; product_code?: string | null }>) || [],
-      followUpPipelineManualRefresh
-    )
+  const {
+    snapshotsByReservationId: followUpSnapshotsByReservationId,
+    loading: followUpSnapshotsLoading,
+    patchCancelManualFlags,
+  } = useReservationFollowUpSnapshots(
+    reservationsLiteForFollowUp,
+    (products as Array<{ id: string; product_code?: string | null }>) || [],
+    followUpPipelineManualRefresh
+  )
 
   const handleFollowUpPipelineManualChange = useCallback(
     async (reservationId: string, step: FollowUpPipelineStepKey, action: 'mark' | 'clear') => {
@@ -1266,97 +1281,49 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         }
       }
 
+      patchCancelManualFlags(
+        reservationId,
+        base.cancel_follow_up_manual,
+        base.cancel_rebooking_outreach_manual
+      )
       setFollowUpPipelineManualRefresh((n) => n + 1)
     },
-    [locale]
+    [locale, patchCancelManualFlags]
   )
 
   const followUpQueueUnionCount = useMemo(() => {
     let n = 0
     for (const r of filteredReservations) {
-      if (isReservationTourDatePastLocal(r.tourDate)) continue
+      if (isReservationTourDatePastLasVegas(r.tourDate)) continue
       const snap = followUpSnapshotsByReservationId.get(r.id)
       if (reservationNeedsCancelFollowUpQueueAttention(r.status as string | undefined, r.tourDate, snap)) {
         n += 1
         continue
       }
-      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
+      if (isReservationAddedStrictlyBeforeTodayLasVegas(r.addedTime)) continue
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
   }, [filteredReservations, followUpSnapshotsByReservationId])
   
-  // 7????? ?????????? ??? ????? ?????(??? ???)
-  const getWeekStartDate = useCallback((weekOffset: number) => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    // weekOffset??0??? ??????6?????? (??7??
-    // weekOffset??1??? 7????????13??????
-    // weekOffset??-1??? 7????????13??????
-    const daysToSubtract = (weekOffset * 7) + 6 // ??? ??? 7??????6???????????
-    const weekStart = new Date(today)
-    weekStart.setDate(today.getDate() - daysToSubtract)
-    weekStart.setHours(0, 0, 0, 0)
-    return weekStart
-  }, [])
-
-  const getWeekEndDate = useCallback((weekOffset: number) => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    // weekOffset??0??? ??????
-    // weekOffset??1??? 7??????
-    // weekOffset??-1??? 7??????
-    const daysToAdd = weekOffset * 7
-    const weekEnd = new Date(today)
-    weekEnd.setDate(today.getDate() + daysToAdd)
-    weekEnd.setHours(23, 59, 59, 999)
-    return weekEnd
-  }, [])
-
-  const formatWeekRange = useCallback((weekOffset: number) => {
-    const weekStart = getWeekStartDate(weekOffset)
-    const weekEnd = getWeekEndDate(weekOffset)
-    
-    // ?? ????? ?????? YYYY-MM-DD ??? ???
-    const formatDate = (date: Date) => {
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-    
-    return {
-      start: formatDate(weekStart),
-      end: formatDate(weekEnd),
-      display: `${weekStart.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}`
-    }
-  }, [getWeekStartDate, getWeekEndDate])
+  // 최근 7일: 라스베가스 달력 기준 어제를 말일로 두고 7일(말일 포함 6일 전~말일). UTC 저장값과 표시·쿼리 일치.
+  const formatWeekRange = useCallback(
+    (weekOffset: number) => {
+      const { startYmd, endYmd } = lvWeekRangeFromOffset(weekOffset)
+      const localeTag = locale === 'en' ? 'en-US' : 'ko-KR'
+      return {
+        start: startYmd,
+        end: endYmd,
+        display: formatLvYmdRangeDisplay(startYmd, endYmd, localeTag),
+      }
+    },
+    [locale]
+  )
 
   const loadAdminReservationList = useCallback(async () => {
     setServerListLoading(true)
     try {
-      const weekStart = getWeekStartDate(currentWeek)
-      const weekEnd = getWeekEndDate(currentWeek)
-      const rangeStartIso = new Date(
-        weekStart.getFullYear(),
-        weekStart.getMonth(),
-        weekStart.getDate(),
-        0,
-        0,
-        0,
-        0
-      ).toISOString()
-      const rangeEndIso = new Date(
-        weekEnd.getFullYear(),
-        weekEnd.getMonth(),
-        weekEnd.getDate(),
-        23,
-        59,
-        59,
-        999
-      ).toISOString()
+      const { rangeStartIso, rangeEndIso } = lvWeekRangeFromOffset(currentWeek)
 
       if (viewMode === 'calendar') {
         const calStart = new Date()
@@ -1425,8 +1392,6 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       setServerListLoading(false)
     }
   }, [
-    getWeekStartDate,
-    getWeekEndDate,
     currentWeek,
     viewMode,
     groupByDate,
@@ -1478,17 +1443,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const groups: { [key: string]: typeof filteredReservations } = {}
     
     // ??? ?? ??? ?? ?? (?? ????? ???)
-    const weekStart = getWeekStartDate(currentWeek)
-    const weekEnd = getWeekEndDate(currentWeek)
-    
-    // ?? ????YYYY-MM-DD ?????? ???(?? ????? ???)
-    const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`
-    const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
-    
+    const { startYmd: weekStartStr, endYmd: weekEndStr } = lvWeekRangeFromOffset(currentWeek)
+
     filteredReservations.forEach((reservation) => {
       const activityDates = new Set<string>()
-      const createdKey = isoToLocalCalendarDateKey(reservation.addedTime)
-      const updatedKey = isoToLocalCalendarDateKey(reservation.updated_at ?? null)
+      const createdKey = isoToLasVegasCalendarDateKey(reservation.addedTime)
+      const updatedKey = isoToLasVegasCalendarDateKey(reservation.updated_at ?? null)
       if (createdKey) activityDates.add(createdKey)
       if (updatedKey) activityDates.add(updatedKey)
       if (activityDates.size === 0) return
@@ -1517,14 +1477,11 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       })
     
     return sortedGroups
-  }, [filteredReservations, groupByDate, currentWeek, getWeekStartDate, getWeekEndDate])
+  }, [filteredReservations, groupByDate, currentWeek])
 
   /** 주간(화면 상단 7일 구간) 일자별 등록 인원·건수 / 취소 인원·건수 — WeeklyStatsPanel 차트용 */
   const weeklyRegCancelByDay = useMemo(() => {
-    const weekStart = getWeekStartDate(currentWeek)
-    const weekEnd = getWeekEndDate(currentWeek)
-    const startDay = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate())
-    const endDay = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate())
+    const { startYmd: weekStartStr, endYmd: weekEndStr } = lvWeekRangeFromOffset(currentWeek)
 
     const rows: Array<{
       dateKey: string
@@ -1535,11 +1492,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }> = []
     const rowByKey = new Map<string, (typeof rows)[number]>()
 
-    for (let cur = new Date(startDay); cur.getTime() <= endDay.getTime(); cur.setDate(cur.getDate() + 1)) {
-      const y = cur.getFullYear()
-      const m = String(cur.getMonth() + 1).padStart(2, '0')
-      const d = String(cur.getDate()).padStart(2, '0')
-      const dateKey = `${y}-${m}-${d}`
+    for (const dateKey of lvInclusiveDateKeys(weekStartStr, weekEndStr)) {
       const row = {
         dateKey,
         registeredPeople: 0,
@@ -1556,7 +1509,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
     for (const r of filteredReservations) {
       const p = getReservationPartySize(r as unknown as Record<string, unknown>)
-      const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+      const createdKey = isoToLasVegasCalendarDateKey(r.addedTime)
       if (createdKey) {
         const row = rowByKey.get(createdKey)
         if (row) {
@@ -1564,7 +1517,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           row.registeredPeople += p
         }
       }
-      const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+      const updatedKey = isoToLasVegasCalendarDateKey(r.updated_at ?? null)
       if (updatedKey && isCancelledLike(r.status)) {
         const row = rowByKey.get(updatedKey)
         if (row) {
@@ -1575,7 +1528,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
 
     return rows
-  }, [filteredReservations, currentWeek, getWeekStartDate, getWeekEndDate])
+  }, [filteredReservations, currentWeek])
 
   // ??????????????????? ????????
   useEffect(() => {
@@ -1597,26 +1550,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   const simpleCardStatusChangeAuditRequest = useMemo(() => {
     if (!groupByDate || cardLayout !== 'simple') return null
-    const weekStart = getWeekStartDate(currentWeek)
-    const weekEnd = getWeekEndDate(currentWeek)
-    const rangeStart = new Date(
-      weekStart.getFullYear(),
-      weekStart.getMonth(),
-      weekStart.getDate(),
-      0,
-      0,
-      0,
-      0
-    ).toISOString()
-    const rangeEnd = new Date(
-      weekEnd.getFullYear(),
-      weekEnd.getMonth(),
-      weekEnd.getDate(),
-      23,
-      59,
-      59,
-      999
-    ).toISOString()
+    const { rangeStartIso: rangeStart, rangeEndIso: rangeEnd } = lvWeekRangeFromOffset(currentWeek)
     const targets: { key: string; reservationId: string; dateKey: string }[] = []
     for (const [dateKey, dayList] of Object.entries(groupedReservations)) {
       const { statusChange } = splitReservationsByActivityForDate(dateKey, dayList)
@@ -1626,7 +1560,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
     const uniqueIds = [...new Set(targets.map((x) => x.reservationId))]
     return { rangeStart, rangeEnd, targets, uniqueIds }
-  }, [groupByDate, cardLayout, currentWeek, groupedReservations, getWeekStartDate, getWeekEndDate])
+  }, [groupByDate, cardLayout, currentWeek, groupedReservations])
 
   useEffect(() => {
     const req = simpleCardStatusChangeAuditRequest
@@ -3171,7 +3105,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                     onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
                     followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
                     {...(cardLayout === 'simple'
-                      ? { onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange }
+                      ? {
+                          onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
+                          onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
+                        }
                       : {})}
                   />
                 )
@@ -3432,7 +3369,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                         onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
                     followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
                     {...(cardLayout === 'simple'
-                      ? { onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange }
+                      ? {
+                          onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
+                          onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
+                        }
                       : {})}
                   />
                 ))}
@@ -3730,6 +3670,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
             followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
+            onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
           />
         )}
       />
@@ -4003,6 +3944,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
             followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
+            onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
           />
         )}
       />

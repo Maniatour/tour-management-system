@@ -12,9 +12,16 @@ export interface PickupHotel {
   youtube_link: string | null
   media: string[] | null
   is_active: boolean | null
+  /** 예약·픽업 배정 등 선택 목록에 포함 */
+  use_for_pickup?: boolean
   group_number: number | null
   created_at: string | null
   updated_at: string | null
+}
+
+/** 예약·스케줄 등 픽업 호텔 선택 목록에 쓸 수 있는지 */
+export function isPickupHotelSelectable(hotel: PickupHotel): boolean {
+  return hotel.use_for_pickup !== false && hotel.is_active !== false
 }
 
 /**
@@ -30,7 +37,8 @@ export function findRoundedGroupHotel(requestedGroupNumber: number, hotels: Pick
   // 반올림된 그룹 번호와 일치하는 호텔 찾기
   const targetHotel = hotels.find(hotel => 
     hotel.group_number === roundedGroupNumber && 
-    hotel.is_active === true
+    hotel.is_active !== false &&
+    hotel.use_for_pickup !== false
   )
   
   return targetHotel || null

@@ -2,7 +2,11 @@ import React, { useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
-import { normalizeReservationIds } from '@/utils/tourUtils'
+import {
+  normalizeReservationIds,
+  reservationIdsLooselyEqual,
+  sameTourProductAndDate,
+} from '@/utils/tourUtils'
 
 export function useTourHandlers() {
   // 단독투어 상태 업데이트 함수
@@ -228,53 +232,6 @@ export function useTourHandlers() {
     }
   }, [])
 
-  // 예약 배정 함수
-  const handleAssignReservation = useCallback(async (tour: { id: string }, reservationId: string) => {
-    if (!tour) return
-
-    const rid = String(reservationId).trim()
-    if (!rid) return
-
-    try {
-      const { data: conflictRows, error: conflictErr } = await supabase
-        .from('tours')
-        .select('id')
-        .contains('reservation_ids', [rid])
-        .neq('id', tour.id)
-        .limit(1)
-
-      if (conflictErr) {
-        console.error('handleAssignReservation conflict check:', conflictErr)
-      } else if (conflictRows && conflictRows.length > 0) {
-        alert(
-          '이 예약은 이미 다른 투어에 배정되어 있습니다. 해당 투어에서 해제하거나, 이 화면에서 다른 투어에 배정된 예약을 이 투어로 옮기는 기능을 사용해 주세요.'
-        )
-        return
-      }
-
-      const currentReservationIds = normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)
-      if (currentReservationIds.includes(rid)) {
-        return currentReservationIds
-      }
-
-      const updatedReservationIds = [...currentReservationIds, rid]
-
-      const { error } = await supabase
-        .from('tours')
-        .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
-        .eq('id', tour.id)
-
-      if (error) {
-        console.error('Error assigning reservation:', error)
-        return
-      }
-
-      return updatedReservationIds
-    } catch (error) {
-      console.error('Error assigning reservation:', error)
-    }
-  }, [])
-
   /** 다른 투어 reservation_ids에서 제거 후 대상 투어에 추가 (같은 날/상품 내 재배정) */
   const handleMoveReservationBetweenTours = useCallback(
     async (reservationId: string, fromTourId: string, toTourId: string) => {
@@ -296,16 +253,13 @@ export function useTourHandlers() {
         const toRow = rows.find((r) => r.id === toTourId) as { id: string; reservation_ids?: unknown } | undefined
         if (!fromRow || !toRow) return null
 
-        const normalizeIds = (raw: unknown): string[] => {
-          if (!raw || !Array.isArray(raw)) return []
-          return raw.map((x) => String(x).trim()).filter(Boolean)
-        }
-
-        const fromIds = normalizeIds(fromRow.reservation_ids)
-        const toIds = normalizeIds(toRow.reservation_ids)
-        const newFromIds = fromIds.filter((id) => id !== rid)
-        const toUnique = [...new Set(toIds.filter((id) => id !== rid))]
-        const newToIds = [...toUnique, rid]
+        const fromIds = normalizeReservationIds(fromRow.reservation_ids)
+        const toIds = normalizeReservationIds(toRow.reservation_ids)
+        const fromMatch = fromIds.find((id) => reservationIdsLooselyEqual(id, rid))
+        const ridForStorage = fromMatch ?? rid
+        const newFromIds = fromIds.filter((id) => !reservationIdsLooselyEqual(id, rid))
+        const toUnique = [...new Set(toIds.filter((id) => !reservationIdsLooselyEqual(id, rid)))]
+        const newToIds = [...toUnique, ridForStorage]
 
         const { error: e1 } = await supabase
           .from('tours')
@@ -340,6 +294,92 @@ export function useTourHandlers() {
       }
     },
     []
+  )
+
+  // 예약 배정 함수
+  const handleAssignReservation = useCallback(
+    async (tour: { id: string }, reservationId: string) => {
+      if (!tour) return
+
+      const rid = String(reservationId).trim()
+      if (!rid) return
+
+      try {
+        const { data: conflictRows, error: conflictErr } = await supabase
+          .from('tours')
+          .select('id, product_id, tour_date')
+          .contains('reservation_ids', [rid])
+          .neq('id', tour.id)
+          .limit(1)
+
+        if (conflictErr) {
+          console.error('handleAssignReservation conflict check:', conflictErr)
+        } else if (conflictRows && conflictRows.length > 0) {
+          const conflict = conflictRows[0] as {
+            id: string
+            product_id: string | null
+            tour_date: string | null
+          }
+          const { data: targetMeta, error: targetMetaErr } = await supabase
+            .from('tours')
+            .select('product_id, tour_date')
+            .eq('id', tour.id)
+            .maybeSingle()
+
+          if (targetMetaErr) {
+            console.error('handleAssignReservation target tour meta:', targetMetaErr)
+          }
+
+          let shouldMove =
+            !!(targetMeta && sameTourProductAndDate(conflict, targetMeta))
+
+          if (!shouldMove && targetMeta) {
+            const { data: resRow, error: resErr } = await supabase
+              .from('reservations')
+              .select('product_id, tour_date')
+              .eq('id', rid)
+              .maybeSingle()
+            if (resErr) {
+              console.error('handleAssignReservation reservation meta:', resErr)
+            }
+            shouldMove = !!(resRow && sameTourProductAndDate(resRow, targetMeta))
+          }
+
+          if (shouldMove) {
+            const moved = await handleMoveReservationBetweenTours(rid, conflict.id, tour.id)
+            if (moved) return moved.newToIds
+            return
+          }
+
+          alert(
+            '이 예약은 이미 다른 투어에 배정되어 있습니다. 해당 투어에서 해제하거나, 이 화면에서 다른 투어에 배정된 예약을 이 투어로 옮기는 기능을 사용해 주세요.'
+          )
+          return
+        }
+
+        const currentReservationIds = normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)
+        if (currentReservationIds.includes(rid)) {
+          return currentReservationIds
+        }
+
+        const updatedReservationIds = [...currentReservationIds, rid]
+
+        const { error } = await supabase
+          .from('tours')
+          .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
+          .eq('id', tour.id)
+
+        if (error) {
+          console.error('Error assigning reservation:', error)
+          return
+        }
+
+        return updatedReservationIds
+      } catch (error) {
+        console.error('Error assigning reservation:', error)
+      }
+    },
+    [handleMoveReservationBetweenTours]
   )
 
   // 예약 배정 해제 함수

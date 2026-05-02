@@ -412,6 +412,53 @@ export function isoToLocalCalendarDateKey(iso: string | null | undefined): strin
   return `${year}-${month}-${day}`
 }
 
+const LV_TZ = 'America/Los_Angeles'
+
+/** UTC/ISO 시각을 라스베가스 달력 날짜 YYYY-MM-DD로 변환 (예약 등록일·수정일 집계용) */
+export function isoToLasVegasCalendarDateKey(iso: string | null | undefined): string | null {
+  if (iso == null || String(iso).trim() === '') return null
+  const date = new Date(iso)
+  if (isNaN(date.getTime())) return null
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LV_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = fmt.formatToParts(date)
+  const y = parts.find((p) => p.type === 'year')?.value
+  const m = parts.find((p) => p.type === 'month')?.value
+  const d = parts.find((p) => p.type === 'day')?.value
+  if (!y || !m || !d) return null
+  return `${y}-${m}-${d}`
+}
+
+/** 라스베가스 달력 기준 오늘 YYYY-MM-DD */
+export function lasVegasCalendarDateKeyToday(): string {
+  return isoToLasVegasCalendarDateKey(new Date().toISOString()) ?? ''
+}
+
+/** 등록 시각의 LV 달력 날짜가 LV 기준 오늘보다 이전이면 true */
+export function isReservationAddedStrictlyBeforeTodayLasVegas(
+  addedAt: string | null | undefined
+): boolean {
+  const addedKey = isoToLasVegasCalendarDateKey(addedAt)
+  if (!addedKey) return false
+  const today = lasVegasCalendarDateKeyToday()
+  if (!today) return false
+  return addedKey < today
+}
+
+/** DB 투어일(YYYY-MM-DD)이 라스베가스 달력 기준 오늘보다 이전이면 true */
+export function isReservationTourDatePastLasVegas(d: string | null | undefined): boolean {
+  const key = normalizeTourDateKey(d)
+  const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return false
+  const today = lasVegasCalendarDateKeyToday()
+  if (!today) return false
+  return key < today
+}
+
 /**
  * 예약 인원 합계 (성인+아동+유아).
  * DB/API는 `child`·`infant`와 `children`·`infants`가 혼용될 수 있음.

@@ -4,8 +4,9 @@ import React from 'react'
 import { Calendar } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import Image from 'next/image'
-import { getProductName, getChannelName, getStatusLabel, isoToLocalCalendarDateKey } from '@/utils/reservationUtils'
+import { getProductName, getChannelName, getStatusLabel, isoToLasVegasCalendarDateKey } from '@/utils/reservationUtils'
 import type { Reservation } from '@/types/reservation'
+import { formatLvYmdLong } from '@/lib/lasVegasCalendar'
 
 interface DateGroupHeaderProps {
   date: string
@@ -35,7 +36,7 @@ export function DateGroupHeader({
   const locale = useLocale()
   const dateLocaleTag = locale === 'en' ? 'en-US' : 'ko-KR'
 
-  const registeredOnDate = reservations.filter((r) => isoToLocalCalendarDateKey(r.addedTime) === date)
+  const registeredOnDate = reservations.filter((r) => isoToLasVegasCalendarDateKey(r.addedTime) === date)
 
   const regCount = registeredOnDate.length
   let regPending = 0
@@ -55,7 +56,7 @@ export function DateGroupHeader({
   const regOther = Math.max(0, regPeopleTotal - regAccounted)
 
   const cancelledOnDate = reservations.filter(
-    (r) => isCancelledLikeStatus(r.status) && isoToLocalCalendarDateKey(r.updated_at ?? null) === date
+    (r) => isCancelledLikeStatus(r.status) && isoToLasVegasCalendarDateKey(r.updated_at ?? null) === date
   )
   const cancelCount = cancelledOnDate.length
   const cancelPeople = cancelledOnDate.reduce((sum, r) => sum + r.totalPeople, 0)
@@ -91,16 +92,7 @@ export function DateGroupHeader({
           people: reservations.reduce((total, r) => total + r.totalPeople, 0)
         })
 
-  const formattedTitleDate = (() => {
-    const [year, month, day] = date.split('-').map(Number)
-    const dateObj = new Date(year, month - 1, day)
-    return dateObj.toLocaleDateString(dateLocaleTag, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long'
-    })
-  })()
+  const formattedTitleDate = formatLvYmdLong(date, dateLocaleTag)
 
   const productGroups = reservations.reduce((groups, reservation) => {
     const productName = getProductName(reservation.productId, products || [])

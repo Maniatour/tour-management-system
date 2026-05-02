@@ -250,6 +250,8 @@ export default function AdminCustomers() {
       const { data, error } = await supabase
         .from('pickup_hotels')
         .select('*')
+        .eq('use_for_pickup', true)
+        .or('is_active.is.null,is_active.eq.true')
         .order('hotel', { ascending: true })
 
       if (error) {

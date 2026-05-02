@@ -25,8 +25,11 @@ import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusS
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import { ReservationFollowUpPipelineIcons } from '@/components/reservation/ReservationFollowUpPipelineIcons'
+import CancelledSimpleCardFollowUpStrip from '@/components/reservation/CancelledSimpleCardFollowUpStrip'
+import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
 import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
 import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
+import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
@@ -85,7 +88,8 @@ function formatRegistrationDateForCard(reservation: Reservation, locale: string)
     return new Date(parsed).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'America/Los_Angeles',
     })
   }
   return raw.trim()
@@ -196,6 +200,12 @@ interface ReservationCardItemProps {
     step: FollowUpPipelineStepKey,
     action: 'mark' | 'clear'
   ) => void | Promise<void>
+  /** 간단 카드·취소: 취소 후 Follow-up 수동 완료(전화·재예약 권유) */
+  onCancelFollowUpManualChange?: (
+    reservationId: string,
+    kind: CancelFollowUpManualKind,
+    action: 'mark' | 'clear'
+  ) => void | Promise<void>
   /** 픽업 요약 모달 재표시 요청 */
   reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
   onReshowPickupSummaryConsumed?: () => void
@@ -259,7 +269,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   reshowPickupSummaryRequest = null,
   onReshowPickupSummaryConsumed,
   followUpPipelineSnapshot = null,
-  onFollowUpPipelineManualChange
+  onFollowUpPipelineManualChange,
+  onCancelFollowUpManualChange
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -288,6 +299,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     normalizeTourId(linkedTourId) || (dbTourListsThisReservation ? tourIdFromReservationRow : '')
 
   const reservationStatusLower = (reservation.status as string)?.toLowerCase?.() || ''
+  const isReservationCancelled =
+    reservationStatusLower === 'cancelled' || reservationStatusLower === 'canceled'
   const hideAssignedTourUi =
     reservationStatusLower === 'cancelled' ||
     reservationStatusLower === 'canceled' ||
@@ -299,6 +312,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const [simpleActionsExpanded, setSimpleActionsExpanded] = useState(false)
   const [pickupSummaryModalOpen, setPickupSummaryModalOpen] = useState(false)
   const [pickupSummaryPortalReady, setPickupSummaryPortalReady] = useState(false)
+  const [cancelReasonBadge, setCancelReasonBadge] = useState<string | null>(null)
+  const [cancelReasonFetchIx, setCancelReasonFetchIx] = useState(0)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -322,6 +337,30 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [statusDropdownOpen])
+
+  useEffect(() => {
+    if (cardLayout !== 'simple' || !isReservationCancelled) {
+      setCancelReasonBadge(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('reservation_follow_ups')
+        .select('content')
+        .eq('reservation_id', reservation.id)
+        .eq('type', 'cancellation_reason')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (cancelled || error) return
+      const text = String((data as { content?: string | null } | null)?.content ?? '').trim()
+      setCancelReasonBadge(text.length > 0 ? text : null)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [cardLayout, isReservationCancelled, reservation.id, cancelReasonFetchIx])
 
   const statusOptions = [
     { value: 'pending', labelKey: 'status.pending' },
@@ -434,7 +473,11 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               })()}
               <button
                 type="button"
-                className="min-w-0 truncate text-left text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                className={`min-w-0 truncate text-left text-sm font-medium hover:underline ${
+                  isReservationCancelled
+                    ? 'text-gray-400 hover:text-gray-500'
+                    : 'text-gray-900 hover:text-blue-600'
+                }`}
                 onClick={(e) => {
                   e.stopPropagation()
                   const customer = customers.find((c) => c.id === reservation.customerId)
@@ -502,18 +545,27 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               </div>
             </div>
             <div className="flex shrink-0 items-center">
-              <ReservationFollowUpPipelineIcons
-                snapshot={followUpPipelineSnapshot}
-                disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
-                onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
-                {...(onFollowUpPipelineManualChange
-                  ? {
-                      allowManualCompletion: true as const,
-                      onManualStepChange: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') =>
-                        onFollowUpPipelineManualChange(reservation.id, step, action),
-                    }
-                  : {})}
-              />
+              {cardLayout === 'simple' && isReservationCancelled ? (
+                <CancelledSimpleCardFollowUpStrip
+                  reservationId={reservation.id}
+                  snapshot={followUpPipelineSnapshot}
+                  onCancelFollowUpManualChange={onCancelFollowUpManualChange}
+                  onReasonSaved={() => setCancelReasonFetchIx((x) => x + 1)}
+                />
+              ) : (
+                <ReservationFollowUpPipelineIcons
+                  snapshot={followUpPipelineSnapshot}
+                  disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
+                  onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
+                  {...(onFollowUpPipelineManualChange
+                    ? {
+                        allowManualCompletion: true as const,
+                        onManualStepChange: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') =>
+                          onFollowUpPipelineManualChange(reservation.id, step, action),
+                      }
+                    : {})}
+                />
+              )}
             </div>
           </div>
 
@@ -525,6 +577,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-800 min-w-0 flex-1">
                     <span className="text-xs font-medium text-gray-600 shrink-0">{t('card.registrationDateLabel')}</span>
                     <span className="tabular-nums">{formatRegistrationDateForCard(reservation, locale)}</span>
+                    {cardLayout === 'simple' && isReservationCancelled && cancelReasonBadge ? (
+                      <span
+                        className="max-w-[11rem] truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 ring-1 ring-slate-200/80"
+                        title={cancelReasonBadge}
+                      >
+                        {cancelReasonBadge}
+                      </span>
+                    ) : null}
                   </div>
                   <button
                     type="button"
@@ -1062,7 +1122,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               />
             )}
             
-            <span>{getCustomerName(reservation.customerId, customers || [])}</span>
+            <span className={isReservationCancelled ? 'text-gray-400' : undefined}>
+              {getCustomerName(reservation.customerId, customers || [])}
+            </span>
             {/* ?? ?? */}
             {(() => {
               const hasChild = reservation.child > 0
@@ -1114,10 +1176,11 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             </a>
             {reservation.addedTime ? (
               <span className="text-xs text-gray-500">
-                {new Date(reservation.addedTime).toLocaleDateString('ko-KR', {
+                {new Date(reservation.addedTime).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
                   year: 'numeric',
                   month: 'short',
-                  day: 'numeric'
+                  day: 'numeric',
+                  timeZone: 'America/Los_Angeles',
                 })}
               </span>
             ) : null}
@@ -1563,7 +1626,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
       pa.manualConfirmation === na.manualConfirmation &&
       pa.manualResident === na.manualResident &&
       pa.manualDeparture === na.manualDeparture &&
-      pa.manualPickup === na.manualPickup)
+      pa.manualPickup === na.manualPickup &&
+      pa.cancelFollowUpManual === na.cancelFollowUpManual &&
+      pa.cancelRebookingOutreachManual === na.cancelRebookingOutreachManual)
 
   return (
     prevProps.reservation.id === nextProps.reservation.id &&
@@ -1576,6 +1641,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     prevProps.tourInfoMap === nextProps.tourInfoMap &&
     prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id) &&
     prevProps.onFollowUpPipelineManualChange === nextProps.onFollowUpPipelineManualChange &&
+    prevProps.onCancelFollowUpManualChange === nextProps.onCancelFollowUpManualChange &&
     snapSame
   )
 })

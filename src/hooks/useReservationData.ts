@@ -279,7 +279,8 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const { data, error } = await supabase
         .from('pickup_hotels')
         .select('*')
-        .eq('is_active', true)
+        .eq('use_for_pickup', true)
+        .or('is_active.is.null,is_active.eq.true')
         .order('hotel', { ascending: true })
 
       if (error) {

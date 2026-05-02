@@ -106,6 +106,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     youtube_link: hotel?.youtube_link || '',
     media: hotel?.media || [],
     is_active: hotel?.is_active ?? true,
+    use_for_pickup: hotel?.use_for_pickup ?? true,
     group_number: hotel?.group_number || null
   })
 
@@ -533,20 +534,45 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
               </span>
             )}
           </div>
-          <div className="flex items-center space-x-6">
-            {/* 픽업 호텔로 사용 온오프 스위치 */}
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-gray-700">픽업 호텔로 사용</span>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:gap-x-6">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">활성</span>
               <button
                 type="button"
-                onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  formData.is_active ? 'bg-blue-600' : 'bg-gray-200'
+                onClick={() =>
+                  setFormData((f) => ({
+                    ...f,
+                    is_active: !(f.is_active !== false),
+                  }))
+                }
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  formData.is_active !== false ? 'bg-blue-600' : 'bg-gray-200'
                 }`}
               >
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    formData.is_active ? 'translate-x-6' : 'translate-x-1'
+                    formData.is_active !== false ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 min-w-0">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">픽업 호텔로 사용</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData((f) => ({
+                    ...f,
+                    use_for_pickup: !(f.use_for_pickup !== false),
+                  }))
+                }
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+                  formData.use_for_pickup !== false ? 'bg-emerald-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    formData.use_for_pickup !== false ? 'translate-x-6' : 'translate-x-1'
                   }`}
                 />
               </button>

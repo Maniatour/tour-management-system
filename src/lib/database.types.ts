@@ -3841,6 +3841,7 @@ export type Database = {
           pick_up_location: string
           pin: string | null
           updated_at: string | null
+          use_for_pickup: boolean
           youtube_link: string | null
         }
         Insert: {
@@ -3857,6 +3858,7 @@ export type Database = {
           pick_up_location: string
           pin?: string | null
           updated_at?: string | null
+          use_for_pickup?: boolean
           youtube_link?: string | null
         }
         Update: {
@@ -3873,6 +3875,7 @@ export type Database = {
           pick_up_location?: string
           pin?: string | null
           updated_at?: string | null
+          use_for_pickup?: boolean
           youtube_link?: string | null
         }
         Relationships: []

@@ -26,6 +26,47 @@ export function normalizeReservationIds(reservationIds: unknown): string[] {
   return []
 }
 
+/** UUID 하이픈 유무·대소문자 차이를 무시하고 예약 ID가 같은지 비교 */
+export function reservationIdsLooselyEqual(a: string, b: string): boolean {
+  const na = String(a).trim().toLowerCase()
+  const nb = String(b).trim().toLowerCase()
+  if (na === nb) return true
+  const da = na.replace(/-/g, '')
+  const db = nb.replace(/-/g, '')
+  if (da.length === 32 && db.length === 32 && /^[0-9a-f]{32}$/.test(da) && /^[0-9a-f]{32}$/.test(db)) {
+    return da === db
+  }
+  return false
+}
+
+/** 집계·중복 검사용 (UUID면 하이픈 제거 소문자) */
+export function canonicalReservationIdKey(s: string): string {
+  const t = String(s).trim().toLowerCase()
+  const h = t.replace(/-/g, '')
+  if (/^[0-9a-f]{32}$/.test(h)) return h
+  return t
+}
+
+/** DB/JSON마다 다른 투어일 표기를 YYYY-MM-DD 키로 맞춤 */
+export function normalizeTourDateKey(value: unknown): string {
+  if (value == null) return ''
+  const s = String(value).trim()
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (m) return m[1]
+  return s.length >= 10 ? s.slice(0, 10) : s
+}
+
+/** 같은 상품·같은 투어일(날짜만)인지 */
+export function sameTourProductAndDate(
+  a: { product_id?: string | null; tour_date?: string | null },
+  b: { product_id?: string | null; tour_date?: string | null }
+): boolean {
+  const pa = String(a.product_id ?? '').trim().toLowerCase()
+  const pb = String(b.product_id ?? '').trim().toLowerCase()
+  if (!pa || !pb || pa !== pb) return false
+  return normalizeTourDateKey(a.tour_date) === normalizeTourDateKey(b.tour_date)
+}
+
 /** 정규화한 뒤, 첫 등장 순서를 유지하며 ID 중복을 제거 (한 투어의 reservation_ids 배열만 정리) */
 export function dedupeReservationIdsPreservingOrder(reservationIds: unknown): string[] {
   const ids = normalizeReservationIds(reservationIds)

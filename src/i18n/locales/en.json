@@ -2046,7 +2046,20 @@
       "editPickupTimeButton": "Edit pickup time",
       "editPickupHotelButton": "Change pickup hotel",
       "registrationDateLabel": "Registered",
-      "prepaidTipBadgeTitle": "Prepaid tip — tip amount included in reservation pricing"
+      "prepaidTipBadgeTitle": "Prepaid tip — tip amount included in reservation pricing",
+      "cancellationReasonLabel": "Cancellation reason",
+      "noCancellationReasonShort": "(No cancellation reason on file)",
+      "registrationDateIconTitle": "Registered on",
+      "cancellationDateIconTitle": "Cancelled on",
+      "cancelAfterProcessShort": "After cancel",
+      "cancellationReasonButtonTitle": "Cancellation reason / note (reservation_follow_ups)",
+      "cancellationReasonModalTitle": "Cancellation reason / note",
+      "cancellationReasonPlaceholder": "Enter cancellation reason or internal note.",
+      "cancellationReasonPlaceholderOptional": "Or enter cancellation reason (optional)",
+      "cancellationReasonSave": "Save",
+      "cancellationReasonCancel": "Close",
+      "cancellationReasonNeedLogin": "Sign in to save.",
+      "cancellationReasonSaveFailed": "Could not save."
     },
     "followUpPipeline": {
       "headerButton": "Follow-up stages",

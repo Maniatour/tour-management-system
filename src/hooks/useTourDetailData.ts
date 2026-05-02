@@ -8,6 +8,10 @@ import {
   getDefaultTeamTypeForProduct,
   sumPeopleSameProductDate,
   isReservationDeletedStatus,
+  isReservationCancelledStatus,
+  normalizeReservationIds,
+  canonicalReservationIdKey,
+  reservationIdsLooselyEqual,
 } from '@/utils/tourUtils'
 import { useAuth } from '@/contexts/AuthContext'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
@@ -37,6 +41,68 @@ type ExtendedReservationRow = ReservationRow & {
   customer_email?: string
   customer_language?: string
   assigned_tour_id?: string | null
+  /** reservation_follow_ups cancellation_reason (배정 관리 카드 등) */
+  cancellation_reason?: string | null
+  /** 취소 사유 follow-up 최초 생성 시각(취소일 표시용) */
+  cancellation_recorded_at?: string | null
+}
+
+type CancellationFollowUpMeta = { reason: string; firstRecordedAt: string | null }
+
+async function fetchCancellationFollowUpMeta(
+  reservationIds: string[]
+): Promise<Map<string, CancellationFollowUpMeta>> {
+  const map = new Map<string, CancellationFollowUpMeta>()
+  const ids = [...new Set(reservationIds.map((x) => String(x).trim()).filter(Boolean))]
+  if (ids.length === 0) return map
+  const { data, error } = await supabase
+    .from('reservation_follow_ups')
+    .select('reservation_id, content, created_at')
+    .in('reservation_id', ids)
+    .eq('type', 'cancellation_reason')
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.error('fetchCancellationFollowUpMeta:', error)
+    return map
+  }
+  const grouped = new Map<string, Array<{ content: string | null; created_at: string | null }>>()
+  for (const row of data || []) {
+    const rid = String((row as { reservation_id: string }).reservation_id)
+    const list = grouped.get(rid) || []
+    list.push({
+      content: (row as { content?: string | null }).content ?? null,
+      created_at: (row as { created_at?: string | null }).created_at ?? null,
+    })
+    grouped.set(rid, list)
+  }
+  for (const [rid, rows] of grouped) {
+    const sorted = [...rows].sort((a, b) =>
+      String(a.created_at || '').localeCompare(String(b.created_at || ''))
+    )
+    const first = sorted[0]
+    const last = sorted[sorted.length - 1]
+    const reason =
+      last?.content != null && String(last.content).trim() ? String(last.content).trim() : ''
+    map.set(rid, {
+      reason,
+      firstRecordedAt: first?.created_at ? String(first.created_at) : null,
+    })
+  }
+  return map
+}
+
+function attachCancellationFollowUpMeta<T extends { id: string }>(
+  rows: T[],
+  metaMap: Map<string, CancellationFollowUpMeta>
+): (T & { cancellation_reason?: string | null; cancellation_recorded_at?: string | null })[] {
+  return rows.map((r) => {
+    const m = metaMap.get(String(r.id))
+    return {
+      ...r,
+      cancellation_reason: m !== undefined ? (m.reason ? m.reason : null) : null,
+      cancellation_recorded_at: m?.firstRecordedAt ?? null,
+    }
+  })
 }
 
 export function useTourDetailData() {
@@ -249,7 +315,12 @@ export function useTourDetailData() {
         const reservationsData = await fetchReservations()
 
         const [pickupHotelsResult, productsResult, channelsResult, teamMembersResult] = await Promise.all([
-          supabase.from('pickup_hotels').select('*').order('hotel'),
+          supabase
+            .from('pickup_hotels')
+            .select('*')
+            .eq('use_for_pickup', true)
+            .or('is_active.is.null,is_active.eq.true')
+            .order('hotel'),
           supabase.from('products').select('*').order('name_ko'),
           supabase.from('channels').select('*').order('name'),
           supabase
@@ -479,7 +550,7 @@ export function useTourDetailData() {
       // 예약 분류 (전체 고객 목록과 무관 — 예약·고객 매핑은 구간별 조회로 처리)
         if (reservationsData && tourData) {
           const tour = tourData as TourRow
-          const assignedReservationIds = (tour.reservation_ids || []) as string[]
+          const assignedReservationIds = normalizeReservationIds(tour.reservation_ids)
           
           console.log('📊 투어 배정 정보 확인:', {
             tourId: tour.id,
@@ -562,14 +633,12 @@ export function useTourDetailData() {
           if (tours.length > 0) {
             tours.forEach(t => {
               const tourRow = t as TourRow
-              if (tourRow.reservation_ids && Array.isArray(tourRow.reservation_ids)) {
-                tourRow.reservation_ids.forEach((id: unknown) => {
-                  const reservationId = String(id).trim()
-                  if (reservationId) {
-                    allAssignedReservationIdsSet.add(reservationId)
-                    reservationToTourMap.set(reservationId, tourRow.id)
-                  }
-                })
+              for (const reservationId of normalizeReservationIds(tourRow.reservation_ids)) {
+                if (reservationId) {
+                  const key = canonicalReservationIdKey(reservationId)
+                  allAssignedReservationIdsSet.add(key)
+                  reservationToTourMap.set(key, tourRow.id)
+                }
               }
             })
           }
@@ -618,14 +687,11 @@ export function useTourDetailData() {
               const otherToursList = (otherTours || []) as Array<{ id: string; reservation_ids?: unknown }>
               otherToursList.forEach(t => {
                 const tourRow = t as TourRow
-                if (tourRow.reservation_ids && Array.isArray(tourRow.reservation_ids)) {
-                  tourRow.reservation_ids.forEach((id: unknown) => {
-                    const reservationId = String(id).trim()
-                    if (reservationId) {
-                      otherReservationIdsSet.add(reservationId)
-                      reservationToTourMap.set(reservationId, tourRow.id)
-                    }
-                  })
+                for (const reservationId of normalizeReservationIds(tourRow.reservation_ids)) {
+                  if (reservationId) {
+                    otherReservationIdsSet.add(reservationId)
+                    reservationToTourMap.set(canonicalReservationIdKey(reservationId), tourRow.id)
+                  }
                 }
               })
 
@@ -666,7 +732,8 @@ export function useTourDetailData() {
                     const otherCustomers = (otherCustomersData || []) as CustomerRow[]
                     filteredReservations = filteredReservations.map(reservation => {
                       const customer = otherCustomers.find(c => c.id === reservation.customer_id)
-                      const assignedTourId = reservationToTourMap.get(reservation.id) || null
+                      const assignedTourId =
+                        reservationToTourMap.get(canonicalReservationIdKey(String(reservation.id))) || null
                       
                       return {
                         ...reservation,
@@ -680,7 +747,8 @@ export function useTourDetailData() {
                   }
                 } else {
                   filteredReservations = filteredReservations.map(reservation => {
-                    const assignedTourId = reservationToTourMap.get(reservation.id) || null
+                    const assignedTourId =
+                      reservationToTourMap.get(canonicalReservationIdKey(String(reservation.id))) || null
                     return {
                       ...reservation,
                       assigned_tour_id: assignedTourId
@@ -702,7 +770,7 @@ export function useTourDetailData() {
           // 어느 투어의 reservation_ids에도 포함되지 않고
           // status가 confirmed 또는 recruiting인 예약
           let pendingReservations = allSameDateProductReservationsList.filter(r => {
-            const reservationId = String(r.id).trim()
+            const reservationId = canonicalReservationIdKey(String(r.id).trim())
             const isInAnyTour = allAssignedReservationIdsSet.has(reservationId)
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
@@ -850,10 +918,17 @@ export function useTourDetailData() {
             }))
           }
           
-          setAssignedReservations(activeAssignedReservations)
-          setPendingReservations(pendingReservations)
-          setOtherToursAssignedReservations(activeOtherToursAssignedReservations)
-          setOtherStatusReservations(allOtherStatusReservations)
+          const cancelledIdsForReasons = allSameDateProductReservationsList
+            .filter((r) => isReservationCancelledStatus(r.status))
+            .map((r) => String(r.id))
+          const cancellationFollowUpMap = await fetchCancellationFollowUpMeta(cancelledIdsForReasons)
+
+          setAssignedReservations(attachCancellationFollowUpMeta(activeAssignedReservations, cancellationFollowUpMap))
+          setPendingReservations(attachCancellationFollowUpMeta(pendingReservations, cancellationFollowUpMap))
+          setOtherToursAssignedReservations(
+            attachCancellationFollowUpMeta(activeOtherToursAssignedReservations, cancellationFollowUpMap)
+          )
+          setOtherStatusReservations(attachCancellationFollowUpMeta(allOtherStatusReservations, cancellationFollowUpMap))
         }
 
         // 예약 폼 등에 쓰는 전체 고객 목록은 수천 건일 수 있어, 화면 표시를 막지 않도록 백그라운드 로드
@@ -1198,14 +1273,12 @@ export function useTourDetailData() {
           if (toursList.length > 0) {
             toursList.forEach(t => {
               const tourRow = t as TourRow
-              if (tourRow.reservation_ids && Array.isArray(tourRow.reservation_ids)) {
-                tourRow.reservation_ids.forEach((id: unknown) => {
-                  const reservationId = String(id).trim()
-                  if (reservationId) {
-                    allAssignedReservationIdsSet.add(reservationId)
-                    reservationToTourMap.set(reservationId, tourRow.id)
-                  }
-                })
+              for (const reservationId of normalizeReservationIds(tourRow.reservation_ids)) {
+                if (reservationId) {
+                  const key = canonicalReservationIdKey(reservationId)
+                  allAssignedReservationIdsSet.add(key)
+                  reservationToTourMap.set(key, tourRow.id)
+                }
               }
             })
           }
@@ -1213,14 +1286,12 @@ export function useTourDetailData() {
           // setTour 직후 호출될 때 클로저의 tour.reservation_ids는 아직 이전 값일 수 있음 → DB에서 읽은 동일날 투어 행 사용
           const currentTourRow = toursList.find((row) => row.id === tour.id) as TourRow | undefined
           const rawAssignedIds = currentTourRow?.reservation_ids ?? tour.reservation_ids
-          const assignedReservationIds: string[] = Array.isArray(rawAssignedIds)
-            ? rawAssignedIds.map((id: unknown) => String(id).trim()).filter(Boolean)
-            : []
+          const assignedReservationIds: string[] = normalizeReservationIds(rawAssignedIds)
 
           let assignedReservations: ExtendedReservationRow[] = []
           if (assignedReservationIds.length > 0) {
-            assignedReservations = reservationsList.filter(r =>
-              assignedReservationIds.includes(r.id)
+            assignedReservations = reservationsList.filter((r) =>
+              assignedReservationIds.some((aid) => reservationIdsLooselyEqual(aid, String(r.id)))
             )
           }
 
@@ -1239,25 +1310,25 @@ export function useTourDetailData() {
               const otherReservationIdsSet = new Set<string>()
               otherTours.forEach(t => {
                 const tourRow = t as TourRow
-                if (tourRow.reservation_ids && Array.isArray(tourRow.reservation_ids)) {
-                  tourRow.reservation_ids.forEach((id: unknown) => {
-                    const reservationId = String(id).trim()
-                    if (reservationId) {
-                      otherReservationIdsSet.add(reservationId)
-                      reservationToTourMap.set(reservationId, tourRow.id)
-                    }
-                  })
+                for (const reservationId of normalizeReservationIds(tourRow.reservation_ids)) {
+                  if (reservationId) {
+                    otherReservationIdsSet.add(reservationId)
+                    reservationToTourMap.set(canonicalReservationIdKey(reservationId), tourRow.id)
+                  }
                 }
               })
               const otherReservationIds = Array.from(otherReservationIdsSet)
               if (otherReservationIds.length === 0) return []
 
-              const filteredReservations = reservationsList.filter(r =>
-                otherReservationIds.includes(r.id) && !assignedReservationIds.includes(r.id)
+              const filteredReservations = reservationsList.filter(
+                (r) =>
+                  otherReservationIds.some((oid) => reservationIdsLooselyEqual(oid, String(r.id))) &&
+                  !assignedReservationIds.some((aid) => reservationIdsLooselyEqual(aid, String(r.id)))
               )
-              return filteredReservations.map(reservation => ({
+              return filteredReservations.map((reservation) => ({
                 ...reservation,
-                assigned_tour_id: reservationToTourMap.get(reservation.id) || null
+                assigned_tour_id:
+                  reservationToTourMap.get(canonicalReservationIdKey(String(reservation.id))) || null,
               }))
             } catch (error) {
               console.error('❌ Error processing other tours reservations:', error)
@@ -1265,8 +1336,8 @@ export function useTourDetailData() {
             }
           })()
 
-          const pendingReservations = reservationsList.filter(r => {
-            const reservationId = String(r.id).trim()
+          const pendingReservations = reservationsList.filter((r) => {
+            const reservationId = canonicalReservationIdKey(String(r.id).trim())
             const isInAnyTour = allAssignedReservationIdsSet.has(reservationId)
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
@@ -1292,10 +1363,17 @@ export function useTourDetailData() {
             r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
           )
 
-          setAssignedReservations(activeAssignedReservations)
-          setPendingReservations(pendingReservations)
-          setOtherToursAssignedReservations(activeOtherToursAssignedReservations)
-          setOtherStatusReservations(otherStatusReservations)
+          const cancelledIdsForReasons = reservationsList
+            .filter((r) => isReservationCancelledStatus(r.status))
+            .map((r) => String(r.id))
+          const cancellationFollowUpMap = await fetchCancellationFollowUpMeta(cancelledIdsForReasons)
+
+          setAssignedReservations(attachCancellationFollowUpMeta(activeAssignedReservations, cancellationFollowUpMap))
+          setPendingReservations(attachCancellationFollowUpMeta(pendingReservations, cancellationFollowUpMap))
+          setOtherToursAssignedReservations(
+            attachCancellationFollowUpMeta(activeOtherToursAssignedReservations, cancellationFollowUpMap)
+          )
+          setOtherStatusReservations(attachCancellationFollowUpMeta(otherStatusReservations, cancellationFollowUpMap))
         }
       } else {
         setAllReservations(reservationsData || [])

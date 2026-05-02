@@ -584,7 +584,15 @@ export default function ReservationFollowUpSection({
   // contact 로그 + 예약 수정 이력의 이메일로 team nick_name 조회 (표시용: nick_name 우선, 없으면 name_ko, 없으면 이메일)
   useEffect(() => {
     const fromContact = followUps.filter((r) => r.type === 'contact').map((l) => l.created_by).filter(Boolean) as string[]
-    const fromEdit = editHistory.map((l) => l.user_email).filter(Boolean) as string[]
+    const fromEdit = editHistory.flatMap((l) => {
+      const emails: string[] = []
+      if (l.user_email?.trim()) emails.push(l.user_email.trim())
+      if (!l.user_email?.trim() && l.action === 'INSERT' && l.new_values) {
+        const ab = l.new_values.added_by
+        if (typeof ab === 'string' && ab.trim()) emails.push(ab.trim())
+      }
+      return emails
+    })
     const emails = [...new Set([...fromContact, ...fromEdit])]
     if (emails.length === 0) {
       setTeamNameByEmail((prev) => (Object.keys(prev).length === 0 ? prev : {}))
@@ -905,6 +913,11 @@ export default function ReservationFollowUpSection({
                   const fields = rawFields.filter((f) => f !== 'updated_at')
                   const oldV = log.old_values || {}
                   const newV = log.new_values || {}
+                  const addedByFromRow =
+                    log.action === 'INSERT' && typeof newV.added_by === 'string'
+                      ? newV.added_by.trim() || null
+                      : null
+                  const editHistoryAuthorEmail = log.user_email?.trim() || addedByFromRow
                   const hasDetail = log.action === 'UPDATE' && fields.length > 0
                   return (
                     <li
@@ -956,9 +969,11 @@ export default function ReservationFollowUpSection({
                           <Clock className="w-3.5 h-3.5 shrink-0" />
                           {formatEditHistoryDateTime(log.created_at)}
                         </span>
-                        <span className="flex items-center gap-1" title={log.user_email ?? ''}>
+                        <span className="flex items-center gap-1" title={editHistoryAuthorEmail ?? ''}>
                           <User className="w-3.5 h-3.5 shrink-0" />
-                          {log.user_email ? (teamNameByEmail[log.user_email] ?? log.user_email) : (isEn ? 'Unknown' : '알 수 없음')}
+                          {editHistoryAuthorEmail
+                            ? (teamNameByEmail[editHistoryAuthorEmail] ?? editHistoryAuthorEmail)
+                            : (isEn ? 'Unknown' : '알 수 없음')}
                         </span>
                       </div>
                     </li>

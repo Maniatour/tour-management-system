@@ -661,7 +661,9 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
       group_number: hotel.group_number,
 
-      is_active: hotel.is_active
+      is_active: hotel.is_active,
+
+      use_for_pickup: hotel.use_for_pickup ?? true
 
     })
 
@@ -1221,7 +1223,9 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
     try {
 
-      const newStatus = !currentStatus
+      const isOn = currentStatus !== false
+
+      const newStatus = !isOn
 
       const { error } = await supabase
 
@@ -1247,14 +1251,55 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
       await fetchHotels()
 
-      alert(locale === 'en' ? `Hotel has been ${newStatus ? 'activated' : 'deactivated'}!` : `호텔이 ${newStatus ? '활성화' : '비활성화'}되었습니다!`)
-
     } catch (error) {
 
 
       console.error('Error toggling hotel status:', error)
 
       alert(locale === 'en' ? 'Error changing hotel status.' : '호텔 상태 변경 중 오류가 발생했습니다.')
+
+    }
+
+  }
+
+  const handleToggleUseForPickup = async (id: string, currentStatus: boolean | null) => {
+
+    try {
+
+      const isOn = currentStatus !== false
+
+      const newStatus = !isOn
+
+      const { error } = await supabase
+
+        .from('pickup_hotels')
+
+        .update({ use_for_pickup: newStatus } as never)
+
+        .eq('id', id)
+
+
+
+      if (error) {
+
+        console.error('Error toggling use_for_pickup:', error)
+
+        alert(locale === 'en' ? 'Error changing pickup use: ' + error.message : '픽업 사용 설정 변경 중 오류가 발생했습니다: ' + error.message)
+
+        return
+
+      }
+
+
+
+      await fetchHotels()
+
+    } catch (error) {
+
+
+      console.error('Error toggling use_for_pickup:', error)
+
+      alert(locale === 'en' ? 'Error changing pickup use.' : '픽업 사용 설정 변경 중 오류가 발생했습니다.')
 
     }
 
@@ -1286,7 +1331,9 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
         media: hotel.media,
 
-        is_active: false // 복사본은 비활성 상태로 생성
+        is_active: false, // 복사본은 비활성 상태로 생성
+
+        use_for_pickup: false
 
       }
 
@@ -1905,23 +1952,39 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                   </button>
 
+                </div>
+
+              </div>
+
+              <div
+
+                className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2"
+
+                onClick={(e) => e.stopPropagation()}
+
+              >
+
+                <div className="flex items-center gap-2 shrink-0">
+
+                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+
+                    {locale === 'en' ? 'Active' : '활성'}
+
+                  </span>
+
                   <button
 
-                    onClick={(e) => {
+                    type="button"
 
-                      e.stopPropagation()
+                    onClick={() => handleToggleActive(hotel.id, hotel.is_active)}
 
-                      handleToggleActive(hotel.id, hotel.is_active)
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
 
-                    }}
-
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-
-                      hotel.is_active ? 'bg-blue-600' : 'bg-gray-300'
+                      hotel.is_active !== false ? 'bg-blue-600' : 'bg-gray-300'
 
                     }`}
 
-                    title={hotel.is_active ? 'Deactivate' : 'Activate'}
+                    title={locale === 'en' ? (hotel.is_active !== false ? 'Deactivate' : 'Activate') : (hotel.is_active !== false ? '비활성화' : '활성화')}
 
                   >
 
@@ -1929,7 +1992,45 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                       className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
 
-                        hotel.is_active ? 'translate-x-5' : 'translate-x-1'
+                        hotel.is_active !== false ? 'translate-x-5' : 'translate-x-1'
+
+                      }`}
+
+                    />
+
+                  </button>
+
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 min-w-0">
+
+                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+
+                    {locale === 'en' ? 'Pickup use' : '픽업 호텔로 사용'}
+
+                  </span>
+
+                  <button
+
+                    type="button"
+
+                    onClick={() => handleToggleUseForPickup(hotel.id, hotel.use_for_pickup ?? true)}
+
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+
+                      hotel.use_for_pickup !== false ? 'bg-emerald-600' : 'bg-gray-300'
+
+                    }`}
+
+                    title={locale === 'en' ? (hotel.use_for_pickup !== false ? 'Turn off' : 'Turn on') : (hotel.use_for_pickup !== false ? '끄기' : '켜기')}
+
+                  >
+
+                    <span
+
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+
+                        hotel.use_for_pickup !== false ? 'translate-x-5' : 'translate-x-1'
 
                       }`}
 
@@ -2575,9 +2676,27 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                         <div className="flex items-center space-x-1">
 
-                          <span>{locale === 'en' ? 'Status' : '상태'}</span>
+                          <span>{locale === 'en' ? 'Active' : '활성'}</span>
 
                           {getSortIcon('is_active')}
+
+                        </div>
+
+                      </th>
+
+                      <th 
+
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+
+                        onClick={() => handleSort('use_for_pickup')}
+
+                      >
+
+                        <div className="flex items-center space-x-1">
+
+                          <span>{locale === 'en' ? 'Pickup use' : '픽업 호텔로 사용'}</span>
+
+                          {getSortIcon('use_for_pickup')}
 
                         </div>
 
@@ -2817,7 +2936,13 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                           {bulkEditMode ? (
 
-                            <label className="flex items-center">
+                            <label className="flex items-center gap-2 cursor-pointer">
+
+                              <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
+
+                                {locale === 'en' ? 'Active' : '활성'}
+
+                              </span>
 
                               <input
 
@@ -2847,7 +2972,13 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                           ) : editingHotelId === hotel.id ? (
 
-                            <label className="flex items-center">
+                            <label className="flex items-center gap-2 cursor-pointer">
+
+                              <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
+
+                                {locale === 'en' ? 'Active' : '활성'}
+
+                              </span>
 
                               <input
 
@@ -2865,19 +2996,161 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
                           ) : (
 
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            <div
 
-                              hotel.is_active 
+                              className="flex items-center gap-2"
 
-                                ? 'bg-green-100 text-green-800' 
+                              onClick={(e) => e.stopPropagation()}
 
-                                : 'bg-red-100 text-red-800'
+                            >
 
-                            }`}>
+                              <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
 
-                              {hotel.is_active ? (locale === 'en' ? 'Active' : '활성') : (locale === 'en' ? 'Inactive' : '비활성')}
+                                {locale === 'en' ? 'Active' : '활성'}
 
-                            </span>
+                              </span>
+
+                              <button
+
+                                type="button"
+
+                                onClick={() => handleToggleActive(hotel.id, hotel.is_active)}
+
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+
+                                  hotel.is_active !== false ? 'bg-blue-600' : 'bg-gray-300'
+
+                                }`}
+
+                                title={locale === 'en' ? (hotel.is_active !== false ? 'Deactivate' : 'Activate') : (hotel.is_active !== false ? '비활성화' : '활성화')}
+
+                              >
+
+                                <span
+
+                                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+
+                                    hotel.is_active !== false ? 'translate-x-5' : 'translate-x-1'
+
+                                  }`}
+
+                                />
+
+                              </button>
+
+                            </div>
+
+                          )}
+
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+
+                          {bulkEditMode ? (
+
+                            <label className="flex items-center gap-2 cursor-pointer">
+
+                              <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
+
+                                {locale === 'en' ? 'Pickup use' : '픽업 호텔로 사용'}
+
+                              </span>
+
+                              <input
+
+                                type="checkbox"
+
+                                checked={bulkEditData[hotel.id]?.use_for_pickup ?? hotel.use_for_pickup ?? true}
+
+                                onChange={(e) => setBulkEditData({
+
+                                  ...bulkEditData,
+
+                                  [hotel.id]: {
+
+                                    ...bulkEditData[hotel.id],
+
+                                    use_for_pickup: e.target.checked
+
+                                  }
+
+                                })}
+
+                                className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+
+                              />
+
+                            </label>
+
+                          ) : editingHotelId === hotel.id ? (
+
+                            <label className="flex items-center gap-2 cursor-pointer">
+
+                              <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
+
+                                {locale === 'en' ? 'Pickup use' : '픽업 호텔로 사용'}
+
+                              </span>
+
+                              <input
+
+                                type="checkbox"
+
+                                checked={editFormData.use_for_pickup !== false}
+
+                                onChange={(e) => setEditFormData({...editFormData, use_for_pickup: e.target.checked})}
+
+                                className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+
+                              />
+
+                            </label>
+
+                          ) : (
+
+                            <div
+
+                              className="flex items-center gap-2"
+
+                              onClick={(e) => e.stopPropagation()}
+
+                            >
+
+                              <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
+
+                                {locale === 'en' ? 'Pickup use' : '픽업 호텔로 사용'}
+
+                              </span>
+
+                              <button
+
+                                type="button"
+
+                                onClick={() => handleToggleUseForPickup(hotel.id, hotel.use_for_pickup ?? true)}
+
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+
+                                  hotel.use_for_pickup !== false ? 'bg-emerald-600' : 'bg-gray-300'
+
+                                }`}
+
+                                title={locale === 'en' ? (hotel.use_for_pickup !== false ? 'Turn off' : 'Turn on') : (hotel.use_for_pickup !== false ? '끄기' : '켜기')}
+
+                              >
+
+                                <span
+
+                                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+
+                                    hotel.use_for_pickup !== false ? 'translate-x-5' : 'translate-x-1'
+
+                                  }`}
+
+                                />
+
+                              </button>
+
+                            </div>
 
                           )}
 

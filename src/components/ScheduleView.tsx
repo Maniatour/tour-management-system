@@ -9,7 +9,11 @@ import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { isReservationCancelledStatus } from '@/utils/tourUtils'
+import {
+  isReservationCancelledStatus,
+  normalizeReservationIds,
+  canonicalReservationIdKey,
+} from '@/utils/tourUtils'
 import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
 import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusLabel, isTourCancelled, tourStatusOptions } from '@/utils/tourStatusUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
@@ -1742,7 +1746,12 @@ export default function ScheduleView() {
               .order('name', { ascending: true }),
             supabase.from('product_options').select('*').order('name', { ascending: true }),
             supabase.from('options').select('*').order('name', { ascending: true }),
-            supabase.from('pickup_hotels').select('*').eq('is_active', true).order('hotel', { ascending: true }),
+            supabase
+              .from('pickup_hotels')
+              .select('*')
+              .eq('use_for_pickup', true)
+              .or('is_active.is.null,is_active.eq.true')
+              .order('hotel', { ascending: true }),
             supabase.from('coupons').select('*').eq('status', 'active').order('coupon_code', { ascending: true })
           ])
         if (cancelled) return
@@ -2474,6 +2483,8 @@ export default function ScheduleView() {
             koWaitingPeople: number
             enWaitingPeople: number
             canceledPeople: number
+            /** 확정·모집인데 해당일 같은 상품 투어 어디에도 배정되지 않은 예약 건수 */
+            assignmentPendingReservationCount: number
             tours: number
             koPeople: number
             enPeople: number
@@ -2519,6 +2530,7 @@ export default function ScheduleView() {
           koWaitingPeople: number
           enWaitingPeople: number
           canceledPeople: number
+          assignmentPendingReservationCount: number
           tours: number
           koPeople: number
           enPeople: number
@@ -2583,6 +2595,16 @@ export default function ScheduleView() {
         const dayCanceledPeople = dayReservationsSameDate
           .filter(res => isReservationCancelledStatus(res.status))
           .reduce((sum, res) => sum + (res.total_people || 0), 0)
+
+        const assignedKeySet = new Set<string>()
+        for (const tour of dayTours) {
+          for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+            if (rawId) assignedKeySet.add(canonicalReservationIdKey(rawId))
+          }
+        }
+        const dayAssignmentPendingReservationCount = dayReservations.filter(
+          (r) => !assignedKeySet.has(canonicalReservationIdKey(String(r.id)))
+        ).length
 
         let dayPrivateTourPeople = 0
         let dayCompanionTourPeople = 0
@@ -2694,6 +2716,7 @@ export default function ScheduleView() {
             koWaitingPeople: 0,
             enWaitingPeople: 0,
             canceledPeople: 0,
+            assignmentPendingReservationCount: 0,
             tours: 0,
             koPeople: 0,
             enPeople: 0,
@@ -2712,6 +2735,7 @@ export default function ScheduleView() {
         dailyData[dateString].koWaitingPeople += dayKoWaitingPeople
         dailyData[dateString].enWaitingPeople += dayEnWaitingPeople
         dailyData[dateString].canceledPeople += dayCanceledPeople
+        dailyData[dateString].assignmentPendingReservationCount += dayAssignmentPendingReservationCount
         dailyData[dateString].koPeople += dayKoPeople
         dailyData[dateString].enPeople += dayEnPeople
         dailyData[dateString].tours += dayTours.length
@@ -4810,12 +4834,27 @@ export default function ScheduleView() {
                                       return 'font-medium leading-tight whitespace-nowrap text-gray-900'
                                     })()}
                                   >
-                                    {formatProductScheduleCellPeopleWithPrivateSplit(
-                                      dayData.privateTourPeople ?? 0,
-                                      dayData.companionTourPeople ?? 0,
-                                      dayData.waitingPeople ?? 0,
-                                      dayData.canceledPeople ?? 0
-                                    )}
+                                    {(() => {
+                                      const ap = dayData.assignmentPendingReservationCount ?? 0
+                                      const canceledP = dayData.canceledPeople ?? 0
+                                      const core = formatProductScheduleCellPeopleWithPrivateSplit(
+                                        dayData.privateTourPeople ?? 0,
+                                        dayData.companionTourPeople ?? 0,
+                                        dayData.waitingPeople ?? 0,
+                                        0
+                                      )
+                                      return (
+                                        <>
+                                          {core}
+                                          {ap > 0 && (
+                                            <span className="font-bold text-red-600 tabular-nums">({ap})</span>
+                                          )}
+                                          {canceledP > 0 ? (
+                                            <span className="tabular-nums">{` (${canceledP})`}</span>
+                                          ) : null}
+                                        </>
+                                      )
+                                    })()}
                                   </div>
                                 ) : (
                                   <div className="text-gray-300">-</div>
