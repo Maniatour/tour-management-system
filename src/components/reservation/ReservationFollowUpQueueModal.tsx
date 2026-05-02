@@ -1,8 +1,8 @@
 'use client'
 
 import React, { useMemo, useState } from 'react'
-import { useTranslations } from 'next-intl'
-import { X, Mail, ClipboardCheck, Plane, MapPin } from 'lucide-react'
+import { useTranslations, useLocale } from 'next-intl'
+import { X, Mail, ClipboardCheck, Plane, MapPin, XCircle, PhoneForwarded, Globe } from 'lucide-react'
 import type { Reservation, Customer } from '@/types/reservation'
 import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
 import {
@@ -10,12 +10,17 @@ import {
   reservationNeedsResidentPipelineAttention,
   reservationExcludedFromFollowUpPipeline,
   reservationNeedsAnyFollowUpAttention,
+  reservationNeedsCancelFollowUpQueueAttention,
   followUpModalMatchesDepartureTab,
   followUpModalMatchesPickupTab,
+  reservationEligibleForCancelFollowUpQueue,
+  reservationCancellationGroupingDateKey,
 } from '@/lib/reservationFollowUpPipeline'
 import { getCustomerName, isReservationTourDatePastLocal, isReservationAddedStrictlyBeforeTodayLocal } from '@/utils/reservationUtils'
 
-export type FollowUpQueueTabId = 'confirm' | 'resident' | 'departure' | 'pickup'
+export type FollowUpQueueTabId = 'confirm' | 'resident' | 'departure' | 'pickup' | 'cancel'
+
+export type CancelFollowUpManualKind = 'cancel_follow_up' | 'cancel_rebooking'
 
 export interface ReservationFollowUpQueueModalProps {
   isOpen: boolean
@@ -27,6 +32,12 @@ export interface ReservationFollowUpQueueModalProps {
   loadingSnapshots: boolean
   /** 예약 관리 간단 카드와 동일한 `ReservationCardItem` 트리 */
   renderSimpleReservationCard: (reservation: Reservation) => React.ReactNode
+  /** 취소 탭: 수동 완료 토글 저장 */
+  onCancelFollowUpManualChange?: (
+    reservationId: string,
+    kind: CancelFollowUpManualKind,
+    action: 'mark' | 'clear'
+  ) => void | Promise<void>
 }
 
 function tabFilter(
@@ -35,6 +46,9 @@ function tabFilter(
   status: string | undefined,
   snap: ReservationFollowUpPipelineSnapshot | undefined
 ): boolean {
+  if (tab === 'cancel') {
+    return reservationEligibleForCancelFollowUpQueue(status, reservation.tourDate)
+  }
   if (!snap) return false
   switch (tab) {
     case 'confirm':
@@ -55,6 +69,72 @@ function tabFilter(
   }
 }
 
+function CancelFollowUpToolbarForReservation({
+  reservation,
+  snap,
+  saving,
+  uiLocale,
+  onToggle,
+}: {
+  reservation: Reservation
+  snap: ReservationFollowUpPipelineSnapshot | undefined
+  saving: boolean
+  uiLocale: string
+  onToggle: (kind: CancelFollowUpManualKind, action: 'mark' | 'clear') => void
+}) {
+  const t = useTranslations('reservations.followUpPipeline')
+  const fu = snap?.cancelFollowUpManual ?? false
+  const re = snap?.cancelRebookingOutreachManual ?? false
+  const key = reservationCancellationGroupingDateKey(reservation)
+  const approxLabel =
+    key === 'unknown'
+      ? '—'
+      : new Date(key + 'T12:00:00').toLocaleDateString(uiLocale === 'en' ? 'en-US' : 'ko-KR', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+
+  const btnClass = (done: boolean) =>
+    `inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm transition-colors disabled:opacity-50 ${
+      done
+        ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+        : 'border-gray-200 bg-white text-gray-400 hover:border-amber-300 hover:bg-amber-50/60 hover:text-amber-900'
+    }`
+
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/90 px-2 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{t('cancelToolbarLabel')}</span>
+      <button
+        type="button"
+        disabled={saving}
+        title={t('cancelFollowUpIconTitle')}
+        aria-label={t('cancelFollowUpIconTitle')}
+        aria-pressed={fu}
+        className={btnClass(fu)}
+        onClick={() => onToggle('cancel_follow_up', fu ? 'clear' : 'mark')}
+      >
+        <PhoneForwarded className="h-4 w-4" aria-hidden />
+      </button>
+      <button
+        type="button"
+        disabled={saving}
+        title={t('cancelRebookingIconTitle')}
+        aria-label={t('cancelRebookingIconTitle')}
+        aria-pressed={re}
+        className={btnClass(re)}
+        onClick={() => onToggle('cancel_rebooking', re ? 'clear' : 'mark')}
+      >
+        <Globe className="h-4 w-4" aria-hidden />
+      </button>
+      <span className="min-w-0 flex-1 text-[11px] text-slate-600">
+        <span className="font-medium text-slate-700">{t('cancelDateApproxLabel')}:</span> {approxLabel}
+      </span>
+    </div>
+  )
+}
+
 export default function ReservationFollowUpQueueModal({
   isOpen,
   onClose,
@@ -63,32 +143,40 @@ export default function ReservationFollowUpQueueModal({
   snapshotsByReservationId,
   loadingSnapshots,
   renderSimpleReservationCard,
+  onCancelFollowUpManualChange,
 }: ReservationFollowUpQueueModalProps) {
-  const t = useTranslations('reservations')
+  const tp = useTranslations('reservations.followUpPipeline')
+  const uiLocale = useLocale()
   const [tab, setTab] = useState<FollowUpQueueTabId>('confirm')
+  const [savingCancelId, setSavingCancelId] = useState<string | null>(null)
 
   const tabs = useMemo(
     () =>
       [
-        { id: 'confirm' as const, Icon: Mail, label: t('followUpPipeline.tabConfirm') },
-        { id: 'resident' as const, Icon: ClipboardCheck, label: t('followUpPipeline.tabResident') },
-        { id: 'departure' as const, Icon: Plane, label: t('followUpPipeline.tabDeparture') },
-        { id: 'pickup' as const, Icon: MapPin, label: t('followUpPipeline.tabPickup') },
+        { id: 'confirm' as const, Icon: Mail, label: tp('tabConfirm') },
+        { id: 'resident' as const, Icon: ClipboardCheck, label: tp('tabResident') },
+        { id: 'departure' as const, Icon: Plane, label: tp('tabDeparture') },
+        { id: 'pickup' as const, Icon: MapPin, label: tp('tabPickup') },
+        { id: 'cancel' as const, Icon: XCircle, label: tp('tabCancel') },
       ] as const,
-    [t]
+    [tp]
   )
 
-  const { rows, counts } = useMemo(() => {
+  const { rows, counts, cancelGrouped } = useMemo(() => {
     const counts = {
       confirm: 0,
       resident: 0,
       departure: 0,
       pickup: 0,
+      cancel: 0,
     }
     for (const r of reservations) {
+      const st = r.status as string | undefined
+      if (reservationEligibleForCancelFollowUpQueue(st, r.tourDate)) {
+        counts.cancel += 1
+      }
       if (isReservationTourDatePastLocal(r.tourDate)) continue
       if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
-      const st = r.status as string | undefined
       if (reservationExcludedFromFollowUpPipeline(st)) continue
       const snap = snapshotsByReservationId.get(r.id)
       if (!snap) continue
@@ -97,35 +185,88 @@ export default function ReservationFollowUpQueueModal({
       if (followUpModalMatchesDepartureTab(st, snap)) counts.departure += 1
       if (followUpModalMatchesPickupTab(r.tourDate, r.tourTime, st, snap)) counts.pickup += 1
     }
+
+    if (tab === 'cancel') {
+      const filtered = reservations.filter((r) =>
+        reservationEligibleForCancelFollowUpQueue(r.status as string | undefined, r.tourDate)
+      )
+      const byDate = new Map<string, Reservation[]>()
+      for (const r of filtered) {
+        const key = reservationCancellationGroupingDateKey(r)
+        const arr = byDate.get(key) ?? []
+        arr.push(r)
+        byDate.set(key, arr)
+      }
+      const todayYmd = new Date().toISOString().slice(0, 10)
+      const dayDistance = (ymd: string): number => {
+        if (ymd === 'unknown') return 999999
+        const d = new Date(ymd + 'T12:00:00').getTime()
+        const t = new Date(todayYmd + 'T12:00:00').getTime()
+        return Math.abs(Math.round((d - t) / 86400000))
+      }
+      const sortedKeys = [...byDate.keys()].sort((a, b) => {
+        const da = dayDistance(a)
+        const db = dayDistance(b)
+        if (da !== db) return da - db
+        return b.localeCompare(a)
+      })
+      for (const k of sortedKeys) {
+        const arr = byDate.get(k)
+        if (!arr) continue
+        arr.sort((a, b) => {
+          const da = String(a.tourDate ?? '')
+          const db = String(b.tourDate ?? '')
+          if (da !== db) return da.localeCompare(db)
+          return getCustomerName(a.customerId, customers).localeCompare(
+            getCustomerName(b.customerId, customers)
+          )
+        })
+      }
+      return { rows: filtered, counts, cancelGrouped: { sortedKeys, byDate } }
+    }
+
     const filtered = reservations.filter((r) => {
       if (isReservationTourDatePastLocal(r.tourDate)) return false
       if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) return false
       const st = r.status as string | undefined
       const snap = snapshotsByReservationId.get(r.id)
-      if (!snap) return false
       return tabFilter(tab, r, st, snap)
     })
     filtered.sort((a, b) => {
       const da = String(a.tourDate ?? '')
       const db = String(b.tourDate ?? '')
       if (da !== db) return da.localeCompare(db)
-      return getCustomerName(a.customerId, customers).localeCompare(
-        getCustomerName(b.customerId, customers)
-      )
+      return getCustomerName(a.customerId, customers).localeCompare(getCustomerName(b.customerId, customers))
     })
-    return { rows: filtered, counts }
+    return { rows: filtered, counts, cancelGrouped: null as null }
   }, [reservations, snapshotsByReservationId, tab, customers])
 
   const activeNeedUnion = useMemo(() => {
     let n = 0
     for (const r of reservations) {
       if (isReservationTourDatePastLocal(r.tourDate)) continue
-      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       const snap = snapshotsByReservationId.get(r.id)
+      if (
+        reservationNeedsCancelFollowUpQueueAttention(r.status as string | undefined, r.tourDate, snap)
+      ) {
+        n += 1
+        continue
+      }
+      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
   }, [reservations, snapshotsByReservationId])
+
+  const handleCancelToggle = async (reservationId: string, kind: CancelFollowUpManualKind, action: 'mark' | 'clear') => {
+    if (!onCancelFollowUpManualChange) return
+    setSavingCancelId(reservationId)
+    try {
+      await onCancelFollowUpManualChange(reservationId, kind, action)
+    } finally {
+      setSavingCancelId(null)
+    }
+  }
 
   if (!isOpen) return null
 
@@ -142,17 +283,17 @@ export default function ReservationFollowUpQueueModal({
       >
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-slate-700 to-teal-800 px-4 py-3 text-white">
           <div>
-            <h2 className="text-lg font-semibold">{t('followUpPipeline.modalTitle')}</h2>
-            <p className="mt-0.5 text-xs text-teal-100/90">{t('followUpPipeline.modalSubtitle')}</p>
+            <h2 className="text-lg font-semibold">{tp('modalTitle')}</h2>
+            <p className="mt-0.5 text-xs text-teal-100/90">{tp('modalSubtitle')}</p>
             <p className="mt-1 text-[11px] text-teal-100/80">
-              {loadingSnapshots ? t('followUpPipeline.loadingSnapshots') : t('followUpPipeline.unionBadge', { count: activeNeedUnion })}
+              {loadingSnapshots ? tp('loadingSnapshots') : tp('unionBadge', { count: activeNeedUnion })}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg p-2 text-white/90 hover:bg-white/10"
-            aria-label={t('followUpPipeline.close')}
+            aria-label={tp('close')}
           >
             <X className="h-5 w-5" />
           </button>
@@ -167,7 +308,9 @@ export default function ReservationFollowUpQueueModal({
                   ? counts.resident
                   : id === 'departure'
                     ? counts.departure
-                    : counts.pickup
+                    : id === 'pickup'
+                      ? counts.pickup
+                      : counts.cancel
             const active = tab === id
             return (
               <button
@@ -195,13 +338,60 @@ export default function ReservationFollowUpQueueModal({
         </div>
 
         <div className="min-h-[200px] flex-1 overflow-y-auto p-3 md:p-4">
-          <p className="mb-3 text-xs text-gray-600">{t(`followUpPipeline.tabHint_${tab}`)}</p>
-          {loadingSnapshots ? (
-            <div className="py-12 text-center text-sm text-gray-500">{t('followUpPipeline.loadingSnapshots')}</div>
+          <p className="mb-3 text-xs text-gray-600">
+            {tab === 'confirm' && tp('tabHint_confirm')}
+            {tab === 'resident' && tp('tabHint_resident')}
+            {tab === 'departure' && tp('tabHint_departure')}
+            {tab === 'pickup' && tp('tabHint_pickup')}
+            {tab === 'cancel' && tp('tabHint_cancel')}
+          </p>
+          {loadingSnapshots && tab !== 'cancel' ? (
+            <div className="py-12 text-center text-sm text-gray-500">{tp('loadingSnapshots')}</div>
+          ) : tab === 'cancel' && cancelGrouped ? (
+            cancelGrouped.sortedKeys.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-500">{tp('emptyTab')}</div>
+            ) : (
+              <div className="space-y-8">
+                {cancelGrouped.sortedKeys.map((dateKey) => {
+                  const groupRows = cancelGrouped.byDate.get(dateKey) ?? []
+                  const header =
+                    dateKey === 'unknown'
+                      ? tp('cancelGroupUnknown')
+                      : new Date(dateKey + 'T12:00:00').toLocaleDateString(uiLocale === 'en' ? 'en-US' : 'ko-KR', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        })
+                  return (
+                    <section key={dateKey}>
+                      <h3 className="mb-3 border-b border-gray-200 pb-1 text-sm font-semibold text-gray-800">
+                        {tp('cancelGroupHeading')}: {header}
+                        <span className="ml-2 font-normal text-gray-500">({groupRows.length})</span>
+                      </h3>
+                      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                        {groupRows.map((r) => (
+                          <div key={r.id} className="min-w-0">
+                            <CancelFollowUpToolbarForReservation
+                              reservation={r}
+                              snap={snapshotsByReservationId.get(r.id)}
+                              saving={savingCancelId === r.id}
+                              uiLocale={uiLocale}
+                              onToggle={(kind, action) => void handleCancelToggle(r.id, kind, action)}
+                            />
+                            {renderSimpleReservationCard(r)}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )
+                })}
+              </div>
+            )
           ) : rows.length === 0 ? (
-            <div className="py-12 text-center text-sm text-gray-500">{t('followUpPipeline.emptyTab')}</div>
+            <div className="py-12 text-center text-sm text-gray-500">{tp('emptyTab')}</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
               {rows.map((r) => (
                 <div key={r.id} className="min-w-0">
                   {renderSimpleReservationCard(r)}

@@ -1,6 +1,7 @@
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
   isReservationStatusConfirmed,
+  isReservationTourDatePastLocal,
   isWithin48HoursBeforeTourStartLocal,
 } from '@/utils/reservationUtils'
 
@@ -24,6 +25,10 @@ export type ReservationFollowUpPipelineSnapshot = {
   manualResident: boolean
   manualDeparture: boolean
   manualPickup: boolean
+  /** 취소 후 고객 안내(Follow-up) 처리 완료 — 수동 */
+  cancelFollowUpManual: boolean
+  /** 홈페이지 재예약 권유 별도 연락 완료 — 수동 */
+  cancelRebookingOutreachManual: boolean
 }
 
 export type FollowUpPipelineStepKey = 'confirmation' | 'resident' | 'departure' | 'pickup'
@@ -33,21 +38,61 @@ export function reservationExcludedFromFollowUpPipeline(status: string | null | 
   return s === 'cancelled' || s === 'canceled' || s === 'deleted'
 }
 
+export function isReservationCancelledOnly(status: string | null | undefined): boolean {
+  const s = String(status ?? '').toLowerCase()
+  return s === 'cancelled' || s === 'canceled'
+}
+
+/**
+ * Follow-up 모달「취소」탭 대상: 취소됐고 투어일이 아직 지나지 않음(오늘 포함 이후).
+ * 예약 처리 필요 모달의 옛 Follow up (Cancel) 탭과 동일 조건.
+ */
+export function reservationEligibleForCancelFollowUpQueue(
+  status: string | null | undefined,
+  tourDate: string | null | undefined
+): boolean {
+  if (!isReservationCancelledOnly(status)) return false
+  return !isReservationTourDatePastLocal(tourDate)
+}
+
+/** 배지·카운트: 취소 큐 중 아직 표시할 작업이 남은 경우 */
+export function reservationNeedsCancelFollowUpQueueAttention(
+  status: string | null | undefined,
+  tourDate: string | null | undefined,
+  s: ReservationFollowUpPipelineSnapshot | undefined
+): boolean {
+  if (!reservationEligibleForCancelFollowUpQueue(status, tourDate)) return false
+  if (!s) return true
+  return !s.cancelFollowUpManual || !s.cancelRebookingOutreachManual
+}
+
+/** 그룹 헤더용: 취소 처리 시점 근사(updated_at 우선, 없으면 addedTime)의 YYYY-MM-DD */
+export function reservationCancellationGroupingDateKey(r: {
+  updated_at?: string | null
+  addedTime?: string
+}): string {
+  const raw = (r.updated_at && String(r.updated_at).trim()) || String(r.addedTime ?? '').trim()
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (m) return m[1]
+  if (raw.length >= 10) return raw.slice(0, 10)
+  return 'unknown'
+}
+
 export function computeNeedsResidentFlow(productCode: string | null | undefined): boolean {
   return productShowsResidentStatusSectionByCode(productCode)
 }
 
-/** 단계별 선행 조건 충족 후 출발 확정 메일이 필요한지 */
-export function prerequisitesMetForDeparture(s: ReservationFollowUpPipelineSnapshot): boolean {
-  if (!s.confirmationSent) return false
-  if (s.needsResidentFlow) {
-    return s.residentInquirySent && s.guestResidentFlowCompleted
-  }
+/**
+ * 출발 확정 메일 단계는 컨펌·거주 완료와 무관하게 항상 처리 가능(바로 발송 허용).
+ * 스냅샷의 confirmationSent는 출발 확정 로그가 있으면 true로 올라가므로, 여기서는 게이트 없음.
+ */
+export function prerequisitesMetForDeparture(_s: ReservationFollowUpPipelineSnapshot): boolean {
   return true
 }
 
+/** 픽업 노티는 출발 확정(로그·수동) 이후에만 의미 있음 */
 export function prerequisitesMetForPickup(s: ReservationFollowUpPipelineSnapshot): boolean {
-  return prerequisitesMetForDeparture(s) && s.departureSent
+  return s.departureSent
 }
 
 /** 탭 1: 예약 확인(컨펌) 메일 미발송 */
@@ -75,7 +120,6 @@ export function reservationNeedsDepartureMail(
   s: ReservationFollowUpPipelineSnapshot
 ): boolean {
   if (reservationExcludedFromFollowUpPipeline(status)) return false
-  if (!prerequisitesMetForDeparture(s)) return false
   return !s.departureSent
 }
 
@@ -139,7 +183,7 @@ export function followUpPipelineStepCanMarkManual(
     return !done
   }
   if (step === 'departure') {
-    return prerequisitesMetForDeparture(s) && !s.departureSent
+    return !s.departureSent
   }
   return prerequisitesMetForPickup(s) && !s.pickupSent
 }

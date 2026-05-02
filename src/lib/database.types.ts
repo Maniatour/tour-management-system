@@ -5672,6 +5672,8 @@ export type Database = {
       }
       reservation_follow_up_pipeline_manual: {
         Row: {
+          cancel_follow_up_manual: boolean
+          cancel_rebooking_outreach_manual: boolean
           confirmation_manual: boolean
           departure_manual: boolean
           pickup_manual: boolean
@@ -5680,6 +5682,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancel_follow_up_manual?: boolean
+          cancel_rebooking_outreach_manual?: boolean
           confirmation_manual?: boolean
           departure_manual?: boolean
           pickup_manual?: boolean
@@ -5688,6 +5692,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancel_follow_up_manual?: boolean
+          cancel_rebooking_outreach_manual?: boolean
           confirmation_manual?: boolean
           departure_manual?: boolean
           pickup_manual?: boolean
@@ -5821,6 +5827,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      resident_inquiry_email_templates: {
+        Row: {
+          html_template: string
+          locale: string
+          subject_template: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          html_template: string
+          locale: string
+          subject_template: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          html_template?: string
+          locale?: string
+          subject_template?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
       }
       reservations: {
         Row: {
@@ -6923,15 +6953,19 @@ export type Database = {
           check_in_date: string
           company: string | null
           created_at: string | null
+          deletion_requested_at: string | null
+          deletion_requested_by: string | null
           ea: number | null
           expense: number | null
           id: string
           income: number | null
+          invoice_number: string | null
           note: string | null
           payment_method: string | null
           reservation_id: string | null
           rn_number: string | null
           season: string | null
+          statement_line_id: string | null
           status: string | null
           submit_on: string | null
           submitted_by: string
@@ -6939,21 +6973,26 @@ export type Database = {
           tour_id: string | null
           updated_at: string | null
           uploaded_file_urls: string[] | null
+          zelle_confirmation_number: string | null
         }
         Insert: {
           category: string
           check_in_date: string
           company?: string | null
           created_at?: string | null
+          deletion_requested_at?: string | null
+          deletion_requested_by?: string | null
           ea?: number | null
           expense?: number | null
           id?: string
           income?: number | null
+          invoice_number?: string | null
           note?: string | null
           payment_method?: string | null
           reservation_id?: string | null
           rn_number?: string | null
           season?: string | null
+          statement_line_id?: string | null
           status?: string | null
           submit_on?: string | null
           submitted_by: string
@@ -6961,21 +7000,26 @@ export type Database = {
           tour_id?: string | null
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
+          zelle_confirmation_number?: string | null
         }
         Update: {
           category?: string
           check_in_date?: string
           company?: string | null
           created_at?: string | null
+          deletion_requested_at?: string | null
+          deletion_requested_by?: string | null
           ea?: number | null
           expense?: number | null
           id?: string
           income?: number | null
+          invoice_number?: string | null
           note?: string | null
           payment_method?: string | null
           reservation_id?: string | null
           rn_number?: string | null
           season?: string | null
+          statement_line_id?: string | null
           status?: string | null
           submit_on?: string | null
           submitted_by?: string
@@ -6983,6 +7027,7 @@ export type Database = {
           tour_id?: string | null
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
+          zelle_confirmation_number?: string | null
         }
         Relationships: [
           {

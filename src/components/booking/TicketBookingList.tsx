@@ -38,6 +38,11 @@ import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/t
 import { isTourCancelled } from '@/utils/tourStatusUtils';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
+import type { TicketBookingLike } from '@/utils/ticketInvoiceParse';
+import {
+  SCHEDULE_COLOR_PRESETS,
+  getScheduleProductDisplayProps,
+} from '@/lib/scheduleProductColorPresets';
 
 /** 로컬 달력 YYYY-MM-DD (달력 칸 기준과 투어 기간 교차 판별용) */
 function localYmdFromDate(date: Date): string {
@@ -66,9 +71,32 @@ function localYmdFromTimestamp(iso: string): string {
   return localYmdFromDate(d);
 }
 
-function tourCalendarSpanEndYmd(tour: { tour_date: string; tour_end_datetime?: string | null }): string {
+/**
+ * 그랜드서클 멀티나잇 상품: 달력 칸 수를 DB 종료일과 무관하게 고정 (1박2일→2칸 …).
+ * ScheduleView `getMultiDayTourDays`와 동일한 product_id 규칙.
+ */
+function ticketCalendarTourFixedSpanDays(productId: string | null | undefined): number | null {
+  const pid = (productId || '').trim();
+  if (!pid) return null;
+  if (pid.startsWith('MNGC1N') || pid.startsWith('MNM1')) return 2;
+  if (pid.startsWith('MNGC2N')) return 3;
+  if (pid.startsWith('MNGC3N')) return 4;
+  return null;
+}
+
+function tourCalendarSpanEndYmd(tour: {
+  tour_date: string;
+  tour_end_datetime?: string | null;
+  product_id?: string | null;
+}): string {
   const start = ymdFromDbDate(tour.tour_date);
   if (!start) return '';
+
+  const fixedDays = ticketCalendarTourFixedSpanDays(tour.product_id);
+  if (fixedDays !== null && fixedDays >= 1) {
+    return addCalendarDaysYmd(start, fixedDays - 1);
+  }
+
   if (tour.tour_end_datetime) {
     const end = localYmdFromTimestamp(String(tour.tour_end_datetime));
     if (!end) return start;
@@ -78,7 +106,7 @@ function tourCalendarSpanEndYmd(tour: { tour_date: string; tour_end_datetime?: s
 }
 
 function tourOverlapsCalendarYmd(
-  tour: { tour_date: string; tour_end_datetime?: string | null },
+  tour: { tour_date: string; tour_end_datetime?: string | null; product_id?: string | null },
   dateYmd: string
 ): boolean {
   const start = ymdFromDbDate(tour.tour_date);
@@ -88,7 +116,7 @@ function tourOverlapsCalendarYmd(
 }
 
 function tourSpanIntersectsGrid(
-  tour: { tour_date: string; tour_end_datetime?: string | null },
+  tour: { tour_date: string; tour_end_datetime?: string | null; product_id?: string | null },
   gridStartYmd: string,
   gridEndYmd: string
 ): boolean {
@@ -166,15 +194,16 @@ interface TicketBooking {
   time: string;
   category: string;
   ea: number;
-  reservation_name: string;
+  /** UI/히스토리 호환용 (DB ticket_bookings에는 없을 수 있음) */
+  reservation_name?: string;
   submitted_by: string;
-  cc: string;
-  unit_price: number;
-  total_price: number;
+  cc?: string;
+  unit_price?: number;
+  total_price?: number;
   expense?: number;
   income?: number;
   payment_method: string;
-  website: string;
+  website?: string;
   rn_number: string;
   note?: string | null;
   invoice_number?: string;
@@ -185,14 +214,16 @@ interface TicketBooking {
   company: string;
   created_at: string;
   updated_at: string;
+  /** `TicketBookingLike` 및 exactOptionalPropertyTypes와 동일한 형태 유지 */
   tours?: {
     tour_date: string;
     total_people?: number;
     products?: {
-      name: string;
+      name?: string;
+      name_ko?: string;
       name_en?: string;
-    } | undefined;
-  } | undefined;
+    };
+  };
 }
 
 function bookingCheckInYmd(booking: TicketBooking): string {
@@ -343,10 +374,178 @@ interface TourEvent {
   adults: number;
   child: number;
   infant: number;
+  tour_guide_id?: string | null;
+  assistant_id?: string | null;
+  /** team 조회 후 표시용 */
+  guide_display_name?: string;
+  assistant_display_name?: string;
   products?: {
     name: string;
     name_en?: string;
   };
+}
+
+function ticketCalendarProductKey(tour: TourEvent): string {
+  const pid = (tour.product_id || '').trim();
+  if (pid) return `pid:${pid}`;
+  const n = (tour.products?.name || tour.products?.name_en || '').trim();
+  return `name:${n || '_'}`;
+}
+
+function ticketCalendarProductPaletteIndex(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return h % SCHEDULE_COLOR_PRESETS.length;
+}
+
+/** 스케줄 뷰에 저장된 상품 색(프리셋 id 또는 레거시 클래스), 없으면 상품키 해시로 프리셋 선택 */
+function ticketCalendarTourChipDisplayProps(
+  tour: TourEvent,
+  scheduleProductColors: Record<string, string>
+): { style?: React.CSSProperties; className?: string } {
+  const pk = ticketCalendarProductKey(tour);
+  const pid = (tour.product_id || '').trim();
+  const saved = pid ? scheduleProductColors[pid] : undefined;
+  const props = getScheduleProductDisplayProps(saved);
+  if (props.style || props.className) return props;
+  const preset = SCHEDULE_COLOR_PRESETS[ticketCalendarProductPaletteIndex(pk)]!;
+  return { style: { backgroundColor: preset.bgHex, color: preset.textHex } };
+}
+
+function ticketCalendarLegendChipDisplayProps(
+  productId: string | null,
+  legendKey: string,
+  scheduleProductColors: Record<string, string>
+): { style?: React.CSSProperties; className?: string } {
+  const pid = (productId || '').trim();
+  const saved = pid ? scheduleProductColors[pid] : undefined;
+  const props = getScheduleProductDisplayProps(saved);
+  if (props.style || props.className) return props;
+  const preset = SCHEDULE_COLOR_PRESETS[ticketCalendarProductPaletteIndex(legendKey)]!;
+  return { style: { backgroundColor: preset.bgHex, color: preset.textHex } };
+}
+
+/** 티켓 부킹 공급처(company)별 구분색 — 스케줄 프리셋 팔레트와 동일 소스, 문자열 해시로 고정 */
+function ticketBookingSupplierColors(company: string | null | undefined): {
+  backgroundColor: string;
+  color: string;
+} {
+  const key = (company || '').trim().toLowerCase() || '__none__';
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  const preset = SCHEDULE_COLOR_PRESETS[h % SCHEDULE_COLOR_PRESETS.length]!;
+  return { backgroundColor: preset.bgHex, color: preset.textHex };
+}
+
+/** 달력 주(0–5)별 투어 가로 세그먼트 — 멀티데이는 한 박스로 이어짐 */
+type TicketCalendarWeekTourSeg = {
+  tour: TourEvent;
+  weekRow: number;
+  startCol: number;
+  endCol: number;
+};
+
+function intervalOverlapsCols(a0: number, a1: number, b0: number, b1: number): boolean {
+  return !(a1 < b0 || b1 < a0);
+}
+
+function assignTicketCalendarTourLanes(
+  segments: TicketCalendarWeekTourSeg[]
+): Array<TicketCalendarWeekTourSeg & { lane: number }> {
+  const sorted = [...segments].sort(
+    (a, b) =>
+      a.startCol - b.startCol || a.endCol - a.startCol - (b.endCol - b.startCol)
+  );
+  const laneIntervals: { startCol: number; endCol: number }[][] = [];
+  const out: Array<TicketCalendarWeekTourSeg & { lane: number }> = [];
+  for (const seg of sorted) {
+    let laneIdx = 0;
+    while (laneIdx < laneIntervals.length) {
+      const lane = laneIntervals[laneIdx]!;
+      const conflict = lane.some((iv) =>
+        intervalOverlapsCols(iv.startCol, iv.endCol, seg.startCol, seg.endCol)
+      );
+      if (!conflict) break;
+      laneIdx++;
+    }
+    if (laneIdx === laneIntervals.length) laneIntervals.push([]);
+    laneIntervals[laneIdx]!.push({ startCol: seg.startCol, endCol: seg.endCol });
+    out.push({ ...seg, lane: laneIdx });
+  }
+  return out;
+}
+
+function buildTicketCalendarTourSegmentsByWeek(
+  tours: TourEvent[],
+  calendarDays: Date[],
+  gridStartYmd: string,
+  gridEndYmd: string
+): Map<number, TicketCalendarWeekTourSeg[]> {
+  const byWeek = new Map<number, TicketCalendarWeekTourSeg[]>();
+  for (let w = 0; w < 6; w++) byWeek.set(w, []);
+
+  for (const tour of tours) {
+    if (!tourSpanIntersectsGrid(tour, gridStartYmd, gridEndYmd)) continue;
+    const start = ymdFromDbDate(tour.tour_date);
+    const end = tourCalendarSpanEndYmd(tour);
+    if (!start || !end) continue;
+    const clipStart = start > gridStartYmd ? start : gridStartYmd;
+    const clipEnd = end < gridEndYmd ? end : gridEndYmd;
+    if (clipStart > clipEnd) continue;
+
+    const indices: number[] = [];
+    for (let i = 0; i < calendarDays.length; i++) {
+      const ymd = localYmdFromDate(calendarDays[i]!);
+      if (ymd >= clipStart && ymd <= clipEnd) indices.push(i);
+    }
+    if (indices.length === 0) continue;
+
+    const byRow = new Map<number, number[]>();
+    for (const i of indices) {
+      const row = Math.floor(i / 7);
+      if (!byRow.has(row)) byRow.set(row, []);
+      byRow.get(row)!.push(i);
+    }
+    for (const [row, idxs] of byRow) {
+      const cols = idxs.map((i) => i % 7);
+      const startCol = Math.min(...cols);
+      const endCol = Math.max(...cols);
+      byWeek.get(row)!.push({ tour, weekRow: row, startCol, endCol });
+    }
+  }
+
+  return byWeek;
+}
+
+const TICKET_CAL_DATE_ROW_PX = 22;
+/** 오버레이 그리드 행 최소 높이 (예전 15px대에 맞춘 컴팩트 높이) */
+const TICKET_CAL_TOUR_LANE_MIN_PX = 15;
+/** 레인 사이 세로 간격 (그리드 row-gap과 cellPadTop 계산에 동일 적용) */
+const TICKET_CAL_TOUR_LANE_GAP_PX = 2;
+/**
+ * 셀 paddingTop용 레인당 예약 높이. 라벨은 얇게 두되 minmax(MIN, auto) 확장·한 줄 줄바꿈 시에도 요약과 안 겹치게 소량 버퍼.
+ */
+const TICKET_CAL_TOUR_LANE_RESERVE_PX = 30;
+/** 투어 스트립 아래 예약 블록까지 추가 간격 */
+const TICKET_CAL_TOUR_STRIP_TAIL_PX = 8;
+
+/** 부킹 관리 초기 로드: 오래된 행 제외(전량 스캔·전송 부담 완화). 약 2년+1개월. */
+const TICKET_BOOKING_LIST_SUBMIT_ON_LOOKBACK_DAYS = 790;
+
+function ticketBookingListSubmitOnLowerBoundYmd(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - TICKET_BOOKING_LIST_SUBMIT_ON_LOOKBACK_DAYS);
+  d.setHours(12, 0, 0, 0);
+  return localYmdFromDate(d);
+}
+
+function ticketCalendarCellPadTopForTourStrip(stripRows: number): number {
+  if (stripRows <= 0) return TICKET_CAL_DATE_ROW_PX + 4;
+  const stripBody =
+    stripRows * TICKET_CAL_TOUR_LANE_RESERVE_PX +
+    Math.max(0, stripRows - 1) * TICKET_CAL_TOUR_LANE_GAP_PX +
+    TICKET_CAL_TOUR_STRIP_TAIL_PX;
+  return TICKET_CAL_DATE_ROW_PX + stripBody;
 }
 
 export default function TicketBookingList() {
@@ -397,6 +596,8 @@ export default function TicketBookingList() {
   const [zelleAttachmentMap, setZelleAttachmentMap] = useState<Map<string, string[]>>(
     () => new Map()
   );
+  /** 투어관리 스케줄 뷰와 동일한 schedule_product_colors (공유 설정·localStorage) */
+  const [scheduleProductColors, setScheduleProductColors] = useState<Record<string, string>>({});
   const [invoiceQuickPhotoUrls, setInvoiceQuickPhotoUrls] = useState<string[]>([]);
   const [zelleQuickPhotoUrls, setZelleQuickPhotoUrls] = useState<string[]>([]);
   const [invoicePhotoLoading, setInvoicePhotoLoading] = useState(false);
@@ -427,6 +628,58 @@ export default function TicketBookingList() {
   useEffect(() => {
     zelleQuickPhotoUrlsRef.current = zelleQuickPhotoUrls;
   }, [zelleQuickPhotoUrls]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const parseColors = (raw: string | null): Record<string, string> | null => {
+        if (!raw) return null;
+        try {
+          const o = JSON.parse(raw) as unknown;
+          if (o && typeof o === 'object' && !Array.isArray(o)) return o as Record<string, string>;
+        } catch {
+          /* noop */
+        }
+        return null;
+      };
+
+      try {
+        const { data, error } = await supabase
+          .from('shared_settings')
+          .select('setting_value')
+          .eq('setting_key', 'schedule_product_colors')
+          .maybeSingle();
+
+        let merged: Record<string, string> | null = null;
+        if (
+          !error &&
+          data?.setting_value &&
+          typeof data.setting_value === 'object' &&
+          !Array.isArray(data.setting_value)
+        ) {
+          merged = data.setting_value as Record<string, string>;
+        }
+        if (!merged && typeof window !== 'undefined') {
+          merged =
+            parseColors(localStorage.getItem('shared_schedule_product_colors')) ??
+            parseColors(localStorage.getItem('schedule_product_colors'));
+        }
+        if (!cancelled && merged && Object.keys(merged).length > 0) {
+          setScheduleProductColors(merged);
+        }
+      } catch {
+        if (typeof window !== 'undefined' && !cancelled) {
+          const fallback =
+            parseColors(localStorage.getItem('shared_schedule_product_colors')) ??
+            parseColors(localStorage.getItem('schedule_product_colors'));
+          if (fallback && Object.keys(fallback).length > 0) setScheduleProductColors(fallback);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const attachmentModalBusy =
     invoiceQuickSaving ||
@@ -581,23 +834,26 @@ export default function TicketBookingList() {
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      
-      // ticket_bookings 배치 조회 (1000+ 행 대응)
-      const PAGE_SIZE = 500
-      let bookingsData: TicketBooking[] | null = []
-      let offset = 0
+
+      const submitOnSince = ticketBookingListSubmitOnLowerBoundYmd();
+
+      // ticket_bookings 배치 조회 (기간 필터 + 큰 페이지로 왕복 횟수 축소)
+      const PAGE_SIZE = 1000;
+      let bookingsData: TicketBooking[] | null = [];
+      let offset = 0;
       while (true) {
         const { data: page, error: pageError } = await supabase
           .from('ticket_bookings')
           .select('*')
+          .gte('submit_on', submitOnSince)
           .order('submit_on', { ascending: false })
           .order('id', { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1)
-        if (pageError) throw pageError
-        if (!page?.length) break
-        bookingsData = (bookingsData || []).concat(page)
-        if (page.length < PAGE_SIZE) break
-        offset += PAGE_SIZE
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (pageError) throw pageError;
+        if (!page?.length) break;
+        bookingsData = (bookingsData || []).concat(page as TicketBooking[]);
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
       }
 
       // submit_on 동률 시 페이지 경계에서 행이 겹칠 수 있음 → id 기준 중복 제거
@@ -610,46 +866,61 @@ export default function TicketBookingList() {
         })
       }
 
-      // supplier_ticket_purchases를 통해 supplier_product 정보 조회 (배치)
+      // supplier_ticket_purchases — 배치를 묶어 병렬 조회
       if (bookingsData && bookingsData.length > 0) {
         try {
           const bookingIds = bookingsData.map((b: TicketBooking) => b.id);
-          const BATCH_SIZE = 100
-          let purchasesData: any[] = []
+          const BATCH_SIZE = 120;
+          const PARALLEL = 6;
+          const batches: string[][] = [];
           for (let i = 0; i < bookingIds.length; i += BATCH_SIZE) {
-            const batch = bookingIds.slice(i, i + BATCH_SIZE)
-            const { data: batchPurchases } = await supabase
-              .from('supplier_ticket_purchases')
-              .select(`
-                booking_id,
-                supplier_product_id,
-                supplier_products (
-                  id,
-                  season_dates
-                )
-              `)
-              .in('booking_id', batch)
-            if (batchPurchases?.length) purchasesData = purchasesData.concat(batchPurchases)
+            batches.push(bookingIds.slice(i, i + BATCH_SIZE));
+          }
+          let purchasesData: Array<{
+            booking_id: string;
+            supplier_products?: { season_dates: SeasonDate[] | null };
+          }> = [];
+          for (let i = 0; i < batches.length; i += PARALLEL) {
+            const slice = batches.slice(i, i + PARALLEL);
+            const pages = await Promise.all(
+              slice.map((batch) =>
+                supabase
+                  .from('supplier_ticket_purchases')
+                  .select(`
+                    booking_id,
+                    supplier_product_id,
+                    supplier_products (
+                      id,
+                      season_dates
+                    )
+                  `)
+                  .in('booking_id', batch)
+                  .then(({ data }) => data ?? [])
+              )
+            );
+            for (const p of pages) {
+              purchasesData = purchasesData.concat(
+                p as Array<{
+                  booking_id: string;
+                  supplier_products?: { season_dates: SeasonDate[] | null };
+                }>
+              );
+            }
           }
 
-          if (purchasesData) {
-            const productMap = new Map<string, { season_dates: SeasonDate[] | null }>();
-            purchasesData.forEach((purchase: { booking_id: string; supplier_products?: { season_dates: SeasonDate[] | null } }) => {
-              if (purchase.booking_id && purchase.supplier_products) {
-                productMap.set(purchase.booking_id, {
-                  season_dates: purchase.supplier_products.season_dates
-                });
-              }
-            });
-            setSupplierProductsMap(productMap);
-            console.log('Supplier products 매핑:', productMap);
+          const productMap = new Map<string, { season_dates: SeasonDate[] | null }>();
+          for (const purchase of purchasesData) {
+            if (purchase.booking_id && purchase.supplier_products) {
+              productMap.set(purchase.booking_id, {
+                season_dates: purchase.supplier_products.season_dates,
+              });
+            }
           }
+          setSupplierProductsMap(productMap);
         } catch (error) {
           console.warn('Supplier product 정보 조회 오류:', error);
         }
       }
-
-      console.log('입장권 부킹 데이터:', bookingsData);
 
       if (!bookingsData || bookingsData.length === 0) {
         setBookings([]);
@@ -658,11 +929,8 @@ export default function TicketBookingList() {
         return;
       }
 
-      // tour_id가 있는 부킹들만 필터링
       const bookingsWithTourId = (bookingsData || []).filter((booking: TicketBooking) => booking.tour_id);
-      
-      console.log('투어 ID가 있는 입장권 부킹들:', bookingsWithTourId);
-      
+
       if (bookingsWithTourId.length === 0) {
         setBookings(bookingsData);
         await refreshInvoiceAttachmentMapForBookings(bookingsData);
@@ -671,8 +939,7 @@ export default function TicketBookingList() {
 
       // tour_id 목록 배치 조회
       const tourIds = [...new Set(bookingsWithTourId.map((booking: TicketBooking) => booking.tour_id))];
-      console.log('조회할 투어 ID들:', tourIds.length);
-      let toursData: any[] = []
+      let toursData: any[] = [];
       const TOUR_BATCH = 100
       for (let i = 0; i < tourIds.length; i += TOUR_BATCH) {
         const batch = tourIds.slice(i, i + TOUR_BATCH) as string[]
@@ -701,9 +968,6 @@ export default function TicketBookingList() {
         }
       }
       const toursError = null
-
-      console.log('투어 데이터:', toursData);
-      console.log('투어 조회 오류:', toursError);
 
       if (toursError) {
         console.warn('투어 정보 조회 오류:', toursError);
@@ -750,32 +1014,33 @@ export default function TicketBookingList() {
         tourTotalPeopleByTourId.set((tour as { id: string }).id, sum);
       }
 
-      console.log('투어 맵:', toursMap);
-
-      // 부킹 데이터에 투어 정보 추가 및 check_in_date 설정
       const bookingsWithTours = (bookingsData || []).map((booking: TicketBooking) => {
         const baseBooking = {
           ...booking,
-          check_in_date: booking.check_in_date || booking.submit_on
+          check_in_date: booking.check_in_date || booking.submit_on,
         };
-        
+
         if (booking.tour_id && toursMap.has(booking.tour_id)) {
           const tour = toursMap.get(booking.tour_id);
-          console.log(`입장권 부킹 ${booking.id}의 투어 정보:`, tour);
+          const toursPart: NonNullable<TicketBooking['tours']> = {
+            tour_date: tour?.tour_date || '',
+            total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
+          };
+          if (tour?.products != null) {
+            const p = tour.products;
+            toursPart.products = {
+              name: p.name,
+              ...(typeof p.name_en === 'string' ? { name_en: p.name_en } : {}),
+            };
+          }
           return {
             ...baseBooking,
-            tours: {
-              tour_date: tour?.tour_date || '',
-              products: tour?.products,
-              total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
-            }
+            tours: toursPart,
           };
         }
-        console.log(`입장권 부킹 ${booking.id}에 투어 정보 없음 (tour_id: ${booking.tour_id})`);
         return baseBooking;
       });
 
-      console.log('최종 입장권 부킹 데이터:', bookingsWithTours);
       setBookings(bookingsWithTours);
       await refreshInvoiceAttachmentMapForBookings(bookingsWithTours);
 
@@ -785,8 +1050,6 @@ export default function TicketBookingList() {
           .map((booking: TicketBooking) => booking.submitted_by)
           .filter((email): email is string => !!email && typeof email === 'string' && email.includes('@'))
       )];
-
-      console.log('조회할 submitted_by 이메일들:', submittedByEmails);
 
       if (submittedByEmails.length > 0) {
         try {
@@ -805,7 +1068,6 @@ export default function TicketBookingList() {
               }
             });
             setTeamMemberMap(emailToNameMap);
-            console.log('Team 멤버 매핑 (submitted_by -> name_ko):', emailToNameMap);
           } else {
             console.warn('Team 정보 조회 오류:', teamError);
             setTeamMemberMap(new Map());
@@ -847,6 +1109,8 @@ export default function TicketBookingList() {
           tour_status,
           product_id,
           reservation_ids,
+          tour_guide_id,
+          assistant_id,
           products (
             name
           )
@@ -867,165 +1131,145 @@ export default function TicketBookingList() {
           tourSpanIntersectsGrid(row, gridStartStr, gridEndStr)
         ) as TourEvent[];
 
-      console.log('투어 데이터:', toursData);
-      console.log('투어 데이터 상세:', JSON.stringify(toursData, null, 2));
-
       if (toursData.length === 0) {
-        console.log('투어 데이터가 없음');
         setTourEvents([]);
         return;
       }
 
-      // 각 투어별로 예약 데이터 조회 (reservation_ids 사용)
-      const tourEventsWithReservations = await Promise.all(
-        toursData.map(async (tour: TourEvent) => {
-          try {
-            console.log(`투어 ${tour.id} 처리 시작:`, {
-              tour_id: tour.id,
-              reservation_ids: tour.reservation_ids,
-              reservation_ids_length: tour.reservation_ids?.length || 0
-            });
+      const staffEmailSet = new Set<string>();
+      for (const row of toursData) {
+        const g = row.tour_guide_id?.trim();
+        const a = row.assistant_id?.trim();
+        if (g) staffEmailSet.add(g);
+        if (a) staffEmailSet.add(a);
+      }
+      const staffEmails = [...staffEmailSet];
+      const staffDisplayByEmailLower = new Map<string, string>();
+      const TEAM_STAFF_BATCH = 80;
+      for (let si = 0; si < staffEmails.length; si += TEAM_STAFF_BATCH) {
+        const chunk = staffEmails.slice(si, si + TEAM_STAFF_BATCH);
+        const { data: teamRows, error: teamStaffErr } = await supabase
+          .from('team')
+          .select('email, name_ko, nick_name')
+          .in('email', chunk);
+        if (teamStaffErr) {
+          console.warn('입장권 달력 투어 staff(team) 조회:', teamStaffErr);
+          continue;
+        }
+        for (const m of teamRows || []) {
+          const em = m.email?.trim();
+          if (!em) continue;
+          const label = String(m.nick_name || m.name_ko || em).trim();
+          staffDisplayByEmailLower.set(em.toLowerCase(), label || em);
+        }
+      }
+      const resolveStaffDisplay = (raw: string | null | undefined): string => {
+        const s = raw?.trim();
+        if (!s) return '';
+        return staffDisplayByEmailLower.get(s.toLowerCase()) || s;
+      };
 
-            // reservation_ids가 없거나 비어있는 경우
-            if (!tour.reservation_ids || tour.reservation_ids.length === 0) {
-              console.log(`투어 ${tour.id}에 배정된 예약이 없음 (reservation_ids: ${tour.reservation_ids})`);
-              return {
-                ...tour,
-                total_reservations: 0,
-                total_people: 0,
-                adults: 0,
-                child: 0,
-                infant: 0
-              };
-            }
+      type CalResRow = {
+        id: string;
+        adults?: number | null;
+        child?: number | null;
+        infant?: number | null;
+        total_people?: number | null;
+        status?: string | null;
+      };
 
-            console.log(`투어 ${tour.id}의 reservation_ids로 예약 조회:`, tour.reservation_ids);
+      const reservationIdSet = new Set<string>();
+      for (const tour of toursData) {
+        for (const rid of tour.reservation_ids || []) {
+          if (rid) reservationIdSet.add(rid);
+        }
+      }
+      const reservationIdList = [...reservationIdSet];
+      const RES_BATCH = 250;
+      const RES_PARALLEL = 5;
+      const reservationById = new Map<string, CalResRow>();
 
-            // reservation_ids에 있는 예약 ID들로 예약 데이터 조회 (상태 필터 제거)
-            const { data: reservationsData, error: reservationsError } = await supabase
+      for (let i = 0; i < reservationIdList.length; i += RES_BATCH * RES_PARALLEL) {
+        const slice = reservationIdList.slice(i, i + RES_BATCH * RES_PARALLEL);
+        const batches: string[][] = [];
+        for (let j = 0; j < slice.length; j += RES_BATCH) {
+          batches.push(slice.slice(j, j + RES_BATCH));
+        }
+        const pages = await Promise.all(
+          batches.map((batch) =>
+            supabase
               .from('reservations')
               .select('id, adults, child, infant, total_people, status')
-              .in('id', tour.reservation_ids);
-
-            console.log(`투어 ${tour.id} 예약 조회 결과:`, {
-              reservationsData,
-              error: reservationsError
-            });
-
-            if (reservationsError) {
-              console.error(`투어 ${tour.id} 예약 조회 오류:`, reservationsError);
-              // Fallback: tour_id로 예약 조회 시도
-              console.log(`투어 ${tour.id} fallback: tour_id로 예약 조회 시도`);
-              const { data: fallbackReservations, error: fallbackError } = await supabase
-                .from('reservations')
-                .select('id, adults, child, infant, total_people, status')
-                .eq('tour_id', tour.id);
-              
-              if (fallbackError) {
-                console.error(`투어 ${tour.id} fallback 조회도 실패:`, fallbackError);
-                return {
-                  ...tour,
-                  total_reservations: 0,
-                  total_people: 0,
-                  adults: 0,
-                  child: 0,
-                  infant: 0
-                };
-              }
-              
-              console.log(`투어 ${tour.id} fallback 조회 성공:`, fallbackReservations);
-              const fallbackActive =
-                fallbackReservations?.filter(
-                  (r: { status?: string | null }) => !isReservationCancelledStatus(r.status)
-                ) || [];
-              const fallbackTotalPeople = fallbackActive.reduce(
-                (sum: number, reservation: { total_people?: number | null }) =>
-                  sum + (Number(reservation.total_people) || 0),
-                0
-              );
-
-              return {
-                ...tour,
-                total_reservations: fallbackActive.length,
-                total_people: fallbackTotalPeople,
-                adults: 0,
-                child: 0,
-                infant: 0
-              };
-            }
-
-            const activeReservations =
-              reservationsData?.filter(
-                (r: { status?: string | null }) => !isReservationCancelledStatus(r.status)
-              ) || [];
-
-            const totalReservations = activeReservations.length;
-
-            console.log(`투어 ${tour.id} 예약 데이터 상세:`, reservationsData);
-
-            // 취소되지 않은 예약만 인원 합산
-            const totalPeople = activeReservations.reduce(
-              (sum: number, reservation: { id: string; total_people?: number | null }) => {
-                console.log(`예약 ${reservation.id} total_people:`, reservation.total_people);
-                return sum + (Number(reservation.total_people) || 0);
-              },
-              0
-            );
-
-            const totalAdults = activeReservations.reduce(
-              (sum: number, reservation: { adults?: number | null }) =>
-                sum + (Number(reservation.adults) || 0),
-              0
-            );
-
-            const totalChild = activeReservations.reduce(
-              (sum: number, reservation: { child?: number | null }) =>
-                sum + (Number(reservation.child) || 0),
-              0
-            );
-
-            const totalInfant = activeReservations.reduce(
-              (sum: number, reservation: { infant?: number | null }) =>
-                sum + (Number(reservation.infant) || 0),
-              0
-            );
-
-            console.log(`투어 ${tour.id} 인원 정보 (reservation_ids 사용):`, {
-              reservation_ids: tour.reservation_ids,
-              adults: totalAdults,
-              child: totalChild,
-              infant: totalInfant,
-              total_people: totalPeople,
-              reservations: totalReservations
-            });
-
-            return {
-              ...tour,
-              total_reservations: totalReservations,
-              total_people: totalPeople,
-              adults: totalAdults,
-              child: totalChild,
-              infant: totalInfant
-            };
-          } catch (error) {
-            console.error(`투어 ${tour.id} 처리 오류:`, error);
-            return {
-              ...tour,
-              total_reservations: 0,
-              total_people: 0,
-              adults: 0,
-              child: 0,
-              infant: 0
-            };
+              .in('id', batch)
+              .then(({ data, error }) => {
+                if (error) throw error;
+                return data ?? [];
+              })
+          )
+        );
+        for (const rows of pages) {
+          for (const row of rows as CalResRow[]) {
+            if (row?.id) reservationById.set(row.id, row);
           }
-        })
-      );
+        }
+      }
 
-      console.log('최종 투어 이벤트 데이터:', tourEventsWithReservations);
-      setTourEvents(tourEventsWithReservations);
+      const tourEventsWithReservations = toursData.map((tour: TourEvent) => {
+        const ids = tour.reservation_ids || [];
+        if (ids.length === 0) {
+          return {
+            ...tour,
+            total_reservations: 0,
+            total_people: 0,
+            adults: 0,
+            child: 0,
+            infant: 0,
+          };
+        }
+
+        const rows = ids
+          .map((id) => reservationById.get(id))
+          .filter((r): r is CalResRow => r != null);
+        const activeReservations = rows.filter(
+          (r) => !isReservationCancelledStatus(r.status)
+        );
+
+        const totalPeople = activeReservations.reduce(
+          (sum, r) => sum + (Number(r.total_people) || 0),
+          0
+        );
+        const totalAdults = activeReservations.reduce(
+          (sum, r) => sum + (Number(r.adults) || 0),
+          0
+        );
+        const totalChild = activeReservations.reduce(
+          (sum, r) => sum + (Number(r.child) || 0),
+          0
+        );
+        const totalInfant = activeReservations.reduce(
+          (sum, r) => sum + (Number(r.infant) || 0),
+          0
+        );
+
+        return {
+          ...tour,
+          total_reservations: activeReservations.length,
+          total_people: totalPeople,
+          adults: totalAdults,
+          child: totalChild,
+          infant: totalInfant,
+        };
+      });
+
+      const tourEventsWithStaff = tourEventsWithReservations.map((ev) => ({
+        ...ev,
+        guide_display_name: resolveStaffDisplay(ev.tour_guide_id),
+        assistant_display_name: resolveStaffDisplay(ev.assistant_id),
+      }));
+
+      setTourEvents(tourEventsWithStaff);
     } catch (error) {
       console.error('투어 이벤트 조회 오류:', error);
-      console.error('오류 상세:', JSON.stringify(error, null, 2));
       setTourEvents([]);
     }
   }, [currentDate]);
@@ -1619,8 +1863,14 @@ export default function TicketBookingList() {
 
   const handleSave = (booking: TicketBooking) => {
     if (editingBooking) {
-      setBookings(prev => 
-        prev.map(b => b.id === booking.id ? { ...booking, tours: b.tours } : b)
+      setBookings((prev) =>
+        prev.map((b) => {
+          if (b.id !== booking.id) return b;
+          if (b.tours !== undefined) {
+            return { ...booking, tours: b.tours };
+          }
+          return { ...booking };
+        })
       );
     } else {
       setBookings(prev => [booking, ...prev]);
@@ -1960,16 +2210,23 @@ export default function TicketBookingList() {
   const renderTicketMobileCard = (booking: TicketBooking) => {
     const cancelDueDate = getCancelDueDate(booking);
     const isOverdue = cancelDueDate ? new Date(cancelDueDate) < new Date() : false;
+    const supplierStyle = ticketBookingSupplierColors(booking.company);
     return (
       <div
         key={booking.id}
         className="border border-gray-200 rounded-xl p-3 bg-white shadow-sm space-y-2"
+        style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
       >
         <div className="flex items-start justify-between gap-2">
           <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${getStatusColor(booking.status)}`}>
             {getStatusText(booking.status)}
           </span>
-          <span className="text-xs font-medium text-gray-700 truncate">{booking.company}</span>
+          <span
+            className="text-xs font-medium max-w-[55%] truncate rounded px-1.5 py-0.5 ring-1 ring-black/10"
+            style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+          >
+            {booking.company}
+          </span>
         </div>
         <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
           <span className="text-gray-500">날짜</span>
@@ -2519,9 +2776,14 @@ export default function TicketBookingList() {
                       const hoverColor = cancelDueDateRow
                         ? (hoverColors[backgroundColors.indexOf(bgColor)] || 'hover:bg-gray-50')
                         : 'hover:bg-gray-50';
-                      
+                      const supplierStyle = ticketBookingSupplierColors(booking.company);
+
                       return (
-                        <tr key={booking.id} className={`${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''}`}>
+                        <tr
+                          key={booking.id}
+                          className={`${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''}`}
+                          style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
+                        >
                       <td className={`px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 ${bgColor} z-10 ${rnRowStripe}`}>
                         <div className="relative z-50">
                           <span 
@@ -2593,7 +2855,12 @@ export default function TicketBookingList() {
                         </div>
                       </td>
                       <td className="px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">{booking.company}</div>
+                        <span
+                          className="inline-block max-w-[12rem] truncate rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-black/10"
+                          style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+                        >
+                          {booking.company}
+                        </span>
                       </td>
                       <td className="px-2 py-1.5 whitespace-nowrap text-xs">
                         <div className="text-gray-900">
@@ -2671,8 +2938,8 @@ export default function TicketBookingList() {
                         </button>
                       </td>
                       <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
-                          {getCCStatusText(booking.cc)}
+                        <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc ?? '')}`}>
+                          {getCCStatusText(booking.cc ?? '')}
                         </span>
                       </td>
                       <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
@@ -2836,9 +3103,6 @@ export default function TicketBookingList() {
           <div>
                         <div>
               {(() => {
-                console.log('필터된 부킹 데이터:', filteredBookings);
-                console.log('부킹 개수:', filteredBookings.length);
-                
                 // 체크인 날짜별로 그룹화 (달력 칸의 로컬 YMD와 일치)
                 const groupedByDate = filteredBookings.reduce((groups, booking) => {
                   const date = bookingCheckInYmd(booking);
@@ -2848,31 +3112,55 @@ export default function TicketBookingList() {
                   groups[date].push(booking);
                   return groups;
                 }, {} as Record<string, TicketBooking[]>);
-                
-                console.log('날짜별 그룹화된 데이터:', groupedByDate);
-                
-                console.log('최종 그룹화된 데이터:', groupedByDate);
 
                 // 선택된 월 기준으로 달력 생성
                 const now = new Date();
-                
+
                 const calendarDays: Date[] = [];
-                
+
                 // 월별 달력 뷰 (전체 월)
                 const currentYear = currentDate.getFullYear();
                 const currentMonth = currentDate.getMonth();
-                
+
                 // 이번 달의 첫 번째 날
                 const firstDay = new Date(currentYear, currentMonth, 1);
                 const startDate = new Date(firstDay);
                 startDate.setDate(startDate.getDate() - firstDay.getDay()); // 일요일부터 시작
-                
+
                 // 6주 표시를 위해 42일 생성
                 for (let i = 0; i < 42; i++) {
                   const date = new Date(startDate);
                   date.setDate(startDate.getDate() + i);
                   calendarDays.push(date);
                 }
+
+                const gridStartYmd = localYmdFromDate(calendarDays[0]!);
+                const gridEndYmd = localYmdFromDate(calendarDays[41]!);
+                const productLegendMap = new Map<
+                  string,
+                  { key: string; displayName: string; productId: string | null }
+                >();
+                for (const tour of tourEvents) {
+                  if (!tourSpanIntersectsGrid(tour, gridStartYmd, gridEndYmd)) continue;
+                  const pk = ticketCalendarProductKey(tour);
+                  if (productLegendMap.has(pk)) continue;
+                  productLegendMap.set(pk, {
+                    key: pk,
+                    displayName: getProductName(tour.products),
+                    productId: (tour.product_id || '').trim() || null,
+                  });
+                }
+                const collatorLocale = locale.startsWith('en') ? 'en' : 'ko';
+                const productLegendItems = [...productLegendMap.values()].sort((a, b) =>
+                  a.displayName.localeCompare(b.displayName, collatorLocale)
+                );
+
+                const tourSegmentsByWeek = buildTicketCalendarTourSegmentsByWeek(
+                  tourEvents,
+                  calendarDays,
+                  gridStartYmd,
+                  gridEndYmd
+                );
 
                 const monthNames = t.raw('monthNames');
                 const dayNames = t.raw('dayNames');
@@ -2914,6 +3202,33 @@ export default function TicketBookingList() {
                       </button>
                     </div>
 
+                    {productLegendItems.length > 0 && (
+                      <div className="rounded-lg border border-gray-200 bg-white px-2 py-2 sm:px-3 sm:py-2.5">
+                        <div className="text-[11px] sm:text-xs font-semibold text-gray-700 mb-1.5">
+                          {t('ticketCalendarProductLegendTitle')}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                          {productLegendItems.map((item) => {
+                            const lp = ticketCalendarLegendChipDisplayProps(
+                              item.productId,
+                              item.key,
+                              scheduleProductColors
+                            );
+                            return (
+                              <span
+                                key={item.key}
+                                title={item.displayName}
+                                className={`inline-flex max-w-[min(100%,14rem)] items-center rounded-full border border-black/10 px-2 py-0.5 text-[10px] sm:text-xs font-medium ${lp.className ?? ''}`}
+                                style={lp.style}
+                              >
+                                <span className="truncate">{item.displayName}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* 요일 헤더 - 모바일 컴팩트 */}
                     <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
                       {dayNames.map((day: string) => (
@@ -2923,186 +3238,306 @@ export default function TicketBookingList() {
                       ))}
                     </div>
 
-                    {/* 달력 그리드 - 모바일 작은 셀 */}
-                    <div className="grid gap-0.5 sm:gap-1 grid-cols-7">
-                      {calendarDays.map((date, index) => {
-                        const dateString = localYmdFromDate(date);
-                        const isCurrentMonth = date.getMonth() === currentMonth;
-                        const isToday = date.toDateString() === now.toDateString();
-                        const dayBookings = groupedByDate[dateString] || [];
-                        const totalQuantity = dayBookings.reduce((sum, booking) => sum + booking.ea, 0);
-
-                        const dayBookingsEaNonCancelled = dayBookings
-                          .filter(isTicketBookingCountingStatus)
-                          .reduce((sum, booking) => sum + (Number(booking.ea) || 0), 0);
-
-                        const dayTours = tourEvents
-                          .filter((tour) => tourOverlapsCalendarYmd(tour, dateString))
-                          .sort(
-                            (a, b) =>
-                              String(a.tour_date).localeCompare(String(b.tour_date)) ||
-                              String(a.id).localeCompare(String(b.id))
-                          );
-
-                        const toursStartingThisDay = dayTours.filter(
-                          (tour) => ymdFromDbDate(tour.tour_date) === dateString
-                        );
-                        const spanningContinuationOnly =
-                          dayTours.length > 0 && toursStartingThisDay.length === 0;
-
-                        const sumTourPeopleStartsToday = toursStartingThisDay.reduce(
-                          (sum, tour) => sum + (Number(tour.total_people) || 0),
-                          0
-                        );
-
-                        let tourBookingHeadcountMismatch = false;
-                        if (!spanningContinuationOnly) {
-                          if (
-                            toursStartingThisDay.length > 0 &&
-                            sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
-                          ) {
-                            tourBookingHeadcountMismatch = true;
-                          } else if (
-                            toursStartingThisDay.length === 0 &&
-                            dayTours.length === 0 &&
-                            dayBookingsEaNonCancelled > 0
-                          ) {
-                            tourBookingHeadcountMismatch = true;
-                          }
-                        }
-
-                        // 디버깅: 해당 날짜에 부킹이 있는지 확인
-                        if (dayBookings.length > 0) {
-                          console.log(`${dateString}에 부킹 ${dayBookings.length}개:`, dayBookings);
-                        }
-
-                        // 디버깅: 해당 날짜에 투어가 있는지 확인
-                        if (dayTours.length > 0) {
-                          console.log(`${dateString}에 투어 ${dayTours.length}개:`, dayTours);
-                        }
-
-                        const cellOutlineClass =
-                          tourBookingHeadcountMismatch ?
-                            'border-2 border-red-500 shadow-sm shadow-red-200/70'
-                          : 'border border-gray-200';
+                    {/* 달력 그리드 — 주(행) 단위 + 멀티데이 투어는 한 박스 오버레이 */}
+                    <div className="flex flex-col gap-0.5 sm:gap-1">
+                      {[0, 1, 2, 3, 4, 5].map((weekRow) => {
+                        const rawWeekSegs = tourSegmentsByWeek.get(weekRow) ?? [];
+                        const segsWithLane = assignTicketCalendarTourLanes(rawWeekSegs);
+                        const maxLane = segsWithLane.reduce((m, s) => Math.max(m, s.lane), -1);
+                        const stripRows = maxLane >= 0 ? maxLane + 1 : 0;
+                        const cellPadTop = ticketCalendarCellPadTopForTourStrip(stripRows);
 
                         return (
                           <div
-                            key={`cal-${dateString}-${index}`}
-                            className={`min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] p-1 sm:p-2 rounded-sm ${cellOutlineClass} ${
-                              isCurrentMonth ? 'bg-white' : 'bg-gray-50'
-                            } ${isToday ? 'ring-2 ring-blue-500 ring-offset-0' : ''}`}
+                            key={`cal-week-${weekRow}`}
+                            className="relative grid grid-cols-7 gap-0.5 sm:gap-1"
                           >
-                            <div className={`text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
-                              isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
-                            } ${isToday ? 'text-blue-600' : ''}`}>
-                              {date.getDate()}
-                            </div>
-                            
-                            {/* 투어 이벤트 정보 */}
-                            {dayTours.length > 0 && (
-                              <div className="space-y-1 mb-2">
-                                {dayTours.map((tour, tourIndex) => (
-                  <div
-                    key={`${dateString}-tour-${tour.id}-${tourIndex}`}
-                    className="px-0.5 sm:px-1 py-0.5 bg-purple-100 text-purple-800 rounded text-[8px] sm:text-[10px] font-medium cursor-pointer hover:bg-purple-200 transition-colors truncate"
-                    title={`${getProductName(tour.products)} - ${t('adults')}:${tour.adults}${t('people')}, ${t('children')}:${tour.child}${t('people')}, ${t('infants')}:${tour.infant}${t('people')} (${t('total')} ${tour.total_people}${t('people')}) (Click for details)`}
-                    onClick={() => handleTourClick(tour.id)}
-                  >
-                    <div className="truncate">
-                      {(() => {
-                        const tourName = getProductName(tour.products);
-                        const totalPeople = tour.total_people;
-                        const child = tour.child || 0;
-                        const infant = tour.infant || 0;
-                        
-                        // 아동이나 유아가 있을 때만 괄호 안에 표시
-                        if (child > 0 || infant > 0) {
-                          const childText = child > 0 ? `${t('children')}${child}` : '';
-                          const infantText = infant > 0 ? `${t('infants')}${infant}` : '';
-                          const additionalText = [childText, infantText].filter(Boolean).join(' ');
-                          return `${tourName} ${totalPeople}${t('people')} (${additionalText})`;
-                        } else {
-                          // 성인만 있을 경우
-                          return `${tourName} ${totalPeople}${t('people')}`;
-                        }
-                      })()}
-                    </div>
-                  </div>
-                                ))}
-                              </div>
-                            )}
-                            
-                            {/* 부킹 정보 라벨 */}
-                            {dayBookings.length > 0 && (
-                              <div className="space-y-0.5">
-                                <div className="text-xs text-blue-600 font-semibold">
-                                  {t('total')} {totalQuantity}{t('items')}
+                            {Array.from({ length: 7 }, (_, col) => {
+                              const index = weekRow * 7 + col;
+                              const date = calendarDays[index]!;
+                              const dateString = localYmdFromDate(date);
+                              const isCurrentMonth = date.getMonth() === currentMonth;
+                              const isToday = date.toDateString() === now.toDateString();
+                              const dayBookings = groupedByDate[dateString] || [];
+
+                              const dayBookingsEaNonCancelled = dayBookings
+                                .filter(isTicketBookingCountingStatus)
+                                .reduce((sum, booking) => sum + (Number(booking.ea) || 0), 0);
+
+                              const dayTours = tourEvents
+                                .filter((tr) => tourOverlapsCalendarYmd(tr, dateString))
+                                .sort(
+                                  (a, b) =>
+                                    String(a.tour_date).localeCompare(String(b.tour_date)) ||
+                                    String(a.id).localeCompare(String(b.id))
+                                );
+
+                              const toursStartingThisDay = dayTours.filter(
+                                (tr) => ymdFromDbDate(tr.tour_date) === dateString
+                              );
+                              const spanningContinuationOnly =
+                                dayTours.length > 0 && toursStartingThisDay.length === 0;
+
+                              const sumTourPeopleStartsToday = toursStartingThisDay.reduce(
+                                (sum, tr) => sum + (Number(tr.total_people) || 0),
+                                0
+                              );
+
+                              let tourBookingHeadcountMismatch = false;
+                              if (!spanningContinuationOnly) {
+                                if (
+                                  toursStartingThisDay.length > 0 &&
+                                  sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
+                                ) {
+                                  tourBookingHeadcountMismatch = true;
+                                } else if (
+                                  toursStartingThisDay.length === 0 &&
+                                  dayTours.length === 0 &&
+                                  dayBookingsEaNonCancelled > 0
+                                ) {
+                                  tourBookingHeadcountMismatch = true;
+                                }
+                              }
+
+                              const cellOutlineClass =
+                                tourBookingHeadcountMismatch ?
+                                  'border-2 border-red-500 shadow-sm shadow-red-200/70'
+                                : 'border border-gray-200';
+
+                              return (
+                                <div
+                                  key={`cal-${dateString}-${index}`}
+                                  style={{ paddingTop: cellPadTop }}
+                                  className={`relative min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] px-1 pb-1 sm:px-2 sm:pb-2 rounded-sm ${cellOutlineClass} ${
+                                    isCurrentMonth ? 'bg-white' : 'bg-gray-50'
+                                  } ${isToday ? 'ring-2 ring-blue-500 ring-offset-0' : ''}`}
+                                >
+                                  <div
+                                    className={`absolute left-1 top-1 z-[15] text-xs sm:text-sm font-medium leading-none ${
+                                      isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
+                                    } ${isToday ? 'text-blue-600' : ''}`}
+                                  >
+                                    {date.getDate()}
+                                  </div>
+
+                                  {/* 부킹 정보 라벨 */}
+                                  {dayBookings.length > 0 && (
+                                    <div className="relative z-[11] space-y-0.5">
+                                      <div className="text-[10px] sm:text-xs text-blue-700 font-semibold leading-tight">
+                                        {t('tourPeopleReservationsSummary', {
+                                          tourPeople: sumTourPeopleStartsToday,
+                                          reservations: dayBookingsEaNonCancelled,
+                                        })}
+                                      </div>
+                                      {buildTicketRnGroups(dayBookings).map((g) => {
+                                        const totalEa = g.rows.reduce((sum, booking) => sum + booking.ea, 0);
+                                        const firstBooking = g.rows[0]!;
+                                        const withTour = g.rows.filter((b) => Boolean(b.tour_id));
+                                        const clipState: 'linked' | 'none' | 'partial' =
+                                          withTour.length === g.rows.length
+                                            ? 'linked'
+                                            : withTour.length === 0
+                                              ? 'none'
+                                              : 'partial';
+                                        const clipTitle =
+                                          clipState === 'linked'
+                                            ? t('tourLinkedBadge')
+                                            : clipState === 'none'
+                                              ? t('tourUnlinkedBadge')
+                                              : t('tourPartiallyLinkedBadge');
+                                        const clipClass =
+                                          clipState === 'linked'
+                                            ? 'text-emerald-600'
+                                            : clipState === 'partial'
+                                              ? 'text-amber-600'
+                                              : '';
+                                        const subtitleParts = g.rows.map((b) => {
+                                          const tm = (b.time || '').replace(/:\d{2}$/, '');
+                                          const co = (b.company || '').trim();
+                                          return co ? `${tm} ${co}` : tm;
+                                        });
+                                        const detailTail =
+                                          g.rows.length > 1 ? ` · +${g.rows.length - 1}` : '';
+                                        const titleLine = `${clipTitle} · ${subtitleParts.join(' · ')}${detailTail}`;
+
+                                        const timeShort = (firstBooking.time || '').replace(/:\d{2}$/, '');
+                                        const companyShort = (firstBooking.company || '').trim();
+                                        const supplierStyle = ticketBookingSupplierColors(firstBooking.company);
+
+                                        return (
+                                          <div
+                                            key={`${dateString}-rn-${g.key}`}
+                                            className="min-w-0 px-0.5 py-0.5 rounded ring-1 ring-black/15 text-[7px] sm:text-[10px] lg:text-[11px] cursor-pointer hover:opacity-90 overflow-hidden transition-opacity"
+                                            style={{
+                                              backgroundColor: supplierStyle.backgroundColor,
+                                              color: supplierStyle.color,
+                                            }}
+                                            title={titleLine}
+                                            onClick={() => handleBookingClick(g.rows)}
+                                          >
+                                            <div className="flex min-w-0 items-center gap-0.5 sm:gap-1 whitespace-nowrap">
+                                              <span
+                                                className="inline-flex shrink-0 items-center"
+                                                title={clipTitle}
+                                                aria-label={clipTitle}
+                                              >
+                                                {clipState === 'none' ? (
+                                                  <span className="relative inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center sm:h-3 sm:w-3">
+                                                    <Paperclip
+                                                      className="absolute inset-0 h-full w-full text-orange-500"
+                                                      strokeWidth={2.25}
+                                                      aria-hidden
+                                                    />
+                                                    <svg
+                                                      viewBox="0 0 24 24"
+                                                      className="relative z-[1] h-full w-full text-orange-600"
+                                                      fill="none"
+                                                      aria-hidden
+                                                    >
+                                                      <path
+                                                        d="M5 5 L19 19"
+                                                        stroke="currentColor"
+                                                        strokeWidth="2.85"
+                                                        strokeLinecap="round"
+                                                      />
+                                                    </svg>
+                                                  </span>
+                                                ) : (
+                                                  <Paperclip
+                                                    className={`h-2.5 w-2.5 sm:h-3 sm:w-3 ${clipClass}`}
+                                                    strokeWidth={2.25}
+                                                    aria-hidden
+                                                  />
+                                                )}
+                                              </span>
+                                              <span className="shrink-0 font-semibold tabular-nums opacity-95">
+                                                {timeShort}
+                                              </span>
+                                              <span className="min-w-0 truncate font-medium opacity-95">
+                                                {companyShort || '—'}
+                                              </span>
+                                              <span className="shrink-0 tabular-nums opacity-95">
+                                                {totalEa}
+                                                {t('items')}
+                                              </span>
+                                              <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-100 px-1 py-px text-[6px] sm:text-[9px] font-bold text-indigo-900 ring-1 ring-indigo-200/90">
+                                                {g.label === 'RN# 없음' ? '—' : g.label}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
-                                {(() => {
-                                  // 공급업체별로 그룹화하고 시간순으로 정렬
-                                  const supplierGroups = dayBookings.reduce((groups, booking) => {
-                                    const company = booking.company;
-                                    if (!groups[company]) {
-                                      groups[company] = [];
+                              );
+                            })}
+
+                            {stripRows > 0 ? (
+                              <div
+                                className="pointer-events-none absolute left-0 right-0 z-[10] grid grid-cols-7 gap-0.5 sm:gap-1"
+                                style={{
+                                  top: TICKET_CAL_DATE_ROW_PX,
+                                  rowGap: TICKET_CAL_TOUR_LANE_GAP_PX,
+                                  gridTemplateRows: `repeat(${stripRows}, minmax(${TICKET_CAL_TOUR_LANE_MIN_PX}px, auto))`,
+                                }}
+                              >
+                                {segsWithLane.map((seg) => {
+                                  const tour = seg.tour;
+                                  const guideName = tour.guide_display_name?.trim();
+                                  const asstName = tour.assistant_display_name?.trim();
+                                  const staffNamesOnly = [guideName, asstName].filter(
+                                    (n): n is string => Boolean(n)
+                                  );
+                                  const tourStartYmd = ymdFromDbDate(tour.tour_date);
+                                  const tourEndYmd = tourCalendarSpanEndYmd(tour);
+                                  const multiDayHint =
+                                    tourStartYmd &&
+                                    tourEndYmd &&
+                                    tourEndYmd !== tourStartYmd
+                                      ? ` · ${tourStartYmd}→${tourEndYmd}`
+                                      : '';
+                                  const baseTitle = `${getProductName(tour.products)} - ${t('adults')}:${tour.adults}${t('people')}, ${t('children')}:${tour.child}${t('people')}, ${t('infants')}:${tour.infant}${t('people')} (${t('total')} ${tour.total_people}${t('people')})${multiDayHint}`;
+                                  const staffTitle = [
+                                    guideName &&
+                                      `${t('ticketCalendarTourGuideLabel')}: ${guideName}`,
+                                    asstName &&
+                                      `${t('ticketCalendarTourAssistantLabel')}: ${asstName}`,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(', ');
+                                  const chipTitle = staffTitle
+                                    ? `${baseTitle} · ${staffTitle} (Click for details)`
+                                    : `${baseTitle} (Click for details)`;
+
+                                  const peopleText = (() => {
+                                    const tourName = getProductName(tour.products);
+                                    const totalPeople = tour.total_people;
+                                    const child = tour.child || 0;
+                                    const infant = tour.infant || 0;
+                                    if (child > 0 || infant > 0) {
+                                      const childText = child > 0 ? `${t('children')}${child}` : '';
+                                      const infantText = infant > 0 ? `${t('infants')}${infant}` : '';
+                                      const additionalText = [childText, infantText].filter(Boolean).join(' ');
+                                      return `${tourName} ${totalPeople}${t('people')} (${additionalText})`;
                                     }
-                                    groups[company].push(booking);
-                                    return groups;
-                                  }, {} as Record<string, TicketBooking[]>);
+                                    return `${tourName} ${totalPeople}${t('people')}`;
+                                  })();
 
-                                  // 각 공급업체별로 시간순 정렬
-                                  Object.keys(supplierGroups).forEach(company => {
-                                    supplierGroups[company].sort((a, b) => a.time.localeCompare(b.time));
-                                  });
+                                  const tourChipProps = ticketCalendarTourChipDisplayProps(
+                                    tour,
+                                    scheduleProductColors
+                                  );
 
-                                  // 공급업체별로 정렬 (시간순)
-                                  const sortedSuppliers = Object.keys(supplierGroups).sort((a, b) => {
-                                    const aTime = supplierGroups[a][0].time;
-                                    const bTime = supplierGroups[b][0].time;
-                                    return aTime.localeCompare(bTime);
-                                  });
-
-                                  return sortedSuppliers.map((company) => {
-                                    const companyBookings = supplierGroups[company];
-                                    const companyTotal = companyBookings.reduce((sum, booking) => sum + booking.ea, 0);
-                                    const firstBooking = companyBookings[0];
-                                    
-                                    // 공급업체별 색상 구분 (투어 연결 상태 고려)
-                                    let companyBgColor = '';
-                                    const hasTourConnection = companyBookings.some(booking => booking.tour_id);
-                                    
-                                    if (company === 'SEE CANYON') {
-                                      companyBgColor = hasTourConnection ? 'bg-blue-200 text-blue-800' : 'bg-blue-100 text-blue-600';
-                                    } else if (company === 'Antelope X') {
-                                      companyBgColor = hasTourConnection ? 'bg-green-200 text-green-800' : 'bg-green-100 text-green-600';
-                                    } else {
-                                      companyBgColor = hasTourConnection ? getStatusColor(firstBooking.status) : 'bg-gray-100 text-gray-600';
-                                    }
-
-                                    return (
+                                  return (
+                                    <div
+                                      key={`ovl-${tour.id}-w${weekRow}-c${seg.startCol}-${seg.endCol}-l${seg.lane}`}
+                                      style={{
+                                        gridColumn: `${seg.startCol + 1} / ${seg.endCol + 2}`,
+                                        gridRow: seg.lane + 1,
+                                      }}
+                                      className="pointer-events-auto box-border flex min-h-0 min-w-0 w-full max-w-full items-stretch px-1.5 sm:px-2"
+                                    >
+                                      {/* 배경은 안쪽에만: 바깥 px로 달력 칸(그리드 스팬) 가장자리와 간격 */}
                                       <div
-                                        key={`${dateString}-supplier-${company}-${firstBooking.id}`}
-                                        className={`px-0.5 py-0 rounded truncate ${companyBgColor} text-[7px] sm:text-[10px] lg:text-[12px] cursor-pointer hover:opacity-80`}
-                                        title={`${company} - ${companyBookings.map((b) => {
-                                          const rn = b.rn_number?.trim();
-                                          const label = rn ? `RN# ${rn}` : 'RN# 없음';
-                                          return `${label} (${b.ea}${t('items')})`;
-                                        }).join(', ')}`}
-                                        onClick={() => handleBookingClick(companyBookings)}
+                                        className={`box-border flex min-w-0 w-full max-w-full items-center overflow-hidden rounded-sm text-[8px] font-medium shadow-sm ring-1 ring-black/10 sm:text-[10px] cursor-pointer hover:opacity-90 transition-opacity ${tourChipProps.className ?? ''}`}
+                                        style={{
+                                          minHeight: TICKET_CAL_TOUR_LANE_MIN_PX,
+                                          ...tourChipProps.style,
+                                        }}
+                                        title={chipTitle}
+                                        onClick={() => handleTourClick(tour.id)}
                                       >
-                                        <div className="block sm:hidden">
-                                          <div className="font-bold">{firstBooking.time.replace(/:\d{2}$/, '')}</div>
-                                          <div>{companyTotal}{t('items')} ({companyBookings.length})</div>
-                                        </div>
-                                        <div className="hidden sm:block">
-                                          <span className="font-bold">{firstBooking.time.replace(/:\d{2}$/, '')}</span> <span>{companyTotal}{t('items')}</span> <span>({companyBookings.length})</span>
+                                        <div
+                                          className="box-border flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-0.5 gap-y-0 leading-tight"
+                                          style={{
+                                            paddingTop: 2,
+                                            paddingBottom: 2,
+                                            paddingLeft: 8,
+                                            paddingRight: 8,
+                                          }}
+                                        >
+                                          <span className="min-w-0 flex-1 truncate">{peopleText}</span>
+                                          {staffNamesOnly.map((name, si) => (
+                                            <span
+                                              key={`${tour.id}-ovl-staff-${si}-${name}`}
+                                              className="inline-flex shrink-0 items-center gap-x-0.5"
+                                            >
+                                              {si > 0 ? (
+                                                <span className="text-[7px] font-normal opacity-70">,</span>
+                                              ) : null}
+                                              <span className="rounded-full bg-white/85 px-1 py-px text-[7px] font-semibold text-neutral-900 shadow-sm ring-1 ring-black/10 sm:text-[9px]">
+                                                {name}
+                                              </span>
+                                            </span>
+                                          ))}
                                         </div>
                                       </div>
-                                    );
-                                  });
-                                })()}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         );
                       })}
@@ -3128,8 +3563,9 @@ export default function TicketBookingList() {
                       </div>
                       <div className="mt-3">
                         <div className="text-sm font-medium text-gray-700 mb-2">{t('tourEvents')}</div>
+                        <p className="text-xs text-gray-600 mb-2 leading-relaxed">{t('ticketCalendarTourColorsLegendHint')}</p>
                         <div className="flex flex-wrap gap-2">
-                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 ring-1 ring-gray-200">
                             {t('tourNameAndPeople')}
                           </span>
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
@@ -3163,8 +3599,14 @@ export default function TicketBookingList() {
         ) : (
           /* 카드뷰 - 모바일 컴팩트 */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
-            {pagedSortedBookings.map((booking) => (
-              <div key={booking.id} className="bg-white rounded-xl sm:rounded-lg shadow-sm sm:shadow-md border border-gray-200 hover:shadow-md sm:hover:shadow-lg transition-shadow">
+            {pagedSortedBookings.map((booking) => {
+              const supplierStyle = ticketBookingSupplierColors(booking.company);
+              return (
+              <div
+                key={booking.id}
+                className="bg-white rounded-xl sm:rounded-lg shadow-sm sm:shadow-md border border-gray-200 hover:shadow-md sm:hover:shadow-lg transition-shadow"
+                style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
+              >
                 <div className="p-3 sm:p-4 lg:p-6">
                   {/* 카드 헤더 - 모바일 컴팩트 */}
                   <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
@@ -3172,7 +3614,12 @@ export default function TicketBookingList() {
                       <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1 truncate">
                         {booking.category}
                       </h3>
-                      <p className="text-xs sm:text-sm text-gray-600 truncate">{booking.company}</p>
+                      <p
+                        className="text-xs sm:text-sm truncate inline-flex max-w-full rounded px-1.5 py-0.5 font-medium ring-1 ring-black/10"
+                        style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+                      >
+                        {booking.company}
+                      </p>
                       <p className="text-xs text-gray-500 mt-0.5 sm:mt-1 truncate">{booking.reservation_name}</p>
                     </div>
                     <span className={`inline-flex px-2 py-0.5 sm:py-1 text-xs font-semibold rounded-full flex-shrink-0 ${getStatusColor(booking.status)}`}>
@@ -3244,8 +3691,8 @@ export default function TicketBookingList() {
                         <div className="mt-0.5 sm:mt-1 font-medium truncate">{getPaymentMethodText(booking.payment_method) || '-'}</div>
                       </div>
                       <div className="mt-1.5 sm:mt-2">
-                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
-                          {getCCStatusText(booking.cc)}
+                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc ?? '')}`}>
+                          {getCCStatusText(booking.cc ?? '')}
                         </span>
                       </div>
                     </div>
@@ -3302,7 +3749,8 @@ export default function TicketBookingList() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -3467,7 +3915,7 @@ export default function TicketBookingList() {
       <TicketInvoiceUploadModal
         open={showInvoiceUploadModal}
         onClose={() => setShowInvoiceUploadModal(false)}
-        bookings={bookings}
+        bookings={bookings as TicketBookingLike[]}
         onApplied={handleInvoiceUploadApplied}
         onRnUpdated={handleInvoiceModalRnUpdated}
         onNoteUpdated={handleInvoiceModalNoteUpdated}
@@ -3854,14 +4302,14 @@ export default function TicketBookingList() {
       {/* 투어 상세 (달력·테이블에서 투어 클릭 시) */}
       {tourDetailModalTourId && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 sm:p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-0"
           role="dialog"
           aria-modal="true"
           aria-labelledby="ticket-tour-detail-modal-title"
           onClick={() => setTourDetailModalTourId(null)}
         >
           <div
-            className="flex h-[min(92vh,900px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            className="flex h-[90vh] w-[90vw] max-h-[90vh] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
@@ -3894,7 +4342,7 @@ export default function TicketBookingList() {
                 key={tourDetailModalTourId}
                 title="투어 상세"
                 src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                className="h-full w-full min-h-[60vh] border-0"
+                className="h-full min-h-0 w-full border-0"
               />
             </div>
           </div>

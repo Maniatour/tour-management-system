@@ -233,8 +233,8 @@ export default function ReservationFollowUpSection({
       const customers = followUpPipelineCustomers ?? []
       if (!res) return
       const customer = customers.find((c) => c.id === res.customerId)
-      if (!customer?.email) {
-        alert(tRes('messages.noCustomerEmail'))
+      if (!customer) {
+        alert(tRes('messages.customerNotLinkedForEmailPreview'))
         return
       }
 
@@ -255,7 +255,7 @@ export default function ReservationFollowUpSection({
         setPipelineEmailPreview({
           reservationId: res.id,
           emailType: 'resident_inquiry',
-          customerEmail: customer.email,
+          customerEmail: customer.email ?? '',
           pickupTime: null,
           tourDate: res.tourDate,
           customerName:
@@ -272,7 +272,7 @@ export default function ReservationFollowUpSection({
       setPipelineEmailPreview({
         reservationId: res.id,
         emailType,
-        customerEmail: customer.email,
+        customerEmail: customer.email ?? '',
         pickupTime: res.pickUpTime,
         tourDate: res.tourDate,
       })
@@ -282,6 +282,10 @@ export default function ReservationFollowUpSection({
 
   const sendPipelineEmailFromPreview = useCallback(async () => {
     if (!pipelineEmailPreview) return
+    if (!pipelineEmailPreview.customerEmail?.trim()) {
+      alert(tRes('messages.emailSendRequiresCustomerEmail'))
+      return
+    }
     const customers = followUpPipelineCustomers ?? []
     const customer = customers.find((c) => c.id === followUpPipelineReservation?.customerId)
     const customerLanguage = customer?.language?.toLowerCase() || 'ko'
@@ -372,7 +376,9 @@ export default function ReservationFollowUpSection({
 
       const { data: existing, error: selErr } = await supabase
         .from('reservation_follow_up_pipeline_manual')
-        .select('confirmation_manual, resident_manual, departure_manual, pickup_manual')
+        .select(
+          'confirmation_manual, resident_manual, departure_manual, pickup_manual, cancel_follow_up_manual, cancel_rebooking_outreach_manual'
+        )
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -387,11 +393,13 @@ export default function ReservationFollowUpSection({
         resident_manual: !!(existing as { resident_manual?: boolean } | null)?.resident_manual,
         departure_manual: !!(existing as { departure_manual?: boolean } | null)?.departure_manual,
         pickup_manual: !!(existing as { pickup_manual?: boolean } | null)?.pickup_manual,
+        cancel_follow_up_manual: !!(existing as { cancel_follow_up_manual?: boolean } | null)?.cancel_follow_up_manual,
+        cancel_rebooking_outreach_manual: !!(existing as { cancel_rebooking_outreach_manual?: boolean } | null)
+          ?.cancel_rebooking_outreach_manual,
       }
       base[col as keyof typeof base] = action === 'mark'
 
-      const anyTrue =
-        base.confirmation_manual || base.resident_manual || base.departure_manual || base.pickup_manual
+      const anyTrue = Object.values(base).some(Boolean)
 
       if (!anyTrue) {
         if (existing) {

@@ -101,12 +101,16 @@ export function useReservationFollowUpSnapshots(
             resident_manual: boolean
             departure_manual: boolean
             pickup_manual: boolean
+            cancel_follow_up_manual: boolean
+            cancel_rebooking_outreach_manual: boolean
           }
         >()
         for (const part of chunk(ids, CHUNK)) {
           const { data: manualRows, error: manErr } = await supabase
             .from('reservation_follow_up_pipeline_manual')
-            .select('reservation_id, confirmation_manual, resident_manual, departure_manual, pickup_manual')
+            .select(
+              'reservation_id, confirmation_manual, resident_manual, departure_manual, pickup_manual, cancel_follow_up_manual, cancel_rebooking_outreach_manual'
+            )
             .in('reservation_id', part)
           if (manErr) throw manErr
           for (const row of manualRows || []) {
@@ -117,6 +121,9 @@ export function useReservationFollowUpSnapshots(
               resident_manual: !!(row as { resident_manual?: boolean }).resident_manual,
               departure_manual: !!(row as { departure_manual?: boolean }).departure_manual,
               pickup_manual: !!(row as { pickup_manual?: boolean }).pickup_manual,
+              cancel_follow_up_manual: !!(row as { cancel_follow_up_manual?: boolean }).cancel_follow_up_manual,
+              cancel_rebooking_outreach_manual: !!(row as { cancel_rebooking_outreach_manual?: boolean })
+                .cancel_rebooking_outreach_manual,
             })
           }
         }
@@ -164,17 +171,23 @@ export function useReservationFollowUpSnapshots(
           const mr = m?.resident_manual ?? false
           const md = m?.departure_manual ?? false
           const mp = m?.pickup_manual ?? false
+          const cFu = m?.cancel_follow_up_manual ?? false
+          const cRe = m?.cancel_rebooking_outreach_manual ?? false
+          /** 출발 확정(이메일·수동)만 있어도 예약 확인 단계는 완료로 표시. 거주 단계는 별도. */
+          const departureEffective = departureSent.has(rid) || md
           next.set(rid, {
-            confirmationSent: confirmationSent.has(rid) || mc,
+            confirmationSent: confirmationSent.has(rid) || mc || departureEffective,
             residentInquirySent: residentInquirySent.has(rid) || (needs && mr),
             guestResidentFlowCompleted: guestDone.has(rid) || (needs && mr),
-            departureSent: departureSent.has(rid) || md,
+            departureSent: departureEffective,
             pickupSent: pickupSent.has(rid) || mp,
             needsResidentFlow: needs,
             manualConfirmation: mc,
             manualResident: mr,
             manualDeparture: md,
             manualPickup: mp,
+            cancelFollowUpManual: cFu,
+            cancelRebookingOutreachManual: cRe,
           })
         }
         if (!cancelled) setSnapshotsByReservationId(next)

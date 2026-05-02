@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslations } from 'next-intl'
 import { X, Mail, Eye, Loader2, Send, Copy, Check, Printer } from 'lucide-react'
 import ProductDetailFieldEditModal from '@/components/reservation/ProductDetailFieldEditModal'
 import {
@@ -45,6 +46,7 @@ export default function EmailPreviewModal({
   tourDate,
   onSend
 }: EmailPreviewModalProps) {
+  const tRes = useTranslations('reservations')
   const [emailContent, setEmailContent] = useState<{
     subject: string
     html: string
@@ -337,6 +339,8 @@ ${printHtml}
     pickup: '픽업 notification 이메일'
   }
 
+  const canSendEmail = !!customerEmail?.trim()
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-[120] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -365,6 +369,11 @@ ${printHtml}
             </div>
           ) : emailContent ? (
             <div className="space-y-4">
+              {!canSendEmail ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  {tRes('messages.noCustomerEmail')}
+                </div>
+              ) : null}
               {/* 이메일 정보 */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="space-y-2 text-sm">
@@ -496,8 +505,12 @@ ${printHtml}
             닫기
           </button>
           <button
+            type="button"
             onClick={handleSend}
-            disabled={sending || !emailContent}
+            disabled={sending || !emailContent || !canSendEmail}
+            title={
+              !canSendEmail ? tRes('messages.emailSendRequiresCustomerEmail') : undefined
+            }
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {sending ? (

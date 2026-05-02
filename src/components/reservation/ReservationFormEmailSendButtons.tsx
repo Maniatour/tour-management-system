@@ -32,8 +32,12 @@ export function ReservationFormEmailSendButtons({
   const openPreview = useCallback(
     (kind: ReservationFormEmailSendKind) => {
       const customer = customers.find((c) => c.id === reservation.customerId)
-      if (!customer?.email) {
-        alert(uiLocale === 'en' ? 'The customer has no email address.' : '고객 이메일이 없습니다.')
+      if (!customer) {
+        alert(
+          uiLocale === 'en'
+            ? 'Linked customer record was not found.'
+            : '연결된 고객 정보를 찾을 수 없습니다.'
+        )
         return
       }
 
@@ -184,7 +188,7 @@ export function ReservationFormEmailSendButtons({
         </button>
       </div>
 
-      {previewKind && previewEmail ? (
+      {previewKind ? (
         <EmailPreviewModal
           isOpen
           onClose={() => setPreviewKind(null)}

@@ -35,7 +35,9 @@ import { DateGroupHeader } from '@/components/reservation/DateGroupHeader'
 import ReservationsEmptyState from '@/components/reservation/ReservationsEmptyState'
 import ReservationsPagination from '@/components/reservation/ReservationsPagination'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
-import ReservationFollowUpQueueModal from '@/components/reservation/ReservationFollowUpQueueModal'
+import ReservationFollowUpQueueModal, {
+  type CancelFollowUpManualKind,
+} from '@/components/reservation/ReservationFollowUpQueueModal'
 import ReservationActionRequiredModal from '@/components/reservation/ReservationActionRequiredModal'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
@@ -78,6 +80,7 @@ import {
 } from '@/utils/balanceChannelRevenue'
 import {
   reservationNeedsAnyFollowUpAttention,
+  reservationNeedsCancelFollowUpQueueAttention,
   type FollowUpPipelineStepKey,
 } from '@/lib/reservationFollowUpPipeline'
 
@@ -1145,7 +1148,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
       const { data: existing, error: selErr } = await supabase
         .from('reservation_follow_up_pipeline_manual')
-        .select('confirmation_manual, resident_manual, departure_manual, pickup_manual')
+        .select(
+          'confirmation_manual, resident_manual, departure_manual, pickup_manual, cancel_follow_up_manual, cancel_rebooking_outreach_manual'
+        )
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -1160,11 +1165,78 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         resident_manual: !!(existing as { resident_manual?: boolean } | null)?.resident_manual,
         departure_manual: !!(existing as { departure_manual?: boolean } | null)?.departure_manual,
         pickup_manual: !!(existing as { pickup_manual?: boolean } | null)?.pickup_manual,
+        cancel_follow_up_manual: !!(existing as { cancel_follow_up_manual?: boolean } | null)?.cancel_follow_up_manual,
+        cancel_rebooking_outreach_manual: !!(existing as { cancel_rebooking_outreach_manual?: boolean } | null)
+          ?.cancel_rebooking_outreach_manual,
       }
       base[col as keyof typeof base] = action === 'mark'
 
-      const anyTrue =
-        base.confirmation_manual || base.resident_manual || base.departure_manual || base.pickup_manual
+      const anyTrue = Object.values(base).some(Boolean)
+
+      if (!anyTrue) {
+        if (existing) {
+          const { error } = await supabase
+            .from('reservation_follow_up_pipeline_manual')
+            .delete()
+            .eq('reservation_id', reservationId)
+          if (error) {
+            console.error(error)
+            alert(locale === 'ko' ? `저장 실패: ${error.message}` : `Save failed: ${error.message}`)
+            return
+          }
+        }
+      } else {
+        const { error } = await supabase.from('reservation_follow_up_pipeline_manual').upsert(
+          {
+            reservation_id: reservationId,
+            ...base,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'reservation_id' }
+        )
+        if (error) {
+          console.error(error)
+          alert(locale === 'ko' ? `저장 실패: ${error.message}` : `Save failed: ${error.message}`)
+          return
+        }
+      }
+
+      setFollowUpPipelineManualRefresh((n) => n + 1)
+    },
+    [locale]
+  )
+
+  const handleCancelFollowUpManualChange = useCallback(
+    async (reservationId: string, kind: CancelFollowUpManualKind, action: 'mark' | 'clear') => {
+      const col =
+        kind === 'cancel_follow_up' ? 'cancel_follow_up_manual' : 'cancel_rebooking_outreach_manual'
+
+      const { data: existing, error: selErr } = await supabase
+        .from('reservation_follow_up_pipeline_manual')
+        .select(
+          'confirmation_manual, resident_manual, departure_manual, pickup_manual, cancel_follow_up_manual, cancel_rebooking_outreach_manual'
+        )
+        .eq('reservation_id', reservationId)
+        .maybeSingle()
+
+      if (selErr) {
+        console.error(selErr)
+        alert(locale === 'ko' ? `저장 실패: ${selErr.message}` : `Save failed: ${selErr.message}`)
+        return
+      }
+
+      const base = {
+        confirmation_manual: !!(existing as { confirmation_manual?: boolean } | null)?.confirmation_manual,
+        resident_manual: !!(existing as { resident_manual?: boolean } | null)?.resident_manual,
+        departure_manual: !!(existing as { departure_manual?: boolean } | null)?.departure_manual,
+        pickup_manual: !!(existing as { pickup_manual?: boolean } | null)?.pickup_manual,
+        cancel_follow_up_manual: !!(existing as { cancel_follow_up_manual?: boolean } | null)?.cancel_follow_up_manual,
+        cancel_rebooking_outreach_manual: !!(existing as { cancel_rebooking_outreach_manual?: boolean } | null)
+          ?.cancel_rebooking_outreach_manual,
+      }
+      base[col as keyof typeof base] = action === 'mark'
+
+      const anyTrue = Object.values(base).some(Boolean)
 
       if (!anyTrue) {
         if (existing) {
@@ -1203,8 +1275,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     let n = 0
     for (const r of filteredReservations) {
       if (isReservationTourDatePastLocal(r.tourDate)) continue
-      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       const snap = followUpSnapshotsByReservationId.get(r.id)
+      if (reservationNeedsCancelFollowUpQueueAttention(r.status as string | undefined, r.tourDate, snap)) {
+        n += 1
+        continue
+      }
+      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
@@ -2293,8 +2369,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   // ????????? ?? ??? - useCallback??? ????????
   const handleOpenEmailPreview = useCallback((reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry') => {
     const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
-    if (!customer?.email) {
-      alert(t('messages.noCustomerEmail'))
+    if (!customer) {
+      alert(t('messages.customerNotLinkedForEmailPreview'))
       return
     }
 
@@ -2327,7 +2403,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       setEmailPreviewData({
         reservationId: reservation.id,
         emailType: 'resident_inquiry',
-        customerEmail: customer.email,
+        customerEmail: customer.email ?? '',
         pickupTime: null,
         tourDate: reservation.tourDate,
         customerName: getCustomerName(reservation.customerId, (customers as Customer[]) || []) || customer.name || '',
@@ -2344,7 +2420,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     setEmailPreviewData({
       reservationId: reservation.id,
       emailType,
-      customerEmail: customer.email,
+      customerEmail: customer.email ?? '',
       pickupTime: reservation.pickUpTime,
       tourDate: reservation.tourDate
     })
@@ -2355,6 +2431,11 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   // ???????? ?? ??? - useCallback??? ????????
   const handleSendEmailFromPreview = useCallback(async () => {
     if (!emailPreviewData) return
+
+    if (!emailPreviewData.customerEmail?.trim()) {
+      alert(t('messages.emailSendRequiresCustomerEmail'))
+      return
+    }
 
     setSendingEmail(emailPreviewData.reservationId)
 
@@ -3595,6 +3676,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         customers={(customers as Customer[]) || []}
         snapshotsByReservationId={followUpSnapshotsByReservationId}
         loadingSnapshots={followUpSnapshotsLoading}
+        onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
         renderSimpleReservationCard={(reservation) => (
           <ReservationCardItem
             reservation={reservation}

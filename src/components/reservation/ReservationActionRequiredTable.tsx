@@ -41,7 +41,6 @@ export type ActionRequiredTableVariant =
   | 'pricingNoPrice'
   | 'pricingMismatch'
   | 'deposit'
-  | 'followUpCancel'
   | 'balance'
 
 export interface ReservationActionRequiredTableProps {
@@ -150,20 +149,6 @@ function daysFromToday(tourDate: string | undefined, todayStr: string): number |
 function isConfirmedReservation(r: Reservation): boolean {
   const s = (r.status as string)?.trim?.().toLowerCase?.() ?? ''
   return s === 'confirmed'
-}
-
-function formatUpdatedDisplay(iso: string | undefined, locale: string): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return iso
-    return d.toLocaleString(locale === 'en' ? 'en-US' : 'ko-KR', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    })
-  } catch {
-    return iso
-  }
 }
 
 type TableRowProps = Omit<ReservationActionRequiredTableProps, 'reservations' | 'tableVariant'> & {
@@ -648,34 +633,6 @@ function VariantTableThead({
           </tr>
         </thead>
       )
-    case 'followUpCancel':
-      return (
-        <thead>
-          <tr className={base}>
-            <th scope="col" className="px-2 py-2">
-              {tc('customer')}
-            </th>
-            <th scope="col" className="px-2 py-2">
-              {tc('product')}
-            </th>
-            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-              {tc('tourDate')}
-            </th>
-            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-              {tc('status')}
-            </th>
-            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-              {tc('lastUpdated')}
-            </th>
-            <th scope="col" className="px-2 py-2">
-              {tc('channelVariant')}
-            </th>
-            <th scope="col" className="px-2 py-2 text-right whitespace-nowrap">
-              {tc('actions')}
-            </th>
-          </tr>
-        </thead>
-      )
     default:
       return null
   }
@@ -800,30 +757,6 @@ function VariantTableBody({
                 <ReservationStatusDropdown reservation={reservation} onStatusChange={row.onStatusChange} />
               </td>
               <td className="px-2 py-2 text-xs text-gray-800 leading-snug max-w-[14rem]">{issueLabel}</td>
-              <ChannelCell reservation={reservation} channels={row.channels} />
-              <ActionsCell {...row} />
-            </tr>
-          )
-        }
-
-        if (variant === 'followUpCancel') {
-          const updatedRaw = reservation.updated_at || reservation.addedTime || ''
-          return (
-            <tr key={reservation.id} className="border-b border-gray-100 hover:bg-gray-50/80 align-top">
-              <CustomerCell reservation={reservation} customers={row.customers} onCustomerClick={row.onCustomerClick} />
-              <ProductCell
-                reservation={reservation}
-                products={row.products}
-                locale={row.locale}
-                getGroupColorClasses={row.getGroupColorClasses}
-                getSelectedChoicesFromNewSystem={row.getSelectedChoicesFromNewSystem}
-                choicesCacheRef={row.choicesCacheRef}
-              />
-              <TourDateCell reservation={reservation} />
-              <td className="px-2 py-2 whitespace-nowrap">
-                <ReservationStatusDropdown reservation={reservation} onStatusChange={row.onStatusChange} />
-              </td>
-              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700">{formatUpdatedDisplay(updatedRaw, locale)}</td>
               <ChannelCell reservation={reservation} channels={row.channels} />
               <ActionsCell {...row} />
             </tr>

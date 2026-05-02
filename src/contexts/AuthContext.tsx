@@ -5,6 +5,7 @@ import { supabase, updateSupabaseToken } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
+import { isSuperAdminEmail } from '@/lib/superAdmin'
 
 function authUserFromSupabaseSessionUser(sessionUser: User): AuthUser {
   return {
@@ -152,9 +153,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       // 먼저 슈퍼관리자 체크 (team 데이터 없이도 작동)
       const normalizedEmail = email.toLowerCase()
-      const superAdminEmails = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
-      
-      if (superAdminEmails.includes(normalizedEmail)) {
+
+      if (isSuperAdminEmail(normalizedEmail)) {
         console.log('AuthContext: Super admin detected, setting admin role')
         setUserRole('admin')
         setUserPosition(null) // 슈퍼관리자는 position 없음

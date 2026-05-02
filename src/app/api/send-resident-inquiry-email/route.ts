@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { supabase } from '@/lib/supabase'
-import { buildResidentInquiryEmail } from '@/lib/residentInquiryEmailHtml'
+import {
+  BUILTIN_RESIDENT_INQUIRY_EMAIL_TEMPLATES,
+  substituteResidentInquiryEmailTemplate,
+} from '@/lib/residentInquiryEmailHtml'
+import { fetchResidentInquiryEmailTemplateFromDb } from '@/lib/residentInquiryEmailTemplateDb'
 import { mintResidentCheckTokenForReservation } from '@/lib/mintResidentCheckToken'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 
@@ -96,7 +100,12 @@ export async function POST(request: NextRequest) {
     })
     const residentCheckAbsoluteUrl = minted?.absoluteUrl?.trim() || ''
 
-    const { subject, html } = buildResidentInquiryEmail({
+    const stored = await fetchResidentInquiryEmailTemplateFromDb(emailLocale)
+    const builtin = BUILTIN_RESIDENT_INQUIRY_EMAIL_TEMPLATES[emailLocale]
+    const subjectTpl = stored?.subject_template ?? builtin.subject
+    const htmlTpl = stored?.html_template ?? builtin.html
+
+    const { subject, html } = substituteResidentInquiryEmailTemplate(subjectTpl, htmlTpl, {
       customerName: cust.name || '',
       tourDate: row.tour_date,
       productName: productName || (emailLocale === 'en' ? 'Tour' : '투어'),

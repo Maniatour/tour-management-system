@@ -1,7 +1,9 @@
 'use client'
 
-import React from 'react'
+import React, { useMemo } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
+import { useAuth } from '@/contexts/AuthContext'
+import { isSuperAdminEmail } from '@/lib/superAdmin'
 
 /** 입장권 부킹 — 예약 상세 정보 모달에 필요한 행 타입 */
 export type TicketBookingReservationDetailRow = {
@@ -114,6 +116,8 @@ export default function TicketBookingReservationDetailModal({
 }: TicketBookingReservationDetailModalProps) {
   const locale = useLocale()
   const t = useTranslations('booking.calendar')
+  const { user } = useAuth()
+  const canDeleteBooking = useMemo(() => isSuperAdminEmail(user?.email), [user?.email])
   const tourFallback = t('tour')
 
   const getStatusText = (status: string) => {
@@ -146,11 +150,18 @@ export default function TicketBookingReservationDetailModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black bg-opacity-50 p-4">
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black bg-opacity-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ticket-booking-detail-modal-title"
+    >
       <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg bg-white">
         <div className="p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-xl font-semibold">예약 상세 정보</h3>
+            <h3 id="ticket-booking-detail-modal-title" className="text-xl font-semibold">
+              {t('ticketBookingDetailModalTitle')}
+            </h3>
             <button
               type="button"
               onClick={() => onOpenChange(false)}
@@ -328,7 +339,7 @@ export default function TicketBookingReservationDetailModal({
                                   )}
                                 </div>
 
-                                {!readOnly && (onEdit || onViewHistory || onDelete) ? (
+                                {!readOnly && (onEdit || onViewHistory || (onDelete && canDeleteBooking)) ? (
                                   <div className="flex space-x-1">
                                     {onEdit ? (
                                       <button
@@ -356,7 +367,7 @@ export default function TicketBookingReservationDetailModal({
                                         히스토리
                                       </button>
                                     ) : null}
-                                    {onDelete ? (
+                                    {onDelete && canDeleteBooking ? (
                                       <button
                                         type="button"
                                         onClick={() => {

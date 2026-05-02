@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, XCircle, LayoutGrid, Table2, GalleryHorizontal } from 'lucide-react'
+import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -24,7 +24,7 @@ import {
 import type { Reservation, Customer } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 
-export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'balance' | 'followUpCancel'
+export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'balance'
 export type PricingSubTabId = 'noPrice' | 'mismatch'
 export type BalanceSubTabId = 'cancelled' | 'unpaid' | 'calcWrong'
 export type BalanceTotalFilterId = 'all' | 'totalMismatch'
@@ -129,7 +129,6 @@ const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType
   { id: 'pricing', labelKey: 'actionRequired.tabs.pricing', icon: DollarSign },
   { id: 'deposit', labelKey: 'actionRequired.tabs.deposit', icon: CreditCard },
   { id: 'balance', labelKey: 'actionRequired.tabs.balance', icon: Scale },
-  { id: 'followUpCancel', labelKey: 'actionRequired.tabs.followUpCancel', icon: XCircle }
 ]
 
 const CARDS_PER_PAGE = 12 // 가로 4개 x 3행
@@ -456,17 +455,6 @@ export default function ReservationActionRequiredModal({
       ]).values()
     ]
 
-    // 취소된 예약: 최신 상태 변경 순(updated_at 기준, 없으면 addedTime). 투어날짜가 지난 것은 제외
-    const followUpCancelList = list
-      .filter(r => isCancelled(r))
-      .filter(r => !tourDateBeforeToday(r))
-      .slice()
-      .sort((a, b) => {
-        const aTime = a.updated_at || a.addedTime || ''
-        const bTime = b.updated_at || b.addedTime || ''
-        return bTime.localeCompare(aTime)
-      })
-
     return {
       status: statusList,
       tour: tourList,
@@ -478,7 +466,6 @@ export default function ReservationActionRequiredModal({
       balanceCancelled: balanceCancelledList,
       balanceUnpaid: balanceUnpaidList,
       balanceCalcWrong: balanceCalcWrongList,
-      followUpCancel: followUpCancelList
     }
   }, [
     reservations,
@@ -500,7 +487,6 @@ export default function ReservationActionRequiredModal({
     pricing: filteredByTab.pricing.length,
     deposit: filteredByTab.deposit.length,
     balance: filteredByTab.balance.length,
-    followUpCancel: filteredByTab.followUpCancel.length
   }), [filteredByTab])
 
   const totalActionCount = useMemo(() =>
@@ -510,7 +496,6 @@ export default function ReservationActionRequiredModal({
       ...filteredByTab.pricing.map(r => r.id),
       ...filteredByTab.deposit.map(r => r.id),
       ...filteredByTab.balance.map(r => r.id),
-      ...filteredByTab.followUpCancel.map(r => r.id)
     ]).size
   , [filteredByTab])
 
@@ -613,8 +598,7 @@ export default function ReservationActionRequiredModal({
     if (activeTab === 'status') return 'status'
     if (activeTab === 'tour') return 'tour'
     if (activeTab === 'pricing') return pricingSubTab === 'noPrice' ? 'pricingNoPrice' : 'pricingMismatch'
-    if (activeTab === 'deposit') return 'deposit'
-    return 'followUpCancel'
+    return 'deposit'
   }, [activeTab, pricingSubTab])
 
   const showCardTableToggle =
@@ -1169,7 +1153,7 @@ export default function ReservationActionRequiredModal({
                   <span>{renderManualText(t('actionRequired.manualBalance'))}</span>
                 </li>
                 <li className="flex gap-2">
-                  <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.followUpCancel')}:</span>
+                  <span className="font-medium text-gray-900 shrink-0">{t('followUpPipeline.tabCancel')}:</span>
                   <span>{renderManualText(t('actionRequired.manualFollowUpCancel'))}</span>
                 </li>
               </ul>
