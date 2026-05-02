@@ -21,6 +21,18 @@ export type PaymentMethodDisplayTeam = {
 
 const PAYM_PREFIX_DISPLAY = /^PAYM[\w-]+\s*-\s*/i
 
+/**
+ * `payment_methods.method`가 채널·정산용인 경우: linked `user_email`/team은 소유자 표시가 아니므로
+ * «Partner Received (직원명)»처럼 붙이지 않고 방법명만 표시한다.
+ */
+const METHOD_NAMES_WITHOUT_PERSON_SUFFIX = new Set(
+  ['partner received', "customer's cc charged", 'commission received !'].map((s) => s.toLowerCase())
+)
+
+function shouldSuppressPersonSuffixForMethodName(methodLabel: string): boolean {
+  return METHOD_NAMES_WITHOUT_PERSON_SUFFIX.has(methodLabel.trim().toLowerCase())
+}
+
 /** 레거시 «PAYMxxx - CC 0602» 또는 method만 */
 export function extractPaymentMethodCardLabel(
   displayName: string | null | undefined,
@@ -66,6 +78,9 @@ export function formatPaymentMethodDisplay(
   }
 
   const cardPart = extractPaymentMethodCardLabel(pm.display_name, pm.method)
+  if (cardPart && shouldSuppressPersonSuffixForMethodName(cardPart)) {
+    return cardPart
+  }
   const holder = (pm.card_holder_name && pm.card_holder_name.trim()) || ''
   let person = holder
   if (!person && team) {

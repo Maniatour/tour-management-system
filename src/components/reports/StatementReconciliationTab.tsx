@@ -358,8 +358,8 @@ const PICKER_BROWSE_PAGE_SIZE = 40
 const AUTO_MATCH_CANDIDATE_LIMIT = 8
 /** 자동 매칭 미리보기: 한 번에 렌더링할 행 수(체크 토글 버벅임 완화) */
 const AUTO_MATCH_PREVIEW_PAGE_SIZE = 120
-/** 자동 매칭 미리보기: 금액이 완전히 같지 않아도 후보로 볼 최대 차이(또는 5%) */
-const AUTO_MATCH_MAX_AMOUNT_DIFF_ABS = 5
+/** 자동 매칭 미리보기: 명세 줄 금액과 같은 지출만 후보 (미리보기 옵션 표시와 동일한 부동소수 허용치) */
+const AUTO_MATCH_AMOUNT_EQUAL_EPS = 0.015
 const AUTO_MATCH_MAX_DAY_DIFF = 7
 /** 계정별 명세 줄·매칭 메모리 캐시 TTL (짧게 유지해 DB 왕복만 완화) */
 const RECONCILIATION_LOAD_CACHE_TTL_MS = 15000
@@ -386,11 +386,10 @@ function dayDiffFromYmd(iso: string, ymd: string): number {
 
 function autoMatchCandidateScore(lineAmount: number, postedDate: string, expense: AutoMatchExpenseCandidate) {
   const amountDiff = Math.abs(Number(expense.amount) - lineAmount)
-  const maxAmountDiff = Math.max(AUTO_MATCH_MAX_AMOUNT_DIFF_ABS, Math.abs(lineAmount) * 0.05)
-  if (amountDiff > maxAmountDiff) return null
+  if (amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS) return null
   const dayDiff = dayDiffFromYmd(expense.occurred_at, postedDate)
   if (dayDiff > AUTO_MATCH_MAX_DAY_DIFF) return null
-  const amountPenalty = amountDiff === 0 ? 0 : Math.min(45, (amountDiff / maxAmountDiff) * 45)
+  const amountPenalty = 0
   const datePenalty = dayDiff * 5
   const labelBonus = expense.label.trim().length > 2 ? 5 : 0
   return Math.max(1, 100 - amountPenalty - datePenalty + labelBonus)
@@ -1234,6 +1233,8 @@ export default function StatementReconciliationTab() {
 
   /** 명세 줄 로드 경합 시 이전 요청의 finally 가 로딩을 끄지 않도록 */
   const loadLinesGenRef = useRef(0)
+  /** 동시에 여러 번 호출될 때 로딩 스피너가 영구히 남는 것 방지 */
+  const loadLinesInFlightRef = useRef(0)
 
   /** 선택 금융 계정에 연결된 모든 명세 업로드의 줄·매칭을 합쳐 로드 */
   const loadLinesAndMatchesForAccount = useCallback(async (accountId: string, options?: { force?: boolean }) => {
@@ -1273,6 +1274,7 @@ export default function StatementReconciliationTab() {
       }
     }
     const gen = ++loadLinesGenRef.current
+    loadLinesInFlightRef.current += 1
     setReconciliationLinesLoading(true)
     try {
       const perImportTasks: Promise<{
@@ -1328,7 +1330,9 @@ export default function StatementReconciliationTab() {
         })
       }
     } finally {
-      if (gen === loadLinesGenRef.current) {
+      loadLinesInFlightRef.current -= 1
+      if (loadLinesInFlightRef.current <= 0) {
+        loadLinesInFlightRef.current = 0
         setReconciliationLinesLoading(false)
       }
     }
@@ -3037,6 +3041,7 @@ export default function StatementReconciliationTab() {
   /** DB에 자동/수동 구분 없음 — reconciliation_matches 전부 삭제 후 명세 줄 대조 상태만 되돌림 */
   const resetAllReconciliationMatches = async () => {
     setResettingAllMatches(true)
+    setResetAllMatchesOpen(false)
     setMessage(null)
     try {
       const { error: delErr } = await supabase
@@ -3051,7 +3056,6 @@ export default function StatementReconciliationTab() {
         .in('matched_status', ['matched', 'partial'])
       if (upErr) throw upErr
 
-      setResetAllMatchesOpen(false)
       setMessage('모든 명세 대조 매칭(지출·입금 연결)이 초기화되었습니다.')
       if (filterAccountId) {
         await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
@@ -5400,7 +5404,7 @@ export default function StatementReconciliationTab() {
         </div>
 
         <AlertDialog open={resetAllMatchesOpen} onOpenChange={setResetAllMatchesOpen}>
-          <AlertDialogContent className="z-[1150] max-w-md">
+          <AlertDialogContent className="max-w-md">
             <AlertDialogHeader>
               <AlertDialogTitle>대조 매칭을 모두 초기화할까요?</AlertDialogTitle>
               <AlertDialogDescription className="text-slate-700 space-y-2">

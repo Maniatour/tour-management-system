@@ -17,7 +17,9 @@ import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCatego
 import {
   applyStandardLeafToCompanyExpense,
   buildUnifiedStandardLeafGroups,
-  flattenUnifiedLeaves
+  flattenUnifiedLeaves,
+  matchStandardLeafIdForPaidForAndCategory,
+  unifiedStandardTriggerLabel
 } from '@/lib/companyExpenseStandardUnified'
 import { Button } from '@/components/ui/button'
 import {
@@ -101,25 +103,77 @@ const KIND_LABEL: Record<BulkExpenseKind, string> = {
   ticket_bookings: '입장권(티켓)'
 }
 
-/** 표준 리프 선택 UI용: 현재 paid_for·category에 가장 잘 맞는 리프 id (카테고리 열 전용, paid_for는 별도 셀렉트) */
-function matchStandardLeafIdForRow(
-  paid_for: string,
-  category: string,
+function ruleResolvedStandardLeafId(
+  r: StatementAutofillRuleRow,
   cats: ExpenseStandardCategoryPickRow[],
   locale: string
 ): string {
-  if (cats.length === 0) return ''
-  const byId = new Map(cats.map((c) => [c.id, c]))
-  const leaves = flattenUnifiedLeaves(buildUnifiedStandardLeafGroups(cats, locale, { includeInactive: true }))
-  const pf = paid_for.trim()
-  const cat = (category || '').trim()
-  const appliedFor = (id: string) => applyStandardLeafToCompanyExpense(id, byId)
+  const fromDb = (r.standard_leaf_id ?? '').trim()
+  if (fromDb) return fromDb
+  return matchStandardLeafIdForPaidForAndCategory(r.paid_for, r.category, cats, locale)
+}
 
-  const byCat = leaves.filter((l) => appliedFor(l.id)?.category === cat)
-  if (byCat.length === 0) return ''
-  if (byCat.length === 1) return byCat[0].id
-  const byBoth = byCat.find((l) => appliedFor(l.id)?.paid_for === pf)
-  return byBoth?.id ?? byCat[0].id
+function effectiveAutofillExpenseFromRule(
+  rule: StatementAutofillRuleRow,
+  catsById: Map<string, ExpenseStandardCategoryPickRow>
+): { paid_for: string; category: string } {
+  const lid = (rule.standard_leaf_id ?? '').trim()
+  if (lid) {
+    const applied = applyStandardLeafToCompanyExpense(lid, catsById)
+    if (applied) return { paid_for: applied.paid_for, category: applied.category }
+  }
+  return { paid_for: rule.paid_for, category: rule.category }
+}
+
+function autofillRuleSupabaseErrorText(e: unknown): string {
+  if (e && typeof e === 'object') {
+    const o = e as { message?: string; details?: string; hint?: string; code?: string }
+    const parts = [o.message, o.details, o.hint, o.code].filter(
+      (x): x is string => typeof x === 'string' && x.trim() !== ''
+    )
+    if (parts.length) return parts.join(' — ')
+  }
+  return e instanceof Error ? e.message : '요청 실패'
+}
+
+/** 원격 DB에 standard_leaf_id 컬럼·캐시가 아직 없을 때 PostgREST 400 대응 */
+function isLikelyMissingStandardLeafIdColumn(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const o = e as { message?: string; details?: string }
+  const t = `${o.message ?? ''} ${o.details ?? ''}`.toLowerCase()
+  if (!t.includes('standard_leaf_id')) return false
+  return (
+    t.includes('schema cache') ||
+    t.includes('could not find') ||
+    t.includes('does not exist') ||
+    t.includes('pgrst204') ||
+    (t.includes('column') && (t.includes('unknown') || t.includes('not find')))
+  )
+}
+
+/** 컬럼 누락·스키마 캐시 또는 standard_leaf_id FK 불일치 시, leaf 없이 재시도 */
+function shouldRetryAutofillRuleWithoutStandardLeafId(e: unknown): boolean {
+  if (isLikelyMissingStandardLeafIdColumn(e)) return true
+  if (!e || typeof e !== 'object') return false
+  const o = e as { message?: string; details?: string; code?: string }
+  const t = `${o.message ?? ''} ${o.details ?? ''}`.toLowerCase()
+  const isFk =
+    o.code === '23503' || t.includes('foreign key') || t.includes('violates foreign key constraint')
+  if (!isFk) return false
+  return t.includes('standard_leaf') || t.includes('expense_standard_categories')
+}
+
+type StatementRuleEditDraft = {
+  id: string
+  pattern: string
+  match_mode: 'contains' | 'startswith'
+  priority: string
+  paid_for: string
+  category: string
+  paid_to: string
+  /** 표준 리프 id — DB standard_leaf_id 와 동기 */
+  standardLeafId: string
+  scopeThisAccount: boolean
 }
 
 type Props = {
@@ -146,7 +200,8 @@ function buildProposalsCompany(
   lines: BulkExpenseCandidateLine[],
   rules: StatementAutofillRuleRow[],
   history: CompanyExpenseHistoryHint[],
-  accountId: string
+  accountId: string,
+  catsById: Map<string, ExpenseStandardCategoryPickRow>
 ): BulkCompanyExpenseProposalRow[] {
   const out: BulkCompanyExpenseProposalRow[] = []
   for (const line of filterExpenseCandidates(lines)) {
@@ -168,8 +223,9 @@ function buildProposalsCompany(
     if (rule) {
       suggestion_source = 'rule'
       rule_id = rule.id
-      paid_for = rule.paid_for
-      category = rule.category
+      const eff = effectiveAutofillExpenseFromRule(rule, catsById)
+      paid_for = eff.paid_for
+      category = eff.category
       paid_to = rule.paid_to.trim() || paid_to
     } else if (hist) {
       suggestion_source = 'history'
@@ -267,7 +323,10 @@ export default function StatementBulkExpenseModal({
   const [newCategory, setNewCategory] = useState('')
   const [newPriority, setNewPriority] = useState('10')
   const [newScopeThisAccount, setNewScopeThisAccount] = useState(true)
+  const [newStandardLeafId, setNewStandardLeafId] = useState('')
   const [addingRule, setAddingRule] = useState(false)
+  const [editRuleDraft, setEditRuleDraft] = useState<StatementRuleEditDraft | null>(null)
+  const [savingRuleEdit, setSavingRuleEdit] = useState(false)
 
   const [expenseStandardCategories, setExpenseStandardCategories] = useState<ExpenseStandardCategoryPickRow[]>([])
   const [paidForFromDb, setPaidForFromDb] = useState<string[]>([])
@@ -350,6 +409,7 @@ export default function StatementBulkExpenseModal({
     setNewPaidTo('')
     setNewPaidFor('')
     setNewCategory('')
+    setNewStandardLeafId('')
     setNewPriority('10')
     setNewScopeThisAccount(true)
   }, [])
@@ -404,7 +464,13 @@ export default function StatementBulkExpenseModal({
           })
         }
 
-        const built = buildProposalsCompany(candidateLines, rulesRows, history, financialAccountId)
+        const built = buildProposalsCompany(
+          candidateLines,
+          rulesRows,
+          history,
+          financialAccountId,
+          standardCatsById
+        )
         setCompanyProposals(built)
         setSelectedIds(
           new Set(built.filter((p) => p.paid_for.trim() && p.category.trim() && p.paid_to.trim()).map((p) => p.statement_line_id))
@@ -441,7 +507,7 @@ export default function StatementBulkExpenseModal({
     } finally {
       setLoading(false)
     }
-  }, [open, candidateLines, financialAccountId, expenseKind])
+  }, [open, candidateLines, financialAccountId, expenseKind, standardCatsById])
 
   useEffect(() => {
     void loadAll()
@@ -502,22 +568,39 @@ export default function StatementBulkExpenseModal({
     }
     setAddingRule(true)
     try {
-      const { error } = await supabase.from('statement_expense_autofill_rules').insert({
+      const leafId = newStandardLeafId.trim()
+      let paidForSave = newPaidFor.trim()
+      let categorySave = newCategory.trim()
+      if (leafId) {
+        const applied = applyStandardLeafToCompanyExpense(leafId, standardCatsById)
+        if (applied) {
+          paidForSave = applied.paid_for
+          categorySave = applied.category
+        }
+      }
+      const insertPayload = {
         financial_account_id: newScopeThisAccount ? financialAccountId : null,
         pattern,
         match_mode: newMatchMode,
         paid_to: newPaidTo.trim(),
-        paid_for: newPaidFor.trim(),
-        category: newCategory.trim(),
+        paid_for: paidForSave,
+        category: categorySave,
+        standard_leaf_id: leafId || null,
         priority: Math.min(9999, Math.max(0, Math.floor(Number(newPriority) || 0))),
-        source: 'template',
+        source: 'template' as const,
         created_by: email || null
-      })
-      if (error) throw error
+      }
+      let { error } = await supabase.from('statement_expense_autofill_rules').insert(insertPayload)
+      if (error && shouldRetryAutofillRuleWithoutStandardLeafId(error)) {
+        const { standard_leaf_id: _omitLeaf, ...rest } = insertPayload
+        const second = await supabase.from('statement_expense_autofill_rules').insert(rest)
+        error = second.error
+      }
+      if (error) throw new Error(autofillRuleSupabaseErrorText(error))
       resetNewRuleForm()
       if (expenseKind === 'company_expenses') await loadAll()
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : '규칙 추가 실패')
+      setFormError(autofillRuleSupabaseErrorText(e))
     } finally {
       setAddingRule(false)
     }
@@ -525,12 +608,72 @@ export default function StatementBulkExpenseModal({
 
   const deleteRule = async (id: string) => {
     setFormError(null)
+    setEditRuleDraft((draft) => (draft?.id === id ? null : draft))
     try {
       const { error } = await supabase.from('statement_expense_autofill_rules').delete().eq('id', id)
       if (error) throw error
       if (expenseKind === 'company_expenses') await loadAll()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '삭제 실패')
+    }
+  }
+
+  const cancelRuleEdit = useCallback(() => {
+    setEditRuleDraft(null)
+    setFormError(null)
+  }, [])
+
+  const saveRuleEdit = async () => {
+    const d = editRuleDraft
+    if (!d) return
+    setFormError(null)
+    const pattern = d.pattern.trim()
+    if (pattern.length < 2) {
+      setFormError('패턴은 2글자 이상 입력하세요.')
+      return
+    }
+    if (!d.paid_for.trim() || !d.category.trim()) {
+      setFormError('결제내용(paid for)·카테고리는 필수입니다.')
+      return
+    }
+    setSavingRuleEdit(true)
+    try {
+      const leafId = d.standardLeafId.trim()
+      let paidForSave = d.paid_for.trim()
+      let categorySave = d.category.trim()
+      if (leafId) {
+        const applied = applyStandardLeafToCompanyExpense(leafId, standardCatsById)
+        if (applied) {
+          paidForSave = applied.paid_for
+          categorySave = applied.category
+        }
+      }
+      const updatePayload = {
+        pattern,
+        match_mode: d.match_mode,
+        paid_to: d.paid_to.trim(),
+        paid_for: paidForSave,
+        category: categorySave,
+        standard_leaf_id: leafId || null,
+        priority: Math.min(9999, Math.max(0, Math.floor(Number(d.priority) || 0))),
+        financial_account_id: d.scopeThisAccount ? financialAccountId : null
+      }
+      let { error } = await supabase
+        .from('statement_expense_autofill_rules')
+        .update(updatePayload)
+        .eq('id', d.id)
+      if (error && shouldRetryAutofillRuleWithoutStandardLeafId(error)) {
+        const { standard_leaf_id: _omitLeaf, ...rest } = updatePayload
+        const second = await supabase.from('statement_expense_autofill_rules').update(rest).eq('id', d.id)
+        error = second.error
+      }
+      if (error) throw new Error(autofillRuleSupabaseErrorText(error))
+      setEditRuleDraft(null)
+      if (expenseKind === 'company_expenses') await loadAll()
+    } catch (e) {
+      setFormError(autofillRuleSupabaseErrorText(e))
+    } finally {
+      setSavingRuleEdit(false)
     }
   }
 
@@ -582,6 +725,13 @@ export default function StatementBulkExpenseModal({
           return
         }
         for (const p of valid) {
+          const leafId = matchStandardLeafIdForPaidForAndCategory(
+            p.paid_for.trim(),
+            p.category.trim(),
+            expenseStandardCategories,
+            locale
+          )
+          const applied = leafId ? applyStandardLeafToCompanyExpense(leafId, standardCatsById) : null
           const { data: ins, error: insErr } = await supabase
             .from('company_expenses')
             .insert({
@@ -591,7 +741,14 @@ export default function StatementBulkExpenseModal({
               amount: p.amount,
               payment_method: paymentMethodValue,
               submit_by: email,
-              category: p.category.trim(),
+              category: applied ? applied.category : p.category.trim(),
+              ...(applied
+                ? {
+                    standard_paid_for: applied.paid_for,
+                    expense_type: applied.expense_type,
+                    tax_deductible: applied.tax_deductible
+                  }
+                : {}),
               status: 'approved',
               ledger_expense_origin: 'statement_adjustment',
               statement_line_id: p.statement_line_id,
@@ -763,6 +920,7 @@ export default function StatementBulkExpenseModal({
           setLoadError(null)
           setFormError(null)
           resetNewRuleForm()
+          setEditRuleDraft(null)
           setTourPickId('')
           setDefaultReservationId('')
         }
@@ -843,12 +1001,39 @@ export default function StatementBulkExpenseModal({
           {expenseKind === 'company_expenses' ? (
             <section className="rounded-md border border-slate-200 bg-slate-50/80 p-2 space-y-2">
               <h3 className="text-xs font-semibold text-slate-800">규칙(템플릿) — 회사 지출만</h3>
-              <p className="text-[10px] text-slate-600 leading-snug">
-                <strong>설정 방법:</strong> 명세 줄에 자주 나오는 문자열을 <strong>패턴</strong>에 넣습니다(가맹점·적요 일부).{' '}
-                <strong>포함</strong>은 그 문자열이 들어가면, <strong>접두</strong>는 줄 맨 앞부터 일치할 때만 적용됩니다. 같은
-                줄에 규칙이 여러 개 맞으면 <strong>우선순위</strong>가 큰 것이 먼저 적용되고, 그다음 &quot;이 금융 계정에만
-                적용&quot; 규칙이 전체(계정 무관) 규칙보다 우선합니다. 아래 표는 규칙 → 과거 승인 지출 설명 순으로 paid
-                for·카테고리를 채웁니다.
+              <p className="text-[10px] text-slate-600 leading-snug space-y-1">
+                <span className="block">
+                  <strong>패턴이란?</strong> 카드 명세에 나온 글자 중, <strong>다음에도 그대로 나올 법한 짧은 부분</strong>만
+                  적습니다. 와일드카드·별표(<code className="text-[9px] bg-slate-100 px-0.5 rounded">*</code>) 같은 특수
+                  문법은 없습니다(프로그래밍용 정규식이 아님). 띄어쓰기만 정리한 뒤 <strong>대소문자 구분 없이</strong>{' '}
+                  비교합니다.
+                </span>
+                <span className="block">
+                  <strong>포함:</strong> 명세 한 줄(가맹점+적요) 안에 패턴 글자가 <strong>어디에든 들어가면</strong> 이
+                  규칙이 적용됩니다. <strong>접두:</strong> 줄 <strong>맨 앞</strong>부터 패턴과 같을 때만 적용됩니다. 보통은{' '}
+                  <strong>포함</strong>만 쓰면 됩니다.
+                </span>
+                <span className="block">
+                  <strong>예:</strong> 적요가{' '}
+                  <code className="text-[9px] bg-slate-100 px-0.5 rounded break-all">
+                    _WIX.COM, INC.*11544NEW YORK NY
+                  </code>{' '}
+                  이면 패턴에 <code className="text-[9px] bg-slate-100 px-0.5 rounded">wix.com</code> 또는{' '}
+                  <code className="text-[9px] bg-slate-100 px-0.5 rounded">wix</code>처럼 <strong>바뀌지 않는 상호
+                  일부</strong>만 넣으세요. 뒤의 지역·숫자까지 통째로 넣으면, 다른 건의 명세는 조금만 달라도 안 맞을 수
+                  있습니다.
+                </span>
+                <span className="block">
+                  <strong>비슷한 명세를 자동으로 같은 카테고리로:</strong> 위처럼 <strong>규칙 저장</strong>을 한 번 해두면,
+                  그 글자가 들어가는 출금 줄마다 결제내용·카테고리가 자동으로 채워집니다. 또는 규칙 없이{' '}
+                  <strong>과거에 저장한 승인 지출의 설명</strong>이 새 명세 줄 안에 그대로(긴 글자 일부 포함) 들어 있으면
+                  &quot;과거 설명&quot;으로 제안되지만, 카드사마다 뒤쪽 글자가 조금씩 다르면 안 맞을 수 있어{' '}
+                  <strong>짧은 패턴 규칙이 더 안정적</strong>입니다.
+                </span>
+                <span className="block">
+                  여러 규칙이 한 줄에 모두 맞으면 <strong>우선순위</strong> 큰 것이 먼저 적용되고, &quot;이 금융 계정에만
+                  적용&quot;이 전체 규칙보다 먼저입니다. 자동 채우기 순서는 <strong>규칙 → 과거 승인 지출 설명</strong>입니다.
+                </span>
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 items-end">
                 <div className="space-y-1">
@@ -886,7 +1071,10 @@ export default function StatementBulkExpenseModal({
                   <select
                     className="h-8 text-xs w-full rounded-md border border-slate-200 bg-white px-2"
                     value={newPaidFor}
-                    onChange={(e) => setNewPaidFor(e.target.value)}
+                    onChange={(e) => {
+                      setNewPaidFor(e.target.value)
+                      setNewStandardLeafId('')
+                    }}
                   >
                     <option value="">선택…</option>
                     {paidForSelectOptions.map((opt) => (
@@ -900,15 +1088,20 @@ export default function StatementBulkExpenseModal({
                   <Label className="text-[10px] text-slate-600">카테고리 (표준 카테고리)</Label>
                   <select
                     className="h-8 text-xs w-full rounded-md border border-slate-200 bg-white px-2"
-                    value={matchStandardLeafIdForRow(newPaidFor, newCategory, expenseStandardCategories, locale)}
+                    value={newStandardLeafId || matchStandardLeafIdForPaidForAndCategory(newPaidFor, newCategory, expenseStandardCategories, locale)}
                     onChange={(e) => {
                       const id = e.target.value
                       if (!id) {
                         setNewCategory('')
+                        setNewStandardLeafId('')
                         return
                       }
                       const applied = applyStandardLeafToCompanyExpense(id, standardCatsById)
-                      if (applied) setNewCategory(applied.category)
+                      if (applied) {
+                        setNewCategory(applied.category)
+                        setNewPaidFor(applied.paid_for)
+                        setNewStandardLeafId(id)
+                      }
                     }}
                   >
                     <option value="">표준 선택…</option>
@@ -946,33 +1139,263 @@ export default function StatementBulkExpenseModal({
                 </Button>
               </div>
               {rules.length > 0 ? (
-                <div className="max-h-24 overflow-y-auto border border-slate-200 rounded bg-white">
-                  <table className="w-full text-[10px] border-collapse">
+                <div className="max-h-72 overflow-y-auto overflow-x-auto border border-slate-200 rounded bg-white">
+                  <table className="w-full text-[10px] border-collapse min-w-[48rem]">
                     <thead>
                       <tr className="text-slate-500 border-b bg-slate-50 text-left">
-                        <th className="py-1 px-1.5 font-medium">패턴</th>
-                        <th className="py-1 px-1.5 font-medium">paid for</th>
-                        <th className="py-1 px-1.5 w-14">우선</th>
-                        <th className="py-1 px-1 w-12" />
+                        <th className="py-1 px-1.5 font-medium min-w-[7rem]">패턴</th>
+                        <th className="py-1 px-1.5 font-medium w-12 whitespace-nowrap">매칭</th>
+                        <th className="py-1 px-1.5 font-medium min-w-[6rem]">paid for</th>
+                        <th className="py-1 px-1.5 font-medium min-w-[8rem]">표준 카테고리</th>
+                        <th className="py-1 px-1.5 font-medium min-w-[5rem]">결제처</th>
+                        <th className="py-1 px-1.5 font-medium w-16 whitespace-nowrap">적용</th>
+                        <th className="py-1 px-1.5 w-12">우선</th>
+                        <th className="py-1 px-1 font-medium w-24 whitespace-nowrap">작업</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rules.map((r) => (
-                        <tr key={r.id} className="border-b border-slate-100">
-                          <td className="py-0.5 px-1.5 break-all max-w-[12rem]">{r.pattern}</td>
-                          <td className="py-0.5 px-1.5 break-words">{r.paid_for}</td>
-                          <td className="py-0.5 px-1.5">{r.priority}</td>
-                          <td className="py-0.5 px-1">
-                            <button
-                              type="button"
-                              className="text-red-600 hover:underline"
-                              onClick={() => void deleteRule(r.id)}
-                            >
-                              삭제
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {rules.map((r) => {
+                        if (editRuleDraft?.id === r.id) {
+                          const d = editRuleDraft
+                          const sourceRule = rules.find((x) => x.id === r.id)
+                          const otherAccountRule =
+                            sourceRule?.financial_account_id != null &&
+                            sourceRule.financial_account_id !== financialAccountId
+                          return (
+                            <tr key={r.id} className="border-b border-amber-200 bg-amber-50/60 align-top">
+                              <td colSpan={8} className="p-2">
+                                <p className="text-[10px] font-semibold text-slate-800 mb-2">규칙 수정</p>
+                                {otherAccountRule ? (
+                                  <p className="text-[10px] text-amber-900 bg-amber-100/80 border border-amber-200 rounded px-2 py-1 mb-2">
+                                    이 규칙은 다른 금융 계정에만 적용되던 항목입니다. 아래에서 &quot;이 금융 계정에만
+                                    적용&quot;을 켜고 저장하면 <strong>현재 명세의 금융 계정</strong>으로 옮겨집니다. 끄고
+                                    저장하면 <strong>전체 계정</strong> 규칙이 됩니다.
+                                  </p>
+                                ) : null}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-end">
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-slate-600">패턴</Label>
+                                    <Input
+                                      className="h-8 text-xs"
+                                      value={d.pattern}
+                                      onChange={(e) =>
+                                        setEditRuleDraft((prev) => (prev ? { ...prev, pattern: e.target.value } : prev))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-slate-600">매칭</Label>
+                                    <Select
+                                      value={d.match_mode}
+                                      onValueChange={(v) =>
+                                        setEditRuleDraft((prev) =>
+                                          prev ? { ...prev, match_mode: v as 'contains' | 'startswith' } : prev
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="contains">포함</SelectItem>
+                                        <SelectItem value="startswith">접두</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-slate-600">우선순위</Label>
+                                    <Input
+                                      className="h-8 text-xs"
+                                      type="number"
+                                      value={d.priority}
+                                      onChange={(e) =>
+                                        setEditRuleDraft((prev) => (prev ? { ...prev, priority: e.target.value } : prev))
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-1 min-w-0">
+                                    <Label className="text-[10px] text-slate-600">paid for</Label>
+                                    <select
+                                      className="h-8 text-xs w-full rounded-md border border-slate-200 bg-white px-2"
+                                      value={d.paid_for}
+                                      onChange={(e) =>
+                                        setEditRuleDraft((prev) =>
+                                          prev
+                                            ? { ...prev, paid_for: e.target.value, standardLeafId: '' }
+                                            : prev
+                                        )
+                                      }
+                                    >
+                                      <option value="">선택…</option>
+                                      {paidForSelectOptions.map((opt) => (
+                                        <option key={opt} value={opt}>
+                                          {opt.length > 48 ? `${opt.slice(0, 48)}…` : opt}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="space-y-1 min-w-0 sm:col-span-1">
+                                    <Label className="text-[10px] text-slate-600">표준 카테고리</Label>
+                                    <select
+                                      className="h-8 text-xs w-full rounded-md border border-slate-200 bg-white px-2"
+                                      value={
+                                        d.standardLeafId ||
+                                        matchStandardLeafIdForPaidForAndCategory(d.paid_for, d.category, expenseStandardCategories, locale)
+                                      }
+                                      onChange={(e) => {
+                                        const id = e.target.value
+                                        setEditRuleDraft((prev) => {
+                                          if (!prev) return prev
+                                          if (!id) return { ...prev, category: '', standardLeafId: '' }
+                                          const applied = applyStandardLeafToCompanyExpense(id, standardCatsById)
+                                          return applied
+                                            ? {
+                                                ...prev,
+                                                category: applied.category,
+                                                paid_for: applied.paid_for,
+                                                standardLeafId: id
+                                              }
+                                            : prev
+                                        })
+                                      }}
+                                    >
+                                      <option value="">표준 선택…</option>
+                                      {unifiedStandardGroups.map((g) => (
+                                        <optgroup key={g.rootId} label={g.groupLabel}>
+                                          {g.items.map((it) => (
+                                            <option key={it.id} value={it.id}>
+                                              {it.displayLabel}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-slate-600">결제처 (paid to)</Label>
+                                    <Input
+                                      className="h-8 text-xs"
+                                      value={d.paid_to}
+                                      onChange={(e) =>
+                                        setEditRuleDraft((prev) => (prev ? { ...prev, paid_to: e.target.value } : prev))
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer mt-2">
+                                  <input
+                                    type="checkbox"
+                                    className="rounded border-slate-300"
+                                    checked={d.scopeThisAccount}
+                                    onChange={(e) =>
+                                      setEditRuleDraft((prev) =>
+                                        prev ? { ...prev, scopeThisAccount: e.target.checked } : prev
+                                      )
+                                    }
+                                  />
+                                  이 금융 계정에만 적용
+                                </label>
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    disabled={savingRuleEdit || loading}
+                                    onClick={() => void saveRuleEdit()}
+                                  >
+                                    {savingRuleEdit ? '저장 중…' : '수정 저장'}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={savingRuleEdit}
+                                    onClick={cancelRuleEdit}
+                                  >
+                                    취소
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        }
+
+                        const leafId = ruleResolvedStandardLeafId(r, expenseStandardCategories, locale)
+                        const stdLabel = leafId ? unifiedStandardTriggerLabel(unifiedStandardGroups, leafId) : ''
+                        const scopeLabel =
+                          r.financial_account_id == null
+                            ? '전체'
+                            : r.financial_account_id === financialAccountId
+                              ? '이 계정'
+                              : '다른 계정'
+
+                        return (
+                          <tr key={r.id} className="border-b border-slate-100 align-top">
+                            <td className="py-0.5 px-1.5 break-all max-w-[14rem]">{r.pattern}</td>
+                            <td className="py-0.5 px-1.5 whitespace-nowrap text-slate-600">
+                              {r.match_mode === 'startswith' ? '접두' : '포함'}
+                            </td>
+                            <td className="py-0.5 px-1.5 break-words">{r.paid_for}</td>
+                            <td className="py-0.5 px-1.5 break-words">
+                              {stdLabel ? (
+                                <span className="text-slate-800">{stdLabel}</span>
+                              ) : (
+                                <span className="text-slate-500">
+                                  <span className="italic text-slate-400">표준 없음</span>
+                                  {r.category ? (
+                                    <span className="not-italic text-slate-500"> · {r.category}</span>
+                                  ) : null}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-0.5 px-1.5 break-all text-slate-600 max-w-[10rem]">
+                              {(r.paid_to ?? '').trim() || '—'}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-slate-600 whitespace-nowrap">{scopeLabel}</td>
+                            <td className="py-0.5 px-1.5">{r.priority}</td>
+                            <td className="py-0.5 px-1.5 whitespace-nowrap">
+                              <button
+                                type="button"
+                                className="text-blue-700 hover:underline mr-2"
+                                disabled={savingRuleEdit || addingRule}
+                                onClick={() => {
+                                  setFormError(null)
+                                  const eff = effectiveAutofillExpenseFromRule(r, standardCatsById)
+                                  setEditRuleDraft({
+                                    id: r.id,
+                                    pattern: r.pattern,
+                                    match_mode: r.match_mode,
+                                    priority: String(typeof r.priority === 'number' ? r.priority : 0),
+                                    paid_for: eff.paid_for,
+                                    category: eff.category,
+                                    paid_to: (r.paid_to ?? '').trim(),
+                                    standardLeafId:
+                                      (r.standard_leaf_id ?? '').trim() ||
+                                      matchStandardLeafIdForPaidForAndCategory(
+                                        eff.paid_for,
+                                        eff.category,
+                                        expenseStandardCategories,
+                                        locale
+                                      ),
+                                    scopeThisAccount:
+                                      r.financial_account_id != null && r.financial_account_id === financialAccountId
+                                  })
+                                }}
+                              >
+                                수정
+                              </button>
+                              <button
+                                type="button"
+                                className="text-red-600 hover:underline"
+                                disabled={savingRuleEdit}
+                                onClick={() => void deleteRule(r.id)}
+                              >
+                                삭제
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1068,7 +1491,7 @@ export default function StatementBulkExpenseModal({
                         <td className="py-1 px-1 min-w-[10rem] max-w-[18rem]">
                           <select
                             className="h-7 text-[10px] px-1 w-full rounded border border-slate-200 bg-white"
-                            value={matchStandardLeafIdForRow(p.paid_for, p.category, expenseStandardCategories, locale)}
+                            value={matchStandardLeafIdForPaidForAndCategory(p.paid_for, p.category, expenseStandardCategories, locale)}
                             onChange={(e) => {
                               const id = e.target.value
                               if (!id) {

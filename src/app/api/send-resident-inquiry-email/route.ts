@@ -69,15 +69,21 @@ export async function POST(request: NextRequest) {
     if (row.product_id) {
       const { data: product } = await supabase
         .from('products')
-        .select('name, name_ko, name_en')
+        .select('name, name_ko, name_en, customer_name_ko, customer_name_en')
         .eq('id', row.product_id)
         .maybeSingle()
-      const p = product as { name?: string; name_ko?: string; name_en?: string } | null
+      const p = product as {
+        name?: string
+        name_ko?: string | null
+        name_en?: string | null
+        customer_name_ko?: string | null
+        customer_name_en?: string | null
+      } | null
       if (p) {
         const en = resolveReservationEmailIsEnglish(cust.language, localeParam)
         productName = en
-          ? (p.name_en || p.name || '').trim()
-          : (p.name_ko || p.name || '').trim()
+          ? (p.customer_name_en || p.name_en || p.name || '').trim()
+          : (p.customer_name_ko || p.name_ko || p.name || '').trim()
       }
     }
 

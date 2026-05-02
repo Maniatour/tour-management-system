@@ -1,8 +1,14 @@
 'use client'
 
 import React, { useCallback, useEffect, useState } from 'react'
+import { useLocale } from 'next-intl'
 import { Landmark } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  applyStandardLeafToCompanyExpense,
+  matchStandardLeafIdForPaidForAndCategory
+} from '@/lib/companyExpenseStandardUnified'
+import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -64,6 +70,7 @@ export default function StatementAdjustmentExpenseModal({
   email,
   onCompleted
 }: Props) {
+  const locale = useLocale()
   const [step, setStep] = useState<'kind' | 'form'>('kind')
   const [kind, setKind] = useState<AdjustmentExpenseKind | null>(null)
   const [saving, setSaving] = useState(false)
@@ -183,6 +190,21 @@ export default function StatementAdjustmentExpenseModal({
           setSaving(false)
           return
         }
+        const { data: catRows, error: catErr } = await supabase
+          .from('expense_standard_categories')
+          .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
+          .order('display_order', { ascending: true })
+        if (catErr) throw catErr
+        const cats = (catRows ?? []) as ExpenseStandardCategoryPickRow[]
+        const leafId = matchStandardLeafIdForPaidForAndCategory(
+          coPaidFor.trim(),
+          coCategory.trim(),
+          cats,
+          locale
+        )
+        const byId = new Map(cats.map((c) => [c.id, c]))
+        const applied = leafId ? applyStandardLeafToCompanyExpense(leafId, byId) : null
+
         const { data: ins, error: insErr } = await supabase
           .from('company_expenses')
           .insert({
@@ -192,7 +214,14 @@ export default function StatementAdjustmentExpenseModal({
             amount: lineAmount,
             payment_method: coPaymentMethod.trim() || 'Card',
             submit_by: email,
-            category: coCategory.trim(),
+            category: applied ? applied.category : coCategory.trim(),
+            ...(applied
+              ? {
+                  standard_paid_for: applied.paid_for,
+                  expense_type: applied.expense_type,
+                  tax_deductible: applied.tax_deductible
+                }
+              : {}),
             status: 'approved',
             ledger_expense_origin: 'statement_adjustment',
             statement_line_id: line.id,

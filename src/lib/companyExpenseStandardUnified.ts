@@ -162,6 +162,30 @@ export function flattenUnifiedLeaves(groups: UnifiedStandardLeafGroup[]): Unifie
   return groups.flatMap((g) => g.items)
 }
 
+/**
+ * 회사 지출 paid_for·category(회사 지출 테이블 문자열)로 표준 카테고리 리프 id 추정.
+ * 명세 일괄 입력 저장 등에서 standard_paid_for·expense_type·tax_deductible 을 채울 때 사용.
+ */
+export function matchStandardLeafIdForPaidForAndCategory(
+  paid_for: string,
+  category: string,
+  cats: ExpenseStandardCategoryPickRow[],
+  locale: string
+): string {
+  if (cats.length === 0) return ''
+  const byId = new Map(cats.map((c) => [c.id, c]))
+  const leaves = flattenUnifiedLeaves(buildUnifiedStandardLeafGroups(cats, locale, { includeInactive: true }))
+  const pf = paid_for.trim()
+  const cat = (category || '').trim()
+  const appliedFor = (id: string) => applyStandardLeafToCompanyExpense(id, byId)
+
+  const byCat = leaves.filter((l) => appliedFor(l.id)?.category === cat)
+  if (byCat.length === 0) return ''
+  if (byCat.length === 1) return byCat[0].id
+  const byBoth = byCat.find((l) => appliedFor(l.id)?.paid_for === pf)
+  return byBoth?.id ?? byCat[0].id
+}
+
 /** 지출 폼·통합 피커 트리거에 표시: «상위 › 세부» 또는 단일 루트면 세부 한 줄만 */
 export function unifiedStandardTriggerLabel(
   groups: UnifiedStandardLeafGroup[],

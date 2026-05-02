@@ -623,6 +623,7 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'paid_to', type: 'text', nullable: false, default: "''" },
       { name: 'paid_for', type: 'text', nullable: false, default: null },
       { name: 'category', type: 'text', nullable: false, default: null },
+      { name: 'standard_leaf_id', type: 'text', nullable: true, default: null },
       { name: 'priority', type: 'integer', nullable: false, default: '0' },
       { name: 'source', type: 'text', nullable: false, default: "'template'" },
       { name: 'usage_count', type: 'integer', nullable: false, default: '0' },

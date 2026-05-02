@@ -8,6 +8,8 @@ export type StatementAutofillRuleRow = {
   paid_to: string
   paid_for: string
   category: string
+  /** 표준 카테고리 리프 id — 저장 시 선택한 항목과 동일하게 복원·적용 */
+  standard_leaf_id?: string | null
   priority: number
   source: 'template' | 'learned'
 }

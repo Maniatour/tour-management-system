@@ -40,6 +40,7 @@ import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { useAuth } from '@/contexts/AuthContext'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
+import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -2202,6 +2203,26 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
 
     if (emailType === 'resident_inquiry') {
+      const prod = (
+        products as
+          | Array<{
+              id: string
+              name?: string | null
+              name_ko?: string | null
+              name_en?: string | null
+              customer_name_ko?: string | null
+              customer_name_en?: string | null
+            }>
+          | null
+          | undefined
+      )?.find((p) => p.id === reservation.productId)
+      const emailIsEn = resolveReservationEmailIsEnglish(customer.language ?? null, null)
+      const productNameForEmail =
+        prod != null
+          ? emailIsEn
+            ? String(prod.customer_name_en || prod.name_en || prod.name || '').trim()
+            : String(prod.customer_name_ko || prod.name_ko || prod.name || '').trim()
+          : ''
       setEmailPreviewData({
         reservationId: reservation.id,
         emailType: 'resident_inquiry',
@@ -2209,7 +2230,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         pickupTime: null,
         tourDate: reservation.tourDate,
         customerName: getCustomerName(reservation.customerId, (customers as Customer[]) || []) || customer.name || '',
-        productName: getProductName(reservation.productId, products || []),
+        productName:
+          productNameForEmail || getProductName(reservation.productId, products || []),
         channelRN: reservation.channelRN ?? null,
         customerLanguage: customer.language ?? null,
       })
@@ -3022,7 +3044,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                           )
                           return (
                             <>
-                              <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                              <div className="rounded-lg border border-gray-200 bg-white">
                                 <button
                                   type="button"
                                   className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
@@ -3056,7 +3078,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                                 )}
                               </div>
 
-                              <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                              <div className="rounded-lg border border-gray-200 bg-white">
                                 <button
                                   type="button"
                                   className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
@@ -3093,7 +3115,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                                           return (
                                             <div
                                               key={`${date}-sub-${subIdx}-${g.bucketKey}`}
-                                              className="rounded-md border border-gray-100 bg-gray-50/80 overflow-hidden"
+                                              className="rounded-md border border-gray-100 bg-gray-50/80"
                                             >
                                               <button
                                                 type="button"
