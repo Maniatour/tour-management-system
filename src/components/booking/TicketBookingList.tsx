@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { isSuperAdminActor } from '@/lib/superAdmin';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
+import TicketBookingBulkAddModal from './TicketBookingBulkAddModal';
 import TicketBookingAxisSummary, {
   buildTicketBookingAxisTooltipLine,
 } from '@/components/booking/TicketBookingAxisSummary';
@@ -19,6 +20,7 @@ import {
   Grid,
   Calendar as CalendarIcon,
   Plus,
+  ListPlus,
   Search,
   Calendar,
   Table,
@@ -693,6 +695,7 @@ export default function TicketBookingList() {
   const tableAxesUndoStackRef = useRef<{ bookingId: string; patch: TicketBookingAxisPatch }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkAddModal, setShowBulkAddModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<TicketBooking | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -2996,6 +2999,14 @@ export default function TicketBookingList() {
             <span className="sm:hidden">인보이스</span>
           </button>
           <button
+            type="button"
+            onClick={() => setShowBulkAddModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors flex-shrink-0"
+          >
+            <ListPlus size={16} />
+            <span>{t('bulkAddBookings')}</span>
+          </button>
+          <button
             onClick={() => setShowForm(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0"
           >
@@ -4710,6 +4721,16 @@ export default function TicketBookingList() {
           </div>
         )}
       </div>
+
+      <TicketBookingBulkAddModal
+        open={showBulkAddModal}
+        onClose={() => setShowBulkAddModal(false)}
+        tourId={null}
+        defaultSubmittedBy={user?.email ?? ''}
+        onSuccess={async () => {
+          await fetchBookings();
+        }}
+      />
 
       {/* 폼 모달 */}
       {showForm && (

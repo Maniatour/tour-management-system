@@ -11,6 +11,7 @@ import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
+import TicketBookingBulkAddModal from '@/components/booking/TicketBookingBulkAddModal'
 import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
 import TourWeather from '@/components/TourWeather'
 import { useAuth } from '@/contexts/AuthContext'
@@ -131,6 +132,7 @@ export default function TourDetailPage() {
   const [ticketBookings, setTicketBookings] = useState<LocalTicketBooking[]>([])
   const [tourHotelBookings, setTourHotelBookings] = useState<LocalTourHotelBooking[]>([])
   const [showTicketBookingForm, setShowTicketBookingForm] = useState<boolean>(false)
+  const [showTicketBookingBulkAdd, setShowTicketBookingBulkAdd] = useState<boolean>(false)
   const [showTourHotelBookingForm, setShowTourHotelBookingForm] = useState<boolean>(false)
   const [editingTicketBooking, setEditingTicketBooking] = useState<LocalTicketBooking | null>(null)
   const [editingTourHotelBooking, setEditingTourHotelBooking] = useState<LocalTourHotelBooking | null>(null)
@@ -1495,6 +1497,10 @@ export default function TourDetailPage() {
     await loadBookings()
   }
 
+  const handleBulkAddTicketBooking = () => {
+    setShowTicketBookingBulkAdd(true)
+  }
+
   const handleEditTicketBooking = async (booking: LocalTicketBooking) => {
     setEditingTicketBooking(booking)
     setShowTicketBookingForm(true)
@@ -2014,6 +2020,7 @@ export default function TourDetailPage() {
               connectionStatus={{ bookings: tourData.connectionStatus.bookings, hotelBookings: tourData.connectionStatus.hotelBookings }}
               isStaff={tourData.isStaff}
               onAddTicketBooking={handleAddTicketBooking}
+              onBulkAddTicketBooking={handleBulkAddTicketBooking}
               onAddTourHotelBooking={handleAddTourHotelBooking}
               onEditTicketBooking={handleEditTicketBooking}
               onEditTourHotelBooking={handleEditTourHotelBooking}
@@ -2482,6 +2489,16 @@ export default function TourDetailPage() {
             />
       )}
       </BookingModal>
+
+      <TicketBookingBulkAddModal
+        open={showTicketBookingBulkAdd}
+        onClose={() => setShowTicketBookingBulkAdd(false)}
+        tourId={tourData.tour?.id ?? null}
+        defaultSubmittedBy={authUser?.email ?? ''}
+        onSuccess={async () => {
+          await loadBookings()
+        }}
+      />
 
       {/* 투어 호텔 부킹 폼 모달 */}
       <BookingModal

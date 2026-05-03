@@ -1,5 +1,5 @@
 import React from 'react'
-import { Plus, Hotel } from 'lucide-react'
+import { Plus, Hotel, ListPlus } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { formatTicketBookingStatusLabel, getTicketBookingStatusBadgeClass } from '@/lib/ticketBookingStatus'
 import { ConnectionStatusLabel } from './TourUIComponents'
@@ -53,6 +53,8 @@ interface BookingManagementProps {
   connectionStatus: { bookings: boolean; hotelBookings: boolean }
   isStaff: boolean
   onAddTicketBooking: () => void
+  /** 입장권 일괄 추가 모달 (투어 상세 등에서 전달) */
+  onBulkAddTicketBooking?: () => void
   onAddTourHotelBooking: () => void
   onEditTicketBooking: (booking: LocalTicketBooking) => void
   onEditTourHotelBooking: (booking: LocalTourHotelBooking) => void
@@ -68,6 +70,7 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
   connectionStatus,
   isStaff,
   onAddTicketBooking,
+  onBulkAddTicketBooking,
   onAddTourHotelBooking,
   onEditTicketBooking,
   onEditTourHotelBooking,
@@ -88,7 +91,7 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 ml-2"></div>
             )}
           </h2>
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap gap-2 justify-end">
             <button
               onClick={onAddTicketBooking}
               className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 flex items-center space-x-1"
@@ -96,6 +99,16 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
               <Plus size={12} />
               <span>{t('addTicket')}</span>
             </button>
+            {onBulkAddTicketBooking ? (
+              <button
+                type="button"
+                onClick={onBulkAddTicketBooking}
+                className="px-3 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 flex items-center space-x-1"
+              >
+                <ListPlus size={12} />
+                <span>{t('bulkAddTicket')}</span>
+              </button>
+            ) : null}
             <button
               onClick={onAddTourHotelBooking}
               className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 flex items-center space-x-1"
