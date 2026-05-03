@@ -139,6 +139,12 @@ export function hasPermission(userRole: UserRole, permission: keyof UserPermissi
  * - `getUserRole`상 Office Manager → `manager`
  * - `admin` 역할은 OP만 제외 (OP는 admin 권한이나 시급 이력은 비표시)
  */
+/** team.position — DB에는 `office manager`·`매니저` 등으로 저장되는 경우가 있음 */
+export function isManagerTeamPosition(rawPosition: string | null | undefined): boolean {
+  const p = String(rawPosition ?? '').toLowerCase().trim()
+  return p === 'manager' || p === 'office manager' || p === '매니저'
+}
+
 export function canViewEmployeeHourlyRatesHistory(
   userRole: UserRole | null,
   userPosition: string | null

@@ -47,6 +47,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
+import { isManagerTeamPosition } from '@/lib/roles'
 import { supabase } from '@/lib/supabase'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
@@ -404,7 +405,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         
         const position = String((teamData as any).position ?? '').toLowerCase().trim()
         const posSuper = position === 'super'
-        const posManager = position === 'manager'
+        const posManager = isManagerTeamPosition((teamData as any).position)
         setIsSuper(posSuper)
         setCanAccessReservationStatistics(posSuper || posManager)
       } catch (error) {

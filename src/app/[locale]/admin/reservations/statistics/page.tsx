@@ -19,6 +19,7 @@ import PnlUnifiedReportTab from '@/components/reports/PnlUnifiedReportTab'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { isManagerTeamPosition } from '@/lib/roles'
 
 interface AdminReservationStatisticsProps {
   params: Promise<{ locale: string }>
@@ -136,7 +137,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         
         const position = String((teamData as any).position ?? '').toLowerCase().trim()
         setIsSuper(position === 'super')
-        setIsManager(position === 'manager')
+        setIsManager(isManagerTeamPosition((teamData as any).position))
       } catch (error) {
         console.error('권한 체크 오류:', error)
         setIsSuper(false)
