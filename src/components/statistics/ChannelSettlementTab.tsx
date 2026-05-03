@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { DollarSign, Users, Calendar, ChevronDown, ChevronRight, X, Filter, FileText, FileSpreadsheet } from 'lucide-react'
+import { DollarSign, Users, Calendar, ChevronDown, ChevronRight, X, Filter, FileText, FileSpreadsheet, GitCompare } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -22,6 +22,7 @@ import {
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
+import { type SystemReservationForOta } from '@/utils/otaSettlementReconciliation'
 
 interface ChannelSettlementTabProps {
   dateRange: { start: string; end: string }
@@ -87,6 +88,15 @@ interface ReservationItem {
   companyTotalRevenue?: number
   /** Partner Received − Returned(파트너 환불) */
   partnerReceivedNet?: number
+}
+
+function reservationItemsToOtaSystemRows(items: ReservationItem[]): SystemReservationForOta[] {
+  return items.map((item) => ({
+    id: item.id,
+    channelRN: item.channelRN || '',
+    channelSettlementAmount: item.channelSettlementAmount ?? null,
+    status: item.status,
+  }))
 }
 
 /** PricingSection 가격계산 4번「총 매출」용 부가 필드 (reservation_pricing) */
@@ -551,7 +561,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     dateRange: { start: string; end: string }
     items: ChannelInvoiceItem[]
   } | null>(null)
-  const [otaReconcileOpen, setOtaReconcileOpen] = useState(false)
+  const [otaReconcileSession, setOtaReconcileSession] = useState<{
+    channelId: string
+    channelName: string
+    systemReservationsOverride?: SystemReservationForOta[]
+    periodNote?: string
+  } | null>(null)
 
   const isOtaChannelId = useCallback(
     (channelId?: string | null) => {
@@ -1622,13 +1637,24 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           )}
           <button
             type="button"
-            onClick={() => setOtaReconcileOpen(true)}
+            onClick={() => {
+              if (!channelFilter) return
+              setOtaReconcileSession({
+                channelId: channelFilter,
+                channelName: selectedChannelName === '전체 채널' ? '' : selectedChannelName,
+                periodNote: `${dateRange.start} ~ ${dateRange.end} · 상단 버튼: 채널 전체 예약과 비교`,
+              })
+            }}
             disabled={!channelFilter}
-            title={!channelFilter ? '채널을 하나 선택한 뒤 사용하세요' : 'OTA CSV/PDF와 채널 정산 금액 대사'}
+            title={
+              !channelFilter
+                ? '채널을 하나 선택한 뒤 사용하세요'
+                : 'OTA CSV/PDF·Excel과 채널 정산 금액 비교 (이 채널 DB 예약 전체)'
+            }
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-45 disabled:cursor-not-allowed"
           >
             <FileSpreadsheet className="h-4 w-4 flex-shrink-0" />
-            OTA 정산 대사
+            정산 비교
           </button>
         </div>
       </div>
@@ -2763,15 +2789,34 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                     </div>
                                   </div>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={handleChannelInvoice}
-                                  title="인보이스 다운로드 (PDF)"
-                                  className="shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 transition-colors border-l border-gray-200"
-                                >
-                                  <FileText className="w-4 h-4 shrink-0" />
-                                  <span className="hidden sm:inline">인보이스</span>
-                                </button>
+                                <div className="flex items-stretch shrink-0 border-l border-gray-200">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setOtaReconcileSession({
+                                        channelId: channel.id,
+                                        channelName: channel.name,
+                                        systemReservationsOverride: reservationItemsToOtaSystemRows(sortedChannelItems),
+                                        periodNote: `${dateRange.start} ~ ${dateRange.end} · 투어 진행 내역`,
+                                      })
+                                    }}
+                                    title="OTA CSV/PDF·Excel과 채널 정산 금액 비교 (이 목록·기간만 시스템 대상)"
+                                    className="px-2.5 sm:px-3 py-2.5 sm:py-3 flex items-center gap-1.5 text-xs font-medium text-emerald-900 bg-emerald-50 hover:bg-emerald-100 transition-colors border-r border-gray-200"
+                                  >
+                                    <GitCompare className="w-4 h-4 shrink-0" />
+                                    <span className="hidden sm:inline">정산 비교</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleChannelInvoice}
+                                    title="인보이스 다운로드 (PDF)"
+                                    className="px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 transition-colors"
+                                  >
+                                    <FileText className="w-4 h-4 shrink-0" />
+                                    <span className="hidden sm:inline">인보이스</span>
+                                  </button>
+                                </div>
                               </div>
 
                               {/* 채널 투어 진행 내역 테이블 */}
@@ -3002,14 +3047,18 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       )}
 
       <ChannelOtaReconciliationModal
-        open={otaReconcileOpen}
-        onClose={() => setOtaReconcileOpen(false)}
-        channelId={channelFilter}
-        channelName={selectedChannelName === '전체 채널' ? '' : selectedChannelName}
+        open={otaReconcileSession !== null}
+        onClose={() => setOtaReconcileSession(null)}
+        channelId={otaReconcileSession?.channelId ?? ''}
+        channelName={otaReconcileSession?.channelName ?? ''}
+        {...(otaReconcileSession?.systemReservationsOverride !== undefined
+          ? { systemReservationsOverride: otaReconcileSession.systemReservationsOverride }
+          : {})}
+        {...(otaReconcileSession?.periodNote !== undefined ? { periodNote: otaReconcileSession.periodNote } : {})}
         onPatched={handleOtaReconcilePatched}
         canAudit={canAudit}
         onOpenReservation={(id) => {
-          setOtaReconcileOpen(false)
+          setOtaReconcileSession(null)
           openReservationEditModal(id)
         }}
       />

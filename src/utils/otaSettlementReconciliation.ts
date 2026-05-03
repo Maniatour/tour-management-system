@@ -41,18 +41,37 @@ export function parseTextToTable(text: string): string[][] {
   return lines.map((line) => parseDelimitedLine(line, delimiter))
 }
 
-/** $, 콤마, 통화 기호 제거 후 숫자 */
+/**
+ * $, 콤마, 통화 기호 제거 후 숫자.
+ * OTA CSV에서 흔한 `"- 544.44"`(음수와 숫자 사이 공백), `−544.44`(유니코드 마이너스), `544.44-`(후행 음수) 등 처리.
+ */
 export function parseMoneyCell(raw: string | null | undefined): number | null {
   if (raw == null) return null
   let s = String(raw).trim()
   if (!s) return null
-  s = s.replace(/[€£¥]/g, '').replace(/\s+/g, '')
+
+  s = s.replace(/[\u200b-\u200d\ufeff]/g, '')
+  s = s.replace(/\u00a0|\u202f|\u2007|\u2060/g, ' ')
+  // MINUS SIGN / EN DASH / EM DASH → ASCII hyphen (Number()는 유니코드 마이너스를 숫자로 인식하지 않음)
+  s = s.replace(/[\u2212\u2013\u2014]/g, '-')
+  s = s.replace(/[€£¥]/g, '')
+  s = s.replace(/USD|KRW|us\s*\$/gi, '')
+  s = s.replace(/\$/g, '')
+  // 음수·통화 제거 후 공백 전부 제거 → "- 544.44" → "-544.44"
+  s = s.replace(/\s+/g, '')
+
   const paren = /^\(([\d,.-]+)\)$/.exec(s)
   if (paren) {
     const n = parseMoneyCell(paren[1])
     return n == null ? null : -Math.abs(n)
   }
-  s = s.replace(/USD|KRW|us\s*\$/gi, '').replace(/^\$+/, '').replace(/\$$/, '')
+
+  const trailingMinus = /^([\d,.]+)-$/.exec(s)
+  if (trailingMinus) {
+    const n = parseMoneyCell(trailingMinus[1])
+    return n == null ? null : -Math.abs(n)
+  }
+
   s = s.replace(/,/g, '')
   const n = Number(s)
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null
