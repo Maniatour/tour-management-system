@@ -3058,7 +3058,6 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         onPatched={handleOtaReconcilePatched}
         canAudit={canAudit}
         onOpenReservation={(id) => {
-          setOtaReconcileSession(null)
           openReservationEditModal(id)
         }}
       />
