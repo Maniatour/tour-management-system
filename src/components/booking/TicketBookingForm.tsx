@@ -40,6 +40,11 @@ function isMissingZelleConfirmationColumnError(err: unknown): boolean {
  */
 let omitZelleConfirmationInTicketBookingsPayload = false;
 
+/** 새 입장권 부킹 추가 시 초기값 (편집 모드에서는 기존 booking이 덮어씀) */
+const DEFAULT_NEW_TICKET_BOOKING_CATEGORY = 'antelope_canyon';
+/** `getCancelDeadlineDays` 등과 동일하게 DB·로직에서 쓰는 표기 */
+const DEFAULT_NEW_TICKET_BOOKING_COMPANY = 'SEE CANYON';
+
 interface TicketBooking {
   id?: string;
   category: string;
@@ -122,6 +127,8 @@ interface TicketBookingFormProps {
   /** Super 권한 여부 */
   isSuper?: boolean;
   tourId?: string;
+  /** true면 6축 워크플로 액션 패널 숨김 (스케줄 달력 등 — 상태·벤더는 달력 셀에서 관리) */
+  hideAxisActionPanel?: boolean;
 }
 
 export default function TicketBookingForm({ 
@@ -131,7 +138,8 @@ export default function TicketBookingForm({
   onDelete,
   onRequestDelete,
   isSuper,
-  tourId 
+  tourId,
+  hideAxisActionPanel = false,
 }: TicketBookingFormProps) {
   const t = useTranslations('booking.ticketBooking');
   const tCal = useTranslations('booking.calendar');
@@ -140,11 +148,11 @@ export default function TicketBookingForm({
     console.log('편집 모드 - 전달받은 booking 데이터:', booking);
     
     const initialData = {
-      category: '',
+      category: DEFAULT_NEW_TICKET_BOOKING_CATEGORY,
       submitted_by: '',
       check_in_date: '',
       time: '',
-      company: '',
+      company: DEFAULT_NEW_TICKET_BOOKING_COMPANY,
       ea: 1,
       expense: 0,
       income: 0,
@@ -1518,9 +1526,15 @@ export default function TicketBookingForm({
                     {formatTicketBookingStatusLabel(formData.status, tCal, locale)}
                   </p>
                   <p className="text-xs text-gray-600 leading-snug">
-                    상태 단계 변경은 아래 액션으로 진행합니다. 목록·통계의 상세 모달에서도 동일하게 사용할 수 있습니다.
+                    {hideAxisActionPanel
+                      ? locale === 'ko'
+                        ? '예약·벤더 상태는 스케줄 달력 부킹 상세 줄에서 변경할 수 있습니다.'
+                        : 'Change booking and vendor status from the schedule calendar booking row.'
+                      : locale === 'ko'
+                        ? '상태 단계 변경은 아래 액션으로 진행합니다. 목록·통계의 상세 모달에서도 동일하게 사용할 수 있습니다.'
+                        : 'Use the actions below to advance workflow stages. The same actions are available from the list and stats detail modals.'}
                   </p>
-                  {axisSnapshot && booking.id ? (
+                  {!hideAxisActionPanel && axisSnapshot && booking.id ? (
                     <TicketBookingActionPanel
                       bookingId={booking.id}
                       axes={axisSnapshot}

@@ -130,6 +130,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
   const t = useTranslations('tours.assignmentManagement')
   const tHeader = useTranslations('tours.tourHeader')
+  const tResCard = useTranslations('reservations.card')
   const locale = useLocale()
   const isExpanded = expandedSections.has('assignment-management')
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
@@ -547,9 +548,13 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               {...(onRefresh && { onRefresh })}
               getProductCodeForReservation={getProductCodeForReservation}
               headerBadges={
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>{`잔금 ${formatBalanceBadge(assignedBalanceTotal)}`}</span>
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                  title={tResCard('balanceDueBadgeTitle')}
+                  aria-label={`${tResCard('balanceDueBadgeTitle')}: ${formatBalanceBadge(assignedBalanceTotal)}`}
+                >
+                  <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                  <span>{formatBalanceBadge(assignedBalanceTotal)}</span>
                 </span>
               }
             />

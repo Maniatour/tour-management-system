@@ -95,10 +95,14 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   const router = useRouter()
   const pathname = usePathname()
   const [isSuper, setIsSuper] = useState(false)
+  const [isManager, setIsManager] = useState(false)
   const [isCheckingPermission, setIsCheckingPermission] = useState(true)
 
   // AuthContext 슈퍼관리자와 동일 — team 직책/조회 실패와 무관하게 Super 접근
   const SUPER_ADMIN_EMAILS = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
+
+  /** 현금 관리·통합 PNL 탭은 Super(및 지정 이메일)만 */
+  const canViewFinanceTabs = isSuper
   
   // 권한 체크
   useEffect(() => {
@@ -110,6 +114,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       const emailLower = authUser.email.toLowerCase().trim()
       if (SUPER_ADMIN_EMAILS.some((e) => e.toLowerCase() === emailLower)) {
         setIsSuper(true)
+        setIsManager(false)
         setIsCheckingPermission(false)
         return
       }
@@ -124,15 +129,18 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         
         if (error || !teamData) {
           setIsSuper(false)
+          setIsManager(false)
           setIsCheckingPermission(false)
           return
         }
         
         const position = String((teamData as any).position ?? '').toLowerCase().trim()
         setIsSuper(position === 'super')
+        setIsManager(position === 'manager')
       } catch (error) {
         console.error('권한 체크 오류:', error)
         setIsSuper(false)
+        setIsManager(false)
       } finally {
         setIsCheckingPermission(false)
       }
@@ -170,6 +178,14 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   })
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') ?? '')
   const endDateInputRef = useRef<HTMLInputElement>(null)
+
+  // Manager는 현금/PNL URL로 들어와도 예약 통계 탭으로 보냄
+  useEffect(() => {
+    if (isCheckingPermission) return
+    if (!canViewFinanceTabs && (activeTab === 'cash' || activeTab === 'pnl')) {
+      setActiveTab('reservations')
+    }
+  }, [isCheckingPermission, canViewFinanceTabs, activeTab])
 
   /** 예약 통계 탭만 부모에서 예약 전량 로드. 투어/정산/현금/PNL 등은 각 탭·API에서 처리해 배치별 리렌더·메인 스레드 부담 감소 */
   const skipParentReservationLoad = activeTab !== 'reservations'
@@ -521,14 +537,14 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     )
   }
 
-  // 권한이 없는 경우 접근 거부
-  if (!isSuper) {
+  // 권한이 없는 경우 접근 거부 (Super·Manager만 통계 리포트, Manager는 현금/PNL 제외)
+  if (!isSuper && !isManager) {
     return (
       <div className="flex items-center justify-center min-h-screen px-4">
         <div className="text-center max-w-md">
           <XCircle className="h-12 w-12 sm:h-16 sm:w-16 text-red-500 mx-auto mb-3 sm:mb-4" />
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">접근 권한이 없습니다</h2>
-          <p className="text-sm sm:text-base text-gray-600">예약 통계 페이지는 Super 권한이 있는 사용자만 접근할 수 있습니다.</p>
+          <p className="text-sm sm:text-base text-gray-600">통계 리포트는 Super 또는 Manager 직책 사용자만 접근할 수 있습니다.</p>
         </div>
       </div>
     )
@@ -553,14 +569,18 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         <div className="border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-6">
             <nav className="-mb-px flex gap-1 overflow-x-auto scrollbar-thin sm:space-x-2 sm:overflow-visible pb-px">
-              {[
+              {([
                 { key: 'reservations', label: '예약 통계', icon: BarChart3 },
                 { key: 'tours', label: '투어 통계', icon: TrendingUp },
                 { key: 'settlement', label: '예약 정산', icon: Receipt },
                 { key: 'channelSettlement', label: '채널별 정산', icon: Receipt },
-                { key: 'cash', label: '현금 관리', icon: DollarSign },
-                { key: 'pnl', label: '통합 PNL', icon: PieChart }
-              ].map(({ key, label, icon: Icon }) => (
+                ...(canViewFinanceTabs
+                  ? [
+                      { key: 'cash' as const, label: '현금 관리', icon: DollarSign },
+                      { key: 'pnl' as const, label: '통합 PNL', icon: PieChart }
+                    ]
+                  : [])
+              ]).map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
                   onClick={() => setActiveTab(key as TabType)}

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { deriveLegacyTicketBookingStatusFromAxes } from '@/lib/ticketBookingLegacyAxisMap';
 import { getTicketBookingTimeSelectOptions } from '@/lib/ticketBookingTimeSelect';
@@ -18,6 +19,9 @@ function isMissingZelleConfirmationColumnError(err: unknown): boolean {
 }
 
 let omitZelleConfirmationInTicketBookingsPayload = false;
+
+const DEFAULT_BULK_ADD_CATEGORY = 'antelope_canyon';
+const DEFAULT_BULK_ADD_COMPANY = 'SEE CANYON';
 
 function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
   const [yRaw, moRaw, dRaw] = ymd.split('-').map((x) => parseInt(x, 10));
@@ -50,7 +54,8 @@ export type TicketBookingBulkAddModalProps = {
   onSuccess?: () => void | Promise<void>;
   /** 투어 상세에서 열 때 현재 투어 ID, 전역 목록에서는 null */
   tourId: string | null;
-  defaultSubmittedBy: string;
+  /** 제출자 이메일(미전달 시 로그인 사용자 이메일 사용) */
+  defaultSubmittedBy?: string;
 };
 
 export default function TicketBookingBulkAddModal({
@@ -58,12 +63,16 @@ export default function TicketBookingBulkAddModal({
   onClose,
   onSuccess,
   tourId,
-  defaultSubmittedBy,
+  defaultSubmittedBy = '',
 }: TicketBookingBulkAddModalProps) {
   const t = useTranslations('booking.ticketBooking');
-  const [category, setCategory] = useState('');
-  const [company, setCompany] = useState('');
-  const [submittedBy, setSubmittedBy] = useState('');
+  const { user } = useAuth();
+  const submitterEmail = useMemo(
+    () => (defaultSubmittedBy?.trim() || user?.email || '').trim(),
+    [defaultSubmittedBy, user?.email]
+  );
+  const [category, setCategory] = useState(DEFAULT_BULK_ADD_CATEGORY);
+  const [company, setCompany] = useState(DEFAULT_BULK_ADD_COMPANY);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [time, setTime] = useState('');
@@ -77,9 +86,8 @@ export default function TicketBookingBulkAddModal({
 
   useEffect(() => {
     if (!open) return;
-    setCategory('');
-    setCompany('');
-    setSubmittedBy(defaultSubmittedBy?.trim() || '');
+    setCategory(DEFAULT_BULK_ADD_CATEGORY);
+    setCompany(DEFAULT_BULK_ADD_COMPANY);
     setDateFrom('');
     setDateTo('');
     setTime('');
@@ -88,7 +96,7 @@ export default function TicketBookingBulkAddModal({
     setIncome(0);
     setNote('');
     setSaving(false);
-  }, [open, defaultSubmittedBy]);
+  }, [open]);
 
   const dates = useMemo(() => enumerateInclusive(dateFrom, dateTo), [dateFrom, dateTo]);
   const previewCount = dates.length;
@@ -115,7 +123,7 @@ export default function TicketBookingBulkAddModal({
     const tid = tourId && tourId.trim() !== '' ? tourId.trim() : null;
     return dates.map((check_in_date) => ({
       category: category.trim(),
-      submitted_by: submittedBy.trim(),
+      submitted_by: submitterEmail,
       check_in_date,
       time,
       company: company.trim(),
@@ -146,7 +154,7 @@ export default function TicketBookingBulkAddModal({
       alert(t('bulkAddCompanyRequired'));
       return;
     }
-    if (!submittedBy.trim()) {
+    if (!submitterEmail) {
       alert(t('bulkAddSubmitterRequired'));
       return;
     }
@@ -226,17 +234,6 @@ export default function TicketBookingBulkAddModal({
               placeholder={t('supplierPlaceholder')}
             />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">{t('submitterEmail')}</label>
-            <input
-              type="email"
-              value={submittedBy}
-              onChange={(e) => setSubmittedBy(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-              placeholder={t('submitterEmailPlaceholder')}
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">{t('bulkAddDateFrom')}</label>

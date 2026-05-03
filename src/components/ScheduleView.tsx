@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -43,7 +43,12 @@ import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
 } from '@/lib/scheduleProductColorPresets'
-import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSummary'
+import ScheduleTicketBookingAxisInline from '@/components/booking/ScheduleTicketBookingAxisInline'
+import {
+  TicketBookingBookingStatusIcon,
+  TicketBookingVendorStatusIcon,
+} from '@/components/booking/ticketBookingAxisStatusIcons'
+import { formatTicketBookingAxisLabel } from '@/lib/ticketBookingAxisLabels'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -283,6 +288,25 @@ type ScheduleBookingDetailRow =
     }
   | { kind: 'hotel'; line: string }
 
+/** 달력에 합쳐진 여러 입장권 행의 예약·벤더 축이 모두 같은지 */
+function resolveMergedTicketBookingAxisDisplay(
+  bookingIds: string[],
+  byId: Map<string, ScheduleTicketBookingRow>
+): { mixed: boolean; bookingStatus: string | null; vendorStatus: string | null } {
+  const rows = bookingIds
+    .map((id) => byId.get(id))
+    .filter((x): x is ScheduleTicketBookingRow => Boolean(x))
+  if (rows.length === 0) return { mixed: true, bookingStatus: null, vendorStatus: null }
+  const bs = new Set(rows.map((r) => (r.booking_status ?? 'requested').trim().toLowerCase()))
+  const vs = new Set(rows.map((r) => (r.vendor_status ?? 'pending').trim().toLowerCase()))
+  const mixed = bs.size > 1 || vs.size > 1 || rows.length < bookingIds.length
+  return {
+    mixed,
+    bookingStatus: mixed ? null : [...bs][0] ?? null,
+    vendorStatus: mixed ? null : [...vs][0] ?? null,
+  }
+}
+
 /** 드롭 존·행 재정렬 하이라이트는 classList만 갱신해 dragover마다 전체 트리 리렌더를 피함 */
 const SCHEDULE_GUIDE_DROP_ZONE_HIGHLIGHT = ['bg-blue-200', 'border-2', 'border-blue-400'] as const
 const SCHEDULE_VEHICLE_CELL_DROP_HIGHLIGHT = ['ring-2', 'ring-blue-400', 'bg-blue-50'] as const
@@ -317,7 +341,8 @@ export default function ScheduleView() {
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
   const tTourCal = useTranslations('tours.calendar')
-  const { user, userRole, hasPermission } = useAuth()
+  const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis')
+  const { user, userRole, userPosition, hasPermission } = useAuth()
   const tourHandlers = useTourHandlers()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [products, setProducts] = useState<Product[]>([])
@@ -340,6 +365,15 @@ export default function ScheduleView() {
     const teamMember = teamMembers.find(m => m.email === user.email)
     return teamMember?.position?.toLowerCase() === 'super' || userRole === 'admin'
   }, [user, userRole, teamMembers])
+
+  /** 배차 표에서 차량명 → VehicleEditModal (super/admin·manager·OP) */
+  const canEditVehicleFromSchedule = useMemo(
+    () =>
+      isSuperAdmin ||
+      userRole === 'manager' ||
+      (userPosition || '').toLowerCase().trim() === 'op',
+    [isSuperAdmin, userRole, userPosition]
+  )
 
   /** 투어 상세 모달·스케줄에서 상태 변경 (투어 상세 페이지 useTourDetailData와 동일 기준) */
   const isScheduleStaff = useMemo(
@@ -2055,7 +2089,7 @@ export default function ScheduleView() {
 
   const openVehicleEditFromSchedule = useCallback(
     async (vehicleId: string) => {
-      if (!isSuperAdmin) return
+      if (!canEditVehicleFromSchedule) return
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data, error } = await (supabase as any)
@@ -2096,7 +2130,7 @@ export default function ScheduleView() {
         alert(e instanceof Error ? e.message : '차량 정보를 불러오지 못했습니다.')
       }
     },
-    [isSuperAdmin]
+    [canEditVehicleFromSchedule]
   )
 
   const openRentalVehicleAddFromSchedule = useCallback(() => {
@@ -4022,13 +4056,28 @@ export default function ScheduleView() {
     return company
   }
 
+  const ticketBookingsById = useMemo(() => {
+    const m = new Map<string, ScheduleTicketBookingRow>()
+    for (const b of ticketBookings) {
+      m.set(b.id, b)
+    }
+    return m
+  }, [ticketBookings])
+
   // 부킹 데이터 날짜별 합산
   const bookingTotals = useMemo(() => {
     const dailyTotals: { [date: string]: { 
       ticketCount: number; 
       hotelCount: number; 
       totalCount: number;
-      ticketDetails: Array<{ id: string; company: string; time: string; ea: number }>;
+      ticketDetails: Array<{
+        id: string
+        company: string
+        time: string
+        ea: number
+        booking_status?: string | null
+        vendor_status?: string | null
+      }>;
       hotelDetails: Array<{ hotel: string; rooms: number }>;
     } } = {}
     
@@ -4079,7 +4128,9 @@ export default function ScheduleView() {
           id: booking.id,
           company: booking.company || '',
           time: booking.time || '',
-          ea: booking.ea || 0
+          ea: booking.ea || 0,
+          booking_status: booking.booking_status ?? null,
+          vendor_status: booking.vendor_status ?? null,
         })
       }
     })
@@ -5911,8 +5962,29 @@ export default function ScheduleView() {
                                 <div className="mb-2">
                                   <div className="font-semibold text-yellow-400 mb-1">입장권 부킹</div>
                                   {bookingData.ticketDetails.map((detail, idx) => (
-                                    <div key={idx} className="ml-2 mb-1">
-                                      {detail.company ? `${getCompanyDisplayName(detail.company)} - ` : ''}{detail.time || '—'} ({detail.ea}개)
+                                    <div key={idx} className="ml-2 mb-1 flex flex-wrap items-center gap-1.5">
+                                      <span>
+                                        {detail.company ? `${getCompanyDisplayName(detail.company)} - ` : ''}
+                                        {detail.time || '—'} ({detail.ea}개)
+                                      </span>
+                                      <span className="inline-flex items-center gap-0.5 text-yellow-100/95">
+                                        <TicketBookingBookingStatusIcon
+                                          status={detail.booking_status}
+                                          className="h-3.5 w-3.5"
+                                          title={formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
+                                        />
+                                        <span className="text-[10px] font-medium">
+                                          {formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
+                                        </span>
+                                        <TicketBookingVendorStatusIcon
+                                          status={detail.vendor_status}
+                                          className="h-3.5 w-3.5"
+                                          title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
+                                        />
+                                        <span className="text-[10px] font-medium">
+                                          {formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
+                                        </span>
+                                      </span>
                                     </div>
                                   ))}
                                 </div>
@@ -5966,33 +6038,115 @@ export default function ScheduleView() {
                                   row.kind === 'ticket' ? (
                                     <div
                                       key={idx}
-                                      role="button"
-                                      tabIndex={0}
-                                      title={locale === 'ko' ? '클릭하여 입장권 부킹 수정' : 'Click to edit ticket booking'}
-                                      className="cursor-pointer rounded-md px-0.5 py-0.5 -mx-0.5 hover:bg-purple-200/90 outline-none focus-visible:ring-1 focus-visible:ring-purple-500 flex flex-wrap items-center gap-0.5"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        onScheduleTicketBookingRowClick(row.bookingIds)
-                                      }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          e.preventDefault()
+                                      className="rounded-md px-0.5 py-0.5 -mx-0.5 space-y-0.5"
+                                    >
+                                      <div
+                                        role="button"
+                                        tabIndex={0}
+                                        title={locale === 'ko' ? '클릭하여 입장권 부킹 수정' : 'Click to edit ticket booking'}
+                                        className="cursor-pointer flex flex-wrap items-center gap-0.5 outline-none focus-visible:ring-1 focus-visible:ring-purple-500 hover:bg-purple-200/90 rounded px-0.5 -mx-0.5"
+                                        onClick={(e) => {
                                           e.stopPropagation()
                                           onScheduleTicketBookingRowClick(row.bookingIds)
-                                        }
-                                      }}
-                                    >
-                                      <span className="text-[9px] tabular-nums text-gray-700 shrink-0 font-medium">
-                                        {row.displayTime}
-                                      </span>
-                                      <span
-                                        className={`inline-flex min-w-[0.95rem] items-center justify-center rounded px-1 py-0.5 text-[8px] font-bold leading-none shadow-sm ${scheduleBookingSupplierTagBadgeClass(row.tag)}`}
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            onScheduleTicketBookingRowClick(row.bookingIds)
+                                          }
+                                        }}
                                       >
-                                        {scheduleBookingSupplierTagDisplay(row.tag)}
-                                      </span>
-                                      <span className="text-[9px] tabular-nums font-semibold text-gray-800 shrink-0">
-                                        {row.ea}
-                                      </span>
+                                        <span className="text-[9px] tabular-nums text-gray-700 shrink-0 font-medium">
+                                          {row.displayTime}
+                                        </span>
+                                        <span
+                                          className={`inline-flex min-w-[0.95rem] items-center justify-center rounded px-1 py-0.5 text-[8px] font-bold leading-none shadow-sm ${scheduleBookingSupplierTagBadgeClass(row.tag)}`}
+                                        >
+                                          {scheduleBookingSupplierTagDisplay(row.tag)}
+                                        </span>
+                                        <span className="text-[9px] tabular-nums font-semibold text-gray-800 shrink-0">
+                                          {row.ea}
+                                        </span>
+                                      </div>
+                                      {row.bookingIds.length === 1 ? (
+                                        (() => {
+                                          const b = ticketBookingsById.get(row.bookingIds[0])
+                                          if (!b) return null
+                                          return (
+                                            <ScheduleTicketBookingAxisInline
+                                              booking={b}
+                                              instanceKey={`sched-tb-${dateString}-${row.bookingIds[0]}-${idx}`}
+                                              disabled={!isScheduleStaff}
+                                              compact
+                                              className="pl-0.5"
+                                              onAxesUpdated={(next) => {
+                                                setTicketBookings((prev) =>
+                                                  prev.map((t) => (t.id === b.id ? { ...t, ...next } : t))
+                                                )
+                                              }}
+                                            />
+                                          )
+                                        })()
+                                      ) : (
+                                        (() => {
+                                          const merged = resolveMergedTicketBookingAxisDisplay(
+                                            row.bookingIds,
+                                            ticketBookingsById
+                                          )
+                                          if (merged.mixed) {
+                                            return (
+                                              <div
+                                                className="flex items-center gap-0.5 pl-0.5 text-[8px] font-medium text-violet-900"
+                                                title={
+                                                  locale === 'ko'
+                                                    ? '같은 줄에 여러 건·상태가 다릅니다. 위 줄을 눌러 선택하세요.'
+                                                    : 'Multiple bookings or mixed statuses — click the line above to choose.'
+                                                }
+                                              >
+                                                <Layers className="h-3 w-3 shrink-0" aria-hidden />
+                                                {locale === 'ko' ? '혼합' : 'Mixed'}
+                                              </div>
+                                            )
+                                          }
+                                          return (
+                                            <div className="flex flex-wrap items-center gap-0.5 pl-0.5 text-[8px] text-gray-800">
+                                              <TicketBookingBookingStatusIcon
+                                                status={merged.bookingStatus}
+                                                className="h-3 w-3"
+                                                title={formatTicketBookingAxisLabel(
+                                                  tTbAxis,
+                                                  'booking',
+                                                  merged.bookingStatus
+                                                )}
+                                              />
+                                              <span className="max-w-[4rem] truncate font-semibold">
+                                                {formatTicketBookingAxisLabel(
+                                                  tTbAxis,
+                                                  'booking',
+                                                  merged.bookingStatus
+                                                )}
+                                              </span>
+                                              <TicketBookingVendorStatusIcon
+                                                status={merged.vendorStatus}
+                                                className="h-3 w-3"
+                                                title={formatTicketBookingAxisLabel(
+                                                  tTbAxis,
+                                                  'vendor',
+                                                  merged.vendorStatus
+                                                )}
+                                              />
+                                              <span className="max-w-[4rem] truncate font-semibold">
+                                                {formatTicketBookingAxisLabel(
+                                                  tTbAxis,
+                                                  'vendor',
+                                                  merged.vendorStatus
+                                                )}
+                                              </span>
+                                            </div>
+                                          )
+                                        })()
+                                      )}
                                     </div>
                                   ) : (
                                     <div key={idx} className="text-gray-600">
@@ -6084,11 +6238,8 @@ export default function ScheduleView() {
                           }`}
                         >
                           <td
-                            className="px-1 py-0.5 text-xs leading-tight text-gray-900 select-none cursor-grab active:cursor-grabbing"
+                            className="px-1 py-0.5 text-xs leading-tight text-gray-900 select-none"
                             style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
-                            draggable
-                            onDragStart={(e) => handleVehicleRowDragStart(e, id)}
-                            onDragEnd={handleVehicleRowDragEnd}
                             onDragOver={(e) => {
                               if (draggedVehicleRowId) {
                                 handleVehicleRowDragOver(e, id)
@@ -6102,46 +6253,54 @@ export default function ScheduleView() {
                             }}
                           >
                             <div className="flex items-center gap-0.5">
-                              <div className="flex flex-col items-center -my-0.5">
-                                <button
-                                  type="button"
-                                  draggable={false}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    if (canMoveUp) moveVehicleRow(index, index - 1)
-                                  }}
-                                  disabled={!canMoveUp}
-                                  className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                                  title="위로 이동"
-                                >
-                                  <ChevronUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  draggable={false}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    if (canMoveDown) moveVehicleRow(index, index + 1)
-                                  }}
-                                  disabled={!canMoveDown}
-                                  className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                                  title="아래로 이동"
-                                >
-                                  <ChevronDown className="w-3 h-3" />
-                                </button>
-                              </div>
-                              <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} />
                               <div
-                                className={`min-w-0 flex-1 truncate font-medium ${isSuperAdmin ? 'cursor-pointer hover:text-blue-700' : 'cursor-help'}`}
+                                className="flex shrink-0 items-center gap-0.5 cursor-grab active:cursor-grabbing"
+                                draggable
+                                onDragStart={(e) => handleVehicleRowDragStart(e, id)}
+                                onDragEnd={handleVehicleRowDragEnd}
+                                title="행 순서: 이 영역을 드래그하여 이동"
+                              >
+                                <div className="flex flex-col items-center -my-0.5">
+                                  <button
+                                    type="button"
+                                    draggable={false}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      if (canMoveUp) moveVehicleRow(index, index - 1)
+                                    }}
+                                    disabled={!canMoveUp}
+                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    title="위로 이동"
+                                  >
+                                    <ChevronUp className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    draggable={false}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      if (canMoveDown) moveVehicleRow(index, index + 1)
+                                    }}
+                                    disabled={!canMoveDown}
+                                    className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    title="아래로 이동"
+                                  >
+                                    <ChevronDown className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} />
+                              </div>
+                              <div
+                                className={`min-w-0 flex-1 truncate font-medium ${canEditVehicleFromSchedule ? 'cursor-pointer hover:text-blue-700' : 'cursor-help'}`}
                                 title={
-                                  isSuperAdmin
+                                  canEditVehicleFromSchedule
                                     ? `${vehicleNameTooltip}\n클릭하여 차량 정보 수정`
                                     : vehicleNameTooltip
                                 }
-                                role={isSuperAdmin ? 'button' : undefined}
-                                tabIndex={isSuperAdmin ? 0 : undefined}
+                                role={canEditVehicleFromSchedule ? 'button' : undefined}
+                                tabIndex={canEditVehicleFromSchedule ? 0 : undefined}
                                 onClick={
-                                  isSuperAdmin
+                                  canEditVehicleFromSchedule
                                     ? (e) => {
                                         e.stopPropagation()
                                         void openVehicleEditFromSchedule(id)
@@ -6149,7 +6308,7 @@ export default function ScheduleView() {
                                     : undefined
                                 }
                                 onKeyDown={
-                                  isSuperAdmin
+                                  canEditVehicleFromSchedule
                                     ? (e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
                                           e.preventDefault()
@@ -7406,7 +7565,19 @@ export default function ScheduleView() {
                       {locale === 'ko' ? '매' : ' ea'}
                     </span>
                   </div>
-                  {b ? <TicketBookingAxisSummary booking={b} variant="inline" className="mt-1 text-[10px]" /> : null}
+                  {b ? (
+                    <div className="mt-2 border-t border-gray-100 pt-2">
+                      <ScheduleTicketBookingAxisInline
+                        booking={b}
+                        instanceKey={`pick-tb-${id}`}
+                        disabled={!isScheduleStaff}
+                        compact={false}
+                        onAxesUpdated={(next) => {
+                          setTicketBookings((prev) => prev.map((t) => (t.id === id ? { ...t, ...next } : t)))
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </button>
               )
             })}
@@ -7435,6 +7606,7 @@ export default function ScheduleView() {
                 key={scheduleTicketBookingEdit?.id ?? 'new'}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 booking={scheduleTicketBookingEdit as any}
+                hideAxisActionPanel
                 onSave={() => {
                   void handleScheduleTicketBookingSaved()
                 }}

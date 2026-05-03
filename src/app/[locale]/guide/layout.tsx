@@ -29,7 +29,17 @@ interface GuideLayoutProps {
 }
 
 export default function GuideLayout({ children, params }: GuideLayoutProps) {
-  const { user, userRole, loading: isLoading, simulatedUser, isSimulating, signOut, stopSimulation } = useAuth()
+  const {
+    user,
+    userRole,
+    loading: isLoading,
+    simulatedUser,
+    isSimulating,
+    signOut,
+    stopSimulation,
+    isInitialized,
+    recoverAuthSession,
+  } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const t = useTranslations('guide')
@@ -53,6 +63,11 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     
     return () => clearTimeout(timer)
   }, [])
+
+  // 모바일 SPA 이동 직후 Supabase 컨텍스트와 React 상태가 잠깐 어긋나면 복구
+  useEffect(() => {
+    void recoverAuthSession()
+  }, [pathname, recoverAuthSession])
 
   // 문서 업로드 모달 열기 함수
   const openDocumentUploadModal = (type: 'medical' | 'cpr') => {
@@ -80,6 +95,11 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     // 초기화 중이면 기다림
     if (isInitializing) {
       console.log('GuideLayout: Initializing, waiting for simulation state...')
+      return
+    }
+
+    if (!isInitialized) {
+      console.log('GuideLayout: Waiting for auth initialization...')
       return
     }
     
@@ -162,7 +182,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     
      // 메디컬 리포트 상태 확인 (비활성화)
      // checkMedicalReportStatus()
-   }, [user, userRole, isLoading, router, isSimulating, simulatedUser, isInitializing])
+   }, [user, userRole, isLoading, router, isSimulating, simulatedUser, isInitializing, isInitialized])
 
   // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
   useEffect(() => {
@@ -402,7 +422,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     }
   }
 
-  if (isLoading || isInitializing) {
+  if (isLoading || isInitializing || !isInitialized) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="flex flex-1 items-center justify-center">

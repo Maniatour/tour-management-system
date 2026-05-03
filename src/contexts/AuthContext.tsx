@@ -37,6 +37,8 @@ interface AuthContextType {
   permissions: UserPermissions | null
   loading: boolean
   isInitialized: boolean
+  /** 가이드 등 SPA 이동 후 세션·컨텍스트 불일치 시 복구 (모바일) */
+  recoverAuthSession: () => Promise<void>
   signOut: () => Promise<void>
   hasPermission: (permission: keyof UserPermissions) => boolean
   teamChatUnreadCount: number
@@ -177,22 +179,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
       
-      // 일반 사용자의 경우 team 쿼리 시도
+      // 일반 사용자: team 쿼리 (모바일망에서 단발 타임아웃 시 가이드가 customer로 떨어지지 않도록 재시도)
       try {
-        const queryPromise = supabase
-          .from('team')
-          .select('name_ko, email, position, is_active')
-          .eq('email', email)
-          .eq('is_active', true)
-          .maybeSingle()
-        
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Query timeout')), 2200)
-        )
-        
-        const { data: teamData, error } = await Promise.race([queryPromise, timeoutPromise]) as { 
-          data: { name_ko: string | null; email: string; position: string | null; is_active: boolean } | null; 
-          error: { message?: string; code?: string } | null 
+        const TEAM_QUERY_TIMEOUT_MS = 5000
+        const MAX_TEAM_ATTEMPTS = 3
+
+        let teamData: {
+          name_ko: string | null
+          email: string
+          position: string | null
+          is_active: boolean
+        } | null = null
+        let error: { message?: string; code?: string } | null = null
+
+        for (let attempt = 0; attempt < MAX_TEAM_ATTEMPTS; attempt++) {
+          try {
+            const queryPromise = supabase
+              .from('team')
+              .select('name_ko, email, position, is_active')
+              .eq('email', email)
+              .eq('is_active', true)
+              .maybeSingle()
+
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Query timeout')), TEAM_QUERY_TIMEOUT_MS)
+            )
+
+            const result = (await Promise.race([queryPromise, timeoutPromise])) as {
+              data: typeof teamData
+              error: { message?: string; code?: string } | null
+            }
+            teamData = result.data
+            error = result.error
+            break
+          } catch (attemptErr) {
+            console.warn(`AuthContext: Team query attempt ${attempt + 1}/${MAX_TEAM_ATTEMPTS} failed:`, attemptErr)
+            if (attempt < MAX_TEAM_ATTEMPTS - 1) {
+              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)))
+              continue
+            }
+            teamData = null
+            error = { message: 'Query timeout', code: 'TIMEOUT' }
+          }
         }
 
         console.log('AuthContext: Team query result:', { 
@@ -264,6 +292,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsInitialized(true)
     }
   }, [])
+
+  const recoverAuthSession = useCallback(async () => {
+    if (typeof window === 'undefined' || !supabase) return
+    if (isSimulating && simulatedUser) return
+
+    const hasStoredAuth = !!(
+      localStorage.getItem('sb-refresh-token') || localStorage.getItem('sb-access-token')
+    )
+    if (!userRef.current?.email && hasStoredAuth) {
+      setLoading(true)
+    }
+
+    try {
+      let session = (await supabase.auth.getSession()).data.session
+
+      if (!session?.user?.email) {
+        const rt = localStorage.getItem('sb-refresh-token')
+        if (rt) {
+          const { data, error } = await supabase.auth.refreshSession({
+            refresh_token: rt,
+          })
+          if (!error && data.session?.user?.email) {
+            session = data.session
+          }
+        }
+      }
+
+      if (!session?.user?.email) {
+        if (!userRef.current?.email && hasStoredAuth) {
+          setLoading(false)
+        }
+        return
+      }
+
+      persistSupabaseSessionToStorage(session)
+      updateSupabaseToken(session.access_token)
+
+      const email = session.user.email
+      if (userRef.current?.email === email) return
+
+      setLoading(true)
+      const authUserData = authUserFromSupabaseSessionUser(session.user)
+      setUser(authUserData)
+      setAuthUser(authUserData)
+      await checkUserRole(email)
+    } catch (e) {
+      console.warn('AuthContext: recoverAuthSession:', e)
+      if (!userRef.current?.email && hasStoredAuth) {
+        setLoading(false)
+      }
+    }
+  }, [isSimulating, simulatedUser, checkUserRole])
 
   // 시뮬레이션 정보 복원 (클라이언트에서만 실행, SSR 호환성)
   useEffect(() => {
@@ -604,7 +684,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Supabase에서 현재 세션 확인
       if (supabase) {
         try {
-          const GET_SESSION_BUDGET_MS = 6000
+          const GET_SESSION_BUDGET_MS = 14000
           const { data: { session }, error } = await Promise.race([
             supabase.auth.getSession(),
             new Promise<{ data: { session: null }; error: { message: string } }>((resolve) =>
@@ -616,8 +696,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ])
           if (error?.message === 'getSession_timeout') {
             console.warn(
-              `AuthContext: getSession exceeded ${GET_SESSION_BUDGET_MS}ms, continuing without session`
+              `AuthContext: getSession exceeded ${GET_SESSION_BUDGET_MS}ms, retrying once (mobile storage)`
             )
+            const second = await supabase.auth.getSession()
+            if (second.data.session?.user?.email) {
+              const session = second.data.session
+              console.log('AuthContext: getSession recovered on retry:', session.user.email)
+              console.log('AuthContext: Found Supabase session:', session.user.email)
+              const authUserData: AuthUser = {
+                id: session.user.id,
+                email: session.user.email || '',
+                name:
+                  session.user.user_metadata?.name ||
+                  session.user.user_metadata?.full_name ||
+                  (session.user.email ? session.user.email.split('@')[0] : 'User'),
+                avatar_url: session.user.user_metadata?.avatar_url,
+                created_at: session.user.created_at,
+                user_metadata: session.user.user_metadata,
+              }
+              setUser(authUserData)
+              setAuthUser(authUserData)
+              localStorage.setItem('sb-access-token', session.access_token)
+              localStorage.setItem('sb-refresh-token', session.refresh_token)
+              const tokenExpiry =
+                session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
+              localStorage.setItem('sb-expires-at', tokenExpiry.toString())
+              updateSupabaseToken(session.access_token)
+              if (session.user.email) {
+                checkUserRole(session.user.email).catch((error) => {
+                  console.error('AuthContext: Team membership check failed:', error)
+                  setUserRole('customer')
+                  setUserPosition(null)
+                  setPermissions(null)
+                  setLoading(false)
+                  setIsInitialized(true)
+                })
+              }
+              return
+            }
           }
           
           if (session && !error) {
@@ -842,6 +958,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else if (event === 'TOKEN_REFRESHED' && session?.user?.email) {
           console.log('AuthContext: Token refreshed')
           
+          persistSupabaseSessionToStorage(session)
+          updateSupabaseToken(session.access_token)
+
           // Supabase User를 AuthUser로 변환
           const authUserData: AuthUser = {
             id: session.user.id,
@@ -968,10 +1087,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pageshow', onPageShow)
+    window.addEventListener('focus', onVisibility)
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pageshow', onPageShow)
+      window.removeEventListener('focus', onVisibility)
     }
   }, [isSimulating, simulatedUser, checkUserRole])
 
@@ -1183,7 +1304,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user && !isSimulating) {
       const interval = setInterval(() => {
         void refreshTokenIfNeeded()
-      }, 30 * 60 * 1000) // 30분마다 체크
+      }, 10 * 60 * 1000) // 10분마다 체크 (모바일 백그라운드에서 만료 방지)
 
       return () => clearInterval(interval)
     }
@@ -1200,6 +1321,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     permissions: effectivePermissions,
     loading,
     isInitialized,
+    recoverAuthSession,
     signOut,
     hasPermission: hasPermissionCheck,
     teamChatUnreadCount,

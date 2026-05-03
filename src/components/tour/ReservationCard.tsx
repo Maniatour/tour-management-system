@@ -1879,11 +1879,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 { paymentRecords, reservationStatus: reservation.status ?? null }
               )
               if (displayBalanceBadge > 0) {
+                const balStr = formatCurrency(
+                  displayBalanceBadge,
+                  reservationPricing?.currency || 'USD'
+                )
                 return (
                   <div className="flex items-center space-x-2">
-                    <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                    <div
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200"
+                      title={tCard('balanceDueBadgeTitle')}
+                      aria-label={`${tCard('balanceDueBadgeTitle')}: ${balStr}`}
+                    >
                       <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                      <span>{`잔금 ${formatCurrency(displayBalanceBadge, reservationPricing?.currency || 'USD')}`}</span>
+                      <span>{balStr}</span>
                     </div>
                     <button
                       onClick={handleReceiveBalance}

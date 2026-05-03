@@ -312,6 +312,17 @@ function ticketBookingRowToDetailModal(
     refund_status: raw.refund_status != null ? str(raw.refund_status) : undefined,
     operation_status: raw.operation_status != null ? str(raw.operation_status) : undefined,
     tours: tourMeta,
+    check_in_date: raw.check_in_date != null ? str(raw.check_in_date) : undefined,
+    expense:
+      raw.expense != null && String(raw.expense) !== '' ? num(raw.expense) : undefined,
+    income: raw.income != null && String(raw.income) !== '' ? num(raw.income) : undefined,
+    payment_method: raw.payment_method != null ? str(raw.payment_method) : undefined,
+    unit_price:
+      raw.unit_price != null && String(raw.unit_price) !== '' ? num(raw.unit_price) : undefined,
+    paid_amount:
+      raw.paid_amount != null && String(raw.paid_amount) !== ''
+        ? num(raw.paid_amount)
+        : undefined,
   }
 }
 

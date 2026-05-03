@@ -81,6 +81,10 @@ import {
   getVendorAxisStatusBadgeClass,
 } from '@/lib/ticketBookingAxisLabels';
 import {
+  TicketBookingBookingStatusIcon,
+  TicketBookingVendorStatusIcon,
+} from '@/components/booking/ticketBookingAxisStatusIcons';
+import {
   formatEaMarginUsdArrow,
   formatExpenseArrow,
   formatQtyArrow,
@@ -314,6 +318,28 @@ function invoiceCompanyNorm(company: string | null | undefined): string {
 
 /** RN 그룹 헤더·구분선 colSpan (예약·벤더·결제·환불 + 나머지 고정 열 수) */
 const TICKET_DESKTOP_TABLE_COL_COUNT = 24
+
+/** 데스크톱 행 Cancel Due 날짜별 배경·호버 (테이블·상세 모달 공통) */
+const TICKET_TABLE_CANCEL_DUE_BG = [
+  'bg-white',
+  'bg-blue-50',
+  'bg-green-50',
+  'bg-yellow-50',
+  'bg-purple-50',
+  'bg-pink-50',
+  'bg-indigo-50',
+  'bg-cyan-50',
+] as const
+const TICKET_TABLE_CANCEL_DUE_HOVER = [
+  'hover:bg-gray-50',
+  'hover:bg-blue-100',
+  'hover:bg-green-100',
+  'hover:bg-yellow-100',
+  'hover:bg-purple-100',
+  'hover:bg-pink-100',
+  'hover:bg-indigo-100',
+  'hover:bg-cyan-100',
+] as const
 
 export type TicketRefundLineRow = {
   id: string
@@ -896,6 +922,21 @@ export default function TicketBookingList() {
   const [showNeedCheckModal, setShowNeedCheckModal] = useState(false);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
 
+  /** 상세 모달이 열린 채로 목록이 갱신되면(축 변경 등) 선택 행을 최신 `bookings`와 맞춤 */
+  useEffect(() => {
+    if (!showBookingModal) return
+    setSelectedBookings((prev) => {
+      if (prev.length === 0) return prev
+      let changed = false
+      const next = prev.map((b) => {
+        const fresh = bookings.find((x) => x.id === b.id)
+        if (fresh && fresh !== b) changed = true
+        return fresh ?? b
+      })
+      return changed ? next : prev
+    })
+  }, [bookings, showBookingModal])
+
   const refreshInvoiceAttachmentMapForBookings = useCallback(
     async (list: TicketBooking[]) => {
       const companies = new Set<string>();
@@ -1199,20 +1240,35 @@ export default function TicketBookingList() {
         return baseBooking;
       });
 
-      const bookingIds = (bookingsData || []).map((b: TicketBooking) => b.id).filter(Boolean);
+      const bookingIds = [
+        ...new Set(
+          (bookingsData || [])
+            .map((b: TicketBooking) => b.id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        ),
+      ];
       const refundMap: Record<string, TicketRefundLineRow[]> = {};
       if (bookingIds.length > 0) {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: rlRows, error: rlErr } = await (supabase as any)
-            .from('ticket_booking_refund_lines')
-            .select('id, anchor_booking_id, status, amount, ea, note')
-            .in('anchor_booking_id', bookingIds);
-          if (!rlErr && rlRows && Array.isArray(rlRows)) {
-            for (const row of rlRows as unknown as TicketRefundLineRow[]) {
-              const k = row.anchor_booking_id;
-              if (!refundMap[k]) refundMap[k] = [];
-              refundMap[k].push(row);
+          // GET 쿼리스트링 한도 — anchor_booking_id=in.(…) 가 길면 400 (Bad Request) 발생 가능
+          const REFUND_ANCHOR_BATCH = 100;
+          for (let i = 0; i < bookingIds.length; i += REFUND_ANCHOR_BATCH) {
+            const batch = bookingIds.slice(i, i + REFUND_ANCHOR_BATCH);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: rlRows, error: rlErr } = await (supabase as any)
+              .from('ticket_booking_refund_lines')
+              .select('id, anchor_booking_id, status, amount, ea, note')
+              .in('anchor_booking_id', batch);
+            if (rlErr) {
+              console.warn('환불 라인 조회 오류:', rlErr.message ?? rlErr);
+              continue;
+            }
+            if (rlRows && Array.isArray(rlRows)) {
+              for (const row of rlRows as unknown as TicketRefundLineRow[]) {
+                const k = row.anchor_booking_id;
+                if (!refundMap[k]) refundMap[k] = [];
+                refundMap[k].push(row);
+              }
             }
           }
         } catch {
@@ -2244,6 +2300,24 @@ export default function TicketBookingList() {
     [supplierProductsMap]
   );
 
+  const buildCancelDueColorMapFor = useCallback((bookings: TicketBooking[]) => {
+    const cancelDueColorMap = new Map<string, string>();
+    let colorIndex = 0;
+    const usedDates = new Set<string>();
+    bookings.forEach((booking) => {
+      const cancelDueDate = getCancelDueDate(booking);
+      if (cancelDueDate && !usedDates.has(cancelDueDate)) {
+        cancelDueColorMap.set(
+          cancelDueDate,
+          TICKET_TABLE_CANCEL_DUE_BG[colorIndex % TICKET_TABLE_CANCEL_DUE_BG.length]
+        );
+        usedDates.add(cancelDueDate);
+        colorIndex++;
+      }
+    });
+    return cancelDueColorMap;
+  }, [getCancelDueDate]);
+
   const ticketNeedCheckUnionCount = useMemo(() => {
     const ids = new Set<string>();
     for (const b of bookings) {
@@ -2563,6 +2637,11 @@ export default function TicketBookingList() {
                   vsCurrent === option.value ? 'bg-gray-900 font-semibold' : 'bg-black'
                 }`}
               >
+                <TicketBookingVendorStatusIcon
+                  status={option.value}
+                  className="h-3.5 w-3.5 shrink-0 text-white"
+                  title={option.label}
+                />
                 <span
                   className={`inline-flex max-w-full truncate px-2 py-0.5 text-[11px] font-medium rounded-full ${option.badgeClass}`}
                 >
@@ -2662,6 +2741,15 @@ export default function TicketBookingList() {
                     : 'hover:bg-gray-800'
                 } ${isSelected ? 'bg-gray-900 font-semibold' : option.disabled ? '' : 'bg-black'}`}
               >
+                {isChangeRow ? (
+                  <PencilLine className="h-3.5 w-3.5 shrink-0 text-white" strokeWidth={2.25} aria-hidden />
+                ) : (
+                  <TicketBookingBookingStatusIcon
+                    status={option.value}
+                    className="h-3.5 w-3.5 shrink-0 text-white"
+                    title={option.label}
+                  />
+                )}
                 <span
                   className={`inline-flex max-w-full truncate px-2 py-0.5 text-[11px] font-medium rounded-full ${option.badgeClass}`}
                 >
@@ -2725,19 +2813,51 @@ export default function TicketBookingList() {
     setShowBookingModal(true);
   };
 
-  const renderTicketMobileCard = (booking: TicketBooking) => {
+  const renderTicketMobileCard = (
+    booking: TicketBooking,
+    opts?: { variant?: 'default' | 'modalForm' }
+  ) => {
+    const isModalForm = opts?.variant === 'modalForm';
     const cancelDueDate = getCancelDueDate(booking);
     const isOverdue = cancelDueDate ? new Date(cancelDueDate) < new Date() : false;
     const supplierStyle = ticketBookingSupplierColors(booking.company);
+    const formLabel = (ko: string, en: string) => (locale.startsWith('en') ? en : ko);
+    const FormField = ({
+      label,
+      children,
+      title: fieldTitle,
+    }: {
+      label: string;
+      children: React.ReactNode;
+      title?: string;
+    }) => (
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</div>
+        <div
+          className="min-h-[2.25rem] rounded-md border border-gray-200 bg-gray-50/80 px-2 py-1.5 text-xs text-gray-900 flex flex-wrap items-center gap-0.5"
+          title={fieldTitle}
+        >
+          {children}
+        </div>
+      </div>
+    );
+    const axisChipClassModal = isModalForm
+      ? 'inline-flex w-full min-w-0 min-h-[2.35rem] max-w-full items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity'
+      : 'inline-flex max-w-full items-center gap-1 truncate px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 cursor-pointer hover:opacity-90';
+    const axisIconClassModal = isModalForm ? 'h-3.5 w-3.5 shrink-0' : 'h-3 w-3 shrink-0';
     return (
       <div
         key={booking.id}
-        className="border border-gray-200 rounded-xl p-3 bg-white shadow-sm space-y-2"
+        className={
+          isModalForm
+            ? 'max-w-full rounded-xl border border-gray-200 bg-white p-3 shadow-sm space-y-3 touch-manipulation'
+            : 'border border-gray-200 rounded-xl p-3 bg-white shadow-sm space-y-2'
+        }
         style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-1.5">
+        {isModalForm ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
               <span
                 ref={(el) => {
                   const key = `${booking.id}:booking`;
@@ -2746,7 +2866,7 @@ export default function TicketBookingList() {
                 }}
                 role="button"
                 tabIndex={0}
-                className={`inline-flex max-w-full truncate px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 cursor-pointer hover:opacity-90 ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
+                className={`${axisChipClassModal} ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleAxisDropdown(booking.id, 'booking');
@@ -2762,7 +2882,14 @@ export default function TicketBookingList() {
                   locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
                 }
               >
-                {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                <TicketBookingBookingStatusIcon
+                  status={booking.booking_status}
+                  className={axisIconClassModal}
+                  title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                />
+                <span className="min-w-0 truncate text-center">
+                  {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                </span>
               </span>
               <span
                 ref={(el) => {
@@ -2772,7 +2899,7 @@ export default function TicketBookingList() {
                 }}
                 role="button"
                 tabIndex={0}
-                className={`inline-flex max-w-full truncate px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 cursor-pointer hover:opacity-90 ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
+                className={`${axisChipClassModal} ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleAxisDropdown(booking.id, 'vendor');
@@ -2790,35 +2917,292 @@ export default function TicketBookingList() {
                     : 'Change vendor status'
                 }
               >
-                {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-              </span>
-              {!isWorkflowInitialPhase(booking) &&
-              String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
-                <span
-                  className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
-                >
-                  {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
+                <TicketBookingVendorStatusIcon
+                  status={booking.vendor_status}
+                  className={axisIconClassModal}
+                  title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+                />
+                <span className="min-w-0 truncate text-center">
+                  {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
                 </span>
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {showChangeRequestButton(booking) ? (
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full border border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                  disabled={workflowActionSavingId === booking.id}
+                  title={locale === 'ko' ? '수량·시간 변경 요청' : 'Request quantity/time change'}
+                  aria-label={locale === 'ko' ? '수량·시간 변경 요청' : 'Request quantity/time change'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setChangeModalBooking(booking);
+                  }}
+                >
+                  <PencilLine className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+                </button>
               ) : null}
             </div>
-            <button
-              type="button"
-              className="text-xs font-medium text-blue-600 hover:underline text-left"
-              onClick={(e) => {
-                e.stopPropagation();
-                setAxesDialogBooking(booking);
-              }}
-            >
-              {tTbActUi('axesEditorOpenButton')}
-            </button>
+            {showVendorInitialActions(booking) ? (
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
+                  disabled={workflowActionSavingId === booking.id}
+                  title={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
+                  aria-label={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setVendorConfirmModalBooking(booking);
+                  }}
+                >
+                  <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
+                  disabled={workflowActionSavingId === booking.id}
+                  title={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
+                  aria-label={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void runWorkflowRpc(booking, 'workflow_vendor_reject_initial');
+                  }}
+                >
+                  <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                </button>
+              </div>
+            ) : null}
+            {showVendorChangeActions(booking) ? (
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
+                  disabled={workflowActionSavingId === booking.id}
+                  title={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
+                  aria-label={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void runWorkflowRpc(booking, 'workflow_vendor_confirm_change');
+                  }}
+                >
+                  <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
+                  disabled={workflowActionSavingId === booking.id}
+                  title={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
+                  aria-label={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void runWorkflowRpc(booking, 'workflow_vendor_reject_change');
+                  }}
+                >
+                  <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                </button>
+              </div>
+            ) : null}
+            {!isWorkflowInitialPhase(booking) &&
+            String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
+              <span
+                className={`inline-flex w-full max-w-full items-center justify-center rounded-full px-2.5 py-1.5 text-[11px] font-semibold ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
+              >
+                {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
+              </span>
+            ) : null}
           </div>
-          <span
-            className="text-xs font-medium max-w-[55%] truncate rounded px-1.5 py-0.5 ring-1 ring-black/10"
-            style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
-          >
-            {booking.company}
-          </span>
-        </div>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span
+                  ref={(el) => {
+                    const key = `${booking.id}:booking`;
+                    if (el) axisBadgeRefs.current.set(key, el);
+                    else axisBadgeRefs.current.delete(key);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`${axisChipClassModal} ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleAxisDropdown(booking.id, 'booking');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleAxisDropdown(booking.id, 'booking');
+                    }
+                  }}
+                  title={
+                    locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
+                  }
+                >
+                  <TicketBookingBookingStatusIcon
+                    status={booking.booking_status}
+                    className={axisIconClassModal}
+                    title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                  />
+                  <span className="truncate">
+                    {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                  </span>
+                </span>
+                <span
+                  ref={(el) => {
+                    const key = `${booking.id}:vendor`;
+                    if (el) axisBadgeRefs.current.set(key, el);
+                    else axisBadgeRefs.current.delete(key);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`${axisChipClassModal} ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleAxisDropdown(booking.id, 'vendor');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleAxisDropdown(booking.id, 'vendor');
+                    }
+                  }}
+                  title={
+                    locale === 'ko'
+                      ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
+                      : 'Change vendor status'
+                  }
+                >
+                  <TicketBookingVendorStatusIcon
+                    status={booking.vendor_status}
+                    className={axisIconClassModal}
+                    title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+                  />
+                  <span className="truncate">
+                    {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+                  </span>
+                </span>
+                {!isWorkflowInitialPhase(booking) &&
+                String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
+                  <span
+                    className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
+                  >
+                    {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
+                  </span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="text-left text-xs font-medium text-blue-600 hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAxesDialogBooking(booking);
+                }}
+              >
+                {tTbActUi('axesEditorOpenButton')}
+              </button>
+            </div>
+            <span
+              className="shrink-0 max-w-[55%] truncate rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-black/10"
+              style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+            >
+              {booking.company}
+            </span>
+          </div>
+        )}
+        {isModalForm ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <FormField label={formLabel('카테고리', 'Category')}>
+              <span className="font-medium text-gray-900">{booking.category}</span>
+            </FormField>
+            <FormField label={formLabel('공급업체', 'Supplier')}>
+              <span
+                className="inline-block max-w-full truncate rounded px-2 py-1 text-xs font-semibold ring-1 ring-black/10"
+                style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+              >
+                {booking.company}
+              </span>
+            </FormField>
+            <FormField label={formLabel('날짜', 'Check-in date')}>
+              <span className="font-medium tabular-nums">
+                {booking.check_in_date ? new Date(booking.check_in_date).toISOString().split('T')[0] : '-'}
+              </span>
+            </FormField>
+            <FormField label={formLabel('시간', 'Time')}>
+              <span
+                className={`font-medium ${ticketBookingPendingTimeDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+              >
+                {formatTimeArrow(booking)}
+              </span>
+            </FormField>
+            <FormField label={formLabel('수량', 'Quantity')}>
+              <span
+                className={`font-medium ${ticketBookingPendingQtyDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+              >
+                {formatQtyArrow(booking)}
+              </span>
+            </FormField>
+            {cancelDueDate ? (
+              <FormField label="Cancel Due">
+                <span className={isOverdue ? 'text-red-600 font-semibold' : 'font-medium'}>{cancelDueDate}</span>
+              </FormField>
+            ) : null}
+            <FormField label="RN#">
+              <span className="font-medium truncate">{booking.rn_number?.trim() || '—'}</span>
+            </FormField>
+            <FormField label={formLabel('Invoice#', 'Invoice #')}>
+              <span className="font-medium truncate">{booking.invoice_number?.trim() || '—'}</span>
+            </FormField>
+            <FormField label={formLabel('Zelle 확인#', 'Zelle confirmation #')}>
+              <span className="font-medium truncate">{booking.zelle_confirmation_number?.trim() || '—'}</span>
+            </FormField>
+            <FormField label={formLabel('EA 금액', 'EA amount')} title={formLabel('(비용 − 수입) ÷ 수량', '(Expense − income) ÷ qty')}>
+              <span
+                className={`font-medium tabular-nums ${ticketBookingPendingExpenseDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+              >
+                {formatEaMarginUsdArrow(booking)}
+              </span>
+            </FormField>
+            <FormField label={formLabel('비용 (USD)', 'Expense (USD)')}>
+              <span
+                className={`font-medium ${ticketBookingPendingExpenseDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+              >
+                {formatExpenseArrow(booking)}
+              </span>
+            </FormField>
+            <FormField label={formLabel('제출일', 'Submitted')}>
+              <span className="font-medium tabular-nums">
+                {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
+              </span>
+            </FormField>
+            <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-3">
+              <FormField label={formLabel('투어', 'Tour')}>
+                {booking.tours && booking.tour_id ? (
+                  <span className="font-medium break-words text-gray-900">
+                    {getProductName(booking.tours.products)} {booking.tours.tour_date || ''}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-left text-xs font-medium text-red-600 underline decoration-red-400/80 underline-offset-2 hover:text-red-800"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLinkTourModalBooking(booking);
+                    }}
+                  >
+                    {locale.startsWith('en') ? 'Not linked · link' : '미연결 · 연결'}
+                  </button>
+                )}
+              </FormField>
+              <FormField label={formLabel('예약자', 'Reservation name')}>
+                <span className="font-medium break-words text-gray-900">{booking.reservation_name || '—'}</span>
+              </FormField>
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
           <span className="text-gray-500">날짜</span>
           <span className="font-medium">{booking.check_in_date ? new Date(booking.check_in_date).toISOString().split('T')[0] : '-'}</span>
@@ -2880,6 +3264,7 @@ export default function TicketBookingList() {
             </button>
           )}
         </div>
+        )}
         <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
           <button
             type="button"
@@ -2922,6 +3307,627 @@ export default function TicketBookingList() {
       </div>
     );
   };
+
+  const renderTicketDesktopTableThead = useCallback(
+    (opts?: { interactiveSort?: boolean }) => {
+      const interactive = opts?.interactiveSort !== false;
+      const sortableTh =
+        'px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ' +
+        (interactive ? 'cursor-pointer hover:bg-gray-100 select-none' : '');
+      return (
+        <thead className="bg-gray-50">
+          <tr className="align-middle">
+            <th
+              className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10"
+              title={t('ticketTableStatusThHintSummary')}
+            >
+              상태
+            </th>
+            <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[7rem] leading-tight">
+              벤더
+            </th>
+            <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[6rem] leading-tight">
+              결제
+            </th>
+            <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[14rem] leading-tight">
+              환불·크레딧
+            </th>
+            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              공급업체
+            </th>
+            <th className={sortableTh} onClick={interactive ? () => handleSort('date') : undefined}>
+              <div className="flex items-center space-x-1">
+                <span>날짜</span>
+                {interactive && sortField === 'date' && (
+                  <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </div>
+            </th>
+            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">시간</th>
+            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">수량</th>
+            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Cancel Due
+            </th>
+            <th
+              className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              title="(비용 − 수입) ÷ 수량"
+            >
+              EA 금액
+            </th>
+            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              비용(USD)
+            </th>
+            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              수입(USD)
+            </th>
+            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              RN#
+            </th>
+            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              결제방법
+            </th>
+            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Zelle 확인#
+            </th>
+            <th className="hidden lg:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Zelle 첨부
+            </th>
+            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CC</th>
+            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              투어연결
+            </th>
+            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              투어총인원
+            </th>
+            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Invoice#
+            </th>
+            <th className="hidden md:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              첨부
+            </th>
+            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
+            <th className={sortableTh} onClick={interactive ? () => handleSort('submit_on') : undefined}>
+              <div className="flex items-center space-x-1">
+                <span>제출일</span>
+                {interactive && sortField === 'submit_on' && (
+                  <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </div>
+            </th>
+            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              예약자
+            </th>
+          </tr>
+        </thead>
+      );
+    },
+    [t, sortField, sortDirection, handleSort]
+  );
+
+  const renderDesktopRow = (booking: TicketBooking, rnRowStripe = '', cancelDueColorMap: Map<string, string>) => {
+    const cancelDueDateRow = getCancelDueDate(booking);
+    const bgColor = cancelDueDateRow 
+      ? (cancelDueColorMap.get(cancelDueDateRow) || 'bg-white')
+      : 'bg-white';
+    const dueBgIdx = TICKET_TABLE_CANCEL_DUE_BG.indexOf(bgColor as (typeof TICKET_TABLE_CANCEL_DUE_BG)[number]);
+    const hoverColor = cancelDueDateRow
+      ? (dueBgIdx >= 0 ? TICKET_TABLE_CANCEL_DUE_HOVER[dueBgIdx] : 'hover:bg-gray-50')
+      : 'hover:bg-gray-50';
+    const supplierStyle = ticketBookingSupplierColors(booking.company);
+
+    const bookingStatusBadge = (
+      <span
+        ref={(el) => {
+          const key = `${booking.id}:booking`;
+          if (el) {
+            axisBadgeRefs.current.set(key, el);
+          } else {
+            axisBadgeRefs.current.delete(key);
+          }
+        }}
+        className={`inline-flex max-w-full min-h-[1.625rem] items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleAxisDropdown(booking.id, 'booking');
+        }}
+        title={
+          locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
+        }
+      >
+        <TicketBookingBookingStatusIcon
+          status={booking.booking_status}
+          className="h-3.5 w-3.5 shrink-0"
+          title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+        />
+        <span className="truncate">
+          {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+        </span>
+      </span>
+    );
+
+    const vendorStatusBadge = (
+      <span
+        ref={(el) => {
+          const key = `${booking.id}:vendor`;
+          if (el) {
+            axisBadgeRefs.current.set(key, el);
+          } else {
+            axisBadgeRefs.current.delete(key);
+          }
+        }}
+        className={`inline-flex max-w-full min-h-[1.625rem] items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleAxisDropdown(booking.id, 'vendor');
+        }}
+        title={
+          locale === 'ko'
+            ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
+            : 'Change vendor status'
+        }
+      >
+        <TicketBookingVendorStatusIcon
+          status={booking.vendor_status}
+          className="h-3.5 w-3.5 shrink-0"
+          title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+        />
+        <span className="truncate">
+          {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+        </span>
+      </span>
+    );
+
+    const axisDropdownPortal = renderTicketBookingAxisDropdownPortal(booking);
+
+    return (
+      <tr
+        key={booking.id}
+        className={`align-middle ${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''}`}
+        style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
+      >
+    <td
+      className={`align-middle px-2.5 py-2 text-xs sticky left-0 ${bgColor} z-10 ${rnRowStripe} max-w-[12rem]`}
+    >
+      <div className="relative z-50 space-y-1.5 px-0.5 py-0.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {bookingStatusBadge}
+          {showChangeRequestButton(booking) ? (
+            <button
+              type="button"
+              className="inline-flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-full border border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+              disabled={workflowActionSavingId === booking.id}
+              title={
+                locale === 'ko' ? '수량·시간 변경 요청' : 'Request quantity/time change'
+              }
+              aria-label={
+                locale === 'ko' ? '수량·시간 변경 요청' : 'Request quantity/time change'
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                setChangeModalBooking(booking);
+              }}
+            >
+              <PencilLine className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+            </button>
+          ) : null}
+        </div>
+        {!isWorkflowInitialPhase(booking) &&
+        String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
+          <div className="px-0.5">
+            <span
+              className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
+            >
+              {formatTicketBookingAxisLabel(
+                tTbAxis,
+                'change',
+                booking.change_status
+              )}
+            </span>
+          </div>
+        ) : null}
+        {axisDropdownPortal}
+      </div>
+    </td>
+    <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[9rem]">
+      <div className="relative z-40">{vendorStatusBadge}</div>
+      {showVendorInitialActions(booking) ? (
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
+            disabled={workflowActionSavingId === booking.id}
+            title={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
+            aria-label={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setVendorConfirmModalBooking(booking);
+            }}
+          >
+            <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
+            disabled={workflowActionSavingId === booking.id}
+            title={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
+            aria-label={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
+            onClick={(e) => {
+              e.stopPropagation();
+              void runWorkflowRpc(booking, 'workflow_vendor_reject_initial');
+            }}
+          >
+            <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+          </button>
+        </div>
+      ) : null}
+      {showVendorChangeActions(booking) ? (
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
+            disabled={workflowActionSavingId === booking.id}
+            title={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
+            aria-label={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
+            onClick={(e) => {
+              e.stopPropagation();
+              void runWorkflowRpc(booking, 'workflow_vendor_confirm_change');
+            }}
+          >
+            <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
+            disabled={workflowActionSavingId === booking.id}
+            title={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
+            aria-label={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
+            onClick={(e) => {
+              e.stopPropagation();
+              void runWorkflowRpc(booking, 'workflow_vendor_reject_change');
+            }}
+          >
+            <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+          </button>
+        </div>
+      ) : null}
+    </td>
+    <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[7rem]">
+      {isWorkflowInitialPhase(booking) ? (
+        <span className="text-gray-400">—</span>
+      ) : String(booking.payment_status ?? '').toLowerCase() === 'paid' ? (
+        <div>
+          <div className="font-bold text-emerald-800">결제 완료</div>
+          <div className="text-gray-600 tabular-nums">
+            ${booking.paid_amount ?? booking.expense ?? '—'}
+          </div>
+        </div>
+      ) : showPaymentCompleteButton(booking) ? (
+        <button
+          type="button"
+          className="inline-flex h-[1.625rem] min-w-[2.25rem] items-center justify-center rounded-full border border-emerald-600 bg-emerald-50 px-2 text-[11px] font-bold tabular-nums tracking-tight text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+          disabled={workflowActionSavingId === booking.id}
+          title={locale === 'ko' ? '결제 입력' : 'Enter payment'}
+          aria-label={locale === 'ko' ? '결제 입력' : 'Enter payment'}
+          onClick={(e) => {
+            e.stopPropagation();
+            setPaymentModalBooking(booking);
+          }}
+        >
+          +$
+        </button>
+      ) : (
+        <span
+          className="inline-flex h-[1.625rem] min-w-[2.25rem] items-center justify-center text-[11px] font-semibold tabular-nums tracking-tight text-gray-400"
+          title={locale === 'ko' ? '결제 전' : 'Unpaid'}
+        >
+          +$
+        </span>
+      )}
+    </td>
+    <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[14rem]">
+      {isWorkflowInitialPhase(booking) ? (
+        <span className="text-gray-400">—</span>
+      ) : (
+        <div className="space-y-1">
+          {(refundLinesByBookingId[booking.id] ?? []).map((line) => (
+            <div
+              key={line.id}
+              className="rounded border border-gray-200 bg-gray-50/90 px-1 py-0.5"
+            >
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="font-medium text-gray-800">
+                  {refundLineStatusLabel(line.status)}
+                </span>
+                <select
+                  className="max-w-[6rem] rounded border border-gray-300 bg-white px-0.5 py-px text-[9px]"
+                  value={line.status}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    void updateRefundLineStatus(line.id, e.target.value);
+                  }}
+                >
+                  <option value="requested">환불 요청</option>
+                  <option value="rejected">환불 거절</option>
+                  <option value="refunded">환불 완료</option>
+                  <option value="credit_received">크레딧 받음</option>
+                </select>
+              </div>
+              <div className="text-[9px] text-gray-600 tabular-nums">
+                금액 ${line.amount ?? '—'} · 수량 {line.ea ?? '—'}
+              </div>
+            </div>
+          ))}
+          {showRefundLineManagement(booking) ? (
+            <button
+              type="button"
+              className="rounded border border-dashed border-gray-400 px-1.5 py-0.5 text-[9px] text-gray-700 hover:bg-gray-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                void addRefundLineForBooking(booking);
+              }}
+            >
+              + 환불 건 추가
+            </button>
+          ) : null}
+        </div>
+      )}
+    </td>
+    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
+      <span
+        className="inline-block max-w-[12rem] truncate rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-black/10"
+        style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+      >
+        {booking.company}
+      </span>
+    </td>
+    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900">
+        {booking.check_in_date 
+          ? new Date(booking.check_in_date).toISOString().split('T')[0]
+          : '-'}
+      </div>
+    </td>
+    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
+      <div
+        className={
+          ticketBookingPendingTimeDiffers(booking)
+            ? 'font-semibold text-red-600'
+            : 'text-gray-900'
+        }
+      >
+        {formatTimeArrow(booking)}
+      </div>
+    </td>
+    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
+      <div
+        className={
+          ticketBookingPendingQtyDiffers(booking)
+            ? 'font-semibold text-red-600'
+            : 'font-medium text-gray-900'
+        }
+      >
+        {formatQtyArrow(booking)}
+      </div>
+    </td>
+    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900">
+        {(() => {
+          const cancelDueDate = getCancelDueDate(booking);
+          if (!cancelDueDate) return '-';
+          
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const dueDate = new Date(cancelDueDate);
+          dueDate.setHours(0, 0, 0, 0);
+          
+          // 취소 기한이 지났으면 빨간색으로 표시
+          const isOverdue = dueDate < today;
+          
+          return (
+            <span className={isOverdue ? 'text-red-600 font-semibold' : ''}>
+              {cancelDueDate}
+            </span>
+          );
+        })()}
+      </div>
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div
+        className={
+          ticketBookingPendingExpenseDiffers(booking)
+            ? 'font-semibold text-red-600 tabular-nums'
+            : 'text-gray-900 tabular-nums'
+        }
+        title="(비용 − 수입) ÷ 수량"
+      >
+        {formatEaMarginUsdArrow(booking)}
+      </div>
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div
+        className={
+          ticketBookingPendingExpenseDiffers(booking)
+            ? 'font-semibold text-red-600'
+            : 'text-gray-900'
+        }
+      >
+        {formatExpenseArrow(booking)}
+      </div>
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900">${booking.income || '-'}</div>
+    </td>
+    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900">{booking.rn_number || '-'}</div>
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900">{getPaymentMethodText(booking.payment_method) || '-'}</div>
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs max-w-[10rem]">
+      <div className="truncate text-gray-900" title={booking.zelle_confirmation_number?.trim() || ''}>
+        {booking.zelle_confirmation_number?.trim() || '—'}
+      </div>
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          openZelleAttachmentView(booking);
+        }}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-emerald-700"
+        title="Zelle 확인 스크린샷"
+      >
+        {(() => {
+          const inv = booking.invoice_number?.trim();
+          const has =
+            inv &&
+            (zelleAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
+          return has ? (
+            <Paperclip className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+          ) : (
+            <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+          );
+        })()}
+      </button>
+    </td>
+    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc ?? '')}`}>
+        {getCCStatusText(booking.cc ?? '')}
+      </span>
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      {booking.tours && booking.tour_id ? (
+        <div 
+          className="text-gray-900 text-xs cursor-pointer hover:text-blue-600 hover:underline transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleTourClick(booking.tour_id!);
+          }}
+          title="투어 상세 보기"
+        >
+          {getProductName(booking.tours.products)} {booking.tours.tour_date || ''}
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="text-left text-xs font-medium text-red-600 underline decoration-red-400/80 underline-offset-2 hover:text-red-800"
+          onClick={(e) => {
+            e.stopPropagation();
+            setLinkTourModalBooking(booking);
+          }}
+          title={locale === 'ko' ? '투어 선택·연결' : 'Select and link a tour'}
+        >
+          미연결
+        </button>
+      )}
+    </td>
+    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900 tabular-nums">
+        {booking.tours && booking.tour_id
+          ? `${booking.tours.total_people ?? 0}명`
+          : '-'}
+      </div>
+    </td>
+    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          openInvoiceQuickModal(booking);
+        }}
+        className={`text-left w-full min-w-[3rem] rounded px-1 py-0.5 hover:bg-gray-100 ${
+          booking.invoice_number?.trim() ? 'text-gray-900' : 'text-gray-400'
+        }`}
+        title="Invoice # 입력·수정"
+      >
+        {booking.invoice_number?.trim() || '-'}
+      </button>
+    </td>
+    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          openInvoiceAttachmentView(booking);
+        }}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-blue-700"
+        title="Invoice 인보이스 사진"
+      >
+        {(() => {
+          const inv = booking.invoice_number?.trim();
+          const has =
+            inv &&
+            (invoiceAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
+          return has ? (
+            <Paperclip className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />
+          ) : (
+            <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+          );
+        })()}
+      </button>
+    </td>
+    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="flex flex-wrap items-center gap-0.5 relative z-20">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleEdit(booking);
+          }}
+          className="px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors relative z-20"
+          title="편집"
+        >
+          편집
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleViewHistory(booking.id);
+          }}
+          className="px-1.5 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors relative z-20"
+          title="히스토리"
+        >
+          히스토리
+        </button>
+        {canSuperDeleteTicketBooking ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void handleDelete(booking.id);
+            }}
+            className="px-1.5 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors relative z-20"
+            title="삭제 (SUPER)"
+          >
+            삭제
+          </button>
+        ) : null}
+      </div>
+    </td>
+    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900">
+        {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
+      </div>
+    </td>
+    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+      <div className="text-gray-900">
+        {(() => {
+          const submittedByEmail = booking.submitted_by?.toLowerCase() || '';
+          const nameKo = teamMemberMap.get(submittedByEmail);
+          // team 테이블에서 name_ko를 찾으면 표시, 없으면 submitted_by 이메일 표시
+          return nameKo || booking.submitted_by || '-';
+        })()}
+      </div>
+    </td>
+      </tr>
+    );
+  };
+
 
   if (loading) {
     return (
@@ -3007,7 +4013,10 @@ export default function TicketBookingList() {
             <span>{t('bulkAddBookings')}</span>
           </button>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setEditingBooking(null);
+              setShowForm(true);
+            }}
             className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0"
           >
             <Plus size={16} />
@@ -3225,658 +4234,11 @@ export default function TicketBookingList() {
               {/* 데스크톱 테이블 */}
               <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr className="align-middle">
-                    <th
-                      className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10"
-                      title={t('ticketTableStatusThHintSummary')}
-                    >
-                      상태
-                    </th>
-                    <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[7rem] leading-tight">
-                      벤더
-                    </th>
-                    <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[6rem] leading-tight">
-                      결제
-                    </th>
-                    <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[14rem] leading-tight">
-                      환불·크레딧
-                    </th>
-                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      공급업체
-                    </th>
-                    <th 
-                      className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => handleSort('date')}
-                    >
-                      <div className="flex items-center space-x-1">
-                        <span>날짜</span>
-                        {sortField === 'date' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      시간
-                    </th>
-                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      수량
-                    </th>
-                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Cancel Due
-                    </th>
-                    <th
-                      className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      title="(비용 − 수입) ÷ 수량"
-                    >
-                      EA 금액
-                    </th>
-                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      비용(USD)
-                    </th>
-                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      수입(USD)
-                    </th>
-                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      RN#
-                    </th>
-                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      결제방법
-                    </th>
-                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Zelle 확인#
-                    </th>
-                    <th className="hidden lg:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Zelle 첨부
-                    </th>
-                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CC
-                    </th>
-                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      투어연결
-                    </th>
-                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      투어총인원
-                    </th>
-                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Invoice#
-                    </th>
-                    <th className="hidden md:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      첨부
-                    </th>
-                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      액션
-                    </th>
-                    <th 
-                      className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => handleSort('submit_on')}
-                    >
-                      <div className="flex items-center space-x-1">
-                        <span>제출일</span>
-                        {sortField === 'submit_on' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      예약자
-                    </th>
-                  </tr>
-                </thead>
+                {renderTicketDesktopTableThead()}
                 <tbody className="bg-white divide-y divide-gray-200">
                   {(() => {
                     // Cancel Due 날짜별로 그룹화하여 배경색 매핑 생성
-                    const cancelDueColorMap = new Map<string, string>();
-                    const backgroundColors = [
-                      'bg-white',
-                      'bg-blue-50',
-                      'bg-green-50',
-                      'bg-yellow-50',
-                      'bg-purple-50',
-                      'bg-pink-50',
-                      'bg-indigo-50',
-                      'bg-cyan-50',
-                    ];
-                    const hoverColors = [
-                      'hover:bg-gray-50',
-                      'hover:bg-blue-100',
-                      'hover:bg-green-100',
-                      'hover:bg-yellow-100',
-                      'hover:bg-purple-100',
-                      'hover:bg-pink-100',
-                      'hover:bg-indigo-100',
-                      'hover:bg-cyan-100',
-                    ];
-                    
-                    let colorIndex = 0;
-                    const usedDates = new Set<string>();
-                    
-                    // sortedBookings를 순회하면서 각 booking의 Cancel Due 날짜에 색상 할당
-                    sortedBookings.forEach((booking) => {
-                      const cancelDueDate = getCancelDueDate(booking);
-                      if (cancelDueDate && !usedDates.has(cancelDueDate)) {
-                        cancelDueColorMap.set(cancelDueDate, backgroundColors[colorIndex % backgroundColors.length]);
-                        usedDates.add(cancelDueDate);
-                        colorIndex++;
-                      }
-                    });
-                    
-                    const renderDesktopRow = (booking: TicketBooking, rnRowStripe = '') => {
-                      const cancelDueDateRow = getCancelDueDate(booking);
-                      const bgColor = cancelDueDateRow 
-                        ? (cancelDueColorMap.get(cancelDueDateRow) || 'bg-white')
-                        : 'bg-white';
-                      const hoverColor = cancelDueDateRow
-                        ? (hoverColors[backgroundColors.indexOf(bgColor)] || 'hover:bg-gray-50')
-                        : 'hover:bg-gray-50';
-                      const supplierStyle = ticketBookingSupplierColors(booking.company);
-
-                      const bookingStatusBadge = (
-                        <span
-                          ref={(el) => {
-                            const key = `${booking.id}:booking`;
-                            if (el) {
-                              axisBadgeRefs.current.set(key, el);
-                            } else {
-                              axisBadgeRefs.current.delete(key);
-                            }
-                          }}
-                          className={`inline-flex max-w-full min-h-[1.625rem] items-center px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleAxisDropdown(booking.id, 'booking');
-                          }}
-                          title={
-                            locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
-                          }
-                        >
-                          <span className="truncate">
-                            {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-                          </span>
-                        </span>
-                      );
-
-                      const vendorStatusBadge = (
-                        <span
-                          ref={(el) => {
-                            const key = `${booking.id}:vendor`;
-                            if (el) {
-                              axisBadgeRefs.current.set(key, el);
-                            } else {
-                              axisBadgeRefs.current.delete(key);
-                            }
-                          }}
-                          className={`inline-flex max-w-full min-h-[1.625rem] items-center px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleAxisDropdown(booking.id, 'vendor');
-                          }}
-                          title={
-                            locale === 'ko'
-                              ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
-                              : 'Change vendor status'
-                          }
-                        >
-                          <span className="truncate">
-                            {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-                          </span>
-                        </span>
-                      );
-
-                      const axisDropdownPortal = renderTicketBookingAxisDropdownPortal(booking);
-
-                      return (
-                        <tr
-                          key={booking.id}
-                          className={`align-middle ${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''}`}
-                          style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
-                        >
-                      <td
-                        className={`align-middle px-2.5 py-2 text-xs sticky left-0 ${bgColor} z-10 ${rnRowStripe} max-w-[12rem]`}
-                      >
-                        <div className="relative z-50 space-y-1.5 px-0.5 py-0.5">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {bookingStatusBadge}
-                            {showChangeRequestButton(booking) ? (
-                              <button
-                                type="button"
-                                className="inline-flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-full border border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 disabled:opacity-50"
-                                disabled={workflowActionSavingId === booking.id}
-                                title={
-                                  locale === 'ko' ? '수량·시간 변경 요청' : 'Request quantity/time change'
-                                }
-                                aria-label={
-                                  locale === 'ko' ? '수량·시간 변경 요청' : 'Request quantity/time change'
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setChangeModalBooking(booking);
-                                }}
-                              >
-                                <PencilLine className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
-                              </button>
-                            ) : null}
-                          </div>
-                          {!isWorkflowInitialPhase(booking) &&
-                          String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
-                            <div className="px-0.5">
-                              <span
-                                className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
-                              >
-                                {formatTicketBookingAxisLabel(
-                                  tTbAxis,
-                                  'change',
-                                  booking.change_status
-                                )}
-                              </span>
-                            </div>
-                          ) : null}
-                          {axisDropdownPortal}
-                        </div>
-                      </td>
-                      <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[9rem]">
-                        <div className="relative z-40">{vendorStatusBadge}</div>
-                        {showVendorInitialActions(booking) ? (
-                          <div className="mt-1 flex flex-wrap items-center gap-1">
-                            <button
-                              type="button"
-                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
-                              disabled={workflowActionSavingId === booking.id}
-                              title={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
-                              aria-label={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setVendorConfirmModalBooking(booking);
-                              }}
-                            >
-                              <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
-                              disabled={workflowActionSavingId === booking.id}
-                              title={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
-                              aria-label={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void runWorkflowRpc(booking, 'workflow_vendor_reject_initial');
-                              }}
-                            >
-                              <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-                            </button>
-                          </div>
-                        ) : null}
-                        {showVendorChangeActions(booking) ? (
-                          <div className="mt-1 flex flex-wrap items-center gap-1">
-                            <button
-                              type="button"
-                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
-                              disabled={workflowActionSavingId === booking.id}
-                              title={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
-                              aria-label={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void runWorkflowRpc(booking, 'workflow_vendor_confirm_change');
-                              }}
-                            >
-                              <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
-                              disabled={workflowActionSavingId === booking.id}
-                              title={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
-                              aria-label={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void runWorkflowRpc(booking, 'workflow_vendor_reject_change');
-                              }}
-                            >
-                              <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-                            </button>
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[7rem]">
-                        {isWorkflowInitialPhase(booking) ? (
-                          <span className="text-gray-400">—</span>
-                        ) : String(booking.payment_status ?? '').toLowerCase() === 'paid' ? (
-                          <div>
-                            <div className="font-bold text-emerald-800">결제 완료</div>
-                            <div className="text-gray-600 tabular-nums">
-                              ${booking.paid_amount ?? booking.expense ?? '—'}
-                            </div>
-                          </div>
-                        ) : showPaymentCompleteButton(booking) ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-[1.625rem] min-w-[2.25rem] items-center justify-center rounded-full border border-emerald-600 bg-emerald-50 px-2 text-[11px] font-bold tabular-nums tracking-tight text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
-                            disabled={workflowActionSavingId === booking.id}
-                            title={locale === 'ko' ? '결제 입력' : 'Enter payment'}
-                            aria-label={locale === 'ko' ? '결제 입력' : 'Enter payment'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPaymentModalBooking(booking);
-                            }}
-                          >
-                            +$
-                          </button>
-                        ) : (
-                          <span
-                            className="inline-flex h-[1.625rem] min-w-[2.25rem] items-center justify-center text-[11px] font-semibold tabular-nums tracking-tight text-gray-400"
-                            title={locale === 'ko' ? '결제 전' : 'Unpaid'}
-                          >
-                            +$
-                          </span>
-                        )}
-                      </td>
-                      <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[14rem]">
-                        {isWorkflowInitialPhase(booking) ? (
-                          <span className="text-gray-400">—</span>
-                        ) : (
-                          <div className="space-y-1">
-                            {(refundLinesByBookingId[booking.id] ?? []).map((line) => (
-                              <div
-                                key={line.id}
-                                className="rounded border border-gray-200 bg-gray-50/90 px-1 py-0.5"
-                              >
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span className="font-medium text-gray-800">
-                                    {refundLineStatusLabel(line.status)}
-                                  </span>
-                                  <select
-                                    className="max-w-[6rem] rounded border border-gray-300 bg-white px-0.5 py-px text-[9px]"
-                                    value={line.status}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => {
-                                      void updateRefundLineStatus(line.id, e.target.value);
-                                    }}
-                                  >
-                                    <option value="requested">환불 요청</option>
-                                    <option value="rejected">환불 거절</option>
-                                    <option value="refunded">환불 완료</option>
-                                    <option value="credit_received">크레딧 받음</option>
-                                  </select>
-                                </div>
-                                <div className="text-[9px] text-gray-600 tabular-nums">
-                                  금액 ${line.amount ?? '—'} · 수량 {line.ea ?? '—'}
-                                </div>
-                              </div>
-                            ))}
-                            {showRefundLineManagement(booking) ? (
-                              <button
-                                type="button"
-                                className="rounded border border-dashed border-gray-400 px-1.5 py-0.5 text-[9px] text-gray-700 hover:bg-gray-100"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void addRefundLineForBooking(booking);
-                                }}
-                              >
-                                + 환불 건 추가
-                              </button>
-                            ) : null}
-                          </div>
-                        )}
-                      </td>
-                      <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-                        <span
-                          className="inline-block max-w-[12rem] truncate rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-black/10"
-                          style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
-                        >
-                          {booking.company}
-                        </span>
-                      </td>
-                      <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">
-                          {booking.check_in_date 
-                            ? new Date(booking.check_in_date).toISOString().split('T')[0]
-                            : '-'}
-                        </div>
-                      </td>
-                      <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div
-                          className={
-                            ticketBookingPendingTimeDiffers(booking)
-                              ? 'font-semibold text-red-600'
-                              : 'text-gray-900'
-                          }
-                        >
-                          {formatTimeArrow(booking)}
-                        </div>
-                      </td>
-                      <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div
-                          className={
-                            ticketBookingPendingQtyDiffers(booking)
-                              ? 'font-semibold text-red-600'
-                              : 'font-medium text-gray-900'
-                          }
-                        >
-                          {formatQtyArrow(booking)}
-                        </div>
-                      </td>
-                      <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">
-                          {(() => {
-                            const cancelDueDate = getCancelDueDate(booking);
-                            if (!cancelDueDate) return '-';
-                            
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            const dueDate = new Date(cancelDueDate);
-                            dueDate.setHours(0, 0, 0, 0);
-                            
-                            // 취소 기한이 지났으면 빨간색으로 표시
-                            const isOverdue = dueDate < today;
-                            
-                            return (
-                              <span className={isOverdue ? 'text-red-600 font-semibold' : ''}>
-                                {cancelDueDate}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div
-                          className={
-                            ticketBookingPendingExpenseDiffers(booking)
-                              ? 'font-semibold text-red-600 tabular-nums'
-                              : 'text-gray-900 tabular-nums'
-                          }
-                          title="(비용 − 수입) ÷ 수량"
-                        >
-                          {formatEaMarginUsdArrow(booking)}
-                        </div>
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div
-                          className={
-                            ticketBookingPendingExpenseDiffers(booking)
-                              ? 'font-semibold text-red-600'
-                              : 'text-gray-900'
-                          }
-                        >
-                          {formatExpenseArrow(booking)}
-                        </div>
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">${booking.income || '-'}</div>
-                      </td>
-                      <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">{booking.rn_number || '-'}</div>
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">{getPaymentMethodText(booking.payment_method) || '-'}</div>
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs max-w-[10rem]">
-                        <div className="truncate text-gray-900" title={booking.zelle_confirmation_number?.trim() || ''}>
-                          {booking.zelle_confirmation_number?.trim() || '—'}
-                        </div>
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openZelleAttachmentView(booking);
-                          }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-emerald-700"
-                          title="Zelle 확인 스크린샷"
-                        >
-                          {(() => {
-                            const inv = booking.invoice_number?.trim();
-                            const has =
-                              inv &&
-                              (zelleAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
-                            return has ? (
-                              <Paperclip className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
-                            ) : (
-                              <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
-                            );
-                          })()}
-                        </button>
-                      </td>
-                      <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc ?? '')}`}>
-                          {getCCStatusText(booking.cc ?? '')}
-                        </span>
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        {booking.tours && booking.tour_id ? (
-                          <div 
-                            className="text-gray-900 text-xs cursor-pointer hover:text-blue-600 hover:underline transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleTourClick(booking.tour_id!);
-                            }}
-                            title="투어 상세 보기"
-                          >
-                            {getProductName(booking.tours.products)} {booking.tours.tour_date || ''}
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="text-left text-xs font-medium text-red-600 underline decoration-red-400/80 underline-offset-2 hover:text-red-800"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setLinkTourModalBooking(booking);
-                            }}
-                            title={locale === 'ko' ? '투어 선택·연결' : 'Select and link a tour'}
-                          >
-                            미연결
-                          </button>
-                        )}
-                      </td>
-                      <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900 tabular-nums">
-                          {booking.tours && booking.tour_id
-                            ? `${booking.tours.total_people ?? 0}명`
-                            : '-'}
-                        </div>
-                      </td>
-                      <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openInvoiceQuickModal(booking);
-                          }}
-                          className={`text-left w-full min-w-[3rem] rounded px-1 py-0.5 hover:bg-gray-100 ${
-                            booking.invoice_number?.trim() ? 'text-gray-900' : 'text-gray-400'
-                          }`}
-                          title="Invoice # 입력·수정"
-                        >
-                          {booking.invoice_number?.trim() || '-'}
-                        </button>
-                      </td>
-                      <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openInvoiceAttachmentView(booking);
-                          }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-blue-700"
-                          title="Invoice 인보이스 사진"
-                        >
-                          {(() => {
-                            const inv = booking.invoice_number?.trim();
-                            const has =
-                              inv &&
-                              (invoiceAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
-                            return has ? (
-                              <Paperclip className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />
-                            ) : (
-                              <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
-                            );
-                          })()}
-                        </button>
-                      </td>
-                      <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="flex flex-wrap items-center gap-0.5 relative z-20">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleEdit(booking);
-                            }}
-                            className="px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors relative z-20"
-                            title="편집"
-                          >
-                            편집
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleViewHistory(booking.id);
-                            }}
-                            className="px-1.5 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors relative z-20"
-                            title="히스토리"
-                          >
-                            히스토리
-                          </button>
-                          {canSuperDeleteTicketBooking ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void handleDelete(booking.id);
-                              }}
-                              className="px-1.5 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors relative z-20"
-                              title="삭제 (SUPER)"
-                            >
-                              삭제
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">
-                          {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
-                        </div>
-                      </td>
-                      <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-                        <div className="text-gray-900">
-                          {(() => {
-                            const submittedByEmail = booking.submitted_by?.toLowerCase() || '';
-                            const nameKo = teamMemberMap.get(submittedByEmail);
-                            // team 테이블에서 name_ko를 찾으면 표시, 없으면 submitted_by 이메일 표시
-                            return nameKo || booking.submitted_by || '-';
-                          })()}
-                        </div>
-                      </td>
-                        </tr>
-                      );
-                    };
+                    const cancelDueColorMap = buildCancelDueColorMapFor(sortedBookings);
 
                     if (ticketTableLayout === 'byRn') {
                       return buildTicketRnGroups(pagedSortedBookings).flatMap((g, gi) => {
@@ -3904,13 +4266,13 @@ export default function TicketBookingList() {
                                 </span>
                               </td>
                             </tr>
-                            {g.rows.map((b) => renderDesktopRow(b, palette.rowStripe))}
+                            {g.rows.map((b) => renderDesktopRow(b, palette.rowStripe, cancelDueColorMap))}
                           </Fragment>
                         );
                         return nodes;
                       });
                     }
-                    return pagedSortedBookings.map((b) => renderDesktopRow(b));
+                    return pagedSortedBookings.map((b) => renderDesktopRow(b, '', cancelDueColorMap));
                   })()}
                 </tbody>
               </table>
@@ -4154,7 +4516,13 @@ export default function TicketBookingList() {
                                   {/* 부킹 정보 라벨 */}
                                   {dayBookings.length > 0 && (
                                     <div className="relative z-[11] space-y-0.5">
-                                      <div className="text-[10px] sm:text-xs text-blue-700 font-semibold leading-tight">
+                                      <div
+                                        className={`text-[10px] sm:text-xs font-semibold leading-tight ${
+                                          sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
+                                            ? 'text-red-600'
+                                            : 'text-blue-700'
+                                        }`}
+                                      >
                                         {t('tourPeopleReservationsSummary', {
                                           tourPeople: sumTourPeopleStartsToday,
                                           reservations: dayBookingsEaNonCancelled,
@@ -4250,6 +4618,28 @@ export default function TicketBookingList() {
                                                   />
                                                 )}
                                               </span>
+                                              <span
+                                                className="inline-flex shrink-0 items-center gap-px sm:gap-0.5"
+                                                title={[
+                                                  formatTicketBookingAxisLabel(tTbAxis, 'booking', firstBooking.booking_status),
+                                                  formatTicketBookingAxisLabel(tTbAxis, 'vendor', firstBooking.vendor_status),
+                                                ].join(' · ')}
+                                                aria-label={[
+                                                  formatTicketBookingAxisLabel(tTbAxis, 'booking', firstBooking.booking_status),
+                                                  formatTicketBookingAxisLabel(tTbAxis, 'vendor', firstBooking.vendor_status),
+                                                ].join(' · ')}
+                                              >
+                                                <TicketBookingBookingStatusIcon
+                                                  status={firstBooking.booking_status}
+                                                  className="h-2 w-2 sm:h-2.5 sm:w-2.5"
+                                                  title={formatTicketBookingAxisLabel(tTbAxis, 'booking', firstBooking.booking_status)}
+                                                />
+                                                <TicketBookingVendorStatusIcon
+                                                  status={firstBooking.vendor_status}
+                                                  className="h-2 w-2 sm:h-2.5 sm:w-2.5"
+                                                  title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', firstBooking.vendor_status)}
+                                                />
+                                              </span>
                                               <span className="shrink-0 font-semibold tabular-nums opacity-95">
                                                 {timeShort}
                                               </span>
@@ -4263,24 +4653,6 @@ export default function TicketBookingList() {
                                               <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-100 px-1 py-px text-[6px] sm:text-[9px] font-bold text-indigo-900 ring-1 ring-indigo-200/90">
                                                 {g.label === 'RN# 없음' ? '—' : g.label}
                                               </span>
-                                            </div>
-                                            <div className="mt-0.5 flex min-w-0 items-center justify-between gap-1 whitespace-normal">
-                                              <span className="min-w-0 truncate rounded bg-black/10 px-1 py-px text-[6px] sm:text-[8px] font-semibold leading-tight ring-1 ring-black/15">
-                                                {formatTicketBookingStatusLabel(firstBooking.status, t, locale)}
-                                              </span>
-                                              {g.rows.length === 1 ?
-                                                <button
-                                                  type="button"
-                                                  className="shrink-0 cursor-pointer rounded px-1 py-px text-[6px] sm:text-[8px] font-bold text-indigo-950 underline decoration-indigo-700/70 hover:bg-white/25"
-                                                  title={tTbActUi('axesEditorOpenButton')}
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setAxesDialogBooking(firstBooking);
-                                                  }}
-                                                >
-                                                  {tTbActUi('axesEditorChipShort')}
-                                                </button>
-                                              : null}
                                             </div>
                                           </div>
                                         );
@@ -4817,6 +5189,28 @@ export default function TicketBookingList() {
         onDelete={handleDelete}
         onActionApplied={() => {
           void fetchBookings();
+        }}
+        renderGroupDesktopTable={(groupRows) => {
+          const rb = groupRows as TicketBooking[];
+          const dueMap = buildCancelDueColorMapFor(rb);
+          return (
+            <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+              <table className="w-full min-w-[1100px] divide-y divide-gray-200">
+                {renderTicketDesktopTableThead({ interactiveSort: false })}
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {rb.map((b) => renderDesktopRow(b, '', dueMap))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }}
+        renderGroupCardBookings={(groupRows) => {
+          const rb = groupRows as TicketBooking[];
+          return (
+            <div className="mt-1 w-full space-y-4">
+              {rb.map((b) => renderTicketMobileCard(b, { variant: 'modalForm' }))}
+            </div>
+          );
         }}
       />
 

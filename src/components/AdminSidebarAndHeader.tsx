@@ -99,7 +99,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     Boolean(authUser?.email && userRole && userRole !== 'customer')
   )
   const [isSuper, setIsSuper] = useState(false)
-  
+  /** 예약 통계(통계 리포트) — Super·Manager */
+  const [canAccessReservationStatistics, setCanAccessReservationStatistics] = useState(false)
+
   // 출퇴근 동기화 훅 사용
   const {
     currentSession,
@@ -356,12 +358,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     const checkSuperPermission = async () => {
       if (!authUser?.email) {
         setIsSuper(false)
+        setCanAccessReservationStatistics(false)
         return
       }
 
       const emailLower = authUser.email.toLowerCase().trim()
       if (SUPER_ADMIN_EMAILS.some((e) => e.toLowerCase() === emailLower)) {
         setIsSuper(true)
+        setCanAccessReservationStatistics(true)
         return
       }
 
@@ -394,14 +398,19 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         
         if (error || !teamData) {
           setIsSuper(false)
+          setCanAccessReservationStatistics(false)
           return
         }
         
-        const position = (teamData as any).position?.toLowerCase()
-        setIsSuper(position === 'super')
+        const position = String((teamData as any).position ?? '').toLowerCase().trim()
+        const posSuper = position === 'super'
+        const posManager = position === 'manager'
+        setIsSuper(posSuper)
+        setCanAccessReservationStatistics(posSuper || posManager)
       } catch (error) {
         console.error('Super 권한 체크 오류:', error)
         setIsSuper(false)
+        setCanAccessReservationStatistics(false)
       }
     }
     
@@ -502,13 +511,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       : []),
     { name: tSidebar('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: tSidebar('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
-    // 예약 통계는 Super 권한만 표시
-    ...(isSuper
-      ? [
-          { name: tSidebar('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
-          { name: tSidebar('statementReconciliation'), href: `/${locale}/admin/statement-reconciliation`, icon: Landmark },
-        ]
+    // 예약 통계(통계 리포트): Super·Manager / 명세 대조: Super만
+    ...(canAccessReservationStatistics
+      ? [{ name: tSidebar('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }]
       : []),
+    ...(isSuper ? [{ name: tSidebar('statementReconciliation'), href: `/${locale}/admin/statement-reconciliation`, icon: Landmark }] : []),
     { name: tSidebar('expenseManagement'), href: `/${locale}/admin/expenses`, icon: DollarSign },
     { name: tSidebar('paidForLabelManagement'), href: `/${locale}/admin/company-expense-paid-for-labels`, icon: Tags },
     // 파트너 자금 관리 (info@maniatour.com만 표시)
