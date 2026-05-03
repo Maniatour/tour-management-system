@@ -1,11 +1,27 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useLocale, useTranslations } from 'next-intl';
-import { isTourCancelled } from '@/utils/tourStatusUtils';
+import {
+  TICKET_BOOKING_STATUS_VALUES,
+  formatTicketBookingStatusLabel,
+  normalizeTicketBookingStatusForSave,
+  normalizeTicketBookingStatusFromDb,
+} from '@/lib/ticketBookingStatus';
+import TicketBookingActionPanel from '@/components/booking/TicketBookingActionPanel';
+import {
+  axisSnapshotFromLegacyTicketBookingStatus,
+  deriveLegacyTicketBookingStatusFromAxes,
+  type TicketBookingAxisSnapshotRequired,
+} from '@/lib/ticketBookingLegacyAxisMap';
+import {
+  getTicketBookingTimeSelectOptions,
+  normalizeDbTimeToTicketSelectSlot,
+} from '@/lib/ticketBookingTimeSelect';
+import { fetchTicketToursForCheckIn } from '@/lib/ticketBookingToursForCheckIn';
 
 /** 원격 DB에 ticket_bookings.zelle_confirmation_number 가 아직 없을 때 PostgREST PGRST204 */
 function isMissingZelleConfirmationColumnError(err: unknown): boolean {
@@ -23,111 +39,6 @@ function isMissingZelleConfirmationColumnError(err: unknown): boolean {
  * (매 저장마다 400 → 재시도 PATCH가 나가는 것을 막음. 마이그레이션 적용 후에는 새로고침하면 다시 전송됨.)
  */
 let omitZelleConfirmationInTicketBookingsPayload = false;
-
-/** YYYY-MM-DD 기준으로 달력 일수 더하기 (DST 피하려고 정오 기준) */
-function addCalendarDays(isoDate: string, deltaDays: number): string {
-  const d = new Date(`${isoDate}T12:00:00`);
-  d.setDate(d.getDate() + deltaDays);
-  return d.toISOString().slice(0, 10);
-}
-
-/** 멀티데이 투어: 시작일이 체크인보다 이만큼 이전이면 DB 후보에 포함 */
-const TICKET_FORM_TOUR_LOOKBACK_DAYS = 45;
-
-function ymdFromDbDate(s: string | null | undefined): string {
-  if (!s) return '';
-  const m = String(s).trim().match(/^(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : '';
-}
-
-/** 타임스탬프 → 로컬 달력 YYYY-MM-DD (종료일 표시용) */
-function localYmdFromTimestamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${day}`;
-}
-
-/** 투어 달력 구간 [시작일, 종료일] (종료일 미입력 시 당일만) */
-function getTourCalendarEndYmd(tour: {
-  tour_date: string;
-  tour_end_datetime?: string | null;
-}): string {
-  const start = ymdFromDbDate(tour.tour_date);
-  if (!start) return '';
-  if (tour.tour_end_datetime) {
-    const end = localYmdFromTimestamp(String(tour.tour_end_datetime));
-    if (!end) return start;
-    if (end < start) return start;
-    return end;
-  }
-  return start;
-}
-
-/** 체크인 날짜(YYYY-MM-DD)가 투어 시작~종료 달력 구간 안에 있는지 */
-function checkInWithinTourCalendarSpan(
-  checkInYmd: string,
-  tour: { tour_date: string; tour_end_datetime?: string | null }
-): boolean {
-  const start = ymdFromDbDate(tour.tour_date);
-  const end = getTourCalendarEndYmd(tour);
-  if (!checkInYmd || !start || !end) return false;
-  return checkInYmd >= start && checkInYmd <= end;
-}
-
-function parseStaffEmails(raw: string | null | undefined): string[] {
-  if (!raw || typeof raw !== 'string') return [];
-  const parts = raw
-    .split(/[,，]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return [...new Set(parts)];
-}
-
-async function fetchTeamDisplayMap(
-  supabaseClient: typeof supabase,
-  emails: string[]
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (emails.length === 0) return map;
-  const chunkSize = 100;
-  for (let i = 0; i < emails.length; i += chunkSize) {
-    const chunk = emails.slice(i, i + chunkSize);
-    const { data, error } = await (supabaseClient as any)
-      .from('team')
-      .select('email, name_ko, nick_name, name_en')
-      .in('email', chunk);
-    if (error) {
-      console.warn('팀(가이드/어시) 이름 조회 경고:', error);
-      continue;
-    }
-    for (const row of (data || []) as Array<{
-      email: string;
-      name_ko?: string | null;
-      nick_name?: string | null;
-      name_en?: string | null;
-    }>) {
-      const display =
-        (row.nick_name && String(row.nick_name).trim()) ||
-        (row.name_ko && String(row.name_ko).trim()) ||
-        (row.name_en && String(row.name_en).trim()) ||
-        row.email;
-      map.set(row.email.toLowerCase(), display);
-    }
-  }
-  return map;
-}
-
-function staffFieldToDisplay(raw: string | null | undefined, teamMap: Map<string, string>): string {
-  const emails = parseStaffEmails(raw);
-  if (emails.length === 0) return '';
-  return emails
-    .map((e) => teamMap.get(e.toLowerCase()) || e.split('@')[0] || e)
-    .filter(Boolean)
-    .join(', ');
-}
 
 interface TicketBooking {
   id?: string;
@@ -154,6 +65,30 @@ interface TicketBooking {
   uploaded_file_urls?: string[]; // 업로드된 파일 URL들
   deletion_requested_at?: string | null;
   deletion_requested_by?: string | null;
+  booking_status?: string | null;
+  vendor_status?: string | null;
+  change_status?: string | null;
+  payment_status?: string | null;
+  refund_status?: string | null;
+  operation_status?: string | null;
+}
+
+function initialAxesForTicketBookingEdit(b?: TicketBooking): TicketBookingAxisSnapshotRequired | null {
+  if (!b?.id) return null;
+  const bs = b.booking_status;
+  if (bs != null && String(bs).trim() !== '') {
+    return {
+      booking_status: String(bs),
+      vendor_status: String(b.vendor_status ?? 'pending'),
+      change_status: String(b.change_status ?? 'none'),
+      payment_status: String(b.payment_status ?? 'not_due'),
+      refund_status: String(b.refund_status ?? 'none'),
+      operation_status: String(b.operation_status ?? 'none'),
+    };
+  }
+  return axisSnapshotFromLegacyTicketBookingStatus(
+    String(normalizeTicketBookingStatusFromDb(b.status ?? ''))
+  );
 }
 
 interface Supplier {
@@ -199,6 +134,7 @@ export default function TicketBookingForm({
   tourId 
 }: TicketBookingFormProps) {
   const t = useTranslations('booking.ticketBooking');
+  const tCal = useTranslations('booking.calendar');
   const locale = useLocale();
   const [formData, setFormData] = useState<TicketBooking>(() => {
     console.log('편집 모드 - 전달받은 booking 데이터:', booking);
@@ -219,45 +155,20 @@ export default function TicketBookingForm({
       tour_id: tourId || null,
       reservation_id: '',
       note: '',
-      status: 'tentative', // 가예약으로 기본값 변경
+      status: 'tentative',
       season: 'no', // 시즌 아님으로 기본값 변경
       uploaded_files: [], // 파일 업로드 필드 추가
       uploaded_file_urls: [] // 업로드된 파일 URL들
     };
 
     if (booking) {
-      // 시간 데이터를 드롭다운 옵션 형식으로 변환
-      const formatTimeForDropdown = (timeValue: string) => {
-        if (!timeValue) return '';
-        
-        // TIME 타입에서 가져온 데이터가 "HH:MM:SS" 형식일 수 있음
-        const timeStr = timeValue.toString();
-        const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-        
-        if (timeMatch) {
-          const hours = parseInt(timeMatch[1]);
-          const minutes = parseInt(timeMatch[2]);
-          
-          // 5분 단위로 반올림
-          const roundedMinutes = Math.round(minutes / 5) * 5;
-          
-          // 시간과 분을 2자리로 포맷
-          const formattedTime = `${hours.toString().padStart(2, '0')}:${roundedMinutes.toString().padStart(2, '0')}`;
-          
-          console.log('시간 변환:', timeValue, '->', formattedTime);
-          return formattedTime;
-        }
-        
-        return timeValue;
-      };
-
       const mergedData = {
         ...initialData,
         ...booking,
         // 명시적으로 각 필드를 설정하여 undefined 값 처리
         category: booking.category ?? initialData.category,
         check_in_date: booking.check_in_date ?? initialData.check_in_date,
-        time: formatTimeForDropdown(booking.time) ?? initialData.time,
+        time: normalizeDbTimeToTicketSelectSlot(booking.time) || initialData.time,
         company: booking.company ?? initialData.company,
         ea: booking.ea ?? initialData.ea,
         expense: booking.expense ?? initialData.expense,
@@ -272,7 +183,7 @@ export default function TicketBookingForm({
         tour_id: booking.tour_id ?? tourId ?? initialData.tour_id,
         reservation_id: booking.reservation_id ?? initialData.reservation_id,
         note: booking.note ?? initialData.note,
-        status: booking.status ?? initialData.status,
+        status: String(normalizeTicketBookingStatusFromDb(booking.status ?? '')),
         season: booking.season ?? initialData.season,
       };
       
@@ -282,6 +193,38 @@ export default function TicketBookingForm({
     
     return initialData;
   });
+
+  const [axisSnapshot, setAxisSnapshot] = useState<TicketBookingAxisSnapshotRequired | null>(() =>
+    initialAxesForTicketBookingEdit(booking)
+  );
+
+  useEffect(() => {
+    setAxisSnapshot(initialAxesForTicketBookingEdit(booking));
+  }, [booking?.id]);
+
+  const refreshAxesFromDb = useCallback(async (id: string) => {
+    const { data, error } = await supabase
+      .from('ticket_bookings')
+      .select(
+        'status, booking_status, vendor_status, change_status, payment_status, refund_status, operation_status'
+      )
+      .eq('id', id)
+      .maybeSingle();
+    if (error || !data) return;
+    const d = data as Record<string, unknown>;
+    setAxisSnapshot({
+      booking_status: String(d.booking_status ?? 'requested'),
+      vendor_status: String(d.vendor_status ?? 'pending'),
+      change_status: String(d.change_status ?? 'none'),
+      payment_status: String(d.payment_status ?? 'not_due'),
+      refund_status: String(d.refund_status ?? 'none'),
+      operation_status: String(d.operation_status ?? 'none'),
+    });
+    setFormData((prev) => ({
+      ...prev,
+      status: String(normalizeTicketBookingStatusFromDb(String(d.status ?? ''))),
+    }));
+  }, []);
 
   interface Tour {
     id: string;
@@ -442,91 +385,8 @@ export default function TicketBookingForm({
         setTours([]);
         return;
       }
-
-      const lookbackStart = addCalendarDays(checkInDate, -TICKET_FORM_TOUR_LOOKBACK_DAYS);
-
-      const { data: rangeData, error: rangeError } = await (supabase as any)
-        .from('tours')
-        .select(
-          'id, tour_date, tour_end_datetime, tour_status, product_id, tour_guide_id, assistant_id'
-        )
-        .lte('tour_date', checkInDate)
-        .gte('tour_date', lookbackStart)
-        .order('tour_date', { ascending: true });
-
-      if (rangeError) {
-        console.error('투어 목록 조회 오류:', rangeError);
-        throw rangeError;
-      }
-
-      let typedToursData = ((rangeData || []) as Tour[]).filter(
-        (t) =>
-          !isTourCancelled(t.tour_status) &&
-          checkInWithinTourCalendarSpan(String(checkInDate).trim(), t)
-      );
-      const idsInRange = new Set(typedToursData.map((x) => x.id));
-
-      if (tourIdToMerge && !idsInRange.has(tourIdToMerge)) {
-        const { data: extra, error: extraErr } = await (supabase as any)
-          .from('tours')
-          .select(
-            'id, tour_date, tour_end_datetime, tour_status, product_id, tour_guide_id, assistant_id'
-          )
-          .eq('id', tourIdToMerge)
-          .maybeSingle();
-        if (!extraErr && extra) {
-          typedToursData = [...typedToursData, extra as Tour];
-          typedToursData.sort((a, b) =>
-            String(a.tour_date).localeCompare(String(b.tour_date))
-          );
-        }
-      }
-
-      if (typedToursData.length === 0) {
-        setTours([]);
-        return;
-      }
-
-      const toursWithProductId = typedToursData.filter((tour: Tour) => tour.product_id);
-      const productIds = [
-        ...new Set(toursWithProductId.map((tour: Tour) => tour.product_id).filter(Boolean)),
-      ] as string[];
-
-      const productsMap = new Map<string, { id: string; name: string }>();
-      if (productIds.length > 0) {
-        const { data: productsData, error: productsError } = await (supabase as any)
-          .from('products')
-          .select('id, name')
-          .in('id', productIds);
-
-        if (productsError) {
-          console.warn('상품 정보 조회 오류:', productsError);
-        } else {
-          ((productsData || []) as Array<{ id: string; name: string }>).forEach((product) => {
-            productsMap.set(product.id, product);
-          });
-        }
-      }
-
-      const emailSet = new Set<string>();
-      for (const tour of typedToursData) {
-        parseStaffEmails(tour.tour_guide_id).forEach((e) => emailSet.add(e));
-        parseStaffEmails(tour.assistant_id).forEach((e) => emailSet.add(e));
-      }
-      const teamMap = await fetchTeamDisplayMap(supabase, [...emailSet]);
-
-      const toursWithProducts = typedToursData.map((tour: Tour) => {
-        const base: Tour = { ...tour };
-        if (tour.product_id && productsMap.has(tour.product_id)) {
-          const product = productsMap.get(tour.product_id)!;
-          base.products = { name: product.name };
-        }
-        base.guide_display = staffFieldToDisplay(tour.tour_guide_id, teamMap);
-        base.assistant_display = staffFieldToDisplay(tour.assistant_id, teamMap);
-        return base;
-      });
-
-      setTours(toursWithProducts);
+      const rows = await fetchTicketToursForCheckIn(supabase as any, checkInDate, tourIdToMerge);
+      setTours(rows as Tour[]);
     } catch (error) {
       console.error('투어 목록 조회 오류:', error);
     }
@@ -911,8 +771,29 @@ export default function TicketBookingForm({
       const zelleDb =
         formData.zelle_confirmation_number?.trim() ? formData.zelle_confirmation_number.trim() : null
 
+      const normalizedStatus = String(normalizeTicketBookingStatusForSave(formData.status));
+      /** 새 부킹: 예매 요청 · 벤더 응답 대기만 두고 나머지 축은 기본값 */
+      const axesForInsert = booking?.id
+        ? axisSnapshotFromLegacyTicketBookingStatus(normalizedStatus)
+        : {
+            booking_status: 'requested',
+            vendor_status: 'pending',
+            change_status: 'none',
+            payment_status: 'not_due',
+            refund_status: 'none',
+            operation_status: 'none',
+          };
+      const legacyForInsert = deriveLegacyTicketBookingStatusFromAxes(
+        axesForInsert.booking_status,
+        axesForInsert.vendor_status,
+        axesForInsert.change_status,
+        axesForInsert.payment_status,
+        axesForInsert.refund_status,
+        axesForInsert.operation_status
+      );
+
       // DB에 없는 필드(supplier_product_id, uploaded_files 등)를 제거한 payload만 전송 (400 방지)
-      const dbPayload = {
+      const dbPayloadBase = {
         category: formData.category,
         submitted_by: formData.submitted_by,
         check_in_date: formData.check_in_date,
@@ -930,38 +811,43 @@ export default function TicketBookingForm({
         tour_id: tourId,
         reservation_id: reservationId,
         note: formData.note || null,
-        status: formData.status,
         season: formData.season || null,
         uploaded_file_urls: mergedFileUrls.length ? mergedFileUrls : null
       };
 
-      console.log('전송할 데이터:', dbPayload);
+      const dbPayloadInsert = {
+        ...dbPayloadBase,
+        ...axesForInsert,
+        status: legacyForInsert,
+      };
+
+      console.log('전송할 데이터:', booking?.id ? dbPayloadBase : dbPayloadInsert);
 
       let error;
       let savedId: string | undefined;
+      let savedRow: Record<string, unknown> | undefined;
       if (booking?.id) {
-        // 수정인 경우 - DB 컬럼만 업데이트
+        // 수정인 경우 — 레거시 status·다축은 apply_ticket_booking_action 으로만 바꿈 (여기서는 제외)
         console.log('수정 모드 - ID:', booking.id);
         const updateData = {
-          category: dbPayload.category,
-          check_in_date: dbPayload.check_in_date,
-          time: dbPayload.time,
-          company: dbPayload.company,
-          ea: dbPayload.ea,
-          expense: dbPayload.expense,
-          income: dbPayload.income,
-          payment_method: dbPayload.payment_method,
-          rn_number: dbPayload.rn_number,
-          invoice_number: dbPayload.invoice_number,
+          category: dbPayloadBase.category,
+          check_in_date: dbPayloadBase.check_in_date,
+          time: dbPayloadBase.time,
+          company: dbPayloadBase.company,
+          ea: dbPayloadBase.ea,
+          expense: dbPayloadBase.expense,
+          income: dbPayloadBase.income,
+          payment_method: dbPayloadBase.payment_method,
+          rn_number: dbPayloadBase.rn_number,
+          invoice_number: dbPayloadBase.invoice_number,
           ...(omitZelleConfirmationInTicketBookingsPayload
             ? {}
             : { zelle_confirmation_number: zelleDb }),
-          tour_id: dbPayload.tour_id,
-          reservation_id: dbPayload.reservation_id,
-          note: dbPayload.note,
-          status: dbPayload.status,
-          season: dbPayload.season,
-          uploaded_file_urls: dbPayload.uploaded_file_urls
+          tour_id: dbPayloadBase.tour_id,
+          reservation_id: dbPayloadBase.reservation_id,
+          note: dbPayloadBase.note,
+          season: dbPayloadBase.season,
+          uploaded_file_urls: dbPayloadBase.uploaded_file_urls
         };
         console.log('업데이트할 데이터:', updateData);
 
@@ -982,20 +868,25 @@ export default function TicketBookingForm({
         error = updateError;
         savedId = booking.id;
       } else {
-        // 새로 생성인 경우 - DB 컬럼만 insert
+        // 새로 생성인 경우 - DB 컬럼만 insert (다축 + 파생 레거시 status 동시 기록)
         console.log('새로 생성 모드');
-        let insertRes = await (supabase as any).from('ticket_bookings').insert(dbPayload).select().single();
+        let insertRes = await (supabase as any)
+          .from('ticket_bookings')
+          .insert(dbPayloadInsert)
+          .select()
+          .single();
         if (isMissingZelleConfirmationColumnError(insertRes.error)) {
           omitZelleConfirmationInTicketBookingsPayload = true;
           console.warn(
             '[ticket_bookings] zelle_confirmation_number 컬럼이 스키마에 없어 해당 필드 없이 다시 저장합니다. ' +
               'supabase/migrations/20260401160000_ticket_bookings_zelle_confirmation_number.sql 을 적용하면 Zelle 확인#도 저장됩니다.'
           );
-          const { zelle_confirmation_number: _z, ...withoutZelle } = dbPayload;
+          const { zelle_confirmation_number: _z, ...withoutZelle } = dbPayloadInsert;
           insertRes = await (supabase as any).from('ticket_bookings').insert(withoutZelle).select().single();
         }
         error = insertRes.error;
         savedId = insertRes.data?.id;
+        savedRow = insertRes.data as Record<string, unknown> | undefined;
       }
 
       if (error) throw error;
@@ -1013,6 +904,31 @@ export default function TicketBookingForm({
         uploaded_file_urls: mergedFileUrls,
         uploaded_files: [],
       };
+      if (savedRow && typeof savedRow === 'object') {
+        resultBooking.status = String(
+          normalizeTicketBookingStatusFromDb(String(savedRow.status ?? formData.status))
+        );
+        if (savedRow.booking_status != null)
+          resultBooking.booking_status = String(savedRow.booking_status);
+        if (savedRow.vendor_status != null)
+          resultBooking.vendor_status = String(savedRow.vendor_status);
+        if (savedRow.change_status != null)
+          resultBooking.change_status = String(savedRow.change_status);
+        if (savedRow.payment_status != null)
+          resultBooking.payment_status = String(savedRow.payment_status);
+        if (savedRow.refund_status != null)
+          resultBooking.refund_status = String(savedRow.refund_status);
+        if (savedRow.operation_status != null)
+          resultBooking.operation_status = String(savedRow.operation_status);
+      } else if (!booking?.id) {
+        resultBooking.status = legacyForInsert;
+        resultBooking.booking_status = axesForInsert.booking_status;
+        resultBooking.vendor_status = axesForInsert.vendor_status;
+        resultBooking.change_status = axesForInsert.change_status;
+        resultBooking.payment_status = axesForInsert.payment_status;
+        resultBooking.refund_status = axesForInsert.refund_status;
+        resultBooking.operation_status = axesForInsert.operation_status;
+      }
       onSave(resultBooking);
     } catch (error) {
       console.error('입장권 부킹 저장 오류:', error);
@@ -1354,86 +1270,11 @@ export default function TicketBookingForm({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">{t('selectTime')}</option>
-                {Array.from({ length: 13 * 12 }, (_, i) => {
-                  const hour = Math.floor(i / 12) + 6; // 6시부터 시작
-                  const minute = (i % 12) * 5;
-                  const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-                  
-                  // 각 시간별 색상 결정
-                  const getTimeSlotColor = (hour: number) => {
-                    if (hour === 6) return { 
-                      bg: '#dbeafe', 
-                      text: '#1e40af'  // 6시: 파란색
-                    };
-                    if (hour === 7) return { 
-                      bg: '#dcfce7', 
-                      text: '#166534'  // 7시: 초록색
-                    };
-                    if (hour === 8) return { 
-                      bg: '#fef3c7', 
-                      text: '#92400e'  // 8시: 노란색
-                    };
-                    if (hour === 9) return { 
-                      bg: '#fce7f3', 
-                      text: '#be185d'  // 9시: 핑크색
-                    };
-                    if (hour === 10) return { 
-                      bg: '#e0e7ff', 
-                      text: '#3730a3'  // 10시: 인디고색
-                    };
-                    if (hour === 11) return { 
-                      bg: '#f0fdf4', 
-                      text: '#14532d'  // 11시: 연두색
-                    };
-                    if (hour === 12) return { 
-                      bg: '#fefce8', 
-                      text: '#a16207'  // 12시: 주황색
-                    };
-                    if (hour === 13) return { 
-                      bg: '#fff7ed', 
-                      text: '#9a3412'  // 13시: 오렌지색
-                    };
-                    if (hour === 14) return { 
-                      bg: '#fef2f2', 
-                      text: '#dc2626'  // 14시: 빨간색
-                    };
-                    if (hour === 15) return { 
-                      bg: '#f3e8ff', 
-                      text: '#7c3aed'  // 15시: 보라색
-                    };
-                    if (hour === 16) return { 
-                      bg: '#ecfdf5', 
-                      text: '#059669'  // 16시: 에메랄드색
-                    };
-                    if (hour === 17) return { 
-                      bg: '#f0f9ff', 
-                      text: '#0284c7'  // 17시: 스카이블루
-                    };
-                    if (hour === 18) return { 
-                      bg: '#f8fafc', 
-                      text: '#475569'  // 18시: 슬레이트색
-                    };
-                    return { 
-                      bg: '#f9fafb', 
-                      text: '#111827'  // 기타: 회색
-                    };
-                  };
-                  
-                  const timeSlotColor = getTimeSlotColor(hour);
-                  
-                  return (
-                    <option 
-                      key={timeString} 
-                      value={timeString}
-                      style={{
-                        backgroundColor: timeSlotColor.bg,
-                        color: timeSlotColor.text
-                      }}
-                    >
-                      {timeString}
-                    </option>
-                  );
-                })}
+                {getTicketBookingTimeSelectOptions().map(({ value, bg, text }) => (
+                  <option key={value} value={value} style={{ backgroundColor: bg, color: text }}>
+                    {value}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1671,18 +1512,42 @@ export default function TicketBookingForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('status')}
               </label>
-              <select
-                name="status"
-                value={formData.status || ''}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="tentative">{t('statusTentative')}</option>
-                <option value="confirmed">{t('statusConfirmed')}</option>
-                <option value="paid">{t('statusPaid')}</option>
-                <option value="cancelled">{t('statusCancelled')}</option>
-                <option value="credit">크레딧</option>
-              </select>
+              {booking?.id ? (
+                <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-sm font-medium text-gray-800">
+                    {formatTicketBookingStatusLabel(formData.status, tCal, locale)}
+                  </p>
+                  <p className="text-xs text-gray-600 leading-snug">
+                    상태 단계 변경은 아래 액션으로 진행합니다. 목록·통계의 상세 모달에서도 동일하게 사용할 수 있습니다.
+                  </p>
+                  {axisSnapshot && booking.id ? (
+                    <TicketBookingActionPanel
+                      bookingId={booking.id}
+                      axes={axisSnapshot}
+                      onApplied={() => {
+                        void refreshAxesFromDb(booking.id as string);
+                      }}
+                    />
+                  ) : null}
+                </div>
+              ) : (
+                <select
+                  name="status"
+                  value={formData.status || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {TICKET_BOOKING_STATUS_VALUES.map((sv) => (
+                    <option key={sv} value={sv}>
+                      {formatTicketBookingStatusLabel(sv, tCal, locale)}
+                    </option>
+                  ))}
+                  {formData.status &&
+                  !(TICKET_BOOKING_STATUS_VALUES as readonly string[]).includes(formData.status) ? (
+                    <option value={formData.status}>{formData.status}</option>
+                  ) : null}
+                </select>
+              )}
             </div>
 
             <div>
@@ -1841,11 +1706,17 @@ export default function TicketBookingForm({
               const bookingId = booking.id;
               return (
               <div className="flex items-center gap-2">
-                {isSuper && booking.deletion_requested_at && onDelete && (
+                {isSuper && onDelete && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm('정말로 이 부킹을 삭제하시겠습니까? (실제 삭제)')) {
+                      if (
+                        confirm(
+                          booking.deletion_requested_at
+                            ? '정말로 이 부킹을 삭제하시겠습니까? (실제 삭제)'
+                            : 'SUPER 관리자 권한으로 이 부킹을 영구 삭제합니다. 계속할까요?'
+                        )
+                      ) {
                         onDelete(bookingId);
                       }
                     }}

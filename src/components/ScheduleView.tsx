@@ -43,6 +43,7 @@ import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
 } from '@/lib/scheduleProductColorPresets'
+import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSummary'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -108,6 +109,23 @@ type Team = Database['public']['Tables']['team']['Row']
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Reservation = any
 type Customer = Database['public']['Tables']['customers']['Row']
+
+/** 스케줄 그리드·호버 합계용 입장권 행 (ticket_bookings 일부 컬럼) */
+type ScheduleTicketBookingRow = {
+  id: string
+  tour_id: string | null
+  status: string | null
+  ea: number | null
+  company?: string
+  time?: string
+  check_in_date?: string
+  booking_status?: string | null
+  vendor_status?: string | null
+  change_status?: string | null
+  payment_status?: string | null
+  refund_status?: string | null
+  operation_status?: string | null
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ReservationFormAny = ReservationForm as any
@@ -342,7 +360,7 @@ export default function ScheduleView() {
   // const [currentUserId] = useState('admin') // 실제로는 인증된 사용자 ID를 사용해야 함
   const [draggedTour, setDraggedTour] = useState<Tour | null>(null)
   const [unassignedTours, setUnassignedTours] = useState<Tour[]>([])
-  const [ticketBookings, setTicketBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; ea: number | null; company?: string; time?: string; check_in_date?: string }>>([])
+  const [ticketBookings, setTicketBookings] = useState<ScheduleTicketBookingRow[]>([])
   const [tourHotelBookings, setTourHotelBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; rooms: number | null; hotel?: string; check_in_date?: string }>>([])
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
   const [hoveredBookingDate, setHoveredBookingDate] = useState<string | null>(null)
@@ -1578,7 +1596,9 @@ export default function ScheduleView() {
       const { data: ticketBookingsData } = await (supabase as any)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('ticket_bookings' as any)
-        .select('id, tour_id, status, ea, company, time, check_in_date')
+        .select(
+          'id, tour_id, status, ea, company, time, check_in_date, booking_status, vendor_status, change_status, payment_status, refund_status, operation_status'
+        )
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
 
@@ -2646,8 +2666,13 @@ export default function ScheduleView() {
         // 투어별 초이스 집계: 위와 동일 식 — 예약당 1개 행이면 total_people, 여러 개면 quantity 합
         const toursChoiceCounts: Array<{ tourId: string; label: string; choiceCounts: Record<string, number> }> = []
         dayTours.forEach((tour, idx) => {
-          const assignedIds = new Set((tour.reservation_ids && Array.isArray(tour.reservation_ids)) ? (tour.reservation_ids as string[]) : [])
-          const assignedResList = dayReservations.filter(r => assignedIds.has(r.id))
+          const assignedCanon = new Set<string>()
+          for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+            if (rawId) assignedCanon.add(canonicalReservationIdKey(rawId))
+          }
+          const assignedResList = dayReservations.filter((r) =>
+            assignedCanon.has(canonicalReservationIdKey(String(r.id)))
+          )
           const byKey: Record<string, number> = {}
           assignedResList.forEach(res => {
             const rows = choiceRowsByResId.get(res.id) || []
@@ -2668,11 +2693,12 @@ export default function ScheduleView() {
           .filter((t) => !isTourCancelled(t.tour_status))
           .sort((a, b) => String(a.id).localeCompare(String(b.id)))
         const tourCapacityRows = sortedDayTours.map((tour, idx) => {
-          const assignedIds = new Set(
-            tour.reservation_ids && Array.isArray(tour.reservation_ids) ? (tour.reservation_ids as string[]) : []
-          )
+          const assignedCanon = new Set<string>()
+          for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+            if (rawId) assignedCanon.add(canonicalReservationIdKey(rawId))
+          }
           const assigned = dayReservations
-            .filter((r) => assignedIds.has(r.id))
+            .filter((r) => assignedCanon.has(canonicalReservationIdKey(String(r.id))))
             .reduce((s, r) => s + (r.total_people || 0), 0)
           const max =
             typeof tour.max_participants === 'number' && Number.isFinite(tour.max_participants)
@@ -3735,7 +3761,13 @@ export default function ScheduleView() {
       .filter(tb => {
         if (tb.tour_id !== tour.id) return false
         const s = tb.status?.toLowerCase()
-        return s === 'confirmed' || s === 'paid' || s === 'pending' || s === 'completed'
+        return (
+          s === 'confirmed' ||
+          s === 'paid' ||
+          s === 'pending' ||
+          s === 'tentative' ||
+          s === 'completed'
+        )
       })
       .reduce((s, tb) => s + (tb.ea || 0), 0)
 
@@ -4021,7 +4053,13 @@ export default function ScheduleView() {
     const isActiveStatus = (status: string | null) => {
       if (!status) return false
       const s = status.toLowerCase()
-      return s === 'confirmed' || s === 'paid' || s === 'pending' || s === 'completed'
+      return (
+        s === 'confirmed' ||
+        s === 'paid' ||
+        s === 'pending' ||
+        s === 'tentative' ||
+        s === 'completed'
+      )
     }
 
     // 입장권 부킹 합산
@@ -4813,7 +4851,16 @@ export default function ScheduleView() {
                                       const confirmed = dayData.totalPeople
                                       const waiting = dayData.waitingPeople ?? 0
                                       const onlyWaiting = confirmed === 0 && waiting > 0
+                                      const ap = dayData.assignmentPendingReservationCount ?? 0
+                                      const assignedSum = br?.totalAssigned ?? 0
+                                      const hasAssignmentPeopleGap =
+                                        (confirmed ?? 0) > assignedSum && (confirmed ?? 0) > 0
                                       if (isCapacityOverfull) {
+                                        return `font-bold leading-tight whitespace-nowrap ${
+                                          isToday(dateString) ? 'text-red-700' : 'text-red-600'
+                                        }`
+                                      }
+                                      if (ap > 0 || hasAssignmentPeopleGap) {
                                         return `font-bold leading-tight whitespace-nowrap ${
                                           isToday(dateString) ? 'text-red-700' : 'text-red-600'
                                         }`
@@ -7351,12 +7398,15 @@ export default function ScheduleView() {
                     void loadFullTicketBookingAndOpen(id)
                   }}
                 >
-                  {[b?.company || '—', b?.time || '—'].join(' · ')}
-                  <span className="tabular-nums">
-                    {' '}
-                    · {b?.ea ?? 0}
-                    {locale === 'ko' ? '매' : ' ea'}
-                  </span>
+                  <div className="font-medium text-gray-900">
+                    {[b?.company || '—', b?.time || '—'].join(' · ')}
+                    <span className="tabular-nums font-medium">
+                      {' '}
+                      · {b?.ea ?? 0}
+                      {locale === 'ko' ? '매' : ' ea'}
+                    </span>
+                  </div>
+                  {b ? <TicketBookingAxisSummary booking={b} variant="inline" className="mt-1 text-[10px]" /> : null}
                 </button>
               )
             })}
@@ -7382,6 +7432,7 @@ export default function ScheduleView() {
             </div>
             <div className="p-6">
               <ScheduleTicketBookingForm
+                key={scheduleTicketBookingEdit?.id ?? 'new'}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 booking={scheduleTicketBookingEdit as any}
                 onSave={() => {

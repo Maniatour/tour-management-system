@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatTicketBookingStatusLabel } from '@/lib/ticketBookingStatus';
 import {
   getCancelDueDateForTicketBooking,
   isTicketBookingCancelDueStaleBeforeCheckIn,
   localDateYmd,
   type SeasonDate,
 } from '@/lib/ticketBookingCancelDue';
+import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSummary';
 
 type SeasonSlice = { season_dates: SeasonDate[] | null };
 
@@ -21,6 +23,12 @@ export type TicketBookingNeedCheckRow = {
   status?: string;
   time?: string;
   ea?: number;
+  booking_status?: string | null;
+  vendor_status?: string | null;
+  change_status?: string | null;
+  payment_status?: string | null;
+  refund_status?: string | null;
+  operation_status?: string | null;
 };
 
 type Props = {
@@ -98,6 +106,7 @@ export default function TicketBookingsNeedCheckModal({
   onEdit,
 }: Props) {
   const t = useTranslations('booking.calendar');
+  const locale = useLocale();
   const [tab, setTab] = useState<'no_tour' | 'cancel_due'>('no_tour');
   const [noTourSub, setNoTourSub] = useState<NoTourSubTab>('upcoming2w');
   const [checkInSort, setCheckInSort] = useState<CheckInSort>('asc');
@@ -323,7 +332,14 @@ export default function TicketBookingsNeedCheckModal({
                         <td className="max-w-[100px] truncate px-3 py-2 font-mono text-[11px] sm:px-4">
                           {b.rn_number?.trim() || '—'}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2 sm:px-4">{b.status || '—'}</td>
+                        <td className="max-w-[min(100vw,14rem)] px-3 py-2 sm:max-w-[16rem] sm:px-4">
+                          <div className="whitespace-nowrap">
+                            {b.status
+                              ? formatTicketBookingStatusLabel(b.status, t, locale)
+                              : '—'}
+                          </div>
+                          <TicketBookingAxisSummary booking={b} variant="inline" className="mt-0.5" />
+                        </td>
                         <td className="whitespace-nowrap px-3 py-2 tabular-nums sm:px-4">{b.ea ?? '—'}</td>
                         <td className="whitespace-nowrap px-3 py-2 sm:px-4">
                           <button

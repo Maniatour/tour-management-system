@@ -1413,6 +1413,18 @@ export default function PricingSection({
     const cb = hasCommissionBase ? Number(cbRaw) : NaN
 
     if (isOTAChannel && hasCommissionBase && cb > 0.005) {
+      /**
+       * DB `commission_base_price`는 원칙적으로 Returned 차감 후 순액이지만,
+       * 전액 환불 후에도 예약 금액(예금·OTA 판매가·상품가 총액)과 동일한 값이 남은 레거시/미동기화 행은
+       * 아직 차감 전 금액으로 남아 있는 것으로 보고 환불을 반영한다.
+       * (그대로 두면 638 순액으로 오인해 표시가 ($1276−638)처럼 어긋난다.)
+       */
+      const grossNetEps = 0.02
+      const matchesDeposit = Math.abs(cb - dep) < grossNetEps
+      const matchesProduct = Math.abs(cb - productGross) < grossNetEps
+      if (effectiveReturnOffGross > 0.005 && (matchesDeposit || matchesProduct)) {
+        return Math.max(0, roundUsd2(cb - effectiveReturnOffGross))
+      }
       return Math.max(0, roundUsd2(cb))
     }
 

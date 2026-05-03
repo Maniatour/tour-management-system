@@ -53,10 +53,10 @@ import {
   calculateTotalPrice,
   getReservationPartySize,
   normalizeTourDateKey,
-  isoToLasVegasCalendarDateKey,
+  isoToLocalCalendarDateKey,
   getStatusLabel,
-  isReservationTourDatePastLasVegas,
-  isReservationAddedStrictlyBeforeTodayLasVegas,
+  isReservationTourDatePastLocal,
+  isReservationAddedStrictlyBeforeTodayLocal,
 } from '@/utils/reservationUtils'
 import {
   isTourDeletedStatus,
@@ -73,7 +73,11 @@ import type {
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
 import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
-import { formatLvYmdRangeDisplay, lvInclusiveDateKeys, lvWeekRangeFromOffset } from '@/lib/lasVegasCalendar'
+import {
+  browserLocalInclusiveDateKeys,
+  browserLocalWeekRangeFromOffset,
+  formatBrowserLocalYmdRangeDisplay,
+} from '@/lib/browserLocalWeek'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import {
   reservationMatchesExtendedPricingMismatchCriteria,
@@ -115,8 +119,8 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
   const seenReg = new Set<string>()
   const seenStatus = new Set<string>()
   for (const r of reservations) {
-    const createdKey = isoToLasVegasCalendarDateKey(r.addedTime)
-    const updatedKey = isoToLasVegasCalendarDateKey(r.updated_at ?? null)
+    const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+    const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
     if (createdKey === date && !seenReg.has(r.id)) {
       seenReg.add(r.id)
       registration.push(r)
@@ -152,7 +156,7 @@ function pickReservationStatusTransitionForDay(
   dateKey: string
 ): { from: string; to: string } | null {
   const candidates = rows
-    .filter((r) => isoToLasVegasCalendarDateKey(r.created_at) === dateKey)
+    .filter((r) => isoToLocalCalendarDateKey(r.created_at) === dateKey)
     .filter((r) => Array.isArray(r.changed_fields) && r.changed_fields.includes('status'))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   for (const row of candidates) {
@@ -1294,27 +1298,27 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   const followUpQueueUnionCount = useMemo(() => {
     let n = 0
     for (const r of filteredReservations) {
-      if (isReservationTourDatePastLasVegas(r.tourDate)) continue
+      if (isReservationTourDatePastLocal(r.tourDate)) continue
       const snap = followUpSnapshotsByReservationId.get(r.id)
       if (reservationNeedsCancelFollowUpQueueAttention(r.status as string | undefined, r.tourDate, snap)) {
         n += 1
         continue
       }
-      if (isReservationAddedStrictlyBeforeTodayLasVegas(r.addedTime)) continue
+      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
   }, [filteredReservations, followUpSnapshotsByReservationId])
   
-  // 최근 7일: 라스베가스 달력 기준 어제를 말일로 두고 7일(말일 포함 6일 전~말일). UTC 저장값과 표시·쿼리 일치.
+  // 최근 7일: 브라우저 로컬 달력 기준 오늘을 말일로 한 7일 — 등록일 그룹 키·조회 구간과 동일.
   const formatWeekRange = useCallback(
     (weekOffset: number) => {
-      const { startYmd, endYmd } = lvWeekRangeFromOffset(weekOffset)
+      const { startYmd, endYmd } = browserLocalWeekRangeFromOffset(weekOffset)
       const localeTag = locale === 'en' ? 'en-US' : 'ko-KR'
       return {
         start: startYmd,
         end: endYmd,
-        display: formatLvYmdRangeDisplay(startYmd, endYmd, localeTag),
+        display: formatBrowserLocalYmdRangeDisplay(startYmd, endYmd, localeTag),
       }
     },
     [locale]
@@ -1323,7 +1327,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   const loadAdminReservationList = useCallback(async () => {
     setServerListLoading(true)
     try {
-      const { rangeStartIso, rangeEndIso } = lvWeekRangeFromOffset(currentWeek)
+      const { rangeStartIso, rangeEndIso } = browserLocalWeekRangeFromOffset(currentWeek)
 
       if (viewMode === 'calendar') {
         const calStart = new Date()
@@ -1443,12 +1447,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const groups: { [key: string]: typeof filteredReservations } = {}
     
     // ??? ?? ??? ?? ?? (?? ????? ???)
-    const { startYmd: weekStartStr, endYmd: weekEndStr } = lvWeekRangeFromOffset(currentWeek)
+    const { startYmd: weekStartStr, endYmd: weekEndStr } = browserLocalWeekRangeFromOffset(currentWeek)
 
     filteredReservations.forEach((reservation) => {
       const activityDates = new Set<string>()
-      const createdKey = isoToLasVegasCalendarDateKey(reservation.addedTime)
-      const updatedKey = isoToLasVegasCalendarDateKey(reservation.updated_at ?? null)
+      const createdKey = isoToLocalCalendarDateKey(reservation.addedTime)
+      const updatedKey = isoToLocalCalendarDateKey(reservation.updated_at ?? null)
       if (createdKey) activityDates.add(createdKey)
       if (updatedKey) activityDates.add(updatedKey)
       if (activityDates.size === 0) return
@@ -1481,7 +1485,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   /** 주간(화면 상단 7일 구간) 일자별 등록 인원·건수 / 취소 인원·건수 — WeeklyStatsPanel 차트용 */
   const weeklyRegCancelByDay = useMemo(() => {
-    const { startYmd: weekStartStr, endYmd: weekEndStr } = lvWeekRangeFromOffset(currentWeek)
+    const { startYmd: weekStartStr, endYmd: weekEndStr } = browserLocalWeekRangeFromOffset(currentWeek)
 
     const rows: Array<{
       dateKey: string
@@ -1492,7 +1496,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }> = []
     const rowByKey = new Map<string, (typeof rows)[number]>()
 
-    for (const dateKey of lvInclusiveDateKeys(weekStartStr, weekEndStr)) {
+    for (const dateKey of browserLocalInclusiveDateKeys(weekStartStr, weekEndStr)) {
       const row = {
         dateKey,
         registeredPeople: 0,
@@ -1509,7 +1513,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
     for (const r of filteredReservations) {
       const p = getReservationPartySize(r as unknown as Record<string, unknown>)
-      const createdKey = isoToLasVegasCalendarDateKey(r.addedTime)
+      const createdKey = isoToLocalCalendarDateKey(r.addedTime)
       if (createdKey) {
         const row = rowByKey.get(createdKey)
         if (row) {
@@ -1517,7 +1521,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           row.registeredPeople += p
         }
       }
-      const updatedKey = isoToLasVegasCalendarDateKey(r.updated_at ?? null)
+      const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
       if (updatedKey && isCancelledLike(r.status)) {
         const row = rowByKey.get(updatedKey)
         if (row) {
@@ -1550,7 +1554,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   const simpleCardStatusChangeAuditRequest = useMemo(() => {
     if (!groupByDate || cardLayout !== 'simple') return null
-    const { rangeStartIso: rangeStart, rangeEndIso: rangeEnd } = lvWeekRangeFromOffset(currentWeek)
+    const { rangeStartIso: rangeStart, rangeEndIso: rangeEnd } = browserLocalWeekRangeFromOffset(currentWeek)
     const targets: { key: string; reservationId: string; dateKey: string }[] = []
     for (const [dateKey, dayList] of Object.entries(groupedReservations)) {
       const { statusChange } = splitReservationsByActivityForDate(dateKey, dayList)

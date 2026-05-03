@@ -12,6 +12,7 @@ import {
   normalizeReservationIds,
   canonicalReservationIdKey,
   reservationIdsLooselyEqual,
+  parseTourAssignmentEmails,
 } from '@/utils/tourUtils'
 import { useAuth } from '@/contexts/AuthContext'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
@@ -1079,20 +1080,32 @@ export function useTourDetailData() {
     return languageMap[language] || 'US'
   }
 
-  const getTeamMemberName = (email: string) => {
-    if (!email) return '직원 미선택'
-    const member = teamMembers.find((member) => member.email === email)
-    if (!member) return email
-    // 고객 언어 무관 team.display_name 사용
-    return (member.display_name && member.display_name.trim()) || member.name_ko || member.name_en || email
+  /** 투어 가이드·2차/어시스턴트 슬롯: display_name 우선 (비어 있으면 name_ko → name_en → 이메일). 콤마 구분 다중 이메일 지원. */
+  const resolveTeamMemberDisplayLabel = (assignmentRaw: string) => {
+    const emails = parseTourAssignmentEmails(assignmentRaw)
+    if (emails.length === 0) return ''
+    const labels = emails.map((email) => {
+      const member = teamMembers.find(
+        (m) => m.email && m.email.toLowerCase() === email.toLowerCase()
+      )
+      if (!member) return email
+      const dn = member.display_name?.trim()
+      if (dn) return dn
+      return member.name_ko || member.name_en || email
+    })
+    return labels.join(' & ')
   }
 
-  /** team 테이블의 display_name 사용 (고객 언어 무관 통일 표시, 봉투 인쇄 등) */
+  const getTeamMemberName = (email: string) => {
+    if (!email?.trim()) return '직원 미선택'
+    const label = resolveTeamMemberDisplayLabel(email)
+    return label || email.trim() || '직원 미선택'
+  }
+
+  /** 봉투 인쇄 등: 항상 team.display_name 우선 (고객 언어별 ko/en 문자열은 동일 표시명 사용) */
   const getTeamMemberNameForLocale = (email: string, _lang: 'ko' | 'en') => {
-    if (!email) return ''
-    const member = teamMembers.find((m) => m.email === email)
-    if (!member) return email
-    return (member.display_name && member.display_name.trim()) || member.name_ko || member.name_en || email
+    if (!email?.trim()) return ''
+    return resolveTeamMemberDisplayLabel(email)
   }
 
   return {

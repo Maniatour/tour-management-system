@@ -303,7 +303,14 @@ function ticketBookingRowToDetailModal(
     cc: typeof raw.cc === 'string' && raw.cc !== '' ? raw.cc : 'not_needed',
     rn_number: str(raw.rn_number),
     invoice_number: str(raw.invoice_number).trim() || undefined,
+    zelle_confirmation_number: raw.zelle_confirmation_number != null ? str(raw.zelle_confirmation_number) : undefined,
     updated_at: str(raw.updated_at || raw.created_at),
+    booking_status: raw.booking_status != null ? str(raw.booking_status) : undefined,
+    vendor_status: raw.vendor_status != null ? str(raw.vendor_status) : undefined,
+    change_status: raw.change_status != null ? str(raw.change_status) : undefined,
+    payment_status: raw.payment_status != null ? str(raw.payment_status) : undefined,
+    refund_status: raw.refund_status != null ? str(raw.refund_status) : undefined,
+    operation_status: raw.operation_status != null ? str(raw.operation_status) : undefined,
     tours: tourMeta,
   }
 }
@@ -2732,6 +2739,9 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           setTicketHistoryOpen(true)
         }}
         onDelete={handleTicketBookingRowDelete}
+        onActionApplied={() => {
+          if (ticketBookingDetailTourId) void reloadTicketBookingDetailRows(ticketBookingDetailTourId)
+        }}
       />
 
       {ticketHistoryOpen ? (
@@ -2763,6 +2773,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
             </div>
             <div className="p-6">
               <TicketBookingFormAny
+                key={(ticketEditBooking as { id?: string } | null)?.id ?? 'new'}
                 booking={ticketEditBooking || undefined}
                 tourId={ticketBookingDetailTourId || ''}
                 onSave={handleTicketFormSave}

@@ -8,6 +8,7 @@
  * `status`가 NULL·빈 문자열인 레거시 행은 포함합니다.
  */
 export const BOOKING_SETTLEMENT_TICKET_STATUSES = [
+  'pending',
   'tentative',
   'confirmed',
   'paid',

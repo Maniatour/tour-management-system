@@ -211,14 +211,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       Math.floor(Number(raw)) >= 0
     return {
       adults: hasPa ? Math.floor(Number(raw)) : (reservation.adults ?? null),
-      children: reservation.children ?? null,
-      infants: reservation.infants ?? null,
+      children: (reservation.children ?? (reservation as { child?: number | null }).child ?? null) as number | null,
+      infants: (reservation.infants ?? (reservation as { infant?: number | null }).infant ?? null) as number | null,
     }
   }, [
     reservationPricing?.pricing_adults,
     reservation.adults,
     reservation.children,
+    (reservation as { child?: number | null }).child,
     reservation.infants,
+    (reservation as { infant?: number | null }).infant,
   ])
 
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
@@ -1879,8 +1881,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               if (displayBalanceBadge > 0) {
                 return (
                   <div className="flex items-center space-x-2">
-                    <div className="px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                      {formatCurrency(displayBalanceBadge, reservationPricing?.currency || 'USD')}
+                    <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                      <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                      <span>{`잔금 ${formatCurrency(displayBalanceBadge, reservationPricing?.currency || 'USD')}`}</span>
                     </div>
                     <button
                       onClick={handleReceiveBalance}

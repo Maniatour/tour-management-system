@@ -40,6 +40,12 @@ export type TicketBookingLike = {
       name_en?: string;
     };
   };
+  booking_status?: string | null;
+  vendor_status?: string | null;
+  change_status?: string | null;
+  payment_status?: string | null;
+  refund_status?: string | null;
+  operation_status?: string | null;
 };
 
 export function normalizeBookingDateToIso(checkIn: string): string | null {

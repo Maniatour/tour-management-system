@@ -3,6 +3,26 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+
+/** 입금 자동 기록: Wix Website (payment_methods.id) */
+const PAYMENT_METHOD_WIX_WEBSITE = 'PAYM030'
+/** 입금 자동 기록: Partner Received */
+const PAYMENT_METHOD_PARTNER_RECEIVED = 'PAYM033'
+
+function depositPaymentMethodIdForEmailImport(
+  channelId: string,
+  importRow: { platform_key?: string | null; source_email?: string | null; subject?: string | null }
+): string {
+  const homepageChannel = channelId === 'M00001'
+  const homepagePlatform = (importRow.platform_key ?? '').toLowerCase() === 'maniatour'
+  const homepageWixEmail = isManiatourHomepageBookingEmail(
+    importRow.source_email ?? null,
+    importRow.subject ?? null
+  )
+  if (homepageChannel || homepagePlatform || homepageWixEmail) return PAYMENT_METHOD_WIX_WEBSITE
+  return PAYMENT_METHOD_PARTNER_RECEIVED
+}
 
 /** 선택된 초이스 (reservation_choices 저장용) */
 interface SelectedChoiceItem {
@@ -264,6 +284,7 @@ export async function POST(
   if (pricingInfo && Number(pricingInfo.depositAmount) > 0) {
     const depositAmount = Number(pricingInfo.depositAmount)
     const paymentId = `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const paymentMethodId = depositPaymentMethodIdForEmailImport(body.channel_id, importRow)
     const { error: paymentError } = await client
       .from('payment_records')
       .insert({
@@ -271,7 +292,7 @@ export async function POST(
         reservation_id: reservationId,
         payment_status: 'Deposit Received',
         amount: depositAmount,
-        payment_method: 'PAYM033',
+        payment_method: paymentMethodId,
         submit_by: body.added_by,
       } as Record<string, unknown>)
     if (paymentError) {

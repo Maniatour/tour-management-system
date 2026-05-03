@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import {
   getBalanceAmountForDisplay,
+  withNormalizedBalanceAmountForDisplay,
   type PartySizeSource,
   type PricingBalanceFields,
   type PaymentRecordLike,
@@ -201,6 +202,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
           const res = resById.get(id)
           if (!pricing || !res) continue
 
+          const row = res as Record<string, unknown>
           const paRaw = pricing.pricing_adults
           const hasPa =
             paRaw !== undefined &&
@@ -209,16 +211,16 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
             Number.isFinite(Number(paRaw)) &&
             Math.floor(Number(paRaw)) >= 0
           const party: PartySizeSource = {
-            adults: hasPa ? Math.floor(Number(paRaw)) : (res.adults ?? null),
-            children: res.children ?? null,
-            infants: res.infants ?? null,
+            adults: hasPa ? Math.floor(Number(paRaw)) : ((row.adults as number | null | undefined) ?? null),
+            children: (row.children ?? row.child ?? null) as number | null,
+            infants: (row.infants ?? row.infant ?? null) as number | null,
           }
 
           const nOpts = optCountById.get(id) ?? 0
           const optionsTotalFromOptions = nOpts > 0 ? (optSumById.get(id) || 0) : null
 
           const b = getBalanceAmountForDisplay(
-            pricing as PricingBalanceFields,
+            withNormalizedBalanceAmountForDisplay(pricing),
             optionsTotalFromOptions,
             party,
             {

@@ -1,9 +1,16 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import { useMemo } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
-import { isSuperAdminEmail } from '@/lib/superAdmin'
+import { isSuperAdminActor } from '@/lib/superAdmin'
+import {
+  formatTicketBookingStatusLabel,
+  getTicketBookingStatusBadgeClass,
+} from '@/lib/ticketBookingStatus'
+import TicketBookingActionPanel from '@/components/booking/TicketBookingActionPanel'
+import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSummary'
+import { TicketBookingAxesEditorForm } from '@/components/booking/TicketBookingAxesEditor'
 
 /** 입장권 부킹 — 예약 상세 정보 모달에 필요한 행 타입 */
 export type TicketBookingReservationDetailRow = {
@@ -18,14 +25,20 @@ export type TicketBookingReservationDetailRow = {
   status: string
   cc: string
   rn_number: string
-  invoice_number?: string
+  invoice_number?: string | undefined
   /** Zelle 결제 시 Confirmation 번호 */
-  zelle_confirmation_number?: string | null
+  zelle_confirmation_number?: string | null | undefined
   updated_at: string
+  booking_status?: string | null | undefined
+  vendor_status?: string | null | undefined
+  change_status?: string | null | undefined
+  payment_status?: string | null | undefined
+  refund_status?: string | null | undefined
+  operation_status?: string | null | undefined
   tours?: {
     tour_date: string
     products?: { name?: string; name_en?: string; name_ko?: string }
-  }
+  } | undefined
 }
 
 function getProductName(
@@ -36,33 +49,6 @@ function getProductName(
   if (!product) return tourFallback
   if (locale === 'en' && product.name_en) return product.name_en
   return product.name || tourFallback
-}
-
-function getStatusColor(status: string) {
-  const normalizedStatus = status?.toLowerCase()
-  switch (normalizedStatus) {
-    case 'pending':
-      return 'bg-yellow-100 text-yellow-800'
-    case 'confirmed':
-      return 'bg-green-100 text-green-800'
-    case 'cancelled':
-    case 'canceled':
-      return 'bg-red-100 text-red-800'
-    case 'completed':
-      return 'bg-blue-100 text-blue-800'
-    case 'credit':
-      return 'bg-cyan-100 text-cyan-800'
-    case 'cancellation_requested':
-      return 'bg-orange-100 text-orange-800'
-    case 'guest_change_requested':
-      return 'bg-purple-100 text-purple-800'
-    case 'time_change_requested':
-      return 'bg-indigo-100 text-indigo-800'
-    case 'payment_requested':
-      return 'bg-pink-100 text-pink-800'
-    default:
-      return 'bg-gray-100 text-gray-800'
-  }
 }
 
 function getCCStatusText(cc: string) {
@@ -102,6 +88,8 @@ export type TicketBookingReservationDetailModalProps = {
   onDelete?: (bookingId: string) => void
   /** 데이터 로딩 중 (통계에서 비동기 조회 시) */
   loading?: boolean
+  /** 액션 RPC 성공 후 목록 새로고침 등 */
+  onActionApplied?: () => void
 }
 
 export default function TicketBookingReservationDetailModal({
@@ -113,39 +101,16 @@ export default function TicketBookingReservationDetailModal({
   onViewHistory,
   onDelete,
   loading = false,
+  onActionApplied,
 }: TicketBookingReservationDetailModalProps) {
   const locale = useLocale()
   const t = useTranslations('booking.calendar')
-  const { user } = useAuth()
-  const canDeleteBooking = useMemo(() => isSuperAdminEmail(user?.email), [user?.email])
+  const { user, userPosition } = useAuth()
+  const canDeleteBooking = useMemo(
+    () => isSuperAdminActor(user?.email, userPosition),
+    [user?.email, userPosition]
+  )
   const tourFallback = t('tour')
-
-  const getStatusText = (status: string) => {
-    const normalizedStatus = status?.toLowerCase()
-    switch (normalizedStatus) {
-      case 'pending':
-        return t('pending')
-      case 'confirmed':
-        return t('confirmed')
-      case 'cancelled':
-      case 'canceled':
-        return t('cancelled')
-      case 'completed':
-        return t('completed')
-      case 'credit':
-        return '크레딧'
-      case 'cancellation_requested':
-        return '전체 취소 요청'
-      case 'guest_change_requested':
-        return '인원 변경 요청'
-      case 'time_change_requested':
-        return '시간 변경 요청'
-      case 'payment_requested':
-        return '결제 요청'
-      default:
-        return status
-    }
-  }
 
   if (!open) return null
 
@@ -315,9 +280,9 @@ export default function TicketBookingReservationDetailModal({
                               <div className="ml-2 flex items-center space-x-2">
                                 <div className="flex flex-col items-end space-y-1">
                                   <span
-                                    className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getStatusColor(booking.status)}`}
+                                    className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getTicketBookingStatusBadgeClass(booking.status)}`}
                                   >
-                                    {getStatusText(booking.status)}
+                                    {formatTicketBookingStatusLabel(booking.status, t, locale)}
                                   </span>
                                   <span
                                     className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getCCStatusColor(booking.cc)}`}
@@ -384,6 +349,41 @@ export default function TicketBookingReservationDetailModal({
                                 ) : null}
                               </div>
                             </div>
+                            <div className="mt-2 border-t border-gray-100 pt-2">
+                              <div className="mb-1 text-xs font-semibold text-gray-700">
+                                {t('ticketBookingActions.axisSummaryTitle')}
+                              </div>
+                              <TicketBookingAxisSummary booking={booking} variant="grid" />
+                            </div>
+                            {!readOnly && onActionApplied ?
+                              <div className="mt-2 border-t border-gray-100 pt-2">
+                                <div className="mb-1 text-xs font-semibold text-gray-700">
+                                  {t('ticketBookingActions.axesEditorSectionTitle')}
+                                </div>
+                                <TicketBookingAxesEditorForm
+                                  embedded
+                                  bookingId={booking.id}
+                                  initial={booking}
+                                  onSaved={() => onActionApplied()}
+                                />
+                              </div>
+                            : null}
+                            {!readOnly ? (
+                              <TicketBookingActionPanel
+                                bookingId={booking.id}
+                                axes={{
+                                  booking_status: booking.booking_status,
+                                  vendor_status: booking.vendor_status,
+                                  change_status: booking.change_status,
+                                  payment_status: booking.payment_status,
+                                  refund_status: booking.refund_status,
+                                  operation_status: booking.operation_status,
+                                }}
+                                onApplied={() => {
+                                  onActionApplied?.()
+                                }}
+                              />
+                            ) : null}
                           </div>
                           )
                         })}

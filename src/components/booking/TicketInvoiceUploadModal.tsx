@@ -2,7 +2,10 @@
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { FileUp, Loader2 } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
+import { formatTicketBookingStatusLabel, getTicketBookingStatusBadgeClass } from '@/lib/ticketBookingStatus';
+import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSummary';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import {
   matchInvoiceLinesToBookings,
@@ -29,60 +32,6 @@ function tourProductLabelKo(
   return (product.name_ko || product.name || product.name_en || '투어').trim();
 }
 
-function ticketBookingStatusBadgeClass(status: string | null | undefined): string {
-  const s = (status ?? '').toLowerCase();
-  switch (s) {
-    case 'pending':
-      return 'bg-yellow-100 text-yellow-800';
-    case 'confirmed':
-      return 'bg-green-100 text-green-800';
-    case 'cancelled':
-    case 'canceled':
-      return 'bg-red-100 text-red-800';
-    case 'completed':
-      return 'bg-blue-100 text-blue-800';
-    case 'credit':
-      return 'bg-cyan-100 text-cyan-800';
-    case 'cancellation_requested':
-      return 'bg-orange-100 text-orange-800';
-    case 'guest_change_requested':
-      return 'bg-purple-100 text-purple-800';
-    case 'time_change_requested':
-      return 'bg-indigo-100 text-indigo-800';
-    case 'payment_requested':
-      return 'bg-pink-100 text-pink-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
-}
-
-function ticketBookingStatusLabelKo(status: string | null | undefined): string {
-  const s = (status ?? '').toLowerCase();
-  switch (s) {
-    case 'pending':
-      return '대기';
-    case 'confirmed':
-      return '확정';
-    case 'cancelled':
-    case 'canceled':
-      return '취소';
-    case 'completed':
-      return '완료';
-    case 'credit':
-      return '크레딧';
-    case 'cancellation_requested':
-      return '전체 취소 요청';
-    case 'guest_change_requested':
-      return '인원 변경 요청';
-    case 'time_change_requested':
-      return '시간 변경 요청';
-    case 'payment_requested':
-      return '결제 요청';
-    default:
-      return (status ?? '').trim() || '—';
-  }
-}
-
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -102,6 +51,8 @@ export default function TicketInvoiceUploadModal({
   onRnUpdated,
   onNoteUpdated,
 }: Props) {
+  const tCal = useTranslations('booking.calendar');
+  const locale = useLocale();
   const [ocrPhase, setOcrPhase] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrText, setOcrText] = useState('');
@@ -805,13 +756,14 @@ export default function TicketInvoiceUploadModal({
                             aria-label={`Invoice 적용: ${b.company ?? ''} RN ${b.rn_number ?? ''}`}
                           />
                         </td>
-                        <td className="px-2 py-1.5 align-middle max-w-[7.5rem]">
+                        <td className="px-2 py-1.5 align-top max-w-[9.5rem]">
                           <span
-                            className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold rounded-full leading-snug text-center ${ticketBookingStatusBadgeClass(b.status)}`}
+                            className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold rounded-full leading-snug text-center ${getTicketBookingStatusBadgeClass(b.status)}`}
                             title={b.status ?? ''}
                           >
-                            {ticketBookingStatusLabelKo(b.status)}
+                            {formatTicketBookingStatusLabel(b.status, tCal, locale)}
                           </span>
+                          <TicketBookingAxisSummary booking={b} variant="inline" className="mt-0.5 text-[9px]" />
                         </td>
                         <td className="px-2 py-1.5 text-gray-900">{b.company || '—'}</td>
                         <td className="px-2 py-1.5 text-gray-800">

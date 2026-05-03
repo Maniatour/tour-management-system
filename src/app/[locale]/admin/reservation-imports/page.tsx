@@ -19,6 +19,12 @@ import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Product } from '@/types/reservation'
 import { ReservationCancellationImportModal } from '@/components/reservation/ReservationCancellationImportModal'
+import {
+  GMAIL_RESERVATION_SYNC_COMPLETE,
+  GMAIL_RESERVATION_SYNC_UNAUTHORIZED,
+  useGmailReservationImportSync,
+  type GmailReservationImportSyncDetail,
+} from '@/contexts/GmailReservationImportSyncContext'
 
 interface ImportItem {
   id: string
@@ -150,8 +156,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [pasteFrom, setPasteFrom] = useState('')
   const [pasteSubmitting, setPasteSubmitting] = useState(false)
   const [gmailStatus, setGmailStatus] = useState<{ connected: boolean; email: string | null; updated_at: string | null }>(emptyGmailStatus)
-  const [gmailSyncing, setGmailSyncing] = useState(false)
   const [gmailMessage, setGmailMessage] = useState<string | null>(null)
+  const { isSyncing: gmailSyncing, startGmailImportSync } = useGmailReservationImportSync()
   const [optimisticConnected, setOptimisticConnected] = useState(false)
   const [cancellationModalId, setCancellationModalId] = useState<string | null>(null)
 
@@ -413,36 +419,35 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     if (error) setGmailMessage(`연결 실패: ${decodeURIComponent(error)}`)
   }, [searchParams, fetchGmailStatus])
 
-  const gmailStartAuthUrl = `/api/email/gmail/start?locale=${locale}`
-
-  const handleGmailSync = async (fullSync = false) => {
-    setGmailSyncing(true)
-    setGmailMessage(null)
-    try {
-      const res = await fetch('/api/email/gmail/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullSync }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        if (res.status === 401) {
-          setOptimisticConnected(false)
-          void fetchGmailStatus()
-        }
-        throw new Error(`동기화 실패: ${data?.error || res.statusText}`)
-      }
+  /** 레이아웃에서 백그라운드 동기화가 끝나면 목록·배너 갱신 */
+  useEffect(() => {
+    const onComplete = (ev: Event) => {
+      const d = (ev as CustomEvent<GmailReservationImportSyncDetail>).detail
+      if (!d) return
       setGmailMessage(
-        fullSync
-          ? `전체 재동기화 완료: ${data.queryUsed ?? 'after:날짜'} 검색, ${data.total ?? 0}건 중 새로 추가 ${data.imported ?? 0}건.`
-          : `동기화 완료: 새 메일 ${data.imported ?? 0}건이 예약 가져오기 목록에 추가되었습니다.`
+        d.fullSync
+          ? `전체 재동기화 완료: ${d.queryUsed ?? 'after:날짜'} 검색, ${d.total ?? 0}건 중 새로 추가 ${d.imported ?? 0}건.`
+          : `동기화 완료: 새 메일 ${d.imported ?? 0}건이 예약 가져오기 목록에 추가되었습니다.`
       )
       loadList()
-    } catch (e) {
-      setGmailMessage(e instanceof Error ? e.message : '동기화 실패')
-    } finally {
-      setGmailSyncing(false)
     }
+    const onUnauthorized = () => {
+      setOptimisticConnected(false)
+      void fetchGmailStatus()
+    }
+    window.addEventListener(GMAIL_RESERVATION_SYNC_COMPLETE, onComplete)
+    window.addEventListener(GMAIL_RESERVATION_SYNC_UNAUTHORIZED, onUnauthorized)
+    return () => {
+      window.removeEventListener(GMAIL_RESERVATION_SYNC_COMPLETE, onComplete)
+      window.removeEventListener(GMAIL_RESERVATION_SYNC_UNAUTHORIZED, onUnauthorized)
+    }
+  }, [loadList, fetchGmailStatus])
+
+  const gmailStartAuthUrl = `/api/email/gmail/start?locale=${locale}`
+
+  const handleGmailSync = (fullSync = false) => {
+    setGmailMessage(null)
+    startGmailImportSync(fullSync)
   }
 
   const handlePasteSubmit = async () => {

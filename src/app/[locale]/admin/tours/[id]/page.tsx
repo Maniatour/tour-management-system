@@ -2471,6 +2471,7 @@ export default function TourDetailPage() {
       >
         {showTicketBookingForm && tourData.tour && (
             <TicketBookingFormAny
+              key={editingTicketBooking?.id ?? 'new'}
               booking={editingTicketBooking || undefined}
               tourId={tourData.tour?.id || ''}
               onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTicketBooking, 'ticket')}

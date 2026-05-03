@@ -5,6 +5,7 @@ import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
 import MobileFooter from '@/components/MobileFooter'
 import AdminAuthGuard from '@/components/auth/AdminAuthGuard'
 import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
+import { GmailReservationImportSyncProvider } from '@/contexts/GmailReservationImportSyncContext'
 import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 
 interface AdminLayoutProps {
@@ -26,14 +27,16 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
     <NextIntlClientProvider messages={messages} locale={locale}>
       <AudioPlayerProvider>
         <AdminAuthGuard locale={locale}>
-          <div className="min-h-screen bg-gray-50">
-            <AdminSidebarAndHeader locale={locale}>
-              {children}
-            </AdminSidebarAndHeader>
-            <MobileFooter locale={locale} />
+          <GmailReservationImportSyncProvider>
+            <div className="min-h-screen bg-gray-50">
+              <AdminSidebarAndHeader locale={locale}>
+                {children}
+              </AdminSidebarAndHeader>
+              <MobileFooter locale={locale} />
 
-            <GlobalAudioPlayer />
-          </div>
+              <GlobalAudioPlayer />
+            </div>
+          </GmailReservationImportSyncProvider>
         </AdminAuthGuard>
       </AudioPlayerProvider>
     </NextIntlClientProvider>

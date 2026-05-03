@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
@@ -223,6 +223,36 @@ export default function ReservationExpenseManager({
     }
   }, [reservationId])
 
+  const getEmptyFormData = () => ({
+    paid_to: '',
+    paid_for: '',
+    amount: '',
+    payment_method: '',
+    note: '',
+    image_url: '',
+    file_path: '',
+    custom_paid_to: '',
+    reservation_id: reservationId || '',
+    uploaded_files: [] as File[],
+    reimbursed_amount: '',
+    reimbursed_on: '',
+    reimbursement_note: ''
+  })
+
+  const closeEditModal = () => {
+    setShowEditModal(false)
+    setEditingExpense(null)
+    setFormData(getEmptyFormData())
+    setShowCustomPaidTo(false)
+  }
+
+  const closeAddModal = () => {
+    setShowAddForm(false)
+    setEditingExpense(null)
+    setFormData(getEmptyFormData())
+    setShowCustomPaidTo(false)
+  }
+
   const loadExpenses = async () => {
     try {
       setLoading(true)
@@ -368,6 +398,26 @@ export default function ReservationExpenseManager({
       )
       return
     }
+
+    let finalPaidTo = formData.paid_to
+    if (formData.custom_paid_to) {
+      finalPaidTo = formData.custom_paid_to
+    }
+
+    const amountNum = parseFloat(formData.amount)
+    if (!Number.isFinite(amountNum) || amountNum === 0) {
+      alert(t('invalidAmountNonZero'))
+      return
+    }
+    const paidForVal = (formData.paid_for || '').trim()
+    if (!paidForVal) {
+      alert('결제 내용을 입력하세요.')
+      return
+    }
+    if (!String(finalPaidTo || '').trim()) {
+      alert('결제처를 선택하거나 입력하세요.')
+      return
+    }
     
     try {
       setUploading(true)
@@ -375,11 +425,7 @@ export default function ReservationExpenseManager({
       // 고유 ID 생성 (구글 시트 ID 형식)
       const id = `RE_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
       
-      // 결제처 처리
-      let finalPaidTo = formData.paid_to
       if (formData.custom_paid_to) {
-        finalPaidTo = formData.custom_paid_to
-        // 새로운 벤더 추가
         try {
           const { data: newVendor } = await supabase
             .from('expense_vendors')
@@ -393,21 +439,6 @@ export default function ReservationExpenseManager({
         } catch (error) {
           console.error('Error adding new vendor:', error)
         }
-      }
-      
-      const amountNum = parseFloat(formData.amount)
-      if (!Number.isFinite(amountNum) || amountNum <= 0) {
-        alert('Please enter a valid amount greater than zero.')
-        return
-      }
-      const paidForVal = (formData.paid_for || '').trim()
-      if (!paidForVal) {
-        alert('결제 내용을 입력하세요.')
-        return
-      }
-      if (!String(finalPaidTo || '').trim()) {
-        alert('결제처를 선택하거나 입력하세요.')
-        return
       }
 
       const { data: sessionData } = await supabase.auth.getSession()
@@ -446,23 +477,7 @@ export default function ReservationExpenseManager({
       const data = result.data as ReservationExpense
 
       setExpenses(prev => [data, ...prev])
-      setShowAddForm(false)
-      setFormData({
-        paid_to: '',
-        paid_for: '',
-        amount: '',
-        payment_method: '',
-        note: '',
-        image_url: '',
-        file_path: '',
-        custom_paid_to: '',
-        reservation_id: reservationId || '',
-        uploaded_files: [],
-        reimbursed_amount: '',
-        reimbursed_on: '',
-        reimbursement_note: ''
-      })
-      setShowCustomPaidTo(false)
+      closeAddModal()
       onExpenseUpdated?.()
       alert('예약 지출이 등록되었습니다.')
     } catch (error) {
@@ -480,6 +495,10 @@ export default function ReservationExpenseManager({
     if (!editingExpense) return
 
     const amountNum = parseFloat(formData.amount)
+    if (!Number.isFinite(amountNum) || amountNum === 0) {
+      alert(t('invalidAmountNonZero'))
+      return
+    }
     const reimb = parseFloat(String(formData.reimbursed_amount ?? '').trim() || '0')
     if (!Number.isFinite(reimb) || reimb < 0) {
       alert(tTour('reimbursementInvalidNonNegative'))
@@ -589,28 +608,6 @@ export default function ReservationExpenseManager({
     setShowEditModal(true)
   }
 
-  const closeEditModal = () => {
-    setShowEditModal(false)
-    setEditingExpense(null)
-    setFormData({
-      paid_to: '',
-      paid_for: '',
-      amount: '',
-      payment_method: '',
-      note: '',
-      image_url: '',
-      file_path: '',
-      custom_paid_to: '',
-      reservation_id: reservationId || '',
-      uploaded_files: [],
-      reimbursed_amount: '',
-      reimbursed_on: '',
-      reimbursement_note: ''
-    })
-    setShowCustomPaidTo(false)
-  }
-
-
   // 드래그 앤 드롭 핸들러
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -703,6 +700,9 @@ export default function ReservationExpenseManager({
       currency: 'USD'
     }).format(amount)
   }
+
+  const amountDisplayClass = (amount: number) =>
+    amount < 0 ? 'text-red-600' : 'text-green-600'
 
   // 총 금액 계산 (예약 폼에 임베드될 때 헤더용 — 전체 목록)
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0)
@@ -992,42 +992,20 @@ export default function ReservationExpenseManager({
       </div>
       )}
 
-      {/* 지출 추가 폼 - 인라인 (추가만, 수정은 모달 사용) */}
-      {showAddForm && !editingExpense && (
-        <div
-          className={`bg-white border p-3 sm:p-4 shadow-sm ${adminList ? 'rounded-xl border-gray-200' : 'rounded-lg'}`}
-        >
-          <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <h4 className="text-base sm:text-lg font-medium text-gray-900">
-              {editingExpense ? t('editExpense') : t('addExpense')}
-            </h4>
-            <button
-              onClick={() => {
-                setShowAddForm(false)
-                setEditingExpense(null)
-                setFormData({
-                  paid_to: '',
-                  paid_for: '',
-                  amount: '',
-                  payment_method: '',
-                  note: '',
-                  image_url: '',
-                  file_path: '',
-                  custom_paid_to: '',
-                  reservation_id: reservationId || '',
-                  uploaded_files: [],
-                  reimbursed_amount: '',
-                  reimbursed_on: '',
-                  reimbursement_note: ''
-                })
-              }}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X size={20} />
-            </button>
-          </div>
+      {/* 지출 추가 — 모달 (수정도 별도 모달) */}
+      <Dialog
+        open={showAddForm && !editingExpense}
+        onOpenChange={(open) => {
+          if (!open) closeAddModal()
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('addExpense')}</DialogTitle>
+            <DialogDescription>{t('amountRefundHint')}</DialogDescription>
+          </DialogHeader>
 
-          <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-3 sm:space-y-4 pt-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               {/* 결제처 */}
               <div>
@@ -1103,8 +1081,7 @@ export default function ReservationExpenseManager({
                   type="number"
                   value={formData.amount ?? ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-                  placeholder="0"
-                  min="0"
+                  placeholder={t('amountInputPlaceholder')}
                   step="0.01"
                   className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
@@ -1282,28 +1259,10 @@ export default function ReservationExpenseManager({
             </div>
 
             {/* 버튼 */}
-            <div className="flex justify-end space-x-2">
+            <div className="flex justify-end space-x-2 pt-2 border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => {
-                  setShowAddForm(false)
-                  setEditingExpense(null)
-                  setFormData({
-                    paid_to: '',
-                    paid_for: '',
-                    amount: '',
-                    payment_method: '',
-                    note: '',
-                    image_url: '',
-                    file_path: '',
-                    custom_paid_to: '',
-                    reservation_id: reservationId || '',
-                    uploaded_files: [],
-                    reimbursed_amount: '',
-                    reimbursed_on: '',
-                    reimbursement_note: ''
-                  })
-                }}
+                onClick={() => closeAddModal()}
                 className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 {t('buttons.cancel')}
@@ -1314,12 +1273,12 @@ export default function ReservationExpenseManager({
                 disabled={uploading}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
-                {uploading ? t('processing') : (editingExpense ? t('buttons.edit') : t('buttons.register'))}
+                {uploading ? t('processing') : t('buttons.register')}
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {/* 지출 목록 */}
       {loading ? (
@@ -1338,7 +1297,7 @@ export default function ReservationExpenseManager({
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
-                    <p className="text-lg font-bold text-green-600 whitespace-nowrap">{formatCurrency(expense.amount)}</p>
+                    <p className={`text-lg font-bold whitespace-nowrap ${amountDisplayClass(expense.amount)}`}>{formatCurrency(expense.amount)}</p>
                   </div>
                   <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
                     <span className="text-gray-400">{tTour('date')}</span>
@@ -1429,7 +1388,7 @@ export default function ReservationExpenseManager({
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate">
                         {reservationCustomerLabel(expense) ?? '—'}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600 text-right">
+                      <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium text-right ${amountDisplayClass(expense.amount)}`}>
                         {formatCurrency(expense.amount)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 text-right">
@@ -1508,7 +1467,7 @@ export default function ReservationExpenseManager({
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-gray-900 text-xs truncate">{expense.paid_for}</span>
-                  <span className="text-sm font-semibold text-green-600 flex-shrink-0">{formatCurrency(expense.amount)}</span>
+                  <span className={`text-sm font-semibold flex-shrink-0 ${amountDisplayClass(expense.amount)}`}>{formatCurrency(expense.amount)}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${getStatusColor(expense.status)}`}>{getStatusText(expense.status)}</span>
                   {expense.payment_method && (
                     <span className="text-[10px] text-gray-500 flex-shrink-0">
@@ -1518,14 +1477,16 @@ export default function ReservationExpenseManager({
                 </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleEditExpense(expense); }}
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditExpense(expense); }}
                     className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
                     title={t('buttons.edit')}
                   >
                     <Edit size={14} />
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteExpense(expense.id); }}
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteExpense(expense.id); }}
                     className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
                     title={t('buttons.delete')}
                   >
@@ -1627,6 +1588,7 @@ export default function ReservationExpenseManager({
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('editExpense')}</DialogTitle>
+            <DialogDescription>{t('amountRefundHint')}</DialogDescription>
           </DialogHeader>
           {editingExpense && (
             <div className="space-y-4 pt-2">
@@ -1654,8 +1616,8 @@ export default function ReservationExpenseManager({
                     type="number"
                     value={formData.amount ?? ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-                    min="0"
                     step="0.01"
+                    placeholder={t('amountInputPlaceholder')}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createSupabaseClientWithToken, supabase } from '@/lib/supabase'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 // 입금 내역 조회
@@ -22,9 +22,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    // 입금 내역 조회 (간단한 쿼리로 변경)
+    // 입금 내역 조회 — 브라우저 세션과 동일한 RLS가 적용되도록 사용자 JWT 클라이언트 사용
     try {
-      let query = supabase
+      const db = createSupabaseClientWithToken(token)
+      let query = db
         .from('payment_records')
         .select('*')
         .order('created_at', { ascending: false })

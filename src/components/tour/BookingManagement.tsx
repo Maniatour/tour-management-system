@@ -1,6 +1,7 @@
 import React from 'react'
 import { Plus, Hotel } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
+import { formatTicketBookingStatusLabel, getTicketBookingStatusBadgeClass } from '@/lib/ticketBookingStatus'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
 /** 간단히 보기(집계) 시 시간·인원·예약번호·RN#을 줄 단위로 표시하기 위한 한 줄 데이터 */
@@ -20,6 +21,7 @@ interface LocalTicketBooking {
   category?: string | null
   time?: string | null
   ea?: number | null
+  expense?: number | null
   rn_number?: string | null
   invoice_number?: string | null
   deletion_requested_at?: string | null
@@ -72,51 +74,8 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
   onToggleTicketBookingDetails
 }) => {
   const t = useTranslations('tours.bookingManagement')
-  
-  const getStatusColor = (status: string | null) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return 'bg-green-100 text-green-800'
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'cancelled':
-        return 'bg-red-100 text-red-800'
-      case 'completed':
-        return 'bg-blue-100 text-blue-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getStatusText = (status: string | null) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return 'Confirm'
-      case 'pending':
-        return 'Pending'
-      case 'cancelled':
-        return 'Cancelled'
-      case 'completed':
-        return 'Completed'
-      default:
-        return status || 'Unknown'
-    }
-  }
-
-  const getHotelStatusText = (status: string | null) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return 'Confirmed'
-      case 'pending':
-        return 'Pending'
-      case 'cancelled':
-        return 'Cancelled'
-      case 'completed':
-        return 'Completed'
-      default:
-        return status || 'Unknown'
-    }
-  }
+  const tCal = useTranslations('booking.calendar')
+  const locale = useLocale()
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
@@ -190,8 +149,10 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                           )}
                         </div>
                         {!isAggregated && booking.status && (
-                          <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
-                            {getStatusText(booking.status)}
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full ${getTicketBookingStatusBadgeClass(booking.status)}`}
+                          >
+                            {formatTicketBookingStatusLabel(booking.status, tCal, locale)}
                           </span>
                         )}
                       </div>
@@ -303,8 +264,10 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                           </span>
                           <div className="flex items-center space-x-2 shrink-0">
                             <span className="text-gray-500">{t('statusLabel')}:</span>
-                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(booking.status)}`}>
-                              {getHotelStatusText(booking.status)}
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs ${getTicketBookingStatusBadgeClass(booking.status)}`}
+                            >
+                              {formatTicketBookingStatusLabel(booking.status, tCal, locale)}
                             </span>
                           </div>
                         </div>

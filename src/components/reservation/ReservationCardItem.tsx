@@ -89,7 +89,6 @@ function formatRegistrationDateForCard(reservation: Reservation, locale: string)
       year: 'numeric',
       month: 'short',
       day: 'numeric',
-      timeZone: 'America/Los_Angeles',
     })
   }
   return raw.trim()
@@ -1180,7 +1179,6 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   year: 'numeric',
                   month: 'short',
                   day: 'numeric',
-                  timeZone: 'America/Los_Angeles',
                 })}
               </span>
             ) : null}

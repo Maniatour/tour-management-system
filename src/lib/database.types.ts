@@ -6952,19 +6952,32 @@ export type Database = {
       }
       ticket_bookings: {
         Row: {
+          booking_status: string
+          booking_status_before_change: string | null
           category: string
+          change_status: string
           check_in_date: string
           company: string | null
           created_at: string | null
+          credit_amount: number | null
           deletion_requested_at: string | null
           deletion_requested_by: string | null
           ea: number | null
           expense: number | null
+          hold_expires_at: string | null
           id: string
           income: number | null
           invoice_number: string | null
           note: string | null
+          operation_status: string
+          paid_amount: number | null
+          payment_due_at: string | null
           payment_method: string | null
+          payment_status: string
+          pending_ea: number | null
+          pending_time: string | null
+          refund_amount: number | null
+          refund_status: string
           reservation_id: string | null
           rn_number: string | null
           season: string | null
@@ -6976,22 +6989,37 @@ export type Database = {
           tour_id: string | null
           updated_at: string | null
           uploaded_file_urls: string[] | null
+          vendor_confirmation_number: string | null
+          vendor_status: string
           zelle_confirmation_number: string | null
         }
         Insert: {
+          booking_status?: string
+          booking_status_before_change?: string | null
           category: string
+          change_status?: string
           check_in_date: string
           company?: string | null
           created_at?: string | null
+          credit_amount?: number | null
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
           ea?: number | null
           expense?: number | null
+          hold_expires_at?: string | null
           id?: string
           income?: number | null
           invoice_number?: string | null
           note?: string | null
+          operation_status?: string
+          paid_amount?: number | null
+          payment_due_at?: string | null
           payment_method?: string | null
+          payment_status?: string
+          pending_ea?: number | null
+          pending_time?: string | null
+          refund_amount?: number | null
+          refund_status?: string
           reservation_id?: string | null
           rn_number?: string | null
           season?: string | null
@@ -7003,22 +7031,37 @@ export type Database = {
           tour_id?: string | null
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
+          vendor_confirmation_number?: string | null
+          vendor_status?: string
           zelle_confirmation_number?: string | null
         }
         Update: {
+          booking_status?: string
+          booking_status_before_change?: string | null
           category?: string
+          change_status?: string
           check_in_date?: string
           company?: string | null
           created_at?: string | null
+          credit_amount?: number | null
           deletion_requested_at?: string | null
           deletion_requested_by?: string | null
           ea?: number | null
           expense?: number | null
+          hold_expires_at?: string | null
           id?: string
           income?: number | null
           invoice_number?: string | null
           note?: string | null
+          operation_status?: string
+          paid_amount?: number | null
+          payment_due_at?: string | null
           payment_method?: string | null
+          payment_status?: string
+          pending_ea?: number | null
+          pending_time?: string | null
+          refund_amount?: number | null
+          refund_status?: string
           reservation_id?: string | null
           rn_number?: string | null
           season?: string | null
@@ -7030,6 +7073,8 @@ export type Database = {
           tour_id?: string | null
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
+          vendor_confirmation_number?: string | null
+          vendor_status?: string
           zelle_confirmation_number?: string | null
         }
         Relationships: [
@@ -7052,6 +7097,226 @@ export type Database = {
             columns: ["reservation_id"]
             isOneToOne: false
             referencedRelation: "reservations_with_invalid_products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_booking_changes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          request_payload: Json
+          resolution_note: string | null
+          resolved_at: string | null
+          ticket_booking_id: string
+          updated_at: string
+          workflow_status: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          request_payload?: Json
+          resolution_note?: string | null
+          resolved_at?: string | null
+          ticket_booking_id: string
+          updated_at?: string
+          workflow_status?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          request_payload?: Json
+          resolution_note?: string | null
+          resolved_at?: string | null
+          ticket_booking_id?: string
+          updated_at?: string
+          workflow_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_booking_changes_ticket_booking_id_fkey"
+            columns: ["ticket_booking_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_booking_payments: {
+        Row: {
+          amount: number | null
+          created_at: string
+          due_at: string | null
+          external_ref: string | null
+          id: string
+          meta: Json
+          paid_at: string | null
+          status: string
+          ticket_booking_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number | null
+          created_at?: string
+          due_at?: string | null
+          external_ref?: string | null
+          id?: string
+          meta?: Json
+          paid_at?: string | null
+          status?: string
+          ticket_booking_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number | null
+          created_at?: string
+          due_at?: string | null
+          external_ref?: string | null
+          id?: string
+          meta?: Json
+          paid_at?: string | null
+          status?: string
+          ticket_booking_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_booking_payments_ticket_booking_id_fkey"
+            columns: ["ticket_booking_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_booking_refunds: {
+        Row: {
+          amount: number | null
+          created_at: string
+          credit_amount: number | null
+          id: string
+          meta: Json
+          note: string | null
+          resolved_at: string | null
+          status: string
+          ticket_booking_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number | null
+          created_at?: string
+          credit_amount?: number | null
+          id?: string
+          meta?: Json
+          note?: string | null
+          resolved_at?: string | null
+          status?: string
+          ticket_booking_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number | null
+          created_at?: string
+          credit_amount?: number | null
+          id?: string
+          meta?: Json
+          note?: string | null
+          resolved_at?: string | null
+          status?: string
+          ticket_booking_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_booking_refunds_ticket_booking_id_fkey"
+            columns: ["ticket_booking_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_booking_refund_lines: {
+        Row: {
+          amount: number | null
+          anchor_booking_id: string
+          created_at: string
+          ea: number | null
+          id: string
+          note: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number | null
+          anchor_booking_id: string
+          created_at?: string
+          ea?: number | null
+          id?: string
+          note?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number | null
+          anchor_booking_id?: string
+          created_at?: string
+          ea?: number | null
+          id?: string
+          note?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_booking_refund_lines_anchor_booking_id_fkey"
+            columns: ["anchor_booking_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_booking_status_logs: {
+        Row: {
+          action: string
+          actor: string | null
+          created_at: string
+          id: string
+          new_snapshot: Json | null
+          old_snapshot: Json | null
+          payload: Json
+          ticket_booking_id: string
+        }
+        Insert: {
+          action: string
+          actor?: string | null
+          created_at?: string
+          id?: string
+          new_snapshot?: Json | null
+          old_snapshot?: Json | null
+          payload?: Json
+          ticket_booking_id: string
+        }
+        Update: {
+          action?: string
+          actor?: string | null
+          created_at?: string
+          id?: string
+          new_snapshot?: Json | null
+          old_snapshot?: Json | null
+          payload?: Json
+          ticket_booking_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_booking_status_logs_ticket_booking_id_fkey"
+            columns: ["ticket_booking_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_bookings"
             referencedColumns: ["id"]
           },
         ]
@@ -9974,6 +10239,15 @@ export type Database = {
           reservation_id: string
         }
         Returns: boolean
+      }
+      apply_ticket_booking_action: {
+        Args: {
+          p_action: string
+          p_actor?: string | null
+          p_booking_id: string
+          p_payload?: Json
+        }
+        Returns: Json
       }
       batch_update_invalid_product_ids: {
         Args: never

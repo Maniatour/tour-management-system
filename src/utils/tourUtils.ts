@@ -26,6 +26,21 @@ export function normalizeReservationIds(reservationIds: unknown): string[] {
   return []
 }
 
+/**
+ * tours.tour_guide_id / assistant_id 에 콤마 구분·JSON 장식 문자열이 올 수 있음 (DB normalize_email_list 와 동작 유사).
+ * 봉투 인쇄 등에서 각 이메일별로 team.display_name 을 조회할 때 사용.
+ */
+export function parseTourAssignmentEmails(raw: string | null | undefined): string[] {
+  if (raw == null || typeof raw !== 'string') return []
+  let cleaned = raw.trim()
+  if (!cleaned) return []
+  cleaned = cleaned.replace(/[\[\]"]/g, '')
+  return cleaned
+    .split(/\s*,\s*/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
 /** UUID 하이픈 유무·대소문자 차이를 무시하고 예약 ID가 같은지 비교 */
 export function reservationIdsLooselyEqual(a: string, b: string): boolean {
   const na = String(a).trim().toLowerCase()

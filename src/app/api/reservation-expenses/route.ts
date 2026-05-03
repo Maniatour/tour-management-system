@@ -100,16 +100,16 @@ export async function POST(request: NextRequest) {
       status = 'pending'
     } = body
 
-    // 필수 필드 검증
-    if (!id || !submitted_by || !paid_to || !paid_for || !amount) {
+    // 필수 필드 검증 (amount는 음수 허용 — null/undefined/'' 만 누락으로 처리)
+    if (!id || !submitted_by || !paid_to || !paid_for || amount === undefined || amount === null || amount === '') {
       return NextResponse.json(
         { success: false, message: 'Missing required fields' },
         { status: 400 }
       )
     }
 
-    // 금액 검증
-    if (isNaN(amount) || amount <= 0) {
+    const amountNum = typeof amount === 'number' ? amount : parseFloat(String(amount))
+    if (!Number.isFinite(amountNum) || amountNum === 0) {
       return NextResponse.json(
         { success: false, message: 'Invalid amount' },
         { status: 400 }
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
         submitted_by,
         paid_to,
         paid_for,
-        amount: parseFloat(amount),
+        amount: amountNum,
         payment_method,
         note,
         image_url,
@@ -199,12 +199,14 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // 금액이 있으면 검증
-    if (updateData.amount && (isNaN(updateData.amount) || updateData.amount <= 0)) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid amount' },
-        { status: 400 }
-      )
+    if (updateData.amount !== undefined && updateData.amount !== null) {
+      const n = typeof updateData.amount === 'number' ? updateData.amount : parseFloat(String(updateData.amount))
+      if (!Number.isFinite(n) || n === 0) {
+        return NextResponse.json(
+          { success: false, message: 'Invalid amount' },
+          { status: 400 }
+        )
+      }
     }
 
     const { data, error } = await db

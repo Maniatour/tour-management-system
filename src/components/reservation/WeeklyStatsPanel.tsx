@@ -65,15 +65,13 @@ export default function WeeklyStatsPanel({
 
   const regCancelChartData = useMemo(() => {
     const tag = locale === 'ko' ? 'ko-KR' : 'en-US'
-    const lvOpts = {
-      timeZone: 'America/Los_Angeles',
-      weekday: 'short' as const,
-      month: 'numeric' as const,
-      day: 'numeric' as const,
-    }
     return weeklyRegCancelByDay.map((row) => ({
       ...row,
-      shortLabel: new Date(`${row.dateKey}T12:00:00`).toLocaleDateString(tag, lvOpts),
+      shortLabel: new Date(`${row.dateKey}T12:00:00`).toLocaleDateString(tag, {
+        weekday: 'short',
+        month: 'numeric',
+        day: 'numeric',
+      }),
     }))
   }, [weeklyRegCancelByDay, locale])
 

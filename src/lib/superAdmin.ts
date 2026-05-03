@@ -6,3 +6,12 @@ export function isSuperAdminEmail(email: string | null | undefined): boolean {
   const n = email.trim().toLowerCase();
   return (SUPER_ADMIN_EMAILS as readonly string[]).includes(n);
 }
+
+/** 팀 `position === 'super'` 또는 슈퍼 관리자 이메일 */
+export function isSuperAdminActor(
+  email: string | null | undefined,
+  teamPosition?: string | null
+): boolean {
+  if (isSuperAdminEmail(email)) return true;
+  return (teamPosition ?? '').trim().toLowerCase() === 'super';
+}

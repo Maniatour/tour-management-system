@@ -501,9 +501,29 @@ export type GetBalanceDisplayOpts = {
 }
 
 /**
+ * `ReservationCard` fetchReservationPricing과 동일: `balance_amount` 비정상 문자열은 미설정으로 취급해
+ * 배정 헤더 합계·카드 `getBalanceAmountForDisplay` 입력을 맞춤.
+ */
+export function withNormalizedBalanceAmountForDisplay(
+  pricing: Record<string, unknown>
+): PricingBalanceFields {
+  const rawBal: unknown = pricing.balance_amount
+  let balance_amount: unknown
+  if (rawBal === null || rawBal === undefined || rawBal === '') {
+    balance_amount = undefined
+  } else if (typeof rawBal === 'string') {
+    const n = parseFloat(rawBal)
+    balance_amount = Number.isFinite(n) ? n : undefined
+  } else {
+    balance_amount = rawBal
+  }
+  return { ...pricing, balance_amount } as PricingBalanceFields
+}
+
+/**
  * 잔액 표시: 입금이 있으면 가격 정보 탭 `displayedOnSiteBalance`와 같은 식(`computeDisplayedOnSiteBalanceLikePricingSection`).
- * `balance_amount`(DB)는 `displayedOnSiteBalance`와 같이: 비어 있으면 계산값만; 0인데 계산이 더 크면 계산값;
- * 양수인데 계산이 ~0이면 정산 완료로 계산값; 그 외 양수는 사용자 저장값.
+ * `balance_amount`(DB)가 비어 있으면 위 계산·또는(입금 없음) 라인 산식 잔액.
+ * 입금이 있을 때 DB에 양수 잔액이 저장돼 있으면 계산값이 ~0이어도 DB값을 표시(배정 카드·DB 잔금 일치).
  */
 export function getBalanceAmountForDisplay(
   pricing: PricingBalanceFields | null | undefined,
@@ -552,11 +572,12 @@ export function getBalanceAmountForDisplay(
       if (Math.abs(defaultBalance) > 0.01) return defaultBalance
       return roundUsd2(storedNum)
     }
-    if (storedNum > 0.005) {
-      if (defaultBalance <= 0.02) return roundUsd2(defaultBalance)
-      return roundUsd2(storedNum)
-    }
     return roundUsd2(storedNum)
+  }
+
+  const rawStoredNoRecords = pricing.balance_amount
+  if (rawStoredNoRecords !== undefined && rawStoredNoRecords !== null && rawStoredNoRecords !== '') {
+    return roundUsd2(pricingFieldToNumber(rawStoredNoRecords))
   }
 
   return computeRemainingBalanceAmount(pricing, optionsTotalFromOptions, party)

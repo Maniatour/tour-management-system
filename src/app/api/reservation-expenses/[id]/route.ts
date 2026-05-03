@@ -80,12 +80,14 @@ export async function PUT(
     const { id } = params
     const body = await request.json()
 
-    // 금액이 있으면 검증
-    if (body.amount && (isNaN(body.amount) || body.amount <= 0)) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid amount' },
-        { status: 400 }
-      )
+    if (body.amount !== undefined && body.amount !== null) {
+      const n = typeof body.amount === 'number' ? body.amount : parseFloat(String(body.amount))
+      if (!Number.isFinite(n) || n === 0) {
+        return NextResponse.json(
+          { success: false, message: 'Invalid amount' },
+          { status: 400 }
+        )
+      }
     }
 
     if (
