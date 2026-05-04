@@ -679,6 +679,13 @@ function statementLinePostedYmd(line: { posted_date?: string | null }): string {
   return raw.length >= 10 ? raw.slice(0, 10) : ''
 }
 
+/** 자동 매칭 미리보기: 명세 거래일 vs 지출 등록일(submit_on) 달력일 비교용 */
+function autoMatchComparableYmd(raw: string | null | undefined): string {
+  const s = String(raw ?? '').trim()
+  if (s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  return ''
+}
+
 function paymentMethodLabelFromRows(id: string | null | undefined, rows: PaymentMethodRow[]): string {
   const raw = id?.trim()
   if (!raw) return '—'
@@ -4641,6 +4648,15 @@ export default function StatementReconciliationTab() {
                   const selectedKey = autoMatchCandidateSelection[p.statement_line_id] || p.candidates[0]!.key
                   const selected = p.candidates.find((c) => c.key === selectedKey) ?? p.candidates[0]!
                   const amountDiff = Math.abs(selected.expense_amount - p.line_amount)
+                  const amountMismatch = amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS
+                  const lineYmd = autoMatchComparableYmd(p.posted_date)
+                  const regYmd = autoMatchComparableYmd(selected.expense_registered_date)
+                  const dateMismatch =
+                    lineYmd.length === 10 && regYmd.length === 10 && lineYmd !== regYmd
+                  const dateMismatchClass = dateMismatch ? 'text-red-600 font-semibold' : 'text-slate-800'
+                  const dateMismatchClassMuted = dateMismatch ? 'text-red-600 font-semibold' : 'text-slate-700'
+                  const lineAmountClass = amountMismatch ? 'text-red-600 font-semibold' : ''
+                  const expenseAmountClass = amountMismatch ? 'text-red-600 font-semibold' : 'text-slate-700'
                   return (
                   <tr key={p.statement_line_id} className="border-b border-slate-100 align-top">
                     <td className="py-1.5 pr-1 text-center align-middle">
@@ -4659,8 +4675,8 @@ export default function StatementReconciliationTab() {
                         aria-label="이 행 저장 여부"
                       />
                     </td>
-                    <td className="py-1.5 pr-2 whitespace-nowrap text-slate-800">{p.posted_date}</td>
-                    <td className="py-1.5 pr-2 text-right tabular-nums">
+                    <td className={`py-1.5 pr-2 whitespace-nowrap ${dateMismatchClass}`}>{p.posted_date}</td>
+                    <td className={`py-1.5 pr-2 text-right tabular-nums ${lineAmountClass}`}>
                       ${Number(p.line_amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
                     <td className="py-1.5 pr-2 text-slate-800 break-words">{p.line_desc || '—'}</td>
@@ -4699,17 +4715,13 @@ export default function StatementReconciliationTab() {
                     <td className="py-1.5 pr-2 text-slate-700 whitespace-nowrap">
                       {AUTO_MATCH_SOURCE_LABEL[selected.source_table]}
                     </td>
-                    <td className="py-1.5 pr-2 whitespace-nowrap tabular-nums text-slate-700">
+                    <td className={`py-1.5 pr-2 whitespace-nowrap tabular-nums ${dateMismatchClassMuted}`}>
                       {formatExpenseSubmitOnUsMdY(selected.expense_registered_date)}
                     </td>
-                    <td
-                      className={`py-1.5 pr-2 text-right tabular-nums ${
-                        amountDiff >= 0.015 ? 'font-semibold text-amber-800' : 'text-slate-700'
-                      }`}
-                    >
+                    <td className={`py-1.5 pr-2 text-right tabular-nums ${expenseAmountClass}`}>
                       {`$${selected.expense_amount.toFixed(2)}`}
-                      {amountDiff >= 0.015 ? (
-                        <div className="text-[10px] font-normal text-amber-700">
+                      {amountMismatch ? (
+                        <div className="text-[10px] font-normal text-red-600">
                           차이 ${amountDiff.toFixed(2)}
                         </div>
                       ) : null}
