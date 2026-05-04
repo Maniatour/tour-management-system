@@ -80,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const userRef = useRef<AuthUser | null>(null)
   userRef.current = user
+  const userRoleRef = useRef<UserRole | null>(null)
+  userRoleRef.current = userRole
 
   // 토큰 자동 갱신 함수
   const refreshTokenIfNeeded = useCallback(async () => {
@@ -877,8 +879,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         })
         
         if (event === 'SIGNED_OUT') {
-          // 모바일에서 다른 앱으로 전환 후 복귀 시 일시적 SIGNED_OUT이 올 수 있음.
-          // 세션/리프레시 토큰으로 한 번 더 확인한 뒤에만 로그아웃 처리한다.
+          // 모바일에서 카메라 등 다른 앱 후 복귀 시 일시적 SIGNED_OUT·빈 getSession이 올 수 있음.
+          // 짧은 지연·재시도 후에도 세션이 없을 때만 로그아웃 처리한다.
           console.log('AuthContext: SIGNED_OUT received, verifying session (mobile resume guard)')
           void (async () => {
             const clearSignedOutState = () => {
@@ -889,33 +891,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setPermissions(null)
               setLoading(false)
             }
+            const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(ua)
+            const initialDelayMs = isMobile ? 700 : 220
+
+            const tryRestoreFromStorage = async (): Promise<Session | null> => {
+              if (!supabase) return null
+              const rt = localStorage.getItem('sb-refresh-token')
+              if (!rt) return null
+              const { data, error } = await supabase.auth.refreshSession({ refresh_token: rt })
+              if (error || !data.session?.user?.email) return null
+              return data.session
+            }
+
             try {
-              await new Promise((r) => setTimeout(r, 200))
+              await new Promise((r) => setTimeout(r, initialDelayMs))
               if (!supabase) {
                 clearSignedOutState()
                 return
               }
-              const { data: { session: verifySession } } = await supabase.auth.getSession()
-              if (verifySession?.user?.email) {
-                console.log('AuthContext: Session still valid after SIGNED_OUT, keeping user')
-                const authUserData = authUserFromSupabaseSessionUser(verifySession.user)
-                setUser(authUserData)
-                setAuthUser(authUserData)
-                persistSupabaseSessionToStorage(verifySession)
-                updateSupabaseToken(verifySession.access_token)
-                return
-              }
-              const rt = localStorage.getItem('sb-refresh-token')
-              if (rt) {
-                const { data, error } = await supabase.auth.refreshSession({ refresh_token: rt })
-                if (data.session?.user?.email && !error) {
-                  console.log('AuthContext: Session recovered via refresh after SIGNED_OUT')
-                  const s = data.session
-                  const authUserData = authUserFromSupabaseSessionUser(s.user)
+
+              for (let attempt = 0; attempt < 3; attempt++) {
+                if (attempt > 0) {
+                  await new Promise((r) => setTimeout(r, 450))
+                }
+                const { data: { session: verifySession } } = await supabase.auth.getSession()
+                if (verifySession?.user?.email) {
+                  console.log('AuthContext: Session still valid after SIGNED_OUT, keeping user')
+                  const authUserData = authUserFromSupabaseSessionUser(verifySession.user)
                   setUser(authUserData)
                   setAuthUser(authUserData)
-                  persistSupabaseSessionToStorage(s)
-                  updateSupabaseToken(s.access_token)
+                  persistSupabaseSessionToStorage(verifySession)
+                  updateSupabaseToken(verifySession.access_token)
+                  return
+                }
+                const refreshed = await tryRestoreFromStorage()
+                if (refreshed?.user?.email) {
+                  console.log('AuthContext: Session recovered via refresh after SIGNED_OUT')
+                  const authUserData = authUserFromSupabaseSessionUser(refreshed.user)
+                  setUser(authUserData)
+                  setAuthUser(authUserData)
+                  persistSupabaseSessionToStorage(refreshed)
+                  updateSupabaseToken(refreshed.access_token)
                   return
                 }
               }
@@ -1032,7 +1049,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       lastResumeSync = now
 
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
+        let { data: { session }, error } = await supabase.auth.getSession()
+        // 카메라 앱 복귀 직후 in-memory 세션이 비어 있어도 localStorage 리프레시로 복구되는 경우가 많음
+        if ((error || !session?.user?.email) && typeof window !== 'undefined') {
+          const rt = localStorage.getItem('sb-refresh-token')
+          if (rt) {
+            const { data: refData, error: refErr } = await supabase.auth.refreshSession({
+              refresh_token: rt,
+            })
+            if (!refErr && refData.session?.user?.email) {
+              session = refData.session
+              error = null
+            }
+          }
+        }
         if (error || !session?.user?.email) return
 
         const nowSec = Math.floor(Date.now() / 1000)
@@ -1067,6 +1097,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthUser(authUserData)
         void checkUserRole(resumedEmail).catch((err) => {
           console.error('AuthContext: Team check failed on resume:', err)
+          const prevRole = userRoleRef.current
+          if (prevRole === 'team_member' || prevRole === 'admin' || prevRole === 'manager') {
+            // 모바일 복귀 직후 team 조회 타임아웃 등으로 customer로 떨어지면 가이드가 로그인 풀린 것처럼 보임
+            setLoading(false)
+            setIsInitialized(true)
+            return
+          }
           setUserRole('customer')
           setUserPosition(null)
           setPermissions(null)
@@ -1081,8 +1118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const onVisibility = () => {
       void resumeSync()
     }
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) void resumeSync()
+    const onPageShow = (_e: PageTransitionEvent) => {
+      // bfcache뿐 아니라 카메라 앱 복귀 등에서도 세션 재동기화 (내부 스로틀 있음)
+      void resumeSync()
     }
 
     document.addEventListener('visibilitychange', onVisibility)

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
@@ -189,6 +189,8 @@ export default function ReservationExpenseManager({
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
+  /** 관리자 목록: 명세 대조 미연결만 API에서 조회 */
+  const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; paidFor: string } | null>(null)
 
   // 폼 데이터
@@ -208,9 +210,35 @@ export default function ReservationExpenseManager({
     reimbursement_note: ''
   })
 
+  const loadExpenses = useCallback(async () => {
+    try {
+      setLoading(true)
+      const params = new URLSearchParams()
+      if (reservationId) params.append('reservation_id', reservationId)
+      if (submittedBy) params.append('submitted_by', submittedBy)
+      if (statementMatchFilter === 'unmatched') params.append('statement_match', 'unmatched')
+
+      const response = await fetch(`/api/reservation-expenses?${params}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setExpenses(result.data)
+      }
+    } catch (error) {
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading expenses:', error)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [reservationId, submittedBy, statementMatchFilter])
+
   // 데이터 로드
   useEffect(() => {
-    loadExpenses()
+    void loadExpenses()
+  }, [loadExpenses])
+
+  useEffect(() => {
     loadVendors()
     loadTeamMembers()
     if (!reservationId) loadReservations()
@@ -251,28 +279,6 @@ export default function ReservationExpenseManager({
     setEditingExpense(null)
     setFormData(getEmptyFormData())
     setShowCustomPaidTo(false)
-  }
-
-  const loadExpenses = async () => {
-    try {
-      setLoading(true)
-      const params = new URLSearchParams()
-      if (reservationId) params.append('reservation_id', reservationId)
-      if (submittedBy) params.append('submitted_by', submittedBy)
-
-      const response = await fetch(`/api/reservation-expenses?${params}`)
-      const result = await response.json()
-      
-      if (result.success) {
-        setExpenses(result.data)
-      }
-    } catch (error) {
-      if (!isAbortLikeError(error)) {
-        console.error('Error loading expenses:', error)
-      }
-    } finally {
-      setLoading(false)
-    }
   }
 
   const loadVendors = async () => {
@@ -805,6 +811,7 @@ export default function ReservationExpenseManager({
     setDateFrom('')
     setDateTo('')
     setReimbursementFilter('all')
+    setStatementMatchFilter('all')
   }
 
   const showTitle = !hideTitle || titleProp
@@ -859,7 +866,7 @@ export default function ReservationExpenseManager({
               <span>{t('addExpense')}</span>
             </button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
             <div>
               <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{tTour('statusLabel')}</label>
               <select
@@ -871,6 +878,23 @@ export default function ReservationExpenseManager({
                 <option value="pending">{tTour('filterPending')}</option>
                 <option value="approved">{tTour('filterApproved')}</option>
                 <option value="rejected">{tTour('filterRejected')}</option>
+              </select>
+            </div>
+            <div>
+              <label
+                className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
+                htmlFor="re-filter-statement-match"
+              >
+                {t('statementMatchLabel')}
+              </label>
+              <select
+                id="re-filter-statement-match"
+                value={statementMatchFilter}
+                onChange={(e) => setStatementMatchFilter(e.target.value as 'all' | 'unmatched')}
+                className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="all">{t('statementMatchAll')}</option>
+                <option value="unmatched">{t('statementMatchUnmatched')}</option>
               </select>
             </div>
             <div>
@@ -891,7 +915,7 @@ export default function ReservationExpenseManager({
                 className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
               />
             </div>
-            <div className="col-span-2 sm:col-span-1 flex items-end">
+            <div className="col-span-2 sm:col-span-1 lg:col-span-1 flex items-end">
               <button
                 type="button"
                 onClick={resetAdminFilters}

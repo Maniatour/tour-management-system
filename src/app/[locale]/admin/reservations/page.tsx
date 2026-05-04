@@ -75,12 +75,22 @@ import { DeletedReservationsTableModal } from '@/components/shared/DeletedReserv
 import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
 import {
   browserLocalInclusiveDateKeys,
+  browserLocalTodayYmd,
+  browserLocalYesterdayYmd,
   browserLocalWeekRangeFromOffset,
   formatBrowserLocalYmdRangeDisplay,
   browserLocalCalendarMonthWindow,
   browserLocalCalendarYearWindow,
   browserLocalCalendarYearMonthKeys,
 } from '@/lib/browserLocalWeek'
+import {
+  type ReservationStatusAuditRow,
+  localYmdSetWhereBecameCancelledFromAuditRows,
+  pickReservationStatusTransitionForDay,
+  isIntoCancelledLikeTransition,
+  statusTransitionSortIndex,
+} from '@/lib/reservationStatusAudit'
+import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import {
   reservationMatchesExtendedPricingMismatchCriteria,
@@ -202,82 +212,75 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
   return { registration, statusChange }
 }
 
-type ReservationStatusAuditRow = {
-  record_id: string
-  created_at: string
-  changed_fields: string[] | null
-  old_values: unknown
-  new_values: unknown
-}
-
-function statusFromReservationAuditJson(json: unknown): string | null {
-  if (!json || typeof json !== 'object') return null
-  const v = (json as Record<string, unknown>).status
-  return typeof v === 'string' && v.trim() ? v.trim() : null
-}
-
-function pickReservationStatusTransitionForDay(
-  rows: ReservationStatusAuditRow[],
-  dateKey: string
-): { from: string; to: string } | null {
-  const candidates = rows
-    .filter((r) => isoToLocalCalendarDateKey(r.created_at) === dateKey)
-    .filter((r) => Array.isArray(r.changed_fields) && r.changed_fields.includes('status'))
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  for (const row of candidates) {
-    const to = statusFromReservationAuditJson(row.new_values)
-    const from = statusFromReservationAuditJson(row.old_values)
-    if (to && from && from !== to) return { from, to }
+/**
+ * 로컬 `year`년 1/1 ~ (같은 해이면 `throughYmd`까지, 과거 해이면 12/31까지) 각 달력일의
+ * 순 등록 인원(등록 − 취소, 차트와 동일한 취소 규칙)을 요일별로 합산한 뒤,
+ * 그 기간에 실제 존재한 해당 요일 수로 나눈 일평균(7요소).
+ * `throughYmd`는 보통 **어제**(오늘 미완료일 제외).
+ */
+function computeYtdNetPeopleAvgByWeekdayForLocalYear(
+  reservations: Reservation[],
+  year: number,
+  throughYmd: string,
+  useAuditCancel: boolean,
+  auditByRecordId: Record<string, ReservationStatusAuditRow[]>
+): number[] {
+  const throughYear = parseInt(throughYmd.slice(0, 4), 10)
+  if (!Number.isFinite(year)) return Array.from({ length: 7 }, () => 0)
+  if (year > throughYear) {
+    return Array.from({ length: 7 }, () => 0)
   }
-  return null
-}
-
-/** 그날 감사 기준으로 취소·삭제 상태로 바뀐 전환만 (이미 취소인 건의 금액 수정 등 제외) */
-function isIntoCancelledLikeTransition(tr: { from: string; to: string } | null | undefined): boolean {
-  if (!tr) return false
-  const to = tr.to.toLowerCase()
-  const from = tr.from.toLowerCase()
-  const toTerm = to === 'cancelled' || to === 'canceled' || to === 'deleted'
-  const fromTerm = from === 'cancelled' || from === 'canceled' || from === 'deleted'
-  return toTerm && !fromTerm
-}
-
-/** 예약별: 로컬 YMD 목록 중 그날 감사상 상태가 취소/삭제로 바뀐 날만 */
-function localYmdSetWhereBecameCancelledFromAuditRows(
-  rows: ReservationStatusAuditRow[] | undefined
-): Set<string> {
-  const out = new Set<string>()
-  if (!rows?.length) return out
-  const dayKeys = new Set<string>()
-  for (const row of rows) {
-    if (!Array.isArray(row.changed_fields) || !row.changed_fields.includes('status')) continue
-    const dk = isoToLocalCalendarDateKey(row.created_at)
-    if (dk && dk.length >= 10) dayKeys.add(dk)
+  const startYmd = `${year}-01-01`
+  let endYmd: string
+  if (year < throughYear) {
+    endYmd = `${year}-12-31`
+  } else {
+    endYmd = throughYmd
   }
-  for (const dk of dayKeys) {
-    const tr = pickReservationStatusTransitionForDay(rows, dk)
-    if (isIntoCancelledLikeTransition(tr)) out.add(dk)
+  if (startYmd > endYmd) return Array.from({ length: 7 }, () => 0)
+
+  const isCancelledLike = (status: string | undefined) =>
+    isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
+
+  const regByYmd = new Map<string, number>()
+  for (const r of reservations) {
+    const ck = isoToLocalCalendarDateKey(r.addedTime)
+    if (!ck || ck < startYmd || ck > endYmd) continue
+    if (parseInt(ck.slice(0, 4), 10) !== year) continue
+    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+    regByYmd.set(ck, (regByYmd.get(ck) ?? 0) + p)
   }
-  return out
-}
 
-const SIMPLE_CARD_STATUS_TRANSITION_ORDER = new Map<string, number>([
-  ['recruiting:confirmed', 10],
-  ['recruiting:cancelled', 20],
-  ['recruiting:canceled', 21],
-  ['pending:confirmed', 30],
-  ['pending:cancelled', 40],
-  ['pending:canceled', 41],
-  ['confirmed:cancelled', 50],
-  ['confirmed:canceled', 51],
-  ['confirmed:completed', 60],
-  ['pending:completed', 65],
-])
+  const cancelByYmd = new Map<string, number>()
+  for (const r of reservations) {
+    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+    const id = String(r.id ?? '').trim()
+    if (useAuditCancel && id) {
+      const ymds = localYmdSetWhereBecameCancelledFromAuditRows(auditByRecordId[id])
+      for (const ymd of ymds) {
+        if (ymd < startYmd || ymd > endYmd) continue
+        if (parseInt(ymd.slice(0, 4), 10) !== year) continue
+        cancelByYmd.set(ymd, (cancelByYmd.get(ymd) ?? 0) + p)
+      }
+    } else {
+      const uk = isoToLocalCalendarDateKey(r.updated_at ?? null)
+      if (!uk || uk < startYmd || uk > endYmd) continue
+      if (parseInt(uk.slice(0, 4), 10) !== year) continue
+      if (!isCancelledLike(r.status)) continue
+      cancelByYmd.set(uk, (cancelByYmd.get(uk) ?? 0) + p)
+    }
+  }
 
-function simpleCardStatusTransitionSortIndex(from: string, to: string) {
-  return (
-    SIMPLE_CARD_STATUS_TRANSITION_ORDER.get(`${from.toLowerCase()}:${to.toLowerCase()}`) ?? 1000
-  )
+  const sums = Array.from({ length: 7 }, () => 0)
+  const counts = Array.from({ length: 7 }, () => 0)
+  for (const ymd of browserLocalInclusiveDateKeys(startYmd, endYmd)) {
+    const net = (regByYmd.get(ymd) ?? 0) - (cancelByYmd.get(ymd) ?? 0)
+    const wd = localWeekdayIndexFromYmd(ymd)
+    sums[wd] += net
+    counts[wd] += 1
+  }
+
+  return sums.map((s, i) => (counts[i] > 0 ? s / counts[i] : 0))
 }
 
 /** 심플 카드 상태변경 소그룹: 대기중→취소(영·미 철자)만 기본 펼침 대상 */
@@ -1482,6 +1485,11 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           if (y.rangeStartIso < rangeStartIso) rangeStartIso = y.rangeStartIso
           if (y.rangeEndIso > rangeEndIso) rangeEndIso = y.rangeEndIso
         }
+        /** 7일 차트 YTD 요일 평균선: 올해 1/1 이후 등록·취소가 반영되도록 조회 시작 확장 */
+        const jan1Local = new Date()
+        jan1Local.setHours(0, 0, 0, 0)
+        const jan1Iso = new Date(jan1Local.getFullYear(), 0, 1, 0, 0, 0, 0).toISOString()
+        if (jan1Iso < rangeStartIso) rangeStartIso = jan1Iso
       }
 
       if (viewMode === 'calendar') {
@@ -1654,6 +1662,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const y = browserLocalCalendarYearWindow(regCancelYearOffset)
     if (y.rangeStartIso < rangeStartIso) rangeStartIso = y.rangeStartIso
     if (y.rangeEndIso > rangeEndIso) rangeEndIso = y.rangeEndIso
+    const jan1Iso = new Date(new Date().getFullYear(), 0, 1, 0, 0, 0, 0).toISOString()
+    if (jan1Iso < rangeStartIso) rangeStartIso = jan1Iso
     return { rangeStartIso, rangeEndIso }
   }, [groupByDate, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
 
@@ -1726,6 +1736,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       registeredCount: number
       cancelledPeople: number
       cancelledCount: number
+      /** 7일 탭: 올해 로컬 YTD 순(등록−취소) 요일별 일평균 인원. 월간: 해당 연 등록만 요일 평균. */
       avgLineRegistered: number
     }
     const isCancelledLike = (status: string | undefined) =>
@@ -1826,12 +1837,16 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     let monthDailyAvgSameYear: number[] | null = null
 
     if (regCancelGranularity === 'week') {
-      const years = new Set<number>()
-      for (const b of base) {
-        const y = parseInt(b.dateKey.slice(0, 4), 10)
-        if (Number.isFinite(y)) years.add(y)
-      }
-      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(filteredReservations, years)
+      const todayYmd = browserLocalTodayYmd()
+      const yesterdayYmd = browserLocalYesterdayYmd()
+      const chartYear = parseInt(todayYmd.slice(0, 4), 10)
+      wdAvg = computeYtdNetPeopleAvgByWeekdayForLocalYear(
+        filteredReservations,
+        chartYear,
+        yesterdayYmd,
+        useAuditCancel,
+        regCancelChartAuditRowsByRecordId
+      )
     } else if (regCancelGranularity === 'month') {
       const { startYmd } = browserLocalCalendarMonthWindow(regCancelMonthOffset)
       const y = parseInt(startYmd.slice(0, 4), 10)
@@ -2083,57 +2098,157 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     regCancelChartAuditRowsByRecordId,
   ])
 
-  // ?? ??? ???????
+  /** 통계 주(차트·상단 요약과 동일 구간): 상품·채널·상태별 등록/취소/순 인원 */
   const weeklyStats = useMemo(() => {
     const allReservations = statisticsWeekReservations
-    
-    // ???????? ???
-    const productStats = allReservations.reduce((groups, reservation) => {
-      const productName = getProductName(reservation.productId, products || [])
-      if (!groups[productName]) {
-        groups[productName] = 0
-      }
-      groups[productName] += reservation.totalPeople
-      return groups
-    }, {} as Record<string, number>)
+    const { startYmd, endYmd } = statisticsWeekBoundary
+    const useAuditCancel = groupByDate && regCancelChartAuditLoaded
+    const party = (r: Reservation) => getReservationPartySize(r as unknown as Record<string, unknown>)
 
-    // ??????? ??? (???????? ???)
-    const channelStats = allReservations.reduce((groups, reservation) => {
-      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
-      const channelName = getChannelName(reservation.channelId, channels || [])
-      const channelKey = `${channelName}|${reservation.channelId}`
-      
-      if (!groups[channelKey]) {
-        groups[channelKey] = {
-          name: channelName,
-          count: 0,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          favicon_url: (channel as any)?.favicon_url || null,
-          channelId: reservation.channelId
+    type FlowPair = { reg: number; cancel: number; regBookings: number; cancelBookings: number }
+    const prodMap = new Map<string, FlowPair>()
+    const statMap = new Map<string, FlowPair>()
+    const chanMap = new Map<
+      string,
+      FlowPair & { name: string; channelId: string; favicon_url: string | null }
+    >()
+
+    const bumpReg = (pair: FlowPair, n: number) => {
+      pair.reg += n
+      pair.regBookings += 1
+    }
+    const bumpCancel = (pair: FlowPair, n: number) => {
+      pair.cancel += n
+      pair.cancelBookings += 1
+    }
+    const getProd = (k: string) => {
+      let p = prodMap.get(k)
+      if (!p) {
+        p = { reg: 0, cancel: 0, regBookings: 0, cancelBookings: 0 }
+        prodMap.set(k, p)
+      }
+      return p
+    }
+    const getStat = (k: string) => {
+      let p = statMap.get(k)
+      if (!p) {
+        p = { reg: 0, cancel: 0, regBookings: 0, cancelBookings: 0 }
+        statMap.set(k, p)
+      }
+      return p
+    }
+    const getChan = (channelId: string, name: string) => {
+      const key = `${name}|${channelId}`
+      let row = chanMap.get(key)
+      if (!row) {
+        const ch = (channels as Array<{ id: string; name: string; favicon_url?: string | null }>)?.find(
+          (c) => c.id === channelId
+        )
+        row = {
+          name,
+          channelId,
+          favicon_url: ch?.favicon_url ?? null,
+          reg: 0,
+          cancel: 0,
+          regBookings: 0,
+          cancelBookings: 0,
         }
+        chanMap.set(key, row)
       }
-      groups[channelKey].count += reservation.totalPeople
-      return groups
-    }, {} as Record<string, { name: string; count: number; favicon_url: string | null; channelId: string }>)
+      return row
+    }
 
-    // ???????? ???
-    const statusStats = allReservations.reduce((groups, reservation) => {
-      const status = reservation.status
-      if (!groups[status]) {
-        groups[status] = 0
+    for (const r of filteredReservations) {
+      const p = party(r)
+      const productName = getProductName(r.productId, products || [])
+      const channelName = getChannelName(r.channelId, channels || [])
+      const chRow = getChan(r.channelId, channelName)
+      const statusKey = String(r.status ?? 'unknown').trim() || 'unknown'
+      const id = String(r.id ?? '').trim()
+
+      const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+      if (createdKey && createdKey >= startYmd && createdKey <= endYmd) {
+        bumpReg(getProd(productName), p)
+        bumpReg(chRow, p)
+        if (!useAuditCancel) bumpReg(getStat(statusKey), p)
       }
-      groups[status] += reservation.totalPeople
-      return groups
-    }, {} as Record<string, number>)
+
+      if (useAuditCancel && id) {
+        const ymds = localYmdSetWhereBecameCancelledFromAuditRows(regCancelChartAuditRowsByRecordId[id])
+        for (const ymd of ymds) {
+          if (ymd < startYmd || ymd > endYmd) continue
+          bumpCancel(getProd(productName), p)
+          bumpCancel(chRow, p)
+        }
+      } else {
+        const uk = isoToLocalCalendarDateKey(r.updated_at ?? null)
+        if (!uk || uk < startYmd || uk > endYmd) continue
+        if (!isReservationCancelledStatus(r.status) && !isReservationDeletedStatus(r.status)) continue
+        bumpCancel(getProd(productName), p)
+        bumpCancel(chRow, p)
+        bumpCancel(getStat(statusKey), p)
+      }
+    }
+
+    const statusTransitionByTarget = useAuditCancel
+      ? aggregateStatusTransitionBucketsForReservationWindow({
+          reservations: filteredReservations,
+          party: (res: unknown) => party(res as Reservation),
+          auditRowsByReservationId: regCancelChartAuditRowsByRecordId,
+          dayKeys: browserLocalInclusiveDateKeys(startYmd, endYmd),
+        })
+      : undefined
+
+    const toNet = (v: FlowPair) => ({
+      regPeople: v.reg,
+      cancelPeople: v.cancel,
+      netPeople: v.reg - v.cancel,
+      regBookings: v.regBookings,
+      cancelBookings: v.cancelBookings,
+      netBookings: v.regBookings - v.cancelBookings,
+    })
+    const sumFlow = (v: { reg: number; cancel: number }) => v.reg + v.cancel
+
+    const productStats = [...prodMap.entries()]
+      .map(([name, v]) => ({ name, ...toNet(v) }))
+      .filter((row) => row.regPeople > 0 || row.cancelPeople > 0)
+      .sort((a, b) => sumFlow({ reg: b.regPeople, cancel: b.cancelPeople }) - sumFlow({ reg: a.regPeople, cancel: a.cancelPeople }))
+
+    const channelStats = [...chanMap.values()]
+      .map((row) => ({
+        name: row.name,
+        channelId: row.channelId,
+        favicon_url: row.favicon_url,
+        ...toNet(row),
+      }))
+      .filter((row) => row.regPeople > 0 || row.cancelPeople > 0)
+      .sort((a, b) => sumFlow({ reg: b.regPeople, cancel: b.cancelPeople }) - sumFlow({ reg: a.regPeople, cancel: a.cancelPeople }))
+
+    const statusStats = useAuditCancel
+      ? []
+      : [...statMap.entries()]
+          .map(([statusKey, v]) => ({ statusKey, ...toNet(v) }))
+          .filter((row) => row.regPeople > 0 || row.cancelPeople > 0)
+          .sort((a, b) => sumFlow({ reg: b.regPeople, cancel: b.cancelPeople }) - sumFlow({ reg: a.regPeople, cancel: a.cancelPeople }))
 
     return {
-      productStats: Object.entries(productStats).sort(([,a], [,b]) => b - a),
-      channelStats: Object.values(channelStats).sort((a, b) => b.count - a.count),
-      statusStats: Object.entries(statusStats).sort(([,a], [,b]) => b - a),
+      productStats,
+      channelStats,
+      statusStats,
       totalReservations: allReservations.length,
-      totalPeople: allReservations.reduce((total, reservation) => total + reservation.totalPeople, 0)
+      totalPeople: allReservations.reduce((total, reservation) => total + reservation.totalPeople, 0),
+      ...(statusTransitionByTarget !== undefined ? { statusTransitionByTarget } : {}),
     }
-  }, [statisticsWeekReservations, products, channels])
+  }, [
+    statisticsWeekReservations,
+    statisticsWeekBoundary,
+    filteredReservations,
+    products,
+    channels,
+    groupByDate,
+    regCancelChartAuditLoaded,
+    regCancelChartAuditRowsByRecordId,
+  ])
   
   // ??????????? (?????? ???? ?????)
   const totalPages = groupByDate ? 1 : Math.max(1, Math.ceil(serverListTotal / itemsPerPage))
@@ -3638,7 +3753,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                             const from = bucketKey.slice(0, sep)
                             const to = bucketKey.slice(sep + 1)
                             title = `${getStatusLabel(from, (key) => t(key))} → ${getStatusLabel(to, (key) => t(key))}`
-                            sortIx = simpleCardStatusTransitionSortIndex(from, to)
+                            sortIx = statusTransitionSortIndex(from, to)
                           }
                           rows.push({ bucketKey, title, items, sortIx })
                         }
@@ -3676,6 +3791,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                       products={(products as Array<{ id: string; name: string }>) || []}
                       channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
                       cancellationStats={cancellationStatsForHeader}
+                      {...(groupByDate && regCancelChartAuditLoaded
+                        ? { auditRowsByReservationId: regCancelChartAuditRowsByRecordId }
+                        : {})}
+                      {...(groupByDate ? { statusAuditLoading: !regCancelChartAuditLoaded } : {})}
                     />
 
                     {cardLayout === 'simple' ? (

@@ -53,6 +53,21 @@ export function browserLocalWeekRangeFromOffset(weekOffset: number): BrowserLoca
   return { startYmd, endYmd, rangeStartIso, rangeEndIso }
 }
 
+/** 브라우저 로컬 달력 기준 오늘 YYYY-MM-DD */
+export function browserLocalTodayYmd(): string {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 브라우저 로컬 달력 기준 어제 YYYY-MM-DD */
+export function browserLocalYesterdayYmd(): string {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export function browserLocalInclusiveDateKeys(startYmd: string, endYmd: string): string[] {
   const [ys, ms, ds] = startYmd.split('-').map(Number)
   const [ye, me, de] = endYmd.split('-').map(Number)

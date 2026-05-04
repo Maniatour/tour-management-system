@@ -21,14 +21,19 @@ export async function GET(request: NextRequest) {
     const standardPaidFor = searchParams.get('standard_paid_for')
     /** all | employee_card | outstanding */
     const reimbursement = (searchParams.get('reimbursement') || 'all').toLowerCase()
+    /** all | unmatched — unmatched: reconciliation_matches에 없는 지출만(뷰) */
+    const statementMatch = (searchParams.get('statement_match') || 'all').toLowerCase()
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
     const from = (page - 1) * limit
     const to = from + limit - 1
-    
+
+    const expenseTable =
+      statementMatch === 'unmatched' ? 'company_expenses_no_statement_match' : 'company_expenses'
+
     // 기본 쿼리 생성 (count 포함)
     let query = supabase
-      .from('company_expenses')
+      .from(expenseTable)
       .select('*', { count: 'exact' })
       .order('submit_on', { ascending: false })
       .range(from, to)

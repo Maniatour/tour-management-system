@@ -9501,6 +9501,7 @@ export type Database = {
           title: string
           body_md: string | null
           body_structure: Json | null
+          freeform_markdown: string
           published_at: string
           published_by: string | null
         }
@@ -9510,6 +9511,7 @@ export type Database = {
           title?: string
           body_md?: string | null
           body_structure?: Json | null
+          freeform_markdown?: string
           published_at?: string
           published_by?: string | null
         }
@@ -9519,6 +9521,7 @@ export type Database = {
           title?: string
           body_md?: string | null
           body_structure?: Json | null
+          freeform_markdown?: string
           published_at?: string
           published_by?: string | null
         }
@@ -9531,6 +9534,7 @@ export type Database = {
           title: string
           body_md: string | null
           body_structure: Json | null
+          freeform_markdown: string
           published_at: string
           published_by: string | null
         }
@@ -9540,6 +9544,7 @@ export type Database = {
           title?: string
           body_md?: string | null
           body_structure?: Json | null
+          freeform_markdown?: string
           published_at?: string
           published_by?: string | null
         }
@@ -9549,6 +9554,7 @@ export type Database = {
           title?: string
           body_md?: string | null
           body_structure?: Json | null
+          freeform_markdown?: string
           published_at?: string
           published_by?: string | null
         }
@@ -9559,7 +9565,9 @@ export type Database = {
           singleton: number
           body_structure: Json
           paste_raw: string
+          paste_raw_en: string
           edit_locale: string
+          freeform_markdown: string
           updated_at: string
           updated_by: string | null
         }
@@ -9567,7 +9575,9 @@ export type Database = {
           singleton: number
           body_structure: Json
           paste_raw?: string
+          paste_raw_en?: string
           edit_locale?: string
+          freeform_markdown?: string
           updated_at?: string
           updated_by?: string | null
         }
@@ -9575,7 +9585,9 @@ export type Database = {
           singleton?: number
           body_structure?: Json
           paste_raw?: string
+          paste_raw_en?: string
           edit_locale?: string
+          freeform_markdown?: string
           updated_at?: string
           updated_by?: string | null
         }
@@ -9586,7 +9598,9 @@ export type Database = {
           singleton: number
           body_structure: Json
           paste_raw: string
+          paste_raw_en: string
           edit_locale: string
+          freeform_markdown: string
           updated_at: string
           updated_by: string | null
         }
@@ -9594,7 +9608,9 @@ export type Database = {
           singleton: number
           body_structure: Json
           paste_raw?: string
+          paste_raw_en?: string
           edit_locale?: string
+          freeform_markdown?: string
           updated_at?: string
           updated_by?: string | null
         }
@@ -9602,9 +9618,135 @@ export type Database = {
           singleton?: number
           body_structure?: Json
           paste_raw?: string
+          paste_raw_en?: string
           edit_locale?: string
+          freeform_markdown?: string
           updated_at?: string
           updated_by?: string | null
+        }
+        Relationships: []
+      },
+      company_structured_doc_sign_campaigns: {
+        Row: {
+          id: string
+          doc_kind: string
+          body_structure: Json
+          title: string
+          note: string
+          created_by: string | null
+          created_at: string
+          closed_at: string | null
+        }
+        Insert: {
+          id?: string
+          doc_kind: string
+          body_structure: Json
+          title?: string
+          note?: string
+          created_by?: string | null
+          created_at?: string
+          closed_at?: string | null
+        }
+        Update: {
+          id?: string
+          doc_kind?: string
+          body_structure?: Json
+          title?: string
+          note?: string
+          created_by?: string | null
+          created_at?: string
+          closed_at?: string | null
+        }
+        Relationships: []
+      },
+      company_structured_doc_sign_campaign_recipients: {
+        Row: {
+          id: string
+          campaign_id: string
+          recipient_email: string
+          status: string
+        }
+        Insert: {
+          id?: string
+          campaign_id: string
+          recipient_email: string
+          status?: string
+        }
+        Update: {
+          id?: string
+          campaign_id?: string
+          recipient_email?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'company_structured_doc_sign_campaign_recipients_campaign_id_fkey'
+            columns: ['campaign_id']
+            isOneToOne: false
+            referencedRelation: 'company_structured_doc_sign_campaigns'
+            referencedColumns: ['id']
+          },
+        ]
+      },
+      company_structured_doc_campaign_signatures: {
+        Row: {
+          id: string
+          campaign_id: string
+          user_id: string
+          signer_email: string
+          signer_name: string
+          pdf_storage_path: string
+          signed_at: string
+        }
+        Insert: {
+          id?: string
+          campaign_id: string
+          user_id: string
+          signer_email: string
+          signer_name: string
+          pdf_storage_path: string
+          signed_at?: string
+        }
+        Update: {
+          id?: string
+          campaign_id?: string
+          user_id?: string
+          signer_email?: string
+          signer_name?: string
+          pdf_storage_path?: string
+          signed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'company_structured_doc_campaign_signatures_campaign_id_fkey'
+            columns: ['campaign_id']
+            isOneToOne: false
+            referencedRelation: 'company_structured_doc_sign_campaigns'
+            referencedColumns: ['id']
+          },
+        ]
+      },
+      company_structured_doc_freeform_snapshots: {
+        Row: {
+          id: string
+          doc_kind: string
+          body_markdown: string
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          doc_kind: string
+          body_markdown?: string
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          doc_kind?: string
+          body_markdown?: string
+          created_at?: string
+          created_by?: string | null
         }
         Relationships: []
       },
@@ -9617,6 +9759,7 @@ export type Database = {
           section_json: Json
           created_at: string
           created_by: string | null
+          published_document_version_id: string | null
         }
         Insert: {
           id?: string
@@ -9626,6 +9769,7 @@ export type Database = {
           section_json: Json
           created_at?: string
           created_by?: string | null
+          published_document_version_id?: string | null
         }
         Update: {
           id?: string
@@ -9635,6 +9779,7 @@ export type Database = {
           section_json?: Json
           created_at?: string
           created_by?: string | null
+          published_document_version_id?: string | null
         }
         Relationships: []
       },
@@ -9788,6 +9933,25 @@ export type Database = {
         Row: {
           balance: number | null
         }
+        Relationships: []
+      }
+      /** reconciliation_matches 미연결 — 명세 미대조 필터용 뷰 */
+      company_expenses_no_statement_match: {
+        Row: Database['public']['Tables']['company_expenses']['Row']
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      reservation_expenses_no_statement_match: {
+        Row: Database['public']['Tables']['reservation_expenses']['Row']
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      tour_expenses_no_statement_match: {
+        Row: Database['public']['Tables']['tour_expenses']['Row']
+        Insert: never
+        Update: never
         Relationships: []
       }
       channels_with_sub_channels: {
@@ -10357,7 +10521,7 @@ export type Database = {
             Returns: string
           }
       company_structured_doc_section_versions_latest: {
-        Args: { p_doc_kind: string }
+        Args: { p_doc_kind: string; p_published_document_version_id: string | null }
         Returns: {
           id: string
           doc_kind: string
@@ -10366,6 +10530,7 @@ export type Database = {
           section_json: Json
           created_at: string
           created_by: string | null
+          published_document_version_id: string | null
         }[]
       }
       copy_template_to_product: {

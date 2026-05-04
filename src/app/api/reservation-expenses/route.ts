@@ -10,11 +10,16 @@ export async function GET(request: NextRequest) {
     const reservationId = searchParams.get('reservation_id')
     const status = searchParams.get('status')
     const submittedBy = searchParams.get('submitted_by')
+    /** all | unmatched — 명세 대조 미연결 지출만 */
+    const statementMatch = (searchParams.get('statement_match') || 'all').toLowerCase()
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
+    const tableName =
+      statementMatch === 'unmatched' ? 'reservation_expenses_no_statement_match' : 'reservation_expenses'
+
     let query = db
-      .from('reservation_expenses')
+      .from(tableName)
       .select(`
         *,
         reservations (

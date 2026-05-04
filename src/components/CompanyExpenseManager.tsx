@@ -174,6 +174,8 @@ export default function CompanyExpenseManager() {
   const [standardPaidForFilter, setStandardPaidForFilter] = useState<'all' | 'set' | 'unset'>('all')
   /** 환급 목록 필터 — API `reimbursement` 쿼리와 동일 */
   const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
+  /** 명세 대조: 전체 | reconciliation_matches 미연결만 */
+  const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
@@ -279,6 +281,9 @@ export default function CompanyExpenseManager() {
       if (reimbursementFilter !== 'all') {
         params.append('reimbursement', reimbursementFilter)
       }
+      if (statementMatchFilter === 'unmatched') {
+        params.append('statement_match', 'unmatched')
+      }
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
       
@@ -306,6 +311,7 @@ export default function CompanyExpenseManager() {
     paidForFilter,
     standardPaidForFilter,
     reimbursementFilter,
+    statementMatchFilter,
     dateFrom,
     dateTo,
     page,
@@ -391,6 +397,7 @@ export default function CompanyExpenseManager() {
     paidForFilter,
     standardPaidForFilter,
     reimbursementFilter,
+    statementMatchFilter,
     dateFrom,
     dateTo,
   ])
@@ -1080,6 +1087,7 @@ export default function CompanyExpenseManager() {
     setPaidForFilter('all')
     setStandardPaidForFilter('all')
     setReimbursementFilter('all')
+    setStatementMatchFilter('all')
     setDateFrom('')
     setDateTo('')
   }
@@ -2084,25 +2092,44 @@ export default function CompanyExpenseManager() {
           </div>
         </div>
 
-        <div className="max-w-md pt-1">
-          <label
-            className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
-            htmlFor="co-filter-reimbursement"
-          >
-            {tTour('reimbursementFilterLabel')}
-          </label>
-          <select
-            id="co-filter-reimbursement"
-            value={reimbursementFilter}
-            onChange={(e) =>
-              setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
-            }
-            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-          >
-            <option value="all">{tTour('reimbursementFilterAll')}</option>
-            <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
-            <option value="outstanding">{tTour('reimbursementFilterOutstanding')}</option>
-          </select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 max-w-2xl pt-1">
+          <div>
+            <label
+              className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
+              htmlFor="co-filter-statement-match"
+            >
+              {t('filters.statementMatch')}
+            </label>
+            <select
+              id="co-filter-statement-match"
+              value={statementMatchFilter}
+              onChange={(e) => setStatementMatchFilter(e.target.value as 'all' | 'unmatched')}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{t('filters.statementMatchAll')}</option>
+              <option value="unmatched">{t('filters.statementMatchUnmatched')}</option>
+            </select>
+          </div>
+          <div>
+            <label
+              className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
+              htmlFor="co-filter-reimbursement"
+            >
+              {tTour('reimbursementFilterLabel')}
+            </label>
+            <select
+              id="co-filter-reimbursement"
+              value={reimbursementFilter}
+              onChange={(e) =>
+                setReimbursementFilter(e.target.value as 'all' | 'employee_card' | 'outstanding')
+              }
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{tTour('reimbursementFilterAll')}</option>
+              <option value="employee_card">{tTour('reimbursementFilterEmployeeCard')}</option>
+              <option value="outstanding">{tTour('reimbursementFilterOutstanding')}</option>
+            </select>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 pt-3 sm:pt-4 border-t border-gray-200/80">

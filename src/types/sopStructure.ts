@@ -364,11 +364,308 @@ export function parseSopDocumentJson(raw: unknown): SopDocument | null {
   })
 }
 
+export type SopPlainTextFill = 'ko' | 'en'
+
+/** 줄 앞 공백·탭(들여쓰기) + 선택적 글머리표 제거 후 본문 텍스트 */
+function lineLeadingIndentAndText(rawLine: string): { units: number; text: string } | null {
+  const m = /^([\t ]*)(.*)$/.exec(rawLine.replace(/\r$/, ''))
+  if (!m) return null
+  let units = 0
+  for (const ch of m[1]) {
+    if (ch === '\t') units += 4
+    else if (ch === ' ') units += 1
+  }
+  const stripped = m[2].trim().replace(/^[-*・●•]\s+/, '').trim()
+  if (!stripped) return null
+  return { units, text: stripped }
+}
+
+function indentStepFromRows(rows: { units: number; text: string }[]): number {
+  const set = [...new Set(rows.map((r) => r.units))].sort((a, b) => a - b)
+  if (set.length < 2) return 4
+  const gaps: number[] = []
+  for (let i = 1; i < set.length; i++) {
+    const g = set[i] - set[i - 1]
+    if (g > 0) gaps.push(g)
+  }
+  if (gaps.length === 0) return 4
+  return Math.max(1, Math.min(...gaps))
+}
+
+/** 붙여넣기·plain 파싱용: 본문을 「추가 설명 → 체크」와 동일 규칙으로 줄 단위 체크 항목으로 바꿉니다. */
+function plainTextBodyToChecklistItems(body: string, fill: SopPlainTextFill): SopChecklistItem[] | undefined {
+  const lines = splitRichContentToChecklistLines(body.trim())
+  if (lines.length === 0) return undefined
+  return lines.map((line, idx) => ({
+    id: newSopId(),
+    title_ko: fill === 'ko' ? line : '',
+    title_en: fill === 'en' ? line : '',
+    sort_order: idx,
+    parent_id: null,
+  }))
+}
+
+/** 한 카테고리 본문 블록: 들여쓰기가 있으면 parent_id 트리, 없으면 줄·문장 분리 체크리스트 */
+function plainTextRowsToHierarchicalChecklist(
+  rows: { units: number; text: string }[],
+  fill: SopPlainTextFill
+): SopChecklistItem[] | undefined {
+  if (rows.length === 0) return undefined
+  const minU = Math.min(...rows.map((r) => r.units))
+  const maxU = Math.max(...rows.map((r) => r.units))
+  const step = indentStepFromRows(rows)
+  if (maxU === minU) {
+    if (rows.length === 1) return plainTextBodyToChecklistItems(rows[0].text, fill)
+    return rows.map((r, idx) => ({
+      id: newSopId(),
+      title_ko: fill === 'ko' ? r.text : '',
+      title_en: fill === 'en' ? r.text : '',
+      sort_order: idx,
+      parent_id: null,
+    }))
+  }
+  const lastIdAtDepth = new Map<number, string>()
+  const items: SopChecklistItem[] = []
+  let sortOrder = 0
+  for (const row of rows) {
+    const d = Math.floor((row.units - minU) / step)
+    const parent_id = d === 0 ? null : lastIdAtDepth.get(d - 1) ?? null
+    const id = newSopId()
+    items.push({
+      id,
+      title_ko: fill === 'ko' ? row.text : '',
+      title_en: fill === 'en' ? row.text : '',
+      sort_order: sortOrder++,
+      parent_id,
+    })
+    lastIdAtDepth.set(d, id)
+    for (const k of [...lastIdAtDepth.keys()]) {
+      if (k > d) lastIdAtDepth.delete(k)
+    }
+  }
+  return items.length > 0 ? items : undefined
+}
+
+function plainTextBlockToChecklistItems(body: string, fill: SopPlainTextFill): SopChecklistItem[] | undefined {
+  const rows: { units: number; text: string }[] = []
+  for (const line of body.replace(/\r\n/g, '\n').split('\n')) {
+    const p = lineLeadingIndentAndText(line)
+    if (p) rows.push(p)
+  }
+  if (rows.length === 0) return undefined
+  return plainTextRowsToHierarchicalChecklist(rows, fill)
+}
+
+function pushCategoryForFill(
+  categories: SopCategory[],
+  fill: SopPlainTextFill,
+  title: string,
+  content: string,
+  sortOrder: number
+): void {
+  const t = (title || '').trim() || '—'
+  const trimmed = (content || '').trim()
+  const checklistItems = plainTextBlockToChecklistItems(trimmed, fill)
+  categories.push({
+    id: newSopId(),
+    title_ko: fill === 'ko' ? t : '',
+    title_en: fill === 'en' ? t : '',
+    content_ko: fill === 'ko' ? (checklistItems ? '' : trimmed) : '',
+    content_en: fill === 'en' ? (checklistItems ? '' : trimmed) : '',
+    sort_order: sortOrder,
+    ...(checklistItems ? { checklist_items: checklistItems } : {}),
+  })
+}
+
 /**
- * 양식 PDF처럼 `섹션 N: …` / `● 카테고리` 로 구분된 텍스트를 구조로 변환.
- * 가져온 텍스트는 한국어 필드에만 채웁니다.
+ * `섹션 N:` 마커가 없을 때
+ * - **같은 열(들여쓰기 없음)**: 1줄=섹션 제목만 / 2줄+=첫 줄=섹션·고정 카테고리「내용」·나머지 각 줄=체크 줄 (줄마다 섹션 금지).
+ * - **들여쓰기 있음**: 첫 `lv=0`만 새 섹션, 이후 같은 열(`lv<=0`)은 같은 섹션 안 체크 줄로만 처리.
+ * - `lv=1` = 카테고리 제목, `lv>=2` = 해당 카테고리 체크(들여 계층).
  */
-export function parseSopPlainTextToDocument(raw: string): SopDocument {
+function parseIndentedOutlinePlainText(cleaned: string, fill: SopPlainTextFill): SopDocument {
+  const rows: { units: number; text: string }[] = []
+  for (const line of cleaned.replace(/\r\n/g, '\n').split('\n')) {
+    const p = lineLeadingIndentAndText(line)
+    if (p) rows.push(p)
+  }
+  if (rows.length === 0) return emptySopDocument()
+
+  const minU = Math.min(...rows.map((r) => r.units))
+  const maxU = Math.max(...rows.map((r) => r.units))
+  const step = indentStepFromRows(rows)
+
+  /** 같은 units → 체크 줄로만 쓰기 위한 합성 들여쓰기(카테고리 본문 블록) */
+  const flatChecklistUnits = minU + Math.max(step, 4) * 4
+
+  if (maxU === minU) {
+    const docTitle = fill === 'ko' ? '문서' : 'Document'
+    const catDefault = fill === 'ko' ? '내용' : 'Body'
+    if (rows.length === 1) {
+      const checklist_items = [
+        {
+          id: newSopId(),
+          title_ko: fill === 'ko' ? rows[0].text : '',
+          title_en: fill === 'en' ? rows[0].text : '',
+          sort_order: 0,
+          parent_id: null as string | null,
+        },
+      ]
+      return {
+        title_ko: '',
+        title_en: '',
+        sections: [
+          {
+            id: newSopId(),
+            title_ko: fill === 'ko' ? docTitle : '',
+            title_en: fill === 'en' ? docTitle : '',
+            sort_order: 0,
+            categories: [
+              {
+                id: newSopId(),
+                title_ko: fill === 'ko' ? catDefault : '',
+                title_en: fill === 'en' ? catDefault : '',
+                content_ko: '',
+                content_en: '',
+                sort_order: 0,
+                checklist_items,
+              },
+            ],
+          },
+        ],
+      }
+    }
+    const secTitle = rows[0].text
+    const checklist_items = rows.slice(1).map((r, idx) => ({
+      id: newSopId(),
+      title_ko: fill === 'ko' ? r.text : '',
+      title_en: fill === 'en' ? r.text : '',
+      sort_order: idx,
+      parent_id: null as string | null,
+    }))
+    return {
+      title_ko: '',
+      title_en: '',
+      sections: [
+        {
+          id: newSopId(),
+          title_ko: fill === 'ko' ? secTitle : '',
+          title_en: fill === 'en' ? secTitle : '',
+          sort_order: 0,
+          categories: [
+            {
+              id: newSopId(),
+              title_ko: fill === 'ko' ? catDefault : '',
+              title_en: fill === 'en' ? catDefault : '',
+              content_ko: '',
+              content_en: '',
+              sort_order: 0,
+              checklist_items,
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  const sectionsOut: SopSection[] = []
+  let secOrder = 0
+  let curSec: SopSection | null = null
+  let curCatTitle: string | null = null
+  let pending: { units: number; text: string }[] = []
+  let catOrder = 0
+
+  const flushCategory = () => {
+    if (!curSec || !curCatTitle) {
+      pending = []
+      curCatTitle = null
+      return
+    }
+    const items = pending.length > 0 ? plainTextRowsToHierarchicalChecklist(pending, fill) : undefined
+    curSec.categories.push({
+      id: newSopId(),
+      title_ko: fill === 'ko' ? curCatTitle : '',
+      title_en: fill === 'en' ? curCatTitle : '',
+      content_ko: '',
+      content_en: '',
+      sort_order: catOrder++,
+      ...(items && items.length > 0 ? { checklist_items: items } : {}),
+    })
+    pending = []
+    curCatTitle = null
+  }
+
+  const flushSectionPush = () => {
+    flushCategory()
+    if (curSec && (curSec.title_ko?.trim() || curSec.title_en?.trim() || curSec.categories.length > 0)) {
+      if (curSec.categories.length === 0) {
+        pushCategoryForFill(curSec.categories, fill, '—', '', 0)
+      }
+      curSec.sort_order = secOrder++
+      sectionsOut.push(curSec)
+    }
+    curSec = null
+    catOrder = 0
+  }
+
+  for (const row of rows) {
+    const lv = Math.floor((row.units - minU) / step)
+    if (lv <= 0) {
+      if (!curSec) {
+        curSec = {
+          id: newSopId(),
+          title_ko: fill === 'ko' ? row.text : '',
+          title_en: fill === 'en' ? row.text : '',
+          sort_order: 0,
+          categories: [],
+        }
+      } else {
+        if (!curCatTitle) {
+          curCatTitle = fill === 'ko' ? '내용' : 'Body'
+        }
+        pending.push({ units: flatChecklistUnits, text: row.text })
+      }
+      continue
+    }
+    if (lv === 1) {
+      if (!curSec) {
+        curSec = {
+          id: newSopId(),
+          title_ko: fill === 'ko' ? '문서' : '',
+          title_en: fill === 'en' ? 'Document' : '',
+          sort_order: 0,
+          categories: [],
+        }
+      }
+      flushCategory()
+      curCatTitle = row.text
+      continue
+    }
+    if (!curSec) {
+      curSec = {
+        id: newSopId(),
+        title_ko: fill === 'ko' ? '문서' : '',
+        title_en: fill === 'en' ? 'Document' : '',
+        sort_order: 0,
+        categories: [],
+      }
+    }
+    if (!curCatTitle) {
+      curCatTitle = fill === 'ko' ? '내용' : 'Body'
+    }
+    pending.push(row)
+  }
+  flushSectionPush()
+
+  if (sectionsOut.length === 0) return emptySopDocument()
+  return { title_ko: '', title_en: '', sections: sectionsOut }
+}
+
+/**
+ * `섹션 N:` / `Section N:` 및 `● 카테고리` 규칙으로 구조 변환.
+ * `fill`: 한글 열만 채우거나(`ko`) 영문 열만 채웁니다(`en`). 두 열을 합치려면 `mergeParallelKoEnPasteDocs` 사용.
+ */
+export function parseSopPlainTextToDocument(raw: string, fill: SopPlainTextFill = 'ko'): SopDocument {
   const cleaned = raw
     .replace(/\r\n/g, '\n')
     .replace(/^--\s*\d+\s+of\s+\d+\s*--\s*$/gim, '')
@@ -380,28 +677,7 @@ export function parseSopPlainTextToDocument(raw: string): SopDocument {
   const hasSectionMarkers = /(?:^|\n)(?:섹션\s*\d+\s*:|Section\s+\d+\s*:)/im.test(cleaned)
 
   if (!hasSectionMarkers) {
-    return prefillSortOrders({
-      title_ko: '',
-      title_en: '',
-      sections: [
-        {
-          id: newSopId(),
-          title_ko: '문서',
-          title_en: '',
-          sort_order: 0,
-          categories: [
-            {
-              id: newSopId(),
-              title_ko: '내용',
-              title_en: '',
-              content_ko: cleaned,
-              content_en: '',
-              sort_order: 0,
-            },
-          ],
-        },
-      ],
-    })
+    return prefillSortOrders(parseIndentedOutlinePlainText(cleaned, fill))
   }
 
   const markerMatch = cleaned.match(/(?:섹션\s*\d+\s*:|Section\s+\d+\s*:)/im)
@@ -417,21 +693,20 @@ export function parseSopPlainTextToDocument(raw: string): SopDocument {
   const sections: SopSection[] = []
   let so = 0
   if (preamble) {
+    const preCats: SopCategory[] = []
+    pushCategoryForFill(
+      preCats,
+      fill,
+      fill === 'ko' ? '문서 상단' : 'Top of document',
+      preamble,
+      0
+    )
     sections.push({
       id: newSopId(),
-      title_ko: '서두 / 표지',
-      title_en: '',
+      title_ko: fill === 'ko' ? '서두 / 표지' : '',
+      title_en: fill === 'en' ? 'Preamble / cover' : '',
       sort_order: so++,
-      categories: [
-        {
-          id: newSopId(),
-          title_ko: '문서 상단',
-          title_en: '',
-          content_ko: preamble,
-          content_en: '',
-          sort_order: 0,
-        },
-      ],
+      categories: preCats,
     })
   }
   for (const chunk of sectionChunks) {
@@ -451,32 +726,28 @@ export function parseSopPlainTextToDocument(raw: string): SopDocument {
         const title = (nl === -1 ? b : b.slice(0, nl)).trim()
         const content = (nl === -1 ? '' : b.slice(nl + 1)).trim()
         if (!title && !content) continue
-        categories.push({
-          id: newSopId(),
-          title_ko: title || '—',
-          title_en: '',
-          content_ko: content,
-          content_en: '',
-          sort_order: co++,
-        })
+        pushCategoryForFill(categories, fill, title, content, co++)
       }
     }
 
     if (categories.length === 0) {
       categories.push({
         id: newSopId(),
-        title_ko: '—',
-        title_en: '',
+        title_ko: fill === 'ko' ? '—' : '',
+        title_en: fill === 'en' ? '—' : '',
         content_ko: '',
         content_en: '',
         sort_order: 0,
       })
     }
 
+    const secTitleKo = fill === 'ko' ? sectionTitle || `섹션 ${so + 1}` : ''
+    const secTitleEn = fill === 'en' ? sectionTitle || `Section ${so + 1}` : ''
+
     sections.push({
       id: newSopId(),
-      title_ko: sectionTitle || `섹션 ${so + 1}`,
-      title_en: '',
+      title_ko: secTitleKo,
+      title_en: secTitleEn,
       sort_order: so++,
       categories,
     })
@@ -489,8 +760,186 @@ export function parseSopPlainTextToDocument(raw: string): SopDocument {
   })
 }
 
+function docHasStructuralBody(doc: SopDocument): boolean {
+  if (doc.title_ko?.trim() || doc.title_en?.trim()) return true
+  for (const s of doc.sections) {
+    if (s.title_ko?.trim() || s.title_en?.trim()) return true
+    for (const c of s.categories) {
+      if (c.title_ko?.trim() || c.title_en?.trim() || c.content_ko?.trim() || c.content_en?.trim()) return true
+      const items = orderedChecklistItems(c.checklist_items)
+      for (const it of items) {
+        if (it.title_ko?.trim() || it.title_en?.trim()) return true
+      }
+    }
+  }
+  return false
+}
+
+function mergeChecklistsParallel(
+  kItems: SopChecklistItem[] | undefined,
+  eItems: SopChecklistItem[] | undefined
+): SopChecklistItem[] | undefined {
+  const ka = orderedChecklistItems(kItems || [])
+  const ea = orderedChecklistItems(eItems || [])
+  if (ka.length === 0 && ea.length === 0) return undefined
+  if (ea.length === 0) return ka.length > 0 ? sanitizeChecklistItems(ka) : undefined
+  if (ka.length === 0) return ea.length > 0 ? sanitizeChecklistItems(ea) : undefined
+  const m = Math.max(ka.length, ea.length)
+  const out: SopChecklistItem[] = []
+  for (let i = 0; i < m; i++) {
+    const k = ka[i]
+    const e = ea[i]
+    if (!k && e) {
+      out.push({ ...e })
+      continue
+    }
+    if (!e) {
+      out.push({ ...k! })
+      continue
+    }
+    out.push({
+      ...k,
+      title_en: e.title_en?.trim() || e.title_ko?.trim() || k.title_en,
+    })
+  }
+  return sanitizeChecklistItems(out)
+}
+
+function mergeCategoriesParallel(kc: SopCategory[], ec: SopCategory[]): SopCategory[] {
+  const a = [...kc].sort((x, y) => x.sort_order - y.sort_order)
+  const b = [...ec].sort((x, y) => x.sort_order - y.sort_order)
+  const out: SopCategory[] = []
+  const m = Math.max(a.length, b.length)
+  for (let i = 0; i < m; i++) {
+    const k = a[i]
+    const e = b[i]
+    if (!k && e) {
+      out.push(e)
+      continue
+    }
+    if (!e) {
+      out.push(k!)
+      continue
+    }
+    const mergedChk = mergeChecklistsParallel(k.checklist_items, e.checklist_items)
+    out.push({
+      ...k,
+      title_en: e.title_en?.trim() || e.title_ko?.trim() || k.title_en,
+      content_en: e.content_en?.trim() || e.content_ko?.trim() || k.content_en,
+      ...(mergedChk ? { checklist_items: mergedChk } : {}),
+    })
+  }
+  return out
+}
+
+/** 한글·영문 각각 붙여넣기 변환 결과를 동일 섹션/카테고리 순서로 합칩니다. */
+export function mergeParallelKoEnPasteDocs(koDoc: SopDocument, enDoc: SopDocument): SopDocument {
+  const koHas = docHasStructuralBody(koDoc)
+  const enHas = docHasStructuralBody(enDoc)
+  if (!enHas) return prefillSortOrders(koDoc)
+  if (!koHas) return prefillSortOrders(enDoc)
+
+  const koSecs = [...koDoc.sections].sort((a, b) => a.sort_order - b.sort_order)
+  const enSecs = [...enDoc.sections].sort((a, b) => a.sort_order - b.sort_order)
+  const outSecs: SopSection[] = []
+  const n = Math.max(koSecs.length, enSecs.length)
+  for (let i = 0; i < n; i++) {
+    const k = koSecs[i]
+    const e = enSecs[i]
+    if (!k && e) {
+      outSecs.push(e)
+      continue
+    }
+    if (!e) {
+      outSecs.push(k!)
+      continue
+    }
+    outSecs.push({
+      ...k,
+      title_en: e.title_en?.trim() || e.title_ko?.trim() || k.title_en,
+      categories: mergeCategoriesParallel(k.categories, e.categories),
+    })
+  }
+
+  return prefillSortOrders({
+    title_ko: koDoc.title_ko || '',
+    title_en: enDoc.title_en?.trim() || enDoc.title_ko?.trim() || koDoc.title_en || '',
+    sections: outSecs,
+  })
+}
+
 export function sopDocumentToJson(doc: SopDocument): Record<string, unknown> {
   return JSON.parse(JSON.stringify(doc)) as Record<string, unknown>
+}
+
+function mergeChecklistItemsForLocale(
+  editorItems: SopChecklistItem[] | undefined,
+  baselineItems: SopChecklistItem[] | undefined,
+  keepFromEditor: SopEditLocale
+): SopChecklistItem[] | undefined {
+  if (editorItems == null || editorItems.length === 0) return editorItems
+  const ei = orderedChecklistItems(editorItems)
+  const biMap = new Map(orderedChecklistItems(baselineItems).map((x) => [x.id, x]))
+  return ei.map((item) => {
+    const b = biMap.get(item.id)
+    return {
+      ...item,
+      title_ko: keepFromEditor === 'ko' ? item.title_ko : (b?.title_ko ?? item.title_ko),
+      title_en: keepFromEditor === 'en' ? item.title_en : (b?.title_en ?? item.title_en),
+    }
+  })
+}
+
+function mergeCategoryForLocale(ec: SopCategory, bc: SopCategory | undefined, loc: SopEditLocale): SopCategory {
+  return {
+    ...ec,
+    title_ko: loc === 'ko' ? ec.title_ko : (bc?.title_ko ?? ec.title_ko),
+    title_en: loc === 'en' ? ec.title_en : (bc?.title_en ?? ec.title_en),
+    content_ko: loc === 'ko' ? ec.content_ko : (bc?.content_ko ?? ec.content_ko),
+    content_en: loc === 'en' ? ec.content_en : (bc?.content_en ?? ec.content_en),
+    checklist_items: mergeChecklistItemsForLocale(ec.checklist_items, bc?.checklist_items, loc),
+  }
+}
+
+function mergeSectionForLocale(es: SopSection, bs: SopSection | undefined, loc: SopEditLocale): SopSection {
+  const baselineCats = bs ? new Map(bs.categories.map((c) => [c.id, c])) : new Map<string, SopCategory>()
+  const mergedCats = [...es.categories]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((ec) => mergeCategoryForLocale(ec, baselineCats.get(ec.id), loc))
+  return {
+    ...es,
+    title_ko: loc === 'ko' ? es.title_ko : (bs?.title_ko ?? es.title_ko),
+    title_en: loc === 'en' ? es.title_en : (bs?.title_en ?? es.title_en),
+    categories: mergedCats,
+  }
+}
+
+/**
+ * 편집기 내용(editor) 중 `keepFromEditor` 언어 필드만 반영하고,
+ * 반대 언어 필드는 baseline(서버에 마지막으로 맞춰 둔 스냅샷)에서 가져옵니다.
+ * 한국어만 저장 / 영어만 저장 시 같은 게시 버전 행을 UPDATE 할 때 사용합니다.
+ */
+export function mergeStructuredDocKeepOtherLocaleFromBaseline(
+  editor: SopDocument,
+  baseline: SopDocument,
+  keepFromEditor: SopEditLocale
+): SopDocument {
+  const title_ko = keepFromEditor === 'ko' ? editor.title_ko : baseline.title_ko
+  const title_en = keepFromEditor === 'en' ? editor.title_en : baseline.title_en
+
+  const baselineMap = new Map(baseline.sections.map((s) => [s.id, s]))
+  const editorIds = new Set(editor.sections.map((s) => s.id))
+  const mergedFromEditor = [...editor.sections]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((es) => mergeSectionForLocale(es, baselineMap.get(es.id), keepFromEditor))
+
+  const extras = baseline.sections.filter((s) => !editorIds.has(s.id))
+
+  return prefillSortOrders({
+    title_ko,
+    title_en,
+    sections: [...mergedFromEditor, ...extras].sort((a, b) => a.sort_order - b.sort_order),
+  })
 }
 
 /** 서버에 저장된 섹션 최신본을 현재 문서의 동일 section id에 덮어씁니다. */

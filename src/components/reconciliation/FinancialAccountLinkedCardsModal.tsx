@@ -43,6 +43,38 @@ type PaymentMethodRow = {
   } | null
 }
 
+type TeamPickRow = {
+  email: string
+  name_ko: string | null
+  name_en: string | null
+  nick_name: string | null
+  is_active: boolean | null
+}
+
+/** 결제수단에 묶인 팀(가이드) 사용자 표시 — 카드명과 별도 줄 */
+function paymentMethodUserLabel(pm: PaymentMethodRow): string | null {
+  const t = pm.team
+  const person =
+    (t?.nick_name && String(t.nick_name).trim()) ||
+    (t?.name_en && String(t.name_en).trim()) ||
+    (t?.name_ko && String(t.name_ko).trim()) ||
+    ''
+  const email = (pm.user_email && String(pm.user_email).trim()) || ''
+  if (person && email) return `${person} (${email})`
+  if (person) return person
+  if (email) return email
+  return null
+}
+
+function teamMemberSelectLabel(m: TeamPickRow): string {
+  const nick = m.nick_name?.trim()
+  const ko = m.name_ko?.trim()
+  const en = m.name_en?.trim()
+  const primary = nick || ko || en || m.email
+  if (ko && en && ko !== en) return `${primary} · ${en}`
+  return primary
+}
+
 function normalizeFa(v: string | null | undefined): string | null {
   const t = String(v ?? '').trim()
   return t ? t : null
@@ -99,6 +131,12 @@ export default function FinancialAccountLinkedCardsModal({
   const [saving, setSaving] = useState(false)
   /** «다른 카드 선택» 드롭다운을 선택 후 맨 위로 되돌리기 위해 계정별 key 버전 */
   const [addPickerVersionByAccount, setAddPickerVersionByAccount] = useState<Record<string, number>>({})
+  const [teamPickRows, setTeamPickRows] = useState<TeamPickRow[]>([])
+  const [newCardOpenForAccountId, setNewCardOpenForAccountId] = useState<string | null>(null)
+  const [newCardMethod, setNewCardMethod] = useState('')
+  const [newCardLast4, setNewCardLast4] = useState('')
+  const [newCardUserEmail, setNewCardUserEmail] = useState('')
+  const [creatingNewCard, setCreatingNewCard] = useState(false)
 
   const paymentMethodsLoadedRef = useRef(false)
 
@@ -202,13 +240,43 @@ export default function FinancialAccountLinkedCardsModal({
     }
   }, [])
 
+  const loadTeamPickRows = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en, nick_name, is_active')
+        .order('is_active', { ascending: false })
+        .order('name_ko', { ascending: true })
+
+      if (error) throw error
+      const rows: TeamPickRow[] = (data ?? []).map((r: Record<string, unknown>) => ({
+        email: String(r.email ?? ''),
+        name_ko: (r.name_ko as string | null) ?? null,
+        name_en: (r.name_en as string | null) ?? null,
+        nick_name: (r.nick_name as string | null) ?? null,
+        is_active: (r.is_active as boolean | null) ?? true,
+      }))
+      setTeamPickRows(rows.filter((r) => r.email))
+    } catch (e) {
+      if (!isAbortLikeError(e)) {
+        console.error(e)
+      }
+      setTeamPickRows([])
+    }
+  }, [])
+
   useEffect(() => {
     if (!open) return
     paymentMethodsLoadedRef.current = false
     setDraftDirty(false)
+    setNewCardOpenForAccountId(null)
+    setNewCardMethod('')
+    setNewCardLast4('')
+    setNewCardUserEmail('')
     void loadAccounts()
     void loadPaymentMethodsInner(true)
-  }, [open, loadAccounts, loadPaymentMethodsInner])
+    void loadTeamPickRows()
+  }, [open, loadAccounts, loadPaymentMethodsInner, loadTeamPickRows])
 
   useEffect(() => {
     if (!open) return
@@ -322,6 +390,110 @@ export default function FinancialAccountLinkedCardsModal({
     }
   }
 
+  const createAndLinkNewCard = async (financialAccountId: string) => {
+    const method = newCardMethod.trim()
+    if (!method) {
+      setPaymentMethodsError('카드·방법 이름을 입력하세요.')
+      return
+    }
+    const last4 = newCardLast4.replace(/\D/g, '').slice(0, 4)
+    const userEmailRaw = newCardUserEmail.trim()
+    const userEmail = userEmailRaw || null
+    const methodSlug =
+      method.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase() || 'CARD'
+    const emailPrefix = userEmail
+      ? userEmail.split('@')[0]?.replace(/[^a-zA-Z0-9_-]/g, '') || 'user'
+      : 'nouser'
+
+    setCreatingNewCard(true)
+    setPaymentMethodsError(null)
+    let lastError: string | null = null
+    let createdId: string | null = null
+    let id = `PAYM${Date.now().toString().slice(-6)}-${methodSlug}-${emailPrefix}`
+
+    try {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const postRes = await fetch('/api/payment-methods', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id,
+            method,
+            method_type: 'card',
+            user_email: userEmail,
+            card_number_last4: last4 || null,
+            status: 'active',
+            created_by: userEmail,
+          }),
+        })
+        const postJson = (await postRes.json()) as {
+          success?: boolean
+          message?: string
+          error?: string
+          data?: { id: string }
+        }
+
+        if (postRes.ok && postJson.success && postJson.data?.id) {
+          createdId = postJson.data.id
+          break
+        }
+        const msg = postJson.error || postJson.message || `HTTP ${postRes.status}`
+        if (String(msg).includes('already exists') && attempt < 5) {
+          id = `PAYM${Date.now().toString().slice(-6)}${attempt}${Math.random()
+            .toString(36)
+            .substring(2, 5)
+            .toUpperCase()}-${methodSlug}-${emailPrefix}`
+          continue
+        }
+        lastError = msg
+        break
+      }
+
+      if (!createdId) {
+        setPaymentMethodsError(lastError || '결제수단을 만들지 못했습니다.')
+        return
+      }
+
+      const token = getStoredAccessToken()
+      if (token) {
+        const patchRes = await fetch(`/api/payment-methods/${encodeURIComponent(createdId)}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ financial_account_id: financialAccountId }),
+          credentials: 'same-origin',
+        })
+        const patchJson = (await patchRes.json()) as { success?: boolean; error?: string; message?: string }
+        if (!patchRes.ok || patchJson.success === false) {
+          setPaymentMethodsError(
+            patchJson.error ||
+              patchJson.message ||
+              `생성은 됐으나 이 금융 계정에 연결하지 못했습니다(Super 권한·HTTP ${patchRes.status}). 아래 «미연결»에서 연결할 수 있습니다.`
+          )
+        }
+      } else {
+        setPaymentMethodsError(
+          '결제수단은 생성됐으나 로그인 토큰이 없어 금융 계정을 자동 연결하지 못했습니다. 로그인 후 «연결 저장» 또는 미연결 목록에서 연결하세요.'
+        )
+      }
+
+      setDraftDirty(false)
+      paymentMethodsLoadedRef.current = false
+      await loadPaymentMethodsInner(true)
+      onSaved?.()
+      setNewCardMethod('')
+      setNewCardLast4('')
+      setNewCardUserEmail('')
+      setNewCardOpenForAccountId(null)
+    } catch (e) {
+      setPaymentMethodsError(e instanceof Error ? e.message : '새 카드 등록 중 오류가 났습니다.')
+    } finally {
+      setCreatingNewCard(false)
+    }
+  }
+
   const displayError = accountsError || paymentMethodsError
   const paymentMethodsHref = `/${locale}/admin/payment-methods`
   const statementRecoHref = `/${locale}/admin/statement-reconciliation`
@@ -340,6 +512,10 @@ export default function FinancialAccountLinkedCardsModal({
         if (!next) {
           setDraftDirty(false)
           setAddPickerVersionByAccount({})
+          setNewCardOpenForAccountId(null)
+          setNewCardMethod('')
+          setNewCardLast4('')
+          setNewCardUserEmail('')
         }
         onOpenChange(next)
       }}
@@ -446,12 +622,20 @@ export default function FinancialAccountLinkedCardsModal({
                           <div className="text-sm font-medium text-slate-800 truncate">
                             {paymentMethodShortLabel(pm)}
                           </div>
+                          {paymentMethodUserLabel(pm) ? (
+                            <div
+                              className="text-xs text-slate-600 mt-0.5 truncate"
+                              title={paymentMethodUserLabel(pm) ?? undefined}
+                            >
+                              사용자 {paymentMethodUserLabel(pm)}
+                            </div>
+                          ) : null}
                           <div className="text-[10px] text-slate-400 font-mono truncate" title={pm.id}>
                             {pm.id}
                           </div>
                         </div>
                         <select
-                          disabled={saving}
+                          disabled={saving || creatingNewCard}
                           className="w-full sm:w-[min(14rem,100%)] shrink-0 text-xs rounded-md border border-slate-300 bg-white px-2 py-1.5 disabled:opacity-50"
                           value={effectiveFa(pm) ?? ''}
                           onChange={(e) =>
@@ -476,7 +660,9 @@ export default function FinancialAccountLinkedCardsModal({
                 </label>
                 <select
                   key={`add-pm-${acc.id}-${addPickerVersionByAccount[acc.id] ?? 0}`}
-                  disabled={saving || paymentMethods.length === 0 || allAccounts.length === 0}
+                  disabled={
+                    saving || creatingNewCard || paymentMethods.length === 0 || allAccounts.length === 0
+                  }
                   className="w-full max-w-md text-xs rounded-md border border-slate-300 bg-white px-2 py-2 disabled:opacity-50"
                   defaultValue=""
                   onChange={(e) => {
@@ -498,6 +684,90 @@ export default function FinancialAccountLinkedCardsModal({
                     </option>
                   ))}
                 </select>
+
+                <div className="mt-3 pt-3 border-t border-slate-200/90">
+                  <button
+                    type="button"
+                    disabled={saving || creatingNewCard}
+                    className="text-xs font-medium text-blue-700 hover:text-blue-900 underline disabled:opacity-50 disabled:no-underline"
+                    onClick={() => {
+                      if (newCardOpenForAccountId === acc.id) {
+                        setNewCardOpenForAccountId(null)
+                      } else {
+                        setNewCardOpenForAccountId(acc.id)
+                        setNewCardMethod('')
+                        setNewCardLast4('')
+                        setNewCardUserEmail('')
+                      }
+                    }}
+                  >
+                    {newCardOpenForAccountId === acc.id ? '새 카드 등록 닫기' : '+ 새 카드 등록'}
+                  </button>
+                  {newCardOpenForAccountId === acc.id ? (
+                    <div className="mt-2 space-y-2 rounded-md border border-slate-200 bg-white p-3 max-w-md">
+                      <p className="text-[11px] text-slate-500">
+                        결제수단을 만든 뒤 이 금융 계정에 연결합니다. 계정 연결은{' '}
+                        <strong>Super</strong> 권한이 필요합니다.
+                      </p>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          카드·방법 이름 <span className="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={newCardMethod}
+                          onChange={(e) => setNewCardMethod(e.target.value)}
+                          placeholder="예: CC 0602"
+                          className="w-full text-xs rounded-md border border-slate-300 px-2 py-1.5"
+                          disabled={creatingNewCard}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          카드번호 끝 4자리
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={4}
+                          value={newCardLast4}
+                          onChange={(e) => setNewCardLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                          placeholder="1234"
+                          className="w-full text-xs rounded-md border border-slate-300 px-2 py-1.5 max-w-[8rem]"
+                          disabled={creatingNewCard}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          담당 사용자(팀)
+                        </label>
+                        <select
+                          value={newCardUserEmail}
+                          onChange={(e) => setNewCardUserEmail(e.target.value)}
+                          className="w-full text-xs rounded-md border border-slate-300 bg-white px-2 py-1.5"
+                          disabled={creatingNewCard}
+                        >
+                          <option value="">없음</option>
+                          {teamPickRows.map((m) => (
+                            <option key={m.email} value={m.email}>
+                              {teamMemberSelectLabel(m)}
+                              {m.is_active === false ? ' (비활성)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full sm:w-auto"
+                        disabled={creatingNewCard || !newCardMethod.trim()}
+                        onClick={() => void createAndLinkNewCard(acc.id)}
+                      >
+                        {creatingNewCard ? '처리 중…' : '등록 후 이 계정에 연결'}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </section>
             )
           })}
@@ -520,10 +790,18 @@ export default function FinancialAccountLinkedCardsModal({
                       <div className="text-sm font-medium text-slate-800 truncate">
                         {paymentMethodShortLabel(pm)}
                       </div>
+                      {paymentMethodUserLabel(pm) ? (
+                        <div
+                          className="text-xs text-slate-600 mt-0.5 truncate"
+                          title={paymentMethodUserLabel(pm) ?? undefined}
+                        >
+                          사용자 {paymentMethodUserLabel(pm)}
+                        </div>
+                      ) : null}
                       <div className="text-[10px] text-slate-400 font-mono truncate">{pm.id}</div>
                     </div>
                     <select
-                      disabled={saving}
+                      disabled={saving || creatingNewCard}
                       className="w-full sm:w-[min(14rem,100%)] text-xs rounded-md border border-slate-300 bg-white px-2 py-1.5"
                       value={effectiveFa(pm) ?? ''}
                       onChange={(e) =>
@@ -569,7 +847,7 @@ export default function FinancialAccountLinkedCardsModal({
           <Button
             type="button"
             className="shrink-0 w-full sm:w-auto"
-            disabled={!hasChanges || saving}
+            disabled={!hasChanges || saving || creatingNewCard}
             onClick={() => void saveFaChanges()}
           >
             {saving ? '저장 중…' : '연결 저장'}

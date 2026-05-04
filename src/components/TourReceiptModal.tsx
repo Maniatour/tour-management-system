@@ -8,6 +8,10 @@ import { useLocale } from 'next-intl'
 import { X, Receipt, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle, Edit, Clock, Upload, Camera, Folder } from 'lucide-react'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
+import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
+
+const TOUR_RECEIPT_MAX_STORAGE_BYTES = 10 * 1024 * 1024
+const TOUR_RECEIPT_MAX_ORIGINAL_BYTES = 35 * 1024 * 1024
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -64,6 +68,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
   const [vendors, setVendors] = useState<any[]>([])
   const [showDriveImporter, setShowDriveImporter] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -298,15 +303,41 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
     try {
       setUploading(true)
 
+      if (!file.type.startsWith('image/')) {
+        alert(getText('이미지 파일만 업로드할 수 있습니다.', 'Only image files can be uploaded.'))
+        return
+      }
+      if (file.size > TOUR_RECEIPT_MAX_ORIGINAL_BYTES) {
+        alert(getText('한 장당 35MB를 넘는 이미지는 올릴 수 없습니다.', 'Each image must be 35MB or smaller.'))
+        return
+      }
+
       await ensureFreshAuthSessionForUpload()
 
-      const fileExt = file.name.split('.').pop()
+      const safeLimit = TOUR_RECEIPT_MAX_STORAGE_BYTES - 256 * 1024
+      let prepared: File
+      try {
+        prepared = file.size > safeLimit ? await ensureImageFitsMaxBytes(file, safeLimit) : file
+      } catch (e) {
+        const failed = e instanceof Error && e.message === RECEIPT_COMPRESS_FAILED
+        alert(
+          failed
+            ? getText(
+                '이미지를 불러오거나 줄이지 못했습니다. 다른 사진을 선택하거나 JPG로 저장해 보세요.',
+                'Could not load or shrink the image. Try another photo or save as JPEG.'
+              )
+            : getText('파일 처리 중 오류가 발생했습니다.', 'An error occurred while processing the file.')
+        )
+        return
+      }
+
+      const fileExt = prepared.name.split('.').pop() || 'jpg'
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
       const filePath = `receipts/${fileName}`
 
       const { error: uploadError } = await supabase.storage
         .from('tour-expenses')
-        .upload(filePath, file)
+        .upload(filePath, prepared)
 
       if (uploadError) {
         console.error('파일 업로드 오류:', uploadError)
@@ -334,8 +365,9 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      handleFileUpload(file)
+      void handleFileUpload(file)
     }
+    e.target.value = ''
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -714,18 +746,45 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
                           {getText('영수증을 드래그하거나 클릭하여 선택하세요', 'Drag and drop receipt or click to select')}
                         </p>
                         <p className="text-xs text-gray-500">
-                          📷 {getText('모바일에서 카메라 촬영 가능 | JPG, PNG, WebP 형식, 최대 5MB', 'Camera shooting available on mobile | JPG, PNG, WebP format, max 5MB')}
+                          {getText(
+                            'JPG·PNG·WebP 등 이미지. 한 장 최대 약 35MB까지 선택 가능하며, 큰 사진은 자동으로 줄여 올립니다.',
+                            'JPG, PNG, WebP, etc. Up to about 35MB per image; large photos are shrunk automatically before upload.'
+                          )}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
-                        >
-                          <Camera className="w-4 h-4 mr-2" />
-                          📷 {getText('카메라 또는 파일 선택', 'Camera or File Selection')}
-                        </button>
+                        <div className="flex flex-wrap gap-2 justify-center">
+                          <button
+                            type="button"
+                            onClick={() => cameraInputRef.current?.click()}
+                            disabled={uploading}
+                            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                          >
+                            <Camera className="w-4 h-4 mr-2" />
+                            {getText('카메라', 'Camera')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploading}
+                            className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                          >
+                            <Folder className="w-4 h-4 mr-2" />
+                            {getText('파일 선택', 'Choose file')}
+                          </button>
+                        </div>
                       </div>
                     )}
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture={
+                        typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                          ? 'environment'
+                          : undefined
+                      }
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
                     <input
                       ref={fileInputRef}
                       type="file"

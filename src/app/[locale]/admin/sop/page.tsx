@@ -5,18 +5,15 @@ import { useParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { canManageCompanySop, normalizeEmail } from '@/lib/sopPermissions'
+import { fetchStructuredDocVersionList } from '@/lib/companyStructuredDocVersions'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import AdminStructuredDocPublishTab from '@/components/sop/AdminStructuredDocPublishTab'
+import AdminStructuredDocPublishTab, {
+  type StructuredDocDualCompliance,
+  type StructuredDocVersionRow,
+} from '@/components/sop/AdminStructuredDocPublishTab'
 
-type SopVersion = {
-  id: string
-  version_number: number
-  title: string
-  body_md: string | null
-  body_structure: unknown
-  published_at: string
-}
+type SopVersion = StructuredDocVersionRow
 
 type TeamRow = { email: string; name_ko: string | null; name_en: string | null; is_active: boolean | null }
 type SigRow = {
@@ -75,17 +72,14 @@ export default function AdminSopPage() {
   )
 
   const refreshVersions = useCallback(async () => {
-    const { data } = await supabase
-      .from('company_sop_versions')
-      .select('id, version_number, title, body_md, body_structure, published_at')
-      .order('version_number', { ascending: false })
-    const list = (data || []) as SopVersion[]
+    const { rows, error } = await fetchStructuredDocVersionList(supabase, 'company_sop_versions')
+    if (error) console.warn('company_sop_versions list:', error.message)
+    const list = rows as SopVersion[]
     setVersions(list)
     const top = list[0] || null
     setLatest(top)
     if (top) await loadCompliance(top.id)
     else {
-      setTeam([])
       setSigs([])
     }
   }, [loadCompliance])
@@ -103,11 +97,9 @@ export default function AdminSopPage() {
   )
 
   const refreshContractVersions = useCallback(async () => {
-    const { data } = await supabase
-      .from('company_employee_contract_versions')
-      .select('id, version_number, title, body_md, body_structure, published_at')
-      .order('version_number', { ascending: false })
-    const list = (data || []) as SopVersion[]
+    const { rows, error } = await fetchStructuredDocVersionList(supabase, 'company_employee_contract_versions')
+    if (error) console.warn('company_employee_contract_versions list:', error.message)
+    const list = rows as SopVersion[]
     setContractVersions(list)
     const top = list[0] || null
     setContractLatest(top)
@@ -133,7 +125,7 @@ export default function AdminSopPage() {
       await refreshContractVersions()
     }
     void run()
-  }, [authUser?.email, isInitialized, loading, refreshVersions, refreshContractVersions, staffOk])
+  }, [authUser?.email, isInitialized, loading, loadTeam, refreshVersions, refreshContractVersions, staffOk])
 
   const contractSigByEmail = useMemo(() => {
     const m = new Map<string, SigRow>()
@@ -151,7 +143,7 @@ export default function AdminSopPage() {
     return m
   }, [sigs])
 
-  const openPdf = async (path: string, bucket: StorageBucket) => {
+  const openPdf = useCallback(async (path: string, bucket: StorageBucket) => {
     setOpeningPdf(path)
     setOpeningPdfBucket(bucket)
     try {
@@ -164,7 +156,21 @@ export default function AdminSopPage() {
     } finally {
       setOpeningPdf(null)
     }
-  }
+  }, [uiLocaleEn])
+
+  const dualComplianceBundle: StructuredDocDualCompliance = useMemo(
+    () => ({
+      team: team.map((t) => ({ email: t.email, name_ko: t.name_ko, name_en: t.name_en })),
+      sopLatest: latest,
+      sopSigs: sigs,
+      contractLatest,
+      contractSigs,
+      onOpenPdf: openPdf,
+      openingPdf,
+      openingPdfBucket,
+    }),
+    [team, latest, sigs, contractLatest, contractSigs, openingPdf, openingPdfBucket, openPdf]
+  )
 
   if (!isInitialized || loading) {
     return (
@@ -191,8 +197,8 @@ export default function AdminSopPage() {
         <p className="text-gray-600 mt-1 text-sm">
           {canManage
             ? uiLocaleEn
-              ? 'Use the tabs to edit the SOP, the employment contract, or manage per-tour checklists.'
-              : '탭에서 회사 SOP·직원 계약서를 수정하거나 투어별 체크리스트를 관리합니다.'
+              ? 'Open a version row to edit. Saving creates a new version. Signature compliance for both documents is under each tab.'
+              : '버전 행을 열어 수정합니다. 저장 시 새 버전이 추가됩니다. 두 문서의 서명 현황은 각 탭 하단에서 확인합니다.'
             : uiLocaleEn
               ? 'View signature compliance and published versions below.'
               : '아래에서 서명 현황과 게시된 버전을 확인할 수 있습니다.'}
@@ -266,7 +272,12 @@ export default function AdminSopPage() {
               locale={locale}
               uiLocaleEn={uiLocaleEn}
               canManage={canManage}
-              onPublished={refreshVersions}
+              versionRows={versions}
+              onVersionsChange={() => {
+                void refreshVersions()
+                void refreshContractVersions()
+              }}
+              dualCompliance={dualComplianceBundle}
             />
           ) : (
             <AdminStructuredDocPublishTab
@@ -274,18 +285,25 @@ export default function AdminSopPage() {
               locale={locale}
               uiLocaleEn={uiLocaleEn}
               canManage={canManage}
-              onPublished={refreshContractVersions}
+              versionRows={contractVersions}
+              onVersionsChange={() => {
+                void refreshVersions()
+                void refreshContractVersions()
+              }}
+              dualCompliance={dualComplianceBundle}
             />
           )}
         </div>
       ) : (
         <p className="text-sm text-gray-600">
           {uiLocaleEn
-            ? 'You can view compliance and open PDFs. Only Super / OP / Office Manager can edit and publish the SOP or employment contract.'
-            : '서명 현황 조회·PDF 열람은 가능합니다. SOP·직원 계약서 수정·게시는 Super / OP / Office Manager만 할 수 있습니다.'}
+            ? 'You can view compliance and open PDFs. Only Super / OP / Office Manager can edit versions.'
+            : '서명 현황 조회·PDF 열람은 가능합니다. SOP·직원 계약서 버전 수정은 Super / OP / Office Manager만 할 수 있습니다.'}
         </p>
       )}
 
+      {!canManage ? (
+        <>
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">{uiLocaleEn ? 'Latest SOP — compliance' : '최신 SOP 서명 현황'}</h2>
         {!latest ? (
@@ -458,6 +476,8 @@ export default function AdminSopPage() {
           ))}
         </ul>
       </section>
+        </>
+      ) : null}
     </div>
   )
 }

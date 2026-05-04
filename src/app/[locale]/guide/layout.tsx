@@ -69,6 +69,20 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     void recoverAuthSession()
   }, [pathname, recoverAuthSession])
 
+  // 카메라·다른 앱에서 복귀 시 WebView 세션이 비었다가 복구되는 경우
+  useEffect(() => {
+    const onResume = () => {
+      if (document.visibilityState !== 'visible') return
+      void recoverAuthSession()
+    }
+    document.addEventListener('visibilitychange', onResume)
+    window.addEventListener('pageshow', onResume)
+    return () => {
+      document.removeEventListener('visibilitychange', onResume)
+      window.removeEventListener('pageshow', onResume)
+    }
+  }, [recoverAuthSession])
+
   // 문서 업로드 모달 열기 함수
   const openDocumentUploadModal = (type: 'medical' | 'cpr') => {
     setDocumentUploadType(type)

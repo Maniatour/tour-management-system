@@ -96,3 +96,65 @@ export function getThumbnailFileName(originalFileName: string): string {
   return `${nameWithoutExt}_thumb${ext}`
 }
 
+/** Thrown as `Error.message` from `ensureImageFitsMaxBytes` when decode/compress fails. */
+export const RECEIPT_COMPRESS_FAILED = 'RECEIPT_COMPRESS_FAILED'
+
+/**
+ * If an image exceeds `maxBytes`, re-encode as JPEG with downscaling until it fits (for receipt uploads).
+ * GIF animation / transparency are flattened to a single JPEG frame.
+ */
+export async function ensureImageFitsMaxBytes(file: File, maxBytes: number): Promise<File> {
+  if (!file.type.startsWith('image/')) return file
+  if (file.size <= maxBytes) return file
+
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    throw new Error(RECEIPT_COMPRESS_FAILED)
+  }
+
+  try {
+    let w = bitmap.width
+    let h = bitmap.height
+    const maxEdge0 = Math.max(w, h)
+    const cap = 2600
+    if (maxEdge0 > cap) {
+      const s = cap / maxEdge0
+      w = Math.round(w * s)
+      h = Math.round(h * s)
+    }
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      throw new Error(RECEIPT_COMPRESS_FAILED)
+    }
+
+    for (let shrink = 0; shrink < 14; shrink++) {
+      canvas.width = w
+      canvas.height = h
+      ctx.drawImage(bitmap, 0, 0, w, h)
+      let q = 0.92
+      while (q >= 0.26) {
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob(resolve, 'image/jpeg', q)
+        })
+        if (blob && blob.size <= maxBytes) {
+          return new File([blob], 'receipt.jpg', { type: 'image/jpeg', lastModified: Date.now() })
+        }
+        q -= 0.055
+      }
+      const nw = Math.max(320, Math.floor(w * 0.84))
+      const nh = Math.max(320, Math.floor(h * 0.84))
+      if (nw >= w && nh >= h) break
+      w = nw
+      h = nh
+    }
+
+    throw new Error(RECEIPT_COMPRESS_FAILED)
+  } finally {
+    bitmap.close()
+  }
+}
+

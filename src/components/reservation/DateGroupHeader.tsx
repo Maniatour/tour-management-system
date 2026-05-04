@@ -4,8 +4,18 @@ import React from 'react'
 import { Calendar, UserMinus, UserPlus, Users } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import Image from 'next/image'
-import { getProductName, getChannelName, getStatusLabel, isoToLocalCalendarDateKey } from '@/utils/reservationUtils'
+import {
+  getProductName,
+  getChannelName,
+  getStatusLabel,
+  getReservationPartySize,
+  isoToLocalCalendarDateKey,
+} from '@/utils/reservationUtils'
 import type { Reservation } from '@/types/reservation'
+import { type ReservationStatusAuditRow } from '@/lib/reservationStatusAudit'
+import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
+import { BreakdownStatBadges } from '@/components/reservation/BreakdownStatBadges'
+import { StatusTransitionByTargetBlock } from '@/components/reservation/StatusTransitionByTargetBlock'
 
 export type DateGroupCancellationStats =
   | { mode: 'default' }
@@ -25,6 +35,10 @@ interface DateGroupHeaderProps {
    * `audit-loading`이면 취소 숫자 자리는 로딩 표시. 생략·default면 기존(updated_at 당일+취소상태).
    */
   cancellationStats?: DateGroupCancellationStats
+  /** 일별 헤더「상태」열: 감사 로드 후 전환별 등록/취소/순 집계. 미전달이면 기존(현재 상태 스냅샷) */
+  auditRowsByReservationId?: Record<string, ReservationStatusAuditRow[]>
+  /** 감사 로딩 중이면 상태 열에 대기 표시 */
+  statusAuditLoading?: boolean
 }
 
 function isCancelledLikeStatus(status: string | undefined) {
@@ -37,6 +51,15 @@ function sumPeopleByKey(list: Reservation[], keyFn: (r: Reservation) => string):
   for (const r of list) {
     const k = keyFn(r)
     m[k] = (m[k] ?? 0) + r.totalPeople
+  }
+  return m
+}
+
+function countByKey(list: Reservation[], keyFn: (r: Reservation) => string): Record<string, number> {
+  const m: Record<string, number> = {}
+  for (const r of list) {
+    const k = keyFn(r)
+    m[k] = (m[k] ?? 0) + 1
   }
   return m
 }
@@ -140,6 +163,8 @@ export function DateGroupHeader({
   products,
   channels,
   cancellationStats = { mode: 'default' },
+  auditRowsByReservationId,
+  statusAuditLoading = false,
 }: DateGroupHeaderProps) {
   const t = useTranslations('reservations')
   const locale = useLocale()
@@ -207,7 +232,13 @@ export function DateGroupHeader({
   const productRegByName = sumPeopleByKey(registeredOnDate, (r) =>
     getProductName(r.productId, products || [])
   )
+  const productRegCountByName = countByKey(registeredOnDate, (r) =>
+    getProductName(r.productId, products || [])
+  )
   const productCancelByName = sumPeopleByKey(cancelledOnDate, (r) =>
+    getProductName(r.productId, products || [])
+  )
+  const productCancelCountByName = countByKey(cancelledOnDate, (r) =>
     getProductName(r.productId, products || [])
   )
   const productRowKeys = [...new Set([...Object.keys(productRegByName), ...Object.keys(productCancelByName)])].sort(
@@ -220,7 +251,13 @@ export function DateGroupHeader({
   const channelRegByName = sumPeopleByKey(registeredOnDate, (r) =>
     getChannelName(r.channelId, channels || [])
   )
+  const channelRegCountByName = countByKey(registeredOnDate, (r) =>
+    getChannelName(r.channelId, channels || [])
+  )
   const channelCancelByName = sumPeopleByKey(cancelledOnDate, (r) =>
+    getChannelName(r.channelId, channels || [])
+  )
+  const channelCancelCountByName = countByKey(cancelledOnDate, (r) =>
     getChannelName(r.channelId, channels || [])
   )
   const channelRowKeys = [...new Set([...Object.keys(channelRegByName), ...Object.keys(channelCancelByName)])].sort(
@@ -294,6 +331,18 @@ export function DateGroupHeader({
     groups[status] += reservation.totalPeople
     return groups
   }, {} as Record<string, number>)
+
+  const useAuditStatusTransitions = auditRowsByReservationId != null && !statusAuditLoading
+  const statusTransitionBuckets = useAuditStatusTransitions
+    ? aggregateStatusTransitionBucketsForReservationWindow({
+        reservations: reservationsForActivityBreakdown,
+        party: (r) => getReservationPartySize(r as unknown as Record<string, unknown>),
+        auditRowsByReservationId,
+        dayKeys: [date],
+      })
+    : null
+
+  const showStatusTransitionAuditUi = statusAuditLoading || statusTransitionBuckets != null
 
   return (
     <div className="bg-gray-50 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border border-gray-200">
@@ -372,7 +421,8 @@ export function DateGroupHeader({
                 ? productRowKeys.map((productName) => {
                     const reg = productRegByName[productName] ?? 0
                     const cancel = productCancelByName[productName] ?? 0
-                    const net = reg - cancel
+                    const regBk = productRegCountByName[productName] ?? 0
+                    const cancelBk = productCancelCountByName[productName] ?? 0
                     return (
                       <div
                         key={productName}
@@ -380,11 +430,13 @@ export function DateGroupHeader({
                       >
                         <span className="text-gray-800 text-sm font-medium truncate sm:max-w-[45%]">{productName}</span>
                         <div className="self-end sm:self-auto">
-                          <RegCancelTotalBadges
-                            reg={reg}
-                            cancel={cancel}
-                            total={net}
-                            peopleSuffix={t('stats.people')}
+                          <BreakdownStatBadges
+                            regBookings={regBk}
+                            regPeople={reg}
+                            cancelBookings={cancelBk}
+                            cancelPeople={cancel}
+                            cancelPending={cancelStatsPending}
+                            totalPending={cancelStatsPending}
                             groupAriaLabel={t('stats.activityBadgesGroupLabel')}
                           />
                         </div>
@@ -422,7 +474,8 @@ export function DateGroupHeader({
                 ? channelRowKeys.map((channelName) => {
                     const reg = channelRegByName[channelName] ?? 0
                     const cancel = channelCancelByName[channelName] ?? 0
-                    const net = reg - cancel
+                    const regBk = channelRegCountByName[channelName] ?? 0
+                    const cancelBk = channelCancelCountByName[channelName] ?? 0
                     const channel = channels?.find((c) => c.name === channelName)
                     return (
                       <div
@@ -459,11 +512,13 @@ export function DateGroupHeader({
                           <span className="text-gray-800 text-sm font-medium truncate">{channelName}</span>
                         </div>
                         <div className="self-end pl-6 sm:max-w-[52%] sm:self-auto sm:pl-0">
-                          <RegCancelTotalBadges
-                            reg={reg}
-                            cancel={cancel}
-                            total={net}
-                            peopleSuffix={t('stats.people')}
+                          <BreakdownStatBadges
+                            regBookings={regBk}
+                            regPeople={reg}
+                            cancelBookings={cancelBk}
+                            cancelPeople={cancel}
+                            cancelPending={cancelStatsPending}
+                            totalPending={cancelStatsPending}
                             groupAriaLabel={t('stats.activityBadgesGroupLabel')}
                           />
                         </div>
@@ -525,20 +580,28 @@ export function DateGroupHeader({
               <svg className="w-4 h-4 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              {t('stats.byStatus')} {t('peopleLabel')}
+              {showStatusTransitionAuditUi ? t('stats.byStatusTransitions') : t('stats.byStatus')}{' '}
+              {t('peopleLabel')}
             </h4>
             <div className="space-y-2">
-              {Object.entries(statusGroups)
-                .sort(([, a], [, b]) => b - a)
-                .map(([status, count]) => (
-                  <div key={status} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
-                    <span className="text-gray-700 text-sm truncate flex-1 mr-2">{getStatusLabel(status, t)}</span>
-                    <span className="font-semibold text-sm bg-purple-100 text-purple-800 px-2 py-1 rounded-full min-w-0">
-                      {count}
-                      {t('stats.people')}
-                    </span>
-                  </div>
-                ))}
+              {showStatusTransitionAuditUi ? (
+                <StatusTransitionByTargetBlock
+                  buckets={statusTransitionBuckets ?? []}
+                  loading={statusAuditLoading}
+                />
+              ) : (
+                Object.entries(statusGroups)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([status, count]) => (
+                    <div key={status} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
+                      <span className="text-gray-700 text-sm truncate flex-1 mr-2">{getStatusLabel(status, t)}</span>
+                      <span className="font-semibold text-sm bg-purple-100 text-purple-800 px-2 py-1 rounded-full min-w-0">
+                        {count}
+                        {t('stats.people')}
+                      </span>
+                    </div>
+                  ))
+              )}
             </div>
           </div>
           </div>

@@ -20,11 +20,60 @@ function selectionInsideList(root: HTMLElement | null): boolean {
   return false
 }
 
+/** LightRichEditor 글자 크기(span style font-size) — htmlToMarkdown이 태그를 지우기 전에 직렬화 */
+const SOPFS_OPEN = '[[sopfs:'
+const SOPFS_CLOSE = '[[/sopfs]]'
+
+function isSafeSopFontSizeToken(size: string): boolean {
+  const s = size.trim()
+  if (!s || s.length > 24) return false
+  // `20px`·`1.25rem` 등 (숫자와 단위 사이 공백 허용)
+  return /^[0-9.]+\s*(px|pt|rem|em|%)?$/i.test(s)
+}
+
+/** 가장 안쪽 `[[sopfs:…]]…[[/sopfs]]`부터 복원 (중첩 시 바깥이 나중에 매칭되도록) */
+function decodeSopFontSizeTokens(markdown: string): string {
+  let out = markdown
+  const innerRe = /\[\[sopfs:([^\]]+)\]\]((?:(?!\[\[sopfs:)[\s\S])*?)\[\[\/sopfs\]\]/
+  for (let g = 0; g < 100; g++) {
+    const m = out.match(innerRe)
+    if (!m) break
+    const size = m[1]
+    const inner = m[2]
+    if (!isSafeSopFontSizeToken(size)) {
+      out = out.replace(m[0], inner)
+      continue
+    }
+    const safe = size.trim()
+    out = out.replace(m[0], `<span style="font-size: ${safe}">${inner}</span>`)
+  }
+  return out
+}
+
+/** contentEditable이 만든 font-size span을 토큰으로 바꿔 htmlToMarkdown 이후 단계에서 보존 */
+function tokenizeSopFontSizeSpans(html: string): string {
+  const re =
+    /<span\b[^>]*\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>((?:(?!<span\b)[\s\S])*?)<\/span>/gi
+  let out = html
+  for (let guard = 0; guard < 100; guard++) {
+    const before = out
+    out = out.replace(re, (full, dblQuoted: string | undefined, sglQuoted: string | undefined, inner: string) => {
+      const style = dblQuoted ?? sglQuoted ?? ''
+      const fsMatch = /font-size\s*:\s*([^;"'\s]+)/i.exec(style)
+      if (!fsMatch || !isSafeSopFontSizeToken(fsMatch[1])) return full
+      return `${SOPFS_OPEN}${fsMatch[1].trim()}]]${inner}${SOPFS_CLOSE}`
+    })
+    if (out === before) break
+  }
+  return out
+}
+
 // 마크다운을 HTML로 변환하는 함수
 export const markdownToHtml = (markdown: string): string => {
   if (!markdown) return ''
 
   let html = markdown.replace(/\r\n/g, '\n')
+  html = decodeSopFontSizeTokens(html)
 
   // 이미지 변환: ![alt](src) -> <img src="src" alt="alt" />
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px; display: block;" />')
@@ -124,6 +173,7 @@ const liInnerToMarkdownLine = (inner: string): string => {
 // HTML을 마크다운으로 변환하는 함수
 const htmlToMarkdown = (html: string): string => {
   let markdown = html
+  markdown = tokenizeSopFontSizeSpans(markdown)
 
   // 이미지 변환: <img src="..." alt="..." /> -> ![alt](src)
   markdown = markdown.replace(/<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*\/?>/g, '![$2]($1)')
@@ -192,6 +242,8 @@ const htmlToMarkdown = (html: string): string => {
 interface LightRichEditorProps {
   value: string
   onChange: (value: string | undefined) => void
+  /** true면 읽기 전용(참고 패널 등) */
+  readOnly?: boolean
   height?: number
   placeholder?: string
   className?: string
@@ -213,6 +265,7 @@ interface LightRichEditorProps {
 const LightRichEditor: React.FC<LightRichEditorProps> = ({
   value,
   onChange,
+  readOnly = false,
   height = 200,
   placeholder = "텍스트를 입력하세요... (Ctrl+B: 굵게, Ctrl+I: 기울임, Ctrl+U: 밑줄)",
   className = "",
@@ -229,6 +282,8 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   minHeight = 100,
   maxHeight = 800
 }) => {
+  const effectiveShowToolbar = readOnly ? false : showToolbar
+  const effectiveResize = readOnly ? false : enableResize
   const editorRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isInitializedRef = useRef(false)
@@ -303,7 +358,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
         }
       }
     }
-  }, [value])
+  }, [value, readOnly])
 
   // 드롭다운 외부 클릭 시 닫기
   React.useEffect(() => {
@@ -356,12 +411,13 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
 
   // 에디터 내용 업데이트
   const updateEditorContent = () => {
+    if (readOnly) return
     if (editorRef.current) {
       // 초기화되지 않았다면 초기화
       if (!isInitializedRef.current) {
         isInitializedRef.current = true
       }
-      
+
       const htmlContent = editorRef.current.innerHTML
       const markdownContent = htmlToMarkdown(htmlContent)
       onChange(markdownContent)
@@ -439,7 +495,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   return (
     <div className={`border border-gray-300 rounded overflow-hidden flex flex-col ${className}`}>
       {/* 툴바 */}
-      {showToolbar && (
+      {effectiveShowToolbar && (
         <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 p-2 flex flex-wrap gap-1">
           {enableBold && (
             <button
@@ -619,17 +675,24 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       {/* 에디터 영역 */}
       <div 
         ref={editorRef}
-        contentEditable
+        contentEditable={!readOnly}
         suppressContentEditableWarning={true}
-        onInput={updateEditorContent}
-        onBlur={updateEditorContent}
-        onKeyUp={updateEditorContent}
-        onPaste={() => {
-          setTimeout(() => {
-            updateEditorContent()
-          }, 0)
-        }}
-        onKeyDown={(e) => {
+        onInput={readOnly ? undefined : updateEditorContent}
+        onBlur={readOnly ? undefined : updateEditorContent}
+        onKeyUp={readOnly ? undefined : updateEditorContent}
+        onPaste={
+          readOnly
+            ? undefined
+            : () => {
+                setTimeout(() => {
+                  updateEditorContent()
+                }, 0)
+              }
+        }
+        onKeyDown={
+          readOnly
+            ? undefined
+            : (e) => {
           // 목록(ul/ol/li) 안에서는 브라우저 기본 Enter(다음 항목·분할) 유지
           if (e.key === 'Enter' && !e.shiftKey) {
             if (selectionInsideList(editorRef.current)) {
@@ -671,8 +734,9 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             document.execCommand('underline')
             setTimeout(updateEditorContent, 0)
           }
-        }}
-        className="w-full p-4 focus:outline-none text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5"
+        }
+        }
+        className={`w-full p-4 text-sm overflow-y-auto flex-shrink-0 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-8 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-8 [&_li]:my-0.5 ${readOnly ? 'cursor-default select-text bg-slate-50/50' : 'focus:outline-none'}`}
         style={{ 
           height: `${currentHeight}px`,
           minHeight: `${minHeight}px`,
@@ -685,7 +749,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       />
       
       {/* 사이즈 조정 핸들 */}
-      {enableResize && (
+      {effectiveResize && (
         <div
           onMouseDown={handleMouseDown}
           onTouchStart={handleMouseDown}

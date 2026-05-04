@@ -528,6 +528,57 @@ export default function StatementBulkExpenseModal({
     el.indeterminate = n > 0 && sel > 0 && sel < n
   }, [activeProposalsLength, selectedIds])
 
+  /** 저장 직전 요약: 선택·필수 입력 완료 건수, 동일 거래일·금액 중복 경고 */
+  const bulkSavePreview = useMemo(() => {
+    const dupKey = (posted: string, amt: number) => `${posted}|${Number(amt).toFixed(2)}`
+    const dupAmong = (rows: { posted_date: string; amount: number }[]) => {
+      const m = new Map<string, number>()
+      for (const r of rows) {
+        const k = dupKey(r.posted_date, r.amount)
+        m.set(k, (m.get(k) ?? 0) + 1)
+      }
+      return [...m.values()].some((c) => c > 1)
+    }
+    if (expenseKind === 'company_expenses') {
+      const rows = companyProposals.filter((p) => selectedIds.has(p.statement_line_id))
+      const ready = rows.filter((p) => p.paid_for.trim() && p.category.trim() && p.paid_to.trim())
+      return {
+        selected: rows.length,
+        ready: ready.length,
+        incomplete: rows.length - ready.length,
+        dupAmountDate: dupAmong(ready)
+      }
+    }
+    if (expenseKind === 'tour_expenses') {
+      const rows = tourProposals.filter((p) => selectedIds.has(p.statement_line_id))
+      const ready = rows.filter((p) => p.paid_for.trim() && p.paid_to.trim())
+      return {
+        selected: rows.length,
+        ready: ready.length,
+        incomplete: rows.length - ready.length,
+        dupAmountDate: dupAmong(ready)
+      }
+    }
+    if (expenseKind === 'reservation_expenses') {
+      const rows = resProposals.filter((p) => selectedIds.has(p.statement_line_id))
+      const ready = rows.filter((p) => p.paid_for.trim() && p.paid_to.trim())
+      return {
+        selected: rows.length,
+        ready: ready.length,
+        incomplete: rows.length - ready.length,
+        dupAmountDate: dupAmong(ready)
+      }
+    }
+    const rows = ticketProposals.filter((p) => selectedIds.has(p.statement_line_id))
+    const ready = rows.filter((p) => p.category.trim() && p.company.trim())
+    return {
+      selected: rows.length,
+      ready: ready.length,
+      incomplete: rows.length - ready.length,
+      dupAmountDate: dupAmong(ready)
+    }
+  }, [expenseKind, selectedIds, companyProposals, tourProposals, resProposals, ticketProposals])
+
   const updateCompanyProposal = useCallback(
     (id: string, patch: Partial<Pick<BulkCompanyExpenseProposalRow, 'paid_to' | 'paid_for' | 'category' | 'description'>>) => {
       setCompanyProposals((prev) =>
@@ -1734,19 +1785,40 @@ export default function StatementBulkExpenseModal({
           )}
         </div>
 
-        <DialogFooter className="px-4 py-3 border-t border-slate-100 shrink-0 gap-2 flex-col sm:flex-row sm:justify-end">
-          <p className="text-[10px] text-slate-500 mr-auto w-full sm:w-auto">
-            결제수단: {defaultPaymentMethodId ? `ID ${defaultPaymentMethodId.slice(0, 8)}…` : '기본 Card'}
-          </p>
+        <DialogFooter className="px-4 py-3 border-t border-slate-100 shrink-0 gap-2 flex-col sm:flex-row sm:items-end sm:justify-end">
+          <div className="w-full sm:flex-1 space-y-1 text-[11px] text-slate-600">
+            <p>
+              선택 <strong className="tabular-nums">{bulkSavePreview.selected}</strong>건 · 저장 가능{' '}
+              <strong className="tabular-nums text-emerald-800">{bulkSavePreview.ready}</strong>건
+              {bulkSavePreview.incomplete > 0 ? (
+                <>
+                  {' '}
+                  · 입력 미완 <strong className="tabular-nums text-amber-950">{bulkSavePreview.incomplete}</strong>건
+                </>
+              ) : null}
+            </p>
+            {bulkSavePreview.dupAmountDate ? (
+              <p className="font-medium text-amber-950">
+                동일 거래일·금액이 둘 이상 있습니다. 중복 저장이 아닌지 확인하세요.
+              </p>
+            ) : null}
+            <p className="text-[10px] text-slate-500">
+              결제수단: {defaultPaymentMethodId ? `ID ${defaultPaymentMethodId.slice(0, 8)}…` : '기본 Card'}
+            </p>
+          </div>
           <Button type="button" variant="outline" disabled={applying} onClick={() => onOpenChange(false)}>
             닫기
           </Button>
           <Button
             type="button"
-            disabled={applying || loading || selectedIds.size === 0}
+            disabled={applying || loading || bulkSavePreview.ready === 0}
             onClick={() => void applySelected()}
           >
-            {applying ? '저장 중…' : `선택 저장 (${selectedIds.size}건)`}
+            {applying
+              ? '저장 중…'
+              : bulkSavePreview.selected !== bulkSavePreview.ready
+                ? `저장 ${bulkSavePreview.ready}건 (선택 ${bulkSavePreview.selected})`
+                : `선택 저장 (${bulkSavePreview.ready}건)`}
           </Button>
         </DialogFooter>
       </DialogContent>

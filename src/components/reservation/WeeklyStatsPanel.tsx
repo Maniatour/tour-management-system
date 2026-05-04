@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import Image from 'next/image'
 import {
@@ -17,6 +17,9 @@ import {
 } from 'recharts'
 import { Plus, Minus, Equal } from 'lucide-react'
 import { getStatusLabel } from '@/utils/reservationUtils'
+import { BreakdownStatBadges } from '@/components/reservation/BreakdownStatBadges'
+import { StatusTransitionByTargetBlock } from '@/components/reservation/StatusTransitionByTargetBlock'
+import type { StatusTransitionTargetBucketAgg } from '@/lib/reservationStatusTargetBuckets'
 
 /** 통계 패널 상단 — 선택 주(달력 일수) 등록·취소·순 및 일평균 */
 export type StatisticsWeekHeaderSummary = {
@@ -41,7 +44,10 @@ export type WeeklyRegCancelDayRow = {
   registeredCount: number
   cancelledPeople: number
   cancelledCount: number
-  /** 요일(7일·월) 또는 연간 월별 일평균 등록 — 표시 구간에 포함된 연도만 반영 */
+  /**
+   * 7일: 올해(로컬) 1/1~어제 각 달력일 순(등록−취소) 인원을 요일별로 모은 뒤, 그 요일이 나온 날 수로 나눈 일평균.
+   * 월간: 표시 연도 기준 등록 인원만의 요일별 일평균. 연간: 월별 일평균 등록(별 필드).
+   */
   avgLineRegistered?: number
 }
 
@@ -51,16 +57,42 @@ interface WeeklyStatsPanelProps {
   onInitialLoadChange: (isInitial: boolean) => void
   isInitialLoad: boolean
   weeklyStats: {
-    productStats: Array<[string, number]>
+    productStats: Array<{
+      name: string
+      regPeople: number
+      cancelPeople: number
+      netPeople: number
+      regBookings: number
+      cancelBookings: number
+      netBookings: number
+    }>
     channelStats: Array<{
       name: string
-      count: number
-      favicon_url: string | null
       channelId: string
+      favicon_url: string | null
+      regPeople: number
+      cancelPeople: number
+      netPeople: number
+      regBookings: number
+      cancelBookings: number
+      netBookings: number
     }>
-    statusStats: Array<[string, number]>
+    statusStats: Array<{
+      statusKey: string
+      /** 감사 기반 주간 집계일 때만: 전환 라벨용 원문 상태 */
+      transitionFrom?: string
+      transitionTo?: string
+      regPeople: number
+      cancelPeople: number
+      netPeople: number
+      regBookings: number
+      cancelBookings: number
+      netBookings: number
+    }>
     totalReservations: number
     totalPeople: number
+    /** 감사 기반 주간: 확정·대기·취소 도착별 세부 전환 (미사용 시 생략) */
+    statusTransitionByTarget?: StatusTransitionTargetBucketAgg[]
   }
   /** 일별 등록·취소 인원 차트 (7일·월간·연간 구간은 부모에서 집계) */
   weeklyRegCancelByDay?: WeeklyRegCancelDayRow[]
@@ -99,6 +131,26 @@ export default function WeeklyStatsPanel({
 }: WeeklyStatsPanelProps) {
   const t = useTranslations('reservations')
   const locale = useLocale()
+  const [productBreakdownExpanded, setProductBreakdownExpanded] = useState(false)
+  const [channelBreakdownExpanded, setChannelBreakdownExpanded] = useState(false)
+  const [statusBreakdownExpanded, setStatusBreakdownExpanded] = useState(false)
+  const BREAKDOWN_PREVIEW = 3
+
+  const statusUsesTransitionBuckets = weeklyStats.statusTransitionByTarget != null
+  const statusBreakdownUsesTransitions = useMemo(
+    () =>
+      statusUsesTransitionBuckets ||
+      weeklyStats.statusStats.some(
+        (r) => r.transitionFrom != null && r.transitionFrom !== '' && r.transitionTo != null && r.transitionTo !== ''
+      ),
+    [weeklyStats.statusStats, statusUsesTransitionBuckets]
+  )
+
+  useEffect(() => {
+    setProductBreakdownExpanded(false)
+    setChannelBreakdownExpanded(false)
+    setStatusBreakdownExpanded(false)
+  }, [currentWeek])
 
   type RegCancelChartRow = WeeklyRegCancelDayRow & {
     shortLabel: string
@@ -110,6 +162,17 @@ export default function WeeklyStatsPanel({
     remainingPeople: number
     avgLineRegistered: number
   }
+
+  const formatAxisAvgPeople = useCallback(
+    (avg: number) => {
+      const n = Number(avg)
+      if (!Number.isFinite(n)) return ''
+      const r = Math.round(n * 10) / 10
+      const s = Number.isInteger(r) ? String(r) : r.toFixed(1)
+      return locale === 'ko' ? `${s}${t('stats.people')}` : `${s} ${t('stats.people')}`
+    },
+    [locale, t]
+  )
 
   const regCancelChartData = useMemo((): RegCancelChartRow[] => {
     const tag = locale === 'ko' ? 'ko-KR' : 'en-US'
@@ -154,10 +217,7 @@ export default function WeeklyStatsPanel({
         <div className="flex items-center justify-between">
           {/* 제목과 통계 정보 - 한 줄에 압축 */}
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-blue-800/90">
-              {t('stats.statsSectionLabel')}
-            </p>
-            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:gap-x-4">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:gap-x-4">
               <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
                 {currentWeek === 0
                   ? t('stats.regCancelWeekHeadingRecent')
@@ -165,18 +225,17 @@ export default function WeeklyStatsPanel({
                     ? t('stats.regCancelWeekHeadingPast', { days: Math.abs(currentWeek) * 7 })
                     : t('stats.regCancelWeekHeadingFuture', { days: currentWeek * 7 })}
               </h3>
-              <div className="text-xs sm:text-sm text-blue-700 whitespace-nowrap">
+              <div className="text-xs sm:text-sm text-blue-700 whitespace-nowrap tabular-nums">
                 {formatWeekRange(currentWeek).display}
               </div>
             </div>
-            
-            {/* 통계 주간: 등록(+)·취소(−)·순(=) 뱃지 + 일평균 */}
-            <div className="mt-1.5 space-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                <span className="tabular-nums font-semibold text-blue-800">
-                  {weekHeaderSummary.calendarDayCount}
-                  {t('stats.weekSummaryDays')}
-                </span>
+
+            {/* 한 줄: 7일 합계 뱃지 + 일평균(색 구분) 뱃지 */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
+              <span className="tabular-nums font-semibold text-blue-800">
+                {weekHeaderSummary.calendarDayCount}
+                {t('stats.weekSummaryDays')}
+              </span>
                 <span
                   className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/90 bg-emerald-50/95 pl-1 pr-2 py-0.5 text-emerald-950 shadow-sm ring-1 ring-emerald-100/80"
                   title={t('stats.weekSummaryReg', {
@@ -251,91 +310,96 @@ export default function WeeklyStatsPanel({
                     {t('stats.people')}
                   </span>
                 </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-blue-200/45 pt-1.5">
-                <span className="shrink-0 tabular-nums font-semibold text-blue-800/95">
-                  {t('stats.weekSummaryAvgRowLabel', {
-                    days: weekHeaderSummary.calendarDayCount,
-                  })}
+
+              <span className="shrink-0 text-blue-300/90 sm:hidden" aria-hidden>
+                ·
+              </span>
+              <span
+                className="hidden shrink-0 self-center sm:inline-block h-4 w-px bg-blue-200/90"
+                aria-hidden
+              />
+              <span className="shrink-0 font-semibold text-blue-900/90 tabular-nums">
+                {t('stats.weekSummaryAvgRowLabel', {
+                  days: weekHeaderSummary.calendarDayCount,
+                })}
+              </span>
+              <span
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-indigo-200/95 bg-indigo-50/95 pl-1 pr-2 py-0.5 text-indigo-950 shadow-sm ring-1 ring-indigo-100/80"
+                title={t('stats.weekSummaryAvgRegTooltip', {
+                  bookings: weekHeaderSummary.avgRegBookingsPerDay,
+                  people: weekHeaderSummary.avgRegPeoplePerDay,
+                })}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white" aria-hidden>
+                  <Plus className="h-3 w-3" strokeWidth={2.75} />
                 </span>
-                <span
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/90 bg-emerald-50/95 pl-1 pr-2 py-0.5 text-emerald-950 shadow-sm ring-1 ring-emerald-100/80"
-                  title={t('stats.weekSummaryAvgRegTooltip', {
-                    bookings: weekHeaderSummary.avgRegBookingsPerDay,
-                    people: weekHeaderSummary.avgRegPeoplePerDay,
-                  })}
-                >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white" aria-hidden>
-                    <Plus className="h-3 w-3" strokeWidth={2.75} />
-                  </span>
-                  <span className="min-w-0 tabular-nums font-medium">
-                    {t('stats.bookingCountInline', { count: weekHeaderSummary.avgRegBookingsPerDay })}
-                    <span className="text-emerald-700/80"> · </span>
-                    {weekHeaderSummary.avgRegPeoplePerDay}
-                    {locale === 'ko' ? '' : ' '}
-                    {t('stats.people')}
-                  </span>
+                <span className="min-w-0 tabular-nums font-medium">
+                  {t('stats.bookingCountInline', { count: weekHeaderSummary.avgRegBookingsPerDay })}
+                  <span className="text-indigo-700/85"> · </span>
+                  {weekHeaderSummary.avgRegPeoplePerDay}
+                  {locale === 'ko' ? '' : ' '}
+                  {t('stats.people')}
                 </span>
-                <span
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-rose-200/90 bg-rose-50/95 pl-1 pr-2 py-0.5 text-rose-950 shadow-sm ring-1 ring-rose-100/80"
-                  title={t('stats.weekSummaryAvgCancelTooltip', {
-                    bookings: weekHeaderSummary.avgCancelBookingsPerDay,
-                    people: weekHeaderSummary.avgCancelPeoplePerDay,
-                  })}
-                >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white" aria-hidden>
-                    <Minus className="h-3 w-3" strokeWidth={2.75} />
-                  </span>
-                  <span className="min-w-0 tabular-nums font-medium">
-                    {t('stats.bookingCountInline', { count: weekHeaderSummary.avgCancelBookingsPerDay })}
-                    <span className="text-rose-700/80"> · </span>
-                    {weekHeaderSummary.avgCancelPeoplePerDay}
-                    {locale === 'ko' ? '' : ' '}
-                    {t('stats.people')}
-                  </span>
+              </span>
+              <span
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-200/95 bg-violet-50/95 pl-1 pr-2 py-0.5 text-violet-950 shadow-sm ring-1 ring-violet-100/80"
+                title={t('stats.weekSummaryAvgCancelTooltip', {
+                  bookings: weekHeaderSummary.avgCancelBookingsPerDay,
+                  people: weekHeaderSummary.avgCancelPeoplePerDay,
+                })}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white" aria-hidden>
+                  <Minus className="h-3 w-3" strokeWidth={2.75} />
                 </span>
+                <span className="min-w-0 tabular-nums font-medium">
+                  {t('stats.bookingCountInline', { count: weekHeaderSummary.avgCancelBookingsPerDay })}
+                  <span className="text-violet-700/85"> · </span>
+                  {weekHeaderSummary.avgCancelPeoplePerDay}
+                  {locale === 'ko' ? '' : ' '}
+                  {t('stats.people')}
+                </span>
+              </span>
+              <span
+                className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
+                  weekHeaderSummary.avgNetBookingsPerDay < 0 ||
+                  weekHeaderSummary.avgNetPeoplePerDay < 0
+                    ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
+                    : 'border-cyan-200/95 bg-cyan-50/95 text-cyan-950 ring-cyan-100/80'
+                }`}
+                title={t('stats.weekSummaryAvgNetTooltip', {
+                  bookings: weekHeaderSummary.avgNetBookingsPerDay,
+                  people: weekHeaderSummary.avgNetPeoplePerDay,
+                })}
+              >
                 <span
-                  className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
                     weekHeaderSummary.avgNetBookingsPerDay < 0 ||
                     weekHeaderSummary.avgNetPeoplePerDay < 0
-                      ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
-                      : 'border-sky-200/90 bg-sky-50/95 text-sky-950 ring-sky-100/80'
+                      ? 'bg-amber-600'
+                      : 'bg-cyan-600'
                   }`}
-                  title={t('stats.weekSummaryAvgNetTooltip', {
-                    bookings: weekHeaderSummary.avgNetBookingsPerDay,
-                    people: weekHeaderSummary.avgNetPeoplePerDay,
-                  })}
+                  aria-hidden
                 >
+                  <Equal className="h-3 w-3" strokeWidth={2.75} />
+                </span>
+                <span className="min-w-0">
+                  {t('stats.bookingCountInline', { count: weekHeaderSummary.avgNetBookingsPerDay })}
                   <span
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
+                    className={
                       weekHeaderSummary.avgNetBookingsPerDay < 0 ||
                       weekHeaderSummary.avgNetPeoplePerDay < 0
-                        ? 'bg-amber-600'
-                        : 'bg-sky-600'
-                    }`}
-                    aria-hidden
+                        ? 'text-amber-700/80'
+                        : 'text-cyan-800/85'
+                    }
                   >
-                    <Equal className="h-3 w-3" strokeWidth={2.75} />
+                    {' '}
+                    ·{' '}
                   </span>
-                  <span className="min-w-0">
-                    {t('stats.bookingCountInline', { count: weekHeaderSummary.avgNetBookingsPerDay })}
-                    <span
-                      className={
-                        weekHeaderSummary.avgNetBookingsPerDay < 0 ||
-                        weekHeaderSummary.avgNetPeoplePerDay < 0
-                          ? 'text-amber-700/80'
-                          : 'text-sky-700/80'
-                      }
-                    >
-                      {' '}
-                      ·{' '}
-                    </span>
-                    {weekHeaderSummary.avgNetPeoplePerDay}
-                    {locale === 'ko' ? '' : ' '}
-                    {t('stats.people')}
-                  </span>
+                  {weekHeaderSummary.avgNetPeoplePerDay}
+                  {locale === 'ko' ? '' : ' '}
+                  {t('stats.people')}
                 </span>
-              </div>
+              </span>
             </div>
           </div>
           
@@ -496,18 +560,62 @@ export default function WeeklyStatsPanel({
                       top: 26,
                       right: 8,
                       left: 0,
-                      bottom: regCancelGranularity === 'month' ? 36 : 6,
+                      bottom:
+                        regCancelGranularity === 'week'
+                          ? 30
+                          : regCancelGranularity === 'month'
+                            ? 36
+                            : 6,
                     }}
                     barCategoryGap={regCancelGranularity === 'year' ? '22%' : '18%'}
                   >
                     <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
                     <XAxis
                       dataKey="shortLabel"
-                      tick={{ fontSize: regCancelGranularity === 'month' ? 8 : 10 }}
+                      tick={
+                        regCancelGranularity === 'week'
+                          ? (props: {
+                              x: number
+                              y: number
+                              payload?: { value?: string }
+                              index: number
+                            }) => {
+                              const { x, y, payload, index } = props
+                              const row = regCancelChartData[index]
+                              const avg = row?.avgLineRegistered ?? 0
+                              const avgLine = formatAxisAvgPeople(avg)
+                              return (
+                                <g transform={`translate(${x},${y})`}>
+                                  <text
+                                    x={0}
+                                    y={0}
+                                    dy={12}
+                                    textAnchor="middle"
+                                    fill="#4b5563"
+                                    fontSize={10}
+                                  >
+                                    {payload?.value ?? ''}
+                                  </text>
+                                  <text
+                                    x={0}
+                                    y={0}
+                                    dy={26}
+                                    textAnchor="middle"
+                                    fill="#111827"
+                                    fontSize={11}
+                                    fontWeight={600}
+                                  >
+                                    {avgLine}
+                                  </text>
+                                </g>
+                              )
+                            }
+                          : { fontSize: regCancelGranularity === 'month' ? 8 : 10 }
+                      }
                       interval={0}
                       angle={regCancelGranularity === 'month' ? -40 : 0}
                       textAnchor={regCancelGranularity === 'month' ? 'end' : 'middle'}
-                      height={regCancelGranularity === 'month' ? 64 : 48}
+                      height={regCancelGranularity === 'week' ? 54 : regCancelGranularity === 'month' ? 64 : 48}
                     />
                     <YAxis tick={{ fontSize: 10 }} width={36} allowDecimals={false} />
                     <Tooltip
@@ -550,13 +658,22 @@ export default function WeeklyStatsPanel({
                             </p>
                             <p className="text-gray-800 mt-0.5 font-medium">
                               {d.weekdayLongForAvg
-                                ? t('stats.weeklyChartTooltipAvgLineWeekday', {
-                                    weekday: d.weekdayLongForAvg,
-                                    people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
-                                  })
-                                : t('stats.weeklyChartTooltipAvgLine', {
-                                    people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
-                                  })}
+                                ? regCancelGranularity === 'week'
+                                  ? t('stats.weeklyChartTooltipAvgLineWeekdayYtdNet', {
+                                      weekday: d.weekdayLongForAvg,
+                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
+                                    })
+                                  : t('stats.weeklyChartTooltipAvgLineWeekday', {
+                                      weekday: d.weekdayLongForAvg,
+                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
+                                    })
+                                : regCancelGranularity === 'week'
+                                  ? t('stats.weeklyChartTooltipAvgLineYtdNet', {
+                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
+                                    })
+                                  : t('stats.weeklyChartTooltipAvgLine', {
+                                      people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
+                                    })}
                             </p>
                           </div>
                         )
@@ -701,7 +818,7 @@ export default function WeeklyStatsPanel({
                       dataKey="avgLineRegistered"
                       name={
                         regCancelGranularity === 'week'
-                          ? t('stats.regCancelAvgLineRegisteredWeekday')
+                          ? t('stats.regCancelAvgLineWeekYtdNet')
                           : t('stats.regCancelAvgLineRegistered')
                       }
                       stroke="#1f2937"
@@ -710,72 +827,83 @@ export default function WeeklyStatsPanel({
                       connectNulls
                       isAnimationActive={false}
                       legendType="plainline"
-                    >
-                      {regCancelGranularity === 'week' ? (
-                        <LabelList
-                          dataKey="avgLineRegistered"
-                          position="top"
-                          offset={6}
-                          className="fill-gray-700 text-[10px] font-medium"
-                          formatter={(v: number | string) => {
-                            const n = Number(v)
-                            if (!Number.isFinite(n) || n <= 0) return ''
-                            const r = Math.round(n * 10) / 10
-                            return Number.isInteger(r) ? String(r) : r.toFixed(1)
-                          }}
-                        />
-                      ) : null}
-                    </Line>
+                    />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-            {/* 상품별 인원 통계 */}
-            <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
-              <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
-                <svg className="w-3 h-3 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* 상품별: 등록·취소·순 */}
+            <div className="rounded border border-gray-200 bg-white p-2 shadow-sm sm:p-3">
+              <h5 className="mb-1.5 flex items-center text-xs font-semibold text-gray-800">
+                <svg className="mr-1 h-3 w-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                 </svg>
                 {t('stats.byProduct')}
               </h5>
               <div className="space-y-0.5">
-                {weeklyStats.productStats.slice(0, 3).map(([productName, count]) => (
-                  <div key={productName} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
-                    <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{productName}</span>
-                    <span className="font-semibold bg-blue-100 text-blue-800 px-1 py-0.5 rounded text-xs">
-                      {count}{t('stats.people')}
-                    </span>
+                {(productBreakdownExpanded
+                  ? weeklyStats.productStats
+                  : weeklyStats.productStats.slice(0, BREAKDOWN_PREVIEW)
+                ).map((row) => (
+                  <div
+                    key={row.name}
+                    className="flex items-center justify-between gap-1 rounded bg-gray-50 px-1.5 py-1 text-[11px] sm:text-xs"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-gray-800">{row.name}</span>
+                    <div className="flex min-w-0 max-w-[min(100%,18rem)] shrink-0 flex-wrap items-center justify-end sm:max-w-[55%]">
+                      <BreakdownStatBadges
+                        regBookings={row.regBookings}
+                        regPeople={row.regPeople}
+                        cancelBookings={row.cancelBookings}
+                        cancelPeople={row.cancelPeople}
+                        groupAriaLabel={t('stats.activityBadgesGroupLabel')}
+                      />
+                    </div>
                   </div>
                 ))}
-                {weeklyStats.productStats.length > 3 && (
-                  <div className="text-xs text-gray-500 text-center py-0.5">
-                    +{weeklyStats.productStats.length - 3}개
-                  </div>
-                )}
               </div>
+              {weeklyStats.productStats.length > BREAKDOWN_PREVIEW ? (
+                <button
+                  type="button"
+                  onClick={() => setProductBreakdownExpanded((v) => !v)}
+                  className="mt-1 w-full rounded border border-gray-200 bg-white py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  {productBreakdownExpanded
+                    ? t('stats.breakdownCollapse')
+                    : t('stats.breakdownExpand', {
+                        count: weeklyStats.productStats.length - BREAKDOWN_PREVIEW,
+                      })}
+                </button>
+              ) : null}
             </div>
-            
-            {/* 채널별 인원 통계 */}
-            <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
-              <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
-                <svg className="w-3 h-3 mr-1 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+            {/* 채널별: 등록·취소·순 */}
+            <div className="rounded border border-gray-200 bg-white p-2 shadow-sm sm:p-3">
+              <h5 className="mb-1.5 flex items-center text-xs font-semibold text-gray-800">
+                <svg className="mr-1 h-3 w-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
                 {t('stats.byChannel')}
               </h5>
               <div className="space-y-0.5">
-                {weeklyStats.channelStats.slice(0, 3).map((channelInfo) => (
-                  <div key={channelInfo.channelId} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
-                    <div className="flex items-center space-x-1 flex-1 mr-1">
+                {(channelBreakdownExpanded
+                  ? weeklyStats.channelStats
+                  : weeklyStats.channelStats.slice(0, BREAKDOWN_PREVIEW)
+                ).map((channelInfo) => (
+                  <div
+                    key={channelInfo.channelId}
+                    className="flex items-center justify-between gap-1 rounded bg-gray-50 px-1.5 py-1 text-[11px] sm:text-xs"
+                  >
+                    <div className="flex min-w-0 flex-1 items-center gap-1">
                       {channelInfo.favicon_url ? (
-                        <Image 
-                          src={channelInfo.favicon_url} 
-                          alt={`${channelInfo.name} favicon`} 
+                        <Image
+                          src={channelInfo.favicon_url}
+                          alt=""
                           width={12}
                           height={12}
-                          className="rounded flex-shrink-0"
+                          className="h-3 w-3 shrink-0 rounded"
                           style={{ width: 'auto', height: 'auto' }}
                           onError={(e) => {
                             const target = e.target as HTMLImageElement
@@ -783,50 +911,103 @@ export default function WeeklyStatsPanel({
                             const parent = target.parentElement
                             if (parent) {
                               const fallback = document.createElement('div')
-                              fallback.className = 'h-3 w-3 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                              fallback.className =
+                                'flex h-3 w-3 shrink-0 items-center justify-center rounded bg-gray-100 text-[10px] text-gray-400'
                               fallback.innerHTML = '🌐'
                               parent.appendChild(fallback)
                             }
                           }}
                         />
                       ) : (
-                        <div className="h-3 w-3 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                        <div className="flex h-3 w-3 shrink-0 items-center justify-center rounded bg-gray-100 text-[10px] text-gray-400">
                           🌐
                         </div>
                       )}
-                      <span className="text-gray-700 truncate text-xs">{channelInfo.name}</span>
+                      <span className="min-w-0 truncate text-gray-800">{channelInfo.name}</span>
                     </div>
-                    <span className="font-semibold bg-green-100 text-green-800 px-1 py-0.5 rounded text-xs">
-                      {channelInfo.count}{t('stats.people')}
-                    </span>
+                    <div className="flex min-w-0 max-w-[min(100%,18rem)] shrink-0 flex-wrap items-center justify-end sm:max-w-[55%]">
+                      <BreakdownStatBadges
+                        regBookings={channelInfo.regBookings}
+                        regPeople={channelInfo.regPeople}
+                        cancelBookings={channelInfo.cancelBookings}
+                        cancelPeople={channelInfo.cancelPeople}
+                        groupAriaLabel={t('stats.activityBadgesGroupLabel')}
+                      />
+                    </div>
                   </div>
                 ))}
-                {weeklyStats.channelStats.length > 3 && (
-                  <div className="text-xs text-gray-500 text-center py-0.5">
-                    +{weeklyStats.channelStats.length - 3}개
-                  </div>
-                )}
               </div>
+              {weeklyStats.channelStats.length > BREAKDOWN_PREVIEW ? (
+                <button
+                  type="button"
+                  onClick={() => setChannelBreakdownExpanded((v) => !v)}
+                  className="mt-1 w-full rounded border border-gray-200 bg-white py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  {channelBreakdownExpanded
+                    ? t('stats.breakdownCollapse')
+                    : t('stats.breakdownExpand', {
+                        count: weeklyStats.channelStats.length - BREAKDOWN_PREVIEW,
+                      })}
+                </button>
+              ) : null}
             </div>
-            
-            {/* 상태별 인원 통계 */}
-            <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
-              <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
-                <svg className="w-3 h-3 mr-1 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+            {/* 상태별: 등록·취소·순 */}
+            <div className="rounded border border-gray-200 bg-white p-2 shadow-sm sm:p-3">
+              <h5 className="mb-1.5 flex items-center text-xs font-semibold text-gray-800">
+                <svg className="mr-1 h-3 w-3 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                {t('stats.byStatus')}
+                {statusBreakdownUsesTransitions ? t('stats.byStatusTransitions') : t('stats.byStatus')}
               </h5>
-              <div className="space-y-0.5">
-                {weeklyStats.statusStats.map(([status, count]) => (
-                  <div key={status} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
-                    <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{getStatusLabel(status, t)}</span>
-                    <span className="font-semibold bg-purple-100 text-purple-800 px-1 py-0.5 rounded text-xs">
-                      {count}{t('stats.people')}
-                    </span>
+              {weeklyStats.statusTransitionByTarget != null ? (
+                <StatusTransitionByTargetBlock buckets={weeklyStats.statusTransitionByTarget} compact />
+              ) : (
+                <>
+                  <div className="space-y-0.5">
+                    {(statusBreakdownExpanded
+                      ? weeklyStats.statusStats
+                      : weeklyStats.statusStats.slice(0, BREAKDOWN_PREVIEW)
+                    ).map((row) => (
+                      <div
+                        key={row.statusKey}
+                        className="flex items-center justify-between gap-1 rounded bg-gray-50 px-1.5 py-1 text-[11px] sm:text-xs"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-gray-800">
+                          {row.transitionFrom != null &&
+                          row.transitionFrom !== '' &&
+                          row.transitionTo != null &&
+                          row.transitionTo !== ''
+                            ? `${getStatusLabel(row.transitionFrom, t)} → ${getStatusLabel(row.transitionTo, t)}`
+                            : getStatusLabel(row.statusKey, t)}
+                        </span>
+                        <div className="flex min-w-0 max-w-[min(100%,18rem)] shrink-0 flex-wrap items-center justify-end sm:max-w-[55%]">
+                          <BreakdownStatBadges
+                            regBookings={row.regBookings}
+                            regPeople={row.regPeople}
+                            cancelBookings={row.cancelBookings}
+                            cancelPeople={row.cancelPeople}
+                            groupAriaLabel={t('stats.activityBadgesGroupLabel')}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                  {weeklyStats.statusStats.length > BREAKDOWN_PREVIEW ? (
+                    <button
+                      type="button"
+                      onClick={() => setStatusBreakdownExpanded((v) => !v)}
+                      className="mt-1 w-full rounded border border-gray-200 bg-white py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      {statusBreakdownExpanded
+                        ? t('stats.breakdownCollapse')
+                        : t('stats.breakdownExpand', {
+                            count: weeklyStats.statusStats.length - BREAKDOWN_PREVIEW,
+                          })}
+                    </button>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         </div>

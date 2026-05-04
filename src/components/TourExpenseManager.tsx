@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Bed, Package } from 'lucide-react'
+import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Bed, Package, Camera } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import OptionManagementModal from './expense/OptionManagementModal'
@@ -17,7 +17,12 @@ import {
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
+import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
+import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
+
+const TOUR_RECEIPT_MAX_STORAGE_BYTES = 10 * 1024 * 1024
+const TOUR_RECEIPT_MAX_ORIGINAL_BYTES = 35 * 1024 * 1024
 
 interface TourExpense {
   id: string
@@ -130,6 +135,10 @@ export default function TourExpenseManager({
   const t = useTranslations('tours.tourExpense')
   const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
   const [expenses, setExpenses] = useState<TourExpense[]>([])
+  /** 명세 대조(reconciliation_matches)에 연결된 투어 지출 id */
+  const [reconciledTourExpenseIds, setReconciledTourExpenseIds] = useState<Set<string>>(() => new Set())
+  /** 목록만: 명세와 매칭되지 않은 지출만 표시 */
+  const [statementUnmatchedOnly, setStatementUnmatchedOnly] = useState(false)
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [vendors, setVendors] = useState<ExpenseVendor[]>([])
   const [paidToOptions, setPaidToOptions] = useState<string[]>([])
@@ -139,6 +148,8 @@ export default function TourExpenseManager({
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing[]>([])
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const [showAddForm, setShowAddForm] = useState(false)
+  const showAddFormRef = useRef(false)
+  showAddFormRef.current = showAddForm
   const [editingExpense, setEditingExpense] = useState<TourExpense | null>(null)
   const [uploading, setUploading] = useState(false)
   const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
@@ -149,8 +160,13 @@ export default function TourExpenseManager({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const receiptOnlyInputRef = useRef<HTMLInputElement>(null)
+  const receiptOnlyCameraInputRef = useRef<HTMLInputElement>(null)
+  /** 카메라·갤러리 확인 직후 합성 click이 배경으로 전달되며 모달이 닫히는 것을 막음 (특히 iOS). */
+  const expenseModalBackdropSuppressedUntilRef = useRef(0)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
   const [ocrReview, setOcrReview] = useState<{
+    /** 신규·수정 입력폼에서 업로드 직후 OCR이면 반영 시 편집 중 지출로 바꾸지 않음 */
+    applyTarget?: 'edit_expense' | 'add_form'
     expense: TourExpense
     result: ReceiptOcrResult
     draft: {
@@ -181,6 +197,13 @@ export default function TourExpenseManager({
   const [reservationExpenses, setReservationExpenses] = useState<Record<string, number>>({})
   const [reservationChannels, setReservationChannels] = useState<Record<string, any>>({})
   const receiptOnlyPaidFor = 'Receipt Pending'
+
+  function translateReceiptImageError(error: unknown): string {
+    if (!(error instanceof Error)) return t('unknownError')
+    if (error.message === 'ORIGINAL_RECEIPT_TOO_LARGE') return t('receiptOriginalTooLarge')
+    if (error.message === RECEIPT_COMPRESS_FAILED) return t('receiptCompressFailed')
+    return error.message
+  }
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -235,7 +258,8 @@ export default function TourExpenseManager({
   const getExpensePaidForLabel = (paidFor: string) =>
     paidFor === receiptOnlyPaidFor ? t('receiptOnlyPendingPaidFor') : paidFor
 
-  const canRunReceiptOcr = userRole === 'admin' || userRole === 'manager'
+  const canRunReceiptOcr =
+    userRole === 'admin' || userRole === 'manager' || userRole === 'team_member'
 
   const findPaymentMethodCandidate = (candidates: ReceiptOcrCandidates) => {
     const last4 = candidates.card_last4.trim()
@@ -258,6 +282,91 @@ export default function TourExpenseManager({
 
     return ''
   }
+
+  const buildOcrStubExpense = useCallback(
+    (imageUrl: string, filePath: string): TourExpense => ({
+      id: '__ocr_draft__',
+      tour_id: tourId,
+      submit_on: new Date().toISOString(),
+      paid_to: '',
+      paid_for: '',
+      amount: 0,
+      payment_method: null,
+      note: null,
+      tour_date: tourDate,
+      product_id: productId ?? null,
+      submitted_by: submittedBy,
+      image_url: imageUrl,
+      file_path: filePath,
+      audited_by: null,
+      checked_by: null,
+      checked_on: null,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }),
+    [tourId, tourDate, productId, submittedBy]
+  )
+
+  const buildOcrReviewFromResult = useCallback(
+    (expense: TourExpense, ocrResult: ReceiptOcrResult, applyTarget: 'edit_expense' | 'add_form') => {
+      const candidatePaidFor = categories.some((category) => category.name === ocrResult.candidates.paid_for)
+        ? ocrResult.candidates.paid_for
+        : ''
+      const paymentMethodId = findPaymentMethodCandidate(ocrResult.candidates)
+      const noteParts = [
+        expense.note || '',
+        ocrResult.candidates.date ? `${t('receiptOcrDateLabel')}: ${ocrResult.candidates.date}` : '',
+      ].filter(Boolean)
+
+      return {
+        applyTarget,
+        expense,
+        result: ocrResult,
+        draft: {
+          paid_to: ocrResult.candidates.paid_to || expense.paid_to || '',
+          paid_for: candidatePaidFor,
+          amount:
+            ocrResult.candidates.amount != null
+              ? ocrResult.candidates.amount.toFixed(2)
+              : expense.amount > 0
+                ? expense.amount.toString()
+                : '',
+          payment_method: paymentMethodId || expense.payment_method || '',
+          date: ocrResult.candidates.date || '',
+          note: noteParts.join('\n'),
+        },
+      }
+    },
+    [categories, findPaymentMethodCandidate, t]
+  )
+
+  const runOcrAfterReceiptUpload = useCallback(
+    async (imageUrl: string, filePath: string) => {
+      if (!showAddFormRef.current) return
+      try {
+        setOcrLoadingExpenseId('__draft__')
+        const response = await fetch('/api/expenses/receipt-ocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageUrl }),
+        })
+        const result = await response.json()
+        if (!response.ok) {
+          console.warn('Receipt OCR after upload:', result?.error)
+          return
+        }
+        const ocrResult = result as ReceiptOcrResult
+        const stub = buildOcrStubExpense(imageUrl, filePath)
+        setOcrReview(buildOcrReviewFromResult(stub, ocrResult, 'add_form'))
+      } catch (e) {
+        console.warn('Receipt OCR after upload failed:', e)
+      } finally {
+        setOcrLoadingExpenseId(null)
+      }
+    },
+    [buildOcrReviewFromResult, buildOcrStubExpense]
+  )
 
   const handlePaymentMethodTabChange = (tab: 'own' | 'other') => {
     const nextOptions = tab === 'own' ? guideCardPaymentMethodOptions : otherPaymentMethodOptions
@@ -539,6 +648,21 @@ export default function TourExpenseManager({
     }
   }, [tourId])
 
+  useEffect(() => {
+    const ids = expenses.map((e) => e.id)
+    if (ids.length === 0) {
+      setReconciledTourExpenseIds(new Set())
+      return
+    }
+    let cancelled = false
+    void fetchReconciledSourceIds(supabase, 'tour_expenses', ids).then((set) => {
+      if (!cancelled) setReconciledTourExpenseIds(set)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [expenses])
+
   // 카테고리 목록 로드
   const loadCategories = async () => {
     try {
@@ -641,25 +765,28 @@ export default function TourExpenseManager({
     try {
       await ensureFreshAuthSessionForUpload()
 
-      // 파일 크기 체크 (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('파일 크기가 너무 큽니다 (최대 5MB)')
-      }
-
       // MIME 타입 체크
       if (!file.type.startsWith('image/')) {
         throw new Error(t('imageOnlyError'))
       }
 
+      if (file.size > TOUR_RECEIPT_MAX_ORIGINAL_BYTES) {
+        throw new Error('ORIGINAL_RECEIPT_TOO_LARGE')
+      }
+
+      const safeLimit = TOUR_RECEIPT_MAX_STORAGE_BYTES - 256 * 1024
+      const prepared =
+        file.size > safeLimit ? await ensureImageFitsMaxBytes(file, safeLimit) : file
+
       // 고유한 파일명 생성
-      const fileExt = file.name.split('.').pop()
+      const fileExt = prepared.name.split('.').pop() || 'jpg'
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
       const filePath = `tour-expenses/${tourId}/${fileName}`
 
       // Supabase Storage에 업로드
       const { error: uploadError } = await supabase.storage
         .from('tour-expenses')
-        .upload(filePath, file)
+        .upload(filePath, prepared)
 
       if (uploadError) throw uploadError
 
@@ -799,6 +926,7 @@ export default function TourExpenseManager({
     if (!files.length) return
 
     try {
+      expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
       setUploading(true)
       const file = files[0] // 첫 번째 파일만 사용
       
@@ -806,11 +934,7 @@ export default function TourExpenseManager({
       if (!file.type.startsWith('image/')) {
         throw new Error('이미지 파일만 업로드할 수 있습니다.')
       }
-      
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('파일 크기는 5MB 이하여야 합니다.')
-      }
-      
+
       const { filePath, imageUrl } = await handleImageUpload(file)
       
       setFormData(prev => ({
@@ -818,9 +942,13 @@ export default function TourExpenseManager({
         file_path: filePath,
         image_url: imageUrl
       }))
+
+      if (showAddFormRef.current) {
+        void runOcrAfterReceiptUpload(imageUrl, filePath)
+      }
     } catch (error) {
       console.error('File upload error:', error)
-      alert(error instanceof Error ? error.message : t('imageUploadFailed', { error: error instanceof Error ? error.message : t('unknownError') }))
+      alert(translateReceiptImageError(error))
     } finally {
       setUploading(false)
     }
@@ -835,10 +963,6 @@ export default function TourExpenseManager({
 
       if (!file.type.startsWith('image/')) {
         throw new Error('이미지 파일만 업로드할 수 있습니다.')
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('파일 크기는 5MB 이하여야 합니다.')
       }
 
       const { filePath, imageUrl } = await handleImageUpload(file)
@@ -870,7 +994,7 @@ export default function TourExpenseManager({
       alert(t('receiptOnlyUploadSuccess'))
     } catch (error) {
       console.error('Receipt-only upload error:', error)
-      alert(error instanceof Error ? error.message : t('expenseRegistrationError'))
+      alert(error instanceof Error ? translateReceiptImageError(error) : t('expenseRegistrationError'))
     } finally {
       setUploading(false)
     }
@@ -1027,29 +1151,7 @@ export default function TourExpenseManager({
       }
 
       const ocrResult = result as ReceiptOcrResult
-      const candidatePaidFor = categories.some((category) => category.name === ocrResult.candidates.paid_for)
-        ? ocrResult.candidates.paid_for
-        : ''
-      const paymentMethodId = findPaymentMethodCandidate(ocrResult.candidates)
-      const noteParts = [
-        expense.note || '',
-        ocrResult.candidates.date ? `${t('receiptOcrDateLabel')}: ${ocrResult.candidates.date}` : ''
-      ].filter(Boolean)
-
-      setOcrReview({
-        expense,
-        result: ocrResult,
-        draft: {
-          paid_to: ocrResult.candidates.paid_to || expense.paid_to || '',
-          paid_for: candidatePaidFor,
-          amount: ocrResult.candidates.amount != null
-            ? ocrResult.candidates.amount.toFixed(2)
-            : (expense.amount > 0 ? expense.amount.toString() : ''),
-          payment_method: paymentMethodId || expense.payment_method || '',
-          date: ocrResult.candidates.date || '',
-          note: noteParts.join('\n')
-        }
-      })
+      setOcrReview(buildOcrReviewFromResult(expense, ocrResult, 'edit_expense'))
     } catch (error) {
       console.error('Receipt OCR error:', error)
       alert(error instanceof Error ? error.message : t('receiptOcrFailed'))
@@ -1060,6 +1162,42 @@ export default function TourExpenseManager({
 
   const handleApplyOcrToForm = () => {
     if (!ocrReview) return
+
+    if (ocrReview.applyTarget === 'add_form') {
+      const { draft } = ocrReview
+      const isPaidToInOptions = paidToOptions.includes(draft.paid_to || '')
+      const dateNote = draft.date ? `${t('receiptOcrDateLabel')}: ${draft.date}` : ''
+
+      setFormData((prev) => {
+        let noteOut = draft.note
+        if (prev.note?.trim()) {
+          const p = prev.note.trim()
+          if (!noteOut.includes(p)) {
+            noteOut = noteOut ? `${p}\n${noteOut}` : p
+          }
+        } else if (dateNote && noteOut && !noteOut.includes(dateNote)) {
+          noteOut = [noteOut, dateNote].filter(Boolean).join('\n')
+        }
+        return {
+          ...prev,
+          paid_to: isPaidToInOptions ? draft.paid_to : '',
+          paid_for: draft.paid_for,
+          amount: draft.amount,
+          payment_method: draft.payment_method,
+          note: noteOut,
+          custom_paid_to: isPaidToInOptions ? '' : draft.paid_to,
+          custom_paid_for: '',
+        }
+      })
+      setPaymentMethodTab(
+        draft.payment_method && guideCardPaymentMethodIds.has(draft.payment_method) ? 'own' : 'other'
+      )
+      setShowCustomPaidTo(Boolean(draft.paid_to && !isPaidToInOptions))
+      setShowCustomPaidFor(false)
+      setShowMoreCategories(false)
+      setOcrReview(null)
+      return
+    }
 
     const { expense, draft } = ocrReview
     const isPaidToInOptions = paidToOptions.includes(draft.paid_to || '')
@@ -1535,11 +1673,15 @@ export default function TourExpenseManager({
     }
   }
 
-  // 지출 카테고리별 그룹화
-  const getExpenseBreakdown = () => {
-    const breakdown: Record<string, { amount: number, count: number, expenses: TourExpense[] }> = {}
-    
-    expenses.forEach(expense => {
+  const visibleTourExpenses = useMemo(() => {
+    if (!statementUnmatchedOnly) return expenses
+    return expenses.filter((e) => !reconciledTourExpenseIds.has(e.id))
+  }, [expenses, statementUnmatchedOnly, reconciledTourExpenseIds])
+
+  // 지출 카테고리별 그룹화 (목록 필터와 동일 데이터 기준)
+  const expenseBreakdown = useMemo(() => {
+    const breakdown: Record<string, { amount: number; count: number; expenses: TourExpense[] }> = {}
+    visibleTourExpenses.forEach((expense) => {
       const category = expense.paid_for
       if (!breakdown[category]) {
         breakdown[category] = { amount: 0, count: 0, expenses: [] }
@@ -1548,12 +1690,10 @@ export default function TourExpenseManager({
       breakdown[category].count += 1
       breakdown[category].expenses.push(expense)
     })
-    
     return breakdown
-  }
+  }, [visibleTourExpenses])
 
   const financialStats = calculateFinancialStats()
-  const expenseBreakdown = getExpenseBreakdown()
 
   useEffect(() => {
     loadExpenses()
@@ -1578,7 +1718,22 @@ export default function TourExpenseManager({
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <div className="flex items-center space-x-2">
           {allowReceiptOnlyUpload && (
-            <>
+            <div className="flex items-center gap-1">
+              <input
+                ref={receiptOnlyCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture={
+                  typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                    ? 'environment'
+                    : undefined
+                }
+                onChange={(e) => {
+                  void handleReceiptOnlyUpload(e.target.files)
+                  e.target.value = ''
+                }}
+                className="hidden"
+              />
               <input
                 ref={receiptOnlyInputRef}
                 type="file"
@@ -1591,6 +1746,15 @@ export default function TourExpenseManager({
               />
               <button
                 type="button"
+                onClick={() => receiptOnlyCameraInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={t('camera')}
+              >
+                <Camera size={20} />
+              </button>
+              <button
+                type="button"
                 onClick={() => receiptOnlyInputRef.current?.click()}
                 disabled={uploading}
                 className="flex items-center justify-center w-10 h-10 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1598,7 +1762,7 @@ export default function TourExpenseManager({
               >
                 <Receipt size={20} />
               </button>
-            </>
+            </div>
           )}
           <button
             onClick={() => setShowOptionManagement(true)}
@@ -1925,7 +2089,22 @@ export default function TourExpenseManager({
         </div>
       ) : expenses.length > 0 ? (
         <div className="space-y-2">
-          {expenses.map((expense) => (
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-gray-300"
+              checked={statementUnmatchedOnly}
+              onChange={(e) => setStatementUnmatchedOnly(e.target.checked)}
+            />
+            <span>{t('statementUnmatchedOnlyLabel')}</span>
+          </label>
+          {visibleTourExpenses.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 py-8 text-center text-sm text-gray-600">
+              {t('statementUnmatchedEmpty')}
+            </div>
+          ) : (
+          <div className="space-y-2">
+          {visibleTourExpenses.map((expense) => (
             <div key={expense.id} className="border rounded-lg p-3 hover:bg-gray-50">
               {/* 상단: 지출명, 금액, 상태 뱃지, 수정/삭제/승인/거부 버튼 (오른쪽 끝 정렬) */}
               <div className="flex items-center justify-between mb-2">
@@ -2064,6 +2243,8 @@ export default function TourExpenseManager({
                 )}
             </div>
           ))}
+          </div>
+          )}
         </div>
       ) : (
         <div className="text-center py-8 text-gray-500">
@@ -2119,14 +2300,18 @@ export default function TourExpenseManager({
         </div>
       )}
 
-      {/* OCR 추출 확인 모달 */}
+      {/* OCR 추출 확인 모달 (지출 모달 z-50 위에 표시) */}
       {ocrReview && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center z-[60] p-4 overflow-y-auto">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl my-8">
             <div className="flex items-center justify-between p-4 border-b">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{t('receiptOcrReviewTitle')}</h3>
-                <p className="text-sm text-gray-500">{t('receiptOcrReviewDescription')}</p>
+                <p className="text-sm text-gray-500">
+                  {ocrReview.applyTarget === 'add_form'
+                    ? t('receiptOcrReviewDescriptionAddForm')
+                    : t('receiptOcrReviewDescription')}
+                </p>
               </div>
               <button
                 type="button"
@@ -2274,6 +2459,7 @@ export default function TourExpenseManager({
           className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto"
           onClick={(e) => {
             // 모달 배경 클릭 시에만 닫기 (모달 내부 클릭은 무시)
+            if (Date.now() < expenseModalBackdropSuppressedUntilRef.current) return
             if (e.target === e.currentTarget && !uploading) {
               if (editingExpense) {
                 handleCancelEdit()
@@ -2695,6 +2881,9 @@ export default function TourExpenseManager({
                         </button>
                       </div>
                       <p className="text-sm text-green-600">{t('receiptUploaded')}</p>
+                      {ocrLoadingExpenseId === '__draft__' && (
+                        <p className="text-xs text-purple-600">{t('receiptOcrAnalyzingAfterUpload')}</p>
+                      )}
                     </div>
                   ) : (
                     <div>
@@ -2712,6 +2901,7 @@ export default function TourExpenseManager({
                     onChange={(e) => {
                       e.stopPropagation()
                       if (e.target.files && e.target.files.length > 0) {
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
                         handleFileUpload(e.target.files)
                         // input 값 초기화
                         setTimeout(() => {
@@ -2732,6 +2922,7 @@ export default function TourExpenseManager({
                     onChange={(e) => {
                       e.stopPropagation()
                       if (e.target.files && e.target.files.length > 0) {
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
                         handleFileUpload(e.target.files)
                         // input 값 초기화
                         setTimeout(() => {
@@ -2749,6 +2940,7 @@ export default function TourExpenseManager({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
                         cameraInputRef.current?.click()
                       }}
                       disabled={uploading}
@@ -2761,6 +2953,7 @@ export default function TourExpenseManager({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
                         fileInputRef.current?.click()
                       }}
                       disabled={uploading}
