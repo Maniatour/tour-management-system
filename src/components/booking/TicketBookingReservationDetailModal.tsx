@@ -5,6 +5,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
+import { canRequestTicketBookingSoftDelete } from '@/lib/ticketBookingSoftDelete'
 import {
   formatTicketBookingAxisLabel,
   getBookingAxisStatusBadgeClass,
@@ -57,6 +58,7 @@ export type TicketBookingReservationDetailRow = {
   payment_method?: string | undefined
   unit_price?: number | undefined
   paid_amount?: number | null | undefined
+  deletion_requested_at?: string | null | undefined
 }
 
 function getProductName(
@@ -199,7 +201,10 @@ export type TicketBookingReservationDetailModalProps = {
   readOnly?: boolean
   onEdit?: (booking: TicketBookingReservationDetailRow) => void
   onViewHistory?: (bookingId: string) => void
-  onDelete?: (bookingId: string) => void
+  /** OP·매니저 — 삭제 요청(소프트) */
+  onRequestSoftDelete?: (bookingId: string) => void
+  /** SUPER — 영구 삭제 */
+  onHardDelete?: (bookingId: string) => void
   /** 데이터 로딩 중 (통계에서 비동기 조회 시) */
   loading?: boolean
   /** 액션 RPC 성공 후 목록 새로고침 등 */
@@ -220,7 +225,8 @@ export default function TicketBookingReservationDetailModal({
   readOnly = false,
   onEdit,
   onViewHistory,
-  onDelete,
+  onRequestSoftDelete,
+  onHardDelete,
   loading = false,
   onActionApplied,
   renderGroupDesktopTable,
@@ -230,9 +236,13 @@ export default function TicketBookingReservationDetailModal({
   const t = useTranslations('booking.calendar')
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis')
   const { user, userPosition } = useAuth()
-  const canDeleteBooking = useMemo(
+  const canHardDeleteBooking = useMemo(
     () => isSuperAdminActor(user?.email, userPosition),
     [user?.email, userPosition]
+  )
+  const canSoftDeleteRequest = useMemo(
+    () => canRequestTicketBookingSoftDelete(userPosition),
+    [userPosition]
   )
   const tourFallback = t('tour')
   const [detailListView, setDetailListView] = useState<'table' | 'card'>('card')
@@ -595,7 +605,13 @@ export default function TicketBookingReservationDetailModal({
                                         </td>
                                         <td className={`${td} text-center`}>
                                           {!readOnly &&
-                                          (onEdit || onViewHistory || (onDelete && canDeleteBooking)) ? (
+                                          (onEdit ||
+                                            onViewHistory ||
+                                            (onHardDelete && canHardDeleteBooking) ||
+                                            (onRequestSoftDelete &&
+                                              canSoftDeleteRequest &&
+                                              !canHardDeleteBooking &&
+                                              !booking.deletion_requested_at)) ? (
                                             <div className="flex flex-col items-stretch gap-1">
                                               {onEdit ? (
                                                 <button
@@ -621,11 +637,31 @@ export default function TicketBookingReservationDetailModal({
                                                   {locale === 'en' ? 'History' : '히스토리'}
                                                 </button>
                                               ) : null}
-                                              {onDelete && canDeleteBooking ? (
+                                              {booking.deletion_requested_at ? (
+                                                <span className="text-[10px] text-amber-700">
+                                                  {locale === 'en' ? 'Deletion pending' : '삭제 요청됨'}
+                                                </span>
+                                              ) : null}
+                                              {onRequestSoftDelete &&
+                                              canSoftDeleteRequest &&
+                                              !canHardDeleteBooking &&
+                                              !booking.deletion_requested_at ? (
                                                 <button
                                                   type="button"
                                                   onClick={() => {
-                                                    onDelete(booking.id)
+                                                    onRequestSoftDelete(booking.id)
+                                                    onOpenChange(false)
+                                                  }}
+                                                  className="rounded bg-amber-600 px-2 py-0.5 text-[10px] text-white hover:bg-amber-700"
+                                                >
+                                                  {locale === 'en' ? 'Delete' : '삭제'}
+                                                </button>
+                                              ) : null}
+                                              {onHardDelete && canHardDeleteBooking ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    onHardDelete(booking.id)
                                                     onOpenChange(false)
                                                   }}
                                                   className="rounded bg-red-600 px-2 py-0.5 text-[10px] text-white hover:bg-red-700"

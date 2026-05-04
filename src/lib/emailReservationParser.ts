@@ -1,4 +1,8 @@
 import type { ExtractedReservationData } from '@/types/reservationImport'
+import {
+  PICKUP_IMPORT_NOT_DECIDED_LABEL,
+  isPickupHotelImportTextUnusable,
+} from '@/lib/reservationImportPickup'
 
 /** 채널별 파서 설정: 전처리(HTML→텍스트) + 전용 추출 함수. 채널 추가 시 여기만 등록하면 됨. */
 export type ChannelParserExtract = (
@@ -1195,8 +1199,73 @@ function getKlook(map: Map<string, string>, ...searchKeys: string[]): string | u
     const lower = searchKey.toLowerCase().replace(/\s+/g, ' ').trim()
     for (const [key, value] of map) {
       const normalizedKey = key.replace(/\s+/g, ' ').toLowerCase()
-      if (normalizedKey === lower || normalizedKey.startsWith(lower) || lower.startsWith(normalizedKey)) return value
+      if (normalizedKey === lower) return value
     }
+  }
+  for (const searchKey of searchKeys) {
+    const lower = searchKey.toLowerCase().replace(/\s+/g, ' ').trim()
+    let bestKey: string | null = null
+    let bestVal: string | undefined
+    for (const [key, value] of map) {
+      const normalizedKey = key.replace(/\s+/g, ' ').toLowerCase()
+      if (!(normalizedKey.startsWith(lower) || lower.startsWith(normalizedKey))) continue
+      if (!bestKey || normalizedKey.length < bestKey.length) {
+        bestKey = normalizedKey
+        bestVal = value
+      }
+    }
+    if (bestVal !== undefined) return bestVal
+  }
+  return undefined
+}
+
+/** 인원 행만: `participant name` 등과 구분해 정확히 participant(s) 키만 사용 */
+function getKlookParticipantQtyCell(map: Map<string, string>): string | undefined {
+  const want = new Set(['participant', 'participants'])
+  for (const [key, value] of map) {
+    const nk = key.replace(/\s+/g, ' ').toLowerCase().trim()
+    if (want.has(nk) && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+/**
+ * Klook "Participant: N x Person|Adult|Guest|…" 인원.
+ * - 메일에 곱셈 `×`(U+00D7)·전각 `：` 등이 올 수 있음.
+ * - `getKlook(..., 'participant')` 가 `participant name` 값을 먼저 잡는 문제 → 맵에서는 getKlookParticipantQtyCell 사용.
+ */
+function parseKlookParticipantXCount(plain: string, map: Map<string, string>): number | undefined {
+  const typeSuffix = /(?:adults?|persons?|people|travellers?|travelers?|guests?)\b/i
+  const mul = String.raw`[x×✕]`
+  const lineRe = new RegExp(
+    `\\bParticipants?\\s*[：:\\s]\\s*(\\d+)\\s*${mul}\\s*${typeSuffix.source}`,
+    'i'
+  )
+  const plainClean = plain.replace(/[\u200B-\u200D\uFEFF]/g, '')
+  const oneLine = plainClean.replace(/\s+/g, ' ')
+  for (const hay of [plainClean, oneLine]) {
+    const lineM = hay.match(lineRe)
+    if (lineM) {
+      const n = parseInt(lineM[1], 10)
+      if (!Number.isNaN(n) && n > 0) return n
+    }
+  }
+  const koRe = new RegExp(
+    `참가(?:자|인원)\\s*[：:\\s]\\s*(\\d+)\\s*${mul}\\s*${typeSuffix.source}`,
+    'i'
+  )
+  for (const hay of [plainClean, oneLine]) {
+    const km = hay.match(koRe)
+    if (km) {
+      const n = parseInt(km[1], 10)
+      if (!Number.isNaN(n) && n > 0) return n
+    }
+  }
+  const pv = getKlookParticipantQtyCell(map)
+  const cellM = pv?.match(new RegExp(`^(\\d+)\\s*${mul}\\s*${typeSuffix.source}`, 'i'))
+  if (cellM) {
+    const n = parseInt(cellM[1], 10)
+    if (!Number.isNaN(n) && n > 0) return n
   }
   return undefined
 }
@@ -1305,14 +1374,6 @@ function extractKlook(
       v('no of participants')
     if (noPart) {
       const n = parseInt(noPart.trim(), 10)
-      if (!isNaN(n)) { out.adults = n; out.total_people = n }
-    }
-  }
-  if (out.adults === undefined) {
-    const part = v('participant')
-    const adultMatch = part?.match(/(\d+)\s*x\s*adult/i)
-    if (adultMatch) {
-      const n = parseInt(adultMatch[1], 10)
       if (!isNaN(n)) { out.adults = n; out.total_people = n }
     }
   }
@@ -1448,14 +1509,6 @@ function extractKlook(
       out.total_people = n
     }
   }
-  if (out.adults === undefined) {
-    const participantMatch = normalizedText.match(/Participant\s*:\s*(\d+)\s*x\s*Adult/i)
-    if (participantMatch) {
-      const n = parseInt(participantMatch[1], 10)
-      out.adults = n
-      out.total_people = n
-    }
-  }
 
   // Preferred language (전화번호 국가로 언어를 못 정했을 때만)
   if (!out.language && out.customer_phone?.trim()) {
@@ -1586,6 +1639,13 @@ function extractKlook(
   // 밤도깨비 그랜드캐년 일출 투어는 투어 시간을 00:00(자정)으로 고정
   if (out.product_name === '밤도깨비 그랜드캐년 일출 투어') {
     out.tour_time = '00:00'
+  }
+
+  // Participant: "2 x Person" / "2 × Person" 등 — 공통 파서의 "1 participant" 오탐을 덮어씀
+  const participantXCount = parseKlookParticipantXCount(normalizedText, mergedMap)
+  if (participantXCount !== undefined) {
+    out.adults = participantXCount
+    out.total_people = participantXCount + (out.children ?? 0) + (out.infants ?? 0)
   }
 
   return out
@@ -2284,6 +2344,11 @@ export function extractReservationFromEmail(options: {
     if (cancelRn && (!cur || cur.length < 4 || cur.toLowerCase() === 'id')) {
       merged = { ...merged, channel_rn: cancelRn }
     }
+  }
+
+  // 픽업: 추출 실패·너무 일반적인 문자열은 DB 퍼지 매칭으로 잘못된 호텔이 잡히므로 "미정" 표시문으로 통일
+  if (isPickupHotelImportTextUnusable(merged.pickup_hotel)) {
+    merged = { ...merged, pickup_hotel: PICKUP_IMPORT_NOT_DECIDED_LABEL }
   }
 
   const extracted_data: ExtractedReservationData = merged as ExtractedReservationData

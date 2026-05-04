@@ -1,11 +1,15 @@
 /**
- * Goblin Grand Canyon sunrise tour — Lipan Point (South Rim) sunrise-based hotel pickup window.
+ * Goblin Grand Canyon sunrise tour — South Rim sunrise-based hotel pickup window.
  * Sunrise: cached DB time for Grand Canyon South Rim when present; otherwise monthly Arizona local approximations.
  */
 
-/** Hotel pickup window starts this many minutes before sunrise; lasts GRAND_CANYON_SUNRISE_PICKUP_WINDOW_MINUTES. */
-export const GRAND_CANYON_SUNRISE_PICKUP_MINUTES_BEFORE_SUNRISE = 6 * 60 + 40
-export const GRAND_CANYON_SUNRISE_PICKUP_WINDOW_MINUTES = 50
+/** Rough pickup window: from (sunrise − this) through (sunrise − END), each edge rounded to 10 minutes. */
+export const GRAND_CANYON_SUNRISE_PICKUP_WINDOW_START_MINUTES_BEFORE_SUNRISE = 7 * 60 + 20
+export const GRAND_CANYON_SUNRISE_PICKUP_WINDOW_END_MINUTES_BEFORE_SUNRISE = 6 * 60
+
+export function roundMinutesToNearest10(minutes: number): number {
+  return Math.round(minutes / 10) * 10
+}
 
 /** South Rim / Lipan approximate sunrise (Arizona local, minutes 0–1439) */
 const LIPAN_APPROX_SUNRISE_MINUTES_BY_MONTH: readonly number[] = [
@@ -13,7 +17,7 @@ const LIPAN_APPROX_SUNRISE_MINUTES_BY_MONTH: readonly number[] = [
   7 * 60 + 15, // Feb
   6 * 60 + 35, // Mar
   5 * 60 + 55, // Apr
-  5 * 60 + 20, // May (e.g. 5:20 → pickup from22:40 previous calendar day)
+  5 * 60 + 20, // May (e.g. 5:20 → rough pickup ~22:00–23:20 previous calendar day)
   5 * 60 + 8, // Jun
   5 * 60 + 15, // Jul
   5 * 60 + 38, // Aug
@@ -102,33 +106,53 @@ export type GrandCanyonSunrisePickupEmailInfo = {
   usedApproxTable: boolean
 }
 
+function normalizeMinutesToYmd(
+  offsetFromTourMidnight: number,
+  tourYmd: string
+): { ymd: string; minutesInDay: number } {
+  let m = offsetFromTourMidnight
+  let ymd = tourYmd
+  while (m < 0) {
+    ymd = addCalendarDaysYmd(ymd, -1)
+    m += 24 * 60
+  }
+  while (m >= 24 * 60) {
+    ymd = addCalendarDaysYmd(ymd, 1)
+    m -= 24 * 60
+  }
+  return { ymd, minutesInDay: m }
+}
+
 export function buildGrandCanyonSunrisePickupEmailInfo(
   tourYmd: string,
   cachedSunrise: string | null | undefined
 ): GrandCanyonSunrisePickupEmailInfo {
   const { sunriseMinutes, usedApproxTable } = resolveSunriseMinutesForEmail(tourYmd, cachedSunrise)
 
-  let pickupStartFromTourMidnight = sunriseMinutes - GRAND_CANYON_SUNRISE_PICKUP_MINUTES_BEFORE_SUNRISE
-  let pickupYmd = tourYmd
-  if (pickupStartFromTourMidnight < 0) {
-    pickupYmd = addCalendarDaysYmd(tourYmd, -1)
-    pickupStartFromTourMidnight += 24 * 60
+  let startOffset = roundMinutesToNearest10(
+    sunriseMinutes - GRAND_CANYON_SUNRISE_PICKUP_WINDOW_START_MINUTES_BEFORE_SUNRISE
+  )
+  let endOffset = roundMinutesToNearest10(
+    sunriseMinutes - GRAND_CANYON_SUNRISE_PICKUP_WINDOW_END_MINUTES_BEFORE_SUNRISE
+  )
+  if (startOffset >= endOffset) {
+    startOffset = endOffset - 10
   }
 
-  const startMin = pickupStartFromTourMidnight
-  let endMin = startMin + GRAND_CANYON_SUNRISE_PICKUP_WINDOW_MINUTES
-  let pickupEndYmd = pickupYmd
-  if (endMin >= 24 * 60) {
-    endMin -= 24 * 60
-    pickupEndYmd = addCalendarDaysYmd(pickupYmd, 1)
-  }
+  const startNorm = normalizeMinutesToYmd(startOffset, tourYmd)
+  const endNorm = normalizeMinutesToYmd(endOffset, tourYmd)
+
+  const pickupYmd = startNorm.ymd
+  const pickupStartFromTourMidnight = startNorm.minutesInDay
+  const pickupEndYmd = endNorm.ymd
+  const endMin = endNorm.minutesInDay
 
   return {
     tourYmd,
     pickupYmd,
     pickupEndYmd,
     sunriseMinutes,
-    pickupWindowStartMinutes: startMin,
+    pickupWindowStartMinutes: pickupStartFromTourMidnight,
     pickupWindowEndMinutes: endMin,
     showDifferentDatesWarning: pickupYmd !== tourYmd,
     usedApproxTable,

@@ -172,3 +172,12 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* TipTap @tiptap/extension-placeholder — 거주 안내 메일 본문 에디터 */
+.resident-inquiry-rich-editor-prose.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: #94a3b8;
+}

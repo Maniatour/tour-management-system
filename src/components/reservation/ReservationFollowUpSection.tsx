@@ -26,6 +26,8 @@ type PipelineEmailPreviewState = {
   productName?: string | null
   channelRN?: string | null
   customerLanguage?: string | null
+  productCode?: string | null
+  productTags?: string[] | null
 }
 
 export type FollowUpType = 'cancellation_reason' | 'contact'
@@ -47,6 +49,7 @@ interface ReservationFollowUpSectionProps {
   followUpPipelineProducts?: Array<{
     id: string
     product_code?: string | null
+    tags?: string[] | null
     name?: string | null
     name_ko?: string | null
     name_en?: string | null
@@ -265,6 +268,8 @@ export default function ReservationFollowUpSection({
             getProductName(res.productId, (followUpPipelineProducts ?? []) as Product[]),
           channelRN: res.channelRN ?? null,
           customerLanguage: customer.language ?? null,
+          productCode: prod?.product_code ?? null,
+          productTags: prod?.tags ?? null,
         })
         return
       }
@@ -996,6 +1001,8 @@ export default function ReservationFollowUpSection({
           tourDate={pipelineEmailPreview.tourDate}
           productName={pipelineEmailPreview.productName || ''}
           channelRN={pipelineEmailPreview.channelRN}
+          productCode={pipelineEmailPreview.productCode}
+          productTags={pipelineEmailPreview.productTags}
           onSend={sendPipelineEmailFromPreview}
         />
       ) : null}

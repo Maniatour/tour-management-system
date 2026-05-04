@@ -1,10 +1,18 @@
 'use client'
 
-import { useCallback } from 'react'
-import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import { ChevronDown, ChevronUp, Eye, History, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import LightRichEditor from '@/components/LightRichEditor'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import SopDocumentReadonly from '@/components/sop/SopDocumentReadonly'
 import type { SopDocument, SopSection, SopCategory, SopChecklistItem, SopEditLocale } from '@/types/sopStructure'
 import {
   newSopId,
@@ -12,17 +20,17 @@ import {
   prefillSortOrders,
   checklistItemDepth,
   splitRichContentToChecklistLines,
+  parseSopSectionJson,
+  sopText,
 } from '@/types/sopStructure'
 import { cn } from '@/lib/utils'
 
-type Props = {
-  value: SopDocument
-  onChange: (next: SopDocument) => void
-  /** UI 라벨(버튼 등) 언어 — URL 로케일 */
-  uiLocaleEn: boolean
-  /** 편집 중인 입력 언어(한/영 필드 전환) */
-  editLocale: SopEditLocale
-  disabled?: boolean
+export type SectionVersionHistoryRow = {
+  id: string
+  revision: number
+  created_at: string
+  section_json: unknown
+  created_by: string | null
 }
 
 function sortSections(doc: SopDocument): SopSection[] {
@@ -69,14 +77,124 @@ const editorBodyProps = {
   maxHeight: 520,
 } as const
 
+function DualRichPair({
+  koValue,
+  enValue,
+  onKoChange,
+  onEnChange,
+  koPlaceholder,
+  enPlaceholder,
+  editorProps,
+}: {
+  koValue: string
+  enValue: string
+  onKoChange: (v: string | undefined) => void
+  onEnChange: (v: string | undefined) => void
+  koPlaceholder: string
+  enPlaceholder: string
+  editorProps: typeof editorTitleProps | typeof editorBodyProps
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <div className="rounded-md border-2 border-sky-300 bg-sky-50/90 p-2 shadow-sm">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <span className="rounded bg-sky-800 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+            한국어
+          </span>
+          <span className="text-[11px] font-medium text-sky-950/90">Korean</span>
+        </div>
+        <LightRichEditor
+          {...editorProps}
+          value={koValue}
+          onChange={onKoChange}
+          placeholder={koPlaceholder}
+          className="bg-white rounded-md border border-sky-200 overflow-hidden"
+        />
+      </div>
+      <div className="rounded-md border-2 border-violet-300 bg-violet-50/90 p-2 shadow-sm">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <span className="rounded bg-violet-800 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+            English
+          </span>
+          <span className="text-[11px] font-medium text-violet-950/90">영문</span>
+        </div>
+        <LightRichEditor
+          {...editorProps}
+          value={enValue}
+          onChange={onEnChange}
+          placeholder={enPlaceholder}
+          className="bg-white rounded-md border border-violet-200 overflow-hidden"
+        />
+      </div>
+    </div>
+  )
+}
+
+type Props = {
+  value: SopDocument
+  onChange: (next: SopDocument) => void
+  /** UI 라벨(버튼 등) 언어 — URL 로케일 */
+  uiLocaleEn: boolean
+  /** 체크 줄 가져오기·일부 동작에 쓰는 기준 언어 */
+  editLocale: SopEditLocale
+  disabled?: boolean
+  /** 섹션 id → 서버에 저장된 최신 섹션 버전 메타 */
+  sectionVersionMeta?: Record<string, { revision: number; savedAt: string }>
+  savingSectionId?: string | null
+  onSaveSectionVersion?: (section: SopSection) => void | Promise<void>
+  onFetchSectionVersionHistory?: (sectionId: string) => Promise<SectionVersionHistoryRow[]>
+  onRestoreSectionFromHistory?: (sectionId: string, sectionJson: unknown) => void | Promise<void>
+}
+
 export default function SopStructureEditor({
   value,
   onChange,
   uiLocaleEn,
   editLocale,
   disabled,
+  sectionVersionMeta = {},
+  savingSectionId = null,
+  onSaveSectionVersion,
+  onFetchSectionVersionHistory,
+  onRestoreSectionFromHistory,
 }: Props) {
   const isEn = uiLocaleEn
+  const [historyOpen, setHistoryOpen] = useState<{
+    sectionId: string
+    label: string
+  } | null>(null)
+  const [historyRows, setHistoryRows] = useState<SectionVersionHistoryRow[]>([])
+  const [historyLoadingSectionId, setHistoryLoadingSectionId] = useState<string | null>(null)
+  const [historyErr, setHistoryErr] = useState<string | null>(null)
+  const [expandedHistoryRevision, setExpandedHistoryRevision] = useState<number | null>(null)
+
+  const openSectionHistory = async (section: SopSection) => {
+    if (!onFetchSectionVersionHistory) return
+    const label =
+      sopText(section.title_ko, section.title_en, editLocale).trim() ||
+      (isEn ? `Section ${section.id.slice(0, 8)}…` : `섹션 ${section.id.slice(0, 8)}…`)
+    setHistoryOpen({ sectionId: section.id, label })
+    setHistoryLoadingSectionId(section.id)
+    setHistoryErr(null)
+    setHistoryRows([])
+    setExpandedHistoryRevision(null)
+    try {
+      const rows = await onFetchSectionVersionHistory(section.id)
+      setHistoryRows(rows)
+    } catch (e) {
+      setHistoryErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setHistoryLoadingSectionId(null)
+    }
+  }
+
+  const closeSectionHistory = () => {
+    setHistoryOpen(null)
+    setHistoryRows([])
+    setHistoryErr(null)
+    setExpandedHistoryRevision(null)
+  }
+
   const emit = useCallback(
     (next: SopDocument) => {
       onChange(prefillSortOrders(next))
@@ -123,7 +241,6 @@ export default function SopStructureEditor({
                   content_ko: '',
                   content_en: '',
                   sort_order: 0,
-                  checklist_items: undefined,
                 },
           ],
         },
@@ -168,7 +285,6 @@ export default function SopStructureEditor({
                   content_ko: '',
                   content_en: '',
                   sort_order: sec.categories.length,
-                  checklist_items: undefined,
                 },
               ],
             }
@@ -208,21 +324,25 @@ export default function SopStructureEditor({
 
   const sections = sortSections(value)
 
-  const secTitleVal = (s: SopSection) => (editLocale === 'ko' ? s.title_ko : s.title_en)
-  const secTitlePatch = (v: string | undefined): Partial<SopSection> =>
-    editLocale === 'ko' ? { title_ko: v ?? '' } : { title_en: v ?? '' }
-
-  const catTitleVal = (c: SopCategory) => (editLocale === 'ko' ? c.title_ko : c.title_en)
-  const catTitlePatch = (v: string | undefined): Partial<SopCategory> =>
-    editLocale === 'ko' ? { title_ko: v ?? '' } : { title_en: v ?? '' }
-
-  const catContentVal = (c: SopCategory) => (editLocale === 'ko' ? c.content_ko : c.content_en)
-  const catContentPatch = (v: string | undefined): Partial<SopCategory> =>
-    editLocale === 'ko' ? { content_ko: v ?? '' } : { content_en: v ?? '' }
-
   const patchChecklistItems = (sectionId: string, categoryId: string, nextItems: SopChecklistItem[] | undefined) => {
-    updateCategory(sectionId, categoryId, {
-      checklist_items: nextItems && nextItems.length > 0 ? nextItems : undefined,
+    if (nextItems && nextItems.length > 0) {
+      updateCategory(sectionId, categoryId, { checklist_items: nextItems })
+      return
+    }
+    emit({
+      ...value,
+      sections: value.sections.map((s) =>
+        s.id !== sectionId
+          ? s
+          : {
+              ...s,
+              categories: s.categories.map((c) => {
+                if (c.id !== categoryId) return c
+                const { checklist_items: _drop, ...rest } = c
+                return rest
+              }),
+            }
+      ),
     })
   }
 
@@ -355,11 +475,12 @@ export default function SopStructureEditor({
   }
 
   return (
+    <>
     <div className={cn('space-y-4', disabled && 'pointer-events-none opacity-60')}>
       <p className="text-sm text-gray-600">
         {isEn
-          ? `Editing ${editLocale === 'ko' ? 'Korean' : 'English'} fields. Optional checklist lines keep stable IDs for future per-tour checks. Rich notes use markdown.`
-          : `${editLocale === 'ko' ? '한국어' : 'English'} 필드를 편집 중입니다. 체크 줄은 고정 id로 두어 추후 투어별 체크에 쓸 수 있습니다. 추가 설명은 마크다운입니다.`}
+          ? 'Korean and English are shown in two columns (sky = 한국어, violet = English). Checklist lines keep stable IDs. “Split notes into checklist” uses the preview language selected above.'
+          : '한국어·English는 두 열로 동시에 보입니다(하늘색=한국어, 보라색=English). 체크 줄은 고정 id입니다. 「추가 설명 → 체크」는 위에서 고른 미리보기 언어 열을 사용합니다.'}
       </p>
 
       {sections.map((section, si) => (
@@ -368,62 +489,99 @@ export default function SopStructureEditor({
           className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 sm:p-4 space-y-3 shadow-sm"
         >
           <div className="flex flex-wrap items-start gap-2 justify-between">
-            <div className="flex-1 min-w-[200px] space-y-1">
-              <label className="text-xs font-semibold text-indigo-900 uppercase tracking-wide">
-                {isEn ? 'Section' : '섹션'} {si + 1}
-                {editLocale === 'ko' ? ' (KO)' : ' (EN)'}
-              </label>
-              <LightRichEditor
-                key={`sec-title-${section.id}-${editLocale}`}
-                {...editorTitleProps}
-                value={secTitleVal(section)}
-                onChange={(v) => updateSection(section.id, secTitlePatch(v))}
-                placeholder={
-                  isEn
-                    ? editLocale === 'ko'
-                      ? '예: 섹션 1: 일반 정보'
-                      : 'e.g. Section 1: General information'
-                    : editLocale === 'ko'
-                      ? '예: 섹션 1: 일반 정보'
-                      : 'e.g. Section 1: General information'
-                }
-                className="bg-white rounded-md border border-gray-200 overflow-hidden"
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 justify-between">
+                <label className="text-xs font-semibold text-indigo-900 uppercase tracking-wide">
+                  {isEn ? 'Section' : '섹션'} {si + 1}
+                </label>
+                {sectionVersionMeta[section.id] ? (
+                  <span className="text-[11px] text-gray-600">
+                    {isEn
+                      ? `Saved v${sectionVersionMeta[section.id].revision} · ${new Date(sectionVersionMeta[section.id].savedAt).toLocaleString('en-US')}`
+                      : `저장 제${sectionVersionMeta[section.id].revision}차 · ${new Date(sectionVersionMeta[section.id].savedAt).toLocaleString('ko-KR')}`}
+                  </span>
+                ) : null}
+              </div>
+              <DualRichPair
+                koValue={section.title_ko}
+                enValue={section.title_en}
+                onKoChange={(v) => updateSection(section.id, { title_ko: v ?? '' })}
+                onEnChange={(v) => updateSection(section.id, { title_en: v ?? '' })}
+                koPlaceholder={isEn ? '예: 섹션 1: 일반 정보' : '예: 섹션 1: 일반 정보'}
+                enPlaceholder="e.g. Section 1: General information"
+                editorProps={editorTitleProps}
               />
             </div>
-            <div className="flex flex-wrap gap-1 shrink-0">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                title={isEn ? 'Move section up' : '섹션 위로'}
-                disabled={disabled || si === 0}
-                onClick={() => moveSection(section.id, -1)}
-              >
-                <ChevronUp className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                title={isEn ? 'Move section down' : '섹션 아래로'}
-                disabled={disabled || si >= sections.length - 1}
-                onClick={() => moveSection(section.id, 1)}
-              >
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 text-red-700"
-                title={isEn ? 'Remove section' : '섹션 삭제'}
-                disabled={disabled || value.sections.length <= 1}
-                onClick={() => removeSection(section.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+            <div className="flex flex-col gap-1 shrink-0">
+              <div className="flex flex-wrap gap-1 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  title={isEn ? 'Move section up' : '섹션 위로'}
+                  disabled={disabled || si === 0}
+                  onClick={() => moveSection(section.id, -1)}
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  title={isEn ? 'Move section down' : '섹션 아래로'}
+                  disabled={disabled || si >= sections.length - 1}
+                  onClick={() => moveSection(section.id, 1)}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 text-red-700"
+                  title={isEn ? 'Remove section' : '섹션 삭제'}
+                  disabled={disabled || value.sections.length <= 1}
+                  onClick={() => removeSection(section.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex flex-col gap-1">
+                {onSaveSectionVersion ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1 whitespace-nowrap"
+                    disabled={disabled || savingSectionId === section.id}
+                    onClick={() => void onSaveSectionVersion(section)}
+                  >
+                    <Save className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {savingSectionId === section.id
+                      ? isEn
+                        ? 'Saving…'
+                        : '저장 중…'
+                      : isEn
+                        ? 'Save section version'
+                        : '이 섹션 버전 저장'}
+                  </Button>
+                ) : null}
+                {onFetchSectionVersionHistory ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 whitespace-nowrap"
+                    disabled={disabled || historyLoadingSectionId === section.id}
+                    onClick={() => void openSectionHistory(section)}
+                  >
+                    <History className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {isEn ? 'Version history' : '이전 버전'}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -432,17 +590,18 @@ export default function SopStructureEditor({
             {sortCategories(section).map((cat, ci) => (
               <div key={cat.id} className="rounded-md border border-white bg-white p-3 space-y-2 shadow-sm">
                 <div className="flex flex-wrap gap-2 justify-between items-start">
-                  <div className="flex-1 min-w-[160px] space-y-1">
-                    <span className="text-xs text-gray-500">
-                      {isEn ? 'Category title' : '카테고리 제목'} ({editLocale === 'ko' ? 'KO' : 'EN'})
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <span className="text-xs font-medium text-gray-700">
+                      {isEn ? 'Category title (KO | EN)' : '카테고리 제목 (한국어 | English)'}
                     </span>
-                    <LightRichEditor
-                      key={`cat-title-${cat.id}-${editLocale}`}
-                      {...editorTitleProps}
-                      value={catTitleVal(cat)}
-                      onChange={(v) => updateCategory(section.id, cat.id, catTitlePatch(v))}
-                      placeholder={isEn ? '● line' : '● 줄'}
-                      className="bg-white rounded-md border border-gray-200 overflow-hidden"
+                    <DualRichPair
+                      koValue={cat.title_ko}
+                      enValue={cat.title_en}
+                      onKoChange={(v) => updateCategory(section.id, cat.id, { title_ko: v ?? '' })}
+                      onEnChange={(v) => updateCategory(section.id, cat.id, { title_en: v ?? '' })}
+                      koPlaceholder={isEn ? '● 줄 (한국어)' : '● 줄 (한국어)'}
+                      enPlaceholder="● line (English)"
+                      editorProps={editorTitleProps}
                     />
                   </div>
                   <div className="flex gap-1 shrink-0">
@@ -526,7 +685,8 @@ export default function SopStructureEditor({
                         const items = cat.checklist_items!
                         const byId = new Map(items.map((x) => [x.id, x]))
                         const depth = checklistItemDepth(it, byId)
-                        const val = editLocale === 'ko' ? it.title_ko : it.title_en
+                        const valKo = it.title_ko
+                        const valEn = it.title_en
                         const siblings = items
                           .filter((x) => (x.parent_id ?? null) === (it.parent_id ?? null))
                           .sort((a, b) => a.sort_order - b.sort_order)
@@ -540,21 +700,32 @@ export default function SopStructureEditor({
                             <span className="text-[10px] text-gray-400 font-mono shrink-0 max-w-[72px] truncate" title={it.id}>
                               {it.id.slice(0, 8)}…
                             </span>
-                            <Input
-                              className="h-8 text-sm flex-1 min-w-[140px]"
-                              value={val}
-                              disabled={disabled}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                updateChecklistItem(
-                                  section.id,
-                                  cat.id,
-                                  it.id,
-                                  editLocale === 'ko' ? { title_ko: v } : { title_en: v }
-                                )
-                              }}
-                              placeholder={isEn ? 'One line (plain)' : '한 줄 (일반 텍스트)'}
-                            />
+                            <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 sm:grid-cols-2">
+                              <div className="min-w-0">
+                                <span className="mb-0.5 block text-[9px] font-bold text-sky-800">한국어</span>
+                                <Input
+                                  className="h-8 border-sky-200 bg-sky-50/80 text-sm"
+                                  value={valKo}
+                                  disabled={disabled}
+                                  onChange={(e) => {
+                                    updateChecklistItem(section.id, cat.id, it.id, { title_ko: e.target.value })
+                                  }}
+                                  placeholder={isEn ? 'Korean line' : '한국어 한 줄'}
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <span className="mb-0.5 block text-[9px] font-bold text-violet-800">English</span>
+                                <Input
+                                  className="h-8 border-violet-200 bg-violet-50/80 text-sm"
+                                  value={valEn}
+                                  disabled={disabled}
+                                  onChange={(e) => {
+                                    updateChecklistItem(section.id, cat.id, it.id, { title_en: e.target.value })
+                                  }}
+                                  placeholder="English line"
+                                />
+                              </div>
+                            </div>
                             <Button
                               type="button"
                               variant="ghost"
@@ -629,15 +800,18 @@ export default function SopStructureEditor({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="text-xs text-gray-500">
-                    {isEn ? 'Extra notes (rich)' : '추가 설명(리치)'} ({editLocale === 'ko' ? 'KO' : 'EN'})
+                  <label className="text-xs font-medium text-gray-700">
+                    {isEn ? 'Extra notes (rich, KO | EN)' : '추가 설명(리치, 한국어 | English)'}
                   </label>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     disabled={
-                      disabled || splitRichContentToChecklistLines(catContentVal(cat)).length === 0
+                      disabled ||
+                      splitRichContentToChecklistLines(
+                        editLocale === 'ko' ? cat.content_ko : cat.content_en
+                      ).length === 0
                     }
                     onClick={() => importChecklistFromRichNotes(section.id, cat.id)}
                   >
@@ -651,17 +825,18 @@ export default function SopStructureEditor({
                     ? 'Uses line breaks, full-width 。, or a period followed by a space to split sentences. Replaces current checklist lines for this category.'
                     : '줄바꿈, 전각 마침표(。), 또는 뒤에 공백이 오는 반각 마침표(.) 기준으로 문장을 나눕니다. 이 카테고리의 기존 체크 줄은 덮어씁니다.'}
                 </p>
-                <LightRichEditor
-                  key={`cat-body-${cat.id}-${editLocale}`}
-                  {...editorBodyProps}
-                  value={catContentVal(cat)}
-                  onChange={(v) => updateCategory(section.id, cat.id, catContentPatch(v))}
-                  placeholder={
+                <DualRichPair
+                  koValue={cat.content_ko}
+                  enValue={cat.content_en}
+                  onKoChange={(v) => updateCategory(section.id, cat.id, { content_ko: v ?? '' })}
+                  onEnChange={(v) => updateCategory(section.id, cat.id, { content_en: v ?? '' })}
+                  koPlaceholder={
                     isEn
-                      ? 'Optional: paste multiple sentences here, then use the button above to turn them into checklist lines.'
-                      : '여러 문장을 붙여 넣은 뒤 위 버튼으로 체크 항목으로 나눌 수 있습니다.'
+                      ? 'Paste Korean sentences; split uses the preview language column above.'
+                      : '한국어 문장을 붙여 넣을 수 있습니다. 위에서 고른 미리보기 언어 열로 나눕니다.'
                   }
-                  className="bg-white rounded-md border border-gray-200 overflow-hidden"
+                  enPlaceholder="Paste English sentences; split uses the preview language column above."
+                  editorProps={editorBodyProps}
                 />
               </div>
             ))}
@@ -685,5 +860,128 @@ export default function SopStructureEditor({
         {isEn ? 'Add section' : '섹션 추가'}
       </Button>
     </div>
+
+    <Dialog
+      open={!!historyOpen}
+      onOpenChange={(next) => {
+        if (!next) closeSectionHistory()
+      }}
+    >
+      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b border-slate-200 px-4 pb-3 pt-4">
+          <DialogTitle className="pr-8 text-left text-base">
+            {isEn ? 'Section version history' : '섹션 버전 기록'}
+            {historyOpen ? (
+              <span className="mt-1 block truncate text-sm font-normal text-slate-600">
+                {historyOpen.label}
+              </span>
+            ) : null}
+          </DialogTitle>
+          <DialogDescription className="text-left">
+            {isEn
+              ? 'Open a snapshot to preview. Restore replaces this section in the editor (unsaved until you save draft or publish).'
+              : '저장된 버전을 미리보기한 뒤, 복원하면 편집기의 이 섹션만 바뀝니다. 이후 「초안 저장」 또는 「게시」로 확정하세요.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          {historyLoadingSectionId && historyRows.length === 0 && !historyErr ? (
+            <p className="text-sm text-slate-600">
+              {isEn ? 'Loading…' : '불러오는 중…'}
+            </p>
+          ) : null}
+          {historyErr ? (
+            <p className="text-sm text-red-600">{historyErr}</p>
+          ) : null}
+          {!historyLoadingSectionId && !historyErr && historyRows.length === 0 && historyOpen ? (
+            <p className="text-sm text-slate-600">
+              {isEn ? 'No saved versions for this section yet.' : '이 섹션에 저장된 버전이 아직 없습니다.'}
+            </p>
+          ) : null}
+          {historyRows.length > 0 ? (
+            <ul className="space-y-3">
+              {historyRows.map((row) => {
+                const expanded = expandedHistoryRevision === row.revision
+                const previewSec = expanded ? parseSopSectionJson(row.section_json) : null
+                return (
+                  <li
+                    key={row.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="font-semibold text-slate-900">
+                          {isEn ? `Revision ${row.revision}` : `제${row.revision}차`}
+                        </span>
+                        <span className="ml-2 text-xs text-slate-600">
+                          {new Date(row.created_at).toLocaleString(isEn ? 'en-US' : 'ko-KR')}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() =>
+                            setExpandedHistoryRevision(expanded ? null : row.revision)
+                          }
+                        >
+                          <Eye className="h-3.5 w-3.5" aria-hidden />
+                          {expanded
+                            ? isEn
+                              ? 'Hide preview'
+                              : '미리보기 닫기'
+                            : isEn
+                              ? 'Preview'
+                              : '미리보기'}
+                        </Button>
+                        {onRestoreSectionFromHistory && historyOpen ? (
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() =>
+                              void (async () => {
+                                await onRestoreSectionFromHistory(
+                                  historyOpen.sectionId,
+                                  row.section_json
+                                )
+                                closeSectionHistory()
+                              })()
+                            }
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                            {isEn ? 'Restore to editor' : '편집기로 복원'}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                    {expanded && previewSec ? (
+                      <div className="mt-3 max-h-64 overflow-y-auto rounded-md border border-slate-200 bg-white p-2">
+                        <SopDocumentReadonly
+                          doc={prefillSortOrders({
+                            title_ko: isEn ? '(Preview)' : '(미리보기)',
+                            title_en: '(Preview)',
+                            sections: [{ ...previewSec, id: previewSec.id }],
+                          })}
+                          viewLang={editLocale}
+                          layout="flat"
+                        />
+                      </div>
+                    ) : expanded ? (
+                      <p className="mt-2 text-xs text-red-600">
+                        {isEn ? 'Could not render this snapshot.' : '이 저장본을 표시할 수 없습니다.'}
+                      </p>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </ul>
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

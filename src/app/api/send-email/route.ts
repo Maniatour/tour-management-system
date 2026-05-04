@@ -245,8 +245,9 @@ export async function POST(request: NextRequest) {
 
     // 이메일 내용 생성
     const isDepartureConfirmation = type === 'voucher'
+    const includeGcSunriseEmailBlock = (type === 'voucher' || type === 'both') && product && isGoblinGrandCanyonSunriseTour(product)
     let grandCanyonSunrisePickup: GrandCanyonSunrisePickupEmailInfo | null = null
-    if (isDepartureConfirmation && product && isGoblinGrandCanyonSunriseTour(product)) {
+    if (includeGcSunriseEmailBlock) {
       const tourYmd = String(reservationData.tour_date ?? '').split('T')[0]
       if (/^\d{4}-\d{2}-\d{2}$/.test(tourYmd)) {
         let cachedSunrise: string | null = null
@@ -555,7 +556,7 @@ export function generateEmailContent(
   ` : ''
 
   const grandCanyonSunrisePickupNotice =
-    isDepartureConfirmation && gcSunrise
+    gcSunrise != null && (type === 'voucher' || type === 'both')
       ? renderGrandCanyonSunrisePickupNotice(gcSunrise, isEnglish)
       : ''
 
@@ -1144,7 +1145,7 @@ export function generateEmailContent(
           <div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Tour Date' : '투어 날짜'}</div>
             <div style="font-size: 16px; font-weight: 600; color: #111827;">${tourDate}</div>
-            ${gcSunrise && isDepartureConfirmation ? renderGrandCanyonSunriseDateHighlightRow(gcSunrise, isEnglish) : ''}
+            ${gcSunrise && (type === 'voucher' || type === 'both') ? renderGrandCanyonSunriseDateHighlightRow(gcSunrise, isEnglish) : ''}
           </div>
           <div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Product' : '상품'}</div>
@@ -1217,10 +1218,9 @@ export function generateEmailContent(
     <body>
       <div class="email-container">
         <div class="email-content">
-          ${departureNotice}
+          ${isDepartureConfirmation ? departureNotice : confirmedNotice}
           ${grandCanyonSunrisePickupNotice}
           ${recruitingNotice}
-          ${!isDepartureConfirmation ? confirmedNotice : ''}
           ${reservationInfoSection}
           ${generatePriceSection()}
           ${generateProductDetailsSection()}

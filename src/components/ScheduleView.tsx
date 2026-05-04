@@ -49,6 +49,11 @@ import {
   TicketBookingVendorStatusIcon,
 } from '@/components/booking/ticketBookingAxisStatusIcons'
 import { formatTicketBookingAxisLabel } from '@/lib/ticketBookingAxisLabels'
+import {
+  filterTicketBookingsExcludedFromMainUi,
+  canRequestTicketBookingSoftDelete,
+} from '@/lib/ticketBookingSoftDelete'
+import { isSuperAdminActor } from '@/lib/superAdmin'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -130,6 +135,7 @@ type ScheduleTicketBookingRow = {
   payment_status?: string | null
   refund_status?: string | null
   operation_status?: string | null
+  deletion_requested_at?: string | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -373,6 +379,16 @@ export default function ScheduleView() {
       userRole === 'manager' ||
       (userPosition || '').toLowerCase().trim() === 'op',
     [isSuperAdmin, userRole, userPosition]
+  )
+
+  /** 입장권 폼: 실제 삭제·삭제 요청 권한 (SUPER / OP·매니저) */
+  const canSuperActorTicketBookingForm = useMemo(
+    () => isSuperAdminActor(user?.email, userPosition),
+    [user?.email, userPosition]
+  )
+  const canRequestScheduleTicketSoftDelete = useMemo(
+    () => canRequestTicketBookingSoftDelete(userPosition),
+    [userPosition]
   )
 
   /** 투어 상세 모달·스케줄에서 상태 변경 (투어 상세 페이지 useTourDetailData와 동일 기준) */
@@ -1400,6 +1416,14 @@ export default function ScheduleView() {
           alert(locale === 'ko' ? '부킹을 불러오지 못했습니다.' : 'Failed to load booking.')
           return
         }
+        if ((data as { deletion_requested_at?: string | null }).deletion_requested_at) {
+          alert(
+            locale === 'ko'
+              ? '삭제 요청된 부킹은 목록에 표시되지 않습니다. SUPER 관리자가 입장권 부킹 메뉴에서 처리합니다.'
+              : 'This booking is pending deletion and is hidden from the schedule. A super admin can process it from ticket bookings.'
+          )
+          return
+        }
         setScheduleTicketBookingEdit(data)
         setScheduleTicketBookingFormOpen(true)
       } catch (e) {
@@ -1631,7 +1655,7 @@ export default function ScheduleView() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('ticket_bookings' as any)
         .select(
-          'id, tour_id, status, ea, company, time, check_in_date, booking_status, vendor_status, change_status, payment_status, refund_status, operation_status'
+          'id, tour_id, status, ea, company, time, check_in_date, booking_status, vendor_status, change_status, payment_status, refund_status, operation_status, deletion_requested_at'
         )
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
@@ -1691,7 +1715,9 @@ export default function ScheduleView() {
       setTours(toursWithVehicles)
       setReservations(reservationsData || [])
       setCustomers((customersData || []) as Customer[])
-      setTicketBookings(ticketBookingsData || [])
+      setTicketBookings(
+        filterTicketBookingsExcludedFromMainUi((ticketBookingsData || []) as ScheduleTicketBookingRow[])
+      )
       setTourHotelBookings(tourHotelBookingsData || [])
       setOffSchedules(offSchedulesData || [])
       setDateNotes(notesMap)
@@ -1717,6 +1743,32 @@ export default function ScheduleView() {
     closeScheduleTicketBookingForm()
     await fetchData()
   }, [closeScheduleTicketBookingForm, fetchData])
+
+  const handleRequestScheduleTicketBookingDelete = useCallback(
+    async (id: string) => {
+      const email = user?.email || ''
+      try {
+        const { error } = await supabase
+          .from('ticket_bookings')
+          .update({
+            deletion_requested_at: new Date().toISOString(),
+            deletion_requested_by: email || null,
+          })
+          .eq('id', id)
+        if (error) throw error
+        alert(
+          locale === 'ko'
+            ? '삭제 요청되었습니다. SUPER 관리자가 확인 후 영구 삭제합니다.'
+            : 'Deletion requested. A super admin will permanently delete after review.'
+        )
+        await handleScheduleTicketBookingSaved()
+      } catch (e) {
+        console.error(e)
+        alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Failed to request deletion.')
+      }
+    },
+    [user?.email, locale, handleScheduleTicketBookingSaved]
+  )
 
   useEffect(() => {
     fetchData()
@@ -7611,7 +7663,9 @@ export default function ScheduleView() {
                   void handleScheduleTicketBookingSaved()
                 }}
                 onCancel={closeScheduleTicketBookingForm}
-                {...(isSuperAdmin
+                canRequestSoftDelete={canRequestScheduleTicketSoftDelete}
+                onRequestDelete={handleRequestScheduleTicketBookingDelete}
+                {...(canSuperActorTicketBookingForm
                   ? {
                       onDelete: (delId: string) => {
                         void (async () => {
@@ -7628,7 +7682,7 @@ export default function ScheduleView() {
                       },
                     }
                   : {})}
-                isSuper={isSuperAdmin}
+                isSuper={canSuperActorTicketBookingForm}
                 tourId={scheduleTicketBookingEdit?.tour_id || undefined}
               />
             </div>

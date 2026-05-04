@@ -1,4 +1,5 @@
 import { isGarbageImportedCustomerName } from '@/lib/emailReservationParser'
+import { isPickupImportNotDecidedLabel } from '@/lib/reservationImportPickup'
 import type { Database } from '@/lib/supabase'
 import type { 
   Customer, 
@@ -17,30 +18,65 @@ export const getPickupHotelDisplay = (hotelId: string, pickupHotels: Array<{ id:
   return hotel ? `${hotel.hotel ?? ''} - ${hotel.pick_up_location ?? ''}` : hotelId
 }
 
-/** 이메일 등에서 추출한 픽업 주소/호텔명 문자열을 pickup_hotels 목록과 매칭해 id 반환 (없으면 null). 단어 단위 퍼지 매칭은 하지 않음(다른 호텔 오선택 방지). */
+/** 이메일 등에서 추출한 픽업 주소/호텔명 문자열을 pickup_hotels 목록과 매칭해 id 반환 (없으면 null). 짧은/일반 문자열로 첫 행만 걸리는 오매칭을 줄인다. */
 export function matchPickupHotelId(
   extractedText: string | null | undefined,
   pickupHotels: Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }> | null
 ): string | null {
   if (!extractedText?.trim() || !pickupHotels?.length) return null
   let query = extractedText.trim()
+  if (isPickupImportNotDecidedLabel(query)) {
+    const nd = pickupHotels.find(
+      (h) =>
+        /not\s*decided/i.test(h.hotel ?? '') ||
+        /not\s*decided/i.test(h.pick_up_location ?? '')
+    )
+    if (nd) return nd.id
+  }
   if (/\bTrump\s+(?:International\s+)?Hotel\s+(?:Las\s+Vegas)?/i.test(query)) query = 'Trump hotel'
-  const q = query.toLowerCase()
+  const qNorm = query.replace(/\s+/g, ' ').trim().toLowerCase()
+  const q = qNorm
   const hotelNamePart = q.split(',')[0].trim()
   const addressPart = q.includes(',') ? q.replace(/^[^,]+,?\s*/, '').trim() : ''
+  /** "las vegas" 등 짧은 공통 구간으로 잘못된 호텔이 먼저 잡히는 것 방지 (Trump 등 짧은 별칭은 하단 분기) */
+  const MIN_SUB = 10
+
   for (const h of pickupHotels) {
-    const hotel = (h.hotel ?? '').toLowerCase()
-    const location = (h.pick_up_location ?? '').toLowerCase()
-    const address = (h.address ?? '').toLowerCase()
+    const hotel = (h.hotel ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
+    const location = (h.pick_up_location ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
+    const address = (h.address ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
     if (!hotel && !location && !address) continue
-    if (hotel && hotelNamePart && (hotel.includes(hotelNamePart) || hotelNamePart.includes(hotel))) return h.id
-    if (hotel && q.includes(hotel)) return h.id
-    if (address && (address.includes(addressPart) || addressPart.includes(address) || q.includes(address))) return h.id
-    if (location && (location.includes(hotelNamePart) || hotelNamePart.includes(location))) return h.id
+    const disp = `${hotel} - ${location}`.replace(/\s*-\s*$/, '').trim()
+    if (disp && disp === qNorm) return h.id
+    if (hotel && hotel === qNorm) return h.id
+    if (
+      hotel &&
+      hotelNamePart.length >= MIN_SUB &&
+      (hotel.includes(hotelNamePart) || hotelNamePart.includes(hotel))
+    ) {
+      return h.id
+    }
+    if (hotel && hotel.length >= 8 && q.includes(hotel)) return h.id
+    if (
+      address &&
+      addressPart.length >= MIN_SUB &&
+      (address.includes(addressPart) || addressPart.includes(address) || q.includes(address))
+    ) {
+      return h.id
+    }
+    if (
+      location &&
+      hotelNamePart.length >= MIN_SUB &&
+      (location.includes(hotelNamePart) || hotelNamePart.includes(location))
+    ) {
+      return h.id
+    }
   }
   if (q.includes('trump')) {
     const byTrump = pickupHotels.find(
-      h => (h.hotel ?? '').toLowerCase().includes('trump') || (h.pick_up_location ?? '').toLowerCase().includes('trump')
+      (h) =>
+        (h.hotel ?? '').toLowerCase().includes('trump') ||
+        (h.pick_up_location ?? '').toLowerCase().includes('trump')
     )
     if (byTrump) return byTrump.id
   }

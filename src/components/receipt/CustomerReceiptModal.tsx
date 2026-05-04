@@ -58,6 +58,12 @@ type ReceiptData = {
 
 const labels = {
   ko: {
+    /** 모달 상단 제목(앱 언어) */
+    modalTitle: '인보이스',
+    /** 인보이스 본문 큰 제목(고객 언어 문서) */
+    invoiceTitle: 'INVOICE',
+    /** 고객 수신 블록 라벨 */
+    toLabel: 'To',
     title: '영수증',
     reservationSummary: '예약 요약',
     guest: '고객',
@@ -119,6 +125,9 @@ const labels = {
     infant: '유아',
   },
   en: {
+    modalTitle: 'Invoice',
+    invoiceTitle: 'INVOICE',
+    toLabel: 'To',
     title: 'Receipt',
     reservationSummary: 'Reservation Summary',
     guest: 'Guest',
@@ -180,6 +189,9 @@ const labels = {
     infant: 'Infant',
   },
   ja: {
+    modalTitle: 'インボイス',
+    invoiceTitle: 'INVOICE',
+    toLabel: '宛先',
     title: '領収書',
     reservationSummary: '予約概要',
     guest: 'お客様',
@@ -248,7 +260,7 @@ const COMPANY = {
   logoUrl: typeof process !== 'undefined' && process.env.NEXT_PUBLIC_COMPANY_LOGO_URL
     ? process.env.NEXT_PUBLIC_COMPANY_LOGO_URL
     : '/favicon.png',
-  address: ['3351 S Highland Dr #202', 'Las Vegas, NV 89109', 'United States'],
+  address: ['3351 S. Highland Dr #202 , Las Vegas, NV 89109 USA'],
   email: 'vegasmaniatour@gmail.com',
   website: 'www.maniatour.com',
   phone: '1-702-929-8025 / 1-702-444-5531',
@@ -689,7 +701,7 @@ export default function CustomerReceiptModal({
     }
 
     const iframe = document.createElement('iframe')
-    iframe.title = 'Receipt Print'
+    iframe.title = 'Invoice Print'
     iframe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:none;overflow:hidden;'
     document.body.appendChild(iframe)
     const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
@@ -717,6 +729,12 @@ export default function CustomerReceiptModal({
       .receipt-letter .receipt-items-table td { padding: 4px 8px !important; border: none !important; border-bottom: 1px solid #e5e7eb !important; }
       .receipt-letter .receipt-items-table thead th { background: #f3f4f6 !important; }
       .receipt-letter .receipt-items-table tbody tr:last-child td { border-bottom: none !important; border-top: 2px solid #d1d5db !important; }
+      .receipt-letter .receipt-doc-heading { text-align: center !important; font-weight: bold !important; font-size: 14px !important; padding: 6px 0 !important; margin: 0 0 8px 0 !important; border-bottom: 1px solid #f3f4f6 !important; text-transform: uppercase !important; letter-spacing: 0.05em !important; color: #111 !important; }
+      .receipt-letter .receipt-to-block { font-size: 12px !important; margin-bottom: 8px !important; padding-bottom: 8px !important; border-bottom: 1px solid #e5e7eb !important; }
+      .receipt-letter .receipt-to-block > p { margin: 2px 0 !important; }
+      .receipt-letter .receipt-booking-meta { font-size: 12px !important; margin-bottom: 8px !important; }
+      .receipt-letter .receipt-booking-meta-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; column-gap: 12px !important; row-gap: 2px !important; }
+      .receipt-letter .receipt-booking-meta-grid > p { margin: 2px 0 !important; min-width: 0 !important; }
       @page { size: 279mm 216mm; margin: 5mm; }
       @media print {
         html, body { width: 279mm !important; max-width: 279mm !important; height: auto !important; min-height: 0 !important; }
@@ -733,7 +751,12 @@ export default function CustomerReceiptModal({
       .receipt-letter:last-child { page-break-after: auto; }
       .receipt-letter .receipt-logo { width: 10.5rem !important; height: 3rem !important; min-width: 10.5rem !important; min-height: 3rem !important; object-fit: contain !important; }
       .receipt-letter .receipt-summary-email { white-space: nowrap !important; min-width: 0 !important; overflow: visible !important; }
-      .receipt-letter .grid > div.min-w-0 { min-width: 0 !important; }
+      .receipt-letter .receipt-doc-heading { text-align: center !important; font-weight: bold !important; font-size: 14px !important; padding: 6px 0 !important; margin: 0 0 8px 0 !important; border-bottom: 1px solid #f3f4f6 !important; text-transform: uppercase !important; letter-spacing: 0.05em !important; color: #111 !important; }
+      .receipt-letter .receipt-to-block { font-size: 12px !important; margin-bottom: 8px !important; padding-bottom: 8px !important; border-bottom: 1px solid #e5e7eb !important; }
+      .receipt-letter .receipt-to-block > p { margin: 2px 0 !important; }
+      .receipt-letter .receipt-booking-meta { font-size: 12px !important; margin-bottom: 8px !important; }
+      .receipt-letter .receipt-booking-meta-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; column-gap: 16px !important; row-gap: 2px !important; }
+      .receipt-letter .receipt-booking-meta-grid > p { margin: 2px 0 !important; min-width: 0 !important; }
       .receipt-letter .receipt-balance-amount { color: #dc2626 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       @page { size: 216mm 279mm; margin: 10mm; }
     `
@@ -744,7 +767,7 @@ export default function CustomerReceiptModal({
     const bodyContent = printRoot.outerHTML
     const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff;width:279mm;max-width:279mm;box-sizing:border-box"' : ''
     iframeDoc.write(`
-      <!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
+      <!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice</title>
       ${links.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}
       <style>${printStyles}</style>
       </head><body${bodyAttrs}>${bodyContent}</body></html>`)
@@ -756,14 +779,20 @@ export default function CustomerReceiptModal({
       const doPrint = () => {
         if (printed) return
         printed = true
-        printWin.focus()
-        printWin.print()
+        try {
+          printWin.focus()
+          printWin.print()
+        } catch {
+          /* ignore */
+        }
         document.body.removeChild(iframe)
       }
-      if (useHalfLayout) {
-        setTimeout(doPrint, 600)
+      const delayMs = useHalfLayout ? 480 : 150
+      const schedule = () => window.setTimeout(doPrint, delayMs)
+      if (printWin.document.readyState === 'complete') {
+        requestAnimationFrame(() => requestAnimationFrame(schedule))
       } else {
-        printWin.onload = () => setTimeout(doPrint, 250)
+        printWin.addEventListener('load', schedule, { once: true })
       }
     } else {
       document.body.removeChild(iframe)
@@ -784,7 +813,7 @@ export default function CustomerReceiptModal({
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[min(95vw,216mm)] max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-6 border-b flex-shrink-0">
           <h2 className="text-xl font-bold text-gray-900">
-            {headerLabel.title}
+            {headerLabel.modalTitle}
           </h2>
           <button type="button" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
             <X className="w-6 h-6" />
@@ -916,25 +945,41 @@ export default function CustomerReceiptModal({
                       </div>
                     </div>
 
-                    {/* 영수증 제목 */}
-                    <h3 className="text-center font-bold text-gray-900 py-1.5 mb-2 border-b border-gray-100 text-base uppercase tracking-wide">
-                      {L.title}
+                    {/* 인보이스 본문 제목 */}
+                    <h3 className="receipt-doc-heading text-center font-bold text-gray-900 py-1.5 mb-2 border-b border-gray-100 text-base uppercase tracking-wide">
+                      {L.invoiceTitle}
                     </h3>
 
-                    <div className="mb-2">
-                      <div className="grid grid-cols-[2fr_1fr] gap-x-4 gap-y-0.5 text-xs">
-                        <div className="min-w-0">
-                          <p><span className="text-gray-600">{L.guest}:</span> {d.customer.name}</p>
-                          <p className="receipt-summary-email" title={d.customer.email || undefined}><span className="text-gray-600">{L.email}:</span> {d.customer.email || '—'}</p>
-                          <p><span className="text-gray-600">{L.tel}:</span> {d.customer.phone || '—'}</p>
-                          <p><span className="text-gray-600">{L.hotel}:</span> {d.pickupHotelName || '—'}</p>
-                        </div>
-                        <div className="text-right">
-                          <p><span className="text-gray-600">{L.receiptId}:</span> {d.reservation.id}</p>
-                          <p><span className="text-gray-600">{L.status}:</span> {statusLabel}</p>
-                          <p><span className="text-gray-600">{L.channel}:</span> {d.channelName || '—'}</p>
-                          <p><span className="text-gray-600">{L.tourDate}:</span> {d.reservation.tour_date}</p>
-                        </div>
+                    <div className="receipt-to-block mb-2 text-xs border-b border-gray-100 pb-2">
+                      <p className="font-semibold text-gray-900 mb-1">{L.toLabel}:</p>
+                      <p>
+                        <span className="text-gray-600">{L.guest}:</span> {d.customer.name}
+                      </p>
+                      <p className="receipt-summary-email" title={d.customer.email || undefined}>
+                        <span className="text-gray-600">{L.email}:</span> {d.customer.email || '—'}
+                      </p>
+                      <p>
+                        <span className="text-gray-600">{L.tel}:</span> {d.customer.phone || '—'}
+                      </p>
+                      <p>
+                        <span className="text-gray-600">{L.hotel}:</span> {d.pickupHotelName || '—'}
+                      </p>
+                    </div>
+
+                    <div className="receipt-booking-meta mb-2 text-xs">
+                      <div className="receipt-booking-meta-grid grid grid-cols-2 gap-x-4 gap-y-0.5">
+                        <p className="min-w-0">
+                          <span className="text-gray-600">{L.receiptId}:</span> {d.reservation.id}
+                        </p>
+                        <p className="text-right min-w-0">
+                          <span className="text-gray-600">{L.status}:</span> {statusLabel}
+                        </p>
+                        <p className="min-w-0">
+                          <span className="text-gray-600">{L.channel}:</span> {d.channelName || '—'}
+                        </p>
+                        <p className="text-right min-w-0">
+                          <span className="text-gray-600">{L.tourDate}:</span> {d.reservation.tour_date}
+                        </p>
                       </div>
                     </div>
 

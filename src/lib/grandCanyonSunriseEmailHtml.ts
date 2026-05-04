@@ -5,7 +5,7 @@ import {
   formatYmdLong,
 } from '@/lib/goblinGrandCanyonSunrisePickup'
 
-/** Departure-confirmation email block: Goblin Grand Canyon sunrise tour pickup window. */
+/** Goblin Grand Canyon sunrise tour: pickup window block (예약 확인 / 출발 확정 이메일 공통). */
 export function renderGrandCanyonSunrisePickupNotice(
   gc: GrandCanyonSunrisePickupEmailInfo,
   isEnglish: boolean
@@ -29,13 +29,17 @@ export function renderGrandCanyonSunrisePickupNotice(
       ? `${pickupLong} ${t1} – ${endLong} ${t2}`
       : `${pickupLong} ${t1} ~ ${endLong} ${t2}`
 
-  const approxNote = gc.usedApproxTable
+  const sunriseTourContext = isEnglish
+    ? 'This tour is timed around <strong>sunrise at the Grand Canyon South Rim</strong>. The <strong>tour date</strong> on your reservation is the calendar date of that sunrise—not the date when hotel pickup begins. Pickup often happens the <strong>previous calendar evening</strong> so we can reach the rim in time.'
+    : '\uc774 \ud22c\uc5b4\ub294 <strong>\uadf8\ub79c\ub4dc\uce90\ub2c8\uc5b8 \uc0ac\uc6b0\uc2a4\ub9bc</strong>\uc758 \uc77c\ucd9c\uc5d0 \ub9de\ucdb0 \ucd9c\ubc1c\ud558\ub294 \uc77c\uc815\uc785\ub2c8\ub2e4. \uc608\uc57d\uc5d0 \ud45c\uc2dc\ub41c <strong>\ud22c\uc5b4 \ub0a0\uc9dc</strong>\ub294 \ud638\ud154 \ud53d\uc5c5\uc774 \uc774\ub8e8\uc5b4\uc9c0\ub294 \ub2ec\ub825\uc774 \uc544\ub2c8\ub77c, \uadf8\ub79c\ub4dc\uce90\ub2c8\uc5b8\uc5d0\uc11c \ud574\ub2f9 \uc77c\ucd9c\uc774 \uc788\ub294 <strong>\ub2ec\ub825</strong>\uc744 \uae30\uc900\uc73c\ub85c \ud569\ub2c8\ub2e4. \uc77c\ucd9c \uc804 \uc800\ub141 \uc2dc\uac04\ub300\uc5d0 \ud53d\uc5c5\ud558\ub294 \uacbd\uc6b0\uac00 \ub9ce\uc2b5\ub2c8\ub2e4.'
+
+  const sunriseTimeSource = gc.usedApproxTable
     ? isEnglish
-      ? 'Approximate sunrise at Lipan Point / South Rim (used when cached data is not available yet).'
-      : '\ub9bd\ub2e8 \ud3ec\uc778\ud2b8\xb7\uc0ac\uc6b0\uc2a4\ub9bc \uae30\uc900 \uc608\uc0c1 \uc77c\ucd9c\uc785\ub2c8\ub2e4(\uc2e4\uc2dc\uac04 \ub370\uc774\ud130\uac00 \uc544\uc9c1 \uc5c6\uc744 \ub54c \uc6d4\ubcc4 \ucc38\uace0\uac12\uc744 \uc0ac\uc6a9\ud569\ub2c8\ub2e4).'
+      ? 'The sunrise time below is approximate (monthly reference) until updated with live data.'
+      : '\uc544\ub798 \uc77c\ucd9c\uc740 \uc2e4\uc2dc\uac04 \ub370\uc774\ud130\uac00 \uc5c5\ub370\ud2b8\ub418\uae30 \uc804\uae4c\uc9c0 \uc6d4\ubcc4 \ucc38\uace0\uac12\uc73c\ub85c \ub300\ub7b5 \uacc4\uc0b0\ub41c \uac12\uc785\ub2c8\ub2e4.'
     : isEnglish
-      ? 'Sunrise time at Lipan Point / South Rim (Grand Canyon South Rim) on your tour date.'
-      : '\ud22c\uc5b4\uc77c \uae30\uc900 \uadf8\ub79c\ub4dc\uce90\ub2c8\uc5b8 \uc0ac\uc6b0\uc2a4\ub9bc(\ub9bd\ub2e8 \ud3ec\uc778\ud2b8) \uc77c\ucd9c \uc2dc\uac01\uc785\ub2c8\ub2e4.'
+      ? 'The sunrise time below is for the Grand Canyon South Rim on your tour date.'
+      : '\uc544\ub798 \uc77c\ucd9c\uc740 \ud22c\uc5b4 \ub0a0\uc9dc \uae30\uc900 \uadf8\ub79c\ub4dc\uce90\ub2c8\uc5b8 \uc0ac\uc6b0\uc2a4\ub9bc\uc758 \uc2dc\uac01\uc785\ub2c8\ub2e4.'
 
   const differentDatesBanner = gc.showDifferentDatesWarning
     ? `
@@ -65,7 +69,8 @@ export function renderGrandCanyonSunrisePickupNotice(
       <h2 style="margin: 0 0 12px 0; color: #9a3412; font-size: 20px; font-weight: 800;">
         ${isEnglish ? 'Sunrise tour · hotel pickup window' : titleKo}
       </h2>
-      <p style="margin: 0 0 8px 0; color: #431407; font-size: 14px; line-height: 1.65;">${approxNote}</p>
+      <p style="margin: 0 0 8px 0; color: #431407; font-size: 14px; line-height: 1.65;">${sunriseTourContext}</p>
+      <p style="margin: 0 0 8px 0; color: #431407; font-size: 14px; line-height: 1.65;">${sunriseTimeSource}</p>
       <p style="margin: 0 0 16px 0; color: #431407; font-size: 15px;">
         <strong>${isEnglish ? 'Approx. sunrise:' : '\uc608\uc0c1 \uc77c\ucd9c:'}</strong> ${sun}
       </p>

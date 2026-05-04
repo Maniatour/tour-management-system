@@ -77,6 +77,9 @@ import {
   browserLocalInclusiveDateKeys,
   browserLocalWeekRangeFromOffset,
   formatBrowserLocalYmdRangeDisplay,
+  browserLocalCalendarMonthWindow,
+  browserLocalCalendarYearWindow,
+  browserLocalCalendarYearMonthKeys,
 } from '@/lib/browserLocalWeek'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import {
@@ -96,13 +99,75 @@ const RESERVATIONS_LIST_UI_DEFAULT = {
   selectedStatus: 'all',
   currentPage: 1,
   itemsPerPage: 20,
-  currentWeek: 0,
+  /** 통계 패널(차트·상단 요약) 전용 주간 오프셋 — 예약 카드 목록과 독립 */
+  statisticsWeekOffset: 0,
+  /** 날짜별 카드 목록이 보여 줄 7일 구간(페이지) */
+  cardsWeekPage: 0,
   selectedChannel: 'all',
   dateRange: { start: '', end: '' } as { start: string; end: string },
   sortBy: 'created_at' as 'created_at' | 'tour_date' | 'customer_name' | 'product_name',
   sortOrder: 'desc' as 'asc' | 'desc',
   groupByDate: true,
   isWeeklyStatsCollapsed: true,
+  /** 일별 등록·취소 차트: 7일 / 월간(한 달) / 연간(1~12월) */
+  regCancelGranularity: 'week' as 'week' | 'month' | 'year',
+  regCancelMonthOffset: 0,
+  regCancelYearOffset: 0,
+}
+
+function localWeekdayIndexFromYmd(ymd: string): number {
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return 0
+  return new Date(y, m - 1, d, 12, 0, 0, 0).getDay()
+}
+
+/** 로드된 예약 기준: `allowedYears`에 속한 연도의 날만 사용, 요일별 일합 평균 */
+function computeAvgDailyRegisteredByWeekdayForYears(
+  reservations: Reservation[],
+  allowedYears: Set<number>
+): number[] {
+  const daily = new Map<string, number>()
+  for (const r of reservations) {
+    const k = isoToLocalCalendarDateKey(r.addedTime)
+    if (!k || k.length < 10) continue
+    const y = parseInt(k.slice(0, 4), 10)
+    if (!allowedYears.has(y)) continue
+    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+    daily.set(k, (daily.get(k) ?? 0) + p)
+  }
+  const buckets: number[][] = Array.from({ length: 7 }, () => [])
+  for (const [ymd, total] of daily) {
+    const y = parseInt(ymd.slice(0, 4), 10)
+    if (!allowedYears.has(y)) continue
+    buckets[localWeekdayIndexFromYmd(ymd)].push(total)
+  }
+  return buckets.map((arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0))
+}
+
+/** 연도 Y: 각 달 m에 대해 (그 달 1~말일 일별 등록 인원 합, 미등록일 0) / 말일 수 */
+function computeAvgDailyRegisteredByMonthForCalendarYear(
+  reservations: Reservation[],
+  year: number
+): number[] {
+  const daily = new Map<string, number>()
+  for (const r of reservations) {
+    const k = isoToLocalCalendarDateKey(r.addedTime)
+    if (!k || k.length < 10) continue
+    if (parseInt(k.slice(0, 4), 10) !== year) continue
+    const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+    daily.set(k, (daily.get(k) ?? 0) + p)
+  }
+  const out: number[] = new Array(13).fill(0)
+  for (let m = 1; m <= 12; m++) {
+    const dim = new Date(year, m, 0).getDate()
+    let sum = 0
+    for (let d = 1; d <= dim; d++) {
+      const ymd = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      sum += daily.get(ymd) ?? 0
+    }
+    out[m] = dim > 0 ? sum / dim : 0
+  }
+  return out
 }
 
 /** 당일 등록 직후에도 수정이 한 번이라도 더 있으면 true (등록 시각과 동일한 updated_at은 false) */
@@ -165,6 +230,35 @@ function pickReservationStatusTransitionForDay(
     if (to && from && from !== to) return { from, to }
   }
   return null
+}
+
+/** 그날 감사 기준으로 취소·삭제 상태로 바뀐 전환만 (이미 취소인 건의 금액 수정 등 제외) */
+function isIntoCancelledLikeTransition(tr: { from: string; to: string } | null | undefined): boolean {
+  if (!tr) return false
+  const to = tr.to.toLowerCase()
+  const from = tr.from.toLowerCase()
+  const toTerm = to === 'cancelled' || to === 'canceled' || to === 'deleted'
+  const fromTerm = from === 'cancelled' || from === 'canceled' || from === 'deleted'
+  return toTerm && !fromTerm
+}
+
+/** 예약별: 로컬 YMD 목록 중 그날 감사상 상태가 취소/삭제로 바뀐 날만 */
+function localYmdSetWhereBecameCancelledFromAuditRows(
+  rows: ReservationStatusAuditRow[] | undefined
+): Set<string> {
+  const out = new Set<string>()
+  if (!rows?.length) return out
+  const dayKeys = new Set<string>()
+  for (const row of rows) {
+    if (!Array.isArray(row.changed_fields) || !row.changed_fields.includes('status')) continue
+    const dk = isoToLocalCalendarDateKey(row.created_at)
+    if (dk && dk.length >= 10) dayKeys.add(dk)
+  }
+  for (const dk of dayKeys) {
+    const tr = pickReservationStatusTransitionForDay(rows, dk)
+    if (isIntoCancelledLikeTransition(tr)) out.add(dk)
+  }
+  return out
 }
 
 const SIMPLE_CARD_STATUS_TRANSITION_ORDER = new Map<string, number>([
@@ -426,14 +520,26 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     selectedStatus,
     currentPage,
     itemsPerPage,
-    currentWeek,
+    statisticsWeekOffset: statisticsWeekOffsetStored,
+    cardsWeekPage: cardsWeekPageStored,
     selectedChannel,
     dateRange,
     sortBy,
     sortOrder,
     groupByDate,
     isWeeklyStatsCollapsed,
-  } = reservationListUi
+    regCancelGranularity: regCancelGranularityStored,
+    regCancelMonthOffset: regCancelMonthOffsetStored,
+    regCancelYearOffset: regCancelYearOffsetStored,
+  } = reservationListUi as typeof RESERVATIONS_LIST_UI_DEFAULT & { currentWeek?: number }
+  const statisticsWeekOffset =
+    statisticsWeekOffsetStored ?? (reservationListUi as { currentWeek?: number }).currentWeek ?? 0
+  const cardsWeekPage =
+    cardsWeekPageStored ?? (reservationListUi as { currentWeek?: number }).currentWeek ?? 0
+  const regCancelGranularity = regCancelGranularityStored ?? 'week'
+  const regCancelMonthOffset = regCancelMonthOffsetStored ?? 0
+  const regCancelYearOffset = regCancelYearOffsetStored ?? 0
+
   const setSearchTerm = (v: React.SetStateAction<string>) =>
     setReservationListUi((u) => ({
       ...u,
@@ -452,11 +558,24 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       ...u,
       itemsPerPage: typeof v === 'function' ? (v as (n: number) => number)(u.itemsPerPage) : v,
     }))
-  const setCurrentWeek = (v: React.SetStateAction<number>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      currentWeek: typeof v === 'function' ? (v as (n: number) => number)(u.currentWeek) : v,
-    }))
+  const setStatisticsWeekOffset = (v: React.SetStateAction<number>) =>
+    setReservationListUi((u) => {
+      const prev =
+        (u as { statisticsWeekOffset?: number; currentWeek?: number }).statisticsWeekOffset ??
+        (u as { currentWeek?: number }).currentWeek ??
+        0
+      const next = typeof v === 'function' ? (v as (n: number) => number)(prev) : v
+      return { ...u, statisticsWeekOffset: next }
+    })
+  const setCardsWeekPage = (v: React.SetStateAction<number>) =>
+    setReservationListUi((u) => {
+      const prev =
+        (u as { cardsWeekPage?: number; currentWeek?: number }).cardsWeekPage ??
+        (u as { currentWeek?: number }).currentWeek ??
+        0
+      const next = typeof v === 'function' ? (v as (n: number) => number)(prev) : v
+      return { ...u, cardsWeekPage: next }
+    })
   const setSelectedChannel = (c: string) => setReservationListUi((u) => ({ ...u, selectedChannel: c }))
   const setDateRange = (v: React.SetStateAction<{ start: string; end: string }>) =>
     setReservationListUi((u) => ({
@@ -484,6 +603,18 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       isWeeklyStatsCollapsed: typeof v === 'function'
         ? (v as (b: boolean) => boolean)(u.isWeeklyStatsCollapsed)
         : v,
+    }))
+  const setRegCancelGranularity = (g: 'week' | 'month' | 'year') =>
+    setReservationListUi((u) => ({ ...u, regCancelGranularity: g }))
+  const setRegCancelMonthOffset = (v: React.SetStateAction<number>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      regCancelMonthOffset: typeof v === 'function' ? (v as (n: number) => number)(u.regCancelMonthOffset ?? 0) : v,
+    }))
+  const setRegCancelYearOffset = (v: React.SetStateAction<number>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      regCancelYearOffset: typeof v === 'function' ? (v as (n: number) => number)(u.regCancelYearOffset ?? 0) : v,
     }))
 
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
@@ -528,6 +659,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     Record<string, { from: string; to: string }>
   >({})
   const [simpleCardStatusTransitionLoading, setSimpleCardStatusTransitionLoading] = useState(false)
+
+  /** 일별 등록·취소 차트: 취소 = 그날 감사상 취소/삭제 전환일만 (DateGroupHeader 심플 카드와 동일 기준) */
+  const [regCancelChartAuditRowsByRecordId, setRegCancelChartAuditRowsByRecordId] = useState<
+    Record<string, ReservationStatusAuditRow[]>
+  >({})
+  const [regCancelChartAuditLoaded, setRegCancelChartAuditLoaded] = useState(false)
   /**
    * 심플 카드 아코디언: 맵에만 사용자 오버라이드 저장.
    * 키 없음 → defaultOpen (등록·상태변경 상위=열림, 소그룹=대기→취소만 열림·수정됨·그 외=접힘).
@@ -602,6 +739,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     productName?: string | null
     channelRN?: string | null
     customerLanguage?: string | null
+    productCode?: string | null
+    productTags?: string[] | null
   } | null>(null)
   const [showEmailLogs, setShowEmailLogs] = useState(false)
   const [selectedReservationForEmailLogs, setSelectedReservationForEmailLogs] = useState<string | null>(null)
@@ -1327,7 +1466,23 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   const loadAdminReservationList = useCallback(async () => {
     setServerListLoading(true)
     try {
-      const { rangeStartIso, rangeEndIso } = browserLocalWeekRangeFromOffset(currentWeek)
+      const cardsWR = browserLocalWeekRangeFromOffset(cardsWeekPage)
+      const statsWR = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
+      let rangeStartIso = cardsWR.rangeStartIso
+      let rangeEndIso = cardsWR.rangeEndIso
+      if (statsWR.rangeStartIso < rangeStartIso) rangeStartIso = statsWR.rangeStartIso
+      if (statsWR.rangeEndIso > rangeEndIso) rangeEndIso = statsWR.rangeEndIso
+      if (groupByDate) {
+        if (regCancelGranularity === 'month') {
+          const m = browserLocalCalendarMonthWindow(regCancelMonthOffset)
+          if (m.rangeStartIso < rangeStartIso) rangeStartIso = m.rangeStartIso
+          if (m.rangeEndIso > rangeEndIso) rangeEndIso = m.rangeEndIso
+        } else if (regCancelGranularity === 'year') {
+          const y = browserLocalCalendarYearWindow(regCancelYearOffset)
+          if (y.rangeStartIso < rangeStartIso) rangeStartIso = y.rangeStartIso
+          if (y.rangeEndIso > rangeEndIso) rangeEndIso = y.rangeEndIso
+        }
+      }
 
       if (viewMode === 'calendar') {
         const calStart = new Date()
@@ -1396,7 +1551,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       setServerListLoading(false)
     }
   }, [
-    currentWeek,
+    cardsWeekPage,
+    statisticsWeekOffset,
     viewMode,
     groupByDate,
     currentPage,
@@ -1408,6 +1564,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     debouncedSearchTerm,
     sortBy,
     sortOrder,
+    regCancelGranularity,
+    regCancelMonthOffset,
+    regCancelYearOffset,
   ])
 
   const refreshReservations = useCallback(async () => {
@@ -1431,7 +1590,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     viewMode,
     sortBy,
     sortOrder,
-    currentWeek,
+    cardsWeekPage,
   ])
 
   useEffect(() => {
@@ -1447,7 +1606,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const groups: { [key: string]: typeof filteredReservations } = {}
     
     // ??? ?? ??? ?? ?? (?? ????? ???)
-    const { startYmd: weekStartStr, endYmd: weekEndStr } = browserLocalWeekRangeFromOffset(currentWeek)
+    const { startYmd: weekStartStr, endYmd: weekEndStr } = browserLocalWeekRangeFromOffset(cardsWeekPage)
 
     filteredReservations.forEach((reservation) => {
       const activityDates = new Set<string>()
@@ -1481,58 +1640,249 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       })
     
     return sortedGroups
-  }, [filteredReservations, groupByDate, currentWeek])
+  }, [filteredReservations, groupByDate, cardsWeekPage])
 
-  /** 주간(화면 상단 7일 구간) 일자별 등록 인원·건수 / 취소 인원·건수 — WeeklyStatsPanel 차트용 */
-  const weeklyRegCancelByDay = useMemo(() => {
-    const { startYmd: weekStartStr, endYmd: weekEndStr } = browserLocalWeekRangeFromOffset(currentWeek)
+  /** 목록 조회와 동일하게 주·월·연 차트 구간을 합친 ISO 범위 — 감사(취소 전환) 조회에 사용 */
+  const regCancelChartAuditIsoRange = useMemo(() => {
+    if (!groupByDate) return null
+    const weekR = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
+    let rangeStartIso = weekR.rangeStartIso
+    let rangeEndIso = weekR.rangeEndIso
+    const m = browserLocalCalendarMonthWindow(regCancelMonthOffset)
+    if (m.rangeStartIso < rangeStartIso) rangeStartIso = m.rangeStartIso
+    if (m.rangeEndIso > rangeEndIso) rangeEndIso = m.rangeEndIso
+    const y = browserLocalCalendarYearWindow(regCancelYearOffset)
+    if (y.rangeStartIso < rangeStartIso) rangeStartIso = y.rangeStartIso
+    if (y.rangeEndIso > rangeEndIso) rangeEndIso = y.rangeEndIso
+    return { rangeStartIso, rangeEndIso }
+  }, [groupByDate, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
 
-    const rows: Array<{
+  useEffect(() => {
+    if (!groupByDate) {
+      setRegCancelChartAuditRowsByRecordId({})
+      setRegCancelChartAuditLoaded(false)
+      return
+    }
+    const range = regCancelChartAuditIsoRange
+    if (!range) return
+    const uniqueIds = [...new Set(filteredReservations.map((r) => r.id).filter(Boolean))]
+    if (uniqueIds.length === 0) {
+      setRegCancelChartAuditRowsByRecordId({})
+      setRegCancelChartAuditLoaded(true)
+      return
+    }
+
+    let cancelled = false
+
+    void (async () => {
+      const chunkSize = 80
+      const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+      try {
+        for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+          const chunk = uniqueIds.slice(i, i + chunkSize)
+          const { data, error } = await supabase
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- audit_logs 미생성 타입
+            .from('audit_logs' as any)
+            .select('record_id, old_values, new_values, changed_fields, created_at')
+            .eq('table_name', 'reservations')
+            .eq('action', 'UPDATE')
+            .gte('created_at', range.rangeStartIso)
+            .lte('created_at', range.rangeEndIso)
+            .in('record_id', chunk)
+            .contains('changed_fields', ['status'])
+          if (cancelled) return
+          if (error) {
+            console.error('audit_logs (reg-cancel chart):', error)
+            break
+          }
+          for (const row of data || []) {
+            const id = String((row as unknown as ReservationStatusAuditRow).record_id ?? '').trim()
+            if (!id) continue
+            const arr = byRecord.get(id) ?? []
+            arr.push(row as unknown as ReservationStatusAuditRow)
+            byRecord.set(id, arr)
+          }
+        }
+      } catch (e) {
+        if (!cancelled) console.error('audit_logs chart fetch failed:', e)
+      }
+      if (cancelled) return
+      const next: Record<string, ReservationStatusAuditRow[]> = {}
+      for (const [id, arr] of byRecord) next[id] = arr
+      setRegCancelChartAuditRowsByRecordId(next)
+      setRegCancelChartAuditLoaded(true)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [groupByDate, regCancelChartAuditIsoRange, filteredReservations])
+
+  /** 일별·월별·연별 등록/취소 차트 행 — WeeklyStatsPanel */
+  const regCancelChartRows = useMemo(() => {
+    type Row = {
       dateKey: string
       registeredPeople: number
       registeredCount: number
       cancelledPeople: number
       cancelledCount: number
-    }> = []
-    const rowByKey = new Map<string, (typeof rows)[number]>()
-
-    for (const dateKey of browserLocalInclusiveDateKeys(weekStartStr, weekEndStr)) {
-      const row = {
-        dateKey,
-        registeredPeople: 0,
-        registeredCount: 0,
-        cancelledPeople: 0,
-        cancelledCount: 0,
-      }
-      rows.push(row)
-      rowByKey.set(dateKey, row)
+      avgLineRegistered: number
     }
-
     const isCancelledLike = (status: string | undefined) =>
       isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
 
-    for (const r of filteredReservations) {
-      const p = getReservationPartySize(r as unknown as Record<string, unknown>)
-      const createdKey = isoToLocalCalendarDateKey(r.addedTime)
-      if (createdKey) {
-        const row = rowByKey.get(createdKey)
-        if (row) {
-          row.registeredCount += 1
-          row.registeredPeople += p
-        }
-      }
-      const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
-      if (updatedKey && isCancelledLike(r.status)) {
-        const row = rowByKey.get(updatedKey)
-        if (row) {
-          row.cancelledCount += 1
-          row.cancelledPeople += p
-        }
+    const useAuditCancel = groupByDate && regCancelChartAuditLoaded
+    const cancelYmdByResId = new Map<string, Set<string>>()
+    if (useAuditCancel) {
+      for (const r of filteredReservations) {
+        const id = String(r.id ?? '').trim()
+        if (!id) continue
+        cancelYmdByResId.set(
+          id,
+          localYmdSetWhereBecameCancelledFromAuditRows(regCancelChartAuditRowsByRecordId[id])
+        )
       }
     }
 
-    return rows
-  }, [filteredReservations, currentWeek])
+    const aggregateIntoKeys = (keys: string[], keyFromCreated: (ck: string) => string | null, keyFromUpdated: (uk: string) => string | null) => {
+      const rowByKey = new Map<string, Row>()
+      const rows: Row[] = []
+      for (const k of keys) {
+        const row: Row = {
+          dateKey: k,
+          registeredPeople: 0,
+          registeredCount: 0,
+          cancelledPeople: 0,
+          cancelledCount: 0,
+          avgLineRegistered: 0,
+        }
+        rows.push(row)
+        rowByKey.set(k, row)
+      }
+      for (const r of filteredReservations) {
+        const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+        const id = String(r.id ?? '').trim()
+        const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+        if (createdKey) {
+          const bk = keyFromCreated(createdKey)
+          if (bk) {
+            const row = rowByKey.get(bk)
+            if (row) {
+              row.registeredCount += 1
+              row.registeredPeople += p
+            }
+          }
+        }
+        if (useAuditCancel && id) {
+          const ymds = cancelYmdByResId.get(id)
+          if (ymds && ymds.size > 0) {
+            for (const ymd of ymds) {
+              const bk = keyFromUpdated(ymd)
+              if (bk) {
+                const row = rowByKey.get(bk)
+                if (row) {
+                  row.cancelledCount += 1
+                  row.cancelledPeople += p
+                }
+              }
+            }
+          }
+        } else {
+          const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+          if (updatedKey && isCancelledLike(r.status)) {
+            const bk = keyFromUpdated(updatedKey)
+            if (bk) {
+              const row = rowByKey.get(bk)
+              if (row) {
+                row.cancelledCount += 1
+                row.cancelledPeople += p
+              }
+            }
+          }
+        }
+      }
+      return rows
+    }
+
+    let base: Row[]
+    if (regCancelGranularity === 'week') {
+      const { startYmd: weekStartStr, endYmd: weekEndStr } = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
+      const keys = browserLocalInclusiveDateKeys(weekStartStr, weekEndStr)
+      base = aggregateIntoKeys(keys, (ck) => ck, (uk) => uk)
+    } else if (regCancelGranularity === 'month') {
+      const { startYmd, endYmd } = browserLocalCalendarMonthWindow(regCancelMonthOffset)
+      const keys = browserLocalInclusiveDateKeys(startYmd, endYmd)
+      base = aggregateIntoKeys(keys, (ck) => ck, (uk) => uk)
+    } else {
+      const keys = browserLocalCalendarYearMonthKeys(regCancelYearOffset)
+      base = aggregateIntoKeys(
+        keys,
+        (ck) => (ck.length >= 7 ? ck.slice(0, 7) : null),
+        (uk) => (uk.length >= 7 ? uk.slice(0, 7) : null)
+      )
+    }
+
+    let wdAvg: number[] = Array.from({ length: 7 }, () => 0)
+    let monthDailyAvgSameYear: number[] | null = null
+
+    if (regCancelGranularity === 'week') {
+      const years = new Set<number>()
+      for (const b of base) {
+        const y = parseInt(b.dateKey.slice(0, 4), 10)
+        if (Number.isFinite(y)) years.add(y)
+      }
+      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(filteredReservations, years)
+    } else if (regCancelGranularity === 'month') {
+      const { startYmd } = browserLocalCalendarMonthWindow(regCancelMonthOffset)
+      const y = parseInt(startYmd.slice(0, 4), 10)
+      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(filteredReservations, new Set([y]))
+    } else {
+      const chartYear = parseInt(
+        browserLocalCalendarYearWindow(regCancelYearOffset).startYmd.slice(0, 4),
+        10
+      )
+      monthDailyAvgSameYear = computeAvgDailyRegisteredByMonthForCalendarYear(
+        filteredReservations,
+        chartYear
+      )
+    }
+
+    return base.map((row) => {
+      let avgLine = 0
+      if (regCancelGranularity === 'week' || regCancelGranularity === 'month') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(row.dateKey)) {
+          avgLine = wdAvg[localWeekdayIndexFromYmd(row.dateKey)] ?? 0
+        }
+      } else if (monthDailyAvgSameYear && /^\d{4}-\d{2}$/.test(row.dateKey)) {
+        const mi = parseInt(row.dateKey.slice(5, 7), 10)
+        avgLine = monthDailyAvgSameYear[mi] ?? 0
+      }
+      return { ...row, avgLineRegistered: avgLine }
+    })
+  }, [
+    filteredReservations,
+    regCancelGranularity,
+    statisticsWeekOffset,
+    regCancelMonthOffset,
+    regCancelYearOffset,
+    groupByDate,
+    regCancelChartAuditLoaded,
+    regCancelChartAuditRowsByRecordId,
+  ])
+
+  const regCancelChartRangeSubtitle = useMemo(() => {
+    const localeTag = locale === 'en' ? 'en-US' : 'ko-KR'
+    if (regCancelGranularity === 'week') {
+      const { startYmd, endYmd } = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
+      return formatBrowserLocalYmdRangeDisplay(startYmd, endYmd, localeTag)
+    }
+    if (regCancelGranularity === 'month') {
+      const { startYmd, endYmd } = browserLocalCalendarMonthWindow(regCancelMonthOffset)
+      return formatBrowserLocalYmdRangeDisplay(startYmd, endYmd, localeTag)
+    }
+    const { startYmd, endYmd } = browserLocalCalendarYearWindow(regCancelYearOffset)
+    return formatBrowserLocalYmdRangeDisplay(startYmd, endYmd, localeTag)
+  }, [locale, regCancelGranularity, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
 
   // ??????????????????? ????????
   useEffect(() => {
@@ -1554,7 +1904,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   const simpleCardStatusChangeAuditRequest = useMemo(() => {
     if (!groupByDate || cardLayout !== 'simple') return null
-    const { rangeStartIso: rangeStart, rangeEndIso: rangeEnd } = browserLocalWeekRangeFromOffset(currentWeek)
+    const { rangeStartIso: rangeStart, rangeEndIso: rangeEnd } = browserLocalWeekRangeFromOffset(cardsWeekPage)
     const targets: { key: string; reservationId: string; dateKey: string }[] = []
     for (const [dateKey, dayList] of Object.entries(groupedReservations)) {
       const { statusChange } = splitReservationsByActivityForDate(dateKey, dayList)
@@ -1564,7 +1914,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
     const uniqueIds = [...new Set(targets.map((x) => x.reservationId))]
     return { rangeStart, rangeEnd, targets, uniqueIds }
-  }, [groupByDate, cardLayout, currentWeek, groupedReservations])
+  }, [groupByDate, cardLayout, cardsWeekPage, groupedReservations])
 
   useEffect(() => {
     const req = simpleCardStatusChangeAuditRequest
@@ -1609,7 +1959,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             break
           }
           for (const row of data || []) {
-            collected.push(row as ReservationStatusAuditRow)
+            collected.push(row as unknown as ReservationStatusAuditRow)
           }
         }
       } catch (e) {
@@ -1641,9 +1991,101 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
   }, [simpleCardStatusChangeAuditRequest])
 
+  const statisticsWeekBoundary = useMemo(
+    () => browserLocalWeekRangeFromOffset(statisticsWeekOffset),
+    [statisticsWeekOffset]
+  )
+
+  /** 통계 패널 요약·차트용: 통계 주간에 활동(등록/수정일)이 겹치는 예약만 */
+  const statisticsWeekReservations = useMemo(() => {
+    const { startYmd, endYmd } = statisticsWeekBoundary
+    const seen = new Set<string>()
+    const out: Reservation[] = []
+    for (const r of filteredReservations) {
+      const c = isoToLocalCalendarDateKey(r.addedTime)
+      const u = isoToLocalCalendarDateKey(r.updated_at ?? null)
+      const inB = (k: string | null) => !!k && k >= startYmd && k <= endYmd
+      if (!inB(c) && !inB(u)) continue
+      const id = String(r.id ?? '').trim()
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      out.push(r)
+    }
+    return out
+  }, [filteredReservations, statisticsWeekBoundary])
+
+  /** 통계 패널 상단: 선택 주(달력 N일) 기준 등록·취소(감사)·순 건수·인원 및 일평균 */
+  const statisticsWeekHeaderSummary = useMemo(() => {
+    const { startYmd, endYmd } = statisticsWeekBoundary
+    const calendarKeys = browserLocalInclusiveDateKeys(startYmd, endYmd)
+    const dayDen = Math.max(calendarKeys.length, 1)
+    const round1 = (n: number) => Math.round(n * 10) / 10
+
+    let regBookings = 0
+    let regPeople = 0
+    for (const r of filteredReservations) {
+      const ck = isoToLocalCalendarDateKey(r.addedTime)
+      if (ck && ck >= startYmd && ck <= endYmd) {
+        regBookings += 1
+        regPeople += getReservationPartySize(r as unknown as Record<string, unknown>)
+      }
+    }
+
+    let cancelBookings = 0
+    let cancelPeople = 0
+    const useAuditCancel = groupByDate && regCancelChartAuditLoaded
+    if (useAuditCancel) {
+      for (const r of filteredReservations) {
+        const id = String(r.id ?? '').trim()
+        if (!id) continue
+        const ymds = localYmdSetWhereBecameCancelledFromAuditRows(regCancelChartAuditRowsByRecordId[id])
+        const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+        for (const ymd of ymds) {
+          if (ymd >= startYmd && ymd <= endYmd) {
+            cancelBookings += 1
+            cancelPeople += p
+          }
+        }
+      }
+    } else {
+      for (const r of filteredReservations) {
+        const uk = isoToLocalCalendarDateKey(r.updated_at ?? null)
+        if (!uk || uk < startYmd || uk > endYmd) continue
+        if (!isReservationCancelledStatus(r.status) && !isReservationDeletedStatus(r.status)) continue
+        cancelBookings += 1
+        cancelPeople += getReservationPartySize(r as unknown as Record<string, unknown>)
+      }
+    }
+
+    const netBookings = regBookings - cancelBookings
+    const netPeople = regPeople - cancelPeople
+
+    return {
+      calendarDayCount: dayDen,
+      regBookings,
+      regPeople,
+      cancelBookings,
+      cancelPeople,
+      netBookings,
+      netPeople,
+      avgRegBookingsPerDay: round1(regBookings / dayDen),
+      avgRegPeoplePerDay: round1(regPeople / dayDen),
+      avgCancelBookingsPerDay: round1(cancelBookings / dayDen),
+      avgCancelPeoplePerDay: round1(cancelPeople / dayDen),
+      avgNetBookingsPerDay: round1(netBookings / dayDen),
+      avgNetPeoplePerDay: round1(netPeople / dayDen),
+    }
+  }, [
+    filteredReservations,
+    statisticsWeekBoundary,
+    groupByDate,
+    regCancelChartAuditLoaded,
+    regCancelChartAuditRowsByRecordId,
+  ])
+
   // ?? ??? ???????
   const weeklyStats = useMemo(() => {
-    const allReservations = Object.values(groupedReservations).flat()
+    const allReservations = statisticsWeekReservations
     
     // ???????? ???
     const productStats = allReservations.reduce((groups, reservation) => {
@@ -1691,7 +2133,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       totalReservations: allReservations.length,
       totalPeople: allReservations.reduce((total, reservation) => total + reservation.totalPeople, 0)
     }
-  }, [groupedReservations, products, channels])
+  }, [statisticsWeekReservations, products, channels])
   
   // ??????????? (?????? ???? ?????)
   const totalPages = groupByDate ? 1 : Math.max(1, Math.ceil(serverListTotal / itemsPerPage))
@@ -2327,6 +2769,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
               name_en?: string | null
               customer_name_ko?: string | null
               customer_name_en?: string | null
+              product_code?: string | null
+              tags?: string[] | null
             }>
           | null
           | undefined
@@ -2349,6 +2793,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           productNameForEmail || getProductName(reservation.productId, products || []),
         channelRN: reservation.channelRN ?? null,
         customerLanguage: customer.language ?? null,
+        productCode: prod?.product_code ?? null,
+        productTags: prod?.tags ?? null,
       })
       setShowEmailPreview(true)
       setEmailDropdownOpen(null)
@@ -2964,24 +3410,71 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           setSortOrder('desc')
           setGroupByDate(true) // ?????????????
           setCurrentPage(1)
-          setCurrentWeek(0) // ?? ?????????? ??? ?? ????
+          setReservationListUi((u) => ({
+            ...u,
+            statisticsWeekOffset: 0,
+            cardsWeekPage: 0,
+          }))
         }}
       />
 
       {/* ?? ?????????????? ??? ??? - ??????????? ?????? ????? ??? */}
       {groupByDate && (
         <WeeklyStatsPanel
-          currentWeek={currentWeek}
-          onWeekChange={setCurrentWeek}
+          currentWeek={statisticsWeekOffset}
+          onWeekChange={setStatisticsWeekOffset}
           onInitialLoadChange={setIsInitialLoad}
           isInitialLoad={isInitialLoad}
           weeklyStats={weeklyStats}
-          weeklyRegCancelByDay={weeklyRegCancelByDay}
+          weeklyRegCancelByDay={regCancelChartRows}
+          regCancelGranularity={regCancelGranularity}
+          onRegCancelGranularityChange={setRegCancelGranularity}
+          regCancelMonthOffset={regCancelMonthOffset}
+          onRegCancelMonthOffsetChange={setRegCancelMonthOffset}
+          regCancelYearOffset={regCancelYearOffset}
+          onRegCancelYearOffsetChange={setRegCancelYearOffset}
+          chartRangeSubtitle={regCancelChartRangeSubtitle}
           isWeeklyStatsCollapsed={isWeeklyStatsCollapsed}
           onToggleStatsCollapsed={() => setIsWeeklyStatsCollapsed(!isWeeklyStatsCollapsed)}
-          groupedReservations={groupedReservations}
+          weekHeaderSummary={statisticsWeekHeaderSummary}
           formatWeekRange={formatWeekRange}
         />
+      )}
+
+      {groupByDate && (
+        <div className="mb-4 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900">{t('stats.cardsListSectionTitle')}</h3>
+            <p className="text-xs text-gray-600 tabular-nums">{formatWeekRange(cardsWeekPage).display}</p>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-1 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setCardsWeekPage((p) => p - 1)}
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              onClick={() => setCardsWeekPage(0)}
+              className={`rounded px-2 py-1 text-xs font-medium ${
+                cardsWeekPage === 0
+                  ? 'border border-blue-600 bg-blue-600 text-white'
+                  : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              {t('stats.cardsWeekNavCurrent')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCardsWeekPage((p) => p + 1)}
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100"
+            >
+              →
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ?? ??? */}
@@ -3157,6 +3650,21 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                       })()
                     : null
 
+                const cancellationStatsForHeader =
+                  cardLayout === 'simple'
+                    ? simpleCardStatusTransitionLoading
+                      ? ({ mode: 'audit-loading' as const } as const)
+                      : ({
+                          mode: 'audit' as const,
+                          reservations: dayReservations.filter((r) => {
+                            const st = (r.status || '').toLowerCase()
+                            if (st !== 'cancelled' && st !== 'canceled' && st !== 'deleted') return false
+                            const tr = simpleCardStatusTransitionMap[`${r.id}|${date}`]
+                            return isIntoCancelledLikeTransition(tr)
+                          }),
+                        } as const)
+                    : ({ mode: 'default' as const } as const)
+
                 return (
                   <div key={date} className="space-y-4">
                     <DateGroupHeader
@@ -3167,6 +3675,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                       customers={(customers as Array<{ id: string; name?: string }>) || []}
                       products={(products as Array<{ id: string; name: string }>) || []}
                       channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+                      cancellationStats={cancellationStatsForHeader}
                     />
 
                     {cardLayout === 'simple' ? (
@@ -3744,6 +4253,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           tourDate={emailPreviewData.tourDate}
           productName={emailPreviewData.productName || ''}
           channelRN={emailPreviewData.channelRN}
+          productCode={emailPreviewData.productCode}
+          productTags={emailPreviewData.productTags}
           onSend={handleSendEmailFromPreview}
         />
       )}

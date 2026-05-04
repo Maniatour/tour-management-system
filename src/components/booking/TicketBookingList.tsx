@@ -5,6 +5,11 @@ import { createPortal } from 'react-dom';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/contexts/AuthContext';
 import { isSuperAdminActor } from '@/lib/superAdmin';
+import {
+  filterTicketBookingsExcludedFromMainUi,
+  canRequestTicketBookingSoftDelete,
+} from '@/lib/ticketBookingSoftDelete';
+import TicketBookingDeletionReviewModal from '@/components/booking/TicketBookingDeletionReviewModal';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import TicketBookingBulkAddModal from './TicketBookingBulkAddModal';
@@ -31,6 +36,7 @@ import {
   Paperclip,
   ImageOff,
   Trash2,
+  Archive,
   FileUp,
   AlertTriangle,
   PencilLine,
@@ -291,6 +297,8 @@ interface TicketBooking {
       name_en?: string;
     };
   };
+  deletion_requested_at?: string | null;
+  deletion_requested_by?: string | null;
 }
 
 function bookingCheckInYmd(booking: TicketBooking): string {
@@ -711,6 +719,10 @@ export default function TicketBookingList() {
     () => isSuperAdminActor(user?.email, userPosition),
     [user?.email, userPosition]
   );
+  const canRequestTicketBookingSoftDeleteUi = useMemo(
+    () => canRequestTicketBookingSoftDelete(userPosition),
+    [userPosition]
+  );
   const t = useTranslations('booking.calendar');
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis');
   const tTbActUi = useTranslations('booking.calendar.ticketBookingActions');
@@ -721,6 +733,7 @@ export default function TicketBookingList() {
   const tableAxesUndoStackRef = useRef<{ bookingId: string; patch: TicketBookingAxisPatch }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [deletionReviewOpen, setDeletionReviewOpen] = useState(false);
   const [showBulkAddModal, setShowBulkAddModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<TicketBooking | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1060,6 +1073,10 @@ export default function TicketBookingList() {
           seen.add(b.id)
           return true
         })
+      }
+
+      if (bookingsData?.length) {
+        bookingsData = filterTicketBookingsExcludedFromMainUi(bookingsData)
       }
 
       // supplier_ticket_purchases — 배치를 묶어 병렬 조회
@@ -1715,6 +1732,31 @@ export default function TicketBookingList() {
     } catch (error) {
       console.error('입장권 부킹 삭제 오류:', error);
       alert('삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleRequestSoftDelete = async (id: string) => {
+    const email = user?.email || '';
+    try {
+      const { error } = await supabase
+        .from('ticket_bookings')
+        .update({
+          deletion_requested_at: new Date().toISOString(),
+          deletion_requested_by: email || null,
+        })
+        .eq('id', id);
+      if (error) throw error;
+      alert(
+        locale === 'ko'
+          ? '삭제 요청되었습니다. 목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.'
+          : 'Deletion requested. It is hidden from the list until a super admin permanently deletes it.'
+      );
+      setBookings((prev) => prev.filter((b) => b.id !== id));
+      setShowForm(false);
+      setEditingBooking(null);
+    } catch (error) {
+      console.error('입장권 삭제 요청 오류:', error);
+      alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Failed to request deletion.');
     }
   };
 
@@ -3303,6 +3345,38 @@ export default function TicketBookingList() {
           >
             히스토리
           </button>
+          {isModalForm && canRequestTicketBookingSoftDeleteUi ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (
+                  confirm(
+                    locale === 'ko'
+                      ? '삭제를 요청하시겠습니까? (목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.)'
+                      : 'Request deletion? It will be hidden until a super admin deletes it.'
+                  )
+                ) {
+                  void handleRequestSoftDelete(booking.id);
+                }
+              }}
+              className="px-2 py-1 bg-amber-600 text-white text-xs rounded-lg hover:bg-amber-700"
+            >
+              {locale === 'ko' ? '삭제' : 'Delete'}
+            </button>
+          ) : null}
+          {isModalForm && canSuperDeleteTicketBooking ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleDelete(booking.id);
+              }}
+              className="px-2 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700"
+            >
+              {locale === 'ko' ? '삭제' : 'Delete'}
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -3893,6 +3967,28 @@ export default function TicketBookingList() {
         >
           히스토리
         </button>
+        {canRequestTicketBookingSoftDeleteUi ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (
+                confirm(
+                  locale === 'ko'
+                    ? '삭제를 요청하시겠습니까? (목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.)'
+                    : 'Request deletion? It will be hidden until a super admin deletes it.'
+                )
+              ) {
+                void handleRequestSoftDelete(booking.id);
+              }
+            }}
+            className="px-1.5 py-0.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 transition-colors relative z-20"
+            title={locale === 'ko' ? '삭제 (목록에서 숨김)' : 'Delete (hide from list)'}
+          >
+            {locale === 'ko' ? '삭제' : 'Delete'}
+          </button>
+        ) : null}
         {canSuperDeleteTicketBooking ? (
           <button
             type="button"
@@ -4011,6 +4107,16 @@ export default function TicketBookingList() {
           >
             <ListPlus size={16} />
             <span>{t('bulkAddBookings')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeletionReviewOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 text-sm font-medium transition-colors flex-shrink-0"
+            title={t('ticketDeletedBookingsViewTitle')}
+          >
+            <Archive size={16} />
+            <span className="hidden sm:inline">{t('ticketDeletedBookingsView')}</span>
+            <span className="sm:hidden">{locale === 'ko' ? '삭제됨' : 'Hidden'}</span>
           </button>
           <button
             onClick={() => {
@@ -4977,6 +5083,25 @@ export default function TicketBookingList() {
                       >
                         히스토리
                       </button>
+                      {canRequestTicketBookingSoftDeleteUi ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                locale === 'ko'
+                                  ? '삭제를 요청하시겠습니까? (목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.)'
+                                  : 'Request deletion? It will be hidden until a super admin deletes it.'
+                              )
+                            ) {
+                              void handleRequestSoftDelete(booking.id);
+                            }
+                          }}
+                          className="flex-1 bg-amber-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-amber-700 text-xs sm:text-sm font-medium transition-colors"
+                        >
+                          {locale === 'ko' ? '삭제' : 'Delete'}
+                        </button>
+                      ) : null}
                       {canSuperDeleteTicketBooking ? (
                         <button
                           type="button"
@@ -5134,6 +5259,8 @@ export default function TicketBookingList() {
                   setEditingBooking(null);
                 }}
                 isSuper={canSuperDeleteTicketBooking}
+                canRequestSoftDelete={canRequestTicketBookingSoftDeleteUi}
+                onRequestDelete={handleRequestSoftDelete}
                 onDelete={(id) => {
                   handleDelete(id);
                   setShowForm(false);
@@ -5156,6 +5283,21 @@ export default function TicketBookingList() {
           }}
         />
       )}
+
+      <TicketBookingDeletionReviewModal
+        open={deletionReviewOpen}
+        onOpenChange={setDeletionReviewOpen}
+        allowBulkPermanentDelete={canSuperDeleteTicketBooking}
+        dialogTitle={t('ticketDeletedBookingsViewTitle')}
+        dialogDescription={
+          canSuperDeleteTicketBooking
+            ? t('ticketDeletedBookingsViewDescSuper')
+            : t('ticketDeletedBookingsViewDescReadOnly')
+        }
+        onAfterBulkDelete={() => {
+          void fetchBookings();
+        }}
+      />
 
       <TicketBookingsNeedCheckModal
         open={showNeedCheckModal}
@@ -5186,7 +5328,8 @@ export default function TicketBookingList() {
           setSelectedBookingId(id);
           setShowHistory(true);
         }}
-        onDelete={handleDelete}
+        {...(canRequestTicketBookingSoftDeleteUi ? { onRequestSoftDelete: handleRequestSoftDelete } : {})}
+        {...(canSuperDeleteTicketBooking ? { onHardDelete: handleDelete } : {})}
         onActionApplied={() => {
           void fetchBookings();
         }}

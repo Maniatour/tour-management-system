@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { supabase } from '@/lib/supabase'
-import {
-  BUILTIN_RESIDENT_INQUIRY_EMAIL_TEMPLATES,
-  substituteResidentInquiryEmailTemplate,
-} from '@/lib/residentInquiryEmailHtml'
+import { getBuiltinResidentInquiryEmailTemplate, substituteResidentInquiryEmailTemplate } from '@/lib/residentInquiryEmailHtml'
 import { fetchResidentInquiryEmailTemplateFromDb } from '@/lib/residentInquiryEmailTemplateDb'
+import {
+  residentInquiryEmailTourKindFromProduct,
+  type ResidentInquiryEmailTourKind,
+} from '@/lib/residentInquiryTourKind'
 import { mintResidentCheckTokenForReservation } from '@/lib/mintResidentCheckToken'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 
@@ -70,10 +71,11 @@ export async function POST(request: NextRequest) {
     }
 
     let productName = ''
+    let emailTourKind: ResidentInquiryEmailTourKind = 'day_tour'
     if (row.product_id) {
       const { data: product } = await supabase
         .from('products')
-        .select('name, name_ko, name_en, customer_name_ko, customer_name_en')
+        .select('name, name_ko, name_en, customer_name_ko, customer_name_en, product_code, tags')
         .eq('id', row.product_id)
         .maybeSingle()
       const p = product as {
@@ -82,12 +84,15 @@ export async function POST(request: NextRequest) {
         name_en?: string | null
         customer_name_ko?: string | null
         customer_name_en?: string | null
+        product_code?: string | null
+        tags?: string[] | null
       } | null
       if (p) {
         const en = resolveReservationEmailIsEnglish(cust.language, localeParam)
         productName = en
           ? (p.customer_name_en || p.name_en || p.name || '').trim()
           : (p.customer_name_ko || p.name_ko || p.name || '').trim()
+        emailTourKind = residentInquiryEmailTourKindFromProduct(p.product_code, p.tags)
       }
     }
 
@@ -100,8 +105,8 @@ export async function POST(request: NextRequest) {
     })
     const residentCheckAbsoluteUrl = minted?.absoluteUrl?.trim() || ''
 
-    const stored = await fetchResidentInquiryEmailTemplateFromDb(emailLocale)
-    const builtin = BUILTIN_RESIDENT_INQUIRY_EMAIL_TEMPLATES[emailLocale]
+    const stored = await fetchResidentInquiryEmailTemplateFromDb(emailLocale, emailTourKind)
+    const builtin = getBuiltinResidentInquiryEmailTemplate(emailLocale, emailTourKind)
     const subjectTpl = stored?.subject_template ?? builtin.subject
     const htmlTpl = stored?.html_template ?? builtin.html
 

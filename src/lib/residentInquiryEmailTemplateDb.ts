@@ -1,7 +1,9 @@
 import { supabase } from '@/lib/supabase'
+import type { ResidentInquiryEmailTourKind } from '@/lib/residentInquiryTourKind'
 
 export type ResidentInquiryEmailTemplateRow = {
   locale: 'ko' | 'en'
+  tour_kind: ResidentInquiryEmailTourKind
   subject_template: string
   html_template: string
   updated_at: string
@@ -9,12 +11,14 @@ export type ResidentInquiryEmailTemplateRow = {
 }
 
 export async function fetchResidentInquiryEmailTemplateFromDb(
-  locale: 'ko' | 'en'
+  locale: 'ko' | 'en',
+  tourKind: ResidentInquiryEmailTourKind = 'day_tour'
 ): Promise<{ subject_template: string; html_template: string } | null> {
   const { data, error } = await supabase
     .from('resident_inquiry_email_templates')
     .select('subject_template,html_template')
     .eq('locale', locale)
+    .eq('tour_kind', tourKind)
     .maybeSingle()
 
   if (error) {

@@ -15,6 +15,11 @@ import TicketBookingBulkAddModal from '@/components/booking/TicketBookingBulkAdd
 import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
 import TourWeather from '@/components/TourWeather'
 import { useAuth } from '@/contexts/AuthContext'
+import { isSuperAdminActor } from '@/lib/superAdmin'
+import {
+  filterTicketBookingsExcludedFromMainUi,
+  canRequestTicketBookingSoftDelete,
+} from '@/lib/ticketBookingSoftDelete'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { SkeletonCard, SkeletonText } from '@/components/tour/TourUIComponents'
 import { TeamAndVehicleAssignment } from '@/components/tour/TeamAndVehicleAssignment'
@@ -121,7 +126,8 @@ export default function TourDetailPage() {
   const t = useTranslations('tours')
   
   const { hasPermission, loading, userPosition, authUser } = useAuth()
-  const isSuper = userPosition === 'super' || (authUser?.email && ['info@maniatour.com', 'wooyong.shim09@gmail.com'].includes(authUser.email.toLowerCase().trim()))
+  const isSuper = isSuperAdminActor(authUser?.email, userPosition)
+  const canRequestTicketBookingSoftDeleteUi = canRequestTicketBookingSoftDelete(userPosition)
   const { openChat } = useFloatingChat()
 
   // 커스텀 훅으로 데이터와 상태 관리
@@ -526,7 +532,7 @@ export default function TourDetailPage() {
       if (ticketError) {
         console.error('티켓 부킹 로드 오류:', ticketError)
       } else {
-        setTicketBookings(ticketBookingsData || [])
+        setTicketBookings(filterTicketBookingsExcludedFromMainUi(ticketBookingsData || []))
         console.log('티켓 부킹 로드됨:', ticketBookingsData?.length || 0, '건')
       }
 
@@ -2484,6 +2490,7 @@ export default function TourDetailPage() {
               onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTicketBooking, 'ticket')}
               onCancel={handleCloseTicketBookingForm}
               isSuper={isSuper}
+              canRequestSoftDelete={canRequestTicketBookingSoftDeleteUi}
               onRequestDelete={handleRequestTicketBookingDelete}
               onDelete={isSuper ? handleActualTicketBookingDelete : undefined}
             />

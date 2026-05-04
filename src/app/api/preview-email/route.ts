@@ -327,8 +327,10 @@ export async function POST(request: NextRequest) {
 
     // 이메일 내용 생성
     const isDepartureConfirmation = type === 'voucher'
+    const includeGcSunriseEmailBlock =
+      (type === 'voucher' || type === 'both') && product && isGoblinGrandCanyonSunriseTour(product as any)
     let grandCanyonSunrisePickup: GenerateEmailContentOptions['grandCanyonSunrisePickup'] = null
-    if (isDepartureConfirmation && product && isGoblinGrandCanyonSunriseTour(product as any)) {
+    if (includeGcSunriseEmailBlock) {
       const tourYmd = String(reservationForEmail.tour_date ?? '').split('T')[0]
       if (/^\d{4}-\d{2}-\d{2}$/.test(tourYmd)) {
         let cachedSunrise: string | null = null

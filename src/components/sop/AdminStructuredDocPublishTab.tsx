@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import LightRichEditor from '@/components/LightRichEditor'
 import SopStructureEditor from '@/components/sop/SopStructureEditor'
 import SopPrintPreviewFrame from '@/components/sop/SopPrintPreviewFrame'
+import SopPrintPreviewFloatingPanel from '@/components/sop/SopPrintPreviewFloatingPanel'
 import type { Json } from '@/lib/database.types'
 import {
   emptySopDocument,
@@ -17,8 +17,11 @@ import {
   sopDocumentToJson,
   prefillSortOrders,
   primaryDocumentTitle,
+  mergeLatestSectionSnapshotsIntoDoc,
+  parseSopSectionJson,
   type SopDocument,
   type SopEditLocale,
+  type SopSection,
 } from '@/types/sopStructure'
 
 export type AdminStructuredDocKind = 'sop' | 'employee_contract'
@@ -65,6 +68,11 @@ export default function AdminStructuredDocPublishTab({
   const [sopEditLang, setSopEditLang] = useState<SopEditLocale>('ko')
   const defaultDoc = kind === 'sop' ? defaultEditorSopDocument : defaultEditorContractDocument
   const [structureDoc, setStructureDoc] = useState<SopDocument>(() => defaultDoc())
+  const [editorBootstrapped, setEditorBootstrapped] = useState(false)
+  const [sectionVersionMeta, setSectionVersionMeta] = useState<
+    Record<string, { revision: number; savedAt: string }>
+  >({})
+  const [savingSectionId, setSavingSectionId] = useState<string | null>(null)
   const [pasteRaw, setPasteRaw] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [publishMsg, setPublishMsg] = useState<string | null>(null)
@@ -73,49 +81,13 @@ export default function AdminStructuredDocPublishTab({
   const [serverDraftUpdatedAt, setServerDraftUpdatedAt] = useState<string | null>(null)
   const [latest, setLatest] = useState<VersionRow | null>(null)
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false)
-  const previewLsKey = kind === 'sop' ? 'admin-sop-preview-width-px' : 'admin-contract-preview-width-px'
-  const [previewWidthPx, setPreviewWidthPx] = useState(480)
-  const publishSplitRef = useRef<HTMLDivElement | null>(null)
-  const previewResizeRef = useRef<{ startX: number; startW: number } | null>(null)
-  const previewWidthDuringDragRef = useRef(480)
+
+  const floatingPreviewStorageKey = useMemo(
+    () => (kind === 'sop' ? 'admin-sop-print-floating-rect' : 'admin-contract-print-floating-rect'),
+    [kind]
+  )
 
   const publishUrl = kind === 'sop' ? '/api/sop/publish' : '/api/employee-contract/publish'
-
-  const clampPreviewWidth = useCallback((px: number) => {
-    const minPreview = 280
-    const minEditor = 300
-    const maxPreview = 1400
-    const el = publishSplitRef.current
-    const cw = el?.offsetWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1200)
-    const capByContainer = cw - minEditor - 28
-    return Math.round(Math.min(maxPreview, Math.max(minPreview, Math.min(capByContainer, px))))
-  }, [])
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(previewLsKey)
-      if (raw) {
-        const n = parseInt(raw, 10)
-        if (!Number.isNaN(n)) setPreviewWidthPx(clampPreviewWidth(n))
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [clampPreviewWidth, previewLsKey])
-
-  useEffect(() => {
-    previewWidthDuringDragRef.current = previewWidthPx
-  }, [previewWidthPx])
-
-  useEffect(() => {
-    const onResize = () => setPreviewWidthPx((w) => clampPreviewWidth(w))
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [clampPreviewWidth])
-
-  useEffect(() => {
-    if (printPreviewOpen) setPreviewWidthPx((w) => clampPreviewWidth(w))
-  }, [printPreviewOpen, clampPreviewWidth])
 
   const refreshLatest = useCallback(async () => {
     const table = kind === 'sop' ? 'company_sop_versions' : 'company_employee_contract_versions'
@@ -151,53 +123,224 @@ export default function AdminStructuredDocPublishTab({
     void refreshServerDraftMeta()
   }, [canManage, refreshServerDraftMeta])
 
-  const onPreviewResizeMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    previewResizeRef.current = { startX: e.clientX, startW: previewWidthDuringDragRef.current }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
+  const refreshSectionSnapshots = useCallback(async (): Promise<Map<string, SopSection>> => {
+    const m = new Map<string, SopSection>()
+    const meta: Record<string, { revision: number; savedAt: string }> = {}
 
-    const onMove = (ev: MouseEvent) => {
-      const d = previewResizeRef.current
-      if (!d) return
-      const dx = ev.clientX - d.startX
-      const nw = clampPreviewWidth(d.startW - dx)
-      previewWidthDuringDragRef.current = nw
-      setPreviewWidthPx(nw)
-    }
-    const onUp = () => {
-      previewResizeRef.current = null
-      document.body.style.removeProperty('cursor')
-      document.body.style.removeProperty('user-select')
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      try {
-        localStorage.setItem(previewLsKey, String(previewWidthDuringDragRef.current))
-      } catch {
-        /* ignore */
+    const applyRows = (
+      rows: Array<{
+        section_id: string
+        revision: number
+        created_at: string
+        section_json: Json
+      }>
+    ) => {
+      for (const row of rows) {
+        meta[row.section_id] = { revision: row.revision, savedAt: row.created_at }
+        const sec = parseSopSectionJson(row.section_json)
+        if (sec) m.set(row.section_id, sec)
       }
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
 
-  const loadLatestIntoEditor = () => {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'company_structured_doc_section_versions_latest',
+      { p_doc_kind: kind }
+    )
+
+    if (!rpcError && Array.isArray(rpcData)) {
+      applyRows(rpcData)
+      setSectionVersionMeta(meta)
+      return m
+    }
+
+    if (rpcError) {
+      console.warn(
+        'company_structured_doc_section_versions_latest:',
+        rpcError.message,
+        '— 테이블 직접 조회로 대체합니다. Supabase에 마이그레이션 20260615120000_company_structured_doc_section_versions.sql 적용 시 RPC를 쓸 수 있습니다.'
+      )
+    }
+
+    const { data: allRows, error: tableError } = await supabase
+      .from('company_structured_doc_section_versions')
+      .select('section_id, revision, created_at, section_json')
+      .eq('doc_kind', kind)
+
+    if (tableError) {
+      console.warn('company_structured_doc_section_versions:', tableError.message)
+      setSectionVersionMeta({})
+      return new Map<string, SopSection>()
+    }
+
+    const bySection = new Map<
+      string,
+      { section_id: string; revision: number; created_at: string; section_json: Json }
+    >()
+    for (const row of allRows || []) {
+      const prev = bySection.get(row.section_id)
+      if (
+        !prev ||
+        row.revision > prev.revision ||
+        (row.revision === prev.revision && row.created_at > prev.created_at)
+      ) {
+        bySection.set(row.section_id, row)
+      }
+    }
+    applyRows(Array.from(bySection.values()))
+    setSectionVersionMeta(meta)
+    return m
+  }, [kind])
+
+  useEffect(() => {
+    if (!canManage) {
+      setEditorBootstrapped(true)
+      return
+    }
+    let cancelled = false
+    setEditorBootstrapped(false)
+    const def = kind === 'sop' ? defaultEditorSopDocument : defaultEditorContractDocument
+    void (async () => {
+      try {
+        const snapMap = await refreshSectionSnapshots()
+        if (cancelled) return
+        const draftTable = kind === 'sop' ? 'company_sop_draft' : 'company_employee_contract_draft'
+        const verTable = kind === 'sop' ? 'company_sop_versions' : 'company_employee_contract_versions'
+        const [{ data: draftRow }, { data: top }] = await Promise.all([
+          supabase.from(draftTable).select('body_structure, paste_raw, edit_locale').eq('singleton', 1).maybeSingle(),
+          supabase.from(verTable).select('id, title, body_md, body_structure').order('version_number', { ascending: false }).limit(1).maybeSingle(),
+        ])
+        if (cancelled) return
+
+        let baseDoc: SopDocument
+        const draftParsed = draftRow ? parseSopDocumentJson(draftRow.body_structure) : null
+        if (draftParsed) {
+          baseDoc = prefillSortOrders(draftParsed)
+          setPasteRaw(typeof draftRow?.paste_raw === 'string' ? draftRow.paste_raw : '')
+          if (draftRow?.edit_locale === 'en' || draftRow?.edit_locale === 'ko') {
+            setSopEditLang(draftRow.edit_locale)
+          }
+        } else {
+          const fromPub = top ? parseSopDocumentJson(top.body_structure) : null
+          if (fromPub) {
+            let doc = prefillSortOrders(fromPub)
+            if (!doc.title_ko?.trim() && !doc.title_en?.trim() && top?.title) {
+              doc = { ...doc, title_ko: top.title }
+            }
+            baseDoc = doc
+          } else if (top?.body_md?.trim()) {
+            baseDoc = parseSopPlainTextToDocument(top.body_md)
+          } else {
+            baseDoc = def()
+          }
+          setPasteRaw('')
+        }
+        baseDoc = mergeLatestSectionSnapshotsIntoDoc(baseDoc, snapMap)
+        setStructureDoc(baseDoc)
+        await refreshServerDraftMeta()
+      } catch (e) {
+        console.warn('admin structured doc bootstrap:', e)
+        if (!cancelled) {
+          const fallback = kind === 'sop' ? defaultEditorSopDocument : defaultEditorContractDocument
+          setStructureDoc(fallback())
+        }
+      } finally {
+        if (!cancelled) setEditorBootstrapped(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [canManage, kind, refreshSectionSnapshots, refreshServerDraftMeta])
+
+  const loadLatestIntoEditor = async () => {
     if (!latest) return
+    const snapMap = await refreshSectionSnapshots()
+    let next: SopDocument
     const parsed = parseSopDocumentJson(latest.body_structure)
     if (parsed) {
       if (!parsed.title_ko?.trim() && !parsed.title_en?.trim() && latest.title) {
-        setStructureDoc({ ...parsed, title_ko: latest.title })
+        next = { ...parsed, title_ko: latest.title }
       } else {
-        setStructureDoc(parsed)
+        next = parsed
       }
-      return
+    } else if (latest.body_md?.trim()) {
+      next = parseSopPlainTextToDocument(latest.body_md)
+    } else {
+      next = prefillSortOrders(emptySopDocument())
     }
-    if (latest.body_md?.trim()) {
-      setStructureDoc(parseSopPlainTextToDocument(latest.body_md))
-      return
+    setStructureDoc(mergeLatestSectionSnapshotsIntoDoc(prefillSortOrders(next), snapMap))
+  }
+
+  const fetchSectionVersionHistory = useCallback(
+    async (sectionId: string) => {
+      const { data, error } = await supabase
+        .from('company_structured_doc_section_versions')
+        .select('id, revision, created_at, section_json, created_by')
+        .eq('doc_kind', kind)
+        .eq('section_id', sectionId)
+        .order('revision', { ascending: false })
+      if (error) throw error
+      return (data || []) as Array<{
+        id: string
+        revision: number
+        created_at: string
+        section_json: Json
+        created_by: string | null
+      }>
+    },
+    [kind]
+  )
+
+  const restoreSectionFromHistory = useCallback(
+    async (sectionId: string, sectionJson: unknown) => {
+      const restored = parseSopSectionJson(sectionJson)
+      if (!restored) {
+        setPublishMsg(
+          uiLocaleEn ? 'Could not read that section snapshot.' : '해당 섹션 저장 형식을 읽을 수 없습니다.'
+        )
+        return
+      }
+      setStructureDoc((prev) =>
+        prefillSortOrders({
+          ...prev,
+          sections: prev.sections.map((s) => (s.id === sectionId ? { ...restored, id: sectionId } : s)),
+        })
+      )
+      await refreshSectionSnapshots()
+      setPublishMsg(
+        uiLocaleEn ? 'Section content replaced from the selected version.' : '선택한 버전으로 이 섹션 내용을 바꿨습니다.'
+      )
+    },
+    [refreshSectionSnapshots, uiLocaleEn]
+  )
+
+  const saveSectionVersion = async (section: SopSection) => {
+    if (!canManage || !authUser?.id) return
+    setSavingSectionId(section.id)
+    setPublishMsg(null)
+    try {
+      const { data, error } = await supabase
+        .from('company_structured_doc_section_versions')
+        .insert({
+          doc_kind: kind,
+          section_id: section.id,
+          section_json: section as unknown as Json,
+          created_by: authUser.id,
+        })
+        .select('revision, created_at')
+        .single()
+      if (error) throw error
+      await refreshSectionSnapshots()
+      setPublishMsg(
+        uiLocaleEn
+          ? `Section saved as version ${data?.revision ?? '—'}.`
+          : `섹션을 버전에 저장했습니다 (제${data?.revision ?? '—'}차).`
+      )
+    } catch (e) {
+      setPublishMsg(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSavingSectionId(null)
     }
-    setStructureDoc(prefillSortOrders(emptySopDocument()))
   }
 
   const saveDraft = async () => {
@@ -257,11 +400,14 @@ export default function AdminStructuredDocPublishTab({
         return
       }
       const parsed = parseSopDocumentJson(data.body_structure)
+      const snapMap = await refreshSectionSnapshots()
+      let nextDoc: SopDocument
       if (parsed) {
-        setStructureDoc(prefillSortOrders(parsed))
+        nextDoc = prefillSortOrders(parsed)
       } else {
-        setStructureDoc(defaultDoc())
+        nextDoc = defaultDoc()
       }
+      setStructureDoc(mergeLatestSectionSnapshotsIntoDoc(nextDoc, snapMap))
       setPasteRaw(typeof data.paste_raw === 'string' ? data.paste_raw : '')
       if (data.edit_locale === 'en' || data.edit_locale === 'ko') {
         setSopEditLang(data.edit_locale)
@@ -275,14 +421,19 @@ export default function AdminStructuredDocPublishTab({
     }
   }
 
-  const applyPasteAsStructure = () => {
+  const applyPasteAsStructure = async () => {
     if (!pasteRaw.trim()) {
       setPublishMsg(uiLocaleEn ? 'Paste text first.' : '먼저 텍스트를 붙여넣으세요.')
       return
     }
-    setStructureDoc(parseSopPlainTextToDocument(pasteRaw))
+    const snapMap = await refreshSectionSnapshots()
+    setStructureDoc(
+      mergeLatestSectionSnapshotsIntoDoc(parseSopPlainTextToDocument(pasteRaw), snapMap)
+    )
     setPublishMsg(
-      uiLocaleEn ? 'Structure imported. Review and switch KO/EN tabs.' : '구조로 반영했습니다. 한/영 탭에서 확인·수정하세요.'
+      uiLocaleEn
+        ? 'Structure imported. Korean and English columns are shown side by side below.'
+        : '구조로 반영했습니다. 아래에서 한국어·English 열을 나란히 확인할 수 있습니다.'
     )
   }
 
@@ -345,6 +496,7 @@ export default function AdminStructuredDocPublishTab({
         else await refreshServerDraftMeta()
       }
       await refreshLatest()
+      await refreshSectionSnapshots()
       await onPublished()
     } catch (e) {
       setPublishMsg(e instanceof Error ? e.message : String(e))
@@ -353,22 +505,18 @@ export default function AdminStructuredDocPublishTab({
     }
   }
 
-  const docTitleValue = sopEditLang === 'ko' ? structureDoc.title_ko : structureDoc.title_en
-  const setDocTitle = (v: string | undefined) => {
-    const t = v ?? ''
-    setStructureDoc((prev) =>
-      sopEditLang === 'ko' ? { ...prev, title_ko: t } : { ...prev, title_en: t }
-    )
-  }
-
-  const titlePlaceholder = useMemo(() => {
-    if (kind === 'sop') {
-      return sopEditLang === 'ko'
-        ? '투어 가이드 / 드라이버 표준 운영 절차 (SOP)'
-        : 'Tour Guide / Driver Standard Operating Procedures (SOP)'
-    }
-    return sopEditLang === 'ko' ? '직원 계약서' : 'Employment contract'
-  }, [kind, sopEditLang])
+  const titlePlaceholderKo = useMemo(
+    () =>
+      kind === 'sop' ? '투어 가이드 / 드라이버 표준 운영 절차 (SOP)' : '직원 계약서',
+    [kind]
+  )
+  const titlePlaceholderEn = useMemo(
+    () =>
+      kind === 'sop'
+        ? 'Tour Guide / Driver Standard Operating Procedures (SOP)'
+        : 'Employment contract',
+    [kind]
+  )
 
   const pastePlaceholder = useMemo(() => {
     return uiLocaleEn
@@ -380,51 +528,89 @@ export default function AdminStructuredDocPublishTab({
         : '전체 계약서 텍스트를 여기에 붙여넣기…'
   }, [kind, uiLocaleEn])
 
+  if (!editorBootstrapped) {
+    return (
+      <div className="p-6" role="tabpanel">
+        <p className="text-gray-600">{uiLocaleEn ? 'Loading saved content…' : '저장된 내용 불러오는 중…'}</p>
+      </div>
+    )
+  }
+
   return (
     <div className="p-4" role="tabpanel">
-      <div
-        ref={publishSplitRef}
-        className="flex w-full min-w-0 flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-0"
-        style={{ ['--sop-preview-w' as string]: `${previewWidthPx}px` } as CSSProperties}
-      >
-        <div className="min-w-0 flex-1 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-gray-700">{uiLocaleEn ? 'Edit language' : '편집 언어'}</span>
-            <Button
-              type="button"
-              size="sm"
-              variant={sopEditLang === 'ko' ? 'default' : 'outline'}
-              onClick={() => setSopEditLang('ko')}
-            >
-              한국어
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={sopEditLang === 'en' ? 'default' : 'outline'}
-              onClick={() => setSopEditLang('en')}
-            >
-              English
-            </Button>
-            <span className="text-xs text-gray-500 ml-2">
-              {uiLocaleEn ? `DB title: ${primaryDocumentTitle(structureDoc)}` : `DB 제목: ${primaryDocumentTitle(structureDoc)}`}
-            </span>
-          </div>
+      <div className="w-full min-w-0 max-w-none space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-gray-700">
+            {uiLocaleEn ? 'Print / PDF preview language' : '인쇄·PDF 미리보기 언어'}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant={sopEditLang === 'ko' ? 'default' : 'outline'}
+            onClick={() => setSopEditLang('ko')}
+          >
+            한국어
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={sopEditLang === 'en' ? 'default' : 'outline'}
+            onClick={() => setSopEditLang('en')}
+          >
+            English
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => setPrintPreviewOpen(true)}>
+            {uiLocaleEn ? 'Open print preview window' : '인쇄·PDF 미리보기 창'}
+          </Button>
+          <span className="text-xs text-gray-500">
+            {uiLocaleEn
+              ? `Checklist “split from notes” uses the language above. DB title (KO priority): ${primaryDocumentTitle(structureDoc)} · Preview opens in a movable window (no dim overlay).`
+              : `「추가 설명 → 체크」는 위 언어 기준입니다. DB 제목(한글 우선): ${primaryDocumentTitle(structureDoc)} · 미리보기는 화면 위 떠 있는 창으로 열립니다(배경 어둡게 가리지 않음).`}
+          </span>
+        </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              {uiLocaleEn ? 'Document title' : '문서 제목'} ({sopEditLang === 'ko' ? 'KO' : 'EN'})
-            </label>
-            <LightRichEditor
-              key={`${kind}-doc-title-${sopEditLang}`}
-              value={docTitleValue}
-              onChange={setDocTitle}
-              height={120}
-              enableImageUpload={false}
-              enableResize={false}
-              className="rounded-md border border-gray-200 overflow-hidden"
-              placeholder={titlePlaceholder}
-            />
+            <span className="block text-sm font-medium text-gray-800">
+              {uiLocaleEn ? 'Document title (both languages)' : '문서 제목 (한국어 / English 동시 표시)'}
+            </span>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border-2 border-sky-300 bg-sky-50/90 p-3 shadow-sm">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="rounded bg-sky-700 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
+                    한국어
+                  </span>
+                  <span className="text-xs text-sky-900/90">Korean</span>
+                </div>
+                <LightRichEditor
+                  key={`${kind}-doc-title-ko`}
+                  value={structureDoc.title_ko}
+                  onChange={(v) => setStructureDoc((prev) => ({ ...prev, title_ko: v ?? '' }))}
+                  height={120}
+                  enableImageUpload={false}
+                  enableResize={false}
+                  className="rounded-md border border-sky-200 bg-white overflow-hidden"
+                  placeholder={titlePlaceholderKo}
+                />
+              </div>
+              <div className="rounded-lg border-2 border-violet-300 bg-violet-50/90 p-3 shadow-sm">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="rounded bg-violet-700 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
+                    English
+                  </span>
+                  <span className="text-xs text-violet-900/90">영문</span>
+                </div>
+                <LightRichEditor
+                  key={`${kind}-doc-title-en`}
+                  value={structureDoc.title_en}
+                  onChange={(v) => setStructureDoc((prev) => ({ ...prev, title_en: v ?? '' }))}
+                  height={120}
+                  enableImageUpload={false}
+                  enableResize={false}
+                  className="rounded-md border border-violet-200 bg-white overflow-hidden"
+                  placeholder={titlePlaceholderEn}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 space-y-2">
@@ -433,8 +619,8 @@ export default function AdminStructuredDocPublishTab({
             </label>
             <p className="text-xs text-gray-600">
               {uiLocaleEn
-                ? 'Parsed text fills Korean fields only; add English in the EN tab.'
-                : '변환된 내용은 한국어 필드에만 들어갑니다. 영문은 English 탭에서 입력하세요.'}
+                ? 'Parsed text fills Korean fields only; add English in the violet “English” column in each block below.'
+                : '변환된 내용은 한국어(하늘색) 열에만 들어갑니다. 영문은 아래 각 블록의 보라색 English 열에 입력하세요.'}
             </p>
             <textarea
               className="w-full min-h-[100px] rounded border border-gray-200 bg-white px-2 py-2 text-xs font-mono"
@@ -443,11 +629,11 @@ export default function AdminStructuredDocPublishTab({
               placeholder={pastePlaceholder}
             />
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" size="sm" onClick={applyPasteAsStructure}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => void applyPasteAsStructure()}>
                 {uiLocaleEn ? 'Parse into structure' : '구조로 변환'}
               </Button>
               {latest ? (
-                <Button type="button" variant="outline" size="sm" onClick={loadLatestIntoEditor}>
+                <Button type="button" variant="outline" size="sm" onClick={() => void loadLatestIntoEditor()}>
                   {uiLocaleEn ? 'Load latest published version' : '현재 게시본 불러오기'}
                 </Button>
               ) : null}
@@ -460,6 +646,11 @@ export default function AdminStructuredDocPublishTab({
             uiLocaleEn={uiLocaleEn}
             editLocale={sopEditLang}
             disabled={publishing || savingDraft}
+            sectionVersionMeta={sectionVersionMeta}
+            savingSectionId={savingSectionId}
+            onSaveSectionVersion={saveSectionVersion}
+            onFetchSectionVersionHistory={fetchSectionVersionHistory}
+            onRestoreSectionFromHistory={restoreSectionFromHistory}
           />
 
           <div className="rounded-md border border-amber-200 bg-amber-50/90 p-3 space-y-2 text-sm text-amber-950">
@@ -493,94 +684,37 @@ export default function AdminStructuredDocPublishTab({
             {draftMsg ? <p className="text-xs text-amber-900/90">{draftMsg}</p> : null}
           </div>
 
-          <div className="flex flex-wrap gap-2 items-center pt-2 border-t border-gray-100">
-            <Button type="button" disabled={publishing || savingDraft} onClick={publish}>
-              {publishing ? (uiLocaleEn ? 'Publishing…' : '게시 중…') : uiLocaleEn ? 'Publish & notify' : '게시 및 알림'}
-            </Button>
-            {publishMsg ? <span className="text-sm text-gray-700">{publishMsg}</span> : null}
-          </div>
-        </div>
-
-        {printPreviewOpen ? (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={uiLocaleEn ? 'Drag to resize preview panel' : '드래그하여 미리보기 너비 조절'}
-            className="mx-1 hidden w-3 shrink-0 cursor-col-resize select-none self-stretch border-x border-transparent hover:border-slate-300 hover:bg-slate-100 lg:flex lg:items-stretch lg:justify-center"
-            onMouseDown={onPreviewResizeMouseDown}
-          >
-            <span className="h-full min-h-[12rem] w-px rounded-full bg-slate-300" />
-          </div>
-        ) : null}
-
-        <div className="flex min-w-0 shrink-0 flex-col lg:flex-row lg:items-stretch lg:min-w-0">
-          <div className="flex justify-end border-t border-gray-100 pt-3 lg:hidden">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setPrintPreviewOpen((o) => !o)}
-              aria-expanded={printPreviewOpen}
-            >
-              {printPreviewOpen
-                ? uiLocaleEn
-                  ? 'Hide print preview'
-                  : '인쇄 미리보기 숨기기'
-                : uiLocaleEn
-                  ? 'Show print preview'
-                  : '인쇄 미리보기'}
-            </Button>
-          </div>
-
-          {!printPreviewOpen ? (
-            <button
-              type="button"
-              onClick={() => setPrintPreviewOpen(true)}
-              className="mt-3 hidden min-h-[12rem] w-11 shrink-0 flex-col items-center justify-center gap-2 self-start rounded-l-md border border-gray-300 bg-slate-100 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-200 lg:ml-3 lg:mt-0 lg:flex lg:sticky lg:top-[calc(var(--header-height,4rem)+0.75rem)]"
-              title={uiLocaleEn ? 'Show print / PDF preview' : '인쇄·PDF 미리보기 펼치기'}
-            >
-              <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
-              <span className="max-h-[14rem] text-center leading-tight" style={{ writingMode: 'vertical-rl' }}>
-                {uiLocaleEn ? 'Preview' : '미리보기'}
-              </span>
-            </button>
-          ) : (
-            <aside className="mt-3 w-full min-w-0 space-y-2 border-gray-200 lg:mt-0 lg:max-w-[min(1400px,calc(100vw-2rem))] lg:min-w-[280px] lg:shrink-0 lg:border-l-0 lg:pl-2 lg:[width:var(--sop-preview-w)]">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-gray-800">
-                  {uiLocaleEn ? 'Print / PDF preview' : '인쇄·PDF 미리보기'}
-                </h3>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="hidden shrink-0 gap-1 lg:inline-flex"
-                  onClick={() => setPrintPreviewOpen(false)}
-                >
-                  <ChevronRight className="h-4 w-4" aria-hidden />
-                  {uiLocaleEn ? 'Hide' : '접기'}
-                </Button>
-              </div>
-              <div className="lg:sticky lg:top-[calc(var(--header-height,4rem)+0.75rem)]">
-                <SopPrintPreviewFrame
-                  doc={structureDoc}
-                  viewLang={sopEditLang}
-                  caption={
-                    uiLocaleEn
-                      ? 'Full A4 width (210mm). Scroll horizontally if the panel is narrow. Same language as edit (KO/EN) above.'
-                      : '본문은 A4 폭(210mm) 그대로입니다. 패널이 좁으면 가로 스크롤하세요. 위 편집 언어(한/영)와 동일합니다.'
-                  }
-                  signatureNote={
-                    uiLocaleEn
-                      ? 'Signature block: each signer’s name and signature appear here on the signed PDF.'
-                      : '서명란: 서명 완료된 PDF에는 직원별 이름·서명이 이 아래에 포함됩니다.'
-                  }
-                />
-              </div>
-            </aside>
-          )}
+        <div className="flex flex-wrap gap-2 items-center pt-2 border-t border-gray-100">
+          <Button type="button" disabled={publishing || savingDraft} onClick={publish}>
+            {publishing ? (uiLocaleEn ? 'Publishing…' : '게시 중…') : uiLocaleEn ? 'Publish & notify' : '게시 및 알림'}
+          </Button>
+          {publishMsg ? <span className="text-sm text-gray-700">{publishMsg}</span> : null}
         </div>
       </div>
+
+      <SopPrintPreviewFloatingPanel
+        open={printPreviewOpen}
+        onOpenChange={setPrintPreviewOpen}
+        uiLocaleEn={uiLocaleEn}
+        storageKey={floatingPreviewStorageKey}
+        title={uiLocaleEn ? 'Print / PDF preview' : '인쇄·PDF 미리보기'}
+      >
+        <SopPrintPreviewFrame
+          scrollMode="floating"
+          doc={structureDoc}
+          viewLang={sopEditLang}
+          caption={
+            uiLocaleEn
+              ? 'Full A4 width (210mm). Drag the window by its title bar; resize from the bottom-right corner. Esc closes.'
+              : '본문은 A4 폭(210mm)입니다. 제목 줄로 창을 옮기고, 오른쪽 아래 모서리로 크기를 조절하세요. Esc로 닫습니다.'
+          }
+          signatureNote={
+            uiLocaleEn
+              ? 'Signature block: each signer’s name and signature appear here on the signed PDF.'
+              : '서명란: 서명 완료된 PDF에는 직원별 이름·서명이 이 아래에 포함됩니다.'
+          }
+        />
+      </SopPrintPreviewFloatingPanel>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 // 투어 관련 데이터 페칭 함수들
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 
 // 부킹 데이터 페칭
 export const fetchBookings = async (tourId: string) => {
@@ -28,7 +29,7 @@ export const fetchBookings = async (tourId: string) => {
     }
 
     return {
-      ticketBookings: ticketBookingsData || [],
+      ticketBookings: filterTicketBookingsExcludedFromMainUi(ticketBookingsData || []),
       tourHotelBookings: tourHotelBookingsData || []
     }
   } catch (error) {

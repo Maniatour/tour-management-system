@@ -312,6 +312,11 @@ function normalizeCategory(o: Record<string, unknown>): SopCategory {
   }
 }
 
+export function parseSopSectionJson(raw: unknown): SopSection | null {
+  if (!raw || typeof raw !== 'object') return null
+  return normalizeSection(raw as Record<string, unknown>)
+}
+
 function normalizeSection(o: Record<string, unknown>): SopSection | null {
   if (!Array.isArray(o.categories)) return null
   const cats = (o.categories as unknown[]).map((c) =>
@@ -486,6 +491,24 @@ export function parseSopPlainTextToDocument(raw: string): SopDocument {
 
 export function sopDocumentToJson(doc: SopDocument): Record<string, unknown> {
   return JSON.parse(JSON.stringify(doc)) as Record<string, unknown>
+}
+
+/** 서버에 저장된 섹션 최신본을 현재 문서의 동일 section id에 덮어씁니다. */
+export function mergeLatestSectionSnapshotsIntoDoc(
+  doc: SopDocument,
+  snapshotsBySectionId: Map<string, SopSection>
+): SopDocument {
+  if (snapshotsBySectionId.size === 0) return prefillSortOrders(doc)
+  return prefillSortOrders({
+    ...doc,
+    sections: doc.sections.map((s) => {
+      const snap = snapshotsBySectionId.get(s.id)
+      if (!snap) return s
+      const merged = parseSopSectionJson(sopDocumentToJson(snap) as unknown)
+      if (!merged) return s
+      return { ...merged, id: s.id }
+    }),
+  })
 }
 
 /** 게시 가능한 최소 내용 */

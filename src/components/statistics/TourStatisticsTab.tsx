@@ -46,6 +46,10 @@ import TicketBookingReservationDetailModal, {
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import BookingHistory from '@/components/booking/BookingHistory'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  filterTicketBookingsExcludedFromMainUi,
+  canRequestTicketBookingSoftDelete,
+} from '@/lib/ticketBookingSoftDelete'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TicketBookingFormAny = TicketBookingForm as any
@@ -770,7 +774,7 @@ async function getTourFinancialStats(tourId: string) {
 
 export default function TourStatisticsTab({ dateRange, isSuper = false }: TourStatisticsTabProps) {
   const locale = useLocale()
-  const { authUser } = useAuth()
+  const { authUser, userPosition } = useAuth()
   const {
     reservations,
     products,
@@ -814,7 +818,8 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
         }
       }
 
-      const rows = (bookingsRes.data || []).map((b) =>
+      const visible = filterTicketBookingsExcludedFromMainUi(bookingsRes.data || [])
+      const rows = visible.map((b) =>
         ticketBookingRowToDetailModal(b as Record<string, unknown>, tourMeta)
       )
       setTicketBookingDetailRows(rows)
@@ -902,37 +907,46 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
     [locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows]
   )
 
-  const handleTicketBookingRowDelete = useCallback(
+  const handleTicketBookingRowSoftDelete = useCallback(
     async (id: string) => {
-      if (isSuper) {
-        if (!confirm(locale === 'ko' ? '정말로 이 부킹을 삭제하시겠습니까?' : 'Delete this booking?')) return
-        const { error } = await supabase.from('ticket_bookings').delete().eq('id', id)
-        if (error) {
-          alert(locale === 'ko' ? '삭제 중 오류가 발생했습니다.' : 'Delete failed.')
-          return
-        }
-      } else {
-        const email = authUser?.email || ''
-        const { error } = await supabase
-          .from('ticket_bookings')
-          .update({
-            deletion_requested_at: new Date().toISOString(),
-            deletion_requested_by: email || null,
-          })
-          .eq('id', id)
-        if (error) {
-          alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Request failed.')
-          return
-        }
-        alert(
-          locale === 'ko'
-            ? '삭제 요청되었습니다. Super가 확인 후 삭제합니다.'
-            : 'Deletion requested.'
-        )
+      const email = authUser?.email || ''
+      const { error } = await supabase
+        .from('ticket_bookings')
+        .update({
+          deletion_requested_at: new Date().toISOString(),
+          deletion_requested_by: email || null,
+        })
+        .eq('id', id)
+      if (error) {
+        alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Request failed.')
+        return
+      }
+      alert(
+        locale === 'ko'
+          ? '삭제 요청되었습니다. Super가 확인 후 삭제합니다.'
+          : 'Deletion requested.'
+      )
+      if (ticketBookingDetailTourId) await reloadTicketBookingDetailRows(ticketBookingDetailTourId)
+    },
+    [authUser?.email, locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows]
+  )
+
+  const handleTicketBookingRowHardDelete = useCallback(
+    async (id: string) => {
+      if (!confirm(locale === 'ko' ? '정말로 이 부킹을 삭제하시겠습니까?' : 'Delete this booking?')) return
+      const { error } = await supabase.from('ticket_bookings').delete().eq('id', id)
+      if (error) {
+        alert(locale === 'ko' ? '삭제 중 오류가 발생했습니다.' : 'Delete failed.')
+        return
       }
       if (ticketBookingDetailTourId) await reloadTicketBookingDetailRows(ticketBookingDetailTourId)
     },
-    [isSuper, authUser?.email, locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows]
+    [locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows]
+  )
+
+  const canSoftDeleteFromStats = useMemo(
+    () => !isSuper && canRequestTicketBookingSoftDelete(userPosition),
+    [isSuper, userPosition]
   )
   const [filters, setFilters] = useRoutePersistedState<TourStatsFiltersState>(
     'tour-filters',
@@ -2749,7 +2763,8 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           setTicketHistoryBookingId(id)
           setTicketHistoryOpen(true)
         }}
-        onDelete={handleTicketBookingRowDelete}
+        onRequestSoftDelete={canSoftDeleteFromStats ? handleTicketBookingRowSoftDelete : undefined}
+        onHardDelete={isSuper ? handleTicketBookingRowHardDelete : undefined}
         onActionApplied={() => {
           if (ticketBookingDetailTourId) void reloadTicketBookingDetailRows(ticketBookingDetailTourId)
         }}
@@ -2790,6 +2805,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 onSave={handleTicketFormSave}
                 onCancel={handleTicketFormCancel}
                 isSuper={isSuper}
+                canRequestSoftDelete={canRequestTicketBookingSoftDelete(userPosition) && !isSuper}
                 onRequestDelete={handleRequestTicketBookingDeleteFromForm}
                 onDelete={isSuper ? handleActualTicketBookingDeleteFromForm : undefined}
               />

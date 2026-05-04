@@ -5,15 +5,35 @@ import { useLocale, useTranslations } from 'next-intl'
 import Image from 'next/image'
 import {
   Bar,
-  BarChart,
   CartesianGrid,
+  ComposedChart,
+  LabelList,
   Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import { Plus, Minus, Equal } from 'lucide-react'
 import { getStatusLabel } from '@/utils/reservationUtils'
+
+/** 통계 패널 상단 — 선택 주(달력 일수) 등록·취소·순 및 일평균 */
+export type StatisticsWeekHeaderSummary = {
+  calendarDayCount: number
+  regBookings: number
+  regPeople: number
+  cancelBookings: number
+  cancelPeople: number
+  netBookings: number
+  netPeople: number
+  avgRegBookingsPerDay: number
+  avgRegPeoplePerDay: number
+  avgCancelBookingsPerDay: number
+  avgCancelPeoplePerDay: number
+  avgNetBookingsPerDay: number
+  avgNetPeoplePerDay: number
+}
 
 export type WeeklyRegCancelDayRow = {
   dateKey: string
@@ -21,6 +41,8 @@ export type WeeklyRegCancelDayRow = {
   registeredCount: number
   cancelledPeople: number
   cancelledCount: number
+  /** 요일(7일·월) 또는 연간 월별 일평균 등록 — 표시 구간에 포함된 연도만 반영 */
+  avgLineRegistered?: number
 }
 
 interface WeeklyStatsPanelProps {
@@ -40,11 +62,19 @@ interface WeeklyStatsPanelProps {
     totalReservations: number
     totalPeople: number
   }
-  /** 일별 등록·취소 인원 차트 (현재 주간 구간) */
+  /** 일별 등록·취소 인원 차트 (7일·월간·연간 구간은 부모에서 집계) */
   weeklyRegCancelByDay?: WeeklyRegCancelDayRow[]
+  regCancelGranularity?: 'week' | 'month' | 'year'
+  onRegCancelGranularityChange?: (g: 'week' | 'month' | 'year') => void
+  regCancelMonthOffset?: number
+  onRegCancelMonthOffsetChange?: (v: React.SetStateAction<number>) => void
+  regCancelYearOffset?: number
+  onRegCancelYearOffsetChange?: (v: React.SetStateAction<number>) => void
+  /** 차트에 적용 중인 날짜 구간(로컬) */
+  chartRangeSubtitle?: string
   isWeeklyStatsCollapsed: boolean
   onToggleStatsCollapsed: () => void
-  groupedReservations: Record<string, unknown[]>
+  weekHeaderSummary: StatisticsWeekHeaderSummary
   formatWeekRange: (weekOffset: number) => { display: string }
 }
 
@@ -55,25 +85,67 @@ export default function WeeklyStatsPanel({
   isInitialLoad,
   weeklyStats,
   weeklyRegCancelByDay = [],
+  regCancelGranularity = 'week',
+  onRegCancelGranularityChange,
+  regCancelMonthOffset = 0,
+  onRegCancelMonthOffsetChange,
+  regCancelYearOffset = 0,
+  onRegCancelYearOffsetChange,
+  chartRangeSubtitle = '',
   isWeeklyStatsCollapsed,
   onToggleStatsCollapsed,
-  groupedReservations,
+  weekHeaderSummary,
   formatWeekRange
 }: WeeklyStatsPanelProps) {
   const t = useTranslations('reservations')
   const locale = useLocale()
 
-  const regCancelChartData = useMemo(() => {
+  type RegCancelChartRow = WeeklyRegCancelDayRow & {
+    shortLabel: string
+    /** 7일 탭: 툴팁·평균선이 “월요일 평균”처럼 읽히도록 전체 요일명 */
+    weekdayLongForAvg?: string
+    /** 스택 하단(초록): 당일 취소 처리 인원(updated_at), 막대 높이는 등록 인원에 맞춤 */
+    cancelStackPeople: number
+    /** 스택 상단(회색): 등록 인원 − 스택에 쓴 취소(겹침 표시) */
+    remainingPeople: number
+    avgLineRegistered: number
+  }
+
+  const regCancelChartData = useMemo((): RegCancelChartRow[] => {
     const tag = locale === 'ko' ? 'ko-KR' : 'en-US'
-    return weeklyRegCancelByDay.map((row) => ({
-      ...row,
-      shortLabel: new Date(`${row.dateKey}T12:00:00`).toLocaleDateString(tag, {
-        weekday: 'short',
-        month: 'numeric',
-        day: 'numeric',
-      }),
-    }))
-  }, [weeklyRegCancelByDay, locale])
+    return weeklyRegCancelByDay.map((row) => {
+      const cancelStackPeople = Math.min(row.cancelledPeople, row.registeredPeople)
+      const remainingPeople = row.registeredPeople - cancelStackPeople
+      let shortLabel: string
+      let weekdayLongForAvg: string | undefined
+      if (/^\d{4}-\d{2}$/.test(row.dateKey)) {
+        const [y, m] = row.dateKey.split('-').map(Number)
+        shortLabel = new Date(y, m - 1, 1).toLocaleDateString(tag, { year: 'numeric', month: 'short' })
+      } else if (/^\d{4}$/.test(row.dateKey)) {
+        shortLabel = locale === 'ko' ? `${row.dateKey}년` : row.dateKey
+      } else if (regCancelGranularity === 'week' && /^\d{4}-\d{2}-\d{2}$/.test(row.dateKey)) {
+        const dt = new Date(`${row.dateKey}T12:00:00`)
+        weekdayLongForAvg = dt.toLocaleDateString(tag, { weekday: 'long' })
+        const wdShort = dt.toLocaleDateString(tag, { weekday: 'short' })
+        const md = dt.toLocaleDateString(tag, { month: 'numeric', day: 'numeric' })
+        shortLabel = locale === 'ko' ? `${wdShort} (${md})` : `${wdShort} ${md}`
+      } else {
+        shortLabel = new Date(`${row.dateKey}T12:00:00`).toLocaleDateString(tag, {
+          weekday: 'short',
+          month: 'numeric',
+          day: 'numeric',
+        })
+      }
+      return {
+        ...row,
+        weekdayLongForAvg,
+        cancelStackPeople,
+        remainingPeople,
+        shortLabel,
+        avgLineRegistered: row.avgLineRegistered ?? 0,
+      }
+    })
+  }, [weeklyRegCancelByDay, locale, regCancelGranularity])
 
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg">
@@ -82,31 +154,188 @@ export default function WeeklyStatsPanel({
         <div className="flex items-center justify-between">
           {/* 제목과 통계 정보 - 한 줄에 압축 */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center space-x-2 sm:space-x-4">
+            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-blue-800/90">
+              {t('stats.statsSectionLabel')}
+            </p>
+            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:gap-x-4">
               <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
-                {currentWeek === 0 ? '최근 7일' : 
-                 currentWeek < 0 ? `${Math.abs(currentWeek) * 7}일 전` : 
-                 `${currentWeek * 7}일 후`}
+                {currentWeek === 0
+                  ? t('stats.regCancelWeekHeadingRecent')
+                  : currentWeek < 0
+                    ? t('stats.regCancelWeekHeadingPast', { days: Math.abs(currentWeek) * 7 })
+                    : t('stats.regCancelWeekHeadingFuture', { days: currentWeek * 7 })}
               </h3>
               <div className="text-xs sm:text-sm text-blue-700 whitespace-nowrap">
                 {formatWeekRange(currentWeek).display}
               </div>
             </div>
             
-            {/* 통계 정보 - 한 줄에 압축 */}
-            <div className="mt-1 flex items-center space-x-3 text-xs">
-              <span className="text-blue-600">
-                <span className="font-semibold">{Object.keys(groupedReservations).length}일</span>
-              </span>
-              <span className="text-blue-600">
-                <span className="font-semibold">{Object.values(groupedReservations).flat().length}예약</span>
-              </span>
-              <span className="text-green-600">
-                <span className="font-semibold">{weeklyStats.totalPeople}{t('stats.people')}</span>
-              </span>
-              <span className="text-green-600">
-                <span className="font-semibold">{Math.round(weeklyStats.totalPeople / Math.max(Object.keys(groupedReservations).length, 1))}/일</span>
-              </span>
+            {/* 통계 주간: 등록(+)·취소(−)·순(=) 뱃지 + 일평균 */}
+            <div className="mt-1.5 space-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                <span className="tabular-nums font-semibold text-blue-800">
+                  {weekHeaderSummary.calendarDayCount}
+                  {t('stats.weekSummaryDays')}
+                </span>
+                <span
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/90 bg-emerald-50/95 pl-1 pr-2 py-0.5 text-emerald-950 shadow-sm ring-1 ring-emerald-100/80"
+                  title={t('stats.weekSummaryReg', {
+                    bookings: weekHeaderSummary.regBookings,
+                    people: weekHeaderSummary.regPeople,
+                  })}
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white" aria-hidden>
+                    <Plus className="h-3 w-3" strokeWidth={2.75} />
+                  </span>
+                  <span className="min-w-0 tabular-nums font-medium">
+                    {t('stats.bookingCountInline', { count: weekHeaderSummary.regBookings })}
+                    <span className="text-emerald-700/80"> · </span>
+                    {weekHeaderSummary.regPeople}
+                    {locale === 'ko' ? '' : ' '}
+                    {t('stats.people')}
+                  </span>
+                </span>
+                <span
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-rose-200/90 bg-rose-50/95 pl-1 pr-2 py-0.5 text-rose-950 shadow-sm ring-1 ring-rose-100/80"
+                  title={t('stats.weekSummaryCancel', {
+                    bookings: weekHeaderSummary.cancelBookings,
+                    people: weekHeaderSummary.cancelPeople,
+                  })}
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white" aria-hidden>
+                    <Minus className="h-3 w-3" strokeWidth={2.75} />
+                  </span>
+                  <span className="min-w-0 tabular-nums font-medium">
+                    {t('stats.bookingCountInline', { count: weekHeaderSummary.cancelBookings })}
+                    <span className="text-rose-700/80"> · </span>
+                    {weekHeaderSummary.cancelPeople}
+                    {locale === 'ko' ? '' : ' '}
+                    {t('stats.people')}
+                  </span>
+                </span>
+                <span
+                  className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
+                    weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
+                      ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
+                      : 'border-sky-200/90 bg-sky-50/95 text-sky-950 ring-sky-100/80'
+                  }`}
+                  title={t('stats.weekSummaryNet', {
+                    bookings: weekHeaderSummary.netBookings,
+                    people: weekHeaderSummary.netPeople,
+                  })}
+                >
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
+                      weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
+                        ? 'bg-amber-600'
+                        : 'bg-sky-600'
+                    }`}
+                    aria-hidden
+                  >
+                    <Equal className="h-3 w-3" strokeWidth={2.75} />
+                  </span>
+                  <span className="min-w-0">
+                    {t('stats.bookingCountInline', { count: weekHeaderSummary.netBookings })}
+                    <span
+                      className={
+                        weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
+                          ? 'text-amber-700/80'
+                          : 'text-sky-700/80'
+                      }
+                    >
+                      {' '}
+                      ·{' '}
+                    </span>
+                    {weekHeaderSummary.netPeople}
+                    {locale === 'ko' ? '' : ' '}
+                    {t('stats.people')}
+                  </span>
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-blue-200/45 pt-1.5">
+                <span className="shrink-0 tabular-nums font-semibold text-blue-800/95">
+                  {t('stats.weekSummaryAvgRowLabel', {
+                    days: weekHeaderSummary.calendarDayCount,
+                  })}
+                </span>
+                <span
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/90 bg-emerald-50/95 pl-1 pr-2 py-0.5 text-emerald-950 shadow-sm ring-1 ring-emerald-100/80"
+                  title={t('stats.weekSummaryAvgRegTooltip', {
+                    bookings: weekHeaderSummary.avgRegBookingsPerDay,
+                    people: weekHeaderSummary.avgRegPeoplePerDay,
+                  })}
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white" aria-hidden>
+                    <Plus className="h-3 w-3" strokeWidth={2.75} />
+                  </span>
+                  <span className="min-w-0 tabular-nums font-medium">
+                    {t('stats.bookingCountInline', { count: weekHeaderSummary.avgRegBookingsPerDay })}
+                    <span className="text-emerald-700/80"> · </span>
+                    {weekHeaderSummary.avgRegPeoplePerDay}
+                    {locale === 'ko' ? '' : ' '}
+                    {t('stats.people')}
+                  </span>
+                </span>
+                <span
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-rose-200/90 bg-rose-50/95 pl-1 pr-2 py-0.5 text-rose-950 shadow-sm ring-1 ring-rose-100/80"
+                  title={t('stats.weekSummaryAvgCancelTooltip', {
+                    bookings: weekHeaderSummary.avgCancelBookingsPerDay,
+                    people: weekHeaderSummary.avgCancelPeoplePerDay,
+                  })}
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white" aria-hidden>
+                    <Minus className="h-3 w-3" strokeWidth={2.75} />
+                  </span>
+                  <span className="min-w-0 tabular-nums font-medium">
+                    {t('stats.bookingCountInline', { count: weekHeaderSummary.avgCancelBookingsPerDay })}
+                    <span className="text-rose-700/80"> · </span>
+                    {weekHeaderSummary.avgCancelPeoplePerDay}
+                    {locale === 'ko' ? '' : ' '}
+                    {t('stats.people')}
+                  </span>
+                </span>
+                <span
+                  className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
+                    weekHeaderSummary.avgNetBookingsPerDay < 0 ||
+                    weekHeaderSummary.avgNetPeoplePerDay < 0
+                      ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
+                      : 'border-sky-200/90 bg-sky-50/95 text-sky-950 ring-sky-100/80'
+                  }`}
+                  title={t('stats.weekSummaryAvgNetTooltip', {
+                    bookings: weekHeaderSummary.avgNetBookingsPerDay,
+                    people: weekHeaderSummary.avgNetPeoplePerDay,
+                  })}
+                >
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
+                      weekHeaderSummary.avgNetBookingsPerDay < 0 ||
+                      weekHeaderSummary.avgNetPeoplePerDay < 0
+                        ? 'bg-amber-600'
+                        : 'bg-sky-600'
+                    }`}
+                    aria-hidden
+                  >
+                    <Equal className="h-3 w-3" strokeWidth={2.75} />
+                  </span>
+                  <span className="min-w-0">
+                    {t('stats.bookingCountInline', { count: weekHeaderSummary.avgNetBookingsPerDay })}
+                    <span
+                      className={
+                        weekHeaderSummary.avgNetBookingsPerDay < 0 ||
+                        weekHeaderSummary.avgNetPeoplePerDay < 0
+                          ? 'text-amber-700/80'
+                          : 'text-sky-700/80'
+                      }
+                    >
+                      {' '}
+                      ·{' '}
+                    </span>
+                    {weekHeaderSummary.avgNetPeoplePerDay}
+                    {locale === 'ko' ? '' : ' '}
+                    {t('stats.people')}
+                  </span>
+                </span>
+              </div>
             </div>
           </div>
           
@@ -147,7 +376,9 @@ export default function WeeklyStatsPanel({
             </button>
             
             {/* 아코디언 화살표 */}
-            {weeklyStats.totalReservations > 0 && (
+            {(weeklyStats.totalReservations > 0 ||
+              weekHeaderSummary.regBookings > 0 ||
+              weekHeaderSummary.cancelBookings > 0) && (
               <button
                 onClick={onToggleStatsCollapsed}
                 className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
@@ -167,7 +398,10 @@ export default function WeeklyStatsPanel({
       </div>
 
       {/* 주간 통계 아코디언 - 초컴팩트 모바일 최적화 */}
-      {weeklyStats.totalReservations > 0 && !isWeeklyStatsCollapsed && (
+      {(weeklyStats.totalReservations > 0 ||
+        weekHeaderSummary.regBookings > 0 ||
+        weekHeaderSummary.cancelBookings > 0) &&
+        !isWeeklyStatsCollapsed && (
         <div className="p-2 sm:p-4">
           {regCancelChartData.length > 0 && (
             <div className="mb-3 sm:mb-4 rounded-lg border border-blue-200 bg-white p-2 sm:p-3 shadow-sm">
@@ -177,60 +411,322 @@ export default function WeeklyStatsPanel({
                 </svg>
                 {t('stats.weeklyRegCancelChartTitle')}
               </h5>
-              <div className="h-[220px] w-full min-h-[200px]">
+              {onRegCancelGranularityChange && (
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  {(['week', 'month', 'year'] as const).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => onRegCancelGranularityChange(g)}
+                      className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                        regCancelGranularity === g
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'border border-blue-300 bg-white text-blue-700 hover:bg-blue-50'
+                      }`}
+                    >
+                      {g === 'week'
+                        ? t('stats.regCancelTabWeek')
+                        : g === 'month'
+                          ? t('stats.regCancelTabMonth')
+                          : t('stats.regCancelTabYear')}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {chartRangeSubtitle ? (
+                <p className="mb-2 text-[10px] text-gray-600 sm:text-xs">{chartRangeSubtitle}</p>
+              ) : null}
+              {regCancelGranularity === 'month' && onRegCancelMonthOffsetChange ? (
+                <div className="mb-2 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onRegCancelMonthOffsetChange((n) => n - 1)}
+                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRegCancelMonthOffsetChange(0)}
+                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    {t('pagination.reset')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRegCancelMonthOffsetChange((n) => n + 1)}
+                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    →
+                  </button>
+                </div>
+              ) : null}
+              {regCancelGranularity === 'year' && onRegCancelYearOffsetChange ? (
+                <div className="mb-2 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onRegCancelYearOffsetChange((n) => n - 1)}
+                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRegCancelYearOffsetChange(0)}
+                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    {t('pagination.reset')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRegCancelYearOffsetChange((n) => n + 1)}
+                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    →
+                  </button>
+                </div>
+              ) : null}
+              <div
+                className={`w-full min-h-[210px] ${regCancelGranularity === 'month' ? 'h-[300px]' : 'h-[240px]'}`}
+              >
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
+                  <ComposedChart
                     data={regCancelChartData}
-                    margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
-                    barCategoryGap="18%"
+                    margin={{
+                      top: 26,
+                      right: 8,
+                      left: 0,
+                      bottom: regCancelGranularity === 'month' ? 36 : 6,
+                    }}
+                    barCategoryGap={regCancelGranularity === 'year' ? '22%' : '18%'}
                   >
                     <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
                     <XAxis
                       dataKey="shortLabel"
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: regCancelGranularity === 'month' ? 8 : 10 }}
                       interval={0}
-                      height={48}
+                      angle={regCancelGranularity === 'month' ? -40 : 0}
+                      textAnchor={regCancelGranularity === 'month' ? 'end' : 'middle'}
+                      height={regCancelGranularity === 'month' ? 64 : 48}
                     />
                     <YAxis tick={{ fontSize: 10 }} width={36} allowDecimals={false} />
                     <Tooltip
                       content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
-                        const d = payload[0].payload as WeeklyRegCancelDayRow & { shortLabel: string }
+                        const d = payload[0].payload as RegCancelChartRow
+                        const tagHead = locale === 'ko' ? 'ko-KR' : 'en-US'
+                        let heading = d.shortLabel
+                        if (
+                          regCancelGranularity === 'week' &&
+                          d.weekdayLongForAvg &&
+                          /^\d{4}-\d{2}-\d{2}$/.test(d.dateKey)
+                        ) {
+                          heading = new Date(`${d.dateKey}T12:00:00`).toLocaleDateString(tagHead, {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                          })
+                        }
                         return (
                           <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs shadow-md">
-                            <p className="font-semibold text-gray-900 mb-1">{d.shortLabel}</p>
-                            <p className="text-blue-700">
+                            <p className="font-semibold text-gray-900 mb-1">{heading}</p>
+                            <p className="text-gray-900 font-medium">
                               {t('stats.weeklyChartTooltipReg', {
                                 count: d.registeredCount,
                                 people: d.registeredPeople,
                               })}
                             </p>
-                            <p className="text-rose-700">
+                            <p className="text-emerald-800">
                               {t('stats.weeklyChartTooltipCancel', {
                                 count: d.cancelledCount,
                                 people: d.cancelledPeople,
                               })}
                             </p>
+                            <p className="text-gray-600 mt-0.5">
+                              {t('stats.weeklyChartTooltipNet', {
+                                people: d.remainingPeople,
+                              })}
+                            </p>
+                            <p className="text-gray-800 mt-0.5 font-medium">
+                              {d.weekdayLongForAvg
+                                ? t('stats.weeklyChartTooltipAvgLineWeekday', {
+                                    weekday: d.weekdayLongForAvg,
+                                    people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
+                                  })
+                                : t('stats.weeklyChartTooltipAvgLine', {
+                                    people: Math.round((d.avgLineRegistered ?? 0) * 10) / 10,
+                                  })}
+                            </p>
                           </div>
                         )
                       }}
                     />
-                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} iconType="square" iconSize={8} />
+                    {/* 스택 하단: 당일 취소 처리(updated_at) — 초록 */}
                     <Bar
-                      dataKey="registeredPeople"
-                      name={t('stats.weeklyChartRegisteredPeople')}
-                      fill="#2563eb"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={44}
-                    />
-                    <Bar
-                      dataKey="cancelledPeople"
+                      stackId="regCancel"
+                      dataKey="cancelStackPeople"
                       name={t('stats.weeklyChartCancelledPeople')}
-                      fill="#e11d48"
+                      fill="#16a34a"
+                      radius={[0, 0, 4, 4]}
+                      maxBarSize={48}
+                    >
+                      <LabelList
+                        dataKey="cancelStackPeople"
+                        position="center"
+                        content={(props: {
+                          x?: string | number
+                          y?: string | number
+                          width?: string | number
+                          height?: string | number
+                          value?: string | number
+                          index?: number
+                        }) => {
+                          const idx = props.index ?? 0
+                          const row = regCancelChartData[idx]
+                          const v = Number(props.value ?? 0)
+                          const h = Number(props.height ?? 0)
+                          const x = Number(props.x ?? 0)
+                          const y = Number(props.y ?? 0)
+                          const w = Number(props.width ?? 0)
+                          const cx = x + w / 2
+                          const mid =
+                            v > 0 && h >= 16 ? (
+                              <text
+                                key="cancel-mid"
+                                x={cx}
+                                y={y + h / 2}
+                                dy="0.35em"
+                                textAnchor="middle"
+                                className="fill-gray-950 text-[10px] font-bold"
+                              >
+                                {v}
+                                {t('stats.people')}
+                              </text>
+                            ) : null
+                          /** 회색(등록−취소) 구간이 없을 때 총등록 라벨은 초록 막대 위에 표시 */
+                          const topWhenAllCancel =
+                            row &&
+                            row.remainingPeople === 0 &&
+                            row.registeredPeople > 0 ? (
+                              <text
+                                key="reg-top"
+                                x={cx}
+                                y={y - 6}
+                                textAnchor="middle"
+                                className="fill-gray-950 text-[11px] font-bold"
+                              >
+                                {row.registeredPeople}
+                                {t('stats.people')}
+                              </text>
+                            ) : null
+                          if (!mid && !topWhenAllCancel) return null
+                          return (
+                            <g>
+                              {topWhenAllCancel}
+                              {mid}
+                            </g>
+                          )
+                        }}
+                      />
+                    </Bar>
+                    {/* 스택 상단: 등록 − 취소 — 회색, 막대 전체 높이 = 등록 인원 */}
+                    <Bar
+                      stackId="regCancel"
+                      dataKey="remainingPeople"
+                      name={t('stats.weeklyChartNetPeople')}
+                      fill="#d4d4d8"
                       radius={[4, 4, 0, 0]}
-                      maxBarSize={44}
-                    />
-                  </BarChart>
+                      maxBarSize={48}
+                    >
+                      <LabelList
+                        dataKey="remainingPeople"
+                        content={(props: {
+                          x?: string | number
+                          y?: string | number
+                          width?: string | number
+                          height?: string | number
+                          value?: string | number
+                          index?: number
+                        }) => {
+                          const idx = props.index ?? 0
+                          const row = regCancelChartData[idx]
+                          const v = Number(props.value ?? 0)
+                          const h = Number(props.height ?? 0)
+                          const x = Number(props.x ?? 0)
+                          const y = Number(props.y ?? 0)
+                          const w = Number(props.width ?? 0)
+                          const total = row?.registeredPeople ?? 0
+                          const centerLabel =
+                            v > 0 && h >= 16 ? (
+                              <text
+                                key="mid"
+                                x={x + w / 2}
+                                y={y + h / 2}
+                                dy="0.35em"
+                                textAnchor="middle"
+                                className="fill-gray-950 text-[10px] font-bold"
+                              >
+                                {v}
+                                {t('stats.people')}
+                              </text>
+                            ) : null
+                          /** 회색 구간이 있을 때만 상단 총등록 (전부 취소인 날은 초록 막대에서 표시) */
+                          const topLabel =
+                            total > 0 && row && row.remainingPeople > 0 ? (
+                              <text
+                                key="top"
+                                x={x + w / 2}
+                                y={y - 6}
+                                textAnchor="middle"
+                                className="fill-gray-950 text-[11px] font-bold"
+                              >
+                                {total}
+                                {t('stats.people')}
+                              </text>
+                            ) : null
+                          if (!centerLabel && !topLabel) return null
+                          return (
+                            <g>
+                              {topLabel}
+                              {centerLabel}
+                            </g>
+                          )
+                        }}
+                      />
+                    </Bar>
+                    <Line
+                      type="linear"
+                      dataKey="avgLineRegistered"
+                      name={
+                        regCancelGranularity === 'week'
+                          ? t('stats.regCancelAvgLineRegisteredWeekday')
+                          : t('stats.regCancelAvgLineRegistered')
+                      }
+                      stroke="#1f2937"
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: '#1f2937' }}
+                      connectNulls
+                      isAnimationActive={false}
+                      legendType="plainline"
+                    >
+                      {regCancelGranularity === 'week' ? (
+                        <LabelList
+                          dataKey="avgLineRegistered"
+                          position="top"
+                          offset={6}
+                          className="fill-gray-700 text-[10px] font-medium"
+                          formatter={(v: number | string) => {
+                            const n = Number(v)
+                            if (!Number.isFinite(n) || n <= 0) return ''
+                            const r = Math.round(n * 10) / 10
+                            return Number.isInteger(r) ? String(r) : r.toFixed(1)
+                          }}
+                        />
+                      ) : null}
+                    </Line>
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </div>

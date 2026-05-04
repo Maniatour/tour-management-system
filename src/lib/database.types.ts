@@ -5836,6 +5836,7 @@ export type Database = {
           html_template: string
           locale: string
           subject_template: string
+          tour_kind: string
           updated_at: string
           updated_by: string | null
         }
@@ -5843,6 +5844,7 @@ export type Database = {
           html_template: string
           locale: string
           subject_template: string
+          tour_kind: string
           updated_at?: string
           updated_by?: string | null
         }
@@ -5850,6 +5852,7 @@ export type Database = {
           html_template?: string
           locale?: string
           subject_template?: string
+          tour_kind?: string
           updated_at?: string
           updated_by?: string | null
         }
@@ -9605,6 +9608,36 @@ export type Database = {
         }
         Relationships: []
       },
+      company_structured_doc_section_versions: {
+        Row: {
+          id: string
+          doc_kind: string
+          section_id: string
+          revision: number
+          section_json: Json
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          doc_kind: string
+          section_id: string
+          revision?: number
+          section_json: Json
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          doc_kind?: string
+          section_id?: string
+          revision?: number
+          section_json?: Json
+          created_at?: string
+          created_by?: string | null
+        }
+        Relationships: []
+      },
       sop_signatures: {
         Row: {
           id: string
@@ -10323,6 +10356,18 @@ export type Database = {
             }
             Returns: string
           }
+      company_structured_doc_section_versions_latest: {
+        Args: { p_doc_kind: string }
+        Returns: {
+          id: string
+          doc_kind: string
+          section_id: string
+          revision: number
+          section_json: Json
+          created_at: string
+          created_by: string | null
+        }[]
+      }
       copy_template_to_product: {
         Args: {
           p_is_required?: boolean

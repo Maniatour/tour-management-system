@@ -35,6 +35,7 @@ import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import { formatTimeWithAMPM, timeToHHmm } from '@/lib/utils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 import { toast } from 'sonner'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
@@ -520,7 +521,7 @@ export default function GuideTourDetailPage() {
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId);
-      setTicketBookings(ticketBookingsData || [])
+      setTicketBookings(filterTicketBookingsExcludedFromMainUi(ticketBookingsData || []))
 
       // 팀 멤버 정보 가져오기 (가이드와 어시스턴트 이름 표시용)
       const { data: teamData } = await supabase

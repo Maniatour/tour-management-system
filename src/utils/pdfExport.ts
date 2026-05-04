@@ -297,12 +297,12 @@ const DEFAULT_TO_LINES = [
 ]
 
 const DEFAULT_COMPANY = {
-  name: 'Las Vegas Mania',
-  address: '4525 Spring Mountain Rd #108, Las Vegas, Nevada 89102, United States',
+  name: 'LAS VEGAS MANIA TOUR',
+  address: '3351 S. Highland Dr #202 , Las Vegas, NV 89109 USA',
   license: '2002495.056-121',
   email: 'vegasmaniatour@gmail.com',
-  website: 'www.lasvegas-mania.com',
-  phone: '1-702-444-5531'
+  website: 'www.maniatour.com',
+  phone: '1-702-929-8025 / 1-702-444-5531',
 }
 
 const DEFAULT_PAYMENT = {
@@ -329,52 +329,82 @@ export function generateChannelInvoicePDF({ channelName, dateRange, items, compa
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   const margin = 14
+  const rightX = pageWidth - margin
   let y = margin
 
-  // Title
-  doc.setFontSize(18)
+  // — 레터헤드(영수증 모달과 동일 구조: 좌 주소 / 우 Lic·연락처) —
+  const yHeaderTop = y
   doc.setFont('helvetica', 'bold')
-  doc.text(`${channelName} Invoice`, pageWidth / 2, y, { align: 'center' })
-  y += 12
-
-  // From / To block
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setFont('helvetica', 'bold')
-  doc.text('From:', margin, y)
-  doc.setFont('helvetica', 'normal')
-  y += 5
+  doc.setFontSize(10)
   doc.text(company.name, margin, y)
+  y += 5
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  const addrLines = doc.splitTextToSize(company.address, pageWidth / 2 - margin - 4)
+  addrLines.forEach((ln: string) => {
+    doc.text(ln, margin, y)
+    y += 4
+  })
+  const yLeftBottom = y
+
+  let yr = yHeaderTop
+  doc.setFontSize(9)
+  doc.text(`Lic #: ${company.license}`, rightX, yr, { align: 'right' })
+  yr += 4
+  doc.text(company.email, rightX, yr, { align: 'right' })
+  yr += 4
+  doc.setTextColor(37, 99, 235)
+  doc.text(company.website, rightX, yr, { align: 'right' })
+  doc.setTextColor(0, 0, 0)
+  yr += 4
+  const phoneLines = doc.splitTextToSize(company.phone, pageWidth / 2 - margin - 4)
+  phoneLines.forEach((ln: string) => {
+    doc.text(ln, rightX, yr, { align: 'right' })
+    yr += 4
+  })
+  y = Math.max(yLeftBottom, yr) + 4
+  doc.setDrawColor(229, 231, 235)
+  doc.line(margin, y, pageWidth - margin, y)
+  y += 6
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('INVOICE', pageWidth / 2, y, { align: 'center' })
   y += 4
-  doc.text(company.address, margin, y)
-  y += 4
-  doc.text(`License No: ${company.license}`, margin, y)
-  y += 4
-  doc.text(company.email, margin, y)
-  y += 4
-  doc.text(company.website, margin, y)
-  y += 4
-  doc.text(company.phone, margin, y)
+  doc.setDrawColor(243, 244, 246)
+  doc.line(margin, y, pageWidth - margin, y)
   y += 8
 
-  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
   doc.text('To:', margin, y)
   doc.setFont('helvetica', 'normal')
   y += 5
   const toLines = toAddress ? toAddress.split('\n').filter(Boolean) : DEFAULT_TO_LINES
   toLines.forEach((line) => {
-    doc.text(line, margin, y)
-    y += 4
+    const wrapped = doc.splitTextToSize(line, pageWidth - 2 * margin)
+    wrapped.forEach((ln: string) => {
+      doc.text(ln, margin, y)
+      y += 4
+    })
   })
+  y += 4
+  doc.line(margin, y, pageWidth - margin, y)
+  y += 6
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  const periodStr = `${dateRange.start} – ${dateRange.end}`
+  doc.text(`Channel: ${channelName}`, margin, y)
+  doc.text(`Period: ${periodStr}`, rightX, y, { align: 'right' })
   y += 10
 
-  // Table header (purple background) — Reservation DATE, Tour Date만 (Tour Date (Actual) 제외)
+  // 테이블 헤더(영수증과 유사: 연한 회색 배경 + 짙은 글자)
   const colWidths = [26, 26, 30, 44, 34, 12, 14, 24, 20, 20]
   const headers = ['Reservation DATE', 'Tour Date', 'Booking #', 'DESCRIPTION', 'Guest Name', 'QUANTITY', 'COMMISION %', 'ORIGINAL PRICE', 'COMMISION', 'PRICE']
   let x = margin
-  doc.setFillColor(128, 0, 128) // purple
+  doc.setFillColor(243, 244, 246)
   doc.rect(margin, y - 4, pageWidth - 2 * margin, 7, 'F')
-  doc.setTextColor(255, 255, 255)
+  doc.setTextColor(55, 65, 81)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   headers.forEach((h, i) => {

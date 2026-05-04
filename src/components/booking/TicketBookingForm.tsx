@@ -124,6 +124,8 @@ interface TicketBookingFormProps {
   onDelete?: (id: string) => void;
   /** 사용자 삭제 요청 (실제 삭제는 하지 않음) */
   onRequestDelete?: (id: string) => void;
+  /** OP·매니저 등 삭제 요청 버튼 표시 (미설정 시 요청 버튼 숨김) */
+  canRequestSoftDelete?: boolean;
   /** Super 권한 여부 */
   isSuper?: boolean;
   tourId?: string;
@@ -137,6 +139,7 @@ export default function TicketBookingForm({
   onCancel,
   onDelete,
   onRequestDelete,
+  canRequestSoftDelete = false,
   isSuper,
   tourId,
   hideAxisActionPanel = false,
@@ -1739,7 +1742,7 @@ export default function TicketBookingForm({
                     {t('deleteActual')}
                   </button>
                 )}
-                {!isSuper && !booking.deletion_requested_at && onRequestDelete && (
+                {!isSuper && !booking.deletion_requested_at && onRequestDelete && canRequestSoftDelete && (
                   <button
                     type="button"
                     onClick={() => {

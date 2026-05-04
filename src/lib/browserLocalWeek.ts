@@ -76,3 +76,50 @@ export function formatBrowserLocalYmdRangeDisplay(startYmd: string, endYmd: stri
   const opts = { month: 'short' as const, day: 'numeric' as const }
   return `${a.toLocaleDateString(localeTag, opts)} - ${b.toLocaleDateString(localeTag, opts)}`
 }
+
+const ymdFromDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/**
+ * 달력 한 달(1일~말일). monthOffset 0 = 이번 달, -1 = 지난 달.
+ */
+export function browserLocalCalendarMonthWindow(monthOffset: number): BrowserLocalWeekRange {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const anchor = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1)
+  const startMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+  const lastDay = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
+  lastDay.setHours(23, 59, 59, 999)
+  startMonth.setHours(0, 0, 0, 0)
+  const startYmd = ymdFromDate(startMonth)
+  const endYmd = ymdFromDate(lastDay)
+  const rangeStartIso = new Date(
+    startMonth.getFullYear(),
+    startMonth.getMonth(),
+    startMonth.getDate(),
+    0,
+    0,
+    0,
+    0
+  ).toISOString()
+  const rangeEndIso = lastDay.toISOString()
+  return { startYmd, endYmd, rangeStartIso, rangeEndIso }
+}
+
+/**
+ * 달력 한 연도(1/1~12/31). yearOffset 0 = 올해, -1 = 작년.
+ */
+export function browserLocalCalendarYearWindow(yearOffset: number): BrowserLocalWeekRange {
+  const y = new Date().getFullYear() + yearOffset
+  const startYmd = `${y}-01-01`
+  const endYmd = `${y}-12-31`
+  const rangeStartIso = new Date(y, 0, 1, 0, 0, 0, 0).toISOString()
+  const rangeEndIso = new Date(y, 11, 31, 23, 59, 59, 999).toISOString()
+  return { startYmd, endYmd, rangeStartIso, rangeEndIso }
+}
+
+/** 해당 연도의 1~12월 키 `YYYY-MM` (시간순) */
+export function browserLocalCalendarYearMonthKeys(yearOffset: number): string[] {
+  const y = new Date().getFullYear() + yearOffset
+  return Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, '0')}`)
+}
