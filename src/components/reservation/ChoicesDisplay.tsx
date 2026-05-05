@@ -55,26 +55,19 @@ export const ChoicesDisplay = React.memo(function ChoicesDisplay({
       }
     }
   }>>(() => {
-    // 초기값을 캐시에서 가져오기
-    return choicesCacheRef.current.get(reservationId) || []
+    return choicesCacheRef.current.has(reservationId)
+      ? choicesCacheRef.current.get(reservationId) || []
+      : []
   })
-  const [loading, setLoading] = useState(() => {
-    // 캐시에 있으면 로딩 상태 false
-    return !choicesCacheRef.current.has(reservationId)
-  })
+  const [loading, setLoading] = useState(() => !choicesCacheRef.current.has(reservationId))
 
   useEffect(() => {
-    // 캐시에 이미 있으면 캐시에서 가져오기
     if (choicesCacheRef.current.has(reservationId)) {
-      const cachedChoices = choicesCacheRef.current.get(reservationId) || []
-      if (cachedChoices.length > 0) {
-        setSelectedChoices(cachedChoices)
-        setLoading(false)
-        return
-      }
+      setSelectedChoices(choicesCacheRef.current.get(reservationId) || [])
+      setLoading(false)
+      return
     }
 
-    // 캐시에 없으면 로드
     const loadChoices = async () => {
       try {
         const choices = await getSelectedChoicesFromNewSystem(reservationId)

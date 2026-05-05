@@ -12,6 +12,7 @@ import AdminStructuredDocPublishTab, {
   type StructuredDocDualCompliance,
   type StructuredDocVersionRow,
 } from '@/components/sop/AdminStructuredDocPublishTab'
+import CompanySopDispatchManagement from '@/components/sop/CompanySopDispatchManagement'
 
 type SopVersion = StructuredDocVersionRow
 
@@ -45,7 +46,9 @@ export default function AdminSopPage() {
   const [openingPdf, setOpeningPdf] = useState<string | null>(null)
   const [openingPdfBucket, setOpeningPdfBucket] = useState<StorageBucket>('sop-signatures')
 
-  const [sopAdminTab, setSopAdminTab] = useState<'edit' | 'employee-contract' | 'tour-checklists'>('edit')
+  const [sopAdminTab, setSopAdminTab] = useState<
+    'edit' | 'employee-contract' | 'tour-checklists' | 'dispatch'
+  >('edit')
 
   const staffOk =
     userRole === 'admin' || userRole === 'manager' || userRole === 'team_member'
@@ -251,6 +254,19 @@ export default function AdminSopPage() {
             >
               {uiLocaleEn ? 'Per-tour checklists' : '투어별 체크리스트 관리'}
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sopAdminTab === 'dispatch'}
+              className={`rounded-t-md px-4 py-2.5 text-sm font-medium transition-colors ${
+                sopAdminTab === 'dispatch'
+                  ? 'border border-b-0 border-gray-200 bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:bg-white/60 hover:text-gray-900'
+              }`}
+              onClick={() => setSopAdminTab('dispatch')}
+            >
+              {uiLocaleEn ? 'Dispatch' : '발송 관리'}
+            </button>
           </div>
 
           {sopAdminTab === 'tour-checklists' ? (
@@ -266,6 +282,8 @@ export default function AdminSopPage() {
                   : '체크 줄 id는 게시된 SOP의 body_structure에 포함되어 추후 투어와 매칭할 수 있습니다.'}
               </p>
             </div>
+          ) : sopAdminTab === 'dispatch' ? (
+            <CompanySopDispatchManagement uiLocaleEn={uiLocaleEn} />
           ) : sopAdminTab === 'edit' ? (
             <AdminStructuredDocPublishTab
               kind="sop"

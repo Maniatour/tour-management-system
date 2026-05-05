@@ -1467,7 +1467,7 @@ export default function PricingSection({
       String(fromForm) !== '' &&
       Number.isFinite(Number(fromForm))
     ) {
-      return Math.max(0, Number(fromForm))
+      return roundUsd2(Number(fromForm))
     }
 
     const pricingAdultsVal = Math.max(
@@ -1585,11 +1585,11 @@ export default function PricingSection({
           amount: refb,
         })
       }
-      const tr = roundUsd2(Math.max(0, ch - refb))
+      const tr = roundUsd2(ch - refb)
       return {
         lines,
         totalRevenue: tr,
-        operatingProfit: roundUsd2(Math.max(0, tr - prepTip)),
+        operatingProfit: roundUsd2(tr - prepTip),
       }
     }
 
@@ -1671,11 +1671,11 @@ export default function PricingSection({
       tr -= ac
     }
 
-    tr = roundUsd2(Math.max(0, tr))
+    tr = roundUsd2(tr)
     return {
       lines,
       totalRevenue: tr,
-      operatingProfit: roundUsd2(Math.max(0, tr - prepTip)),
+      operatingProfit: roundUsd2(tr - prepTip),
     }
   }, [
     isReservationCancelled,
@@ -3987,7 +3987,7 @@ export default function PricingSection({
                         markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => ({
                           ...prev,
-                          channelSettlementAmount: Math.max(0, n),
+                          channelSettlementAmount: n,
                         }))
                         onChannelSettlementEdited?.()
                       }
@@ -4003,7 +4003,7 @@ export default function PricingSection({
                         markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => omitChannelSettlementAmount({ ...prev }))
                       } else {
-                        const finalValue = Math.max(0, roundUsd2(Number(raw) || 0))
+                        const finalValue = roundUsd2(Number(raw) || 0)
                         markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => ({
                           ...prev,
@@ -4015,7 +4015,6 @@ export default function PricingSection({
                     }}
                     className={`w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right ${priceTextClass('channel_settlement_amount')}`}
                     step="0.01"
-                    min="0"
                     placeholder="0"
                   />
                 </div>

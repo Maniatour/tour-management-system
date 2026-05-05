@@ -1,6 +1,7 @@
 import { supabase, supabaseAdmin } from './supabase'
 import { readSheetDataDynamic } from './googleSheets'
 import { highPerformanceCache, databaseOptimizer } from './performanceOptimizer'
+import { SYNC_TABLES_REQUIRE_SHEET_ROW_ID } from './syncSheetPrimaryKey'
 
 // 최적화된 동기화 서비스
 export class OptimizedSyncService {
@@ -269,7 +270,9 @@ export class OptimizedSyncService {
             const preparedBatch = batch.map(row => {
               const prepared = { ...row }
               if (!prepared.id && targetTable !== 'team') {
-                prepared.id = this.generateUUID()
+                if (!SYNC_TABLES_REQUIRE_SHEET_ROW_ID.has(targetTable)) {
+                  prepared.id = this.generateUUID()
+                }
               }
               
               // 테이블에 updated_at 컬럼이 있는 경우에만 추가

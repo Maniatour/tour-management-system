@@ -21,7 +21,7 @@ export type PricingSectionRevenueDisplayInput = {
 
 export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionRevenueDisplayInput): number {
   if (inp.isReservationCancelled) {
-    if (inp.isOTAChannel) return Math.max(0, roundUsd2(inp.channelSettlementBeforePartnerReturn))
+    if (inp.isOTAChannel) return roundUsd2(inp.channelSettlementBeforePartnerReturn)
     return 0
   }
   let totalRevenue = inp.channelSettlementBeforePartnerReturn
@@ -42,16 +42,16 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
   if (inp.excludeHomepageAdditionalCostFromCompanyTotals && inp.additionalCost > 0) {
     totalRevenue -= inp.additionalCost
   }
-  return Math.max(0, roundUsd2(totalRevenue))
+  return roundUsd2(totalRevenue)
 }
 
 export function computePricingSectionDisplayOperatingProfit(inp: PricingSectionRevenueDisplayInput): number {
   if (inp.isReservationCancelled) {
     if (inp.isOTAChannel) {
-      return Math.max(0, roundUsd2(inp.channelSettlementBeforePartnerReturn - inp.prepaymentTip))
+      return roundUsd2(inp.channelSettlementBeforePartnerReturn - inp.prepaymentTip)
     }
     return 0
   }
   const totalRevenue = computePricingSectionDisplayTotalRevenue(inp)
-  return Math.max(0, roundUsd2(totalRevenue - inp.prepaymentTip))
+  return roundUsd2(totalRevenue - inp.prepaymentTip)
 }

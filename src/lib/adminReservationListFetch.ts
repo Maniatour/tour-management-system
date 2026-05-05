@@ -61,6 +61,40 @@ export type FetchAdminReservationListArgs = {
   calendarCreatedEndIso?: string
 }
 
+function collectIds(rows: unknown): string[] {
+  if (!Array.isArray(rows)) return []
+  const out: string[] = []
+  for (const r of rows) {
+    if (r && typeof r === 'object' && 'id' in r) {
+      const id = (r as { id: string }).id
+      if (id) out.push(id)
+    }
+  }
+  return [...new Set(out)]
+}
+
+/** Supabase 단일 요청: 네트워크/RLS 등으로 실패해도 검색 나머지 조건은 유지 */
+async function safeSelectIds(
+  label: string,
+  run: () => Promise<{ data: unknown; error: { message?: string } | null }>
+): Promise<string[]> {
+  try {
+    const { data, error } = await run()
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[admin reservation search] ${label} lookup skipped:`, error.message || error)
+      }
+      return []
+    }
+    return collectIds(data)
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[admin reservation search] ${label} lookup failed:`, e)
+    }
+    return []
+  }
+}
+
 async function buildSearchOrClause(
   supabase: SupabaseClient,
   term: string
@@ -74,6 +108,8 @@ async function buildSearchOrClause(
     `pickup_hotel.ilike.${q}`,
     `added_by.ilike.${q}`,
     `event_note.ilike.${q}`,
+    `sub_channel.ilike.${q}`,
+    `variant_key.ilike.${q}`,
   ]
 
   // DATE/TIME/UUID 컬럼은 PostgREST에서 ilike(~~*) 불가 — 정확 일치만 or에 추가
@@ -88,24 +124,33 @@ async function buildSearchOrClause(
     parts.push(`tour_time.eq.${eqQuoted(timeEq)}`)
   }
 
-  const likePat = `%${t.replace(/%/g, '\\%')}%`
-  const [{ data: cust }, { data: prod }, { data: ch }] = await Promise.all([
-    supabase
-      .from('customers')
-      .select('id')
-      .or(`name.ilike.${q},special_requests.ilike.${q}`)
-      .limit(400),
-    supabase
-      .from('products')
-      .select('id')
-      .or(`name.ilike.${q},name_ko.ilike.${q},name_en.ilike.${q}`)
-      .limit(400),
-    supabase.from('channels').select('id').ilike('name', likePat).limit(400),
+  const lookupLimit = 500
+  const likePat = `%${t.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+
+  const [cids, pids, chids] = await Promise.all([
+    safeSelectIds('customers', () =>
+      supabase
+        .from('customers')
+        .select('id')
+        .or(
+          `name.ilike.${q},special_requests.ilike.${q},email.ilike.${q},phone.ilike.${q},emergency_contact.ilike.${q}`
+        )
+        .limit(lookupLimit)
+    ),
+    safeSelectIds('products', () =>
+      supabase
+        .from('products')
+        .select('id')
+        .or(
+          `name.ilike.${q},name_ko.ilike.${q},name_en.ilike.${q},product_code.ilike.${q},customer_name_ko.ilike.${q},customer_name_en.ilike.${q}`
+        )
+        .limit(lookupLimit)
+    ),
+    safeSelectIds('channels', () =>
+      supabase.from('channels').select('id').ilike('name', likePat).limit(lookupLimit)
+    ),
   ])
 
-  const cids = [...new Set((cust || []).map((r: { id: string }) => r.id).filter(Boolean))]
-  const pids = [...new Set((prod || []).map((r: { id: string }) => r.id).filter(Boolean))]
-  const chids = [...new Set((ch || []).map((r: { id: string }) => r.id).filter(Boolean))]
   if (cids.length) parts.push(`customer_id.in.(${cids.join(',')})`)
   if (pids.length) parts.push(`product_id.in.(${pids.join(',')})`)
   if (chids.length) parts.push(`channel_id.in.(${chids.join(',')})`)

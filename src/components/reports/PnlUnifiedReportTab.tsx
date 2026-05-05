@@ -1,34 +1,95 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { PieChart, Save, BookOpen } from 'lucide-react'
+import { useLocale } from 'next-intl'
+import { PieChart, Save, BookOpen, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
 import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fiscal-settings'
 import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
+import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
+import { buildPnlStandardCategoryTableRows, PNL_UNMATCHED_BUCKET_KEY } from '@/lib/pnlStandardCategoryTable'
+import PnlUnifiedExpenseDetailDialog, {
+  type PnlDetailLine,
+  type PnlDrillState,
+  type PnlExpenseSource,
+} from '@/components/reports/PnlUnifiedExpenseDetailDialog'
+import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 
 interface PnlUnifiedReportTabProps {
   dateRange: { start: string; end: string }
 }
 
-type CatRow = { categoryLabel: string; amount: number; source: string }
-
-function mapKey(
-  paidFor: string | null,
-  sourceTable: string,
-  mappings: Map<string, string>
+function mappingOriginalForExpense(
+  source: PnlExpenseSource,
+  r: { paid_for?: string | null; category?: string | null }
 ): string {
-  const raw = (paidFor || '').trim() || '기타'
-  return mappings.get(`${raw}::${sourceTable}`) || raw
+  if (source === 'tour_expenses' || source === 'reservation_expenses') {
+    return (r.paid_for || '').trim() || '기타'
+  }
+  if (source === 'company_expenses') {
+    return (r.paid_for || r.category || '').trim() || '기타'
+  }
+  return (r.category || '').trim() || '입장권'
+}
+
+function bucketForResolvedLeaf(resolvedLeafId: string | null, leafIdSet: Set<string>): string {
+  if (resolvedLeafId && leafIdSet.has(resolvedLeafId)) return resolvedLeafId
+  return PNL_UNMATCHED_BUCKET_KEY
+}
+
+/** submit_on 기준 로컬 연-월 (YYYY-MM) */
+function yearMonthFromSubmitOn(iso: string): string {
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = d.getMonth() + 1
+  return `${y}-${String(m).padStart(2, '0')}`
+}
+
+function enumerateMonthsInclusive(startYmd: string, endYmd: string): string[] {
+  const s = new Date(startYmd + 'T00:00:00')
+  const e = new Date(endYmd + 'T23:59:59')
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return []
+  const out: string[] = []
+  const cur = new Date(s.getFullYear(), s.getMonth(), 1)
+  const endM = new Date(e.getFullYear(), e.getMonth(), 1)
+  while (cur <= endM) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`)
+    cur.setMonth(cur.getMonth() + 1)
+  }
+  return out
+}
+
+function formatMonthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map((x) => parseInt(x, 10))
+  if (!y || !m) return ym
+  return `${y}년 ${m}월`
+}
+
+function formatMoney(n: number): string {
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 }
 
 export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabProps) {
+  const locale = useLocale()
   const [ledgerBase, setLedgerBase] = useState(getDefaultLedgerBaseDate())
   const [editLedger, setEditLedger] = useState(getDefaultLedgerBaseDate())
   const [savingFiscal, setSavingFiscal] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [rows, setRows] = useState<CatRow[]>([])
+  /** 표준 리프 id 또는 미매칭 버킷 → 월(YYYY-MM) → 금액 */
+  const [monthlyCells, setMonthlyCells] = useState<Record<string, Record<string, number>>>({})
+  const [standardCategoryRows, setStandardCategoryRows] = useState<ExpenseStandardCategoryPickRow[]>([])
+  const [pnlDetailLines, setPnlDetailLines] = useState<PnlDetailLine[]>([])
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailDrill, setDetailDrill] = useState<PnlDrillState | null>(null)
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
   const [totalExcl, setTotalExcl] = useState(0)
+
+  const { rows: pnlTableRows, groups: unifiedStandardGroups } = useMemo(
+    () => buildPnlStandardCategoryTableRows(standardCategoryRows, locale),
+    [standardCategoryRows, locale]
+  )
 
   useEffect(() => {
     getFiscalReportingSettings().then((s) => {
@@ -60,122 +121,285 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     const endISO = new Date(dateRange.end + 'T23:59:59.999').toISOString()
 
     const [{ data: mappings }, { data: standards }] = await Promise.all([
-      supabase.from('expense_category_mappings').select('original_value, source_table, standard_category_id'),
-      supabase.from('expense_standard_categories').select('id, name, name_ko')
+      supabase
+        .from('expense_category_mappings')
+        .select('original_value, source_table, standard_category_id, sub_category_id'),
+      supabase
+        .from('expense_standard_categories')
+        .select('id, name, name_ko, parent_id, display_order, is_active, tax_deductible'),
     ])
 
-    const stdName = new Map<string, string>()
-    for (const s of standards || []) {
-      stdName.set(
-        (s as { id: string }).id,
-        (s as { name_ko: string | null; name: string }).name_ko ||
-          (s as { name: string }).name
-      )
-    }
+    const cats: ExpenseStandardCategoryPickRow[] = (standards || []) as ExpenseStandardCategoryPickRow[]
+    setStandardCategoryRows(cats)
+    const { leafIdSet } = buildPnlStandardCategoryTableRows(cats, locale)
 
-    const mapLookup = new Map<string, string>()
+    const mapToLeaf = new Map<string, string>()
     for (const m of mappings || []) {
-      const row = m as { original_value: string; source_table: string; standard_category_id: string | null }
-      if (row.standard_category_id) {
-        mapLookup.set(
-          `${row.original_value}::${row.source_table}`,
-          stdName.get(row.standard_category_id) || row.standard_category_id
-        )
+      const row = m as {
+        original_value: string
+        source_table: string
+        standard_category_id: string | null
+        sub_category_id: string | null
+      }
+      const eff = row.sub_category_id || row.standard_category_id
+      if (eff) {
+        mapToLeaf.set(`${row.original_value}::${row.source_table}`, eff)
       }
     }
 
     const [{ data: te }, { data: re }, { data: ce }, { data: tb }] = await Promise.all([
       supabase
         .from('tour_expenses')
-        .select('amount, paid_for, exclude_from_pnl')
+        .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
         .gte('submit_on', startISO)
         .lte('submit_on', endISO),
       supabase
         .from('reservation_expenses')
-        .select('amount, paid_for, exclude_from_pnl')
+        .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
         .gte('submit_on', startISO)
         .lte('submit_on', endISO),
       supabase
         .from('company_expenses')
-        .select('amount, paid_for, category, exclude_from_pnl')
+        .select('id, amount, paid_for, category, paid_to, notes, description, payment_method, exclude_from_pnl, submit_on')
         .gte('submit_on', startISO)
         .lte('submit_on', endISO),
       supabase
         .from('ticket_bookings')
-        .select('expense, category')
+        .select('id, expense, category, company, note, payment_method, submit_on')
         .gte('submit_on', startISO)
         .lte('submit_on', endISO)
         .in('status', ['confirmed', 'paid'])
     ])
 
-    const agg = new Map<string, { amount: number; source: string }>()
+    const monthly = new Map<string, Map<string, number>>()
+    const detailLines: PnlDetailLine[] = []
     let excluded = 0
 
-    const add = (label: string, amount: number, source: string) => {
-      const prev = agg.get(label)
-      if (prev) prev.amount += amount
-      else agg.set(label, { amount, source })
+    const addMonthly = (bucketKey: string, submitOn: string | null, amount: number) => {
+      if (!submitOn) return
+      const ym = yearMonthFromSubmitOn(submitOn)
+      if (!monthly.has(bucketKey)) monthly.set(bucketKey, new Map())
+      const row = monthly.get(bucketKey)!
+      row.set(ym, (row.get(ym) || 0) + amount)
     }
 
     for (const x of te || []) {
-      const r = x as { amount: unknown; paid_for: string | null; exclude_from_pnl: boolean | null }
+      const r = x as {
+        id: string
+        amount: unknown
+        paid_for: string | null
+        paid_to: string | null
+        note: string | null
+        payment_method: string | null
+        exclude_from_pnl: boolean | null
+        submit_on: string | null
+      }
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
         excluded += amt
         continue
       }
-      const label = mapKey(r.paid_for, 'tour_expenses', mapLookup)
-      add(label, amt, 'tour_expenses')
+      if (!r.submit_on) continue
+      const orig = mappingOriginalForExpense('tour_expenses', r)
+      const resolvedLeafId = mapToLeaf.get(`${orig}::tour_expenses`) ?? null
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      addMonthly(bucketKey, r.submit_on, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'tour_expenses',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        paid_to: r.paid_to,
+        paid_for: r.paid_for,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: null,
+        company: null,
+        note: r.note,
+        exclude_from_pnl: r.exclude_from_pnl ?? false,
+      })
     }
     for (const x of re || []) {
-      const r = x as { amount: unknown; paid_for: string | null; exclude_from_pnl: boolean | null }
+      const r = x as {
+        id: string
+        amount: unknown
+        paid_for: string | null
+        paid_to: string | null
+        note: string | null
+        payment_method: string | null
+        exclude_from_pnl: boolean | null
+        submit_on: string | null
+      }
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
         excluded += amt
         continue
       }
-      const label = mapKey(r.paid_for, 'reservation_expenses', mapLookup)
-      add(label, amt, 'reservation_expenses')
+      if (!r.submit_on) continue
+      const orig = mappingOriginalForExpense('reservation_expenses', r)
+      const resolvedLeafId = mapToLeaf.get(`${orig}::reservation_expenses`) ?? null
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      addMonthly(bucketKey, r.submit_on, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'reservation_expenses',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        paid_to: r.paid_to,
+        paid_for: r.paid_for,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: null,
+        company: null,
+        note: r.note,
+        exclude_from_pnl: r.exclude_from_pnl ?? false,
+      })
     }
     for (const x of ce || []) {
       const r = x as {
+        id: string
         amount: unknown
         paid_for: string | null
         category: string | null
+        paid_to: string | null
+        notes: string | null
+        description: string | null
+        payment_method: string | null
         exclude_from_pnl: boolean | null
+        submit_on: string | null
       }
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
         excluded += amt
         continue
       }
-      const label = mapKey(r.paid_for || r.category, 'company_expenses', mapLookup)
-      add(label, amt, 'company_expenses')
+      if (!r.submit_on) continue
+      const orig = mappingOriginalForExpense('company_expenses', r)
+      const resolvedLeafId = mapToLeaf.get(`${orig}::company_expenses`) ?? null
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      addMonthly(bucketKey, r.submit_on, amt)
+      const memo = [r.notes, r.description].filter(Boolean).join(' · ') || null
+      detailLines.push({
+        id: r.id,
+        source: 'company_expenses',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        paid_to: r.paid_to,
+        paid_for: r.paid_for,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: r.category,
+        company: null,
+        note: memo,
+        exclude_from_pnl: r.exclude_from_pnl ?? false,
+      })
     }
     for (const x of tb || []) {
-      const r = x as { expense: unknown; category: string | null }
+      const r = x as {
+        id: string
+        expense: unknown
+        category: string | null
+        company: string | null
+        note: string | null
+        payment_method: string | null
+        submit_on: string | null
+      }
       const amt = Number(r.expense) || 0
-      const label = r.category || '입장권'
-      add(label, amt, 'ticket_bookings')
+      if (!r.submit_on) continue
+      const orig = mappingOriginalForExpense('ticket_bookings', r)
+      const resolvedLeafId = mapToLeaf.get(`${orig}::ticket_bookings`) ?? null
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      addMonthly(bucketKey, r.submit_on, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'ticket_bookings',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        paid_to: null,
+        paid_for: null,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: r.category,
+        company: r.company,
+        note: r.note,
+        exclude_from_pnl: false,
+      })
     }
 
-    const list: CatRow[] = Array.from(agg.entries()).map(([categoryLabel, v]) => ({
-      categoryLabel,
-      amount: v.amount,
-      source: v.source
-    }))
-    list.sort((a, b) => b.amount - a.amount)
+    const teIds = detailLines.filter((l) => l.source === 'tour_expenses').map((l) => l.id)
+    const reIds = detailLines.filter((l) => l.source === 'reservation_expenses').map((l) => l.id)
+    const ceIds = detailLines.filter((l) => l.source === 'company_expenses').map((l) => l.id)
+    const tbIds = detailLines.filter((l) => l.source === 'ticket_bookings').map((l) => l.id)
 
-    setRows(list)
+    const [teRe, reRe, ceRe, tbRe] = await Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', teIds),
+      fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reIds),
+      fetchReconciledSourceIdsBatched(supabase, 'company_expenses', ceIds),
+      fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', tbIds),
+    ])
+
+    const detailLinesWithRecon: PnlDetailLine[] = detailLines.map((l) => ({
+      ...l,
+      statementReconciled:
+        (l.source === 'tour_expenses' && teRe.has(l.id)) ||
+        (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
+        (l.source === 'company_expenses' && ceRe.has(l.id)) ||
+        (l.source === 'ticket_bookings' && tbRe.has(l.id)),
+    }))
+
+    const cells: Record<string, Record<string, number>> = {}
+    for (const [cat, mmap] of monthly) {
+      cells[cat] = Object.fromEntries(mmap)
+    }
+
+    setMonthlyCells(cells)
+    setPnlDetailLines(detailLinesWithRecon)
     setTotalExcl(excluded)
     setLoading(false)
-  }, [dateRange])
+  }, [dateRange, locale])
 
   useEffect(() => {
     loadPnl()
   }, [loadPnl])
 
-  const grandTotal = useMemo(() => rows.reduce((s, r) => s + r.amount, 0), [rows])
+  const months = useMemo(
+    () => enumerateMonthsInclusive(dateRange.start, dateRange.end),
+    [dateRange.start, dateRange.end]
+  )
+
+  const { rowTotals, colTotals, grandTotal } = useMemo(() => {
+    const bucketKeys = Object.keys(monthlyCells)
+    const rowTotals: Record<string, number> = {}
+    for (const k of bucketKeys) {
+      rowTotals[k] = Object.values(monthlyCells[k] || {}).reduce((s, v) => s + v, 0)
+    }
+    const colTotals: Record<string, number> = {}
+    for (const ym of months) {
+      let s = 0
+      for (const k of bucketKeys) {
+        s += monthlyCells[k]?.[ym] ?? 0
+      }
+      colTotals[ym] = s
+    }
+    const grandTotal = bucketKeys.reduce((sum, k) => sum + (rowTotals[k] ?? 0), 0)
+    return { rowTotals, colTotals, grandTotal }
+  }, [monthlyCells, months])
 
   if (loading) {
     return (
@@ -219,12 +443,11 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               <code className="text-xs bg-white px-1 rounded border">ticket_bookings</code>.
             </li>
             <li>
-              <code className="text-xs bg-white px-1 rounded border">expense_category_mappings</code>에 따라{' '}
-              <strong>
-                <AccountingTerm termKey="표준카테고리">표준 카테고리</AccountingTerm> 이름
-              </strong>
-              으로 묶어 보여 줍니다. 매핑이 없으면 <code className="text-xs">paid_for</code>·
-              카테고리 문자열 그대로 나옵니다.
+              행 구조·순서는 <strong>카테고리 매니저 › 표준 카테고리 관리</strong>에 등록된{' '}
+              <code className="text-xs bg-white px-1 rounded border">expense_standard_categories</code> 트리와 같습니다(
+              상위 그룹 헤더 + 들여쓰기된 하위 리프). 집계는{' '}
+              <code className="text-xs bg-white px-1 rounded border">expense_category_mappings</code>의 리프(또는 상위만
+              있을 때) 기준이며, 트리에 없는 매핑·미매칭은 맨 아래 <strong>매칭되지 않은 지출</strong> 행에 모읍니다.
             </li>
             <li>
               <strong>exclude_from_pnl</strong>이 켜진 행(
@@ -301,47 +524,217 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="font-semibold mb-2 flex flex-wrap items-center gap-x-1 gap-y-1">
-          <AccountingTerm termKey="통합지출">통합 지출</AccountingTerm>
-          <span className="font-normal text-gray-600">
-            (<AccountingTerm termKey="표준카테고리">표준 카테고리</AccountingTerm> 매핑 반영)
-          </span>
-        </h3>
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+          <h3 className="font-semibold flex flex-wrap items-center gap-x-1 gap-y-1">
+            <AccountingTerm termKey="통합지출">통합 지출</AccountingTerm>
+            <span className="font-normal text-gray-600">
+              (<AccountingTerm termKey="표준카테고리">표준 카테고리</AccountingTerm> 매핑 반영)
+            </span>
+          </h3>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => setCategoryManagerOpen(true)}
+          >
+            <Settings className="h-4 w-4 mr-1.5" aria-hidden />
+            표준 카테고리·매핑 관리
+          </Button>
+        </div>
         <p className="text-xs sm:text-sm text-gray-600 mb-4 break-words">
           기간 {dateRange.start} ~ {dateRange.end} · exclude_from_pnl 인 건은 제외했습니다 (합계: $
           {totalExcl.toLocaleString(undefined, { maximumFractionDigits: 2 })})
         </p>
+        <p className="text-xs text-blue-900/90 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-3">
+          금액·합계 셀을 누르면 <strong>상세 지출</strong> 모달이 열립니다. 모달 상단에서 원문·출처별로{' '}
+          <strong>표준 카테고리(리프) 매핑</strong>을 저장할 수 있고, 하단에서 지출 금액·분류·PNL 제외 등을 수정할 수
+          있습니다(입장권 부킹은 PNL 제외 옵션 없음).
+        </p>
         <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
-          <table className="w-full min-w-[300px] text-xs sm:text-sm">
+          <table className="w-full min-w-[480px] text-xs sm:text-sm border-collapse">
             <thead>
-              <tr className="border-b text-left text-gray-500">
-                <th className="py-2">카테고리(매핑 후)</th>
-                <th className="py-2">출처</th>
-                <th className="py-2 text-right">금액</th>
+              <tr className="border-b text-left text-gray-500 bg-slate-50">
+                <th className="py-2 pl-2 pr-3 font-medium sticky left-0 z-20 bg-slate-50 min-w-[220px] max-w-[min(42vw,22rem)]">
+                  <AccountingTerm termKey="표준카테고리">표준 카테고리</AccountingTerm>
+                </th>
+                {months.map((ym) => (
+                  <th key={ym} className="py-2 px-2 text-right font-medium whitespace-nowrap min-w-[88px]">
+                    {formatMonthLabel(ym)}
+                  </th>
+                ))}
+                <th className="py-2 pl-2 pr-2 text-right font-semibold text-gray-700 whitespace-nowrap min-w-[100px] bg-slate-100">
+                  합계
+                </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={`${r.categoryLabel}-${i}`} className="border-b border-gray-100">
-                  <td className="py-2">{r.categoryLabel}</td>
-                  <td className="py-2 text-gray-500">{r.source}</td>
-                  <td className="py-2 text-right">${r.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+              {standardCategoryRows.length === 0 && !loading ? (
+                <tr>
+                  <td className="py-6 text-center text-gray-500" colSpan={Math.max(2, months.length + 2)}>
+                    표준 카테고리를 불러오지 못했습니다. DB 마이그레이션과 권한을 확인하세요.
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                pnlTableRows.map((row) => {
+                  if (row.kind === 'group-header') {
+                    const groupMonthSum = (ym: string) =>
+                      row.leafIds.reduce((s, id) => s + (monthlyCells[id]?.[ym] ?? 0), 0)
+                    const groupPeriodSum = row.leafIds.reduce((s, id) => s + (rowTotals[id] ?? 0), 0)
+                    return (
+                      <tr key={row.rowKey} className="bg-slate-100/95 border-b border-slate-200">
+                        <td className="py-1.5 pl-3 pr-2 text-[11px] sm:text-xs font-semibold text-slate-800 leading-snug sticky left-0 z-10 bg-slate-100/95 shadow-[2px_0_4px_rgba(15,23,42,0.06)]">
+                          {row.label}
+                        </td>
+                        {months.map((ym) => {
+                          const v = groupMonthSum(ym)
+                          return (
+                            <td
+                              key={ym}
+                              className="py-1.5 px-2 text-right tabular-nums text-slate-700 font-semibold text-[11px] sm:text-xs"
+                              title="이 그룹 하위 표준 리프 합계"
+                            >
+                              {v !== 0 ? formatMoney(v) : '—'}
+                            </td>
+                          )
+                        })}
+                        <td
+                          className="py-1.5 pl-2 pr-2 text-right tabular-nums font-semibold text-slate-900 text-[11px] sm:text-xs bg-slate-200/80"
+                          title="이 그룹 하위 표준 리프 기간 합계"
+                        >
+                          {groupPeriodSum !== 0 ? formatMoney(groupPeriodSum) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  }
+                  const dataKey = row.rowKey
+                  const rowTitle = row.label
+                  const isUnmatched = row.kind === 'unmatched'
+                  return (
+                    <tr
+                      key={row.rowKey}
+                      className={`border-b border-gray-100 hover:bg-gray-50/80 ${isUnmatched ? 'bg-amber-50/35' : ''}`}
+                    >
+                      <td
+                        className={`py-2 pr-3 align-top sticky left-0 z-10 text-[11px] sm:text-xs leading-snug shadow-[2px_0_4px_rgba(15,23,42,0.06)] ${
+                          row.kind === 'leaf' && row.indentSubcategory ? 'pl-5 sm:pl-7' : 'pl-2'
+                        } ${isUnmatched ? 'bg-amber-50/95 font-medium' : 'bg-white'}`}
+                      >
+                        {row.label}
+                      </td>
+                      {months.map((ym) => {
+                        const v = monthlyCells[dataKey]?.[ym] ?? 0
+                        return (
+                          <td key={ym} className="py-1 px-2 text-right tabular-nums">
+                            <button
+                              type="button"
+                              title="이 달·이 표준 분류 상세"
+                              className={`w-full min-h-[36px] rounded px-1 py-1 -mx-1 transition-colors ${
+                                v !== 0
+                                  ? 'text-blue-800 hover:bg-blue-50 hover:underline underline-offset-2'
+                                  : 'text-gray-400 hover:bg-slate-100'
+                              }`}
+                              onClick={() => {
+                                setDetailDrill({
+                                  mode: 'cell',
+                                  rowId: dataKey,
+                                  month: ym,
+                                  rowTitle: rowTitle,
+                                })
+                                setDetailOpen(true)
+                              }}
+                            >
+                              {v !== 0 ? formatMoney(v) : '—'}
+                            </button>
+                          </td>
+                        )
+                      })}
+                      <td
+                        className={`py-1 pl-2 pr-2 text-right tabular-nums font-medium ${
+                          isUnmatched ? 'bg-amber-100/70' : 'bg-slate-50/90'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          title="이 행·기간 전체 상세"
+                          className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-blue-900 hover:bg-blue-50 hover:underline underline-offset-2"
+                          onClick={() => {
+                            setDetailDrill({
+                              mode: 'row',
+                              rowId: dataKey,
+                              rowTitle: `${rowTitle} · 기간 합계`,
+                            })
+                            setDetailOpen(true)
+                          }}
+                        >
+                          {formatMoney(rowTotals[dataKey] ?? 0)}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
-            <tfoot>
-              <tr className="font-semibold">
-                <td className="py-2" colSpan={2}>
-                  합계
-                </td>
-                <td className="py-2 text-right">
-                  ${grandTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </td>
-              </tr>
-            </tfoot>
+            {standardCategoryRows.length > 0 && months.length > 0 && (
+              <tfoot>
+                <tr className="font-semibold border-t-2 border-slate-200 bg-slate-50">
+                  <td className="py-2 pl-2 pr-3 sticky left-0 z-10 bg-slate-50">월 합계</td>
+                  {months.map((ym) => (
+                    <td key={ym} className="py-1 px-2 text-right tabular-nums">
+                      <button
+                        type="button"
+                        title="이 달·전체 카테고리 상세"
+                        className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-blue-900 hover:bg-blue-50 hover:underline underline-offset-2"
+                        onClick={() => {
+                          setDetailDrill({ mode: 'col', month: ym })
+                          setDetailOpen(true)
+                        }}
+                      >
+                        {formatMoney(colTotals[ym] ?? 0)}
+                      </button>
+                    </td>
+                  ))}
+                  <td className="py-1 pl-2 pr-2 text-right tabular-nums bg-slate-100">
+                    <button
+                      type="button"
+                      title="기간 전체 상세"
+                      className="w-full min-h-[36px] rounded px-1 py-1 -mx-1 text-blue-950 hover:bg-blue-100/80 hover:underline underline-offset-2 font-semibold"
+                      onClick={() => {
+                        setDetailDrill({ mode: 'grand' })
+                        setDetailOpen(true)
+                      }}
+                    >
+                      {formatMoney(grandTotal)}
+                    </button>
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
+
+      <CategoryManagerModal
+        isOpen={categoryManagerOpen}
+        onClose={() => {
+          setCategoryManagerOpen(false)
+          void loadPnl()
+        }}
+        onSave={() => {
+          void loadPnl()
+        }}
+      />
+
+      <PnlUnifiedExpenseDetailDialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        drill={detailDrill}
+        lines={pnlDetailLines}
+        formatMonthLabel={formatMonthLabel}
+        onSaved={loadPnl}
+        expenseStandardCategories={standardCategoryRows}
+        unifiedStandardGroups={unifiedStandardGroups}
+      />
     </div>
   )
 }

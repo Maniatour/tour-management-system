@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { readSheetDataDynamic } from './googleSheets'
+import { SYNC_TABLES_REQUIRE_SHEET_ROW_ID } from './syncSheetPrimaryKey'
 
 // 하드코딩된 매핑 제거 - 실제 데이터베이스 스키마 기반으로 동적 매핑 생성
 
@@ -579,7 +580,9 @@ export const flexibleSync = async (
         payment_records: ['reservation_id'],  // amount, payment_method는 nullable
         reservations: ['product_id'],  // customer_email은 customers 테이블에서 customer_id로 조회하는 데이터
         tours: ['product_id'],
-        // 다른 테이블의 필수 필드도 여기에 추가 가능
+        reservation_expenses: ['id'],
+        company_expenses: ['id'],
+        tour_expenses: ['id'],
       }
       return requiredFieldsMap[tableName] || []
     }
@@ -1022,12 +1025,24 @@ export const flexibleSync = async (
       try {
         const row = { ...originalRow }
 
-        // ID가 없으면 생성하여 스킵 방지
+        // ID가 없을 때: 시트 행 ID가 PK인 테이블은 UUID를 만들면 동기화마다 중복 행이 쌓이므로 생성하지 않음(상위 검증에서 걸러야 함)
         if (!row.id) {
+          if (SYNC_TABLES_REQUIRE_SHEET_ROW_ID.has(targetTable)) {
+            results.errors++
+            const skipMsg = `${targetTable}: 시트 ID(id) 누락 — 컬럼 매핑에 ID 열을 연결하세요.`
+            results.errorDetails.push(skipMsg)
+            onProgress?.({ type: 'warn', message: skipMsg })
+            processed++
+            if (processed === totalRows || totalRows < 250 || processed % 40 === 0) {
+              onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
+            }
+            if (rowsBuffer.length >= batchSize) {
+              await flush()
+            }
+            continue
+          }
           try {
-            // team 테이블은 PK가 email이므로 id를 생성하지 않음
             if (targetTable !== 'team') {
-              // Node 18+ 환경
               row.id = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto?.randomUUID ? (globalThis as { crypto: { randomUUID: () => string } }).crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`
             }
           } catch {

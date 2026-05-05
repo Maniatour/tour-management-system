@@ -213,7 +213,7 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   } = inp
 
   if (isReservationCancelled) {
-    if (isOTAChannel) return Math.max(0, roundUsd2(channelSettlementBase))
+    if (isOTAChannel) return roundUsd2(channelSettlementBase)
     return 0
   }
 
@@ -245,6 +245,6 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     totalRevenue -= additionalCost
   }
 
-  return Math.max(0, roundUsd2(totalRevenue))
+  return roundUsd2(totalRevenue)
 }
 

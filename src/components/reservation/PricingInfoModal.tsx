@@ -8,7 +8,7 @@ import {
   useReservationOptions,
   reservationOptionCountsTowardPricingTotal,
 } from '@/hooks/useReservationOptions'
-import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
+import { roundUsd2, splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import {
   computePricingSectionCustomerPaymentGrossLike,
   computePricingSectionCustomerPaymentNet,
@@ -94,6 +94,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const [isOTAChannel, setIsOTAChannel] = useState(false)
   /** 홈페이지 채널 판별용 — `channels` 목록 없이 현재 예약 채널명만으로 검사 */
   const [channelDisplayName, setChannelDisplayName] = useState<string | null>(null)
+  const [channelSettlementFocused, setChannelSettlementFocused] = useState(false)
+  const [channelSettlementDraft, setChannelSettlementDraft] = useState('')
 
   const reservationOptionsHookId = isOpen && reservation?.id ? String(reservation.id) : ''
   const { reservationOptions: reservationOptionsRows } = useReservationOptions(reservationOptionsHookId)
@@ -103,6 +105,13 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       loadPricingData()
     }
   }, [isOpen, reservation])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setChannelSettlementFocused(false)
+      setChannelSettlementDraft('')
+    }
+  }, [isOpen])
 
   // pricingData가 로드된 후 쿠폰 로드 (채널 변경 시에도 다시 로드)
   useEffect(() => {
@@ -274,8 +283,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           commission_amount: 0,
           commission_percent: pricingInfo?.commission_percent || 0,
           commission_base_price: 0,
-          channel_settlement_amount: Math.max(
-            0,
+          channel_settlement_amount: roundUsd2(
             (pricingInfo?.depositAmount || 0) - (Number(pricingInfo?.commission_amount) || 0)
           ),
           pricing_adults: reservation.adults ?? 0,
@@ -318,7 +326,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       const chSettleFromDb =
         raw.channel_settlement_amount != null && raw.channel_settlement_amount !== ''
           ? toNum(raw.channel_settlement_amount)
-          : Math.max(0, dep - comm)
+          : roundUsd2(dep - comm)
 
       const paRaw = raw.pricing_adults
       const pricingAdultsMerged =
@@ -664,7 +672,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       String(fromForm) !== '' &&
       Number.isFinite(Number(fromForm))
     ) {
-      return Math.max(0, Number(fromForm))
+      return roundUsd2(Number(fromForm))
     }
     const pa = Math.max(0, Math.floor(Number(editData.pricing_adults ?? reservation.adults) || 0))
     const billingPax = pa + (reservation.child || 0) + (reservation.infant || 0)
@@ -1270,13 +1278,44 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
                           <input
                             type="number"
-                            value={editData?.channel_settlement_amount ?? ''}
-                            onChange={(e) =>
-                              handleInputChange('channel_settlement_amount', Math.max(0, Number(e.target.value) || 0))
+                            value={
+                              channelSettlementFocused
+                                ? channelSettlementDraft
+                                : editData?.channel_settlement_amount !== undefined &&
+                                    editData?.channel_settlement_amount !== null
+                                  ? String(editData.channel_settlement_amount)
+                                  : ''
                             }
+                            onFocus={() => {
+                              setChannelSettlementFocused(true)
+                              setChannelSettlementDraft(
+                                editData?.channel_settlement_amount !== undefined &&
+                                  editData?.channel_settlement_amount !== null
+                                  ? String(editData.channel_settlement_amount)
+                                  : ''
+                              )
+                            }}
+                            onChange={(e) => {
+                              const raw = e.target.value
+                              setChannelSettlementDraft(raw)
+                              if (raw === '' || raw === '-') return
+                              const n = Number(raw)
+                              if (Number.isFinite(n)) {
+                                handleInputChange('channel_settlement_amount', n)
+                              }
+                            }}
+                            onBlur={() => {
+                              setChannelSettlementFocused(false)
+                              const raw = channelSettlementDraft.trim()
+                              setChannelSettlementDraft('')
+                              if (raw === '' || raw === '-') return
+                              const n = Number(raw)
+                              if (Number.isFinite(n)) {
+                                handleInputChange('channel_settlement_amount', roundUsd2(n))
+                              }
+                            }}
                             className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right font-semibold text-blue-600"
                             step="0.01"
-                            min="0"
                           />
                         </div>
                       </div>
@@ -1315,7 +1354,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       )}
                       <div className="flex justify-between">
                         <span className="font-bold text-purple-800">운영 이익</span>
-                        <span className="font-bold text-purple-600">${Math.max(0, operatingProfitDisplay).toFixed(2)}</span>
+                        <span className="font-bold text-purple-600">${operatingProfitDisplay.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>

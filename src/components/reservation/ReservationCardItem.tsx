@@ -208,6 +208,8 @@ interface ReservationCardItemProps {
   /** 픽업 요약 모달 재표시 요청 */
   reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
   onReshowPickupSummaryConsumed?: () => void
+  /** 예약 관리: 목록 로드 시 배치로 채운 reservation_customers (카드별 GET 감소) */
+  residentCustomerBatchMap?: Map<string, { resident_status: string | null }[]>
 }
 
 function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
@@ -269,10 +271,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onReshowPickupSummaryConsumed,
   followUpPipelineSnapshot = null,
   onFollowUpPipelineManualChange,
-  onCancelFollowUpManualChange
+  onCancelFollowUpManualChange,
+  residentCustomerBatchMap,
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
+
+  const prefetchedResidentCustomerRows = residentCustomerBatchMap?.get(reservation.id)
 
   const showResidentStatusUi = productShowsResidentStatusSectionByCode(
     products.find((p) => p.id === reservation.productId)?.product_code ?? null
@@ -493,6 +498,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   customerId={reservation.customerId}
                   totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
                   onUpdate={onRefreshReservations}
+                  prefetchedResidentCustomerRows={prefetchedResidentCustomerRows}
                 />
               )}
               {(() => {
@@ -1118,6 +1124,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 customerId={reservation.customerId}
                 totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
                 onUpdate={onRefreshReservations}
+                prefetchedResidentCustomerRows={prefetchedResidentCustomerRows}
               />
             )}
             

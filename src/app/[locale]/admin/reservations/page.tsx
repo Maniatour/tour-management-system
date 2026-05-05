@@ -73,6 +73,7 @@ import type {
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
 import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
+import { prefetchAdminReservationCardSideData } from '@/lib/adminReservationCardPrefetch'
 import {
   browserLocalInclusiveDateKeys,
   browserLocalTodayYmd,
@@ -348,7 +349,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // ????????????????????????????????????
   const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string, isRetry = false) => {
+    if (!reservationId?.trim()) {
+      return []
+    }
+
     const run = async () => {
+      // product_choices는 reservation_choices.choice_id FK로도 연결됨. choice_options 안에 중첩하면
+      // PostgREST/데이터 불일치 시 조회가 실패할 수 있어 ReservationCard와 동일하게 형제 임베드 사용.
       const { data, error } = await supabase
         .from('reservation_choices')
         .select(`
@@ -358,10 +365,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           choice_options!inner (
             option_key,
             option_name,
-            option_name_ko,
-            product_choices!inner (
-              choice_group_ko
-            )
+            option_name_ko
+          ),
+          product_choices!inner (
+            choice_group_ko
           )
         `)
         .eq('reservation_id', reservationId)
@@ -390,19 +397,27 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return []
       }
 
-      // ???? ??? ??? ???? ??? ??? ?? (???? ?? ???)
-      const err = error as { message?: string; code?: string; details?: string; hint?: string }
-      const errMsg = (err?.message && err.message.trim()) || (error instanceof Error ? error.message : '')
-      const code = err?.code?.trim?.()
-      const details = (err?.details && err.details.trim()) || (err?.hint && err.hint.trim())
-      if (errMsg || code || details) {
-        console.error('Error fetching reservation choices:', {
-          message: errMsg || undefined,
-          code: code || undefined,
-          details: details || undefined,
-          reservationId
-        })
-      }
+      const err = error as { message?: string; code?: string | number; details?: string; hint?: string }
+      const errMsg =
+        (typeof err?.message === 'string' && err.message.trim()) ||
+        (error instanceof Error ? error.message : '')
+      const code =
+        typeof err?.code === 'string'
+          ? err.code.trim() || undefined
+          : err?.code != null
+            ? String(err.code)
+            : undefined
+      const details =
+        (typeof err?.details === 'string' && err.details.trim()) ||
+        (typeof err?.hint === 'string' && err.hint.trim()) ||
+        undefined
+      console.error('Error fetching reservation choices:', {
+        reservationId,
+        message: errMsg || undefined,
+        code,
+        details,
+        raw: error,
+      })
       return []
     }
   }, [])
@@ -410,12 +425,32 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // ReservationCardItem?? null?????????????? choices ??
   const getSelectedChoicesNormalized = useCallback(async (reservationId: string) => {
     const rows = await getSelectedChoicesFromNewSystem(reservationId)
-    return rows.map(r => ({
-      choice_id: r.choice_id ?? '',
-      option_id: r.option_id ?? '',
-      quantity: r.quantity ?? 0,
-      choice_options: r.choice_options
-    }))
+    return rows.map((r) => {
+      const row = r as {
+        choice_id?: string | null
+        option_id?: string | null
+        quantity?: number | null
+        choice_options?: {
+          option_key?: string | null
+          option_name?: string | null
+          option_name_ko?: string | null
+        }
+        product_choices?: { choice_group_ko?: string | null }
+      }
+      const co = row.choice_options
+      const pc = row.product_choices
+      return {
+        choice_id: row.choice_id ?? '',
+        option_id: row.option_id ?? '',
+        quantity: row.quantity ?? 0,
+        choice_options: {
+          option_key: co?.option_key ?? '',
+          option_name: co?.option_name ?? '',
+          option_name_ko: co?.option_name_ko ?? '',
+          product_choices: { choice_group_ko: pc?.choice_group_ko ?? '' },
+        },
+      }
+    })
   }, [getSelectedChoicesFromNewSystem])
 
   // ??????????? (???? ???)
@@ -432,6 +467,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
     }
   }>>>(new Map())
+
+  const [residentCustomerBatchMap, setResidentCustomerBatchMap] = useState<
+    Map<string, { resident_status: string | null }[]>
+  >(() => new Map())
 
   const router = useRouter()
   const routeParams = useParams() as { locale?: string }
@@ -622,12 +661,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   
-  // ???? debounce (300ms)
+  // 검색 debounce — 짧으면 Supabase·Auth 요청이 겹쳐 Failed to fetch가 나기 쉬움
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm)
-    }, 300)
-    
+    }, 550)
+
     return () => clearTimeout(timer)
   }, [searchTerm])
   const [showAddForm, setShowAddForm] = useState(false)
@@ -1466,6 +1505,29 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     [locale]
   )
 
+  const applyReservationListSideDataPrefetch = useCallback(async (rows: Record<string, unknown>[] | null) => {
+    const ids = (rows || [])
+      .map((r) =>
+        r && typeof r === 'object' && 'id' in r ? String((r as { id: unknown }).id ?? '').trim() : ''
+      )
+      .filter(Boolean)
+    if (ids.length === 0) {
+      setResidentCustomerBatchMap(new Map())
+      return
+    }
+    try {
+      const m = await prefetchAdminReservationCardSideData(supabase, ids, choicesCacheRef)
+      setResidentCustomerBatchMap(m)
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[admin reservations] card side prefetch failed:', e)
+      }
+      const fallback = new Map<string, { resident_status: string | null }[]>()
+      for (const id of ids) fallback.set(id, [])
+      setResidentCustomerBatchMap(fallback)
+    }
+  }, [])
+
   const loadAdminReservationList = useCallback(async () => {
     setServerListLoading(true)
     try {
@@ -1519,6 +1581,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         })
         if (error) throw error
         await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+        await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
         setServerListTotal(count ?? 0)
         return
       }
@@ -1541,6 +1604,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       const { data, count, error } = await fetchAdminReservationList(supabase, cardArgs)
       if (error) throw error
       await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+      await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
       setServerListTotal(count ?? 0)
     } catch (e) {
       // Strict Mode·탭 전환·필터 변경 등으로 이전 요청이 Abort된 경우 — 목록을 비우지 않고 무시
@@ -1553,6 +1617,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         return
       }
       console.error(`loadAdminReservationList: ${describeError(e)}`, serializeError(e))
+      setResidentCustomerBatchMap(new Map())
       await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
       setServerListTotal(0)
     } finally {
@@ -1575,6 +1640,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     regCancelGranularity,
     regCancelMonthOffset,
     regCancelYearOffset,
+    applyReservationListSideDataPrefetch,
   ])
 
   const refreshReservations = useCallback(async () => {
@@ -3533,8 +3599,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         }}
       />
 
-      {/* ?? ?????????????? ??? ??? - ??????????? ?????? ????? ??? */}
-      {groupByDate && (
+      {/* 검색 시 groupByDate 가 꺼져도 주간 통계는 유지(검색 결과·필터 기준) */}
+      {(groupByDate || debouncedSearchTerm.trim().length > 0) && (
         <WeeklyStatsPanel
           currentWeek={statisticsWeekOffset}
           onWeekChange={setStatisticsWeekOffset}
@@ -3708,6 +3774,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                     getGroupColorClasses={getGroupColorClasses}
                     getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                     choicesCacheRef={choicesCacheRef}
+                    residentCustomerBatchMap={residentCustomerBatchMap}
                     linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
                     cardLayout={cardLayout}
                     onOpenTourDetailModal={handleOpenTourDetailModal}
@@ -3992,6 +4059,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
                     getGroupColorClasses={getGroupColorClasses}
                         getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                         choicesCacheRef={choicesCacheRef}
+                        residentCustomerBatchMap={residentCustomerBatchMap}
                         linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
                         cardLayout={cardLayout}
                         onOpenTourDetailModal={handleOpenTourDetailModal}
@@ -4293,6 +4361,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             getGroupColorClasses={getGroupColorClasses}
             getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
             choicesCacheRef={choicesCacheRef}
+            residentCustomerBatchMap={residentCustomerBatchMap}
             linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
             cardLayout="simple"
             onOpenTourDetailModal={handleOpenTourDetailModal}
@@ -4569,6 +4638,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             getGroupColorClasses={getGroupColorClasses}
             getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
             choicesCacheRef={choicesCacheRef}
+            residentCustomerBatchMap={residentCustomerBatchMap}
             linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
             cardLayout="simple"
             onOpenTourDetailModal={handleOpenTourDetailModal}

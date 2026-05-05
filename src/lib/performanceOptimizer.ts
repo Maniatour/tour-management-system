@@ -218,16 +218,15 @@ export class DatabaseOptimizer {
     console.log(`🔍 데이터 검증 시작: ${data.length}개 행, 테이블: ${tableName}`)
     console.log(`🔍 검증 규칙:`, validationRules)
 
-    // 필수 필드 검증 (id가 없으면 자동 생성되므로 제외)
+    // 필수 필드 검증 (requiredFields에 포함된 항목은 모두 검증 — 시트 ID가 PK인 테이블은 id 누락 시 여기서 걸러야 중복 삽입을 막을 수 있음)
     if (validationRules?.requiredFields) {
       data.forEach((row, index) => {
         const errors: string[] = []
         
-        // id 필드를 제외한 필수 필드만 검증
-        const requiredFieldsWithoutId = validationRules.requiredFields!.filter(field => field !== 'id')
-        
-        requiredFieldsWithoutId.forEach(field => {
+        validationRules.requiredFields!.forEach(field => {
           if (row[field] === undefined || row[field] === null || row[field] === '') {
+            errors.push(`${field} 필드가 비어있습니다`)
+          } else if (field === 'id' && typeof row[field] === 'string' && (row[field] as string).trim() === '') {
             errors.push(`${field} 필드가 비어있습니다`)
           }
         })

@@ -21,6 +21,49 @@ if (process.env.NODE_ENV === 'development') {
   })
 }
 
+/** 브라우저가 동시에 수백 개 REST 요청을 열면 net::ERR_INSUFFICIENT_RESOURCES 발생 — 전역으로 동시 실행 제한 */
+const supabaseOutboundMaxConcurrent = typeof window === 'undefined' ? 14 : 6
+let supabaseOutboundActive = 0
+const supabaseOutboundWaiters: Array<() => void> = []
+
+function acquireSupabaseOutboundSlot(): Promise<void> {
+  if (supabaseOutboundActive < supabaseOutboundMaxConcurrent) {
+    supabaseOutboundActive += 1
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    supabaseOutboundWaiters.push(() => {
+      supabaseOutboundActive += 1
+      resolve()
+    })
+  })
+}
+
+function releaseSupabaseOutboundSlot(): void {
+  supabaseOutboundActive = Math.max(0, supabaseOutboundActive - 1)
+  const next = supabaseOutboundWaiters.shift()
+  if (next) next()
+}
+
+async function runSupabaseOutboundBounded<T>(fn: () => Promise<T>): Promise<T> {
+  await acquireSupabaseOutboundSlot()
+  try {
+    return await fn()
+  } finally {
+    releaseSupabaseOutboundSlot()
+  }
+}
+
+function isInsufficientResourcesError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false
+  const m = e.message
+  return (
+    m.includes('INSUFFICIENT_RESOURCES') ||
+    m.includes('Insufficient resources') ||
+    m.includes('ERR_INSUFFICIENT_RESOURCES')
+  )
+}
+
 // 재시도 로직이 포함된 fetch 함수
 const fetchWithRetry = async (
   url: RequestInfo | URL,
@@ -53,11 +96,13 @@ const fetchWithRetry = async (
         headers.set('Accept', 'application/json, application/vnd.pgjson.object+json, application/vnd.pgjson.array+json')
       }
 
-      const response = await fetch(url, {
-        ...restOptions,
-        signal: controller.signal,
-        headers: headers
-      })
+      const response = await runSupabaseOutboundBounded(() =>
+        fetch(url, {
+          ...restOptions,
+          signal: controller.signal,
+          headers: headers
+        })
+      )
 
       clearTimeout(timeoutId)
 
@@ -94,6 +139,11 @@ const fetchWithRetry = async (
         error.message.includes('aborted')
       )
 
+      // 소켓/리소스 고갈: 재시도하면 오히려 악화
+      if (isInsufficientResourcesError(error)) {
+        throw lastError
+      }
+
       if (attempt === maxRetries || !isRetryableError || isAbortError) {
         throw lastError
       }
@@ -109,21 +159,63 @@ const fetchWithRetry = async (
 
 /**
  * GoTrue(/auth/v1/)는 REST용 fetchWithRetry(30초 Abort·다단 재시도)와 겹치면 초기화가 과도하게 길어짐.
- * 대신 게이트웨이 일시 오류(502/503/504/408)만 짧은 백오프로 1~2회 재시도.
+ * 게이트웨이 일시 오류(502/503/504/408)는 짧은 백오프로 재시도하고,
+ * `Failed to fetch` 등 브라우저 네트워크 일시 오류도 동일하게 소수 재시도(Abort는 제외).
  */
 async function fetchAuthWithGatewayRetry(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<Response> {
   const retryStatuses = new Set([408, 502, 503, 504])
-  const maxExtraAttempts = 2
-  let response = await fetch(input, init)
-  for (let extra = 0; extra < maxExtraAttempts && retryStatuses.has(response.status); extra++) {
-    const delayMs = 400 * Math.pow(2, extra)
-    await new Promise((r) => setTimeout(r, delayMs))
-    response = await fetch(input, init)
+  const maxGatewayRetries = 2
+  const maxNetworkAttempts = 4
+  let lastError: Error | null = null
+
+  for (let netAttempt = 0; netAttempt < maxNetworkAttempts; netAttempt++) {
+    try {
+      let response = await runSupabaseOutboundBounded(() => fetch(input, init))
+
+      for (let extra = 0; extra < maxGatewayRetries && retryStatuses.has(response.status); extra++) {
+        const delayMs = 400 * Math.pow(2, extra)
+        await new Promise((r) => setTimeout(r, delayMs))
+        response = await runSupabaseOutboundBounded(() => fetch(input, init))
+      }
+
+      return response
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      const msg = lastError.message
+      if (isInsufficientResourcesError(error)) {
+        throw lastError
+      }
+      const isAbort =
+        lastError.name === 'AbortError' || msg.includes('aborted') || msg.includes('signal is aborted')
+      const retryableNetwork =
+        !isAbort &&
+        (msg.includes('Failed to fetch') ||
+          msg.includes('ERR_CONNECTION') ||
+          msg.includes('ERR_NETWORK') ||
+          msg.includes('network') ||
+          msg.includes('ECONNRESET') ||
+          msg.includes('ETIMEDOUT') ||
+          msg.includes('QUIC'))
+
+      if (!retryableNetwork || netAttempt === maxNetworkAttempts - 1) {
+        throw lastError
+      }
+
+      const delayMs = 350 * Math.pow(2, netAttempt)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          `Supabase Auth 요청 네트워크 오류, ${delayMs}ms 후 재시도 (${netAttempt + 1}/${maxNetworkAttempts - 1}):`,
+          msg
+        )
+      }
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
   }
-  return response
+
+  throw lastError ?? new Error('Auth fetch failed')
 }
 
 function supabaseGlobalFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

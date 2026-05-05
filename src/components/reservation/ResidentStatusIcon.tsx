@@ -11,13 +11,41 @@ interface ResidentStatusIconProps {
   customerId: string | null
   totalPeople: number
   onUpdate?: () => void
+  /** 목록 배치 프리패치로 전달 시 해당 예약에 대한 단건 GET 생략 */
+  prefetchedResidentCustomerRows?: { resident_status: string | null }[]
+}
+
+function mostCommonResidentStatusFromRows(
+  reservationCustomers: { resident_status?: string | null }[]
+): 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null {
+  if (!reservationCustomers.length) return null
+  const statusCounts: Record<string, number> = {}
+  reservationCustomers.forEach((rc: { resident_status?: string | null }) => {
+    const status = rc.resident_status || 'unknown'
+    statusCounts[status] = (statusCounts[status] || 0) + 1
+  })
+  let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null =
+    null
+  let maxCount = 0
+  Object.entries(statusCounts).forEach(([status, count]) => {
+    if (count > maxCount && status !== 'unknown') {
+      maxCount = count
+      mostCommonStatus = status as
+        | 'us_resident'
+        | 'non_resident'
+        | 'non_resident_with_pass'
+        | 'non_resident_under_16'
+    }
+  })
+  return mostCommonStatus
 }
 
 export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
   reservationId,
   customerId,
   totalPeople,
-  onUpdate
+  onUpdate,
+  prefetchedResidentCustomerRows,
 }) => {
   const t = useTranslations('common')
   const locale = useLocale()
@@ -46,24 +74,11 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
         .from('reservation_customers')
         .select('resident_status')
         .eq('reservation_id', reservationId)
-      
+
       if (!error && reservationCustomers && reservationCustomers.length > 0) {
-        const statusCounts: Record<string, number> = {}
-        reservationCustomers.forEach((rc: any) => {
-          const status = rc.resident_status || 'unknown'
-          statusCounts[status] = (statusCounts[status] || 0) + 1
-        })
-        
-        let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null = null
-        let maxCount = 0
-        Object.entries(statusCounts).forEach(([status, count]) => {
-          if (count > maxCount && status !== 'unknown') {
-            maxCount = count
-            mostCommonStatus = status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
-          }
-        })
-        
-        setResidentStatus(mostCommonStatus)
+        setResidentStatus(mostCommonResidentStatusFromRows(reservationCustomers))
+      } else {
+        setResidentStatus(null)
       }
     } catch (error) {
       console.error('거주 상태 조회 오류:', error)
@@ -229,8 +244,12 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
   }
 
   useEffect(() => {
-    fetchResidentStatus()
-  }, [fetchResidentStatus])
+    if (prefetchedResidentCustomerRows !== undefined) {
+      setResidentStatus(mostCommonResidentStatusFromRows(prefetchedResidentCustomerRows))
+      return
+    }
+    void fetchResidentStatus()
+  }, [reservationId, prefetchedResidentCustomerRows, fetchResidentStatus])
 
   const getStatusIcon = () => {
     if (residentStatus === 'us_resident') {

@@ -40,6 +40,16 @@ interface CategoryManagerModalProps {
   onSave?: () => void
 }
 
+/** 표준 카테고리 관리 탭과 동일한 정렬로 서브 목록 */
+function sortedStandardSubs(
+  parentId: string,
+  subCategoriesByParent: Map<string, StandardCategory[]>
+): StandardCategory[] {
+  return [...(subCategoriesByParent.get(parentId) || [])].sort(
+    (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
+  )
+}
+
 /** null: 닫힘 · edit: 기존 행 수정 · create: 복사 초안 등 신규 저장 전 */
 type StandardCategoryEditorState = null | { type: 'edit'; id: string } | { type: 'create' }
 
@@ -152,8 +162,6 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     display_order: 0,
     is_active: true,
   })
-  const [selectedMainCategories, setSelectedMainCategories] = useState<Map<number, string>>(new Map())
-  const [selectedSubCategories, setSelectedSubCategories] = useState<Map<number, string>>(new Map())
   const [categorySelectModalOpen, setCategorySelectModalOpen] = useState<number | null>(null) // 현재 카테고리 선택 모달이 열린 행의 인덱스
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null) // 수정 중인 매핑 ID
   const [editMainCat, setEditMainCat] = useState<string>('')
@@ -975,19 +983,14 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     }
   })
 
-  /** 카테고리 매핑 선택·부모 지정 — 표준 카테고리 관리 탭과 동일하게 전체(비활성 포함) 노출 */
+  /** 새 카테고리 상위 선택용 — 메인만, display_order 순 */
   const pickerMainCategories = useMemo(
     () =>
-      standardCategories
-        .filter((c) => !c.parent_id)
-        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)),
+      [...standardCategories.filter((c) => !c.parent_id)].sort(
+        (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
+      ),
     [standardCategories]
   )
-
-  const getPickerSubCategories = (parentId: string) =>
-    standardCategories
-      .filter((c) => c.parent_id === parentId)
-      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
 
   // 카테고리 선택 핸들러 (메인 + 서브카테고리)
   const handleCategorySelect = async (expense: UnmappedExpense, categoryId: string, subCategoryId?: string) => {
@@ -1402,9 +1405,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                   </thead>
                   <tbody className="divide-y">
                     {mainCategories.map((cat) => {
-                      const subCats = [...(subCategoriesByParent.get(cat.id) || [])].sort(
-                        (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
-                      )
+                      const subCats = sortedStandardSubs(cat.id, subCategoriesByParent)
                       return (
                         <React.Fragment key={cat.id}>
                           {/* 메인 카테고리 */}
@@ -1615,23 +1616,26 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
         </div>
       </div>
 
-      {/* 카테고리 선택 모달 */}
+      {/* 카테고리 선택 모달 — 표준 카테고리 관리 탭과 동일한 테이블 트리 */}
       {categorySelectModalOpen !== null && (() => {
         const item = filteredUnmapped[categorySelectModalOpen]
         if (!item) return null
-        
+
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-            <div className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-              {/* 헤더 */}
-              <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+            <div className="bg-white rounded-lg w-full max-w-[min(1100px,calc(100vw-2rem))] max-h-[80vh] overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b bg-gray-50 shrink-0">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">카테고리 선택</h3>
                   <p className="text-sm text-gray-600 mt-1">
                     원본 값: <span className="font-medium">{item.paid_for}</span>
                   </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    표준 카테고리 관리와 같은 목록입니다. 서브가 없는 메인은 행을 누르면 바로 매핑됩니다.
+                  </p>
                 </div>
-                <button 
+                <button
+                  type="button"
                   onClick={() => setCategorySelectModalOpen(null)}
                   className="p-2 hover:bg-gray-200 rounded-lg"
                 >
@@ -1639,166 +1643,163 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                 </button>
               </div>
 
-              {/* 카테고리 목록 */}
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="space-y-2">
-                  {pickerMainCategories.map(mainCat => {
-                    const subs = getPickerSubCategories(mainCat.id)
-                    const isMainSelected = selectedMainCategories.get(categorySelectModalOpen) === mainCat.id
-                    
-                    return (
-                      <div key={mainCat.id} className="mb-2">
-                        {/* 메인 카테고리 */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newMainMap = new Map(selectedMainCategories)
-                            const newSubMap = new Map(selectedSubCategories)
-                            
-                            if (isMainSelected) {
-                              // 이미 선택된 경우 해제
-                              newMainMap.delete(categorySelectModalOpen)
-                              newSubMap.delete(categorySelectModalOpen)
-                            } else {
-                              // 선택
-                              newMainMap.set(categorySelectModalOpen, mainCat.id)
-                              // 서브카테고리가 없으면 바로 저장
-                              if (subs.length === 0) {
-                                handleCategorySelect(item, mainCat.id)
-                                newMainMap.delete(categorySelectModalOpen)
-                                setCategorySelectModalOpen(null)
-                              } else {
-                                newSubMap.delete(categorySelectModalOpen) // 서브카테고리 초기화
-                              }
-                            }
-                            
-                            setSelectedMainCategories(newMainMap)
-                            setSelectedSubCategories(newSubMap)
-                          }}
-                          disabled={saving}
-                          className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                            isMainSelected
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-white text-gray-700 hover:bg-gray-100 border-2 border-gray-200'
-                          } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                        >
-                          <div className="flex flex-col">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold">
-                                {mainCat.name_ko || mainCat.name}
-                                {!mainCat.is_active && (
-                                  <span
-                                    className={`font-normal ${isMainSelected ? 'text-blue-100' : 'text-gray-500'}`}
-                                  >
-                                    {' '}
-                                    (비활성)
-                                  </span>
-                                )}
-                              </span>
-                              {mainCat.irs_schedule_c_line && (
-                                <span className={`text-xs ${isMainSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                                  {mainCat.irs_schedule_c_line}
-                                </span>
-                              )}
-                            </div>
-                            {mainCat.description && (
-                              <p className={`text-xs mt-1 ${isMainSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                                {mainCat.description}
-                              </p>
-                            )}
-                          </div>
-                        </button>
-                        
-                        {/* 서브카테고리들 */}
-                        {isMainSelected && subs.length > 0 && (
-                          <div className="ml-6 mt-2 space-y-1">
-                            {subs.map(subCat => {
-                              const isSubSelected = selectedSubCategories.get(categorySelectModalOpen) === subCat.id
-                              
-                              return (
-                                <button
-                                  key={subCat.id}
-                                  type="button"
-                                  onClick={() => {
-                                    const mainCatId = selectedMainCategories.get(categorySelectModalOpen)!
-                                    // 서브카테고리 선택 및 바로 저장
-                                    handleCategorySelect(item, mainCatId, subCat.id)
-                                    const newMainMap = new Map(selectedMainCategories)
-                                    const newSubMap = new Map(selectedSubCategories)
-                                    newMainMap.delete(categorySelectModalOpen)
-                                    newSubMap.delete(categorySelectModalOpen)
-                                    setSelectedMainCategories(newMainMap)
-                                    setSelectedSubCategories(newSubMap)
-                                    setCategorySelectModalOpen(null)
-                                  }}
-                                  disabled={saving}
-                                  className={`w-full text-left px-4 py-2 rounded-lg text-sm transition-colors ${
-                                    isSubSelected
-                                      ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
-                                  } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                                >
-                                  <div className="flex flex-col">
-                                    <div>
-                                      <span className="text-gray-400 mr-2">└</span>
-                                      <span className="font-medium">
-                                        {subCat.name_ko || subCat.name}
-                                        {!subCat.is_active && (
-                                          <span
-                                            className={`font-normal ${isSubSelected ? 'text-blue-100' : 'text-gray-500'}`}
-                                          >
-                                            {' '}
-                                            (비활성)
-                                          </span>
-                                        )}
-                                      </span>
-                                    </div>
-                                    {subCat.description && (
-                                      <p className={`text-xs mt-0.5 ml-5 ${isSubSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                                        {subCat.description}
-                                      </p>
-                                    )}
-                                  </div>
-                                </button>
-                              )
-                            })}
-                            
-                            {/* 서브카테고리 없음 옵션 */}
-                            <button
-                              type="button"
+              <div className="flex-1 overflow-auto p-4 min-h-0">
+                <div className="border rounded-lg overflow-hidden overflow-x-auto">
+                  <table className="w-full min-w-[880px] text-xs sm:text-sm border-collapse">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap min-w-[7.5rem]">
+                          ID
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">영문</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">한글</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase min-w-[6rem]">설명</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          IRS Line
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          공제율
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          세금공제
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          상태
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          매핑
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {mainCategories.map((cat) => {
+                        const subCats = sortedStandardSubs(cat.id, subCategoriesByParent)
+                        const leafMain = subCats.length === 0
+                        return (
+                          <React.Fragment key={cat.id}>
+                            <tr
+                              className={`${
+                                cat.is_active ? 'bg-blue-50' : 'bg-gray-100 opacity-90'
+                              } ${leafMain && !saving ? 'cursor-pointer hover:bg-blue-100/90' : ''} ${
+                                saving ? 'opacity-50' : ''
+                              }`}
                               onClick={() => {
-                                const mainCatId = selectedMainCategories.get(categorySelectModalOpen)!
-                                handleCategorySelect(item, mainCatId, '__none__')
-                                
-                                const newMainMap = new Map(selectedMainCategories)
-                                const newSubMap = new Map(selectedSubCategories)
-                                newMainMap.delete(categorySelectModalOpen)
-                                newSubMap.delete(categorySelectModalOpen)
-                                setSelectedMainCategories(newMainMap)
-                                setSelectedSubCategories(newSubMap)
+                                if (saving || !leafMain) return
+                                void handleCategorySelect(item, cat.id)
                                 setCategorySelectModalOpen(null)
                               }}
-                              disabled={saving}
-                              className={`w-full text-left px-4 py-2 rounded-lg text-sm transition-colors ${
-                                selectedSubCategories.get(categorySelectModalOpen) === '__none__'
-                                  ? 'bg-gray-400 text-white hover:bg-gray-500'
-                                  : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-200'
-                              } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                              title={leafMain ? '클릭하여 이 메인 카테고리로 매핑' : undefined}
                             >
-                              <span className="text-gray-400 mr-2">└</span>
-                              서브카테고리 없음 (메인만 사용)
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                              <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">{cat.id}</td>
+                              <td className="px-3 py-2 font-semibold">{cat.name}</td>
+                              <td className="px-3 py-2 font-semibold">{cat.name_ko || '—'}</td>
+                              <td className="px-3 py-2 text-gray-600 max-w-[14rem] truncate" title={cat.description || ''}>
+                                {cat.description || '—'}
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                {cat.irs_schedule_c_line || '—'}
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                {cat.deduction_limit_percent !== undefined ? `${cat.deduction_limit_percent}%` : '100%'}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {cat.tax_deductible ? (
+                                  <span className="text-green-600">예</span>
+                                ) : (
+                                  <span className="text-red-600">아니오</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                {cat.is_active ? (
+                                  <span className="text-green-700">사용</span>
+                                ) : (
+                                  <span className="text-gray-500">비활성</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                {leafMain ? '행 클릭' : '—'}
+                              </td>
+                            </tr>
+                            {subCats.map((subCat) => (
+                              <tr
+                                key={subCat.id}
+                                className={`hover:bg-blue-50/90 ${!subCat.is_active ? 'bg-gray-50 opacity-90' : ''} ${
+                                  saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                }`}
+                                onClick={() => {
+                                  if (saving) return
+                                  void handleCategorySelect(item, cat.id, subCat.id)
+                                  setCategorySelectModalOpen(null)
+                                }}
+                                title="클릭하여 이 서브카테고리로 매핑"
+                              >
+                                <td className="px-3 py-2 font-mono text-gray-500 pl-8 whitespace-nowrap">
+                                  <span className="text-xs text-gray-400 mr-1">└</span>
+                                  {subCat.id}
+                                </td>
+                                <td className="px-3 py-2 pl-8">{subCat.name}</td>
+                                <td className="px-3 py-2 pl-8">{subCat.name_ko || '—'}</td>
+                                <td
+                                  className="px-3 py-2 text-gray-500 pl-8 max-w-[14rem] truncate"
+                                  title={subCat.description || ''}
+                                >
+                                  {subCat.description || '—'}
+                                </td>
+                                <td className="px-3 py-2 text-gray-400 pl-8 whitespace-nowrap">
+                                  {subCat.irs_schedule_c_line || '—'}
+                                </td>
+                                <td className="px-3 py-2 text-gray-400 pl-8 whitespace-nowrap">
+                                  {subCat.deduction_limit_percent !== undefined
+                                    ? `${subCat.deduction_limit_percent}%`
+                                    : '100%'}
+                                </td>
+                                <td className="px-3 py-2 pl-8 whitespace-nowrap">
+                                  {subCat.tax_deductible ? (
+                                    <span className="text-green-600">예</span>
+                                  ) : (
+                                    <span className="text-red-600">아니오</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 pl-8 text-gray-600 whitespace-nowrap">
+                                  {subCat.is_active ? (
+                                    <span className="text-green-700">사용</span>
+                                  ) : (
+                                    <span className="text-gray-500">비활성</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-blue-600 font-medium whitespace-nowrap">행 클릭</td>
+                              </tr>
+                            ))}
+                            {subCats.length > 0 && (
+                              <tr
+                                className={`bg-amber-50/50 hover:bg-amber-100/80 ${
+                                  saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                }`}
+                                onClick={() => {
+                                  if (saving) return
+                                  void handleCategorySelect(item, cat.id, '__none__')
+                                  setCategorySelectModalOpen(null)
+                                }}
+                                title="메인 카테고리만 사용 (서브 없음)"
+                              >
+                                <td className="px-3 py-2 pl-8 text-gray-600 italic" colSpan={8}>
+                                  <span className="text-xs text-gray-400 mr-1">└</span>
+                                  서브카테고리 없음 (메인만 사용)
+                                </td>
+                                <td className="px-3 py-2 text-amber-800 font-medium whitespace-nowrap">행 클릭</td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
-              {/* 푸터 */}
-              <div className="border-t p-4 bg-gray-50 flex justify-end">
+              <div className="border-t p-4 bg-gray-50 flex justify-end shrink-0">
                 <button
+                  type="button"
                   onClick={() => setCategorySelectModalOpen(null)}
                   className="px-6 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg"
                 >
@@ -1817,9 +1818,9 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
         
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-            <div className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="bg-white rounded-lg w-full max-w-[min(1100px,calc(100vw-2rem))] max-h-[80vh] overflow-hidden flex flex-col">
               {/* 헤더 */}
-              <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+              <div className="flex items-center justify-between p-4 border-b bg-gray-50 shrink-0">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">매핑 수정</h3>
                   <p className="text-sm text-gray-600 mt-1">
@@ -1839,112 +1840,175 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                 </button>
               </div>
 
-              {/* 카테고리 목록 */}
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="space-y-2">
-                  {mainCategories.map(mainCat => {
-                    const subs = [...(subCategoriesByParent.get(mainCat.id) || [])].sort(
-                      (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
-                    )
-                    const isMainSelected = editMainCat === mainCat.id || (mapping.standard_category_id === mainCat.id && editMainCat === '')
-                    
-                    return (
-                      <div key={mainCat.id} className="mb-2">
-                        {/* 메인 카테고리 */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (isMainSelected) {
-                              setEditMainCat('')
-                              setEditSubCat(null)
-                            } else {
-                              setEditMainCat(mainCat.id)
-                              // 서브카테고리가 없으면 서브카테고리 초기화
-                              if (subs.length === 0) {
+              <div className="flex-1 overflow-auto p-4 min-h-0">
+                <p className="text-xs text-gray-500 mb-2">
+                  표준 카테고리 관리와 동일한 표입니다. 메인·서브·「메인만」행을 눌러 선택한 뒤 저장하세요.
+                </p>
+                <div className="border rounded-lg overflow-hidden overflow-x-auto">
+                  <table className="w-full min-w-[880px] text-xs sm:text-sm border-collapse">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap min-w-[7.5rem]">
+                          ID
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">영문</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">한글</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase min-w-[6rem]">설명</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          IRS Line
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          공제율
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          세금공제
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          상태
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase whitespace-nowrap">
+                          선택
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {mainCategories.map((cat) => {
+                        const subCats = sortedStandardSubs(cat.id, subCategoriesByParent)
+                        const mainRowRing =
+                          editMainCat === cat.id &&
+                          editSubCat !== '__none__' &&
+                          (subCats.length === 0 || editSubCat === null)
+                        return (
+                          <React.Fragment key={cat.id}>
+                            <tr
+                              className={`${
+                                cat.is_active ? 'bg-blue-50' : 'bg-gray-100 opacity-90'
+                              } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-blue-100/80'} ${
+                                mainRowRing ? 'ring-2 ring-inset ring-blue-600' : ''
+                              }`}
+                              onClick={() => {
+                                if (saving) return
+                                if (editMainCat === cat.id) {
+                                  setEditMainCat('')
+                                  setEditSubCat(null)
+                                  return
+                                }
+                                setEditMainCat(cat.id)
                                 setEditSubCat(null)
-                              }
-                            }
-                          }}
-                          disabled={saving}
-                          className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                            isMainSelected
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-white text-gray-700 hover:bg-gray-100 border-2 border-gray-200'
-                          } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                        >
-                          <div className="flex flex-col">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold">{mainCat.name_ko || mainCat.name}</span>
-                              {mainCat.irs_schedule_c_line && (
-                                <span className={`text-xs ${isMainSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                                  {mainCat.irs_schedule_c_line}
-                                </span>
-                              )}
-                            </div>
-                            {mainCat.description && (
-                              <p className={`text-xs mt-1 ${isMainSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                                {mainCat.description}
-                              </p>
-                            )}
-                          </div>
-                        </button>
-                        
-                        {/* 서브카테고리들 */}
-                        {isMainSelected && subs.length > 0 && (
-                          <div className="ml-6 mt-2 space-y-1">
-                            {subs.map(subCat => {
-                              const isSubSelected = editSubCat === subCat.id
-                              
+                              }}
+                              title="메인 카테고리 선택"
+                            >
+                              <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">{cat.id}</td>
+                              <td className="px-3 py-2 font-semibold">{cat.name}</td>
+                              <td className="px-3 py-2 font-semibold">{cat.name_ko || '—'}</td>
+                              <td className="px-3 py-2 text-gray-600 max-w-[14rem] truncate" title={cat.description || ''}>
+                                {cat.description || '—'}
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                {cat.irs_schedule_c_line || '—'}
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                {cat.deduction_limit_percent !== undefined ? `${cat.deduction_limit_percent}%` : '100%'}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {cat.tax_deductible ? (
+                                  <span className="text-green-600">예</span>
+                                ) : (
+                                  <span className="text-red-600">아니오</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                {cat.is_active ? (
+                                  <span className="text-green-700">사용</span>
+                                ) : (
+                                  <span className="text-gray-500">비활성</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                {subCats.length === 0 ? '메인만' : '메인'}
+                              </td>
+                            </tr>
+                            {subCats.map((subCat) => {
+                              const subRing = editMainCat === cat.id && editSubCat === subCat.id
                               return (
-                                <button
+                                <tr
                                   key={subCat.id}
-                                  type="button"
+                                  className={`${!subCat.is_active ? 'bg-gray-50 opacity-90' : ''} ${
+                                    saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-blue-50/90'
+                                  } ${subRing ? 'ring-2 ring-inset ring-blue-600' : ''}`}
                                   onClick={() => {
-                                    setEditSubCat(isSubSelected ? null : subCat.id)
+                                    if (saving) return
+                                    setEditMainCat(cat.id)
+                                    setEditSubCat(editSubCat === subCat.id ? null : subCat.id)
                                   }}
-                                  disabled={saving}
-                                  className={`w-full text-left px-4 py-2 rounded-lg text-sm transition-colors ${
-                                    isSubSelected
-                                      ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
-                                  } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                  title="서브카테고리 선택"
                                 >
-                                  <div className="flex flex-col">
-                                    <div>
-                                      <span className="text-gray-400 mr-2">└</span>
-                                      <span className="font-medium">{subCat.name_ko || subCat.name}</span>
-                                    </div>
-                                    {subCat.description && (
-                                      <p className={`text-xs mt-0.5 ml-5 ${isSubSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                                        {subCat.description}
-                                      </p>
+                                  <td className="px-3 py-2 font-mono text-gray-500 pl-8 whitespace-nowrap">
+                                    <span className="text-xs text-gray-400 mr-1">└</span>
+                                    {subCat.id}
+                                  </td>
+                                  <td className="px-3 py-2 pl-8">{subCat.name}</td>
+                                  <td className="px-3 py-2 pl-8">{subCat.name_ko || '—'}</td>
+                                  <td
+                                    className="px-3 py-2 text-gray-500 pl-8 max-w-[14rem] truncate"
+                                    title={subCat.description || ''}
+                                  >
+                                    {subCat.description || '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-400 pl-8 whitespace-nowrap">
+                                    {subCat.irs_schedule_c_line || '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-400 pl-8 whitespace-nowrap">
+                                    {subCat.deduction_limit_percent !== undefined
+                                      ? `${subCat.deduction_limit_percent}%`
+                                      : '100%'}
+                                  </td>
+                                  <td className="px-3 py-2 pl-8 whitespace-nowrap">
+                                    {subCat.tax_deductible ? (
+                                      <span className="text-green-600">예</span>
+                                    ) : (
+                                      <span className="text-red-600">아니오</span>
                                     )}
-                                  </div>
-                                </button>
+                                  </td>
+                                  <td className="px-3 py-2 pl-8 text-gray-600 whitespace-nowrap">
+                                    {subCat.is_active ? (
+                                      <span className="text-green-700">사용</span>
+                                    ) : (
+                                      <span className="text-gray-500">비활성</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-blue-600 font-medium whitespace-nowrap">서브</td>
+                                </tr>
                               )
                             })}
-                            
-                            {/* 서브카테고리 없음 옵션 */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditSubCat(editSubCat === '__none__' ? null : '__none__')
-                              }}
-                              disabled={saving}
-                              className={`w-full text-left px-4 py-2 rounded-lg text-sm transition-colors ${
-                                editSubCat === '__none__'
-                                  ? 'bg-gray-400 text-white hover:bg-gray-500'
-                                  : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-200'
-                              } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                            >
-                              <span className="text-gray-400 mr-2">└</span>
-                              서브카테고리 없음 (메인만 사용)
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                            {subCats.length > 0 && (
+                              <tr
+                                className={`bg-amber-50/50 hover:bg-amber-100/80 ${
+                                  saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                } ${
+                                  editMainCat === cat.id && editSubCat === '__none__'
+                                    ? 'ring-2 ring-inset ring-blue-600'
+                                    : ''
+                                }`}
+                                onClick={() => {
+                                  if (saving) return
+                                  setEditMainCat(cat.id)
+                                  setEditSubCat(editSubCat === '__none__' ? null : '__none__')
+                                }}
+                                title="메인만 사용"
+                              >
+                                <td className="px-3 py-2 pl-8 text-gray-600 italic" colSpan={8}>
+                                  <span className="text-xs text-gray-400 mr-1">└</span>
+                                  서브카테고리 없음 (메인만 사용)
+                                </td>
+                                <td className="px-3 py-2 text-amber-800 font-medium whitespace-nowrap">메인만</td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
