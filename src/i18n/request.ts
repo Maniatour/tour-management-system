@@ -8,6 +8,16 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 // 서버 사이드용 Supabase 클라이언트
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+/** DB에 인코딩 깨짐 등으로 `?` 위주 문자열만 들어온 경우 파일 번역을 유지 */
+function shouldKeepFileStringInsteadOfDb(fileValue: unknown, dbValue: unknown): boolean {
+  if (typeof fileValue !== 'string' || typeof dbValue !== 'string') return false
+  if (!dbValue.includes('?')) return false
+  const fileHasLetters = /\p{L}/u.test(fileValue)
+  const dbLetters = dbValue.replace(/[^\p{L}]/gu, '')
+  const dbLooksCorrupted = dbLetters.length === 0 || /^[?]+$/u.test(dbLetters)
+  return fileHasLetters && dbLooksCorrupted
+}
+
 export default getRequestConfig(async ({ locale }) => {
   // 지원하는 언어 목록
   const supportedLocales = ['ko', 'en']
@@ -69,31 +79,39 @@ export default getRequestConfig(async ({ locale }) => {
           `[i18n] translation_values query exceeded ${DB_TRANSLATIONS_TIMEOUT_MS}ms, using file messages only`
         )
       } else if (!dbError && dbTranslations && dbTranslations.length > 0) {
-        // DB 번역을 messages 객체에 병합 (DB 번역이 우선순위 높음)
-        const dbMessages = { ...fileMessages }
-        
+        // DB 번역을 messages에 병합 (DB 우선). 깊은 복사로 locale JSON 모듈 객체를 오염시키지 않음
+        const dbMessages = structuredClone(fileMessages) as typeof fileMessages
+
         for (const dbTrans of dbTranslations) {
           const trans = dbTrans.translations as any
           if (trans && trans.namespace && trans.key_path) {
             // namespace 생성이 없으면 생성
             if (!dbMessages[trans.namespace]) {
-              dbMessages[trans.namespace] = {}
+              dbMessages[trans.namespace] = {} as (typeof dbMessages)[string]
             }
-            
+
             // key_path가 점(.)으로 구분된 경우 중첩 객체 생성
             const keys = trans.key_path.split('.')
-            let current = dbMessages[trans.namespace]
-            
+            let current = dbMessages[trans.namespace] as Record<string, unknown>
+
             // 마지막 키를 제외하고 중첩 객체 생성
             for (let i = 0; i < keys.length - 1; i++) {
               if (!current[keys[i]]) {
                 current[keys[i]] = {}
               }
-              current = current[keys[i]]
+              current = current[keys[i]] as Record<string, unknown>
             }
-            
-            // 마지막 키에 값 설정
-            current[keys[keys.length - 1]] = dbTrans.value
+
+            const leafKey = keys[keys.length - 1]
+            const existing = current[leafKey]
+            const incoming = dbTrans.value
+            if (typeof incoming === 'string' && incoming.trim() === '' && typeof existing === 'string' && existing.length > 0) {
+              continue
+            }
+            if (shouldKeepFileStringInsteadOfDb(existing, incoming)) {
+              continue
+            }
+            current[leafKey] = incoming
           }
         }
         

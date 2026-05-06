@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
-    "type-check": "tsc --noEmit",
+    "type-check": "node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit",
     "clean": "rm -rf .next out dist",
     "clean:all": "rm -rf .next out dist node_modules package-lock.json && npm install",
     "generate-thumbnails": "node scripts/generate-thumbnails.js",

@@ -57,6 +57,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -391,11 +392,18 @@ const AUTO_MATCH_CANDIDATE_LIMIT = 8
 const AUTO_MATCH_PREVIEW_PAGE_SIZE = 120
 /** 자동 매칭 미리보기: 명세 줄 금액과 같은 지출만 후보 (미리보기 옵션 표시와 동일한 부동소수 허용치) */
 const AUTO_MATCH_AMOUNT_EQUAL_EPS = 0.015
-/** 명세 대조 화면 전반: 거래일·등록일 기준 ±N일(미매칭 구간, 지출 피커, 운영원장 후보, 자동 매칭 지출 로드·점수) */
+/** 자동 매칭 — 정확 금액: 명세 거래일 vs 지출 등록일( submit_on ) 최대 차이(일) */
+const AUTO_MATCH_EXACT_DAY_WINDOW = 4
+/** 자동 매칭 — 비슷한 금액: 명세 거래일 vs 지출 등록일 최대 차이(일) */
+const AUTO_MATCH_SIMILAR_DAY_WINDOW = 7
+/** 자동 매칭 지출 조회 시 명세 업로드 기간 확장 — 두 모드 중 넓은 등록일 창에 맞춤 */
+const AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING = Math.max(AUTO_MATCH_EXACT_DAY_WINDOW, AUTO_MATCH_SIMILAR_DAY_WINDOW)
+/** 명세 대조 화면 전반: 거래일·등록일 기준 ±N일(미매칭 구간, 지출 피커, 운영원장 후보 등) */
 const RECON_STATEMENT_DAY_WINDOW = 4
-const AUTO_MATCH_MAX_DAY_DIFF = RECON_STATEMENT_DAY_WINDOW
 /** 자동 매칭 미리보기: 한 실행에서 처리할 명세 줄 상한(실제 대상은 표 현재 페이지의 출금·미연결 줄뿐) */
 const AUTO_MATCH_MAX_STATEMENT_LINES = 800
+
+type AutoMatchAmountMode = 'exact' | 'similar'
 /** 계정별 명세 줄·매칭 메모리 캐시 TTL (짧게 유지해 DB 왕복만 완화) */
 const RECONCILIATION_LOAD_CACHE_TTL_MS = 15000
 
@@ -419,14 +427,36 @@ function dayDiffFromYmd(iso: string, ymd: string): number {
   return Math.abs(a - b)
 }
 
+/** 지출 피커 «유사 금액»과 동일 — 명세 금액과 지출 금액이 비슷한지 (±12% 또는 $4 이내, 또는 $0.02 미만) */
+function expenseAmountRoughlyMatchesLine(lineAmt: number, expenseAmt: number): boolean {
+  const diff = Math.abs(expenseAmt - lineAmt)
+  if (diff < 0.02) return true
+  const ref = Math.max(Math.abs(lineAmt), Math.abs(expenseAmt), 0.01)
+  return diff / ref <= 0.12 || diff <= 4
+}
+
 /** 금액·거래일 근접만 반영 (텍스트·라벨·결제수단은 사용하지 않음) */
-function autoMatchCandidateScore(lineAmount: number, postedDate: string, expense: AutoMatchExpenseCandidate) {
-  const amountDiff = Math.abs(Number(expense.amount) - lineAmount)
-  if (amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS) return null
+function autoMatchCandidateScore(
+  lineAmount: number,
+  postedDate: string,
+  expense: AutoMatchExpenseCandidate,
+  rule: { maxDayDiff: number; amountMode: AutoMatchAmountMode }
+): number | null {
+  const expenseAmt = Number(expense.amount)
+  const amountDiff = Math.abs(expenseAmt - lineAmount)
+  if (rule.amountMode === 'exact') {
+    if (amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS) return null
+  } else if (!expenseAmountRoughlyMatchesLine(lineAmount, expenseAmt)) {
+    return null
+  }
   const dayDiff = dayDiffFromYmd(expense.occurred_at, postedDate)
-  if (dayDiff > AUTO_MATCH_MAX_DAY_DIFF) return null
+  if (dayDiff > rule.maxDayDiff) return null
   const datePenalty = dayDiff * 5
-  return Math.max(1, 100 - datePenalty)
+  const similarAmountPenalty =
+    rule.amountMode === 'similar' && amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS
+      ? Math.min(28, amountDiff * 2.5)
+      : 0
+  return Math.max(1, 100 - datePenalty - similarAmountPenalty)
 }
 
 /** 동점·동일 금액 차이일 때 후보 다양성 — 투어·예약이 회사·티켓보다 앞서도록(여전히 DB는 네 테이블 모두 조회) */
@@ -887,14 +917,6 @@ function calendarDaysBetweenIsoDates(a: string, b: string): number {
   return Math.abs(t1 - t2) / 86400000
 }
 
-/** 금액 완전 일치 후보가 없을 때 — 명세 금액과 지출 금액이 비슷한지 (±12% 또는 $4 이내) */
-function expenseAmountRoughlyMatchesLine(lineAmt: number, expenseAmt: number): boolean {
-  const diff = Math.abs(expenseAmt - lineAmt)
-  if (diff < 0.02) return true
-  const ref = Math.max(Math.abs(lineAmt), Math.abs(expenseAmt), 0.01)
-  return diff / ref <= 0.12 || diff <= 4
-}
-
 function expenseKey(sourceTable: string, sourceId: string) {
   return `${sourceTable}:${sourceId}`
 }
@@ -1167,12 +1189,16 @@ export default function StatementReconciliationTab() {
   const [autoMatchPreviewOpen, setAutoMatchPreviewOpen] = useState(false)
   const [autoMatchProposals, setAutoMatchProposals] = useState<AutoMatchProposalRow[]>([])
   const [autoMatchSummaryHint, setAutoMatchSummaryHint] = useState<string | null>(null)
+  /** 미리보기에 적용된 자동 매칭 규칙 설명(정확 금액 ±4일 vs 비슷한 금액 ±7일) */
+  const [autoMatchRuleNarrative, setAutoMatchRuleNarrative] = useState<string | null>(null)
   const [autoMatchApplying, setAutoMatchApplying] = useState(false)
   /** 미리보기에서 저장할 명세 줄 id — 기본은 후보 전체 선택 */
   const [autoMatchSelectedIds, setAutoMatchSelectedIds] = useState<Set<string>>(() => new Set())
   const [autoMatchPreviewPage, setAutoMatchPreviewPage] = useState(1)
   /** 미리보기에서 명세 줄별로 선택한 후보 key */
   const [autoMatchCandidateSelection, setAutoMatchCandidateSelection] = useState<Record<string, string>>({})
+  /** 자동 매칭: 금액·일자 조건에 맞는 지출 후보가 한 건도 없을 때 안내 모달 본문 */
+  const [autoMatchNoCandidateAlert, setAutoMatchNoCandidateAlert] = useState<string | null>(null)
   const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
   const [bulkCompanyExpenseModalOpen, setBulkCompanyExpenseModalOpen] = useState(false)
   const [standaloneCompanyDupModalOpen, setStandaloneCompanyDupModalOpen] = useState(false)
@@ -2983,7 +3009,7 @@ export default function StatementReconciliationTab() {
     [canMutateStatementUploads]
   )
 
-  const prepareAutoMatch = async () => {
+  const prepareAutoMatch = async (amountMode: AutoMatchAmountMode) => {
     if (!filterAccountId || !accountExpenseWindow) return
     if (reconciliationTableLines.length === 0) {
       setMessage('필터가 적용된 명세 목록이 비어 있습니다. 월·거래일·검색·계정을 확인하세요.')
@@ -2996,14 +3022,17 @@ export default function StatementReconciliationTab() {
       )
       return
     }
+    const maxDayDiff =
+      amountMode === 'exact' ? AUTO_MATCH_EXACT_DAY_WINDOW : AUTO_MATCH_SIMILAR_DAY_WINDOW
+    const matchRule = { maxDayDiff, amountMode } as const
     const linesForAutoMatch = eligible.slice(0, AUTO_MATCH_MAX_STATEMENT_LINES)
     setLoading(true)
     setMessage(null)
 
     const start = new Date(accountExpenseWindow.period_start)
     const end = new Date(accountExpenseWindow.period_end)
-    start.setDate(start.getDate() - RECON_STATEMENT_DAY_WINDOW)
-    end.setDate(end.getDate() + RECON_STATEMENT_DAY_WINDOW)
+    start.setDate(start.getDate() - AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING)
+    end.setDate(end.getDate() + AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING)
     const startIso = start.toISOString()
     const endIso = end.toISOString()
 
@@ -3089,7 +3118,7 @@ export default function StatementReconciliationTab() {
         .map((expense) => {
           const key = `${expense.source_table}:${expense.source_id}`
           if (used.has(key)) return null
-          const score = autoMatchCandidateScore(amt, line.posted_date, expense)
+          const score = autoMatchCandidateScore(amt, line.posted_date, expense, matchRule)
           if (!score) return null
           return {
             key,
@@ -3134,16 +3163,30 @@ export default function StatementReconciliationTab() {
 
     const proposalsWithCandidates = proposals.filter((p) => p.candidates.length > 0)
     if (proposalsWithCandidates.length === 0) {
-      setMessage(
-        `명세 ${linesForAutoMatch.length}건에 대해, 금액·등록일(±${AUTO_MATCH_MAX_DAY_DIFF}일)이 맞는 지출 후보가 한 건도 없습니다. 지출 등록일·금액을 확인하거나 수동으로 연결하세요.`
+      const amtPart =
+        amountMode === 'exact'
+          ? `금액이 거의 같고(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)`
+          : '금액이 비슷한 범위(차이 ≤12% 또는 ≤$4, 또는 $0.02 미만)이고'
+      setAutoMatchNoCandidateAlert(
+        `명세 ${linesForAutoMatch.length}건에 대해, ${amtPart} 지출 등록일이 명세 거래일 ±${maxDayDiff}일 안에 맞는 후보가 한 건도 없습니다. 지출 등록일·금액을 확인하거나 수동으로 연결하세요.`
       )
       return
     }
 
     const skippedNoCandidate = proposals.length - proposalsWithCandidates.length
     const truncated = eligible.length > AUTO_MATCH_MAX_STATEMENT_LINES
+    const modeLabel =
+      amountMode === 'exact'
+        ? `정확 금액 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일`
+        : `비슷한 금액 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일`
+    setAutoMatchRuleNarrative(
+      amountMode === 'exact'
+        ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)이고, 지출 등록일이 명세 거래일 기준 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내입니다. 점수는 거래일 차이를 반영합니다.`
+        : `이 실행의 후보 조건: 명세 금액과 지출 금액이 비슷한 범위(차이가 큰 쪽 대비 12% 이하이거나 $4 이하, 또는 $0.02 미만)이고, 지출 등록일이 명세 거래일 기준 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내입니다. 금액 차이가 허용 범위 안에서도 크면 점수에서 추가로 감점합니다.`
+    )
     setAutoMatchSummaryHint(
       [
+        modeLabel,
         truncated
           ? `출금·미연결 ${eligible.length}건 중 앞 ${linesForAutoMatch.length}건만 미리보기합니다. (한도 ${AUTO_MATCH_MAX_STATEMENT_LINES}건)`
           : `출금·미연결 명세 ${linesForAutoMatch.length}건 검토`,
@@ -3169,6 +3212,7 @@ export default function StatementReconciliationTab() {
       setAutoMatchPreviewOpen(false)
       setAutoMatchProposals([])
       setAutoMatchSummaryHint(null)
+      setAutoMatchRuleNarrative(null)
       setAutoMatchSelectedIds(new Set())
       setAutoMatchPreviewPage(1)
       setAutoMatchCandidateSelection({})
@@ -3226,6 +3270,7 @@ export default function StatementReconciliationTab() {
     setAutoMatchPreviewOpen(false)
     setAutoMatchProposals([])
     setAutoMatchSummaryHint(null)
+    setAutoMatchRuleNarrative(null)
     setAutoMatchSelectedIds(new Set())
     setAutoMatchPreviewPage(1)
     setAutoMatchCandidateSelection({})
@@ -4572,6 +4617,29 @@ export default function StatementReconciliationTab() {
         createdByEmail={email}
       />
 
+      <AlertDialog
+        open={autoMatchNoCandidateAlert != null}
+        onOpenChange={(open) => {
+          if (!open) setAutoMatchNoCandidateAlert(null)
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm> 후보 없음
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-left text-slate-700 whitespace-pre-wrap">
+              {autoMatchNoCandidateAlert ?? ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction type="button" onClick={() => setAutoMatchNoCandidateAlert(null)}>
+              확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog
         open={autoMatchPreviewOpen}
         onOpenChange={(open) => {
@@ -4580,6 +4648,7 @@ export default function StatementReconciliationTab() {
           if (!open) {
             setAutoMatchProposals([])
             setAutoMatchSummaryHint(null)
+            setAutoMatchRuleNarrative(null)
             setAutoMatchSelectedIds(new Set())
             setAutoMatchPreviewPage(1)
             setAutoMatchCandidateSelection({})
@@ -4610,8 +4679,16 @@ export default function StatementReconciliationTab() {
               테이블 모두 <strong>1000행씩 순회</strong>하며, 이미{' '}
               <code className="text-[11px] bg-slate-100 px-1 rounded">reconciliation_matches</code>에 연결된 동일 출처 지출은 후보에서 제외합니다.
               후보가 없는 명세 줄은 목록에 넣지 않습니다.
-              명세 금액과 동일(허용 오차 내)이고 등록일이 명세 거래일과 ±{AUTO_MATCH_MAX_DAY_DIFF}일 이내인 것만 후보이며, 점수는{' '}
-              <strong>거래일 차이만</strong> 반영합니다(결제수단·문구 일치·라벨 길이는 사용하지 않음). 점수·금액차가 같으면 투어·예약 후보가 목록에서 앞쪽에 오도록 정렬합니다.
+              {autoMatchRuleNarrative ? (
+                <span className="block mt-1 text-slate-700">{autoMatchRuleNarrative}</span>
+              ) : (
+                <span className="block mt-1">
+                  실행 시 고른 버튼에 따라 후보 조건이 달라집니다. <strong>정확 금액 ±{AUTO_MATCH_EXACT_DAY_WINDOW}일</strong>은 금액이 거의
+                  같을 때, <strong>비슷한 금액 ±{AUTO_MATCH_SIMILAR_DAY_WINDOW}일</strong>은 금액·날짜 허용 범위를 넓힙니다. 점수는 거래일 차이를
+                  반영하고, 비슷한 금액 모드에서는 금액 차이에 따른 감점이 추가될 수 있습니다. 결제수단·문구 일치·라벨 길이는 사용하지 않습니다.
+                  점수·금액차가 같으면 투어·예약 후보가 목록에서 앞쪽에 오도록 정렬합니다.
+                </span>
+              )}
               {autoMatchSummaryHint ? (
                 <span className="block mt-1 text-slate-700">{autoMatchSummaryHint}</span>
               ) : null}
@@ -4799,6 +4876,7 @@ export default function StatementReconciliationTab() {
                 setAutoMatchPreviewOpen(false)
                 setAutoMatchProposals([])
                 setAutoMatchSummaryHint(null)
+                setAutoMatchRuleNarrative(null)
                 setAutoMatchSelectedIds(new Set())
                 setAutoMatchPreviewPage(1)
                 setAutoMatchCandidateSelection({})
@@ -5035,7 +5113,7 @@ export default function StatementReconciliationTab() {
                   <strong>
                     <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>
                   </strong>
-                  을 실행하면 <strong>미리보기</strong>가 나오고, 내용을 확인한 뒤 <strong>저장</strong>할 때만 DB에 반영됩니다. 표 하단에서 <strong>페이지당 행 수</strong>를 고르면 그만큼 한 페이지에 보이며, <strong>자동 매칭</strong>도 같은 범위의 줄만 대상으로 합니다. <strong>지금 보이는 페이지</strong>에 한해 금액이 같고 날짜가 가까운 기존 지출(회사/투어/예약/입장권 부킹)과 연결됩니다. 나머지는 페이지를 넘겨 가며 반복합니다.
+                  을 실행하면 <strong>미리보기</strong>가 나오고, 내용을 확인한 뒤 <strong>저장</strong>할 때만 DB에 반영됩니다. <strong>정확 금액 ±{AUTO_MATCH_EXACT_DAY_WINDOW}일</strong>과 <strong>비슷한 금액 ±{AUTO_MATCH_SIMILAR_DAY_WINDOW}일</strong> 중 하나를 고를 수 있습니다. 표 하단에서 <strong>페이지당 행 수</strong>를 고르면 그만큼 한 페이지에 보이며, <strong>자동 매칭</strong>도 같은 범위의 줄만 대상으로 합니다. <strong>지금 보이는 페이지</strong>의 출금·미연결 줄과 기존 지출(회사/투어/예약/입장권 부킹)을 맞춥니다. 나머지는 페이지를 넘겨 가며 반복합니다.
                 </li>
                 <li>
                   여전히{' '}
@@ -5801,7 +5879,7 @@ export default function StatementReconciliationTab() {
           <Button
             type="button"
             variant="secondary"
-            onClick={prepareAutoMatch}
+            onClick={() => void prepareAutoMatch('exact')}
             disabled={
               loading ||
               reconciliationLinesLoading ||
@@ -5811,10 +5889,40 @@ export default function StatementReconciliationTab() {
               autoMatchPreviewOpen ||
               autoMatchApplying
             }
-            title="명세 대조 표에 지금 보이는 페이지의 출금·미연결 줄만 미리보기합니다. 다른 페이지는 페이지를 바꾼 뒤 다시 실행하세요. 저장은 미리보기에서 선택한 행만 반영됩니다."
+            title={`금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)하고 지출 등록일이 명세 거래일 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내인 지출만 후보로 붙입니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다.`}
           >
-            <Wand2 className="h-4 w-4 mr-1" />
+            <Wand2 className="h-4 w-4 mr-1 shrink-0" />
             <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>
+            <span className="ml-1 font-normal">정확 금액 ±{AUTO_MATCH_EXACT_DAY_WINDOW}일</span>
+            {autoMatchEligibleStatementLines.length > 0 ? (
+              <span className="ml-1 text-[11px] font-normal text-slate-600">
+                (대상{' '}
+                {Math.min(autoMatchEligibleStatementLines.length, AUTO_MATCH_MAX_STATEMENT_LINES)}
+                {autoMatchEligibleStatementLines.length > AUTO_MATCH_MAX_STATEMENT_LINES
+                  ? `/${autoMatchEligibleStatementLines.length}`
+                  : ''}
+                건)
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void prepareAutoMatch('similar')}
+            disabled={
+              loading ||
+              reconciliationLinesLoading ||
+              !filterAccountId ||
+              !accountExpenseWindow ||
+              autoMatchEligibleStatementLines.length === 0 ||
+              autoMatchPreviewOpen ||
+              autoMatchApplying
+            }
+            title={`금액이 비슷한 범위(차이 ≤12% 또는 ≤$4, 또는 $0.02 미만)이고 지출 등록일이 명세 거래일 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내인 지출을 후보로 붙입니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다.`}
+          >
+            <Wand2 className="h-4 w-4 mr-1 shrink-0" />
+            <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>
+            <span className="ml-1 font-normal">비슷한 금액 ±{AUTO_MATCH_SIMILAR_DAY_WINDOW}일</span>
             {autoMatchEligibleStatementLines.length > 0 ? (
               <span className="ml-1 text-[11px] font-normal text-slate-600">
                 (대상{' '}
