@@ -51,6 +51,17 @@ export type AdminNavAccessContext = {
   canAccessReservationStatistics: boolean
   isSimulating: boolean
   authUserEmail: string | null | undefined
+  /** 사이트 구조「내 메뉴」열·패치 병합용 — 생략 시 null 취급 */
+  userPosition?: string | null
+  /**
+   * 사이드바 레지스트리 id(`products` 등) 기준 읽기 허용 — DB 매트릭스 패치 병합 결과.
+   * 생략 시 기존과 동일(가시성 규칙만 적용).
+   */
+  siteAccessSidebarReadAllowed?: (sidebarRegistryId: string) => boolean
+  /**
+   * 헤더 빠른 이동 레지스트리 id(`hq-team-board` 등) 기준 읽기 허용.
+   */
+  siteAccessHeaderReadAllowed?: (headerRegistryId: string) => boolean
 }
 
 export function isAdminNavVisible(rule: AdminNavVisibility, ctx: AdminNavAccessContext): boolean {
@@ -154,6 +165,24 @@ export const ADMIN_HEADER_QUICK_REGISTRY: readonly AdminHeaderQuickEntry[] = [
   { id: 'hq-chat-management', path: 'chat-management', labelNamespace: 'common', labelKey: 'chatManagement', visibility: { type: 'always' } },
 ]
 
+/** 데스크톱 헤더 빠른 이동 버튼 스타일 — `ADMIN_HEADER_QUICK_REGISTRY` id와 동일 키 */
+export const ADMIN_HEADER_QUICK_BUTTON_CLASS: Record<string, string> = {
+  'hq-team-board':
+    'px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors cursor-pointer relative z-10',
+  'hq-consultation':
+    'px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10',
+  'hq-customers':
+    'px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors cursor-pointer relative z-10',
+  'hq-reservations':
+    'px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10',
+  'hq-booking':
+    'px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer relative z-10',
+  'hq-tours':
+    'px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors cursor-pointer relative z-10',
+  'hq-chat-management':
+    'px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10 inline-flex items-center',
+}
+
 export type BuiltAdminNavItem = {
   id: string
   name: string
@@ -167,12 +196,25 @@ export function buildAdminSidebarNavigation(
   ctx: AdminNavAccessContext
 ): BuiltAdminNavItem[] {
   const base = `/${locale}/admin`
-  return ADMIN_SIDEBAR_REGISTRY.filter((e) => isAdminNavVisible(e.visibility, ctx)).map((e) => ({
+  return ADMIN_SIDEBAR_REGISTRY.filter((e) => {
+    if (!isAdminNavVisible(e.visibility, ctx)) return false
+    if (ctx.siteAccessSidebarReadAllowed && !ctx.siteAccessSidebarReadAllowed(e.id)) return false
+    return true
+  }).map((e) => ({
     id: e.id,
     name: tSidebar(e.sidebarTranslationKey),
     href: `${base}/${e.path}`,
     icon: e.icon,
   }))
+}
+
+/** 헤더 데스크톱 빠른 이동 — 가시성 + site_access 패치 읽기 */
+export function visibleAdminHeaderQuickEntries(ctx: AdminNavAccessContext): readonly AdminHeaderQuickEntry[] {
+  return ADMIN_HEADER_QUICK_REGISTRY.filter((e) => {
+    if (!isAdminNavVisible(e.visibility, ctx)) return false
+    if (ctx.siteAccessHeaderReadAllowed && !ctx.siteAccessHeaderReadAllowed(e.id)) return false
+    return true
+  })
 }
 
 export function adminNavVisibilityLabelKey(rule: AdminNavVisibility): string {

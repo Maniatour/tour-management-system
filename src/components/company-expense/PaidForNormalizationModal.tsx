@@ -23,6 +23,7 @@ import {
   VEHICLE_REPAIR_STANDARD_LEAF_ID,
 } from '@/lib/companyExpenseStandardUnified'
 import { supabase } from '@/lib/supabase'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { UnifiedStandardLeafPicker } from '@/components/company-expense/UnifiedStandardLeafPicker'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 
@@ -116,8 +117,8 @@ export function PaidForNormalizationModal({ open, onOpenChange, onApplied }: Pro
     setLoading(true)
     try {
       const [sRes, lRes, catResult] = await Promise.all([
-        fetch('/api/company-expenses/paid-for-normalization'),
-        fetch('/api/company-expenses/paid-for-labels?includeInactive=1'),
+        fetch('/api/company-expenses/paid-for-normalization', { headers: apiBearerAuthHeaders() }),
+        fetch('/api/company-expenses/paid-for-labels?includeInactive=1', { headers: apiBearerAuthHeaders() }),
         supabase
           .from('expense_standard_categories')
           .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
@@ -354,7 +355,7 @@ export function PaidForNormalizationModal({ open, onOpenChange, onApplied }: Pro
     try {
       const res = await fetch('/api/company-expenses/paid-for-normalization/apply', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paidFor: r.paid_for,
           previousLabelId: r.paid_for_label_id,
@@ -392,7 +393,7 @@ export function PaidForNormalizationModal({ open, onOpenChange, onApplied }: Pro
     try {
       const res = await fetch('/api/company-expenses/paid-for-normalization/apply-by-ids', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expenseIds: ids,
           standardLeafId: d.targetLeafId,

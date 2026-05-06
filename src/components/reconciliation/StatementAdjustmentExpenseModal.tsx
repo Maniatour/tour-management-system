@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { BookOpen, Landmark } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import {
   applyStandardLeafToCompanyExpense,
   buildUnifiedStandardLeafGroups,
@@ -260,7 +261,7 @@ export default function StatementAdjustmentExpenseModal({
     setSuggestionsLoading(true)
     void (async () => {
       try {
-        const res = await fetch('/api/company-expenses/suggestions')
+        const res = await fetch('/api/company-expenses/suggestions', { headers: apiBearerAuthHeaders() })
         const json = await res.json()
         if (cancelled) return
         if (res.ok && json && typeof json === 'object' && !Array.isArray(json)) {

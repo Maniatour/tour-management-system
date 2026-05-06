@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { fetchUploadApi } from '@/lib/uploadClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -305,7 +306,9 @@ export default function CompanyExpenseManager({
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
       
-      const response = await fetch(`/api/company-expenses?${params.toString()}`)
+      const response = await fetch(`/api/company-expenses?${params.toString()}`, {
+        headers: apiBearerAuthHeaders(),
+      })
       const result = await response.json()
       
       if (response.ok) {
@@ -439,7 +442,9 @@ export default function CompanyExpenseManager({
 
   const loadPaidForLabels = useCallback(async () => {
     try {
-      const res = await fetch('/api/company-expenses/paid-for-labels?includeInactive=1')
+      const res = await fetch('/api/company-expenses/paid-for-labels?includeInactive=1', {
+        headers: apiBearerAuthHeaders(),
+      })
       const json = await res.json()
       if (res.ok && Array.isArray(json.data)) {
         setPaidForLabels(json.data)
@@ -470,7 +475,9 @@ export default function CompanyExpenseManager({
     ;(async () => {
       setSuggestionsLoading(true)
       try {
-        const res = await fetch('/api/company-expenses/suggestions')
+        const res = await fetch('/api/company-expenses/suggestions', {
+          headers: apiBearerAuthHeaders(),
+        })
         const json = await res.json()
         if (cancelled) return
         if (res.ok && json && typeof json === 'object' && !Array.isArray(json)) {
@@ -608,7 +615,7 @@ export default function CompanyExpenseManager({
       try {
         const res = await fetch('/api/company-expenses/batch-apply-standard-leaf', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ expenseIds, standardLeafId }),
         })
         const json = await res.json().catch(() => ({}))
@@ -882,6 +889,7 @@ export default function CompanyExpenseManager({
       const response = await fetch(url, {
         method,
         headers: {
+          ...apiBearerAuthHeaders(),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(submitData)
@@ -960,7 +968,8 @@ export default function CompanyExpenseManager({
   const handleDelete = async (id: string) => {
     try {
       const response = await fetch(`/api/company-expenses/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: apiBearerAuthHeaders(),
       })
       
       const result = await response.json()
@@ -1232,7 +1241,7 @@ export default function CompanyExpenseManager({
       }
       const res = await fetch(`/api/company-expenses/${encodeURIComponent(expense.id)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
       const json = (await res.json()) as { data?: CompanyExpense; error?: string }
@@ -1465,10 +1474,10 @@ export default function CompanyExpenseManager({
               variant="outline"
               className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 border-amber-200 text-amber-950 flex items-center justify-center gap-1.5 sm:gap-2"
               onClick={() => setLedgerDupModalOpen(true)}
-              title="목록의 시작일·종료일(비어 있으면 최근 90일~오늘) 범위에서 회사·투어·예약·입장권 지출 중 금액·등록일이 비슷한 그룹을 찾습니다."
+              title="회사·투어·예약·입장권(확정) 지출을 한데 비교합니다. 출처가 달라도 금액·등록일이 비슷하면 한 그룹으로 묶습니다. 목록의 시작일·종료일(비어 있으면 최근 90일~오늘)을 사용합니다."
             >
               <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-              회사 지출 중복 점검
+              회사·투어·예약·입장권 지출 중복 점검
             </Button>
           ) : null}
           <Dialog

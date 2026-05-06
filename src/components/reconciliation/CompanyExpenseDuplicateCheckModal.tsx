@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ExternalLink } from 'lucide-react'
 import {
   BULK_COMPANY_DUP_AMOUNT_EPS,
   BULK_COMPANY_DUP_DAY_WINDOW,
@@ -70,6 +72,48 @@ function originCell(origin: string | null): string {
   return origin === 'statement_adjustment' ? '명세 보정·일괄' : '운영'
 }
 
+function LedgerDetailLinksCell({
+  row,
+  locale
+}: {
+  row: UnifiedLedgerDuplicateExpenseRow
+  locale: string
+}) {
+  const tourId = row.detail_tour_id?.trim()
+  const resId = row.detail_reservation_id?.trim()
+  if (!tourId && !resId) {
+    return <span className="text-slate-400">—</span>
+  }
+  return (
+    <div className="flex flex-col gap-1 items-start">
+      {tourId ? (
+        <Button asChild size="sm" variant="outline" className="h-7 text-[10px] px-2 py-0 gap-1">
+          <Link
+            href={`/${locale}/admin/tours/${encodeURIComponent(tourId)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            투어 상세
+            <ExternalLink className="h-3 w-3 opacity-70 shrink-0" aria-hidden />
+          </Link>
+        </Button>
+      ) : null}
+      {resId ? (
+        <Button asChild size="sm" variant="outline" className="h-7 text-[10px] px-2 py-0 gap-1">
+          <Link
+            href={`/${locale}/admin/reservations/${encodeURIComponent(resId)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            예약 상세
+            <ExternalLink className="h-3 w-3 opacity-70 shrink-0" aria-hidden />
+          </Link>
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function standardCategoryCell(row: LedgerDuplicateExpenseRow): string {
   const spf = (row.standard_paid_for ?? '').trim()
   if (spf) return spf
@@ -105,6 +149,9 @@ export default function CompanyExpenseDuplicateCheckModal({
   onAfterLedgerMutation,
   createdByEmail = null
 }: Props) {
+  const params = useParams()
+  const locale = typeof params?.locale === 'string' ? params.locale : 'ko'
+
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [statementRows, setStatementRows] = useState<BulkCompanyDuplicateRow[] | null>(null)
@@ -195,7 +242,9 @@ export default function CompanyExpenseDuplicateCheckModal({
   }, [ledgerGroups])
 
   const title =
-    mode === 'statement' ? '명세 줄 ↔ 기존 회사 지출 중복 점검' : '전체 지출 중복 의심 점검'
+    mode === 'statement'
+      ? '명세 줄 ↔ 기존 회사 지출 중복 점검'
+      : '회사·투어·예약·입장권 교차 중복 의심 점검'
 
   async function onMarkGroupDifferent(group: UnifiedLedgerDuplicateExpenseRow[]) {
     const keys = group.map((r) => r.source_key)
@@ -308,9 +357,10 @@ export default function CompanyExpenseDuplicateCheckModal({
               ) : (
                 <>
                   목록의 <strong>시작일·종료일</strong>이 있으면 그 범위로, 비어 있으면 <strong>종료일=오늘 · 시작일=90일
-                  전</strong>으로 조회합니다. <strong>회사·투어·예약·입장권(확정)</strong> 지출을 한데 묶어, 금액(±
-                  {BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)이 비슷한 건을 그룹으로 보여
-                  줍니다. 우연히 겹친 경우 <strong>다른 지출로 숨김</strong>을 남기거나, 동일 거래 중복이면{' '}
+                  전</strong>으로 조회합니다. <strong>회사·투어·예약·입장권(확정)</strong> 네 종류 지출을 한 풀에 넣어 비교하며,{' '}
+                  <strong>같은 테이블 안끼리만이 아니라</strong> 출처가 달라도(예: 회사 지출 ↔ 투어 지출) 금액(±
+                  {BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)이 비슷하면 한 그룹으로 묶습니다.
+                  우연히 겹친 경우 <strong>다른 지출로 숨김</strong>을 남기거나, 동일 거래 중복이면{' '}
                   <strong>한 건만 남기고 삭제</strong>하세요.
                 </>
               )}
@@ -449,7 +499,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                         </Button>
                       </div>
                       <div className="overflow-x-auto px-1 pb-2 pt-1">
-                        <table className="w-full min-w-[84rem] border-collapse text-left text-[11px]">
+                        <table className="w-full min-w-[94rem] border-collapse text-left text-[11px]">
                           <thead>
                             <tr className="border-b border-amber-200/90 text-slate-600 bg-amber-50/80">
                               <th className="py-1.5 px-2 font-medium w-10 text-center">유지</th>
@@ -463,6 +513,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                               <th className="py-1.5 px-2 font-medium min-w-[8rem]">결제 방법</th>
                               <th className="py-1.5 px-2 font-medium min-w-[9rem]">명세 대조 현황</th>
                               <th className="py-1.5 px-2 font-medium min-w-[8rem]">대조 금융 계정</th>
+                              <th className="py-1.5 px-2 font-medium min-w-[8rem] whitespace-nowrap">투어·예약 상세</th>
                               <th className="py-1.5 px-2 font-medium min-w-[8rem]">참고</th>
                             </tr>
                           </thead>
@@ -516,6 +567,9 @@ export default function CompanyExpenseDuplicateCheckModal({
                                 <td className="py-2 px-2 break-words text-slate-800">{row.display_statement_status}</td>
                                 <td className="py-2 px-2 break-words text-slate-800">
                                   {row.display_financial_account ?? '—'}
+                                </td>
+                                <td className="py-2 px-2 align-top">
+                                  <LedgerDetailLinksCell row={row} locale={locale} />
                                 </td>
                                 <td className="py-2 px-2 break-words text-slate-600 text-[10px]">
                                   {row.source_context?.trim() || '—'}

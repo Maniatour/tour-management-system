@@ -9828,6 +9828,27 @@ export type Database = {
         }
         Relationships: []
       },
+      site_access_matrix_overrides: {
+        Row: {
+          node_id: string
+          persona: string
+          patch: Json
+          updated_at: string
+        }
+        Insert: {
+          node_id: string
+          persona: string
+          patch?: Json
+          updated_at?: string
+        }
+        Update: {
+          node_id?: string
+          persona?: string
+          patch?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      },
       sop_signatures: {
         Row: {
           id: string

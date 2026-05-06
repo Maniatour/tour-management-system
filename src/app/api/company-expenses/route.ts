@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { Database } from '@/lib/database.types'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const { searchParams } = new URL(request.url)
     
     // 쿼리 파라미터 추출
@@ -138,7 +139,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const body = await request.json()
     
     const {
@@ -247,7 +249,8 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const body = await request.json()
     
     const { id, ...rest } = body
@@ -307,7 +310,8 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

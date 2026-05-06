@@ -24,7 +24,18 @@ import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
 import type { UserRole } from '@/lib/roles'
-import { buildAdminSidebarNavigation } from '@/lib/admin-site-registry'
+import {
+  ADMIN_HEADER_QUICK_BUTTON_CLASS,
+  buildAdminSidebarNavigation,
+  visibleAdminHeaderQuickEntries,
+} from '@/lib/admin-site-registry'
+import {
+  personaCrudForHeaderRegistryId,
+  personaCrudForSidebarRegistryId,
+} from '@/lib/admin-site-access-tree'
+import { mergePersonaCrudWithPatches } from '@/lib/site-access-matrix-overrides'
+import { resolveSiteAccessPersona } from '@/lib/site-access-persona'
+import { useSiteAccessMatrixPatchContext } from '@/contexts/SiteAccessMatrixPatchContext'
 import { supabase } from '@/lib/supabase'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
@@ -55,7 +66,7 @@ const ADMIN_SIDEBAR_COLLAPSED_KEY = 'tms-admin-sidebar-collapsed'
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { signOut, authUser, userRole, isSimulating, stopSimulation } = useAuth()
+  const { signOut, authUser, userRole, userPosition, isSimulating, stopSimulation, teamChatUnreadCount } = useAuth()
   const currentLocale = locale
   const t = useTranslations('common')
   const tAdmin = useTranslations('admin')
@@ -70,7 +81,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [showCustomerSimulationModal, setShowCustomerSimulationModal] = useState(false)
   const [expiringDocumentsCount, setExpiringDocumentsCount] = useState(0)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
-  const { teamChatUnreadCount } = useAuth()
+  const { patchMap, loading: siteAccessPatchesLoading } = useSiteAccessMatrixPatchContext()
   const tourChatUnreadCount = useAdminTourChatUnreadCount(
     Boolean(authUser?.email && userRole && userRole !== 'customer')
   )
@@ -399,25 +410,73 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     return currentLocale === 'ko' ? 'KR' : 'US'
   }
 
-  const navigation = useMemo(
+  const siteAccessPersonaResolved = useMemo(
     () =>
-      buildAdminSidebarNavigation(locale, tSidebar, {
+      resolveSiteAccessPersona({
         userRole: (userRole as UserRole | null) ?? null,
+        userPosition,
         isSuper,
-        canAccessReservationStatistics,
-        isSimulating: Boolean(isSimulating),
         authUserEmail: authUser?.email,
       }),
+    [userRole, userPosition, isSuper, authUser?.email]
+  )
+
+  const siteAccessSidebarReadAllowed = useCallback(
+    (sidebarRegistryId: string) => {
+      if (siteAccessPatchesLoading) return true
+      if (!siteAccessPersonaResolved) return true
+      const base = personaCrudForSidebarRegistryId(sidebarRegistryId)
+      const merged = mergePersonaCrudWithPatches(base, `sb-${sidebarRegistryId}`, patchMap)
+      return merged[siteAccessPersonaResolved].read
+    },
+    [siteAccessPatchesLoading, siteAccessPersonaResolved, patchMap]
+  )
+
+  const siteAccessHeaderReadAllowed = useCallback(
+    (headerRegistryId: string) => {
+      if (siteAccessPatchesLoading) return true
+      if (!siteAccessPersonaResolved) return true
+      const base = personaCrudForHeaderRegistryId(headerRegistryId)
+      const merged = mergePersonaCrudWithPatches(base, headerRegistryId, patchMap)
+      return merged[siteAccessPersonaResolved].read
+    },
+    [siteAccessPatchesLoading, siteAccessPersonaResolved, patchMap]
+  )
+
+  const navAccessCtx = useMemo(
+    () => ({
+      userRole: (userRole as UserRole | null) ?? null,
+      isSuper,
+      canAccessReservationStatistics,
+      isSimulating: Boolean(isSimulating),
+      authUserEmail: authUser?.email,
+      userPosition,
+      siteAccessSidebarReadAllowed,
+      siteAccessHeaderReadAllowed,
+    }),
     [
-      locale,
-      tSidebar,
       userRole,
       isSuper,
       canAccessReservationStatistics,
       isSimulating,
       authUser?.email,
+      userPosition,
+      siteAccessSidebarReadAllowed,
+      siteAccessHeaderReadAllowed,
     ]
   )
+
+  const navigation = useMemo(
+    () => buildAdminSidebarNavigation(locale, tSidebar, navAccessCtx),
+    [locale, tSidebar, navAccessCtx]
+  )
+
+  const visibleHeaderQuickEntries = useMemo(
+    () => visibleAdminHeaderQuickEntries(navAccessCtx),
+    [navAccessCtx]
+  )
+
+  const showHeaderAddReservation = siteAccessHeaderReadAllowed('hq-reservations')
 
   return (
     <>
@@ -442,98 +501,64 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 {t('systemTitle')}
               </button>
               
-              {/* 데스크톱 전용 빠른 이동 */}
+              {/* 데스크톱 전용 빠른 이동 — 레지스트리 + site_access_matrix 패치 */}
               <div className="hidden lg:flex items-center space-x-2">
-                <Link
-                  href={`/${locale}/admin/team-board`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/${locale}/admin/team-board`)
-                  }}
-                >
-                  {t('teamBoard')}
-                </Link>
-                <Link
-                  href={`/${locale}/admin/consultation`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/${locale}/admin/consultation`)
-                  }}
-                >
-                  {t('consultation')}
-                </Link>
-                <Link
-                  href={`/${locale}/admin/customers`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/${locale}/admin/customers`)
-                  }}
-                >
-                  {t('customers')}
-                </Link>
-                <Link
-                  href={`/${locale}/admin/reservations`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/${locale}/admin/reservations`)
-                  }}
-                >
-                  {t('reservations')}
-                </Link>
-                <Link
-                  href={`/${locale}/admin/booking`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/${locale}/admin/booking`)
-                  }}
-                >
-                  {t('booking')}
-                </Link>
-                <Link
-                  href={`/${locale}/admin/tours`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    router.push(`/${locale}/admin/tours`)
-                  }}
-                >
-                  {t('tours')}
-                </Link>
-                <div className="relative inline-block">
-                  <Link
-                    href={`/${locale}/admin/chat-management`}
-                    className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10 inline-flex items-center"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      router.push(`/${locale}/admin/chat-management`)
-                    }}
-                  >
-                    {t('chatManagement')}
-                  </Link>
-                  {tourChatUnreadCount > 0 && (
-                    <span
-                      className="absolute -top-1.5 -right-1.5 z-20 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[18px] h-[18px] px-1 leading-none pointer-events-none"
-                      aria-label={`읽지 않은 투어 채팅 ${tourChatUnreadCount}건`}
+                {visibleHeaderQuickEntries.map((e) => {
+                  const href = `/${locale}/admin/${e.path}`
+                  const btnClass =
+                    ADMIN_HEADER_QUICK_BUTTON_CLASS[e.id] ??
+                    'px-3 py-1.5 text-sm border rounded-md text-gray-600 border-gray-300 hover:bg-gray-100 transition-colors cursor-pointer relative z-10'
+                  const label = t(e.labelKey as Parameters<typeof t>[0])
+                  if (e.id === 'hq-chat-management') {
+                    return (
+                      <div key={e.id} className="relative inline-block">
+                        <Link
+                          href={href}
+                          className={btnClass}
+                          onClick={(ev) => {
+                            ev.preventDefault()
+                            router.push(href)
+                          }}
+                        >
+                          {label}
+                        </Link>
+                        {tourChatUnreadCount > 0 && (
+                          <span
+                            className="absolute -top-1.5 -right-1.5 z-20 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[18px] h-[18px] px-1 leading-none pointer-events-none"
+                            aria-label={`읽지 않은 투어 채팅 ${tourChatUnreadCount}건`}
+                          >
+                            {tourChatUnreadCount > 99 ? '99+' : tourChatUnreadCount}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  }
+                  return (
+                    <Link
+                      key={e.id}
+                      href={href}
+                      className={btnClass}
+                      onClick={(ev) => {
+                        ev.preventDefault()
+                        router.push(href)
+                      }}
                     >
-                      {tourChatUnreadCount > 99 ? '99+' : tourChatUnreadCount}
-                    </span>
-                  )}
-                </div>
-                {/* 새 예약 추가 버튼 (모든 admin 페이지에서 표시) */}
-                <button
-                  onClick={() => {
-                    router.push(`/${locale}/admin/reservations?add=true`)
-                  }}
-                  className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10 flex items-center space-x-1"
-                >
-                  <Plus size={14} />
-                  <span>{tAdmin('addReservation')}</span>
-                </button>
+                      {label}
+                    </Link>
+                  )
+                })}
+                {showHeaderAddReservation && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      router.push(`/${locale}/admin/reservations?add=true`)
+                    }}
+                    className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10 flex items-center space-x-1"
+                  >
+                    <Plus size={14} />
+                    <span>{tAdmin('addReservation')}</span>
+                  </button>
+                )}
               </div>
               
             </div>

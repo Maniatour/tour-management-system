@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -375,7 +376,7 @@ export default function PnlUnifiedExpenseDetailDialog({
         } else if (line.source === 'company_expenses') {
           const res = await fetch('/api/company-expenses', {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: line.id,
               paid_for: draft.paid_for.trim(),

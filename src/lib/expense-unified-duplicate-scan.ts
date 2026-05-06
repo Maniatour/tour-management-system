@@ -28,6 +28,10 @@ export type UnifiedLedgerDuplicateExpenseRow = LedgerDuplicateExpenseRow & {
   source_table: UnifiedExpenseSourceTable
   source_key: string
   source_context: string | null
+  /** admin 투어 상세 `/[locale]/admin/tours/[id]` */
+  detail_tour_id: string | null
+  /** admin 예약 상세 `/[locale]/admin/reservations/[id]` */
+  detail_reservation_id: string | null
 }
 
 export function expenseSourceKey(table: UnifiedExpenseSourceTable, id: string): string {
@@ -368,7 +372,9 @@ function mapCompanyRaw(
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
     source_key: expenseSourceKey(source_table, id),
-    source_context: null
+    source_context: null,
+    detail_tour_id: null,
+    detail_reservation_id: null
   }
 }
 
@@ -398,7 +404,9 @@ function mapTourRaw(
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
     source_key: expenseSourceKey(source_table, id),
-    source_context: ctx
+    source_context: ctx,
+    detail_tour_id: tid.trim() ? tid : null,
+    detail_reservation_id: null
   }
 }
 
@@ -409,6 +417,7 @@ function mapReservationRaw(
 ): Omit<UnifiedLedgerDuplicateExpenseRow, 'display_payment_method' | 'display_statement_status' | 'display_financial_account'> {
   const id = String(r.id ?? '')
   const rid = r.reservation_id == null ? '' : String(r.reservation_id)
+  const tourLinkId = r.tour_id == null ? '' : String(r.tour_id)
   const ctx = rid ? `예약 ${rid.slice(0, 8)}…` : null
   return {
     id,
@@ -426,7 +435,9 @@ function mapReservationRaw(
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
     source_key: expenseSourceKey(source_table, id),
-    source_context: ctx
+    source_context: ctx,
+    detail_tour_id: tourLinkId.trim() ? tourLinkId : null,
+    detail_reservation_id: rid.trim() ? rid : null
   }
 }
 
@@ -438,6 +449,8 @@ function mapTicketRaw(
   const id = String(r.id ?? '')
   const cat = r.category == null ? '' : String(r.category)
   const co = r.company == null ? '' : String(r.company)
+  const tidTb = r.tour_id == null ? '' : String(r.tour_id)
+  const ridTb = r.reservation_id == null ? '' : String(r.reservation_id)
   return {
     id,
     amount: r.expense == null ? null : Number(r.expense),
@@ -454,7 +467,9 @@ function mapTicketRaw(
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
     source_key: expenseSourceKey(source_table, id),
-    source_context: r.check_in_date == null ? null : `체크인 ${String(r.check_in_date).slice(0, 10)}`
+    source_context: r.check_in_date == null ? null : `체크인 ${String(r.check_in_date).slice(0, 10)}`,
+    detail_tour_id: tidTb.trim() ? tidTb : null,
+    detail_reservation_id: ridTb.trim() ? ridTb : null
   }
 }
 
@@ -493,14 +508,14 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(
     ),
     fetchExpenseTableWindow(
       'reservation_expenses',
-      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, reservation_id',
+      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, reservation_id, tour_id',
       startIso,
       endIso,
       UNIFIED_DUP_PER_TABLE_FETCH
     ),
     fetchExpenseTableWindow(
       'ticket_bookings',
-      'id, expense, submit_on, category, company, note, booking_status, payment_method, statement_line_id, check_in_date',
+      'id, expense, submit_on, category, company, note, booking_status, payment_method, statement_line_id, check_in_date, tour_id, reservation_id',
       startIso,
       endIso,
       UNIFIED_DUP_PER_TABLE_FETCH
@@ -577,6 +592,7 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(
     byKey.set(row.source_key, row)
   }
 
+  /** 출처 테이블 무관 — 회사↔투어, 회사↔예약 등 교차 쌍도 동일 규칙으로 포함 */
   const pairKeys: [string, string][] = []
   for (let i = 0; i < eligibleBase.length; i++) {
     const a = eligibleBase[i]!

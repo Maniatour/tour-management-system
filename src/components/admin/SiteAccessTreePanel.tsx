@@ -10,63 +10,57 @@ import {
   buildSiteAccessTree,
   computeCrudForNode,
   isAdminSidebarMenuColumnRelevant,
+  personaCrudFromRoleCrud,
   resolveMenuVisibility,
   type CrudCell,
   type SiteAccessNode,
 } from '@/lib/admin-site-access-tree'
-import type { UserRole } from '@/lib/roles'
+import {
+  mergePersonaCrudWithPatches,
+  type SiteAccessCrudPatch,
+  type SiteAccessPatchMap,
+  upsertSiteAccessMatrixPatch,
+} from '@/lib/site-access-matrix-overrides'
+import {
+  canEditSiteAccessMatrixClient,
+  resolveSiteAccessPersona,
+  SITE_ACCESS_PERSONAS,
+  type SiteAccessPersona,
+} from '@/lib/site-access-persona'
+import { useSiteAccessMatrixPatchContext } from '@/contexts/SiteAccessMatrixPatchContext'
+import { supabase } from '@/lib/supabase'
 
-/** 표 오른쪽: 직책·고객 축 (앱 `UserRole` 4분할 대신 문서용) */
-type SiteAccessPersona = 'customer' | 'op' | 'office_manager' | 'guide' | 'super'
+const CRUD_TABLE_COLSPAN = 4 + SITE_ACCESS_PERSONAS.length * 4
 
-const MATRIX_PERSONAS: SiteAccessPersona[] = [
-  'customer',
-  'op',
-  'office_manager',
-  'guide',
-  'super',
-]
+const CRUD_KEYS: (keyof CrudCell)[] = ['read', 'write', 'update', 'delete']
 
-const Z: CrudCell = { read: false, write: false, update: false, delete: false }
-
-/** 통계 현금·PNL 탭: UI는 Super 전용 — OP 열은 비우고 Super 열에만 이전 admin 열과 동일하게 표시 */
-const FINANCE_SUPER_ONLY_NODE_IDS = new Set(['sb-stat-tab-cash', 'sb-stat-tab-pnl'])
-
-function mergeCrudMax(a: CrudCell, b: CrudCell): CrudCell {
-  return {
-    read: a.read || b.read,
-    write: a.write || b.write,
-    update: a.update || b.update,
-    delete: a.delete || b.delete,
-  }
+function triValue(patch: SiteAccessCrudPatch, k: keyof CrudCell): 'inherit' | 'grant' | 'deny' {
+  if (patch[k] === undefined) return 'inherit'
+  return patch[k] ? 'grant' : 'deny'
 }
 
-/** `computeCrudForNode` 결과를 페르소나 열로 투영 */
-function personaCrudFromRoleCrud(
+function mergedAdminLinkShown(
   node: SiteAccessNode,
-  crud: Record<UserRole, CrudCell>
-): Record<SiteAccessPersona, CrudCell> {
-  if (FINANCE_SUPER_ONLY_NODE_IDS.has(node.id)) {
-    const adminCell = crud.admin
-    return {
-      customer: crud.customer,
-      guide: crud.team_member,
-      office_manager: crud.manager,
-      op: { ...Z },
-      super: { ...adminCell },
-    }
+  navCtx: AdminNavAccessContext,
+  patchMap: SiteAccessPatchMap
+): { sidebarColumn: boolean; treeHintHidden: boolean } {
+  const vis = resolveMenuVisibility(node)
+  const baseNav = vis ? isAdminNavVisible(vis, navCtx) : true
+  if (node.kind === 'cluster' || !isAdminSidebarMenuColumnRelevant(node)) {
+    return { sidebarColumn: true, treeHintHidden: false }
   }
-  return {
-    customer: crud.customer,
-    guide: crud.team_member,
-    office_manager: crud.manager,
-    op: crud.admin,
-    super: mergeCrudMax(crud.admin, crud.manager),
-  }
+  const persona = resolveSiteAccessPersona({
+    userRole: navCtx.userRole,
+    userPosition: navCtx.userPosition ?? null,
+    isSuper: navCtx.isSuper,
+    authUserEmail: navCtx.authUserEmail,
+  })
+  const baseCrud = personaCrudFromRoleCrud(node, computeCrudForNode(node))
+  const merged = mergePersonaCrudWithPatches(baseCrud, node.id, patchMap)
+  const readOk = !persona || merged[persona].read
+  const effective = baseNav && readOk
+  return { sidebarColumn: effective, treeHintHidden: !effective }
 }
-
-/** 종류·항목·경로·내 메뉴 + 페르소나×4 */
-const CRUD_TABLE_COLSPAN = 4 + MATRIX_PERSONAS.length * 4
 
 function kindBadgeClass(kind: SiteAccessNode['kind']): string {
   switch (kind) {
@@ -123,10 +117,9 @@ function displayPath(locale: string, node: SiteAccessNode): string {
 }
 
 function CrudFourCells({ cell }: { cell: CrudCell }) {
-  const keys: (keyof CrudCell)[] = ['read', 'write', 'update', 'delete']
   return (
     <>
-      {keys.map((k, i) => (
+      {CRUD_KEYS.map((k, i) => (
         <td
           key={k}
           className={`border-b border-gray-100 bg-white px-0.5 py-1.5 text-center text-[11px] tabular-nums text-gray-800 ${
@@ -134,6 +127,48 @@ function CrudFourCells({ cell }: { cell: CrudCell }) {
           }`}
         >
           {cell[k] ? '✓' : '—'}
+        </td>
+      ))}
+    </>
+  )
+}
+
+function PersonaCrudEditCells({
+  mergedCell,
+  patch,
+  saving,
+  t,
+  onTriChange,
+}: {
+  mergedCell: CrudCell
+  patch: SiteAccessCrudPatch
+  saving: boolean
+  t: ReturnType<typeof useTranslations<'siteDirectory'>>
+  onTriChange: (key: keyof CrudCell, tri: 'inherit' | 'grant' | 'deny') => void
+}) {
+  return (
+    <>
+      {CRUD_KEYS.map((k, i) => (
+        <td
+          key={k}
+          className={`border-b border-gray-100 bg-white px-0.5 py-0.5 ${
+            i === 0 ? 'border-l border-gray-200' : ''
+          }`}
+        >
+          <select
+            disabled={saving}
+            className="w-full max-w-[3.25rem] rounded border border-amber-200 bg-amber-50/40 py-0.5 text-[10px] text-gray-900"
+            value={triValue(patch, k)}
+            title={mergedCell[k] ? '✓' : '—'}
+            onChange={(e) => {
+              const v = e.target.value as 'inherit' | 'grant' | 'deny'
+              onTriChange(k, v)
+            }}
+          >
+            <option value="inherit">{t('triInherit')}</option>
+            <option value="grant">{t('triGrant')}</option>
+            <option value="deny">{t('triDeny')}</option>
+          </select>
         </td>
       ))}
     </>
@@ -151,23 +186,50 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
   const tCommon = useTranslations('common')
   const tree = useMemo(() => buildSiteAccessTree(), [])
   const groups = useMemo(() => buildSiteAccessGroups(tree), [tree])
+  const { patchMap, loading: patchesLoading, error: patchError, refetch } = useSiteAccessMatrixPatchContext()
 
   const [open, setOpen] = useState<Record<string, boolean>>(() => ({
     root: true,
     'cluster-header': true,
     'cluster-sidebar': true,
   }))
+  const [editMode, setEditMode] = useState(false)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+
+  const canEdit = canEditSiteAccessMatrixClient({
+    userRole: navCtx.userRole,
+    userPosition: navCtx.userPosition ?? null,
+    isSuper: navCtx.isSuper,
+    authUserEmail: navCtx.authUserEmail,
+  })
 
   const toggle = useCallback((id: string) => {
     setOpen((prev) => ({ ...prev, [id]: !prev[id] }))
   }, [])
 
+  const persistTri = useCallback(
+    async (nodeId: string, persona: SiteAccessPersona, key: keyof CrudCell, tri: 'inherit' | 'grant' | 'deny') => {
+      const sk = `${nodeId}::${persona}::${key}`
+      setSavingKey(sk)
+      try {
+        const existing = patchMap.get(nodeId)?.get(persona) ?? {}
+        const next: SiteAccessCrudPatch = { ...existing }
+        if (tri === 'inherit') delete next[key]
+        else next[key] = tri === 'grant'
+        const { error } = await upsertSiteAccessMatrixPatch(supabase, nodeId, persona, next)
+        if (!error) await refetch()
+      } finally {
+        setSavingKey(null)
+      }
+    },
+    [patchMap, refetch]
+  )
+
   const renderNode = (node: SiteAccessNode, depth: number) => {
     const hasChildren = Boolean(node.children?.length)
     const expanded = open[node.id] ?? depth < 1
     const label = resolveNodeLabel(node, t, tSidebar, tCommon)
-    const vis = resolveMenuVisibility(node)
-    const menuShown = vis ? isAdminNavVisible(vis, navCtx) : true
+    const { treeHintHidden } = mergedAdminLinkShown(node, navCtx, patchMap)
     const href = formatHref(locale, node)
 
     return (
@@ -208,7 +270,7 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
                 </Link>
               )}
             </div>
-            {!menuShown && node.kind !== 'cluster' && (
+            {treeHintHidden && node.kind !== 'cluster' && (
               <div className="mt-0.5 text-xs text-amber-700">({t('badgeHidden')})</div>
             )}
           </div>
@@ -226,6 +288,26 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
         <h2 className="text-base font-semibold text-gray-900">{t('fullCrudTableTitle')}</h2>
         <p className="mt-1 text-xs text-gray-600">{t('fullCrudTableIntro')}</p>
         <p className="mt-1 text-xs text-amber-800">{t('crudFinanceSuperNote')}</p>
+        {patchError && (
+          <p className="mt-2 text-xs text-red-700">
+            {t('matrixLoadError')}: {patchError.message}
+          </p>
+        )}
+        {canEdit && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setEditMode((v) => !v)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                editMode ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+              }`}
+            >
+              {t('matrixEditMode')}
+            </button>
+            <p className="text-xs text-gray-600">{t('matrixEditHint')}</p>
+            {patchesLoading && <span className="text-xs text-gray-500">{t('matrixLoading')}</span>}
+          </div>
+        )}
       </div>
 
       <div className="w-full min-w-0 overflow-x-auto rounded border border-gray-200 shadow-sm">
@@ -251,7 +333,7 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
               >
                 {t('columnInMyMenu')}
               </th>
-              {MATRIX_PERSONAS.map((persona) => (
+              {SITE_ACCESS_PERSONAS.map((persona) => (
                 <th
                   key={persona}
                   colSpan={4}
@@ -262,7 +344,7 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
               ))}
             </tr>
             <tr className="border-b border-gray-200 bg-gray-100/80">
-              {MATRIX_PERSONAS.flatMap((persona) => {
+              {SITE_ACCESS_PERSONAS.flatMap((persona) => {
                 const subKeys = ['crudRead', 'crudWrite', 'crudUpdate', 'crudDelete'] as const
                 return subKeys.map((sk, idx) => (
                   <th
@@ -290,12 +372,13 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
                 </tr>
                 {group.rows.map(({ node, depth }) => {
                   const label = resolveNodeLabel(node, t, tSidebar, tCommon)
-                  const vis = resolveMenuVisibility(node)
-                  const menuShown = vis ? isAdminNavVisible(vis, navCtx) : true
+                  const { sidebarColumn: menuShown } = mergedAdminLinkShown(node, navCtx, patchMap)
                   const pathStr = displayPath(locale, node)
                   const href = formatHref(locale, node)
-                  const crud = personaCrudFromRoleCrud(node, computeCrudForNode(node))
+                  const baseline = personaCrudFromRoleCrud(node, computeCrudForNode(node))
+                  const crud = mergePersonaCrudWithPatches(baseline, node.id, patchMap)
                   const indentPx = 8 + depth * 18
+                  const rowEditable = editMode && canEdit && node.kind !== 'cluster'
 
                   return (
                     <tr key={node.id} className="hover:bg-blue-50/30">
@@ -343,11 +426,27 @@ export default function SiteAccessTreePanel({ navCtx }: SiteAccessTreePanelProps
                               ? '✓'
                               : '—'}
                       </td>
-                      {MATRIX_PERSONAS.map((persona) => (
-                        <React.Fragment key={persona}>
-                          <CrudFourCells cell={crud[persona]} />
-                        </React.Fragment>
-                      ))}
+                      {SITE_ACCESS_PERSONAS.map((persona) => {
+                        const patch = patchMap.get(node.id)?.get(persona) ?? {}
+                        const saving = savingKey?.startsWith(`${node.id}::${persona}`) ?? false
+                        return (
+                          <React.Fragment key={persona}>
+                            {rowEditable ? (
+                              <PersonaCrudEditCells
+                                mergedCell={crud[persona]}
+                                patch={patch}
+                                saving={saving}
+                                t={t}
+                                onTriChange={(key, tri) => {
+                                  void persistTri(node.id, persona, key, tri)
+                                }}
+                              />
+                            ) : (
+                              <CrudFourCells cell={crud[persona]} />
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
                     </tr>
                   )
                 })}

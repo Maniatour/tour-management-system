@@ -100,10 +100,11 @@ export default function ExpensesManagementPage() {
               type="button"
               onClick={() => openCompanyLedgerDupRef.current?.()}
               className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md text-amber-950 text-xs sm:text-sm font-medium"
-              title="목록의 시작일·종료일(비어 있으면 최근 90일~오늘) 범위에서 회사·투어·예약·입장권 지출 중 금액·등록일이 비슷한 그룹을 찾습니다."
+              title="회사·투어·예약·입장권(확정) 지출을 한데 비교합니다. 같은 테이블끼리만이 아니라 출처가 달라도 금액·등록일이 비슷하면 한 그룹으로 묶습니다. 목록의 시작일·종료일(비어 있으면 최근 90일~오늘)을 사용합니다."
             >
               <AlertTriangle size={14} className="sm:w-4 sm:h-4 shrink-0 text-amber-600" aria-hidden />
-              회사 지출 중복 점검
+              <span className="hidden sm:inline">회사·투어·예약·입장권 지출 중복 점검</span>
+              <span className="sm:hidden">지출 중복 점검</span>
             </button>
           )}
           <button

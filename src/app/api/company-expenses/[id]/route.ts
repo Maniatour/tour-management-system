@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { Database } from '@/lib/database.types'
 
 type CompanyExpenseUpdate = Database['public']['Tables']['company_expenses']['Update']
@@ -16,7 +16,8 @@ export async function GET(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
@@ -53,7 +54,8 @@ export async function PUT(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
@@ -189,7 +191,8 @@ export async function DELETE(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })

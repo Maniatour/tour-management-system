@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   applyStandardLeafToCompanyExpense,
@@ -16,7 +16,8 @@ const MAX_IDS = 100
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const dbForCategories = supabaseAdmin ?? supabase
     const body = await request.json()
     const rawIds = Array.isArray(body.expenseIds) ? body.expenseIds : []

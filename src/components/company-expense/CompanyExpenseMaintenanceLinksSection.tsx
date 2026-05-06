@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 
 type Candidate = {
   id: string
@@ -39,7 +40,9 @@ export function CompanyExpenseMaintenanceLinksSection({ expenseId, vehicleId, en
     }
     setLoading(true)
     try {
-      const res = await fetch(`/api/company-expenses/${encodeURIComponent(expenseId)}/maintenance-links`)
+      const res = await fetch(`/api/company-expenses/${encodeURIComponent(expenseId)}/maintenance-links`, {
+        headers: apiBearerAuthHeaders(),
+      })
       const json = await res.json()
       if (!res.ok) {
         toast.error(json.error || t('loadError'))
@@ -78,7 +81,7 @@ export function CompanyExpenseMaintenanceLinksSection({ expenseId, vehicleId, en
     try {
       const res = await fetch(`/api/company-expenses/${encodeURIComponent(expenseId)}/maintenance-links`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ maintenanceIds: Array.from(selected) }),
       })
       const json = await res.json()

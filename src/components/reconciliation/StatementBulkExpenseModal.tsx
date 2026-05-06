@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { AlertTriangle, ListPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import {
   normalizeExpenseDescriptionForMatch,
@@ -381,7 +382,9 @@ export default function StatementBulkExpenseModal({
     void (async () => {
       try {
         const [sJson, catRes] = await Promise.all([
-          fetch('/api/company-expenses/suggestions').then((r) => r.json()),
+          fetch('/api/company-expenses/suggestions', { headers: apiBearerAuthHeaders() }).then((r) =>
+            r.json()
+          ),
           supabase
             .from('expense_standard_categories')
             .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')

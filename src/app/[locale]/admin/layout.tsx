@@ -1,12 +1,10 @@
 import React from 'react'
 import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
-import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
-import MobileFooter from '@/components/MobileFooter'
 import AdminAuthGuard from '@/components/auth/AdminAuthGuard'
+import AdminChrome from '@/components/admin/AdminChrome'
 import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
 import { GmailReservationImportSyncProvider } from '@/contexts/GmailReservationImportSyncContext'
-import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -28,14 +26,7 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
       <AudioPlayerProvider>
         <AdminAuthGuard locale={locale}>
           <GmailReservationImportSyncProvider>
-            <div className="min-h-screen bg-gray-50">
-              <AdminSidebarAndHeader locale={locale}>
-                {children}
-              </AdminSidebarAndHeader>
-              <MobileFooter locale={locale} />
-
-              <GlobalAudioPlayer />
-            </div>
+            <AdminChrome locale={locale}>{children}</AdminChrome>
           </GmailReservationImportSyncProvider>
         </AdminAuthGuard>
       </AudioPlayerProvider>

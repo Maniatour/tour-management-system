@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 
 type RouteParams = Promise<{ id: string }> | { id: string }
 
@@ -9,11 +9,12 @@ async function resolveId(params: RouteParams): Promise<string | undefined> {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
@@ -80,7 +81,8 @@ export async function PUT(
   { params }: { params: RouteParams }
 ) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
     const id = await resolveId(params)
     if (!id) {
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })

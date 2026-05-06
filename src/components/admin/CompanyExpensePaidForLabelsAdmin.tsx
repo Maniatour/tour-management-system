@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 
 type LabelRow = {
   id: string
@@ -49,7 +50,9 @@ export default function CompanyExpensePaidForLabelsAdmin() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/company-expenses/paid-for-labels?includeInactive=1')
+      const res = await fetch('/api/company-expenses/paid-for-labels?includeInactive=1', {
+        headers: apiBearerAuthHeaders(),
+      })
       const json = await res.json()
       if (!res.ok) {
         toast.error(json.error || t('loadError'))
@@ -86,7 +89,7 @@ export default function CompanyExpensePaidForLabelsAdmin() {
     try {
       const res = await fetch(`/api/company-expenses/paid-for-labels/${encodeURIComponent(editRow.id)}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: editDraft.code.trim(),
           label_ko: editDraft.label_ko.trim(),
@@ -119,7 +122,7 @@ export default function CompanyExpensePaidForLabelsAdmin() {
     try {
       const res = await fetch('/api/company-expenses/paid-for-labels', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: createForm.code.trim() || undefined,
           label_ko: createForm.label_ko.trim(),
@@ -150,6 +153,7 @@ export default function CompanyExpensePaidForLabelsAdmin() {
     try {
       const res = await fetch(`/api/company-expenses/paid-for-labels/${encodeURIComponent(r.id)}`, {
         method: 'DELETE',
+        headers: apiBearerAuthHeaders(),
       })
       const json = await res.json()
       if (!res.ok) {
@@ -170,7 +174,7 @@ export default function CompanyExpensePaidForLabelsAdmin() {
     try {
       const res = await fetch(`/api/company-expenses/paid-for-labels/${encodeURIComponent(r.id)}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: true }),
       })
       const json = await res.json()

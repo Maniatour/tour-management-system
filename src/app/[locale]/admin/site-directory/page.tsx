@@ -29,7 +29,7 @@ const PERMISSION_ORDER: (keyof UserPermissions)[] = [
 
 export default function AdminSiteDirectoryPage() {
   const t = useTranslations('siteDirectory')
-  const { authUser, userRole, isSimulating } = useAuth()
+  const { authUser, userRole, userPosition, isSimulating } = useAuth()
   const { isSuper, canAccessReservationStatistics } = useAdminNavAccessFlags()
   const [tab, setTab] = useState<TabId>('structure')
 
@@ -40,8 +40,9 @@ export default function AdminSiteDirectoryPage() {
       canAccessReservationStatistics,
       isSimulating: Boolean(isSimulating),
       authUserEmail: authUser?.email,
+      userPosition,
     }),
-    [userRole, isSuper, canAccessReservationStatistics, isSimulating, authUser?.email]
+    [userRole, isSuper, canAccessReservationStatistics, isSimulating, authUser?.email, userPosition]
   )
 
   return (

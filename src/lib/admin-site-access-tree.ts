@@ -4,6 +4,10 @@ import {
   type AdminNavVisibility,
 } from '@/lib/admin-site-registry'
 import { ROLE_PERMISSIONS, type UserPermissions, type UserRole } from '@/lib/roles'
+import type { SiteAccessPersona } from '@/lib/site-access-persona'
+
+export type { SiteAccessPersona } from '@/lib/site-access-persona'
+export { SITE_ACCESS_PERSONAS } from '@/lib/site-access-persona'
 
 export type SiteAccessKind = 'cluster' | 'page' | 'tab' | 'modal' | 'virtual'
 
@@ -674,6 +678,53 @@ export function computeCrudForNode(node: SiteAccessNode): Record<UserRole, CrudC
   if (node.registryHeaderId) return crudForHeaderId(node.registryHeaderId)
   const roles: UserRole[] = ['customer', 'team_member', 'manager', 'admin']
   return Object.fromEntries(roles.map((r) => [r, { ...Z }])) as Record<UserRole, CrudCell>
+}
+
+const FINANCE_SUPER_ONLY_NODE_IDS = new Set(['sb-stat-tab-cash', 'sb-stat-tab-pnl'])
+
+function mergeCrudCellMax(a: CrudCell, b: CrudCell): CrudCell {
+  return {
+    read: a.read || b.read,
+    write: a.write || b.write,
+    update: a.update || b.update,
+    delete: a.delete || b.delete,
+  }
+}
+
+/** `computeCrudForNode` 결과를 페르소나 열로 투영 — DB 패치 병합 전 baseline */
+export function personaCrudFromRoleCrud(
+  node: Pick<SiteAccessNode, 'id'>,
+  crud: Record<UserRole, CrudCell>
+): Record<SiteAccessPersona, CrudCell> {
+  if (FINANCE_SUPER_ONLY_NODE_IDS.has(node.id)) {
+    const adminCell = crud.admin
+    return {
+      customer: crud.customer,
+      guide: crud.team_member,
+      office_manager: crud.manager,
+      op: { ...Z },
+      super: { ...adminCell },
+    }
+  }
+  return {
+    customer: crud.customer,
+    guide: crud.team_member,
+    office_manager: crud.manager,
+    op: crud.admin,
+    super: mergeCrudCellMax(crud.admin, crud.manager),
+  }
+}
+
+/** 사이드바 레지스트리 id → 페르소나 CRUD baseline */
+export function personaCrudForSidebarRegistryId(sidebarRegistryId: string): Record<SiteAccessPersona, CrudCell> {
+  const stub: Pick<SiteAccessNode, 'id'> = { id: `sb-${sidebarRegistryId}` }
+  return personaCrudFromRoleCrud(stub, crudForSidebarId(sidebarRegistryId))
+}
+
+/** 헤더 빠른 이동 레지스트리 id → 페르소나 CRUD baseline */
+export function personaCrudForHeaderRegistryId(headerRegistryId: string): Record<SiteAccessPersona, CrudCell> {
+  const stub: Pick<SiteAccessNode, 'id'> = { id: headerRegistryId }
+  return personaCrudFromRoleCrud(stub, crudForHeaderId(headerRegistryId))
 }
 
 export type FlatSiteAccessRow = { node: SiteAccessNode; depth: number }

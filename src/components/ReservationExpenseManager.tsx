@@ -362,7 +362,9 @@ export default function ReservationExpenseManager({
 
       setReservations(reservationsWithCustomers)
     } catch (error) {
-      console.error('Error loading reservations:', error)
+      if (!isAbortLikeError(error)) {
+        console.error('Error loading reservations:', error)
+      }
     }
   }
 

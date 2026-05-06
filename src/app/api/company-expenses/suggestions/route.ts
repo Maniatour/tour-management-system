@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 
 type SuggestionsPayload = { paid_to: string[]; paid_for: string[]; payment_method: string[] }
 
@@ -16,9 +16,10 @@ function mergeDistinctSorted(base: string[], extra: string[]): string[] {
   return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
 
     const [rpcResult, pmResult] = await Promise.all([
       supabase.rpc('company_expense_suggestions'),

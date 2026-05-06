@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { Database } from '@/lib/database.types'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 
 type CompanyExpenseRow = Database['public']['Tables']['company_expenses']['Row']
 
@@ -144,7 +145,7 @@ export function VehicleExpenseDetailEditableTable({
       const existing = rows.find((r) => r.id === editingId)
       const res = await fetch(`/api/company-expenses/${encodeURIComponent(editingId)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paid_to: draft.paid_to.trim(),
           paid_for: draft.paid_for.trim(),

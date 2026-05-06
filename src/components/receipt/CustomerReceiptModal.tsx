@@ -469,30 +469,84 @@ export default function CustomerReceiptModal({
       try {
         const results: ReceiptData[] = []
         for (const id of ids) {
-          const { data: rez, error: rezErr } = await supabase
-            .from('reservations')
-            .select('id, tour_date, tour_time, adults, child, infant, total_people, customer_id, product_id, status, created_at, pickup_hotel, channel_id')
-            .eq('id', id)
-            .single()
-          if (rezErr || !rez) {
-            setError('Reservation not found')
-            setLoading(false)
-            return
+          let rez: Record<string, unknown> | null = null
+          let customer: { name?: string; language?: string | null; email?: string | null; phone?: string | null } | null =
+            null
+          let product: {
+            name_ko?: string | null
+            name_en?: string | null
+            customer_name_ko?: string | null
+            customer_name_en?: string | null
+          } | null = null
+          let pickupHotel: { hotel?: string | null } | null = null
+          let channel: { name?: string | null } | null = null
+
+          try {
+            const metaRes = await fetch(
+              `/api/public/receipt-row-meta?reservation_id=${encodeURIComponent(id)}`
+            )
+            if (metaRes.ok) {
+              const meta = (await metaRes.json()) as {
+                ok?: boolean
+                reservation?: Record<string, unknown>
+                customer?: typeof customer
+                product?: typeof product
+                pickupHotel?: typeof pickupHotel
+                channel?: typeof channel
+              }
+              if (meta.ok && meta.reservation) {
+                rez = meta.reservation
+                customer = meta.customer ?? null
+                product = meta.product ?? null
+                pickupHotel = meta.pickupHotel ?? null
+                channel = meta.channel ?? null
+              }
+            }
+          } catch {
+            /* 폴백: 클라이언트 Supabase */
           }
-          const customerId = (rez as any).customer_id
-          const productId = (rez as any).product_id
-          const pickupHotelId = (rez as any).pickup_hotel
-          const channelId = (rez as any).channel_id
-          const [{ data: customer }, { data: product }, { data: pickupHotel }, { data: channel }] = await Promise.all([
-            supabase.from('customers').select('name, language, email, phone').eq('id', customerId).single(),
-            supabase.from('products').select('name_ko, name_en, customer_name_ko, customer_name_en').eq('id', productId).single(),
-            pickupHotelId
-              ? supabase.from('pickup_hotels').select('hotel').eq('id', pickupHotelId).single()
-              : Promise.resolve({ data: null }),
-            channelId
-              ? supabase.from('channels').select('name').eq('id', channelId).single()
-              : Promise.resolve({ data: null }),
-          ])
+
+          if (!rez) {
+            const { data: rezRow, error: rezErr } = await supabase
+              .from('reservations')
+              .select(
+                'id, tour_date, tour_time, adults, child, infant, total_people, customer_id, product_id, status, created_at, pickup_hotel, channel_id'
+              )
+              .eq('id', id)
+              .single()
+            if (rezErr || !rezRow) {
+              setError('Reservation not found')
+              setLoading(false)
+              return
+            }
+            rez = rezRow as Record<string, unknown>
+            const customerId = rez.customer_id as string | null | undefined
+            const productId = rez.product_id as string | null | undefined
+            const pickupHotelId = rez.pickup_hotel as string | null | undefined
+            const channelId = rez.channel_id as string | null | undefined
+            const [cRes, pRes, phRes, chRes] = await Promise.all([
+              customerId
+                ? supabase.from('customers').select('name, language, email, phone').eq('id', customerId).single()
+                : Promise.resolve({ data: null }),
+              productId
+                ? supabase
+                    .from('products')
+                    .select('name_ko, name_en, customer_name_ko, customer_name_en')
+                    .eq('id', productId)
+                    .single()
+                : Promise.resolve({ data: null }),
+              pickupHotelId
+                ? supabase.from('pickup_hotels').select('hotel').eq('id', pickupHotelId).single()
+                : Promise.resolve({ data: null }),
+              channelId
+                ? supabase.from('channels').select('name').eq('id', channelId).single()
+                : Promise.resolve({ data: null }),
+            ])
+            customer = (cRes.data as typeof customer) ?? null
+            product = (pRes.data as typeof product) ?? null
+            pickupHotel = (phRes.data as typeof pickupHotel) ?? null
+            channel = (chRes.data as typeof channel) ?? null
+          }
           let pricingRow: Record<string, unknown> | null = null
           const pr = await supabase.from('reservation_pricing').select('*').eq('reservation_id', id).maybeSingle()
           if (pr.error) {
