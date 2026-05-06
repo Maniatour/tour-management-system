@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 
 // 가이드비 노트 조회
 export async function GET() {
   try {
-    const { data, error } = await supabase
+    const db = supabaseAdmin ?? supabase
+    const { data, error } = await db
       .from('guide_cost_notes')
       .select('*')
       .eq('id', '00000000-0000-0000-0000-000000000001')
@@ -48,7 +49,8 @@ export async function PUT(request: NextRequest) {
     const noteId = '00000000-0000-0000-0000-000000000001'
 
     // 먼저 기존 노트가 있는지 확인
-    const { data: existingData, error: checkError } = await supabase
+    const db = supabaseAdmin ?? supabase
+    const { data: existingData, error: checkError } = await db
       .from('guide_cost_notes')
       .select('id')
       .eq('id', noteId)
@@ -70,7 +72,7 @@ export async function PUT(request: NextRequest) {
 
     if (!existingData) {
       // 노트가 없으면 삽입
-      const { data: insertData, error: insertError } = await supabase
+      const { data: insertData, error: insertError } = await db
         .from('guide_cost_notes')
         .insert({
           id: noteId,
@@ -85,7 +87,7 @@ export async function PUT(request: NextRequest) {
       error = insertError
     } else {
       // 노트가 있으면 업데이트
-      const { data: updateData, error: updateError } = await supabase
+      const { data: updateData, error: updateError } = await db
         .from('guide_cost_notes')
         .update({
           note: note || '',

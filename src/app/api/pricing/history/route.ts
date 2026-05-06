@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClientSupabase } from '@/lib/supabase'
+import { createClientSupabase, supabaseAdmin } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const supabase = createClientSupabase()
+    const supabase = supabaseAdmin ?? createClientSupabase()
 
     // 1. 채널별 최근 가격 조회
     let query = supabase

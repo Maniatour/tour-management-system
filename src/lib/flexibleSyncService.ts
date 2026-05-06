@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, supabaseAdmin } from './supabase'
 import { readSheetDataDynamic } from './googleSheets'
 import { SYNC_TABLES_REQUIRE_SHEET_ROW_ID } from './syncSheetPrimaryKey'
 
@@ -512,8 +512,9 @@ const buildReservationCustomerEmailToIdMap = async (
 // 동기화 히스토리 저장 (직접 데이터베이스 접근)
 const saveSyncHistory = async (tableName: string, spreadsheetId: string, recordCount: number) => {
   try {
-    // 직접 Supabase에 저장
-    const { error } = await (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+    const db = supabaseAdmin ?? supabase
+    // 직접 Supabase에 저장 (RLS: 스태프 전용 — 서버에서는 service_role 우선)
+    const { error } = await (db as any) // eslint-disable-line @typescript-eslint/no-explicit-any
       .from('sync_history')
       .insert({
         table_name: tableName,

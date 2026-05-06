@@ -34,6 +34,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const pickupHotelsDb = supabaseAdmin ?? supabase
+
     // 예약 정보 조회
     const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest) {
     // 픽업 호텔 정보 별도 조회
     let pickupHotel = null
     if (reservation.pickup_hotel) {
-      const { data: hotelData, error: hotelError } = await supabase
+      const { data: hotelData, error: hotelError } = await pickupHotelsDb
         .from('pickup_hotels')
         .select('id, hotel, pick_up_location, address, link, media')
         .eq('id', reservation.pickup_hotel)
@@ -237,7 +239,7 @@ export async function POST(request: NextRequest) {
                 .eq('id', res.customer_id)
                 .maybeSingle()
 
-              const { data: hotelInfo } = await supabase
+              const { data: hotelInfo } = await pickupHotelsDb
                 .from('pickup_hotels')
                 .select('hotel, pick_up_location, address, link')
                 .eq('id', res.pickup_hotel)
@@ -287,7 +289,7 @@ export async function POST(request: NextRequest) {
               .eq('id', res.customer_id)
               .maybeSingle()
 
-            const { data: hotelInfo } = await supabase
+            const { data: hotelInfo } = await pickupHotelsDb
               .from('pickup_hotels')
               .select('hotel, pick_up_location, address, link')
               .eq('id', res.pickup_hotel)
@@ -418,7 +420,8 @@ export async function POST(request: NextRequest) {
 
       if (tourData.tour_car_id) {
         console.log('[preview-pickup-schedule-notification] 차량 조회:', tourData.tour_car_id)
-        const { data: vehicleData, error: vehicleError } = await supabase
+        const vehiclesDb = supabaseAdmin ?? supabase
+        const { data: vehicleData, error: vehicleError } = await vehiclesDb
           .from('vehicles')
           .select('vehicle_type, capacity, color')
           .eq('id', tourData.tour_car_id)

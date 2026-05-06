@@ -63,9 +63,24 @@ export async function POST(request: NextRequest) {
     }
 
     let channelId: string | null = null
-    const { data: chRow } = await db.from('channels').select('id').limit(1).maybeSingle()
-    if (chRow && typeof (chRow as { id?: string }).id === 'string') {
-      channelId = (chRow as { id: string }).id
+    const pickId = (row: unknown) =>
+      row && typeof (row as { id?: string }).id === 'string' ? (row as { id: string }).id : null
+
+    const channelAttempts = [
+      () => db.from('channels').select('id').eq('type', 'self').limit(1).maybeSingle(),
+      () => db.from('channels').select('id').eq('type', 'Website').limit(1).maybeSingle(),
+      () =>
+        db.from('channels').select('id').in('id', ['SELF', 'M00001', 'HOMEPAGE']).limit(1).maybeSingle(),
+      () => db.from('channels').select('id').not('favicon_url', 'is', null).limit(1).maybeSingle(),
+    ]
+    for (const run of channelAttempts) {
+      const { data: row } = await run()
+      channelId = pickId(row)
+      if (channelId) break
+    }
+    if (!channelId) {
+      const { data: chRow } = await db.from('channels').select('id').limit(1).maybeSingle()
+      channelId = pickId(chRow)
     }
 
     if (!channelId) {

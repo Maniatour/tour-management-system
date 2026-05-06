@@ -25,11 +25,11 @@ const PAYMENT_STATUS_OPTIONS = [
   'Deposit Requested',
   'Deposit Received',
   'Balance Received',
-  'Refunded',
+  '환불됨 (우리)',
   "Customer's CC Charged",
   'Deleted',
   'Refund Requested',
-  'Returned',
+  '환불됨 (파트너)',
   'Balance Requested',
   'Commission Received !',
 ] as const

@@ -3,13 +3,26 @@ import { supabase, supabaseAdmin } from '@/lib/supabase'
 
 const db = supabaseAdmin ?? supabase
 
+type RouteParams = Promise<{ id: string }> | { id: string }
+
+async function resolveId(params: RouteParams): Promise<string | undefined> {
+  const resolved = await Promise.resolve(params)
+  return resolved?.id
+}
+
 // GET: 특정 예약 지출 조회
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: RouteParams }
 ) {
   try {
-    const { id } = params
+    const id = await resolveId(params)
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: 'ID가 필요합니다.' },
+        { status: 400 }
+      )
+    }
 
     const { data, error } = await db
       .from('reservation_expenses')
@@ -74,10 +87,16 @@ export async function GET(
 // PUT: 특정 예약 지출 수정
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: RouteParams }
 ) {
   try {
-    const { id } = params
+    const id = await resolveId(params)
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: 'ID가 필요합니다.' },
+        { status: 400 }
+      )
+    }
     const body = await request.json()
 
     if (body.amount !== undefined && body.amount !== null) {
@@ -161,10 +180,16 @@ export async function PUT(
 // DELETE: 특정 예약 지출 삭제
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: RouteParams }
 ) {
   try {
-    const { id } = params
+    const id = await resolveId(params)
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: 'ID가 필요합니다.' },
+        { status: 400 }
+      )
+    }
 
     const { error } = await db
       .from('reservation_expenses')

@@ -33,6 +33,8 @@ interface CashTransaction {
   updated_at: string
   source?: 'cash_transactions' | 'payment_records' | 'company_expenses' | 'reservation_expenses' // 데이터 출처
   created_by_name?: string // team 테이블에서 가져온 name_ko
+  /** payment_records 출처만 — DB payment_status */
+  payment_status?: string | null
 }
 
 interface TransactionHistory {
@@ -65,6 +67,13 @@ const categories = [
   '예약 지출',
   '기타 지출'
 ]
+
+/**
+ * 현금 관리·현금 리포트에서 공통으로 쓰는 값.
+ * 회사/예약 지출은 결제수단 선택 시 payment_method 옵션 ID(예: PAYM032)로 저장되는 경우가 많아,
+ * 리터럴 `Cash`/`cash`만 조회하면 누락된다.
+ */
+const CASH_PAYMENT_METHOD_DB_VALUES = ['PAYM032', 'PAYM001', 'cash', 'Cash'] as const
 
 export default function CashManagement() {
   const t = useTranslations('cashManagement')
@@ -199,7 +208,7 @@ export default function CashManagement() {
       let paymentRecordsQuery = supabase
         .from('payment_records')
         .select('id, amount, submit_on, submit_by, note, reservation_id, payment_status')
-        .in('payment_method', ['PAYM032', 'PAYM001', 'cash', 'Cash'])
+        .in('payment_method', [...CASH_PAYMENT_METHOD_DB_VALUES])
         .order('submit_on', { ascending: false })
 
       if (searchTerm) {
@@ -218,10 +227,14 @@ export default function CashManagement() {
         paymentRecordsQuery = paymentRecordsQuery.lte('submit_on', end.toISOString())
       }
 
-      const { data: paymentRecords, error: paymentError } = await paymentRecordsQuery
+      const { data: paymentRecordsRaw, error: paymentError } = await paymentRecordsQuery
       if (paymentError) {
         console.warn('payment_records 로드 오류:', paymentError)
       }
+      /** 보증금 요청 단계(미입금) — 실현 거래가 아니므로 현금 거래 내역에서 제외 */
+      const paymentRecords = (paymentRecordsRaw || []).filter(
+        (pr) => String(pr.payment_status ?? '').trim() !== 'Deposit Requested'
+      )
 
       // 3. company_expenses 테이블에서 Cash/cash 데이터 가져오기
       let companyExpensesQuery = supabase
@@ -259,7 +272,7 @@ export default function CashManagement() {
       let reservationExpensesQuery = supabase
         .from('reservation_expenses')
         .select('id, amount, submit_on, submitted_by, note, paid_for, paid_to, reservation_id')
-        .ilike('payment_method', 'Cash')
+        .in('payment_method', [...CASH_PAYMENT_METHOD_DB_VALUES])
         .order('submit_on', { ascending: false })
 
       if (searchTerm) {
@@ -316,7 +329,8 @@ export default function CashManagement() {
           notes: pr.note || null,
           created_at: pr.submit_on || new Date().toISOString(),
           updated_at: pr.submit_on || new Date().toISOString(),
-          source: 'payment_records' as const
+          source: 'payment_records' as const,
+          payment_status: pr.payment_status != null ? String(pr.payment_status) : null,
         }))
         allTransactions.push(...converted)
       }
@@ -1162,6 +1176,14 @@ export default function CashManagement() {
                           <span>{transaction.category || '-'}</span>
                           <span className="text-gray-400">출처</span>
                           <span>{sourceLabel}</span>
+                          {transaction.source === 'payment_records' ? (
+                            <>
+                              <span className="text-gray-400">결제 상태</span>
+                              <span className="truncate" title={transaction.payment_status || ''}>
+                                {transaction.payment_status?.trim() || '—'}
+                              </span>
+                            </>
+                          ) : null}
                         </div>
                         <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-gray-100">
                           <Button variant="ghost" size="sm" className="h-10 w-10 p-0 min-h-[44px]" onClick={() => handleViewHistory(transaction)} title="히스토리">
@@ -1203,6 +1225,7 @@ export default function CashManagement() {
                       <TableHead className="py-2">설명</TableHead>
                       <TableHead className="w-40 py-2">카테고리</TableHead>
                       <TableHead className="w-32 py-2">출처</TableHead>
+                      <TableHead className="min-w-[7rem] max-w-[10rem] py-2">결제 상태</TableHead>
                       <TableHead className="py-2">메모</TableHead>
                       <TableHead className="py-2">작성자</TableHead>
                       <TableHead className="text-right w-40 py-2">작업</TableHead>
@@ -1282,6 +1305,11 @@ export default function CashManagement() {
                             <Badge variant="secondary" className="text-xs">
                               {sourceLabel}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="min-w-[7rem] max-w-[10rem] py-1 text-xs text-gray-800" title={transaction.payment_status || ''}>
+                            {transaction.source === 'payment_records'
+                              ? transaction.payment_status?.trim() || '—'
+                              : '—'}
                           </TableCell>
                           <TableCell className="max-w-xs truncate py-1 text-sm">{transaction.notes || '-'}</TableCell>
                           <TableCell className="text-sm text-gray-500 py-1">

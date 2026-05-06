@@ -265,7 +265,8 @@ export async function POST(request: NextRequest) {
         }
 
         if (tourData.tour_car_id) {
-          const { data: vehicleData } = await supabase
+          const vehiclesDb = supabaseAdmin ?? supabase
+          const { data: vehicleData } = await vehiclesDb
             .from('vehicles')
             .select('vehicle_type, capacity, color')
             .eq('id', tourData.tour_car_id)
@@ -317,7 +318,8 @@ export async function POST(request: NextRequest) {
     let pickupHotelForEmail: GenerateEmailContentOptions['pickupHotel'] = null
     const pickupHotelId = reservationForEmail.pickup_hotel as string | null | undefined
     if (pickupHotelId) {
-      const { data: hotelRow } = await supabase
+      const pickupDb = supabaseAdmin ?? supabase
+      const { data: hotelRow } = await pickupDb
         .from('pickup_hotels')
         .select('hotel, pick_up_location, address')
         .eq('id', pickupHotelId)

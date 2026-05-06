@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 
 /**
  * GET /api/options/with-usage
@@ -8,8 +8,9 @@ import { supabase } from '@/lib/supabase'
  */
 export async function GET() {
   try {
+    const usageClient = supabaseAdmin ?? supabase
     const [usageRes, optionsRes] = await Promise.all([
-      supabase.from('reservation_options').select('option_id'),
+      usageClient.from('reservation_options').select('option_id'),
       supabase
         .from('options')
         .select('id, name, name_ko, name_en, adult_price')

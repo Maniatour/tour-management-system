@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { getBuiltinResidentInquiryEmailTemplate, type ResidentInquiryEmailLocale } from '@/lib/residentInquiryEmailHtml'
 import { fetchResidentInquiryEmailTemplateFromDb } from '@/lib/residentInquiryEmailTemplateDb'
 import {
@@ -57,7 +57,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'subject_template and html_template are required' }, { status: 400 })
     }
 
-    const { error } = await supabase.from('resident_inquiry_email_templates').upsert(
+    const db = supabaseAdmin ?? supabase
+    const { error } = await db.from('resident_inquiry_email_templates').upsert(
       {
         locale,
         tour_kind: tourKind,
@@ -89,7 +90,8 @@ export async function DELETE(request: NextRequest) {
 
   const tourKind = parseTourKind(request.nextUrl.searchParams.get('tour_kind'))
 
-  const { error } = await supabase
+  const db = supabaseAdmin ?? supabase
+  const { error } = await db
     .from('resident_inquiry_email_templates')
     .delete()
     .eq('locale', locale)

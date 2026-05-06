@@ -79,7 +79,7 @@ async function ensurePartnerRefundPaymentOnImportCancel(reservationId: string): 
   const { error } = await supabase.from('payment_records').insert({
     id: paymentId,
     reservation_id: reservationId,
-    payment_status: 'Returned',
+    payment_status: '환불됨 (파트너)',
     amount,
     payment_method: 'PAYM033',
     note: IMPORT_CANCEL_PARTNER_REFUND_MEMO,

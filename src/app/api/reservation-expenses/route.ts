@@ -72,9 +72,55 @@ export async function GET(request: NextRequest) {
       return expense
     }))
 
+    /** 예약별 payment_records 금액 합계 (입금 내역) */
+    const reservationIds = [
+      ...new Set(
+        (expensesWithCustomers || [])
+          .map((e: { reservation_id?: string | null; reservations?: { id?: string } | null }) => {
+            const rid = e.reservation_id || e.reservations?.id
+            return rid && String(rid).trim() ? String(rid).trim() : null
+          })
+          .filter((id): id is string => Boolean(id))
+      ),
+    ]
+
+    const paymentTotalByReservation = new Map<string, number>()
+    let paymentTotalsOk = true
+    const chunkSize = 80
+    for (let i = 0; i < reservationIds.length; i += chunkSize) {
+      const chunk = reservationIds.slice(i, i + chunkSize)
+      const { data: prRows, error: prError } = await db
+        .from('payment_records')
+        .select('reservation_id, amount, amount_krw')
+        .in('reservation_id', chunk)
+
+      if (prError) {
+        console.error('Error fetching payment_records for reservation expenses:', prError)
+        paymentTotalsOk = false
+        break
+      }
+      for (const row of prRows || []) {
+        const rid = row.reservation_id as string
+        const raw = row.amount ?? row.amount_krw
+        const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '0'))
+        const amt = Number.isFinite(n) ? n : 0
+        paymentTotalByReservation.set(rid, (paymentTotalByReservation.get(rid) || 0) + amt)
+      }
+    }
+
+    const dataWithPayments = expensesWithCustomers.map(
+      (e: { reservation_id?: string | null; reservations?: { id?: string } | null }) => {
+        const rid = e.reservation_id || e.reservations?.id
+        const key = rid && String(rid).trim() ? String(rid).trim() : null
+        const reservation_payments_total =
+          !paymentTotalsOk ? null : key == null ? null : (paymentTotalByReservation.get(key) ?? 0)
+        return { ...e, reservation_payments_total }
+      }
+    )
+
     return NextResponse.json({
       success: true,
-      data: expensesWithCustomers
+      data: dataWithPayments
     })
 
   } catch (error) {

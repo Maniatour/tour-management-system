@@ -42,7 +42,11 @@ flags AS (
         OR lower(ps) LIKE '%deposit received%'
         OR lower(ps) LIKE '%customer''s cc charged%'
       )
-      AND (ps LIKE '%Refunded%' OR lower(ps) = 'refunded')
+      AND (
+        ps = '환불됨 (우리)'
+        OR ps LIKE '%Refunded%'
+        OR lower(ps) = 'refunded'
+      )
     ) AS is_refunded,
     (
       NOT (lower(ps) = 'balance received' OR lower(ps) LIKE 'balance received%')
@@ -51,8 +55,16 @@ flags AS (
         OR lower(ps) LIKE '%deposit received%'
         OR lower(ps) LIKE '%customer''s cc charged%'
       )
-      AND NOT (ps LIKE '%Refunded%' OR lower(ps) = 'refunded')
-      AND (ps LIKE '%Returned%' OR lower(ps) = 'returned')
+      AND NOT (
+        ps = '환불됨 (우리)'
+        OR ps LIKE '%Refunded%'
+        OR lower(ps) = 'refunded'
+      )
+      AND (
+        ps = '환불됨 (파트너)'
+        OR ps LIKE '%Returned%'
+        OR lower(ps) = 'returned'
+      )
     ) AS is_returned
   FROM classified
 ),

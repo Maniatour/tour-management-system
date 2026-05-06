@@ -205,6 +205,15 @@ export default function TourExpenseManager({
     return error.message
   }
 
+  /** RLS: tour_expenses.submitted_by / checked_by는 JWT 이메일과 맞아야 할 때가 많음 — prop이 비면 세션에서 채움 */
+  const resolveSubmitterEmail = useCallback(async (): Promise<string | null> => {
+    const fromProp = typeof submittedBy === 'string' ? submittedBy.trim() : ''
+    if (fromProp) return fromProp
+    const { data: sessionData } = await supabase.auth.getSession()
+    const fromSession = sessionData?.session?.user?.email?.trim()
+    return fromSession || null
+  }, [submittedBy])
+
   // 폼 데이터
   const [formData, setFormData] = useState({
     paid_to: '',
@@ -220,6 +229,8 @@ export default function TourExpenseManager({
     reimbursed_on: '',
     reimbursement_note: ''
   })
+  /** 지출 추가·수정 폼: 환급 입력란 표시 */
+  const [reimbursementSectionOpen, setReimbursementSectionOpen] = useState(false)
 
   /** 투어에 배정된 가이드·어시스턴트(또는 2인 가이드) 이메일 — 본인 카드 탭에 모두 반영 */
   const tourGuideEmails = useMemo(() => {
@@ -831,6 +842,12 @@ export default function TourExpenseManager({
 
     try {
       setUploading(true)
+
+      const effectiveSubmittedBy = await resolveSubmitterEmail()
+      if (!effectiveSubmittedBy) {
+        alert(t('submitterEmailRequired'))
+        return
+      }
       
       // 지급 대상 값 확인
       console.log('지급 대상 값 확인:', {
@@ -881,7 +898,7 @@ export default function TourExpenseManager({
           note: formData.note || null,
           tour_date: tourDate,
           product_id: finalProductId,
-          submitted_by: submittedBy,
+          submitted_by: effectiveSubmittedBy,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
           status: 'pending'
@@ -907,6 +924,7 @@ export default function TourExpenseManager({
         reimbursed_on: '',
         reimbursement_note: ''
       })
+      setReimbursementSectionOpen(false)
       setShowCustomPaidFor(false)
       setShowCustomPaidTo(false)
       setShowMoreCategories(false)
@@ -965,6 +983,12 @@ export default function TourExpenseManager({
         throw new Error('이미지 파일만 업로드할 수 있습니다.')
       }
 
+      const effectiveSubmittedBy = await resolveSubmitterEmail()
+      if (!effectiveSubmittedBy) {
+        alert(t('submitterEmailRequired'))
+        return
+      }
+
       const { filePath, imageUrl } = await handleImageUpload(file)
       const finalProductId = productId || tourData?.product_id || null
 
@@ -979,7 +1003,7 @@ export default function TourExpenseManager({
           note: 'Receipt uploaded first; expense details pending.',
           tour_date: tourDate,
           product_id: finalProductId,
-          submitted_by: submittedBy,
+          submitted_by: effectiveSubmittedBy,
           image_url: imageUrl,
           file_path: filePath,
           status: 'pending'
@@ -1064,11 +1088,16 @@ export default function TourExpenseManager({
   // 지출 상태 업데이트
   const handleStatusUpdate = async (expenseId: string, status: 'approved' | 'rejected') => {
     try {
+      const effectiveSubmittedBy = await resolveSubmitterEmail()
+      if (!effectiveSubmittedBy) {
+        alert(t('submitterEmailRequired'))
+        return
+      }
       const { error } = await supabase
         .from('tour_expenses')
         .update({
           status,
-          checked_by: submittedBy,
+          checked_by: effectiveSubmittedBy,
           checked_on: new Date().toISOString()
         })
         .eq('id', expenseId)
@@ -1078,7 +1107,7 @@ export default function TourExpenseManager({
       setExpenses(prev => 
         prev.map(expense => 
           expense.id === expenseId 
-            ? { ...expense, status, checked_by: submittedBy, checked_on: new Date().toISOString() }
+            ? { ...expense, status, checked_by: effectiveSubmittedBy, checked_on: new Date().toISOString() }
             : expense
         )
       )
@@ -1127,6 +1156,11 @@ export default function TourExpenseManager({
     // 기존 값이 paidToOptions 목록에 없으면 직접 입력 모드로 전환
     setShowCustomPaidTo(!isPaidToInOptions)
     setShowCustomPaidFor(!isPaidForInOptions && !isReceiptOnlyPending)
+    setReimbursementSectionOpen(
+      parseReimbursedAmount(expense.reimbursed_amount) > 0.009 ||
+        Boolean(String(expense.reimbursed_on ?? '').trim()) ||
+        Boolean(String(expense.reimbursement_note ?? '').trim())
+    )
     setShowAddForm(true)
   }
 
@@ -1187,6 +1221,9 @@ export default function TourExpenseManager({
           note: noteOut,
           custom_paid_to: isPaidToInOptions ? '' : draft.paid_to,
           custom_paid_for: '',
+          reimbursed_amount: '',
+          reimbursed_on: '',
+          reimbursement_note: '',
         }
       })
       setPaymentMethodTab(
@@ -1195,6 +1232,7 @@ export default function TourExpenseManager({
       setShowCustomPaidTo(Boolean(draft.paid_to && !isPaidToInOptions))
       setShowCustomPaidFor(false)
       setShowMoreCategories(false)
+      setReimbursementSectionOpen(false)
       setOcrReview(null)
       return
     }
@@ -1228,6 +1266,11 @@ export default function TourExpenseManager({
     setShowCustomPaidTo(Boolean(draft.paid_to && !isPaidToInOptions))
     setShowCustomPaidFor(false)
     setShowMoreCategories(false)
+    setReimbursementSectionOpen(
+      parseReimbursedAmount(expense.reimbursed_amount) > 0.009 ||
+        Boolean(String(expense.reimbursed_on ?? '').trim()) ||
+        Boolean(String(expense.reimbursement_note ?? '').trim())
+    )
     setShowAddForm(true)
     setOcrReview(null)
   }
@@ -1237,6 +1280,7 @@ export default function TourExpenseManager({
     setEditingExpense(null)
     setShowAddForm(false)
     setShowMoreCategories(false)
+    setReimbursementSectionOpen(false)
     setFormData({
       paid_to: '',
       paid_for: '',
@@ -1274,7 +1318,9 @@ export default function TourExpenseManager({
     }
 
     const amountNum = parseFloat(formData.amount)
-    const reimbNum = parseFloat(String(formData.reimbursed_amount ?? '').trim() || '0')
+    const reimbNum = reimbursementSectionOpen
+      ? parseFloat(String(formData.reimbursed_amount ?? '').trim() || '0')
+      : 0
     if (!Number.isFinite(reimbNum) || reimbNum < 0) {
       alert(t('reimbursementInvalidNonNegative'))
       return
@@ -1296,7 +1342,7 @@ export default function TourExpenseManager({
 
       const reimbursedOnVal = formData.reimbursed_on?.trim() || null
       const reimbPayload =
-        amountNum > 0
+        amountNum > 0 && reimbursementSectionOpen
           ? {
               reimbursed_amount: reimbNum,
               reimbursed_on: reimbursedOnVal,
@@ -1774,6 +1820,7 @@ export default function TourExpenseManager({
           <button
             onClick={() => {
               setPaymentMethodTab('own')
+              setReimbursementSectionOpen(false)
               setShowAddForm(true)
             }}
             className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -2797,41 +2844,65 @@ export default function TourExpenseManager({
 
               {parseFloat(formData.amount || '0') > 0 && (
                 <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 p-3 space-y-3">
-                  <p className="text-xs font-medium text-amber-900">{t('reimbursementSectionTitle')}</p>
-                  <p className="text-[11px] text-amber-800/90">{t('reimbursementSectionHint')}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedAmount')}</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.reimbursed_amount}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
-                        placeholder="0"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedOn')}</label>
-                      <input
-                        type="date"
-                        value={formData.reimbursed_on}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursementNote')}</label>
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
                     <input
-                      type="text"
-                      value={formData.reimbursement_note}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
-                      placeholder={t('reimbursementNotePlaceholder')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-700 focus:ring-amber-500"
+                      checked={reimbursementSectionOpen}
+                      onChange={(e) => {
+                        const on = e.target.checked
+                        setReimbursementSectionOpen(on)
+                        if (!on) {
+                          setFormData((prev) => ({
+                            ...prev,
+                            reimbursed_amount: '',
+                            reimbursed_on: '',
+                            reimbursement_note: '',
+                          }))
+                        }
+                      }}
                     />
-                  </div>
+                    <span className="text-sm font-medium text-amber-950">{t('reimbursementToggleLabel')}</span>
+                  </label>
+                  {reimbursementSectionOpen && (
+                    <>
+                      <p className="text-xs font-medium text-amber-900">{t('reimbursementSectionTitle')}</p>
+                      <p className="text-[11px] text-amber-800/90">{t('reimbursementSectionHint')}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedAmount')}</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={formData.reimbursed_amount}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                            placeholder="0"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedOn')}</label>
+                          <input
+                            type="date"
+                            value={formData.reimbursed_on}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursementNote')}</label>
+                        <input
+                          type="text"
+                          value={formData.reimbursement_note}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
+                          placeholder={t('reimbursementNotePlaceholder')}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

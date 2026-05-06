@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams, usePathname, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
@@ -9,9 +9,10 @@ import CompanyExpenseManager from '@/components/CompanyExpenseManager'
 import AllTourExpensesManager from '@/components/AllTourExpensesManager'
 import CashManagement from '@/components/CashManagement'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
-import { Receipt, Calendar, Building2, MapPin, Wallet, Settings } from 'lucide-react'
+import PaymentRecordsHistoryTab from '@/components/expenses/PaymentRecordsHistoryTab'
+import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle } from 'lucide-react'
 
-type ExpenseTab = 'reservation' | 'company' | 'tour' | 'cash'
+type ExpenseTab = 'payments' | 'reservation' | 'company' | 'tour' | 'cash'
 
 export default function ExpensesManagementPage() {
   const t = useTranslations('expenses')
@@ -23,9 +24,13 @@ export default function ExpensesManagementPage() {
   const tabFromUrl = searchParams.get('tab') as ExpenseTab | null
   const [activeTab, setActiveTab] = useState<ExpenseTab>(tabFromUrl || 'tour')
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
-  
+  const openCompanyLedgerDupRef = useRef<(() => void) | null>(null)
+  const registerOpenCompanyLedgerDup = useCallback((fn: (() => void) | null) => {
+    openCompanyLedgerDupRef.current = fn
+  }, [])
+
   useEffect(() => {
-    if (tabFromUrl && ['reservation', 'company', 'tour', 'cash'].includes(tabFromUrl)) {
+    if (tabFromUrl && ['payments', 'reservation', 'company', 'tour', 'cash'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl)
     }
   }, [tabFromUrl])
@@ -38,6 +43,12 @@ export default function ExpensesManagementPage() {
   }
 
   const tabs = [
+    {
+      id: 'payments' as ExpenseTab,
+      label: t('tabPayments'),
+      icon: Banknote,
+      description: t('tabPaymentsDesc')
+    },
     {
       id: 'reservation' as ExpenseTab,
       label: t('tabReservation'),
@@ -83,13 +94,27 @@ export default function ExpensesManagementPage() {
             </Link>
           </p>
         </div>
-        <button
-          onClick={() => setIsCategoryManagerOpen(true)}
-          className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 text-xs sm:text-sm font-medium flex-shrink-0"
-        >
-          <Settings size={14} className="sm:w-4 sm:h-4" />
-          {t('categoryManager')}
-        </button>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 shrink-0 w-full sm:w-auto">
+          {activeTab === 'company' && (
+            <button
+              type="button"
+              onClick={() => openCompanyLedgerDupRef.current?.()}
+              className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md text-amber-950 text-xs sm:text-sm font-medium"
+              title="목록의 시작일·종료일(비어 있으면 최근 90일~오늘) 범위에서 회사·투어·예약·입장권 지출 중 금액·등록일이 비슷한 그룹을 찾습니다."
+            >
+              <AlertTriangle size={14} className="sm:w-4 sm:h-4 shrink-0 text-amber-600" aria-hidden />
+              회사 지출 중복 점검
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsCategoryManagerOpen(true)}
+            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 text-xs sm:text-sm font-medium shrink-0"
+          >
+            <Settings size={14} className="sm:w-4 sm:h-4" />
+            {t('categoryManager')}
+          </button>
+        </div>
       </div>
 
       {/* 탭 네비게이션 - 모바일 컴팩트 */}
@@ -123,6 +148,16 @@ export default function ExpensesManagementPage() {
 
       {/* 탭 컨텐츠 - 통일된 패딩 */}
       <div className="bg-white rounded-lg shadow-sm border">
+        {activeTab === 'payments' && (
+          <div className="p-3 sm:p-4 lg:p-6">
+            <div className="mb-3 sm:mb-4">
+              <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionPaymentsTitle')}</h2>
+              <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionPaymentsDesc')}</p>
+            </div>
+            <PaymentRecordsHistoryTab />
+          </div>
+        )}
+
         {activeTab === 'reservation' && (
           <div className="p-3 sm:p-4 lg:p-6">
             <div className="mb-3 sm:mb-4">
@@ -139,7 +174,7 @@ export default function ExpensesManagementPage() {
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionCompanyTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionCompanyDesc')}</p>
             </div>
-            <CompanyExpenseManager />
+            <CompanyExpenseManager registerOpenLedgerDuplicateCheck={registerOpenCompanyLedgerDup} />
           </div>
         )}
 

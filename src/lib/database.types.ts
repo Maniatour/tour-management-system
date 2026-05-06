@@ -1024,22 +1024,28 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           description: string | null
+          exclude_from_pnl: boolean
           expense_type: string | null
           id: string
+          is_personal: boolean
+          ledger_expense_origin: string
           maintenance_type: string | null
           notes: string | null
           paid_by: string | null
           paid_for: string | null
           paid_for_label_id: string | null
+          personal_partner: string | null
           reimbursement_note: string | null
           reimbursed_amount: number
           reimbursed_on: string | null
           reimbursement_outstanding: number
+          reconciliation_status: string | null
           standard_paid_for: string | null
           paid_on: string | null
           paid_to: string | null
           payment_method: string | null
           photo_url: string | null
+          statement_line_id: string | null
           status: string | null
           subcategory: string | null
           submit_by: string | null
@@ -1059,21 +1065,27 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           description?: string | null
+          exclude_from_pnl?: boolean
           expense_type?: string | null
           id?: string
+          is_personal?: boolean
+          ledger_expense_origin?: string
           maintenance_type?: string | null
           notes?: string | null
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
+          personal_partner?: string | null
           reimbursed_amount?: number
           reimbursed_on?: string | null
           reimbursement_note?: string | null
+          reconciliation_status?: string | null
           standard_paid_for?: string | null
           paid_on?: string | null
           paid_to?: string | null
           payment_method?: string | null
           photo_url?: string | null
+          statement_line_id?: string | null
           status?: string | null
           subcategory?: string | null
           submit_by?: string | null
@@ -1093,21 +1105,27 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           description?: string | null
+          exclude_from_pnl?: boolean
           expense_type?: string | null
           id?: string
+          is_personal?: boolean
+          ledger_expense_origin?: string
           maintenance_type?: string | null
           notes?: string | null
           paid_by?: string | null
           paid_for?: string | null
           paid_for_label_id?: string | null
+          personal_partner?: string | null
           reimbursed_amount?: number
           reimbursed_on?: string | null
           reimbursement_note?: string | null
+          reconciliation_status?: string | null
           standard_paid_for?: string | null
           paid_on?: string | null
           paid_to?: string | null
           payment_method?: string | null
           photo_url?: string | null
+          statement_line_id?: string | null
           status?: string | null
           subcategory?: string | null
           submit_by?: string | null
@@ -2754,6 +2772,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      expense_duplicate_suppressions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          fingerprint: string
+          id: string
+          kind: string
+          member_keys: string[]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          fingerprint: string
+          id?: string
+          kind: string
+          member_keys: string[]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          fingerprint?: string
+          id?: string
+          kind?: string
+          member_keys?: string[]
+        }
+        Relationships: []
       }
       expense_normalization_mappings: {
         Row: {

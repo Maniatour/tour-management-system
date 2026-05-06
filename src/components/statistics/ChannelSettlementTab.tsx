@@ -23,6 +23,7 @@ import {
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import { type SystemReservationForOta } from '@/utils/otaSettlementReconciliation'
+import { isRefundedPaymentStatus, isReturnedPaymentStatus } from '@/utils/reservationPricingBalance'
 
 interface ChannelSettlementTabProps {
   dateRange: { start: string; end: string }
@@ -840,11 +841,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
               .eq('reservation_id', editingReservation.id)
             ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
               const status = row.payment_status || ''
-              const sl = status.toLowerCase()
               if (status === 'Partner Received') {
                 partnerReceivedAmount += Number(row.amount) || 0
               }
-              if (status.includes('Returned') || sl === 'returned') {
+              if (isReturnedPaymentStatus(status)) {
                 returnedAmount += Number(row.amount) || 0
               }
             })
@@ -1172,10 +1172,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
               partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
             }
             const st = row.payment_status || ''
-            const sl = st.toLowerCase()
-            if (st.includes('Refunded') || sl === 'refunded') {
+            if (isRefundedPaymentStatus(st)) {
               refundedOurMap[rid] = (refundedOurMap[rid] ?? 0) + amt
-            } else if (st.includes('Returned') || sl === 'returned') {
+            } else if (isReturnedPaymentStatus(st)) {
               returnedMap[rid] = (returnedMap[rid] ?? 0) + amt
             }
           })
@@ -1435,10 +1434,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                 partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
               }
               const st = row.payment_status || ''
-              const sl = st.toLowerCase()
-              if (st.includes('Refunded') || sl === 'refunded') {
+              if (isRefundedPaymentStatus(st)) {
                 refundedOurTourMap[rid] = (refundedOurTourMap[rid] ?? 0) + amt
-              } else if (st.includes('Returned') || sl === 'returned') {
+              } else if (isReturnedPaymentStatus(st)) {
                 returnedMapTour[rid] = (returnedMapTour[rid] ?? 0) + amt
               }
             })

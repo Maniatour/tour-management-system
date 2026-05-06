@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
-import { ListPlus } from 'lucide-react'
+import { AlertTriangle, ListPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import {
@@ -21,6 +21,12 @@ import {
   matchStandardLeafIdForPaidForAndCategory,
   unifiedStandardTriggerLabel
 } from '@/lib/companyExpenseStandardUnified'
+import {
+  BULK_COMPANY_DUP_AMOUNT_EPS,
+  BULK_COMPANY_DUP_DAY_WINDOW,
+  fetchCompanyExpenseDuplicatesForBulk,
+  type BulkCompanyDuplicateRow
+} from '@/lib/statement-bulk-company-duplicate-check'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -176,6 +182,13 @@ type StatementRuleEditDraft = {
   scopeThisAccount: boolean
 }
 
+type CompanyDupScreenState =
+  | {
+      rows: BulkCompanyDuplicateRow[]
+      valid: BulkCompanyExpenseProposalRow[]
+    }
+  | null
+
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -328,6 +341,8 @@ export default function StatementBulkExpenseModal({
   const [editRuleDraft, setEditRuleDraft] = useState<StatementRuleEditDraft | null>(null)
   const [savingRuleEdit, setSavingRuleEdit] = useState(false)
 
+  const [companyDupScreen, setCompanyDupScreen] = useState<CompanyDupScreenState>(null)
+  const [dupCheckLoading, setDupCheckLoading] = useState(false)
   const [expenseStandardCategories, setExpenseStandardCategories] = useState<ExpenseStandardCategoryPickRow[]>([])
   const [paidForFromDb, setPaidForFromDb] = useState<string[]>([])
 
@@ -751,6 +766,110 @@ export default function StatementBulkExpenseModal({
     if (uErr) throw uErr
   }
 
+  const applyCompanyBulkInner = async (valid: BulkCompanyExpenseProposalRow[]) => {
+    const ruleUsage = new Map<string, number>()
+    for (const p of valid) {
+      const leafId = matchStandardLeafIdForPaidForAndCategory(
+        p.paid_for.trim(),
+        p.category.trim(),
+        expenseStandardCategories,
+        locale
+      )
+      const applied = leafId ? applyStandardLeafToCompanyExpense(leafId, standardCatsById) : null
+      const { data: ins, error: insErr } = await supabase
+        .from('company_expenses')
+        .insert({
+          paid_to: p.paid_to.trim(),
+          paid_for: p.paid_for.trim(),
+          description: p.description.trim() || null,
+          amount: p.amount,
+          payment_method: paymentMethodValue,
+          submit_by: email,
+          category: applied ? applied.category : p.category.trim(),
+          ...(applied
+            ? {
+                standard_paid_for: applied.paid_for,
+                expense_type: applied.expense_type,
+                tax_deductible: applied.tax_deductible
+              }
+            : {}),
+          status: 'approved',
+          ledger_expense_origin: 'statement_adjustment',
+          statement_line_id: p.statement_line_id,
+          reconciliation_status: 'reconciled',
+          exclude_from_pnl: p.exclude_from_pnl,
+          is_personal: false,
+          personal_partner: null,
+          submit_on: `${p.posted_date}T12:00:00.000Z`
+        })
+        .select('id')
+        .single()
+      if (insErr || !ins?.id) throw insErr || new Error('회사 지출 저장 실패')
+      await linkStatement(p.statement_line_id, 'company_expenses', String(ins.id), p.amount)
+      if (p.rule_id && p.suggestion_source === 'rule') {
+        ruleUsage.set(p.rule_id, (ruleUsage.get(p.rule_id) ?? 0) + 1)
+      }
+    }
+    for (const [rid, n] of ruleUsage) {
+      const { data: cur } = await supabase
+        .from('statement_expense_autofill_rules')
+        .select('usage_count')
+        .eq('id', rid)
+        .maybeSingle()
+      const base = Number(cur?.usage_count ?? 0)
+      await supabase.from('statement_expense_autofill_rules').update({ usage_count: base + n }).eq('id', rid)
+    }
+  }
+
+  const finalizeAfterBulkSuccess = async () => {
+    await onCompleted()
+    onOpenChange(false)
+  }
+
+  const beginCompanySaveWithDupCheck = async (valid: BulkCompanyExpenseProposalRow[]) => {
+    setDupCheckLoading(true)
+    try {
+      const dups = await fetchCompanyExpenseDuplicatesForBulk(
+        valid.map((p) => ({
+          statement_line_id: p.statement_line_id,
+          posted_date: p.posted_date,
+          amount: p.amount,
+          line_desc: p.line_desc
+        }))
+      )
+      if (dups.length > 0) {
+        setCompanyDupScreen({ rows: dups, valid })
+        return
+      }
+      setApplying(true)
+      try {
+        await applyCompanyBulkInner(valid)
+        await finalizeAfterBulkSuccess()
+      } finally {
+        setApplying(false)
+      }
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : '중복 점검 중 오류')
+    } finally {
+      setDupCheckLoading(false)
+    }
+  }
+
+  const confirmDespiteDuplicates = async () => {
+    if (!companyDupScreen) return
+    const { valid } = companyDupScreen
+    setCompanyDupScreen(null)
+    setApplying(true)
+    try {
+      await applyCompanyBulkInner(valid)
+      await finalizeAfterBulkSuccess()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : '저장 중 오류')
+    } finally {
+      setApplying(false)
+    }
+  }
+
   const applySelected = async () => {
     setFormError(null)
     if (expenseKind === 'tour_expenses' && !tourPickId) {
@@ -764,69 +883,20 @@ export default function StatementBulkExpenseModal({
       return
     }
 
+    if (expenseKind === 'company_expenses') {
+      const rows = companyProposals.filter((p) => selectedIds.has(p.statement_line_id))
+      const valid = rows.filter((p) => p.paid_for.trim() && p.category.trim() && p.paid_to.trim())
+      if (valid.length === 0) {
+        setFormError('저장할 행을 선택하고, 결제처·결제내용·카테고리를 모두 채우세요.')
+        return
+      }
+      await beginCompanySaveWithDupCheck(valid)
+      return
+    }
+
     setApplying(true)
-    const ruleUsage = new Map<string, number>()
     try {
-      if (expenseKind === 'company_expenses') {
-        const rows = companyProposals.filter((p) => selectedIds.has(p.statement_line_id))
-        const valid = rows.filter((p) => p.paid_for.trim() && p.category.trim() && p.paid_to.trim())
-        if (valid.length === 0) {
-          setFormError('저장할 행을 선택하고, 결제처·결제내용·카테고리를 모두 채우세요.')
-          setApplying(false)
-          return
-        }
-        for (const p of valid) {
-          const leafId = matchStandardLeafIdForPaidForAndCategory(
-            p.paid_for.trim(),
-            p.category.trim(),
-            expenseStandardCategories,
-            locale
-          )
-          const applied = leafId ? applyStandardLeafToCompanyExpense(leafId, standardCatsById) : null
-          const { data: ins, error: insErr } = await supabase
-            .from('company_expenses')
-            .insert({
-              paid_to: p.paid_to.trim(),
-              paid_for: p.paid_for.trim(),
-              description: p.description.trim() || null,
-              amount: p.amount,
-              payment_method: paymentMethodValue,
-              submit_by: email,
-              category: applied ? applied.category : p.category.trim(),
-              ...(applied
-                ? {
-                    standard_paid_for: applied.paid_for,
-                    expense_type: applied.expense_type,
-                    tax_deductible: applied.tax_deductible
-                  }
-                : {}),
-              status: 'approved',
-              ledger_expense_origin: 'statement_adjustment',
-              statement_line_id: p.statement_line_id,
-              reconciliation_status: 'reconciled',
-              exclude_from_pnl: p.exclude_from_pnl,
-              is_personal: false,
-              personal_partner: null,
-              submit_on: `${p.posted_date}T12:00:00.000Z`
-            })
-            .select('id')
-            .single()
-          if (insErr || !ins?.id) throw insErr || new Error('회사 지출 저장 실패')
-          await linkStatement(p.statement_line_id, 'company_expenses', String(ins.id), p.amount)
-          if (p.rule_id && p.suggestion_source === 'rule') {
-            ruleUsage.set(p.rule_id, (ruleUsage.get(p.rule_id) ?? 0) + 1)
-          }
-        }
-        for (const [rid, n] of ruleUsage) {
-          const { data: cur } = await supabase
-            .from('statement_expense_autofill_rules')
-            .select('usage_count')
-            .eq('id', rid)
-            .maybeSingle()
-          const base = Number(cur?.usage_count ?? 0)
-          await supabase.from('statement_expense_autofill_rules').update({ usage_count: base + n }).eq('id', rid)
-        }
-      } else if (expenseKind === 'tour_expenses' && pickedTour) {
+      if (expenseKind === 'tour_expenses' && pickedTour) {
         const rows = tourProposals.filter((p) => selectedIds.has(p.statement_line_id))
         const valid = rows.filter((p) => p.paid_for.trim() && p.paid_to.trim())
         if (valid.length === 0) {
@@ -953,13 +1023,14 @@ export default function StatementBulkExpenseModal({
     setExpenseKind(k)
     setSelectedIds(new Set())
     setFormError(null)
+    setCompanyDupScreen(null)
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!v && applying) return
+        if (!v && (applying || dupCheckLoading)) return
         onOpenChange(v)
         if (!v) {
           setExpenseKind('company_expenses')
@@ -970,6 +1041,8 @@ export default function StatementBulkExpenseModal({
           setSelectedIds(new Set())
           setLoadError(null)
           setFormError(null)
+          setCompanyDupScreen(null)
+          setDupCheckLoading(false)
           resetNewRuleForm()
           setEditRuleDraft(null)
           setTourPickId('')
@@ -980,24 +1053,105 @@ export default function StatementBulkExpenseModal({
       <DialogContent
         className="max-w-[min(96rem,calc(100vw-1.5rem))] w-[calc(100vw-1rem)] max-h-[min(92vh,900px)] flex flex-col gap-0 p-0"
         onPointerDownOutside={(e) => {
-          if (applying) e.preventDefault()
+          if (applying || dupCheckLoading) e.preventDefault()
         }}
         onEscapeKeyDown={(e) => {
-          if (applying) e.preventDefault()
+          if (applying || dupCheckLoading) e.preventDefault()
         }}
       >
         <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b border-slate-100 shrink-0 text-left space-y-1">
           <DialogTitle className="text-base flex items-center gap-2">
-            <ListPlus className="h-5 w-5 shrink-0 text-slate-600" aria-hidden />
-            명세에서 지출 일괄 입력
+            {companyDupScreen ? (
+              <>
+                <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" aria-hidden />
+                회사 지출 중복 점검
+              </>
+            ) : (
+              <>
+                <ListPlus className="h-5 w-5 shrink-0 text-slate-600" aria-hidden />
+                명세에서 지출 일괄 입력
+              </>
+            )}
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm text-slate-600">
-            <strong>지출 유형</strong>을 고른 뒤 미리보기에서 값을 확인·수정하고, 체크한 행만 저장합니다.{' '}
-            <strong>회사 지출</strong>만 규칙·과거 설명으로 paid for·카테고리를 자동 제안합니다. 투어·예약·입장권은
-            행마다 입력하거나 가맹점명을 결제처로 두고 수정하세요.
+            {companyDupScreen ? (
+              <>
+                저장하려는 명세 줄과 <strong>같은 금액(±{BULK_COMPANY_DUP_AMOUNT_EPS})</strong>·
+                <strong>근접 등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)</strong>인 기존 회사 지출이 있습니다. 자동 매칭만 한 뒤
+                일괄 입력하면 같은 카드 거래가 둘로 남을 수 있으니, 목록을 확인한 뒤 저장 여부를 정하세요.
+              </>
+            ) : (
+              <>
+                <strong>지출 유형</strong>을 고른 뒤 미리보기에서 값을 확인·수정하고, 체크한 행만 저장합니다.{' '}
+                <strong>회사 지출</strong>만 규칙·과거 설명으로 paid for·카테고리를 자동 제안합니다. 투어·예약·입장권은
+                행마다 입력하거나 가맹점명을 결제처로 두고 수정하세요.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
+        {companyDupScreen ? (
+          <div className="px-3 sm:px-4 py-2 overflow-y-auto flex-1 min-h-0 space-y-2 text-[11px] sm:text-xs">
+            <p className="text-slate-600">
+              비교 대상은 <strong>승인·대기</strong> 상태의 회사 지출입니다. 이미{' '}
+              <strong>이 명세 줄</strong>에 연결된 지출 행은 제외했습니다.
+            </p>
+            <div className="rounded-md border border-amber-200/90 bg-amber-50/50 overflow-x-auto">
+              <table className="w-full min-w-[72rem] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-amber-200/80 text-slate-600 bg-amber-100/40">
+                    <th className="py-1.5 px-1.5 font-medium whitespace-nowrap">명세일</th>
+                    <th className="py-1.5 px-1.5 font-medium text-right whitespace-nowrap">명세 금액</th>
+                    <th className="py-1.5 px-1.5 font-medium min-w-[10rem]">명세 설명</th>
+                    <th className="py-1.5 px-1.5 font-medium whitespace-nowrap">기존 지출 ID</th>
+                    <th className="py-1.5 px-1.5 font-medium text-right whitespace-nowrap">기존 금액</th>
+                    <th className="py-1.5 px-1.5 font-medium whitespace-nowrap">등록일</th>
+                    <th className="py-1.5 px-1.5 font-medium min-w-[7rem]">Paid to</th>
+                    <th className="py-1.5 px-1.5 font-medium min-w-[7rem]">Paid for</th>
+                    <th className="py-1.5 px-1.5 font-medium whitespace-nowrap">지출 상태</th>
+                    <th className="py-1.5 px-1.5 font-medium whitespace-nowrap">지출↔명세</th>
+                    <th className="py-1.5 px-1.5 font-medium min-w-[8rem]">비고</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {companyDupScreen.rows.flatMap((block) =>
+                    block.matches.map((m) => (
+                      <tr key={`${block.proposal.statement_line_id}-${m.id}`} className="border-b border-amber-100/80 align-top">
+                        <td className="py-1 px-1.5 whitespace-nowrap text-slate-800">{block.proposal.posted_date}</td>
+                        <td className="py-1 px-1.5 text-right tabular-nums text-slate-800">
+                          ${Number(block.proposal.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-1 px-1.5 break-words text-slate-700">{block.proposal.line_desc || '—'}</td>
+                        <td className="py-1 px-1.5 font-mono text-[10px] text-slate-800">{m.id.slice(0, 8)}…</td>
+                        <td className="py-1 px-1.5 text-right tabular-nums text-slate-800">
+                          {m.amount != null && Number.isFinite(m.amount)
+                            ? `$${m.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                            : '—'}
+                        </td>
+                        <td className="py-1 px-1.5 whitespace-nowrap text-slate-700">
+                          {m.submit_on ? String(m.submit_on).slice(0, 10) : '—'}
+                        </td>
+                        <td className="py-1 px-1.5 break-words text-slate-700">{m.paid_to?.trim() || '—'}</td>
+                        <td className="py-1 px-1.5 break-words text-slate-700">{m.paid_for?.trim() || '—'}</td>
+                        <td className="py-1 px-1.5 whitespace-nowrap text-slate-700">{m.status?.trim() || '—'}</td>
+                        <td className="py-1 px-1.5 whitespace-nowrap text-slate-700">
+                          {m.reconciled_statement_line_id
+                            ? `대조:${m.reconciled_statement_line_id.slice(0, 8)}…`
+                            : m.statement_line_id
+                              ? `행:${m.statement_line_id.slice(0, 8)}…`
+                              : '—'}
+                        </td>
+                        <td className="py-1 px-1.5 text-slate-600">
+                          {m.ledger_expense_origin === 'statement_adjustment' ? '명세 보정·일괄' : '운영'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
         <div className="px-3 sm:px-4 py-2 overflow-y-auto flex-1 min-h-0 space-y-3 text-xs sm:text-sm">
           {hintLine ? <p className="text-amber-800 text-[11px] sm:text-xs">{hintLine}</p> : null}
           {loadError ? <p className="text-red-700 text-sm">{loadError}</p> : null}
@@ -1784,42 +1938,73 @@ export default function StatementBulkExpenseModal({
             </div>
           )}
         </div>
+        )}
 
         <DialogFooter className="px-4 py-3 border-t border-slate-100 shrink-0 gap-2 flex-col sm:flex-row sm:items-end sm:justify-end">
-          <div className="w-full sm:flex-1 space-y-1 text-[11px] text-slate-600">
-            <p>
-              선택 <strong className="tabular-nums">{bulkSavePreview.selected}</strong>건 · 저장 가능{' '}
-              <strong className="tabular-nums text-emerald-800">{bulkSavePreview.ready}</strong>건
-              {bulkSavePreview.incomplete > 0 ? (
-                <>
-                  {' '}
-                  · 입력 미완 <strong className="tabular-nums text-amber-950">{bulkSavePreview.incomplete}</strong>건
-                </>
-              ) : null}
-            </p>
-            {bulkSavePreview.dupAmountDate ? (
-              <p className="font-medium text-amber-950">
-                동일 거래일·금액이 둘 이상 있습니다. 중복 저장이 아닌지 확인하세요.
-              </p>
-            ) : null}
-            <p className="text-[10px] text-slate-500">
-              결제수단: {defaultPaymentMethodId ? `ID ${defaultPaymentMethodId.slice(0, 8)}…` : '기본 Card'}
-            </p>
-          </div>
-          <Button type="button" variant="outline" disabled={applying} onClick={() => onOpenChange(false)}>
-            닫기
-          </Button>
-          <Button
-            type="button"
-            disabled={applying || loading || bulkSavePreview.ready === 0}
-            onClick={() => void applySelected()}
-          >
-            {applying
-              ? '저장 중…'
-              : bulkSavePreview.selected !== bulkSavePreview.ready
-                ? `저장 ${bulkSavePreview.ready}건 (선택 ${bulkSavePreview.selected})`
-                : `선택 저장 (${bulkSavePreview.ready}건)`}
-          </Button>
+          {companyDupScreen ? (
+            <>
+              <div className="w-full sm:flex-1 space-y-1 text-[11px] text-slate-600">
+                <p>
+                  <strong>그래도 저장</strong>을 누르면 아래에 나온 대로 <strong>새 회사 지출</strong>이 추가되고 명세와
+                  연결됩니다. 기존 지출과 동일 거래면 회사 지출 목록에서 중복이 생깁니다.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={applying || dupCheckLoading}
+                onClick={() => setCompanyDupScreen(null)}
+              >
+                돌아가 수정
+              </Button>
+              <Button
+                type="button"
+                disabled={applying || dupCheckLoading}
+                onClick={() => void confirmDespiteDuplicates()}
+              >
+                {applying ? '저장 중…' : '그래도 저장'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="w-full sm:flex-1 space-y-1 text-[11px] text-slate-600">
+                <p>
+                  선택 <strong className="tabular-nums">{bulkSavePreview.selected}</strong>건 · 저장 가능{' '}
+                  <strong className="tabular-nums text-emerald-800">{bulkSavePreview.ready}</strong>건
+                  {bulkSavePreview.incomplete > 0 ? (
+                    <>
+                      {' '}
+                      · 입력 미완 <strong className="tabular-nums text-amber-950">{bulkSavePreview.incomplete}</strong>건
+                    </>
+                  ) : null}
+                </p>
+                {bulkSavePreview.dupAmountDate ? (
+                  <p className="font-medium text-amber-950">
+                    동일 거래일·금액이 둘 이상 있습니다. 중복 저장이 아닌지 확인하세요.
+                  </p>
+                ) : null}
+                <p className="text-[10px] text-slate-500">
+                  결제수단: {defaultPaymentMethodId ? `ID ${defaultPaymentMethodId.slice(0, 8)}…` : '기본 Card'}
+                </p>
+              </div>
+              <Button type="button" variant="outline" disabled={applying || dupCheckLoading} onClick={() => onOpenChange(false)}>
+                닫기
+              </Button>
+              <Button
+                type="button"
+                disabled={applying || dupCheckLoading || loading || bulkSavePreview.ready === 0}
+                onClick={() => void applySelected()}
+              >
+                {dupCheckLoading
+                  ? '점검 중…'
+                  : applying
+                    ? '저장 중…'
+                    : bulkSavePreview.selected !== bulkSavePreview.ready
+                      ? `저장 ${bulkSavePreview.ready}건 (선택 ${bulkSavePreview.selected})`
+                      : `선택 저장 (${bulkSavePreview.ready}건)`}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

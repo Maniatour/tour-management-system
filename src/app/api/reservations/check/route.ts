@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { fetchReservationOptionsLegacyByReservationId } from '@/lib/fetchReservationOptionsLegacy'
 
 // 예약 확인 (고객용 - 인증 없이 이메일과 예약 ID로 확인)
@@ -59,8 +59,9 @@ export async function POST(request: NextRequest) {
       }, { status: 404 })
     }
 
+    const optionsClient = supabaseAdmin ?? supabase
     const reservation_options = await fetchReservationOptionsLegacyByReservationId(
-      supabase,
+      optionsClient,
       reservation_id
     )
 

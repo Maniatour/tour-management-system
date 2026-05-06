@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createSupabaseClientWithToken, supabase } from '@/lib/supabase'
 
 // 출퇴근 기록 조회
 export async function GET(request: NextRequest) {
@@ -26,13 +26,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
+    const userDb = createSupabaseClientWithToken(token)
+
     // 해당 월의 출퇴근 기록 조회
     const monthStart = month + '-01'
     const year = parseInt(month.split('-')[0])
     const monthNum = parseInt(month.split('-')[1]) - 1
     const monthEnd = new Date(year, monthNum + 1, 0).toISOString().split('T')[0]
 
-    const { data, error } = await supabase
+    const { data, error } = await userDb
       .from('attendance_records')
       .select('*')
       .eq('employee_email', employeeEmail)
@@ -78,8 +80,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
+    const userDb = createSupabaseClientWithToken(token)
+
     // 직원 정보 확인
-    const { data: employeeData, error: employeeError } = await supabase
+    const { data: employeeData, error: employeeError } = await userDb
       .from('team')
       .select('name_ko, email')
       .eq('email', employee_email)
@@ -91,7 +95,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 해당 날짜의 기존 기록 조회하여 다음 세션 번호 계산
-    const { data: existingRecords } = await supabase
+    const { data: existingRecords } = await userDb
       .from('attendance_records')
       .select('session_number')
       .eq('employee_email', employee_email)
@@ -113,7 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 출퇴근 기록 추가
-    const { data, error } = await supabase
+    const { data, error } = await userDb
       .from('attendance_records')
       .insert({
         employee_email,

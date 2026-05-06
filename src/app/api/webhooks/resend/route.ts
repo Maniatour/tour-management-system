@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
 
 /**
  * POST /api/webhooks/resend
@@ -19,6 +19,11 @@ export async function POST(request: NextRequest) {
     })
 
     const emailId = event.data?.email_id
+
+    if (!supabaseAdmin) {
+      console.error('[webhook/resend] supabaseAdmin 미설정(SUPABASE_SERVICE_ROLE_KEY)')
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+    }
     
     if (!emailId) {
       console.error('[webhook/resend] email_id가 없습니다.')
@@ -26,7 +31,7 @@ export async function POST(request: NextRequest) {
     }
 
     // email_logs에서 해당 이메일 찾기
-    const { data: emailLog, error: findError } = await supabase
+    const { data: emailLog, error: findError } = await supabaseAdmin
       .from('email_logs')
       .select('id, opened_at, opened_count, delivered_at, bounced_at, clicked_at, clicked_count')
       .eq('resend_email_id', emailId)
@@ -47,7 +52,7 @@ export async function POST(request: NextRequest) {
     if (event.type === 'email.delivered') {
       // 이메일 전달 성공
       if (!emailLog.delivered_at) {
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from('email_logs')
           .update({
             delivered_at: new Date().toISOString(),
@@ -70,7 +75,7 @@ export async function POST(request: NextRequest) {
       const bounceReason = event.data?.bounce_type || event.data?.reason || 'Unknown'
       
       if (!emailLog.bounced_at) {
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from('email_logs')
           .update({
             bounced_at: new Date().toISOString(),
@@ -94,7 +99,7 @@ export async function POST(request: NextRequest) {
       // 이메일 읽음
       if (emailLog.opened_at) {
         // 이미 읽은 적이 있는 경우 opened_count만 증가
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from('email_logs')
           .update({
             opened_count: (emailLog.opened_count || 0) + 1
@@ -112,7 +117,7 @@ export async function POST(request: NextRequest) {
         })
       } else {
         // 처음 읽은 경우 opened_at과 opened_count 설정
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from('email_logs')
           .update({
             opened_at: new Date().toISOString(),
@@ -134,7 +139,7 @@ export async function POST(request: NextRequest) {
       // 링크 클릭
       if (emailLog.clicked_at) {
         // 이미 클릭한 적이 있는 경우 clicked_count만 증가
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from('email_logs')
           .update({
             clicked_count: (emailLog.clicked_count || 0) + 1
@@ -152,7 +157,7 @@ export async function POST(request: NextRequest) {
         })
       } else {
         // 처음 클릭한 경우 clicked_at과 clicked_count 설정
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
           .from('email_logs')
           .update({
             clicked_at: new Date().toISOString(),

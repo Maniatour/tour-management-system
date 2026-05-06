@@ -206,10 +206,10 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
     if (normalizedStatus?.includes('received') || normalizedStatus?.includes('charged')) {
       return <CheckCircle size={16} className="text-green-500" />
     }
-    if (normalizedStatus === 'returned') {
+    if (status === '환불됨 (파트너)' || normalizedStatus === 'returned' || status.includes('Returned')) {
       return <XCircle size={16} className="text-rose-600" />
     }
-    if (normalizedStatus === 'refunded') {
+    if (status === '환불됨 (우리)' || normalizedStatus === 'refunded' || status.includes('Refunded')) {
       return <XCircle size={16} className="text-red-600" />
     }
     if (normalizedStatus?.includes('refund') || normalizedStatus?.includes('returned') || normalizedStatus?.includes('deleted')) {
@@ -230,10 +230,12 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
       'deposit received': '보증금 수령',
       'balance received': '잔금 수령',
       'refunded': '환불됨 (우리)',
+      '환불됨 (우리)': '환불됨 (우리)',
       "customer's cc charged": '고객 CC 청구 (대행)',
       'deleted': '삭제됨',
       'refund requested': '환불 요청',
       'returned': '환불됨 (파트너)',
+      '환불됨 (파트너)': '환불됨 (파트너)',
       'balance requested': '잔금 요청',
       'commission received !': '수수료 수령 !',
       // 기존 값들도 유지
@@ -242,7 +244,7 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
       'rejected': '거부됨'
     }
     
-    return statusMap[status.toLowerCase()] || status
+    return statusMap[status] || statusMap[status.toLowerCase()] || status
   }
 
   const getStatusColor = (status: string) => {
@@ -264,10 +266,10 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
     }
 
     // 환불 조치 완료 — 우리(적색) / 파트너(로즈) 붉은 계열 구분
-    if (normalizedStatus === 'refunded') {
+    if (status === '환불됨 (우리)' || normalizedStatus === 'refunded' || status.includes('Refunded')) {
       return 'bg-red-100 text-red-800'
     }
-    if (normalizedStatus === 'returned') {
+    if (status === '환불됨 (파트너)' || normalizedStatus === 'returned' || status.includes('Returned')) {
       return 'bg-rose-100 text-rose-800'
     }
 

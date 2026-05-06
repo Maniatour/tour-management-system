@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, createSupabaseClientWithToken } from '@/lib/supabase'
 import { fetchReservationOptionsLegacyByReservationId } from '@/lib/fetchReservationOptionsLegacy'
 
 // 특정 예약 조회, 수정, 삭제
@@ -24,8 +24,10 @@ export async function GET(
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
+    const userSb = createSupabaseClientWithToken(token)
+
     // 예약 조회
-    const { data: reservation, error } = await supabase
+    const { data: reservation, error } = await userSb
       .from('reservations')
       .select(`
         *,
@@ -62,7 +64,7 @@ export async function GET(
     }
 
     const reservation_options = await fetchReservationOptionsLegacyByReservationId(
-      supabase,
+      userSb,
       reservationId
     )
 

@@ -13,6 +13,14 @@ interface PaymentRecordFormProps {
   editingRecord?: PaymentRecord | null
 }
 
+/** 구버전 DB·시트 값 → 폼 option value */
+function normalizePaymentStatusForForm(ps: string | undefined | null): string {
+  const t = String(ps || '').trim()
+  if (t === 'Refunded') return '환불됨 (우리)'
+  if (t === 'Returned') return '환불됨 (파트너)'
+  return t
+}
+
 interface PaymentRecord {
   id: string
   reservation_id: string
@@ -102,7 +110,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
             }
             
             return {
-              payment_status: editingRecord.payment_status,
+              payment_status: normalizePaymentStatusForForm(editingRecord.payment_status),
               amount: editingRecord.amount.toString(),
               payment_method: paymentMethodDisplay,
               payment_method_id: paymentMethodId,
@@ -320,11 +328,11 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                   <option value="Deposit Requested">보증금 요청</option>
                   <option value="Deposit Received">보증금 수령</option>
                   <option value="Balance Received">잔금 수령</option>
-                  <option value="Refunded">환불됨 (우리)</option>
+                  <option value="환불됨 (우리)">환불됨 (우리)</option>
                   <option value="Customer's CC Charged">고객 CC 청구 (대행)</option>
                   <option value="Deleted">삭제됨</option>
                   <option value="Refund Requested">환불 요청</option>
-                  <option value="Returned">환불됨 (파트너)</option>
+                  <option value="환불됨 (파트너)">환불됨 (파트너)</option>
                   <option value="Balance Requested">잔금 요청</option>
                   <option value="Commission Received !">수수료 수령 !</option>
                 </select>

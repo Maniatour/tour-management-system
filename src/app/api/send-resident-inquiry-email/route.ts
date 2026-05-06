@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { getBuiltinResidentInquiryEmailTemplate, substituteResidentInquiryEmailTemplate } from '@/lib/residentInquiryEmailHtml'
 import { fetchResidentInquiryEmailTemplateFromDb } from '@/lib/residentInquiryEmailTemplateDb'
 import {
@@ -140,16 +140,20 @@ export async function POST(request: NextRequest) {
 
     if (emailError) {
       try {
-        await supabase.from('email_logs').insert({
-          reservation_id: reservationId.trim(),
-          email: toEmail,
-          email_type: 'resident_inquiry',
-          subject,
-          status: 'failed',
-          error_message: emailError.message || 'Email sending failed',
-          sent_at: new Date().toISOString(),
-          sent_by: sentBy || null,
-        } as never)
+        if (supabaseAdmin) {
+          await supabaseAdmin.from('email_logs').insert({
+            reservation_id: reservationId.trim(),
+            email: toEmail,
+            email_type: 'resident_inquiry',
+            subject,
+            status: 'failed',
+            error_message: emailError.message || 'Email sending failed',
+            sent_at: new Date().toISOString(),
+            sent_by: sentBy || null,
+          } as never)
+        } else {
+          console.error('email_logs: supabaseAdmin 미설정, 실패 로그 미저장')
+        }
       } catch {
         // ignore
       }
@@ -160,16 +164,20 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await supabase.from('email_logs').insert({
-        reservation_id: reservationId.trim(),
-        email: toEmail,
-        email_type: 'resident_inquiry',
-        subject,
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-        sent_by: sentBy || null,
-        resend_email_id: emailResult?.id || null,
-      } as never)
+      if (supabaseAdmin) {
+        await supabaseAdmin.from('email_logs').insert({
+          reservation_id: reservationId.trim(),
+          email: toEmail,
+          email_type: 'resident_inquiry',
+          subject,
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+          sent_by: sentBy || null,
+          resend_email_id: emailResult?.id || null,
+        } as never)
+      } else {
+        console.error('email_logs: supabaseAdmin 미설정, 발송 로그 미저장')
+      }
     } catch {
       // ignore
     }

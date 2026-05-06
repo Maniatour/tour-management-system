@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabase, supabaseAdmin, createSupabaseClientWithToken } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { fetchReservationOptionsLegacyByReservationIds } from '@/lib/fetchReservationOptionsLegacy'
@@ -151,7 +151,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    let query = supabase
+    const userSb = createSupabaseClientWithToken(token)
+
+    let query = userSb
       .from('reservations')
       .select(`
         *,
@@ -204,7 +206,7 @@ export async function GET(request: NextRequest) {
 
     const reservationIds = (reservations || []).map((r) => String((r as { id: string }).id))
     const optionsByReservation = await fetchReservationOptionsLegacyByReservationIds(
-      supabase,
+      userSb,
       reservationIds
     )
     const reservationsWithOptions = (reservations || []).map((r) => {
@@ -217,7 +219,7 @@ export async function GET(request: NextRequest) {
     })
 
     // 총 개수 조회
-    let countQuery = supabase
+    let countQuery = userSb
       .from('reservations')
       .select('*', { count: 'exact', head: true })
 

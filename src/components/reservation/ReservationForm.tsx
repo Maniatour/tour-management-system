@@ -54,6 +54,7 @@ import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
+import { isReturnedPaymentStatus } from '@/utils/reservationPricingBalance'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
@@ -4833,11 +4834,10 @@ export default function ReservationForm({
           .eq('reservation_id', reservationId)
         ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
           const status = row.payment_status || ''
-          const sl = status.toLowerCase()
           if (status === 'Partner Received') {
             partnerReceivedAmount += Number(row.amount) || 0
           }
-          if (status.includes('Returned') || sl === 'returned') {
+          if (isReturnedPaymentStatus(status)) {
             returnedAmount += Number(row.amount) || 0
           }
         })

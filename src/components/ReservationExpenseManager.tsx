@@ -31,6 +31,8 @@ interface ReservationExpense {
   reimbursed_amount?: number | null
   reimbursed_on?: string | null
   reimbursement_note?: string | null
+  /** GET /api/reservation-expenses: 해당 예약 payment_records 금액 합계 */
+  reservation_payments_total?: number | null
   reservations?: {
     id: string
     customer_name?: string
@@ -189,6 +191,8 @@ export default function ReservationExpenseManager({
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
+  /** 수정 모달: 환급 입력란 표시 */
+  const [reimbursementSectionOpen, setReimbursementSectionOpen] = useState(false)
   /** 관리자 목록: 명세 대조 미연결만 API에서 조회 */
   const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; paidFor: string } | null>(null)
@@ -272,6 +276,7 @@ export default function ReservationExpenseManager({
     setEditingExpense(null)
     setFormData(getEmptyFormData())
     setShowCustomPaidTo(false)
+    setReimbursementSectionOpen(false)
   }
 
   const closeAddModal = () => {
@@ -480,11 +485,9 @@ export default function ReservationExpenseManager({
       if (!result.success) {
         throw new Error(result.message || 'Failed to create expense')
       }
-      const data = result.data as ReservationExpense
-
-      setExpenses(prev => [data, ...prev])
       closeAddModal()
       onExpenseUpdated?.()
+      void loadExpenses()
       alert('예약 지출이 등록되었습니다.')
     } catch (error) {
       console.error('Error adding expense:', error)
@@ -505,7 +508,9 @@ export default function ReservationExpenseManager({
       alert(t('invalidAmountNonZero'))
       return
     }
-    const reimb = parseFloat(String(formData.reimbursed_amount ?? '').trim() || '0')
+    const reimb = reimbursementSectionOpen
+      ? parseFloat(String(formData.reimbursed_amount ?? '').trim() || '0')
+      : 0
     if (!Number.isFinite(reimb) || reimb < 0) {
       alert(tTour('reimbursementInvalidNonNegative'))
       return
@@ -516,7 +521,7 @@ export default function ReservationExpenseManager({
     }
 
     const reimbPayload =
-      amountNum > 0
+      amountNum > 0 && reimbursementSectionOpen
         ? {
             reimbursed_amount: reimb,
             reimbursed_on: formData.reimbursed_on?.trim() || null,
@@ -555,11 +560,9 @@ export default function ReservationExpenseManager({
         throw new Error(result.message)
       }
 
-      setExpenses(prev => prev.map(expense => 
-        expense.id === editingExpense.id ? result.data : expense
-      ))
       closeEditModal()
       onExpenseUpdated?.()
+      void loadExpenses()
       alert('예약 지출이 수정되었습니다.')
     } catch (error) {
       console.error('Error updating expense:', error)
@@ -611,6 +614,11 @@ export default function ReservationExpenseManager({
       reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
       reimbursement_note: expense.reimbursement_note || ''
     })
+    setReimbursementSectionOpen(
+      parseReimbursedAmount(expense.reimbursed_amount) > 0.009 ||
+        Boolean(String(expense.reimbursed_on ?? '').trim()) ||
+        Boolean(String(expense.reimbursement_note ?? '').trim())
+    )
     setShowEditModal(true)
   }
 
@@ -798,6 +806,17 @@ export default function ReservationExpenseManager({
 
   const displayExpenses = adminList ? filteredExpenses : expenses
 
+  const depositTotalForSingleReservation = useMemo(() => {
+    if (!reservationId) return null
+    const row = expenses.find((e) => e.reservation_payments_total != null)
+    return row?.reservation_payments_total ?? null
+  }, [reservationId, expenses])
+
+  const formatDepositCell = (v: number | null | undefined) => {
+    if (v == null) return '—'
+    return formatCurrency(v)
+  }
+
   const reservationCustomerLabel = (expense: ReservationExpense) => {
     const r = expense.reservations
     if (!r) return null
@@ -981,8 +1000,17 @@ export default function ReservationExpenseManager({
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
-          <div className="text-[10px] sm:text-xs text-gray-600">
-            {t('totalAmountLabel')}: <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
+          <div className="text-[10px] sm:text-xs text-gray-600 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span>
+              {t('totalAmountLabel')}:{' '}
+              <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
+            </span>
+            {depositTotalForSingleReservation != null && (
+              <span title={t('depositPaymentsTotalHint')}>
+                {t('depositPaymentsTotal')}:{' '}
+                <span className="font-semibold text-blue-700">{formatCurrency(depositTotalForSingleReservation)}</span>
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -1342,6 +1370,8 @@ export default function ReservationExpenseManager({
                         <span className="truncate">{reservationCustomerLabel(expense)}</span>
                       </>
                     )}
+                    <span className="text-gray-400">{t('depositPaymentsTotal')}</span>
+                    <span className="font-medium text-blue-800">{formatDepositCell(expense.reservation_payments_total)}</span>
                     {expense.amount > 0 && (
                       <>
                         <span className="text-gray-400">{tTour('reimbursedShort')}</span>
@@ -1391,7 +1421,15 @@ export default function ReservationExpenseManager({
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('date')}</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidFor')}</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidTo')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('form.reservationId')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('form.reservationId')}
+                    </th>
+                    <th
+                      className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      title={t('depositPaymentsTotalHint')}
+                    >
+                      {t('depositPaymentsTotal')}
+                    </th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('amount')}</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('reimbursedShort')}</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('outstandingShort')}</th>
@@ -1411,6 +1449,9 @@ export default function ReservationExpenseManager({
                       <td className="px-4 py-3 text-sm text-gray-900">{expense.paid_to}</td>
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate">
                         {reservationCustomerLabel(expense) ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-right text-blue-800">
+                        {formatDepositCell(expense.reservation_payments_total)}
                       </td>
                       <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium text-right ${amountDisplayClass(expense.amount)}`}>
                         {formatCurrency(expense.amount)}
@@ -1536,6 +1577,11 @@ export default function ReservationExpenseManager({
               </div>
               {!reservationId && expense.reservations && reservationCustomerLabel(expense) && (
                 <p className="mt-0.5 text-[10px] text-gray-400 truncate">{reservationCustomerLabel(expense)}</p>
+              )}
+              {expense.reservation_payments_total != null && (
+                <p className="mt-0.5 text-[10px] text-blue-800/90 truncate" title={t('depositPaymentsTotalHint')}>
+                  {t('depositPaymentsTotal')}: {formatCurrency(expense.reservation_payments_total)}
+                </p>
               )}
               {expense.note && (
                 <p className="mt-0.5 text-[10px] text-gray-500 truncate max-w-full" title={expense.note}>{expense.note}</p>
@@ -1679,40 +1725,64 @@ export default function ReservationExpenseManager({
               )}
               {parseFloat(formData.amount || '0') > 0 && (
                 <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 p-3 space-y-3">
-                  <p className="text-xs font-medium text-amber-900">{tTour('reimbursementSectionTitle')}</p>
-                  <p className="text-[11px] text-amber-800/90">{tTour('reimbursementSectionHint')}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursedAmount')}</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.reimbursed_amount}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursedOn')}</label>
-                      <input
-                        type="date"
-                        value={formData.reimbursed_on}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursementNote')}</label>
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
                     <input
-                      type="text"
-                      value={formData.reimbursement_note}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
-                      placeholder={tTour('reimbursementNotePlaceholder')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-700 focus:ring-amber-500"
+                      checked={reimbursementSectionOpen}
+                      onChange={(e) => {
+                        const on = e.target.checked
+                        setReimbursementSectionOpen(on)
+                        if (!on) {
+                          setFormData((prev) => ({
+                            ...prev,
+                            reimbursed_amount: '',
+                            reimbursed_on: '',
+                            reimbursement_note: '',
+                          }))
+                        }
+                      }}
                     />
-                  </div>
+                    <span className="text-sm font-medium text-amber-950">{tTour('reimbursementToggleLabel')}</span>
+                  </label>
+                  {reimbursementSectionOpen && (
+                    <>
+                      <p className="text-xs font-medium text-amber-900">{tTour('reimbursementSectionTitle')}</p>
+                      <p className="text-[11px] text-amber-800/90">{tTour('reimbursementSectionHint')}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursedAmount')}</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={formData.reimbursed_amount}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursedOn')}</label>
+                          <input
+                            type="date"
+                            value={formData.reimbursed_on}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">{tTour('reimbursementNote')}</label>
+                        <input
+                          type="text"
+                          value={formData.reimbursement_note}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
+                          placeholder={tTour('reimbursementNotePlaceholder')}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
               <div>

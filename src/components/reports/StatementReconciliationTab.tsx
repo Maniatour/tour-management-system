@@ -41,7 +41,8 @@ import {
   GripVertical,
   ListPlus,
   Loader2,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
@@ -74,6 +75,7 @@ import {
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import StatementAdjustmentExpenseModal from '@/components/reconciliation/StatementAdjustmentExpenseModal'
 import StatementBulkExpenseModal from '@/components/reconciliation/StatementBulkExpenseModal'
+import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
 import FinancialAccountLinkedCardsModal from '@/components/reconciliation/FinancialAccountLinkedCardsModal'
 import {
@@ -84,6 +86,7 @@ import {
   type StatementCsvDirectionMode
 } from '@/lib/statement-csv'
 import { formatStatementLineDescription } from '@/lib/statement-display'
+import type { BulkCompanyDuplicateCheckInput } from '@/lib/statement-bulk-company-duplicate-check'
 import { type ExpenseCandidate } from '@/lib/reconciliation-engine'
 
 type FinancialAccount = {
@@ -1172,6 +1175,7 @@ export default function StatementReconciliationTab() {
   const [autoMatchCandidateSelection, setAutoMatchCandidateSelection] = useState<Record<string, string>>({})
   const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
   const [bulkCompanyExpenseModalOpen, setBulkCompanyExpenseModalOpen] = useState(false)
+  const [standaloneCompanyDupModalOpen, setStandaloneCompanyDupModalOpen] = useState(false)
   const [resetAllMatchesOpen, setResetAllMatchesOpen] = useState(false)
   const [resettingAllMatches, setResettingAllMatches] = useState(false)
   const [matchHistoryTarget, setMatchHistoryTarget] = useState<{
@@ -2032,6 +2036,15 @@ export default function StatementReconciliationTab() {
       )
       .slice(0, 200)
   }, [reconciliationTableLines, matchesByLine])
+
+  const statementDupCheckInputs = useMemo((): BulkCompanyDuplicateCheckInput[] => {
+    return bulkCompanyExpenseCandidates.map((l) => ({
+      statement_line_id: l.id,
+      posted_date: l.posted_date,
+      amount: Number(l.amount),
+      line_desc: formatStatementLineDescription(l.description, l.merchant)
+    }))
+  }, [bulkCompanyExpenseCandidates])
 
   const defaultPaymentMethodIdForAccount = useMemo(() => {
     const pm = paymentMethods.find((p) => p.financial_account_id === filterAccountId)
@@ -4551,6 +4564,14 @@ export default function StatementReconciliationTab() {
         }}
       />
 
+      <CompanyExpenseDuplicateCheckModal
+        open={standaloneCompanyDupModalOpen}
+        onOpenChange={setStandaloneCompanyDupModalOpen}
+        mode="statement"
+        statementCandidates={statementDupCheckInputs}
+        createdByEmail={email}
+      />
+
       <Dialog
         open={autoMatchPreviewOpen}
         onOpenChange={(open) => {
@@ -5824,6 +5845,22 @@ export default function StatementReconciliationTab() {
             {bulkCompanyExpenseCandidates.length >= 200 ? (
               <span className="ml-1 text-[11px] font-normal text-slate-600">(최대 200건)</span>
             ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setStandaloneCompanyDupModalOpen(true)}
+            disabled={
+              loading ||
+              reconciliationLinesLoading ||
+              !filterAccountId ||
+              !accountExpenseWindow ||
+              statementDupCheckInputs.length === 0
+            }
+            title="지출 일괄 입력 후보(출금·미대조·미연결, 최대 200건)마다 기존 회사 지출과 금액·날짜가 겹치는지 모달에서 확인합니다."
+          >
+            <AlertTriangle className="h-4 w-4 mr-1 shrink-0 text-amber-600" />
+            회사 지출 중복 점검
           </Button>
           <Button
             type="button"

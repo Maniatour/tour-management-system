@@ -82,14 +82,20 @@ function isDepositBucketPaymentStatus(paymentStatus: string): boolean {
   )
 }
 
-function isRefundedPaymentStatus(paymentStatus: string): boolean {
+/** 우리 쪽 입금 환불 (DB: `환불됨 (우리)`, 구버전 Refunded 등) */
+export function isRefundedPaymentStatus(paymentStatus: string): boolean {
   const s = (paymentStatus || '').trim()
+  if (!s) return false
+  if (s === '환불됨 (우리)') return true
   const lower = s.toLowerCase()
   return s.includes('Refunded') || lower === 'refunded'
 }
 
-function isReturnedPaymentStatus(paymentStatus: string): boolean {
+/** 파트너 입금 환불 (DB: `환불됨 (파트너)`, 구버전 Returned 등) */
+export function isReturnedPaymentStatus(paymentStatus: string): boolean {
   const s = (paymentStatus || '').trim()
+  if (!s) return false
+  if (s === '환불됨 (파트너)') return true
   const lower = s.toLowerCase()
   return s.includes('Returned') || lower === 'returned'
 }

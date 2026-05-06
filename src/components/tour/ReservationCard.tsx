@@ -1237,10 +1237,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       'deposit received': '보증금 수령',
       'balance received': '잔금 수령',
       'refunded': '환불됨 (우리)',
+      '환불됨 (우리)': '환불됨 (우리)',
       "customer's cc charged": '고객 CC 청구 (대행)',
       'deleted': '삭제됨',
       'refund requested': '환불 요청',
       'returned': '환불됨 (파트너)',
+      '환불됨 (파트너)': '환불됨 (파트너)',
       'balance requested': '잔금 요청',
       'commission received !': '수수료 수령 !',
       // 기존 값들도 유지
@@ -1249,7 +1251,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       'rejected': '거부됨'
     }
     
-    return statusMap[status.toLowerCase()] || status
+    return statusMap[status] || statusMap[status.toLowerCase()] || status
   }
 
   const getPaymentMethodText = (method: string) => {
@@ -1437,7 +1439,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         },
         body: JSON.stringify({
           reservation_id: reservation.id,
-          payment_status: 'Refunded',
+          payment_status: '환불됨 (우리)',
           amount: refundAmount,
           payment_method: 'cash',
           note: `현금 환불 (${teamDisplay})`

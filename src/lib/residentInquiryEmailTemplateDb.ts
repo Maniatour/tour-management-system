@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import type { ResidentInquiryEmailTourKind } from '@/lib/residentInquiryTourKind'
 
 export type ResidentInquiryEmailTemplateRow = {
@@ -14,7 +14,8 @@ export async function fetchResidentInquiryEmailTemplateFromDb(
   locale: 'ko' | 'en',
   tourKind: ResidentInquiryEmailTourKind = 'day_tour'
 ): Promise<{ subject_template: string; html_template: string } | null> {
-  const { data, error } = await supabase
+  const db = supabaseAdmin ?? supabase
+  const { data, error } = await db
     .from('resident_inquiry_email_templates')
     .select('subject_template,html_template')
     .eq('locale', locale)

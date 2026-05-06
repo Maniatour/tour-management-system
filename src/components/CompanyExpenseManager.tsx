@@ -26,6 +26,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   Plus,
+  AlertTriangle,
   Search,
   Trash2,
   CheckCircle,
@@ -45,6 +46,7 @@ import { toast } from 'sonner'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { VehicleRepairCostReportModal } from '@/components/company-expense/VehicleRepairCostReportModal'
+import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
 import { CompanyExpenseListDesktopTableBody } from '@/components/company-expense/CompanyExpenseListDesktopTableBody'
 import { PaidForNormalizationModal } from '@/components/company-expense/PaidForNormalizationModal'
 import { UnifiedStandardLeafPicker } from '@/components/company-expense/UnifiedStandardLeafPicker'
@@ -144,7 +146,14 @@ interface VehicleMaintenanceIntegrationRow {
   vehicles?: { id: string; vehicle_number?: string; vehicle_type?: string; vehicle_category?: string | null } | null
 }
 
-export default function CompanyExpenseManager() {
+type CompanyExpenseManagerProps = {
+  /** 지출 통합 페이지 상단 등에서 중복 점검을 열 때 사용. 전달 시 매니저 내부의 동일 버튼은 숨깁니다. */
+  registerOpenLedgerDuplicateCheck?: (open: (() => void) | null) => void
+}
+
+export default function CompanyExpenseManager({
+  registerOpenLedgerDuplicateCheck,
+}: CompanyExpenseManagerProps = {}) {
   const t = useTranslations('companyExpense')
   const tVm = useTranslations('vehicleMaintenance')
   const tTour = useTranslations('tours.tourExpense')
@@ -174,6 +183,8 @@ export default function CompanyExpenseManager() {
   const [standardPaidForFilter, setStandardPaidForFilter] = useState<'all' | 'set' | 'unset'>('all')
   /** 환급 목록 필터 — API `reimbursement` 쿼리와 동일 */
   const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
+  /** 지출 등록·수정 모달: 환급 입력란 표시 여부 */
+  const [reimbursementSectionOpen, setReimbursementSectionOpen] = useState(false)
   /** 명세 대조: 전체 | reconciliation_matches 미연결만 */
   const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
   const [dateFrom, setDateFrom] = useState('')
@@ -216,6 +227,13 @@ export default function CompanyExpenseManager() {
     }>
   >([])
   const [paidForNormModalOpen, setPaidForNormModalOpen] = useState(false)
+  const [ledgerDupModalOpen, setLedgerDupModalOpen] = useState(false)
+
+  useEffect(() => {
+    registerOpenLedgerDuplicateCheck?.(() => setLedgerDupModalOpen(true))
+    return () => registerOpenLedgerDuplicateCheck?.(null)
+  }, [registerOpenLedgerDuplicateCheck])
+
   const [expenseStandardCategories, setExpenseStandardCategories] = useState<ExpenseStandardCategoryPickRow[]>([])
   /** 표준 결제 내용: 선택된 표준 리프(하위) id */
   const [standardHierarchyLeafId, setStandardHierarchyLeafId] = useState('')
@@ -778,7 +796,7 @@ export default function CompanyExpenseManager() {
     }
 
     const amtNum = parseFloat(formData.amount)
-    const reimbNum = parseReimbursedAmount(formData.reimbursed_amount)
+    const reimbNum = reimbursementSectionOpen ? parseReimbursedAmount(formData.reimbursed_amount) : 0
     if (!Number.isFinite(reimbNum)) {
       toast.error(tTour('reimbursementInvalidNonNegative'))
       return
@@ -841,13 +859,19 @@ export default function CompanyExpenseManager() {
         uploaded_files: undefined, // 서버로 전송하지 않음
         paid_for_label_id: formData.paid_for_label_id?.trim() || null,
         reimbursed_amount:
-          Number.isFinite(amtNum) && amtNum > 0 ? reimbNum : 0,
+          reimbursementSectionOpen && Number.isFinite(amtNum) && amtNum > 0 ? reimbNum : 0,
         reimbursed_on:
-          Number.isFinite(amtNum) && amtNum > 0 && formData.reimbursed_on.trim()
+          reimbursementSectionOpen &&
+          Number.isFinite(amtNum) &&
+          amtNum > 0 &&
+          formData.reimbursed_on.trim()
             ? formData.reimbursed_on.trim().slice(0, 10)
             : null,
         reimbursement_note:
-          Number.isFinite(amtNum) && amtNum > 0 && formData.reimbursement_note.trim()
+          reimbursementSectionOpen &&
+          Number.isFinite(amtNum) &&
+          amtNum > 0 &&
+          formData.reimbursement_note.trim()
             ? formData.reimbursement_note.trim()
             : null,
       }
@@ -910,6 +934,11 @@ export default function CompanyExpenseManager() {
       reimbursed_on: ymdFromReimbursedOn(expense.reimbursed_on),
       reimbursement_note: expense.reimbursement_note ?? ''
     })
+    setReimbursementSectionOpen(
+      parseReimbursedAmount(expense.reimbursed_amount) > 0.009 ||
+        Boolean(String(expense.reimbursed_on ?? '').trim()) ||
+        Boolean(String(expense.reimbursement_note ?? '').trim())
+    )
     const groups = buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, { includeInactive: true })
     setStandardHierarchyLeafId('')
     if (groups.length > 0) {
@@ -990,6 +1019,7 @@ export default function CompanyExpenseManager() {
       reimbursed_on: '',
       reimbursement_note: ''
     })
+    setReimbursementSectionOpen(false)
     setStandardHierarchyLeafId('')
     setStandardLeafConfirmOpen(false)
     setPendingStandardLeafConfirm(null)
@@ -1429,11 +1459,24 @@ export default function CompanyExpenseManager() {
           >
             {t('paidForNormalization.openButton')}
           </Button>
+          {!registerOpenLedgerDuplicateCheck ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 border-amber-200 text-amber-950 flex items-center justify-center gap-1.5 sm:gap-2"
+              onClick={() => setLedgerDupModalOpen(true)}
+              title="목록의 시작일·종료일(비어 있으면 최근 90일~오늘) 범위에서 회사·투어·예약·입장권 지출 중 금액·등록일이 비슷한 그룹을 찾습니다."
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+              회사 지출 중복 점검
+            </Button>
+          ) : null}
           <Dialog
             open={isDialogOpen}
             onOpenChange={(open) => {
               setIsDialogOpen(open)
               if (!open) {
+                setReimbursementSectionOpen(false)
                 setStandardHierarchyLeafId('')
                 setStandardLeafConfirmOpen(false)
                 setPendingStandardLeafConfirm(null)
@@ -1503,50 +1546,78 @@ export default function CompanyExpenseManager() {
 
               {parseFloat(formData.amount || '0') > 0 && (
                 <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 p-3 space-y-3">
-                  <p className="text-xs font-medium text-amber-900">{tTour('reimbursementSectionTitle')}</p>
-                  <p className="text-[11px] text-amber-800/90">{tTour('reimbursementSectionHint')}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="co_reimbursed_amount" className="text-xs">
-                        {tTour('reimbursedAmount')}
-                      </Label>
-                      <Input
-                        id="co_reimbursed_amount"
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={formData.reimbursed_amount}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
-                        placeholder="0"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="co_reimbursed_on" className="text-xs">
-                        {tTour('reimbursedOn')}
-                      </Label>
-                      <Input
-                        id="co_reimbursed_on"
-                        type="date"
-                        value={formData.reimbursed_on}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="co_reimbursement_note" className="text-xs">
-                      {tTour('reimbursementNote')}
-                    </Label>
-                    <Input
-                      id="co_reimbursement_note"
-                      type="text"
-                      value={formData.reimbursement_note}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
-                      placeholder={tTour('reimbursementNotePlaceholder')}
-                      className="mt-1"
+                  <div className="flex items-start gap-2.5">
+                    <Checkbox
+                      id="co_reimbursement_toggle"
+                      checked={reimbursementSectionOpen}
+                      onCheckedChange={(checked) => {
+                        const on = checked === true
+                        setReimbursementSectionOpen(on)
+                        if (!on) {
+                          setFormData((prev) => ({
+                            ...prev,
+                            reimbursed_amount: '',
+                            reimbursed_on: '',
+                            reimbursement_note: '',
+                          }))
+                        }
+                      }}
+                      className="mt-0.5"
                     />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <Label htmlFor="co_reimbursement_toggle" className="text-sm font-medium text-amber-950 cursor-pointer">
+                        {tTour('reimbursementToggleLabel')}
+                      </Label>
+                    </div>
                   </div>
+                  {reimbursementSectionOpen && (
+                    <>
+                      <p className="text-xs font-medium text-amber-900">{tTour('reimbursementSectionTitle')}</p>
+                      <p className="text-[11px] text-amber-800/90">{tTour('reimbursementSectionHint')}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="co_reimbursed_amount" className="text-xs">
+                            {tTour('reimbursedAmount')}
+                          </Label>
+                          <Input
+                            id="co_reimbursed_amount"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={formData.reimbursed_amount}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                            placeholder="0"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="co_reimbursed_on" className="text-xs">
+                            {tTour('reimbursedOn')}
+                          </Label>
+                          <Input
+                            id="co_reimbursed_on"
+                            type="date"
+                            value={formData.reimbursed_on}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_on: e.target.value }))}
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="co_reimbursement_note" className="text-xs">
+                          {tTour('reimbursementNote')}
+                        </Label>
+                        <Input
+                          id="co_reimbursement_note"
+                          type="text"
+                          value={formData.reimbursement_note}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, reimbursement_note: e.target.value }))}
+                          placeholder={tTour('reimbursementNotePlaceholder')}
+                          className="mt-1"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
               
@@ -2766,6 +2837,18 @@ export default function CompanyExpenseManager() {
         onApplied={() => {
           void loadExpenses()
           void loadPaidForLabels()
+        }}
+      />
+
+      <CompanyExpenseDuplicateCheckModal
+        open={ledgerDupModalOpen}
+        onOpenChange={setLedgerDupModalOpen}
+        mode="ledger"
+        ledgerDateFrom={dateFrom}
+        ledgerDateTo={dateTo}
+        createdByEmail={user?.email ?? null}
+        onAfterLedgerMutation={() => {
+          void loadExpenses()
         }}
       />
     </div>

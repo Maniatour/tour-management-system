@@ -30,6 +30,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const pickupHotelsDb = supabaseAdmin ?? supabase
+
     // 예약 정보 조회
     console.log('[send-pickup-schedule-notification] 예약 조회 시작:', { reservationId })
     const { data: reservation, error: reservationError } = await supabase
@@ -96,7 +98,7 @@ export async function POST(request: NextRequest) {
     // 픽업 호텔 정보 별도 조회
     let pickupHotel = null
     if (reservation.pickup_hotel) {
-      const { data: hotelData, error: hotelError } = await supabase
+      const { data: hotelData, error: hotelError } = await pickupHotelsDb
         .from('pickup_hotels')
         .select('id, hotel, pick_up_location, address, link, media')
         .eq('id', reservation.pickup_hotel)
@@ -241,7 +243,7 @@ export async function POST(request: NextRequest) {
                 .eq('id', res.customer_id)
                 .maybeSingle()
 
-              const { data: hotelInfo } = await supabase
+              const { data: hotelInfo } = await pickupHotelsDb
                 .from('pickup_hotels')
                 .select('hotel, pick_up_location, address, link')
                 .eq('id', res.pickup_hotel)
@@ -360,7 +362,8 @@ export async function POST(request: NextRequest) {
 
       if (tourData.tour_car_id) {
         console.log('[send-pickup-schedule-notification] 차량 조회:', tourData.tour_car_id)
-        const { data: vehicleData, error: vehicleError } = await supabase
+        const vehiclesDb = supabaseAdmin ?? supabase
+        const { data: vehicleData, error: vehicleError } = await vehiclesDb
           .from('vehicles')
           .select('vehicle_type, capacity, color')
           .eq('id', tourData.tour_car_id)
@@ -715,24 +718,25 @@ export async function POST(request: NextRequest) {
 
       // 이메일 발송 기록 저장
       try {
-        const { error: logError } = await supabase
-          .from('email_logs')
-          .insert({
-            reservation_id: reservationId,
-            email: customer.email,
-            email_type: 'pickup',
-            subject: emailContent.subject,
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            sent_by: sentBy || null,
-            resend_email_id: emailResult?.id || null
-          } as never)
-          .catch(() => {
-            // email_logs 테이블이 없으면 무시
-          })
+        if (supabaseAdmin) {
+          const { error: logError } = await supabaseAdmin
+            .from('email_logs')
+            .insert({
+              reservation_id: reservationId,
+              email: customer.email,
+              email_type: 'pickup',
+              subject: emailContent.subject,
+              status: 'sent',
+              sent_at: new Date().toISOString(),
+              sent_by: sentBy || null,
+              resend_email_id: emailResult?.id || null
+            } as never)
 
-        if (logError) {
-          console.error('이메일 로그 저장 오류 (무시):', logError)
+          if (logError) {
+            console.error('이메일 로그 저장 오류 (무시):', logError)
+          }
+        } else {
+          console.error('email_logs: supabaseAdmin 미설정, 발송 로그 미저장')
         }
       } catch (error) {
         console.log('이메일 로그 테이블이 없습니다. (무시됨)')
@@ -749,19 +753,22 @@ export async function POST(request: NextRequest) {
       
       // 실패 기록 저장
       try {
-        await supabase
-          .from('email_logs')
-          .insert({
-            reservation_id: reservationId,
-            email: customer.email,
-            email_type: 'pickup',
-            subject: emailContent.subject,
-            status: 'failed',
-            error_message: error instanceof Error ? error.message : 'Unknown error',
-            sent_at: new Date().toISOString(),
-            sent_by: sentBy || null
-          } as never)
-          .catch(() => {})
+        if (supabaseAdmin) {
+          await supabaseAdmin
+            .from('email_logs')
+            .insert({
+              reservation_id: reservationId,
+              email: customer.email,
+              email_type: 'pickup',
+              subject: emailContent.subject,
+              status: 'failed',
+              error_message: error instanceof Error ? error.message : 'Unknown error',
+              sent_at: new Date().toISOString(),
+              sent_by: sentBy || null
+            } as never)
+        } else {
+          console.error('email_logs: supabaseAdmin 미설정, 실패 로그 미저장')
+        }
       } catch (logError) {
         // 무시
       }

@@ -1,56 +1,34 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { 
-  Users, 
-  Settings, 
-  BarChart3,
-  FileText,
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import {
   LogOut,
   Menu,
   X,
-  History,
-  Ticket,
-  Building,
-  FileCheck,
-  Car,
   BookOpen,
-  Truck,
-  DollarSign,
   Clock,
   CheckCircle,
   XCircle,
   Home,
   ChevronDown,
   MessageCircle,
-  FileSpreadsheet,
-  Globe,
-  Mail,
   User,
-  Camera,
-  Calculator,
   UserCheck,
-  CreditCard,
-  Wrench,
-  Tag,
-  Tags,
   Plus,
-  TrendingUp,
-  Cloud,
   ChevronLeft,
   ChevronRight,
-  Landmark,
-  Replace
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
-import { isManagerTeamPosition } from '@/lib/roles'
+import type { UserRole } from '@/lib/roles'
+import { buildAdminSidebarNavigation } from '@/lib/admin-site-registry'
 import { supabase } from '@/lib/supabase'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
+import { useAdminNavAccessFlags } from '@/hooks/useAdminNavAccessFlags'
 import { useAdminTourChatUnreadCount } from '@/hooks/useAdminTourChatUnreadCount'
 import { useTranslations } from 'next-intl'
 import SimulationModal from './SimulationModal'
@@ -74,9 +52,6 @@ interface AdminSidebarAndHeaderProps {
 
 const ADMIN_SIDEBAR_COLLAPSED_KEY = 'tms-admin-sidebar-collapsed'
 
-/** AuthContext 슈퍼관리자와 동일 — team 직책 없이도 예약 통계 등 Super 전용 메뉴 표시 */
-const SUPER_ADMIN_EMAILS = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
-
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -99,9 +74,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const tourChatUnreadCount = useAdminTourChatUnreadCount(
     Boolean(authUser?.email && userRole && userRole !== 'customer')
   )
-  const [isSuper, setIsSuper] = useState(false)
-  /** 예약 통계(통계 리포트) — Super·Manager */
-  const [canAccessReservationStatistics, setCanAccessReservationStatistics] = useState(false)
+  const { isSuper, canAccessReservationStatistics } = useAdminNavAccessFlags()
 
   // 출퇴근 동기화 훅 사용
   const {
@@ -354,70 +327,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     }
   }, [authUser?.email])
 
-  // Super 권한 체크 (슈퍼관리자 이메일 또는 team.position === 'super')
-  useEffect(() => {
-    const checkSuperPermission = async () => {
-      if (!authUser?.email) {
-        setIsSuper(false)
-        setCanAccessReservationStatistics(false)
-        return
-      }
-
-      const emailLower = authUser.email.toLowerCase().trim()
-      if (SUPER_ADMIN_EMAILS.some((e) => e.toLowerCase() === emailLower)) {
-        setIsSuper(true)
-        setCanAccessReservationStatistics(true)
-        return
-      }
-
-      try {
-        // 재시도 로직이 포함된 쿼리 실행
-        const executeQuery = async (retries = 3): Promise<{ data: any; error: any }> => {
-          try {
-            return await supabase
-              .from('team')
-              .select('position')
-              .eq('email', authUser.email)
-              .eq('is_active', true)
-              .maybeSingle()
-          } catch (error) {
-            // 네트워크 오류인 경우 재시도
-            if (retries > 0 && error instanceof Error && (
-              error.message.includes('Failed to fetch') ||
-              error.message.includes('ERR_CONNECTION_CLOSED') ||
-              error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-              error.message.includes('network')
-            )) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)))
-              return executeQuery(retries - 1)
-            }
-            throw error
-          }
-        }
-
-        const { data: teamData, error } = await executeQuery()
-        
-        if (error || !teamData) {
-          setIsSuper(false)
-          setCanAccessReservationStatistics(false)
-          return
-        }
-        
-        const position = String((teamData as any).position ?? '').toLowerCase().trim()
-        const posSuper = position === 'super'
-        const posManager = isManagerTeamPosition((teamData as any).position)
-        setIsSuper(posSuper)
-        setCanAccessReservationStatistics(posSuper || posManager)
-      } catch (error) {
-        console.error('Super 권한 체크 오류:', error)
-        setIsSuper(false)
-        setCanAccessReservationStatistics(false)
-      }
-    }
-    
-    checkSuperPermission()
-  }, [authUser?.email])
-
   useEffect(() => {
     fetchTeamBoardCount()
     fetchExpiringDocumentsCount()
@@ -490,49 +399,25 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     return currentLocale === 'ko' ? 'KR' : 'US'
   }
 
-  const navigation = [
-    // removed from sidebar: 대시보드, 고객 관리, 예약 관리, 부킹 관리, 투어 관리, 채팅 관리
-    { name: tSidebar('products'), href: `/${locale}/admin/products`, icon: BookOpen },
-    { name: tSidebar('options'), href: `/${locale}/admin/options`, icon: Settings },
-    { name: tSidebar('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
-    { name: tSidebar('tourCostCalculator'), href: `/${locale}/admin/tour-cost-calculator`, icon: TrendingUp },
-    { name: tSidebar('channels'), href: `/${locale}/admin/channels`, icon: Settings },
-    { name: tSidebar('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
-    { name: tSidebar('tagTranslationManagement'), href: `/${locale}/admin/tag-translations`, icon: Tag },
-    { name: tSidebar('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
-    { name: tSidebar('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
-    { name: tSidebar('vehicleMaintenanceManagement'), href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
-    { name: tSidebar('team'), href: `/${locale}/admin/team`, icon: Users },
-    { name: tSidebar('attendance'), href: `/${locale}/admin/attendance`, icon: Clock },
-    { name: tSidebar('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },
-    { name: tSidebar('guideFeeManagement'), href: `/${locale}/admin/guide-costs`, icon: Calculator },
-    { name: tSidebar('documents'), href: `/${locale}/admin/documents`, icon: FileText },
-    ...(userRole === 'admin' || userRole === 'manager'
-      ? [{ name: tSidebar('companySop'), href: `/${locale}/admin/sop`, icon: FileCheck }]
-      : []),
-    { name: tSidebar('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
-    { name: tSidebar('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
-    // 예약 통계(통계 리포트): Super·Manager / 명세 대조: Super만
-    ...(canAccessReservationStatistics
-      ? [{ name: tSidebar('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }]
-      : []),
-    ...(isSuper ? [{ name: tSidebar('statementReconciliation'), href: `/${locale}/admin/statement-reconciliation`, icon: Landmark }] : []),
-    { name: tSidebar('expenseManagement'), href: `/${locale}/admin/expenses`, icon: DollarSign },
-    { name: tSidebar('paidForLabelManagement'), href: `/${locale}/admin/company-expense-paid-for-labels`, icon: Tags },
-    // 파트너 자금 관리 (info@maniatour.com만 표시)
-    ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: tSidebar('partnerFundManagement'), href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
-    { name: tSidebar('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
-    { name: tSidebar('expensePaymentMethodNormalize'), href: `/${locale}/admin/expense-payment-method-normalize`, icon: Replace },
-    { name: tSidebar('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
-    { name: tSidebar('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
-    { name: tSidebar('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
-    { name: tSidebar('weatherRecords'), href: `/${locale}/admin/weather-records`, icon: Cloud },
-    { name: tSidebar('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
-    { name: tSidebar('reservationImports'), href: `/${locale}/admin/reservation-imports`, icon: Mail },
-    { name: tSidebar('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
-    // 개발자 도구 (관리자만 보이도록, 시뮬레이션 중일 때도 표시)
-    ...((userRole === 'admin' || (userRole === 'team_member' && isSimulating)) ? [{ name: tSidebar('developerTools'), href: `/${locale}/admin/dev-tools`, icon: Settings }] : []),
-  ]
+  const navigation = useMemo(
+    () =>
+      buildAdminSidebarNavigation(locale, tSidebar, {
+        userRole: (userRole as UserRole | null) ?? null,
+        isSuper,
+        canAccessReservationStatistics,
+        isSimulating: Boolean(isSimulating),
+        authUserEmail: authUser?.email,
+      }),
+    [
+      locale,
+      tSidebar,
+      userRole,
+      isSuper,
+      canAccessReservationStatistics,
+      isSimulating,
+      authUser?.email,
+    ]
+  )
 
   return (
     <>
@@ -982,7 +867,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               const isDocuments = item.href.includes('/admin/documents')
               return (
                 <Link
-                  key={item.name}
+                  key={item.id}
                   href={item.href}
                   className={`flex items-center px-3 py-1 text-sm font-medium rounded-lg mb-0.5 transition-colors ${
                     isActive
@@ -1043,7 +928,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               const isDocuments = item.href.includes('/admin/documents')
               return (
                 <Link
-                  key={item.name}
+                  key={item.id}
                   href={item.href}
                   title={sidebarCollapsed ? item.name : undefined}
                   className={`relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
