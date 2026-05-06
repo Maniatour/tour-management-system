@@ -41,6 +41,7 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
+    const emailRouteDb = supabaseAdmin ?? supabase
     const body = await request.json()
     const { reservationId, email, type = 'both', locale: localeParam, sentBy } = body
 
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 예약 정보 조회 (별도 조회로 변경)
-    const { data: reservation, error: reservationError } = await supabase
+    const { data: reservation, error: reservationError } = await emailRouteDb
       .from('reservations')
       .select('*')
       .eq('id', reservationId)
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     // 고객 정보 조회
     let customer = null
     if (reservationData.customer_id) {
-      const { data: customerData } = await supabase
+      const { data: customerData } = await emailRouteDb
         .from('customers')
         .select('id, name, email, language')
         .eq('id', reservationData.customer_id)
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
     // 상품 정보 조회
     let product = null
     if (reservationData.product_id) {
-      const { data: productData } = await supabase
+      const { data: productData } = await emailRouteDb
         .from('products')
         .select('id, name, name_ko, name_en, customer_name_ko, customer_name_en, duration, departure_city, arrival_city')
         .eq('id', reservationData.product_id)
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
 
     // 가격 정보 조회
     let pricing = null
-    const { data: pricingData } = await supabase
+    const { data: pricingData } = await emailRouteDb
       .from('reservation_pricing')
       .select('*')
       .eq('reservation_id', reservationId)
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest) {
     const languageCode = emailLocale === 'en' ? 'en' : 'ko'
     
     const channelsLookupClient = supabaseAdmin ?? supabase
-    const productDetails = (await fetchProductDetailsForReservationEmail(supabase, {
+    const productDetails = (await fetchProductDetailsForReservationEmail(emailRouteDb, {
       productId: reservationData.product_id,
       languageCode,
       channelId: reservationData.channel_id ?? null,
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest) {
 
     // 투어 스케줄 조회
     let productSchedules = null
-    const { data: schedulesData } = await supabase
+    const { data: schedulesData } = await emailRouteDb
       .from('product_schedules')
       .select('id, day_number, start_time, end_time, title_ko, title_en, description_ko, description_en, show_to_customers, order_index')
       .eq('product_id', reservationData.product_id)
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
     let tourStatus = null
     let tourDetails: any = null
     if (reservationData.tour_id) {
-      const { data: tourData } = await supabase
+      const { data: tourData } = await emailRouteDb
         .from('tours')
         .select('*')
         .eq('id', reservationData.tour_id)
@@ -160,8 +161,9 @@ export async function POST(request: NextRequest) {
         let assistantInfo = null
         let vehicleInfo = null
 
+        const teamDb = supabaseAdmin ?? supabase
         if (tourDataTyped.tour_guide_id) {
-          const { data: guideData } = await supabase
+          const { data: guideData } = await teamDb
             .from('team')
             .select('name_ko, name_en, phone, email, languages')
             .eq('email', tourDataTyped.tour_guide_id)
@@ -170,7 +172,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (tourDataTyped.assistant_id) {
-          const { data: assistantData } = await supabase
+          const { data: assistantData } = await teamDb
             .from('team')
             .select('name_ko, name_en, phone, email')
             .eq('email', tourDataTyped.assistant_id)
@@ -188,13 +190,13 @@ export async function POST(request: NextRequest) {
 
           const vehicleDataTyped = vehicleData as any
           if (vehicleDataTyped?.vehicle_type) {
-            const { data: vehicleTypeData } = await supabase
+            const { data: vehicleTypeData } = await emailRouteDb
               .from('vehicle_types')
               .select('id, name, brand, model, passenger_capacity, description')
               .eq('name', vehicleDataTyped.vehicle_type)
               .maybeSingle()
 
-            const { data: photosData } = await supabase
+            const { data: photosData } = await emailRouteDb
               .from('vehicle_type_photos')
               .select('photo_url, photo_name, description, is_primary, display_order')
               .eq('vehicle_type_id', (vehicleTypeData as any)?.id || '')
@@ -265,7 +267,7 @@ export async function POST(request: NextRequest) {
 
     let productChoicesForEmail: ProductChoiceRowForResidentFees[] | null = null
     if (reservationData.product_id) {
-      const { data: pcRows } = await supabase
+      const { data: pcRows } = await emailRouteDb
         .from('product_choices')
         .select('id, choice_group_ko, choice_group, options')
         .eq('product_id', reservationData.product_id)
@@ -273,7 +275,7 @@ export async function POST(request: NextRequest) {
     }
 
     const reservationOptionLines = await fetchReservationOptionLinesForEmail(
-      supabase,
+      emailRouteDb,
       reservationId,
       isEnglish
     )

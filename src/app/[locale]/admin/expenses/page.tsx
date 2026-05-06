@@ -10,12 +10,15 @@ import AllTourExpensesManager from '@/components/AllTourExpensesManager'
 import CashManagement from '@/components/CashManagement'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import PaymentRecordsHistoryTab from '@/components/expenses/PaymentRecordsHistoryTab'
+import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
+import { useAuth } from '@/contexts/AuthContext'
 import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle } from 'lucide-react'
 
 type ExpenseTab = 'payments' | 'reservation' | 'company' | 'tour' | 'cash'
 
 export default function ExpensesManagementPage() {
   const t = useTranslations('expenses')
+  const { user } = useAuth()
   const params = useParams()
   const locale = typeof params?.locale === 'string' ? params.locale : 'ko'
   const router = useRouter()
@@ -24,6 +27,7 @@ export default function ExpensesManagementPage() {
   const tabFromUrl = searchParams.get('tab') as ExpenseTab | null
   const [activeTab, setActiveTab] = useState<ExpenseTab>(tabFromUrl || 'tour')
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
+  const [ledgerDupModalOpen, setLedgerDupModalOpen] = useState(false)
   const openCompanyLedgerDupRef = useRef<(() => void) | null>(null)
   const registerOpenCompanyLedgerDup = useCallback((fn: (() => void) | null) => {
     openCompanyLedgerDupRef.current = fn
@@ -41,6 +45,15 @@ export default function ExpensesManagementPage() {
     params.set('tab', tab)
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
+
+  const openLedgerDuplicateCheck = useCallback(() => {
+    const openCompanyLedgerDup = openCompanyLedgerDupRef.current
+    if (openCompanyLedgerDup) {
+      openCompanyLedgerDup()
+      return
+    }
+    setLedgerDupModalOpen(true)
+  }, [])
 
   const tabs = [
     {
@@ -95,18 +108,16 @@ export default function ExpensesManagementPage() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 shrink-0 w-full sm:w-auto">
-          {activeTab === 'company' && (
-            <button
-              type="button"
-              onClick={() => openCompanyLedgerDupRef.current?.()}
-              className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md text-amber-950 text-xs sm:text-sm font-medium"
-              title="회사·투어·예약·입장권(확정) 지출을 한데 비교합니다. 같은 테이블끼리만이 아니라 출처가 달라도 금액·등록일이 비슷하면 한 그룹으로 묶습니다. 목록의 시작일·종료일(비어 있으면 최근 90일~오늘)을 사용합니다."
-            >
-              <AlertTriangle size={14} className="sm:w-4 sm:h-4 shrink-0 text-amber-600" aria-hidden />
-              <span className="hidden sm:inline">회사·투어·예약·입장권 지출 중복 점검</span>
-              <span className="sm:hidden">지출 중복 점검</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={openLedgerDuplicateCheck}
+            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md text-amber-950 text-xs sm:text-sm font-medium"
+            title="회사·투어·예약·입장권(확정) 지출 전체를 한데 비교합니다. 같은 테이블끼리만이 아니라 출처가 달라도 금액·등록일이 비슷하면 한 그룹으로 묶습니다."
+          >
+            <AlertTriangle size={14} className="sm:w-4 sm:h-4 shrink-0 text-amber-600" aria-hidden />
+            <span className="hidden sm:inline">회사·투어·예약·입장권 지출 중복 점검</span>
+            <span className="sm:hidden">지출 중복 점검</span>
+          </button>
           <button
             type="button"
             onClick={() => setIsCategoryManagerOpen(true)}
@@ -204,6 +215,12 @@ export default function ExpensesManagementPage() {
       <CategoryManagerModal
         isOpen={isCategoryManagerOpen}
         onClose={() => setIsCategoryManagerOpen(false)}
+      />
+      <CompanyExpenseDuplicateCheckModal
+        open={ledgerDupModalOpen}
+        onOpenChange={setLedgerDupModalOpen}
+        mode="ledger"
+        createdByEmail={user?.email ?? null}
       />
     </div>
   )

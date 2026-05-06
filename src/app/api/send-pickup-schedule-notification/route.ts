@@ -30,11 +30,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const pickupHotelsDb = supabaseAdmin ?? supabase
+    const routeDb = supabaseAdmin ?? supabase
 
     // 예약 정보 조회
     console.log('[send-pickup-schedule-notification] 예약 조회 시작:', { reservationId })
-    const { data: reservation, error: reservationError } = await supabase
+    const { data: reservation, error: reservationError } = await routeDb
       .from('reservations')
       .select('*')
       .eq('id', reservationId)
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     // 고객 정보 별도 조회
     let customer = null
     if (reservation.customer_id) {
-      const { data: customerData, error: customerError } = await supabase
+      const { data: customerData, error: customerError } = await routeDb
         .from('customers')
         .select('id, name, email, language')
         .eq('id', reservation.customer_id)
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     // 상품 정보 별도 조회
     let product = null
     if (reservation.product_id) {
-      const { data: productData, error: productError } = await supabase
+      const { data: productData, error: productError } = await routeDb
         .from('products')
         .select('id, name, name_ko, name_en, customer_name_ko, customer_name_en')
         .eq('id', reservation.product_id)
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     // 픽업 호텔 정보 별도 조회
     let pickupHotel = null
     if (reservation.pickup_hotel) {
-      const { data: hotelData, error: hotelError } = await pickupHotelsDb
+      const { data: hotelData, error: hotelError } = await routeDb
         .from('pickup_hotels')
         .select('id, hotel, pick_up_location, address, link, media')
         .eq('id', reservation.pickup_hotel)
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     // 1. reservation.tour_id로 먼저 시도
     if (reservation.tour_id) {
       console.log('[send-pickup-schedule-notification] tour_id로 투어 조회:', reservation.tour_id)
-      const { data: tourDataById, error: tourError } = await supabase
+      const { data: tourDataById, error: tourError } = await routeDb
         .from('tours')
         .select('*')
         .eq('id', reservation.tour_id)
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
       })
       
       // product_id와 tour_date로 먼저 필터링한 후, reservation_ids 배열에서 확인
-      const { data: toursByProduct, error: tourError } = await supabase
+      const { data: toursByProduct, error: tourError } = await routeDb
         .from('tours')
         .select('*')
         .eq('product_id', reservation.product_id)
@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
       
       if (reservationIds.length > 0) {
         // reservation_ids에 포함된 예약만 조회 (취소된 예약 제외)
-        const { data: allReservations } = await supabase
+        const { data: allReservations } = await routeDb
           .from('reservations')
           .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
           .in('id', reservationIds)
@@ -237,13 +237,13 @@ export async function POST(request: NextRequest) {
         if (allReservations) {
           allPickups = await Promise.all(
             allReservations.map(async (res: any) => {
-              const { data: customerInfo } = await supabase
+              const { data: customerInfo } = await routeDb
                 .from('customers')
                 .select('name')
                 .eq('id', res.customer_id)
                 .maybeSingle()
 
-              const { data: hotelInfo } = await pickupHotelsDb
+              const { data: hotelInfo } = await routeDb
                 .from('pickup_hotels')
                 .select('hotel, pick_up_location, address, link')
                 .eq('id', res.pickup_hotel)
@@ -328,9 +328,10 @@ export async function POST(request: NextRequest) {
       let assistantInfo = null
       let vehicleInfo = null
 
+      const teamDb = supabaseAdmin ?? supabase
       if (tourData.tour_guide_id) {
         console.log('[send-pickup-schedule-notification] 가이드 조회:', tourData.tour_guide_id)
-        const { data: guideData, error: guideError } = await supabase
+        const { data: guideData, error: guideError } = await teamDb
           .from('team')
           .select('name_ko, name_en, phone, email, languages')
           .eq('email', tourData.tour_guide_id)
@@ -346,7 +347,7 @@ export async function POST(request: NextRequest) {
 
       if (tourData.assistant_id) {
         console.log('[send-pickup-schedule-notification] 어시스턴트 조회:', tourData.assistant_id)
-        const { data: assistantData, error: assistantError } = await supabase
+        const { data: assistantData, error: assistantError } = await teamDb
           .from('team')
           .select('name_ko, name_en, phone, email')
           .eq('email', tourData.assistant_id)
@@ -372,7 +373,7 @@ export async function POST(request: NextRequest) {
         if (vehicleError) {
           console.error('[send-pickup-schedule-notification] 차량 조회 오류:', vehicleError)
         } else if (vehicleData?.vehicle_type) {
-          const { data: vehicleTypeData, error: vehicleTypeError } = await supabase
+          const { data: vehicleTypeData, error: vehicleTypeError } = await routeDb
             .from('vehicle_types')
             .select('id, name, brand, model, passenger_capacity, description')
             .eq('name', vehicleData.vehicle_type)
@@ -382,7 +383,7 @@ export async function POST(request: NextRequest) {
             console.error('[send-pickup-schedule-notification] 차량 타입 조회 오류:', vehicleTypeError)
           }
 
-          const { data: typePhotosData, error: typePhotosError } = await supabase
+          const { data: typePhotosData, error: typePhotosError } = await routeDb
             .from('vehicle_type_photos')
             .select('photo_url, photo_name, description, is_primary, display_order')
             .eq('vehicle_type_id', vehicleTypeData?.id || '')
@@ -393,7 +394,7 @@ export async function POST(request: NextRequest) {
             console.error('[send-pickup-schedule-notification] vehicle_type_photos 조회 오류:', typePhotosError)
           }
 
-          const { data: vehiclePhotosData, error: vehiclePhotosError } = await supabase
+          const { data: vehiclePhotosData, error: vehiclePhotosError } = await routeDb
             .from('vehicle_photos')
             .select('photo_url, photo_name, is_primary, display_order')
             .eq('vehicle_id', tourData.tour_car_id)
@@ -503,7 +504,7 @@ export async function POST(request: NextRequest) {
     // Chat Room 정보 조회 (찾은 투어 ID 사용)
     let chatRoomCode: string | null = null
     if (tourData && tourData.id) {
-      const { data: chatRoomData } = await supabase
+      const { data: chatRoomData } = await routeDb
         .from('chat_rooms')
         .select('room_code')
         .eq('tour_id', tourData.id)
@@ -593,7 +594,7 @@ export async function POST(request: NextRequest) {
         
         // 예약 상태만 업데이트
         try {
-          await supabase
+          await routeDb
             .from('reservations')
             .update({ pickup_notification_sent: true })
             .eq('id', reservationId)
@@ -704,7 +705,7 @@ export async function POST(request: NextRequest) {
 
       // reservations 테이블에 pickup_notification_sent 업데이트
       try {
-        const { error: updateError } = await supabase
+        const { error: updateError } = await routeDb
           .from('reservations')
           .update({ pickup_notification_sent: true })
           .eq('id', reservationId)

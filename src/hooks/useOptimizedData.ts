@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { isAbortLikeError } from '@/lib/supabase'
+import { serializeUnknownError, unknownToError } from '@/lib/unknownToError'
 
 interface UseOptimizedDataOptions<T> {
   fetchFn: () => Promise<T>
@@ -72,8 +73,9 @@ export function useOptimizedData<T>({
       if (isAbortLikeError(err)) {
         return
       }
-      console.error('Error fetching data:', err)
-      setError(err as Error)
+      const normalized = unknownToError(err)
+      console.error('Error fetching data:', serializeUnknownError(err), normalized.message)
+      setError(normalized)
     } finally {
       if (isMountedRef.current) {
         setLoading(false)

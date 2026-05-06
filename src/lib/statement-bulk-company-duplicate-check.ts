@@ -227,6 +227,3 @@ export async function fetchCompanyExpenseDuplicatesForBulk(
 
   return out
 }
-
-/** 통합 중복 점검(회사·투어·예약·입장권) 등에서 조회·비교 상한(병합 후 slice 기준) */
-export const COMPANY_EXPENSE_LEDGER_DUP_MAX_SCAN = 2500

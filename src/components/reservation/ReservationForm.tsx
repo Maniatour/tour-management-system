@@ -15,6 +15,42 @@ import {
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { generateCustomerId } from '@/lib/entityIds'
 import type { Database } from '@/lib/supabase'
+
+/** 브라우저에서 customers INSERT 시 RLS(team↔is_staff 재귀 등)로 실패할 때 API+service role 경로 사용 */
+async function insertCustomerForReservationForm(
+  useServerApi: boolean,
+  customerRow: Record<string, unknown>
+): Promise<{ row: Database['public']['Tables']['customers']['Row'] | null; errorMessage: string | null }> {
+  if (useServerApi) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      return { row: null, errorMessage: '세션이 없습니다. 다시 로그인해 주세요.' }
+    }
+    const res = await fetch('/api/admin/customers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ customer: customerRow }),
+    })
+    const json = (await res.json().catch(() => ({}))) as {
+      error?: string
+      customer?: Database['public']['Tables']['customers']['Row']
+    }
+    if (!res.ok) {
+      return { row: null, errorMessage: json.error || `요청 실패 (${res.status})` }
+    }
+    return { row: json.customer ?? null, errorMessage: null }
+  }
+  const { data, error } = await (supabase as any).from('customers').insert(customerRow).select('*').maybeSingle()
+  if (error) {
+    return { row: null, errorMessage: error.message }
+  }
+  return { row: (data as Database['public']['Tables']['customers']['Row']) ?? null, errorMessage: null }
+}
 import CustomerForm from '@/components/CustomerForm'
 import CustomerSection from '@/components/reservation/CustomerSection'
 import TourInfoSection from '@/components/reservation/TourInfoSection'
@@ -254,6 +290,8 @@ interface ReservationFormProps {
   formTitle?: string
   /** 예약 가져오기: 이미 confirmed 등 처리된 항목은 저장만 막고 UI는 동일하게 유지 */
   importSubmitDisabled?: boolean
+  /** true면 고객 INSERT 를 /api/admin/customers 로 수행(서비스 롤) — 이메일 가져오기 시 브라우저 RLS 회피 */
+  useServerCustomerInsert?: boolean
   /** Follow-up 파이프라인(컨펌·거주·출발·픽업) 스냅샷 재조회 트리거 — 예: 상단 이메일 발송 성공 시 증가 */
   followUpPipelineSnapshotRefreshToken?: number
 }
@@ -338,6 +376,7 @@ export default function ReservationForm({
   initialNotIncludedAmountFromImport: _initialNotIncludedAmountFromImport,
   formTitle: formTitleOverride,
   importSubmitDisabled = false,
+  useServerCustomerInsert = false,
   followUpPipelineSnapshotRefreshToken = 0,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
@@ -5129,18 +5168,17 @@ export default function ReservationForm({
           status: formData.customerStatus || 'active'
         }
         
-        const { data: newCustomer, error: customerError } = await (supabase as any)
-          .from('customers')
-          .insert(customerData)
-          .select('*')
-          .single()
-        
-        if (customerError) {
-          console.error('고객 정보 생성 오류:', customerError)
-          alert('고객 정보 생성 중 오류가 발생했습니다: ' + customerError.message)
+        const { row: newCustomer, errorMessage: createCustomerErr } = await insertCustomerForReservationForm(
+          useServerCustomerInsert,
+          customerData
+        )
+
+        if (createCustomerErr || !newCustomer) {
+          console.error('고객 정보 생성 오류:', createCustomerErr)
+          alert('고객 정보 생성 중 오류가 발생했습니다: ' + (createCustomerErr || '알 수 없음'))
           return
         }
-        
+
         finalCustomerId = newCustomer.id
         setFormData(prev => ({ ...prev, customerId: finalCustomerId }))
         
@@ -5439,15 +5477,14 @@ export default function ReservationForm({
         created_at: getLasVegasToday()
       }
       
-      // Supabase에 저장
-      const { data, error } = await (supabase as any)
-        .from('customers')
-        .insert(customerDataWithDate as Database['public']['Tables']['customers']['Insert'])
-        .select('*')
+      const { row: newCustomer, errorMessage: addErr } = await insertCustomerForReservationForm(
+        useServerCustomerInsert,
+        customerDataWithDate as Record<string, unknown>
+      )
 
-      if (error) {
-        console.error('Error adding customer:', error)
-        alert('고객 추가 중 오류가 발생했습니다: ' + error.message)
+      if (addErr || !newCustomer) {
+        console.error('Error adding customer:', addErr)
+        alert('고객 추가 중 오류가 발생했습니다: ' + (addErr || '알 수 없음'))
         return
       }
 
@@ -5455,28 +5492,22 @@ export default function ReservationForm({
       await onRefreshCustomers()
       setShowCustomerForm(false)
 
-      // 새로 추가된 고객을 선택하고, 예약 폼도 제출하여 고객+예약 모두 저장
-      if (data && data[0]) {
-        const newCustomer = data[0] as Database['public']['Tables']['customers']['Row']
-        setShowNewCustomerForm(false)
-        setFormData(prev => ({
-          ...prev,
-          customerId: newCustomer.id,
-          customerSearch: `${newCustomer.name}${newCustomer.email ? ` (${newCustomer.email})` : ''}`,
-          showCustomerDropdown: false
-        }))
-        // setState 후 예약 폼 제출을 트리거하여 예약도 함께 저장
-        setTimeout(() => {
-          reservationFormRef.current?.requestSubmit()
-        }, 0)
-      } else {
-        alert('고객이 성공적으로 추가되었습니다!')
-      }
+      // 새로 추가된 고객을 선택하고, 예약 폼도 제출을 트리거하여 예약도 함께 저장
+      setShowNewCustomerForm(false)
+      setFormData((prev) => ({
+        ...prev,
+        customerId: newCustomer.id,
+        customerSearch: `${newCustomer.name}${newCustomer.email ? ` (${newCustomer.email})` : ''}`,
+        showCustomerDropdown: false,
+      }))
+      setTimeout(() => {
+        reservationFormRef.current?.requestSubmit()
+      }, 0)
     } catch (error) {
       console.error('Error adding customer:', error)
       alert('고객 추가 중 오류가 발생했습니다.')
     }
-  }, [onRefreshCustomers])
+  }, [onRefreshCustomers, useServerCustomerInsert])
 
   // 외부 클릭 시 고객 검색 드롭다운 / 언어 드롭다운 닫기
   useEffect(() => {
@@ -6445,19 +6476,18 @@ export default function ReservationForm({
                       ...pendingCustomerData,
                       id: newCustomerId
                     }
-                    
-                    const { data: newCustomer, error: customerError } = await (supabase as any)
-                      .from('customers')
-                      .insert(customerData)
-                      .select('*')
-                      .single()
-                    
-                    if (customerError) {
-                      console.error('고객 정보 생성 오류:', customerError)
-                      alert('고객 정보 생성 중 오류가 발생했습니다: ' + customerError.message)
+
+                    const { row: newCustomer, errorMessage: dupCreateErr } = await insertCustomerForReservationForm(
+                      useServerCustomerInsert,
+                      customerData as Record<string, unknown>
+                    )
+
+                    if (dupCreateErr || !newCustomer) {
+                      console.error('고객 정보 생성 오류:', dupCreateErr)
+                      alert('고객 정보 생성 중 오류가 발생했습니다: ' + (dupCreateErr || '알 수 없음'))
                       return
                     }
-                    
+
                     // ref에 생성된 고객 ID를 저장하여 handleSubmit에서 즉시 사용
                     resolvedCustomerIdRef.current = newCustomer.id
                     setFormData(prev => ({ ...prev, customerId: newCustomer.id }))

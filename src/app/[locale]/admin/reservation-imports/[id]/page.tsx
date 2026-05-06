@@ -735,6 +735,7 @@ export default function ReservationImportDetailPage() {
           extractPriceFromEmailBodyForImport(row?.raw_body_html ?? null)
         }
         importSubmitDisabled={isImportProcessed}
+        useServerCustomerInsert
       />
 
       {showProcessedNotice && (

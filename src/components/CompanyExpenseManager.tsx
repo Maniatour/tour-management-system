@@ -1474,7 +1474,7 @@ export default function CompanyExpenseManager({
               variant="outline"
               className="w-full sm:w-auto shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 border-amber-200 text-amber-950 flex items-center justify-center gap-1.5 sm:gap-2"
               onClick={() => setLedgerDupModalOpen(true)}
-              title="회사·투어·예약·입장권(확정) 지출을 한데 비교합니다. 출처가 달라도 금액·등록일이 비슷하면 한 그룹으로 묶습니다. 목록의 시작일·종료일(비어 있으면 최근 90일~오늘)을 사용합니다."
+              title="회사·투어·예약·입장권(확정) 지출 전체를 한데 비교합니다. 출처가 달라도 금액·등록일이 비슷하면 한 그룹으로 묶습니다."
             >
               <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
               회사·투어·예약·입장권 지출 중복 점검
@@ -2853,8 +2853,6 @@ export default function CompanyExpenseManager({
         open={ledgerDupModalOpen}
         onOpenChange={setLedgerDupModalOpen}
         mode="ledger"
-        ledgerDateFrom={dateFrom}
-        ledgerDateTo={dateTo}
         createdByEmail={user?.email ?? null}
         onAfterLedgerMutation={() => {
           void loadExpenses()

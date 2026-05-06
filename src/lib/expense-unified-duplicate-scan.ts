@@ -2,14 +2,11 @@ import { supabase } from '@/lib/supabase'
 import {
   BULK_COMPANY_DUP_AMOUNT_EPS,
   BULK_COMPANY_DUP_DAY_WINDOW,
-  COMPANY_EXPENSE_LEDGER_DUP_MAX_SCAN,
   type LedgerDuplicateExpenseRow
 } from '@/lib/statement-bulk-company-duplicate-check'
 
 const FETCH_PAGE = 1000
 const MATCH_IN_CHUNK = 200
-/** 테이블당 조회 상한(병합 후 전체는 COMPANY_EXPENSE_LEDGER_DUP_MAX_SCAN으로 자름) */
-const UNIFIED_DUP_PER_TABLE_FETCH = 900
 
 export type UnifiedExpenseSourceTable =
   | 'company_expenses'
@@ -262,16 +259,13 @@ type RawTagged = { _source_table: UnifiedExpenseSourceTable; _raw: Record<string
 
 async function fetchExpenseTableWindow(
   table: UnifiedExpenseSourceTable,
-  selectList: string,
-  startIso: string,
-  endIso: string,
-  maxRows: number
+  selectList: string
 ): Promise<Record<string, unknown>[]> {
   const sb = table === 'reservation_expenses' ? (supabase as any) : supabase
   const out: Record<string, unknown>[] = []
   let from = 0
   for (;;) {
-    let q = sb.from(table).select(selectList).gte('submit_on', startIso).lte('submit_on', endIso)
+    let q = sb.from(table).select(selectList)
     if (table === 'ticket_bookings') {
       q = q.or('status.eq.confirmed,status.eq.Confirmed')
     }
@@ -282,10 +276,10 @@ async function fetchExpenseTableWindow(
     if (error) throw error
     const batch = (data as Record<string, unknown>[]) || []
     out.push(...batch)
-    if (batch.length < FETCH_PAGE || out.length >= maxRows) break
+    if (batch.length < FETCH_PAGE) break
     from += FETCH_PAGE
   }
-  return out.length > maxRows ? out.slice(0, maxRows) : out
+  return out
 }
 
 async function fetchExpenseDuplicateSuppressionFingerprints(): Promise<{
@@ -477,48 +471,23 @@ function mapTicketRaw(
  * 회사·투어·예약·입장권 지출을 한 풀에서 금액·등록일(±) 기준으로 묶은 중복 의심 그룹.
  * `expense_duplicate_suppressions`에 기록된 쌍·그룹은 제외합니다.
  */
-export async function fetchUnifiedExpenseLedgerDuplicateGroups(
-  dateFromYmd: string,
-  dateToYmd: string
-): Promise<{ groups: UnifiedLedgerDuplicateExpenseRow[][]; truncated: boolean }> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFromYmd) || !/^\d{4}-\d{2}-\d{2}$/.test(dateToYmd)) {
-    throw new Error('날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)')
-  }
-  if (dateFromYmd > dateToYmd) {
-    throw new Error('시작일이 종료일보다 늦습니다.')
-  }
-
-  const startIso = `${dateFromYmd}T00:00:00.000Z`
-  const endIso = `${dateToYmd}T23:59:59.999Z`
-
+export async function fetchUnifiedExpenseLedgerDuplicateGroups(): Promise<{ groups: UnifiedLedgerDuplicateExpenseRow[][] }> {
   const [ce, te, re, tb, { pairFp, groupFp }] = await Promise.all([
     fetchExpenseTableWindow(
       'company_expenses',
-      'id, amount, submit_on, paid_to, paid_for, description, category, status, statement_line_id, ledger_expense_origin, standard_paid_for, payment_method',
-      startIso,
-      endIso,
-      UNIFIED_DUP_PER_TABLE_FETCH
+      'id, amount, submit_on, paid_to, paid_for, description, category, status, statement_line_id, ledger_expense_origin, standard_paid_for, payment_method'
     ),
     fetchExpenseTableWindow(
       'tour_expenses',
-      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, tour_date, tour_id',
-      startIso,
-      endIso,
-      UNIFIED_DUP_PER_TABLE_FETCH
+      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, tour_date, tour_id'
     ),
     fetchExpenseTableWindow(
       'reservation_expenses',
-      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, reservation_id, tour_id',
-      startIso,
-      endIso,
-      UNIFIED_DUP_PER_TABLE_FETCH
+      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, reservation_id, tour_id'
     ),
     fetchExpenseTableWindow(
       'ticket_bookings',
-      'id, expense, submit_on, category, company, note, booking_status, payment_method, statement_line_id, check_in_date, tour_id, reservation_id',
-      startIso,
-      endIso,
-      UNIFIED_DUP_PER_TABLE_FETCH
+      'id, expense, submit_on, category, company, note, booking_status, payment_method, statement_line_id, check_in_date, tour_id, reservation_id'
     ),
     fetchExpenseDuplicateSuppressionFingerprints()
   ])
@@ -539,16 +508,13 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(
     )
   })
 
-  const mergedTruncated = tagged.length > COMPANY_EXPENSE_LEDGER_DUP_MAX_SCAN
-  const cappedTagged = mergedTruncated ? tagged.slice(0, COMPANY_EXPENSE_LEDGER_DUP_MAX_SCAN) : tagged
-
   const idsByTable: Record<UnifiedExpenseSourceTable, string[]> = {
     company_expenses: [],
     tour_expenses: [],
     reservation_expenses: [],
     ticket_bookings: []
   }
-  for (const t of cappedTagged) {
+  for (const t of tagged) {
     const id = String(t._raw.id ?? '')
     if (id) idsByTable[t._source_table].push(id)
   }
@@ -569,7 +535,7 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(
     'display_payment_method' | 'display_statement_status' | 'display_financial_account'
   >[] = []
 
-  for (const { _source_table, _raw } of cappedTagged) {
+  for (const { _source_table, _raw } of tagged) {
     let row: Omit<
       UnifiedLedgerDuplicateExpenseRow,
       'display_payment_method' | 'display_statement_status' | 'display_financial_account'
@@ -602,12 +568,15 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(
     if (aAmt == null || !Number.isFinite(aAmt)) continue
     for (let j = i + 1; j < eligibleBase.length; j++) {
       const b = eligibleBase[j]!
+      const by = comparableYmd(b.submit_on)
+      if (by.length !== 10) continue
+      if (calendarDayDiffAbs(ay, by) > BULK_COMPANY_DUP_DAY_WINDOW) {
+        if (by > ay) break
+        continue
+      }
       const bAmt = b.amount
       if (bAmt == null || !Number.isFinite(bAmt)) continue
       if (Math.abs(aAmt - bAmt) > BULK_COMPANY_DUP_AMOUNT_EPS) continue
-      const by = comparableYmd(b.submit_on)
-      if (by.length !== 10) continue
-      if (calendarDayDiffAbs(ay, by) > BULK_COMPANY_DUP_DAY_WINDOW) continue
       const fp = canonPairFingerprint(a.source_key, b.source_key)
       if (pairFp.has(fp)) continue
       pairKeys.push([a.source_key, b.source_key])
@@ -646,9 +615,7 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(
     return sortUnifiedGroupRows(rows)
   })
 
-  const truncated = mergedTruncated || ce.length >= UNIFIED_DUP_PER_TABLE_FETCH || te.length >= UNIFIED_DUP_PER_TABLE_FETCH || re.length >= UNIFIED_DUP_PER_TABLE_FETCH || tb.length >= UNIFIED_DUP_PER_TABLE_FETCH
-
-  return { groups, truncated }
+  return { groups }
 }
 
 export async function insertExpenseDuplicateSuppression(input: {

@@ -7,7 +7,6 @@ import { AlertTriangle, ExternalLink } from 'lucide-react'
 import {
   BULK_COMPANY_DUP_AMOUNT_EPS,
   BULK_COMPANY_DUP_DAY_WINDOW,
-  COMPANY_EXPENSE_LEDGER_DUP_MAX_SCAN,
   fetchCompanyExpenseDuplicatesForBulk,
   type BulkCompanyDuplicateCheckInput,
   type BulkCompanyDuplicateRow,
@@ -51,9 +50,6 @@ type Props = {
   mode: CompanyExpenseDuplicateCheckMode
   /** mode === 'statement' — 지출 일괄 입력 후보와 동일한 명세 줄 목록 */
   statementCandidates?: BulkCompanyDuplicateCheckInput[]
-  /** mode === 'ledger' — YYYY-MM-DD */
-  ledgerDateFrom?: string
-  ledgerDateTo?: string
   /** 중복 점검에서 숨김·삭제 후 부모 목록 새로고침 등 */
   onAfterLedgerMutation?: () => void
   createdByEmail?: string | null
@@ -122,30 +118,11 @@ function standardCategoryCell(row: LedgerDuplicateExpenseRow): string {
   return '—'
 }
 
-function ymdTodayLocal(): string {
-  const t = new Date()
-  const y = t.getFullYear()
-  const m = String(t.getMonth() + 1).padStart(2, '0')
-  const d = String(t.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function ymdAddDaysLocal(ymd: string, delta: number): string {
-  const [y, mo, da] = ymd.split('-').map(Number)
-  const u = new Date(y, mo - 1, da + delta)
-  const yy = u.getFullYear()
-  const mm = String(u.getMonth() + 1).padStart(2, '0')
-  const dd = String(u.getDate()).padStart(2, '0')
-  return `${yy}-${mm}-${dd}`
-}
-
 export default function CompanyExpenseDuplicateCheckModal({
   open,
   onOpenChange,
   mode,
   statementCandidates = [],
-  ledgerDateFrom = '',
-  ledgerDateTo = '',
   onAfterLedgerMutation,
   createdByEmail = null
 }: Props) {
@@ -156,10 +133,9 @@ export default function CompanyExpenseDuplicateCheckModal({
   const [err, setErr] = useState<string | null>(null)
   const [statementRows, setStatementRows] = useState<BulkCompanyDuplicateRow[] | null>(null)
   const [ledgerGroups, setLedgerGroups] = useState<UnifiedLedgerDuplicateExpenseRow[][] | null>(null)
-  const [ledgerTruncated, setLedgerTruncated] = useState(false)
-  const [keepKeyByGroup, setKeepKeyByGroup] = useState<Record<number, string>>({})
+  const [deleteKeysByGroup, setDeleteKeysByGroup] = useState<Record<number, string[]>>({})
   const [actionBusy, setActionBusy] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ keepKey: string; deleteKeys: string[] } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ deleteKeys: string[] } | null>(null)
 
   const stmtKey = useMemo(
     () =>
@@ -169,31 +145,18 @@ export default function CompanyExpenseDuplicateCheckModal({
     [mode, statementCandidates]
   )
 
-  const ledgerRange = useMemo(() => {
-    const to = ledgerDateTo.trim() || ymdTodayLocal()
-    const from = ledgerDateFrom.trim() || ymdAddDaysLocal(to, -90)
-    return { from, to }
-  }, [ledgerDateFrom, ledgerDateTo])
-
   const reloadLedger = useCallback(async () => {
-    const { from, to } = ledgerRange
-    const { groups, truncated } = await fetchUnifiedExpenseLedgerDuplicateGroups(from, to)
+    const { groups } = await fetchUnifiedExpenseLedgerDuplicateGroups()
     setLedgerGroups(groups)
-    setLedgerTruncated(truncated)
-    const init: Record<number, string> = {}
-    for (let i = 0; i < groups.length; i++) {
-      init[i] = groups[i][0]?.source_key ?? ''
-    }
-    setKeepKeyByGroup(init)
-  }, [ledgerRange])
+    setDeleteKeysByGroup({})
+  }, [])
 
   useEffect(() => {
     if (!open) {
       setErr(null)
       setStatementRows(null)
       setLedgerGroups(null)
-      setLedgerTruncated(false)
-      setKeepKeyByGroup({})
+      setDeleteKeysByGroup({})
       setDeleteConfirm(null)
       return
     }
@@ -203,8 +166,7 @@ export default function CompanyExpenseDuplicateCheckModal({
       setErr(null)
       setStatementRows(null)
       setLedgerGroups(null)
-      setLedgerTruncated(false)
-      setKeepKeyByGroup({})
+      setDeleteKeysByGroup({})
       try {
         if (mode === 'statement') {
           if (statementCandidates.length === 0) {
@@ -227,24 +189,29 @@ export default function CompanyExpenseDuplicateCheckModal({
     }
   }, [open, mode, stmtKey, reloadLedger])
 
-  useEffect(() => {
-    if (!ledgerGroups) return
-    setKeepKeyByGroup((prev) => {
-      const next: Record<number, string> = {}
-      for (let gi = 0; gi < ledgerGroups.length; gi++) {
-        const g = ledgerGroups[gi]
-        const keys = g.map((r) => r.source_key)
-        const cur = prev[gi]
-        next[gi] = cur && keys.includes(cur) ? cur : keys[0] ?? ''
-      }
-      return next
-    })
-  }, [ledgerGroups])
-
   const title =
     mode === 'statement'
       ? '명세 줄 ↔ 기존 회사 지출 중복 점검'
       : '회사·투어·예약·입장권 교차 중복 의심 점검'
+
+  function removeLedgerKeysFromCurrentList(keys: string[]) {
+    const keySet = new Set(keys)
+    setLedgerGroups((prev) => {
+      if (!prev) return prev
+      return prev
+        .map((group) => group.filter((row) => !keySet.has(row.source_key)))
+        .filter((group) => group.length >= 2)
+    })
+    setDeleteKeysByGroup({})
+  }
+
+  function toggleDeleteKey(groupIndex: number, sourceKey: string, checked: boolean) {
+    setDeleteKeysByGroup((prev) => {
+      const cur = prev[groupIndex] ?? []
+      const next = checked ? [...new Set([...cur, sourceKey])] : cur.filter((k) => k !== sourceKey)
+      return { ...prev, [groupIndex]: next }
+    })
+  }
 
   async function onMarkGroupDifferent(group: UnifiedLedgerDuplicateExpenseRow[]) {
     const keys = group.map((r) => r.source_key)
@@ -261,6 +228,7 @@ export default function CompanyExpenseDuplicateCheckModal({
         created_by: createdByEmail ?? null
       })
       toast.success('다른 지출로 기록했습니다. 이 목록에서는 다시 표시되지 않습니다.')
+      removeLedgerKeysFromCurrentList(keys)
       await reloadLedger()
       onAfterLedgerMutation?.()
     } catch (e) {
@@ -271,7 +239,7 @@ export default function CompanyExpenseDuplicateCheckModal({
     }
   }
 
-  async function runDeleteOthers(deleteKeys: string[]) {
+  async function runDeleteSelected(deleteKeys: string[]) {
     setDeleteConfirm(null)
     setActionBusy(true)
     setErr(null)
@@ -279,7 +247,8 @@ export default function CompanyExpenseDuplicateCheckModal({
       for (const k of deleteKeys) {
         await deleteExpenseBySourceKey(k)
       }
-      toast.success(`${deleteKeys.length}건을 삭제하고 한 건만 남겼습니다.`)
+      toast.success(`${deleteKeys.length}건을 삭제했습니다.`)
+      removeLedgerKeysFromCurrentList(deleteKeys)
       await reloadLedger()
       onAfterLedgerMutation?.()
     } catch (e) {
@@ -295,10 +264,10 @@ export default function CompanyExpenseDuplicateCheckModal({
       <AlertDialog open={deleteConfirm != null} onOpenChange={(v) => !v && setDeleteConfirm(null)}>
         <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-left text-base">선택한 한 건만 남기고 삭제</AlertDialogTitle>
+            <AlertDialogTitle className="text-left text-base">선택한 지출 삭제</AlertDialogTitle>
             <AlertDialogDescription className="text-left text-sm space-y-2">
               <p>
-                유지할 지출을 제외한 나머지는 <strong>영구 삭제</strong>됩니다. 명세 대조 연결이 있으면 함께 해제됩니다.
+                아래에서 선택한 지출만 <strong>영구 삭제</strong>됩니다. 명세 대조 연결이 있으면 함께 해제됩니다.
               </p>
               {deleteConfirm && deleteConfirm.deleteKeys.length > 0 ? (
                 <ul className="list-disc pl-4 font-mono text-[11px] break-all text-slate-700">
@@ -317,7 +286,7 @@ export default function CompanyExpenseDuplicateCheckModal({
               onClick={(ev) => {
                 ev.preventDefault()
                 if (!deleteConfirm) return
-                void runDeleteOthers(deleteConfirm.deleteKeys)
+                void runDeleteSelected(deleteConfirm.deleteKeys)
               }}
             >
               삭제 실행
@@ -356,12 +325,12 @@ export default function CompanyExpenseDuplicateCheckModal({
                 </>
               ) : (
                 <>
-                  목록의 <strong>시작일·종료일</strong>이 있으면 그 범위로, 비어 있으면 <strong>종료일=오늘 · 시작일=90일
-                  전</strong>으로 조회합니다. <strong>회사·투어·예약·입장권(확정)</strong> 네 종류 지출을 한 풀에 넣어 비교하며,{' '}
+                  날짜 필터와 상관없이 <strong>전체 데이터</strong>를 조회합니다. <strong>회사·투어·예약·입장권(확정)</strong> 네
+                  종류 지출을 한 풀에 넣어 비교하며,{' '}
                   <strong>같은 테이블 안끼리만이 아니라</strong> 출처가 달라도(예: 회사 지출 ↔ 투어 지출) 금액(±
                   {BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)이 비슷하면 한 그룹으로 묶습니다.
                   우연히 겹친 경우 <strong>다른 지출로 숨김</strong>을 남기거나, 동일 거래 중복이면{' '}
-                  <strong>한 건만 남기고 삭제</strong>하세요.
+                  <strong>삭제할 지출을 선택해서 삭제</strong>하세요.
                 </>
               )}
             </DialogDescription>
@@ -391,13 +360,6 @@ export default function CompanyExpenseDuplicateCheckModal({
               <p className="text-emerald-800">
                 해당 기간·기준에서 중복 의심 그룹이 없습니다. (금액 ±{BULK_COMPANY_DUP_AMOUNT_EPS}, 등록일 ±
                 {BULK_COMPANY_DUP_DAY_WINDOW}일, 승인·대기·입장권 확정)
-              </p>
-            ) : null}
-
-            {ledgerTruncated ? (
-              <p className="text-amber-900 font-medium">
-                조회·비교 상한({COMPANY_EXPENSE_LEDGER_DUP_MAX_SCAN}건)에 걸렸습니다. 기간을 줄이거나 테이블당 일부만
-                가져온 뒤 비교하므로, 누락될 수 있습니다.
               </p>
             ) : null}
 
@@ -458,8 +420,8 @@ export default function CompanyExpenseDuplicateCheckModal({
                     refAmt != null && Number.isFinite(refAmt)
                       ? `$${refAmt.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
                       : '—'
-                  const keepKey = keepKeyByGroup[gi] ?? group[0]?.source_key ?? ''
-                  const deleteKeys = group.map((r) => r.source_key).filter((k) => k !== keepKey)
+                  const selectedDeleteKeys = deleteKeysByGroup[gi] ?? []
+                  const selectedDeleteKeySet = new Set(selectedDeleteKeys)
                   return (
                     <div
                       key={`ledger-group-${gi}-${group.map((r) => r.source_key).join('-')}`}
@@ -492,17 +454,17 @@ export default function CompanyExpenseDuplicateCheckModal({
                           size="sm"
                           variant="destructive"
                           className="h-8 text-[11px]"
-                          disabled={actionBusy || deleteKeys.length === 0}
-                          onClick={() => setDeleteConfirm({ keepKey, deleteKeys })}
+                          disabled={actionBusy || selectedDeleteKeys.length === 0}
+                          onClick={() => setDeleteConfirm({ deleteKeys: selectedDeleteKeys })}
                         >
-                          유지 한 건만 남기고 나머지 삭제
+                          선택한 지출 삭제{selectedDeleteKeys.length > 0 ? ` (${selectedDeleteKeys.length})` : ''}
                         </Button>
                       </div>
                       <div className="overflow-x-auto px-1 pb-2 pt-1">
                         <table className="w-full min-w-[94rem] border-collapse text-left text-[11px]">
                           <thead>
                             <tr className="border-b border-amber-200/90 text-slate-600 bg-amber-50/80">
-                              <th className="py-1.5 px-2 font-medium w-10 text-center">유지</th>
+                              <th className="py-1.5 px-2 font-medium w-14 text-center">삭제 선택</th>
                               <th className="py-1.5 px-2 font-medium min-w-[7rem]">지출 구분</th>
                               <th className="py-1.5 px-2 font-medium min-w-[11rem]">지출 ID</th>
                               <th className="py-1.5 px-2 font-medium whitespace-nowrap">등록일</th>
@@ -522,17 +484,16 @@ export default function CompanyExpenseDuplicateCheckModal({
                               <tr
                                 key={row.source_key}
                                 className={`border-b border-amber-100/90 align-top ${
-                                  ri === 0 ? 'bg-amber-50/95' : 'bg-white'
+                                  selectedDeleteKeySet.has(row.source_key) ? 'bg-red-50/80' : ri === 0 ? 'bg-amber-50/95' : 'bg-white'
                                 }`}
                               >
                                 <td className="py-2 px-2 text-center align-middle">
                                   <input
-                                    type="radio"
-                                    className="h-3.5 w-3.5 accent-amber-700"
-                                    name={`dup-keep-${gi}`}
-                                    checked={keepKey === row.source_key}
-                                    onChange={() => setKeepKeyByGroup((p) => ({ ...p, [gi]: row.source_key }))}
-                                    aria-label={`그룹 ${gi + 1}에서 유지할 지출`}
+                                    type="checkbox"
+                                    className="h-3.5 w-3.5 accent-red-600"
+                                    checked={selectedDeleteKeySet.has(row.source_key)}
+                                    onChange={(e) => toggleDeleteKey(gi, row.source_key, e.target.checked)}
+                                    aria-label={`그룹 ${gi + 1}에서 삭제할 지출 선택`}
                                   />
                                 </td>
                                 <td className="py-2 px-2 whitespace-nowrap text-slate-800 font-medium">
