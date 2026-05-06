@@ -1378,26 +1378,36 @@ export default function ScheduleView() {
       const endDate = lastDayOfMonth.format('YYYY-MM-DD')
       
       // 가이드 또는 어시스턴트가 배정되지 않은 투어들 (특정 상태 제외)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: unassignedToursData, error } = await (supabase as any)
+      /** PostgREST max-rows(1000) 회피 */
+      const UNASSIGNED_PAGE = 1000
+      let unassignedToursData: Tour[] = []
+      for (let from = 0; ; from += UNASSIGNED_PAGE) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('tours' as any)
-        .select(`
+        const { data: batch, error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('tours' as any)
+          .select(`
           *,
           products!inner(name)
         `)
-        .gte('tour_date', startDate)
-        .lte('tour_date', endDate)
-        .or('tour_guide_id.is.null,tour_guide_id.eq.,assistant_id.is.null,assistant_id.eq.')
-        .not('tour_status', 'like', 'canceled%')
-        .not('tour_status', 'like', 'Canceled%')
-        .not('tour_status', 'eq', 'Deleted')
-        .not('tour_status', 'eq', 'Requested for Delete')
-        .order('tour_date', { ascending: true })
+          .gte('tour_date', startDate)
+          .lte('tour_date', endDate)
+          .or('tour_guide_id.is.null,tour_guide_id.eq.,assistant_id.is.null,assistant_id.eq.')
+          .not('tour_status', 'like', 'canceled%')
+          .not('tour_status', 'like', 'Canceled%')
+          .not('tour_status', 'eq', 'Deleted')
+          .not('tour_status', 'eq', 'Requested for Delete')
+          .order('tour_date', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + UNASSIGNED_PAGE - 1)
 
-      if (error) {
-        console.error('Error fetching unassigned tours:', error)
-        return
+        if (error) {
+          console.error('Error fetching unassigned tours:', error)
+          return
+        }
+        const b = (batch || []) as Tour[]
+        unassignedToursData = unassignedToursData.concat(b)
+        if (b.length < UNASSIGNED_PAGE) break
       }
 
       setUnassignedTours(unassignedToursData || [])
@@ -1486,13 +1496,28 @@ export default function ScheduleView() {
       const startDate = firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
       const endDate = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: toursData } = await (supabase as any)
+      /** PostgREST max-rows(1000) 회피 — 한 달·버퍼 구간에 투어가 매우 많을 때 누락 방지 */
+      const TOURS_PAGE = 1000
+      let toursData: Tour[] = []
+      for (let from = 0; ; from += TOURS_PAGE) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('tours' as any)
-        .select('*, products(name)')
-        .gte('tour_date', startDate)
-        .lte('tour_date', endDate)
+        const { data: batch, error: toursFetchErr } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('tours' as any)
+          .select('*, products(name)')
+          .gte('tour_date', startDate)
+          .lte('tour_date', endDate)
+          .order('tour_date', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + TOURS_PAGE - 1)
+        if (toursFetchErr) {
+          console.error('Error fetching tours:', toursFetchErr)
+          break
+        }
+        const b = (batch || []) as Tour[]
+        toursData = toursData.concat(b)
+        if (b.length < TOURS_PAGE) break
+      }
 
       // 해당 월 투어에서 사용하는 차량 ID로 차량 정보 조회 (라벨/범례용)
       const rawVehicleIds = (toursData || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id: string | null | undefined): id is string => id != null && String(id).trim().length > 0)

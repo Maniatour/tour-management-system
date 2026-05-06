@@ -180,19 +180,23 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   const dateStart = addDays(dateEnd, -6)
 
-  const loadList = useCallback(() => {
-    setLoading(true)
-    const params = new URLSearchParams({ status: statusFilter })
-    if (!noDateFilter) {
-      params.set('from_utc', localDateToUtcStart(dateStart))
-      params.set('to_utc', localDateToUtcEnd(dateEnd))
-    }
-    fetch(`/api/reservation-imports?${params}`)
-      .then((res) => res.json())
-      .then((json) => setItems(json.data ?? []))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false))
-  }, [statusFilter, dateStart, dateEnd, noDateFilter])
+  const loadList = useCallback(
+    (opts?: { skipDateFilter?: boolean }) => {
+      setLoading(true)
+      const params = new URLSearchParams({ status: statusFilter })
+      const omitDates = noDateFilter || opts?.skipDateFilter === true
+      if (!omitDates) {
+        params.set('from_utc', localDateToUtcStart(dateStart))
+        params.set('to_utc', localDateToUtcEnd(dateEnd))
+      }
+      fetch(`/api/reservation-imports?${params}`)
+        .then((res) => res.json())
+        .then((json) => setItems(json.data ?? []))
+        .catch(() => setItems([]))
+        .finally(() => setLoading(false))
+    },
+    [statusFilter, dateStart, dateEnd, noDateFilter]
+  )
 
   useEffect(() => {
     if (!cancellationImportFromUrl) return
@@ -429,7 +433,9 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           ? `전체 재동기화 완료: ${d.queryUsed ?? 'after:날짜'} 검색, ${d.total ?? 0}건 중 새로 추가 ${d.imported ?? 0}건.`
           : `동기화 완료: 새 메일 ${d.imported ?? 0}건이 예약 가져오기 목록에 추가되었습니다.`
       )
-      loadList()
+      // 새 행이 생겼을 때 날짜 창 밖이면 목록에 안 보일 수 있음 → 한 번은 날짜 없이 최신 1000건으로 갱신
+      const added = d.imported ?? 0
+      loadList(added > 0 ? { skipDateFilter: true } : undefined)
     }
     const onUnauthorized = () => {
       setOptimisticConnected(false)
@@ -538,11 +544,11 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                 type="button"
                 onClick={() => handleGmailSync(true)}
                 disabled={gmailSyncing}
-                title="최근 24시간 메일 전부 검색해 DB와 비교 후 누락분만 추가 (최신 메일이 안 보일 때 사용)"
+                title="최근 7일 수신함 메일을 검색해 DB와 비교 후 누락분만 추가합니다. History API만으로는 안 잡히는 메일도 포함합니다."
                 className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50 touch-manipulation"
               >
                 {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <RefreshCw className="w-4 h-4 shrink-0" />}
-                전체 재동기화 (최근 24시간)
+                전체 재동기화 (최근 7일)
               </button>
             </div>
           </div>

@@ -190,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name_ko: string | null
           email: string
           position: string | null
-          is_active: boolean
+          is_active: boolean | null
         } | null = null
         let error: { message?: string; code?: string } | null = null
 
@@ -199,8 +199,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const queryPromise = supabase
               .from('team')
               .select('name_ko, email, position, is_active')
-              .eq('email', email)
-              .eq('is_active', true)
+              .ilike('email', normalizedEmail)
+              .or('is_active.is.null,is_active.eq.true')
               .maybeSingle()
 
             const timeoutPromise = new Promise<never>((_, reject) =>

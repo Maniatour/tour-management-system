@@ -82,7 +82,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
   },
 }
 
-export function getUserRole(email: string, teamData?: { position?: string; is_active?: boolean }): UserRole {
+export function getUserRole(
+  email: string,
+  teamData?: { position?: string; is_active?: boolean | null }
+): UserRole {
   console.log('getUserRole called with:', { email, teamData })
   console.log('SUPER_ADMIN_EMAILS:', SUPER_ADMIN_EMAILS)
 
@@ -96,8 +99,9 @@ export function getUserRole(email: string, teamData?: { position?: string; is_ac
     return 'admin'
   }
   
-  // 팀 데이터가 있고 이메일이 팀 테이블에 있는 경우
-  if (teamData && teamData.is_active) {
+  // 팀 데이터가 있고 비활성(is_active === false)이 아닌 경우
+  // DB RLS·is_staff()는 coalesce(is_active, true)와 동일하게 null 을 활성으로 본다.
+  if (teamData && teamData.is_active !== false) {
     const position = teamData.position?.toLowerCase() || ''
     
     console.log('Team data found, position:', position)

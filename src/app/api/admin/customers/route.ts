@@ -23,20 +23,33 @@ async function teamActiveRowExists(
   return !!data
 }
 
+/** customers RLS·is_staff(text)와 동일: 활성 팀 행(또는 화이트리스트) — team 직접 SELECT 실패 시 보조 */
+async function isActiveStaffForCustomerInsert(
+  client: SupabaseClient<Database>,
+  emailLower: string
+): Promise<boolean> {
+  const { data, error } = await client.rpc('is_staff', { p_email: emailLower })
+  if (!error) {
+    return Boolean(data)
+  }
+  console.error('[api/admin/customers] is_staff rpc:', error.message)
+  return teamActiveRowExists(client, emailLower)
+}
+
 async function callerMayInsertCustomers(userEmail: string | undefined | null, accessToken: string): Promise<boolean> {
   if (!userEmail) return false
   const em = userEmail.trim().toLowerCase()
   if (STAFF_EMAIL_WHITELIST.has(em)) return true
 
   if (supabaseAdmin) {
-    const ok = await teamActiveRowExists(supabaseAdmin, em)
+    const ok = await isActiveStaffForCustomerInsert(supabaseAdmin, em)
     if (ok) return true
   }
 
-  // 서비스 롤 조회 실패·미설정: JWT로 team 조회 (활성 OP 등은 RLS 통과)
+  // 서비스 롤 미설정·RPC만 통과하는 환경: 사용자 JWT로 is_staff / team 조회
   try {
     const userSb = createSupabaseClientWithToken(accessToken)
-    return await teamActiveRowExists(userSb, em)
+    return await isActiveStaffForCustomerInsert(userSb, em)
   } catch (e) {
     console.error('[api/admin/customers] team lookup (user jwt) exception:', e)
     return false

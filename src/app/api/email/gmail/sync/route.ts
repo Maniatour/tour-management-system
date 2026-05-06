@@ -42,9 +42,10 @@ type FullMsg = {
 
 /**
  * POST /api/email/gmail/sync
- * 전체 재동기화: body { fullSync: true } 또는 쿼리 ?full=1 → History 건너뛰고 after:날짜 검색으로 최근 메일 전부 처리
- * 1) fullSync가 아니고 last_history_id가 있으면 History API로 그 이후 추가분만 조회
- * 2) 그 외: after:(오늘-3일) 검색 → 수집한 메일 전부 internalDate 정렬 후 DB 비교·저장
+ * 전체 재동기화: body { fullSync: true } → History 생략, after:(오늘-7일) 수신함 목록으로 누락 보정
+ * 1) fullSync가 아니고 last_history_id가 있으면 History API로 messageAdded 수집 → 있으면 즉시 반환
+ * 2) History에서 추가 ID가 없어도 Gmail 누락이 있을 수 있으므로 항상 이어서 messages.list(수신함)로 보정
+ * 3) 목록 쿼리: 일반 동기화 after:3일, fullSync 시 after:7일 (예약 가져오기 UI 기본 날짜 창과 맞춤)
  */
 export async function POST(request: Request) {
   let forceFullSync = false
@@ -175,6 +176,9 @@ export async function POST(request: Request) {
       extracted_data: extracted_data as object,
       status: 'pending',
     })
+    if (insertErr) {
+      console.error('[gmail/sync] reservation_imports insert:', insertErr.message, insertErr.code)
+    }
     return !insertErr
   }
 
@@ -252,13 +256,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ imported, total: addedIds.length, mode: 'history' })
     }
 
+    // History에 messageAdded가 없어도 Gmail이 일부 변경을 누락할 수 있음 → 아래 messages.list 로 보정
     if (newHistoryId) {
       await updateHistoryId(newHistoryId)
-      return NextResponse.json({ imported: 0, total: 0, mode: 'history' })
     }
   }
 
-  // 2) 전체 동기화: messages.list 순서를 믿지 않고, ID 300개 수집 → 본문 조회 → internalDate 기준 최신 100건만 처리
+  // 2) 수신함 messages.list: History 미적용·누락 분을 DB와 대조해 삽입 (중복은 message_id로 스킵)
   const profileRes = await fetch(`${GMAIL_API_BASE}/profile`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -271,9 +275,9 @@ export async function POST(request: Request) {
   const profile = (await profileRes.json()) as { historyId?: string }
   const currentHistoryId = profile.historyId
 
-  // after:YYYY/MM/DD 로 최근 3일만 검색 (newer_than보다 확실). 해당 기간 메일 전부 수집 후 internalDate 정렬해 전부 처리.
+  // after:YYYY/MM/DD — 일반 동기화 3일, 전체 재동기화(forceFullSync)는 예약 가져오기 목록 기본 7일창과 맞춤
   const afterDate = new Date()
-  afterDate.setDate(afterDate.getDate() - 3)
+  afterDate.setDate(afterDate.getDate() - (forceFullSync ? 7 : 3))
   const afterStr = `${afterDate.getFullYear()}/${String(afterDate.getMonth() + 1).padStart(2, '0')}/${String(afterDate.getDate()).padStart(2, '0')}`
   const listIds: string[] = []
   let listPageToken: string | undefined

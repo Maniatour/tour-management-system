@@ -267,13 +267,23 @@ export default function AdminTours() {
   // 최적화된 데이터 로딩 (스케줄 뷰는 ScheduleView가 월 단위로 직접 조회 — 전체 투어 로드 생략)
   const { data: toursData, loading: toursLoading, refetch: refetchTours } = useOptimizedData({
     fetchFn: async () => {
-      const { data, error } = await supabase
-        .from('tours')
-        .select('*')
-        .order('tour_date', { ascending: false })
-      
-      if (error) throw error
-      return data || []
+      /** PostgREST 기본 max-rows(1000) — 단일 select로는 그 이후 행이 잘림 → range 순회 */
+      const PAGE_SIZE = 1000
+      const rows: Database['public']['Tables']['tours']['Row'][] = []
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from('tours')
+          .select('*')
+          .order('tour_date', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1)
+
+        if (error) throw error
+        const batch = data ?? []
+        rows.push(...batch)
+        if (batch.length < PAGE_SIZE) break
+      }
+      return rows
     },
     cacheKey: 'tours',
     cacheTime: 2 * 60 * 1000, // 2분 캐시
