@@ -709,6 +709,19 @@ function mergeTicketBookingAxesFromRpcRow(
   return next;
 }
 
+/** 탭 전환·언마운트·중복 요청 등으로 fetch 가 취소될 때 — 네트워크 실패와 구분 */
+function isAbortLikeError(error: unknown): boolean {
+  if (error == null) return false;
+  if (typeof error === 'object') {
+    const name = (error as { name?: string }).name;
+    if (name === 'AbortError') return true;
+    const msg = String((error as { message?: unknown }).message ?? '');
+    if (/abort/i.test(msg)) return true;
+  }
+  if (typeof error === 'string' && /abort/i.test(error)) return true;
+  return false;
+}
+
 /** 테이블 축 드롭다운 저장 후 Ctrl+Z 되돌리기 스택 최대 길이 */
 const TICKET_TABLE_AXES_UNDO_STACK_MAX = 50;
 
@@ -730,6 +743,7 @@ export default function TicketBookingList() {
   const bookingsRef = useRef<TicketBooking[]>([]);
   bookingsRef.current = bookings;
   const fetchBookingsRef = useRef<() => Promise<void>>(async () => {});
+  const fetchBookingsGenRef = useRef(0);
   const tableAxesUndoStackRef = useRef<{ bookingId: string; patch: TicketBookingAxisPatch }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1041,6 +1055,7 @@ export default function TicketBookingList() {
   }, []);
 
   const fetchBookings = async () => {
+    const gen = ++fetchBookingsGenRef.current;
     try {
       setLoading(true);
 
@@ -1333,9 +1348,13 @@ export default function TicketBookingList() {
         setTeamMemberMap(new Map());
       }
     } catch (error) {
-      console.error('입장권 부킹 조회 오류:', error);
+      if (!isAbortLikeError(error)) {
+        console.error('입장권 부킹 조회 오류:', error);
+      }
     } finally {
-      setLoading(false);
+      if (gen === fetchBookingsGenRef.current) {
+        setLoading(false);
+      }
     }
   };
 

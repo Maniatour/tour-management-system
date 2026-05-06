@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createSupabaseClientWithToken, supabase } from '@/lib/supabase'
+import {
+  createSupabaseClientWithToken,
+  supabase,
+  supabaseAdmin,
+} from '@/lib/supabase'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 // 입금 내역 조회
@@ -97,8 +101,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    // 입금 내역 생성
-    const { data: newPaymentRecord, error } = await supabase
+    // RLS: anon 은 payment_records 접근 불가 — PUT/[id] 와 동일하게 서비스 롤 또는 사용자 JWT
+    const db = supabaseAdmin ?? createSupabaseClientWithToken(token)
+
+    const { data: newPaymentRecord, error } = await db
       .from('payment_records')
       .insert({
         id: `payment_${Date.now()}_${Math.random().toString(36).substring(2)}`,
@@ -119,7 +125,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '입금 내역을 생성할 수 없습니다' }, { status: 500 })
     }
 
-    const sync = await syncReservationPricingAggregates(supabase, reservation_id)
+    const sync = await syncReservationPricingAggregates(db, reservation_id)
     if (!sync.ok && sync.error) {
       console.warn('[payment-records POST] reservation_pricing 동기화 실패:', reservation_id, sync.error)
     }

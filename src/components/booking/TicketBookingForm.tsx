@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay';
 import { fetchUploadApi } from '@/lib/uploadClient';
@@ -264,7 +264,10 @@ export default function TicketBookingForm({
   }
 
   const [tours, setTours] = useState<Tour[]>([]);
+  const [toursLoading, setToursLoading] = useState(false);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
+  const prevCheckInYmdRef = useRef<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [paymentMethodsList, setPaymentMethodsList] = useState<Array<{ id: string; method: string; display_name: string | null }>>([]);
@@ -283,7 +286,6 @@ export default function TicketBookingForm({
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
-    fetchReservations();
     fetchCategories();
     fetchCompanies();
     fetchPaymentMethods();
@@ -296,6 +298,26 @@ export default function TicketBookingForm({
     void fetchTours(formData.check_in_date, tourIdToMerge);
     // 투어 드롭다운 값만 바꿀 때는 재조회하지 않음
     // eslint-disable-next-line react-hooks/exhaustive-deps -- formData.tour_id 제외
+  }, [formData.check_in_date]);
+
+  /** 예약 선택: 체크인일과 동일한 tour_date 행만 조회 (날짜 변경 시 예약 연결 초기화) */
+  useEffect(() => {
+    const ymd = String(formData.check_in_date ?? '').trim().slice(0, 10);
+    const prev = prevCheckInYmdRef.current;
+
+    let mergeReservationId: string | null =
+      (formData.reservation_id && String(formData.reservation_id).trim()) || null;
+    if (prev !== null && prev !== ymd) {
+      mergeReservationId = null;
+      setFormData((p) => ({ ...p, reservation_id: '' }));
+    }
+    prevCheckInYmdRef.current = ymd || null;
+
+    if (!ymd) {
+      setReservations([]);
+      return;
+    }
+    void fetchReservationsForCheckIn(ymd, mergeReservationId);
   }, [formData.check_in_date]);
 
   // 제출자 이메일: 새 부킹일 때만 로그인 사용자 이메일로 자동 설정
@@ -394,44 +416,68 @@ export default function TicketBookingForm({
     try {
       if (!checkInDate || !String(checkInDate).trim()) {
         setTours([]);
+        setToursLoading(false);
         return;
       }
+      setToursLoading(true);
       const rows = await fetchTicketToursForCheckIn(supabase as any, checkInDate, tourIdToMerge);
       setTours(rows as Tour[]);
     } catch (error) {
       console.error('투어 목록 조회 오류:', error);
+    } finally {
+      setToursLoading(false);
     }
   };
 
-  const fetchReservations = async () => {
+  /** 체크인 날짜와 같은 tour_date 예약만 (편집 시 목록에 없으면 mergeReservationId 한 건 병합) */
+  const fetchReservationsForCheckIn = async (checkInYmd: string, mergeReservationId?: string | null) => {
     try {
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD 형식
-      
-      console.log('예약 목록 조회 시작...');
-      // 먼저 reservations만 조회
+      const ymd = String(checkInYmd ?? '').trim().slice(0, 10);
+      if (!ymd) {
+        setReservations([]);
+        return;
+      }
+
+      setReservationsLoading(true);
+      console.log('예약 목록 조회 (체크인일 일치):', ymd);
+
       const { data: reservationsData, error: reservationsError } = await (supabase as any)
         .from('reservations')
-        .select(`
-          id, 
-          tour_date, 
+        .select(
+          `
+          id,
+          tour_date,
           status,
           product_id
-        `)
-        .gte('tour_date', today) // 오늘 날짜 이후의 예약만
-        .order('tour_date', { ascending: true });
+        `
+        )
+        .eq('tour_date', ymd)
+        .order('id', { ascending: true });
 
       if (reservationsError) {
         console.error('예약 목록 조회 오류:', reservationsError);
         throw reservationsError;
       }
 
-      if (!reservationsData || reservationsData.length === 0) {
+      let typedReservationsData = (reservationsData || []) as Reservation[];
+      const ids = new Set(typedReservationsData.map((r) => r.id));
+      const merge = mergeReservationId && String(mergeReservationId).trim();
+      if (merge && !ids.has(merge)) {
+        const { data: extra, error: exErr } = await (supabase as any)
+          .from('reservations')
+          .select(`id, tour_date, status, product_id`)
+          .eq('id', merge)
+          .maybeSingle();
+        if (!exErr && extra) {
+          typedReservationsData = [...typedReservationsData, extra as Reservation];
+        }
+      }
+
+      if (typedReservationsData.length === 0) {
         setReservations([]);
         return;
       }
 
-      // product_id가 있는 예약들만 필터링
-      const typedReservationsData = (reservationsData || []) as Reservation[];
       const reservationsWithProductId = typedReservationsData.filter((reservation: Reservation) => reservation.product_id);
       
       if (reservationsWithProductId.length === 0) {
@@ -480,6 +526,8 @@ export default function TicketBookingForm({
       setReservations(reservationsWithProducts);
     } catch (error) {
       console.error('예약 목록 조회 오류:', error);
+    } finally {
+      setReservationsLoading(false);
     }
   };
 
@@ -834,6 +882,33 @@ export default function TicketBookingForm({
 
       console.log('전송할 데이터:', booking?.id ? dbPayloadBase : dbPayloadInsert);
 
+      let authSession = (await supabase.auth.getSession()).data.session;
+      if (!authSession?.access_token) {
+        const { data } = await supabase.auth.refreshSession();
+        authSession = data.session ?? null;
+      }
+      if (!authSession?.access_token) {
+        alert(
+          locale === 'ko'
+            ? '로그인 세션이 없거나 아직 붙지 않았습니다. 잠시 후 다시 시도하거나 페이지를 새로고침해 주세요.'
+            : 'Your session is not ready or has expired. Wait a moment or refresh the page and try again.'
+        );
+        setLoading(false);
+        return;
+      }
+
+      // getSession()만 쓰면 로컬 캐시/레이스로 JWT가 비어 RLS(ticket_bookings 등)가 실패할 수 있음 — 서버 검증으로 동기화
+      const { error: verifyUserErr } = await supabase.auth.getUser();
+      if (verifyUserErr) {
+        alert(
+          locale === 'ko'
+            ? '로그인 정보를 확인할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.'
+            : 'Could not verify your login. Refresh the page and try again.'
+        );
+        setLoading(false);
+        return;
+      }
+
       let error;
       let savedId: string | undefined;
       let savedRow: Record<string, unknown> | undefined;
@@ -879,25 +954,27 @@ export default function TicketBookingForm({
         error = updateError;
         savedId = booking.id;
       } else {
-        // 새로 생성인 경우 - DB 컬럼만 insert (다축 + 파생 레거시 status 동시 기록)
+        // 새로 생성은 서버 API에서 인증 확인 후 service role로 insert (브라우저 RLS 세션 레이스 방지)
         console.log('새로 생성 모드');
-        let insertRes = await (supabase as any)
-          .from('ticket_bookings')
-          .insert(dbPayloadInsert)
-          .select()
-          .single();
-        if (isMissingZelleConfirmationColumnError(insertRes.error)) {
-          omitZelleConfirmationInTicketBookingsPayload = true;
-          console.warn(
-            '[ticket_bookings] zelle_confirmation_number 컬럼이 스키마에 없어 해당 필드 없이 다시 저장합니다. ' +
-              'supabase/migrations/20260401160000_ticket_bookings_zelle_confirmation_number.sql 을 적용하면 Zelle 확인#도 저장됩니다.'
+        const apiRes = await fetch('/api/ticket-bookings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authSession.access_token}`,
+          },
+          body: JSON.stringify(dbPayloadInsert),
+        });
+        const apiJson = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          error = new Error(
+            typeof apiJson?.error === 'string'
+              ? apiJson.error
+              : '입장권 부킹을 생성할 수 없습니다'
           );
-          const { zelle_confirmation_number: _z, ...withoutZelle } = dbPayloadInsert;
-          insertRes = await (supabase as any).from('ticket_bookings').insert(withoutZelle).select().single();
+        } else {
+          savedId = apiJson.ticketBooking?.id;
+          savedRow = apiJson.ticketBooking as Record<string, unknown> | undefined;
         }
-        error = insertRes.error;
-        savedId = insertRes.data?.id;
-        savedRow = insertRes.data as Record<string, unknown> | undefined;
       }
 
       if (error) throw error;
@@ -1449,12 +1526,17 @@ export default function TicketBookingForm({
                 name="tour_id"
                 value={formData.tour_id || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={Boolean(formData.check_in_date?.trim()) && toursLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
               >
                 <option value="">{t('selectTourPlaceholder')}</option>
                 {!formData.check_in_date?.trim() ? (
                   <option value="" disabled>
                     {t('enterCheckInToLoadTours')}
+                  </option>
+                ) : toursLoading ? (
+                  <option value="" disabled>
+                    {t('loadingTourOptions')}
                   </option>
                 ) : tours.length > 0 ? (
                   tours.map((tour) => {
@@ -1493,19 +1575,33 @@ export default function TicketBookingForm({
                 name="reservation_id"
                 value={formData.reservation_id || ''}
                 onChange={handleChange}
-                disabled={Boolean(formData.tour_id)}
+                disabled={
+                  Boolean(formData.tour_id) ||
+                  !formData.check_in_date?.trim() ||
+                  reservationsLoading
+                }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
               >
                 <option value="">{t('selectReservationPlaceholder')}</option>
-                {reservations.length > 0 ? (
-                    reservations.map(reservation => (
-                      <option key={reservation.id} value={reservation.id}>
-                        {reservation.id} - {reservation.tour_date} - {reservation.products?.name || '상품명 없음'} ({reservation.status})
-                      </option>
-                    ))
+                {!formData.check_in_date?.trim() ? (
+                  <option value="" disabled>
+                    {t('enterCheckInToLoadReservations')}
+                  </option>
+                ) : reservationsLoading ? (
+                  <option value="" disabled>
+                    {t('loadingReservationOptions')}
+                  </option>
+                ) : reservations.length > 0 ? (
+                  reservations.map((reservation) => (
+                    <option key={reservation.id} value={reservation.id}>
+                      {reservation.id} - {reservation.tour_date} -{' '}
+                      {reservation.products?.name || (locale === 'ko' ? '상품명 없음' : 'No product')} (
+                      {reservation.status})
+                    </option>
+                  ))
                 ) : (
                   <option value="" disabled>
-                    예정된 예약이 없습니다
+                    {t('noReservationsForCheckInDate')}
                   </option>
                 )}
               </select>

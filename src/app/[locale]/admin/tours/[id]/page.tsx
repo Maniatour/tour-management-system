@@ -2528,7 +2528,7 @@ export default function TourDetailPage() {
         <PickupScheduleAutoGenerateModal
           isOpen={showPickupScheduleModal}
           tourDate={tourData.tour.tour_date}
-          productId={tourData.product?.id || null}
+          productId={tourData.tour.product_id ?? tourData.product?.id ?? null}
           assignedReservations={tourData.assignedReservations}
           pickupHotels={tourData.pickupHotels as any}
           onClose={() => setShowPickupScheduleModal(false)}

@@ -274,9 +274,10 @@ export async function getSunriseSunsetData(locationName: string, date: string) {
     
     const location = GOBLIN_TOUR_LOCATIONS.find(loc => loc.name === locationName)
     if (location) {
-      return await getSunriseSunsetDataFromAPI(location.lat, location.lng, normalizedDate)
+      const apiData = await getSunriseSunsetDataFromAPI(location.lat, location.lng, normalizedDate)
+      if (apiData) return apiData
     }
-    
+
     // Return default values if everything fails
     return {
       sunrise: '06:00',

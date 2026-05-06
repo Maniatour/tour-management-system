@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { X, MapPin, Clock, Navigation, ChevronUp, ChevronDown } from 'lucide-react'
-import { getCachedSunriseSunsetData } from '@/lib/weatherApi'
+import { getSunriseSunsetData } from '@/lib/weatherApi'
 
 interface PickupHotel {
   id: string
@@ -107,7 +107,7 @@ export default function PickupScheduleAutoGenerateModal({
     if (isSunriseTour && isOpen) {
       const loadSunriseTime = async () => {
         try {
-          const data = await getCachedSunriseSunsetData('Grand Canyon South Rim', tourDate)
+          const data = await getSunriseSunsetData('Grand Canyon South Rim', tourDate)
           if (data?.sunrise) {
             // 시간 형식 변환 (HH:MM:SS 또는 HH:MM -> HH:MM)
             let timeStr = data.sunrise
