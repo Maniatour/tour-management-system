@@ -1,7 +1,12 @@
 /** Match statement lines to operational expense rows by amount + date proximity. */
 
 export type ExpenseCandidate = {
-  source_table: 'company_expenses' | 'tour_expenses' | 'reservation_expenses' | 'ticket_bookings'
+  source_table:
+    | 'company_expenses'
+    | 'tour_expenses'
+    | 'reservation_expenses'
+    | 'ticket_bookings'
+    | 'tour_hotel_bookings'
   source_id: string
   amount: number
   occurred_at: string // ISO

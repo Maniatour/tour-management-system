@@ -1806,7 +1806,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             .gte('created_at', range.rangeStartIso)
             .lte('created_at', range.rangeEndIso)
             .in('record_id', chunk)
-            .contains('changed_fields', ['status'])
+            // postgrest-js: .contains(col, ['status']) → cs.{status} (따옴표 없음) → PG text[] 파싱 오류·500 가능
+            .contains('changed_fields', '{"status"}')
           if (cancelled) return
           if (error) {
             console.error('audit_logs (reg-cancel chart):', error)
@@ -2074,7 +2075,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             .gte('created_at', req.rangeStart)
             .lte('created_at', req.rangeEnd)
             .in('record_id', chunk)
-            .contains('changed_fields', ['status'])
+            .contains('changed_fields', '{"status"}')
           if (cancelled) return
           if (error) {
             console.error('audit_logs (status transitions):', error)

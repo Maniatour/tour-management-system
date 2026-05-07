@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { PAYMENT_METHOD_REF_TABLES } from '@/lib/paymentMethodRefTables'
 import { buildPaymentMethodStoredDisplayName } from '@/lib/paymentMethodDisplay'
 
@@ -40,6 +41,9 @@ async function loadReferenceCountByKeyFallback(): Promise<Map<string, number>> {
 // GET: 결제 방법 목록 조회
 export async function GET(request: NextRequest) {
   try {
+    const authSb = await getSupabaseForApiRoute(request)
+    if (authSb instanceof NextResponse) return authSb
+
     const { searchParams } = new URL(request.url)
     const userEmail = searchParams.get('user_email')
     const status = searchParams.get('status')
@@ -47,7 +51,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    let query = supabase
+    let query = authSb
       .from('payment_methods')
       .select('*')
       .order('created_at', { ascending: false })
@@ -106,7 +110,7 @@ export async function GET(request: NextRequest) {
       { email: string; name_ko: string | null; name_en: string | null; nick_name: string | null }
     > = {}
     if (neededLower.size > 0) {
-      const { data: teamData } = await supabase
+      const { data: teamData } = await authSb
         .from('team')
         .select('email, name_ko, name_en, nick_name')
 
@@ -132,7 +136,7 @@ export async function GET(request: NextRequest) {
     ]
     let financialAccountMap: Record<string, { id: string; name: string }> = {}
     if (faIds.length > 0) {
-      const { data: faRows } = await supabase
+      const { data: faRows } = await authSb
         .from('financial_accounts')
         .select('id, name')
         .in('id', faIds)
@@ -189,6 +193,9 @@ export async function GET(request: NextRequest) {
 // POST: 결제 방법 생성
 export async function POST(request: NextRequest) {
   try {
+    const authSb = await getSupabaseForApiRoute(request)
+    if (authSb instanceof NextResponse) return authSb
+
     const body = await request.json()
     const {
       id,
@@ -217,7 +224,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 기존 데이터 확인
-    const { data: existing } = await supabase
+    const { data: existing } = await authSb
       .from('payment_methods')
       .select('id')
       .eq('id', id)
@@ -235,7 +242,7 @@ export async function POST(request: NextRequest) {
       card_holder_name: card_holder_name || null,
     })
 
-    const { data, error } = await supabase
+    const { data, error } = await authSb
       .from('payment_methods')
       .insert({
         id,
@@ -301,6 +308,9 @@ export async function POST(request: NextRequest) {
 // PUT: 결제 방법 수정
 export async function PUT(request: NextRequest) {
   try {
+    const authSb = await getSupabaseForApiRoute(request)
+    if (authSb instanceof NextResponse) return authSb
+
     const body = await request.json()
     const { id, ...updateData } = body
 
@@ -339,7 +349,7 @@ export async function PUT(request: NextRequest) {
       updateData.id !== undefined ||
       updateData.card_holder_name !== undefined
     ) {
-      const { data: existingData } = await supabase
+      const { data: existingData } = await authSb
         .from('payment_methods')
         .select('method, card_holder_name')
         .eq('id', id)
@@ -360,7 +370,7 @@ export async function PUT(request: NextRequest) {
       })
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await authSb
       .from('payment_methods')
       .update(updateData)
       .eq('id', id)
@@ -399,6 +409,9 @@ export async function PUT(request: NextRequest) {
 // DELETE: 결제 방법 삭제
 export async function DELETE(request: NextRequest) {
   try {
+    const authSb = await getSupabaseForApiRoute(request)
+    if (authSb instanceof NextResponse) return authSb
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
@@ -409,7 +422,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const { error } = await supabase
+    const { error } = await authSb
       .from('payment_methods')
       .delete()
       .eq('id', id)

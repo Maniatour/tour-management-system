@@ -89,6 +89,7 @@ import {
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import type { BulkCompanyDuplicateCheckInput } from '@/lib/statement-bulk-company-duplicate-check'
 import { type ExpenseCandidate } from '@/lib/reconciliation-engine'
+import { hotelAmountForSettlement, isHotelBookingIncludedInSettlement } from '@/lib/bookingSettlement'
 
 type FinancialAccount = {
   id: string
@@ -334,13 +335,16 @@ type AutoMatchExpenseCandidate = ExpenseCandidate & {
   paid_to: string
   paid_for: string
   standard_paid_for: string | null
+  /** 입장권: 체크인일. 호텔: 등록일(submit_on)의 YMD — occurred_at과 쌍으로 후보·점수에 사용 */
+  auto_match_alt_ymd?: string | null
 }
 
 const AUTO_MATCH_SOURCE_LABEL: Record<ExpenseCandidate['source_table'], string> = {
   company_expenses: '회사 지출',
   tour_expenses: '투어 지출',
   reservation_expenses: '예약 지출',
-  ticket_bookings: '입장권 부킹'
+  ticket_bookings: '입장권 부킹',
+  tour_hotel_bookings: '호텔 부킹'
 }
 
 const OPERATIONAL_LEDGER_SOURCE_LABEL: Record<OperationalLedgerSourceTable, string> = {
@@ -392,11 +396,11 @@ const AUTO_MATCH_CANDIDATE_LIMIT = 8
 const AUTO_MATCH_PREVIEW_PAGE_SIZE = 120
 /** 자동 매칭 미리보기: 명세 줄 금액과 같은 지출만 후보 (미리보기 옵션 표시와 동일한 부동소수 허용치) */
 const AUTO_MATCH_AMOUNT_EQUAL_EPS = 0.015
-/** 자동 매칭 — 정확 금액: 명세 거래일 vs 지출 등록일( submit_on ) 최대 차이(일) */
+/** 자동 매칭 — 정확 금액: 명세 거래일 vs 지출 기준일(등록일 submit_on, 호텔은 체크인일) 최대 차이(일) */
 const AUTO_MATCH_EXACT_DAY_WINDOW = 4
-/** 자동 매칭 — 비슷한 금액: 명세 거래일 vs 지출 등록일 최대 차이(일) */
+/** 자동 매칭 — 비슷한 금액: 명세 거래일 vs 지출 기준일 최대 차이(일) */
 const AUTO_MATCH_SIMILAR_DAY_WINDOW = 7
-/** 자동 매칭 지출 조회 시 명세 업로드 기간 확장 — 두 모드 중 넓은 등록일 창에 맞춤 */
+/** 자동 매칭 지출·부킹 조회 시 명세 업로드 기간 확장 — 등록일·체크인일 창에 맞춤 */
 const AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING = Math.max(AUTO_MATCH_EXACT_DAY_WINDOW, AUTO_MATCH_SIMILAR_DAY_WINDOW)
 /** 명세 대조 화면 전반: 거래일·등록일 기준 ±N일(미매칭 구간, 지출 피커, 운영원장 후보 등) */
 const RECON_STATEMENT_DAY_WINDOW = 4
@@ -435,6 +439,27 @@ function expenseAmountRoughlyMatchesLine(lineAmt: number, expenseAmt: number): b
   return diff / ref <= 0.12 || diff <= 4
 }
 
+/** 명세 거래일과의 달력일 차이 — 입장권·호텔은 등록일·체크인 중 더 가까운 쪽 */
+function autoMatchDayDiffToLine(
+  postedDate: string,
+  occurredAt: string,
+  altYmd: string | null | undefined
+): number {
+  const d0 = dayDiffFromYmd(occurredAt, postedDate)
+  const alt = altYmd?.trim()
+  if (!alt || alt.length < 10) return d0
+  const d1 = dayDiffFromYmd(alt, postedDate)
+  return Math.min(d0, d1)
+}
+
+function autoMatchDisplayDateForLine(postedDate: string, expense: AutoMatchExpenseCandidate): string {
+  const alt = expense.auto_match_alt_ymd?.trim()
+  if (!alt || alt.length < 10) return expense.occurred_at
+  const d0 = dayDiffFromYmd(expense.occurred_at, postedDate)
+  const d1 = dayDiffFromYmd(alt, postedDate)
+  return d1 < d0 ? alt : expense.occurred_at
+}
+
 /** 금액·거래일 근접만 반영 (텍스트·라벨·결제수단은 사용하지 않음) */
 function autoMatchCandidateScore(
   lineAmount: number,
@@ -449,7 +474,7 @@ function autoMatchCandidateScore(
   } else if (!expenseAmountRoughlyMatchesLine(lineAmount, expenseAmt)) {
     return null
   }
-  const dayDiff = dayDiffFromYmd(expense.occurred_at, postedDate)
+  const dayDiff = autoMatchDayDiffToLine(postedDate, expense.occurred_at, expense.auto_match_alt_ymd)
   if (dayDiff > rule.maxDayDiff) return null
   const datePenalty = dayDiff * 5
   const similarAmountPenalty =
@@ -466,10 +491,12 @@ function autoMatchSourceTableTieOrder(t: AutoMatchExpenseCandidate['source_table
       return 0
     case 'reservation_expenses':
       return 1
-    case 'company_expenses':
+    case 'tour_hotel_bookings':
       return 2
-    case 'ticket_bookings':
+    case 'company_expenses':
       return 3
+    case 'ticket_bookings':
+      return 4
     default:
       return 9
   }
@@ -501,18 +528,16 @@ async function fetchAllStatementLinesForImportChunk(importChunk: string[]): Prom
   return out
 }
 
-/** 자동 매칭: PostgREST max-rows(1000) 회피 — submit_on 창 안 지출 전부 */
-type AutoMatchExpenseDbTable =
-  | 'company_expenses'
-  | 'tour_expenses'
-  | 'reservation_expenses'
-  | 'ticket_bookings'
+/** 자동 매칭: PostgREST max-rows(1000) 회피 — submit_on 창 안 지출(입장권·호텔은 별도 병합 조회) */
+type AutoMatchExpenseDbTable = 'company_expenses' | 'tour_expenses' | 'reservation_expenses'
 
-const AUTO_MATCH_USED_SOURCE_TABLES: AutoMatchExpenseDbTable[] = [
+/** 자동 매칭에서 «이미 연결됨» 판별 시 reconciliation_matches에 나오는 출처(호텔 포함) */
+const AUTO_MATCH_USED_SOURCE_TABLES: readonly string[] = [
   'company_expenses',
   'tour_expenses',
   'reservation_expenses',
-  'ticket_bookings'
+  'ticket_bookings',
+  'tour_hotel_bookings'
 ]
 
 async function fetchAllExpenseRowsForAutoMatch(
@@ -525,11 +550,7 @@ async function fetchAllExpenseRowsForAutoMatch(
   const out: Record<string, unknown>[] = []
   let from = 0
   for (;;) {
-    let q = sb.from(table).select(selectList).gte('submit_on', startIso).lte('submit_on', endIso)
-    /** 명세 자동 매칭: 입장권은 확정 부킹만 후보(금액은 `expense`만 사용) */
-    if (table === 'ticket_bookings') {
-      q = q.or('status.eq.confirmed,status.eq.Confirmed')
-    }
+    const q = sb.from(table).select(selectList).gte('submit_on', startIso).lte('submit_on', endIso)
     const { data, error } = await q
       .order('submit_on', { ascending: true })
       .order('id', { ascending: true })
@@ -546,7 +567,171 @@ async function fetchAllExpenseRowsForAutoMatch(
   return out
 }
 
-/** 이미 명세와 연결된 지출 id — max-rows 회피, 지출 네 테이블만(다른 출처 매칭 제외) */
+/** 입장권: 등록일(submit_on)이 창 안 — 확정 부킹만 */
+async function fetchTicketBookingsBySubmitOnForAutoMatch(
+  startIso: string,
+  endIso: string
+): Promise<Record<string, unknown>[]> {
+  const sb = supabase as any
+  const out: Record<string, unknown>[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await sb
+      .from('ticket_bookings')
+      .select('id,expense,submit_on,check_in_date,category,company')
+      .gte('submit_on', startIso)
+      .lte('submit_on', endIso)
+      .or('status.eq.confirmed,status.eq.Confirmed')
+      .order('submit_on', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
+    if (error) {
+      if (!isAbortLikeError(error)) console.error('auto-match ticket_bookings by submit_on:', error)
+      throw error
+    }
+    const batch = (data as Record<string, unknown>[]) || []
+    out.push(...batch)
+    if (batch.length < STATEMENT_LINES_FETCH_PAGE) break
+    from += STATEMENT_LINES_FETCH_PAGE
+  }
+  return out
+}
+
+/** 입장권: 체크인일이 창 안 — 확정 부킹만 */
+async function fetchTicketBookingsByCheckInForAutoMatch(
+  startYmd: string,
+  endYmd: string
+): Promise<Record<string, unknown>[]> {
+  const sb = supabase as any
+  const out: Record<string, unknown>[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await sb
+      .from('ticket_bookings')
+      .select('id,expense,submit_on,check_in_date,category,company')
+      .gte('check_in_date', startYmd)
+      .lte('check_in_date', endYmd)
+      .or('status.eq.confirmed,status.eq.Confirmed')
+      .order('check_in_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
+    if (error) {
+      if (!isAbortLikeError(error)) console.error('auto-match ticket_bookings by check_in_date:', error)
+      throw error
+    }
+    const batch = (data as Record<string, unknown>[]) || []
+    out.push(...batch)
+    if (batch.length < STATEMENT_LINES_FETCH_PAGE) break
+    from += STATEMENT_LINES_FETCH_PAGE
+  }
+  return out
+}
+
+async function fetchAllTicketBookingsForAutoMatchMerged(
+  startIso: string,
+  endIso: string,
+  startYmd: string,
+  endYmd: string
+): Promise<Record<string, unknown>[]> {
+  const [bySubmit, byCheckIn] = await Promise.all([
+    fetchTicketBookingsBySubmitOnForAutoMatch(startIso, endIso),
+    fetchTicketBookingsByCheckInForAutoMatch(startYmd, endYmd)
+  ])
+  const m = new Map<string, Record<string, unknown>>()
+  for (const r of bySubmit) m.set(String(r.id), r)
+  for (const r of byCheckIn) {
+    const id = String(r.id)
+    const prev = m.get(id)
+    m.set(id, prev ? { ...prev, ...r } : r)
+  }
+  return [...m.values()]
+}
+
+/** 호텔: 등록일(submit_on)이 창 안 */
+async function fetchTourHotelBookingsBySubmitOnForAutoMatch(
+  startIso: string,
+  endIso: string
+): Promise<Record<string, unknown>[]> {
+  const sb = supabase as any
+  const out: Record<string, unknown>[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await sb
+      .from('tour_hotel_bookings')
+      .select('id,total_price,unit_price,rooms,check_in_date,hotel,reservation_name,status,submit_on')
+      .gte('submit_on', startIso)
+      .lte('submit_on', endIso)
+      .order('submit_on', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
+    if (error) {
+      if (!isAbortLikeError(error)) console.error('auto-match tour_hotel_bookings by submit_on:', error)
+      throw error
+    }
+    const rawBatch = (data as Record<string, unknown>[]) || []
+    const batch = rawBatch.filter((r) =>
+      isHotelBookingIncludedInSettlement(r.status as string | null | undefined)
+    )
+    out.push(...batch)
+    if (rawBatch.length < STATEMENT_LINES_FETCH_PAGE) break
+    from += STATEMENT_LINES_FETCH_PAGE
+  }
+  return out
+}
+
+/** 호텔 부킹: 체크인일이 창 안 */
+async function fetchAllTourHotelBookingsForAutoMatchByCheckIn(
+  startYmd: string,
+  endYmd: string
+): Promise<Record<string, unknown>[]> {
+  const sb = supabase as any
+  const out: Record<string, unknown>[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await sb
+      .from('tour_hotel_bookings')
+      .select('id,total_price,unit_price,rooms,check_in_date,hotel,reservation_name,status,submit_on')
+      .gte('check_in_date', startYmd)
+      .lte('check_in_date', endYmd)
+      .order('check_in_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
+    if (error) {
+      if (!isAbortLikeError(error)) console.error('auto-match tour_hotel_bookings fetch:', error)
+      throw error
+    }
+    const rawBatch = (data as Record<string, unknown>[]) || []
+    const batch = rawBatch.filter((r) =>
+      isHotelBookingIncludedInSettlement(r.status as string | null | undefined)
+    )
+    out.push(...batch)
+    if (rawBatch.length < STATEMENT_LINES_FETCH_PAGE) break
+    from += STATEMENT_LINES_FETCH_PAGE
+  }
+  return out
+}
+
+async function fetchAllTourHotelBookingsForAutoMatchMerged(
+  startIso: string,
+  endIso: string,
+  startYmd: string,
+  endYmd: string
+): Promise<Record<string, unknown>[]> {
+  const [bySubmit, byCheckIn] = await Promise.all([
+    fetchTourHotelBookingsBySubmitOnForAutoMatch(startIso, endIso),
+    fetchAllTourHotelBookingsForAutoMatchByCheckIn(startYmd, endYmd)
+  ])
+  const m = new Map<string, Record<string, unknown>>()
+  for (const r of bySubmit) m.set(String(r.id), r)
+  for (const r of byCheckIn) {
+    const id = String(r.id)
+    const prev = m.get(id)
+    m.set(id, prev ? { ...prev, ...r } : r)
+  }
+  return [...m.values()]
+}
+
+/** 이미 명세와 연결된 지출 id — max-rows 회피, 자동 매칭 출처 테이블만(다른 출처 매칭 제외) */
 async function fetchAllUsedExpenseKeysForAutoMatch(): Promise<Set<string>> {
   const used = new Set<string>()
   let from = 0
@@ -1313,7 +1498,34 @@ export default function StatementReconciliationTab() {
   const loadPaymentMethods = useCallback(async (force = false) => {
     if (!force && paymentMethodsLoadedRef.current) return
     try {
-      const res = await fetch('/api/payment-methods?limit=5000')
+      const getSessionToken = async () => {
+        try {
+          const {
+            data: { session }
+          } = await supabase.auth.getSession()
+          return session?.access_token ?? null
+        } catch (e) {
+          if (isAbortLikeError(e)) return getStoredAccessToken()
+          throw e
+        }
+      }
+
+      let token = getStoredAccessToken() || (await getSessionToken())
+      const fetchPaymentMethods = (accessToken: string | null) =>
+        fetch('/api/payment-methods?limit=5000', {
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          credentials: 'same-origin'
+        })
+
+      let res = await fetchPaymentMethods(token)
+      if (res.status === 401) {
+        const refreshedToken = await getSessionToken()
+        if (refreshedToken && refreshedToken !== token) {
+          token = refreshedToken
+          res = await fetchPaymentMethods(refreshedToken)
+        }
+      }
+
       const json = (await res.json()) as {
         success?: boolean
         message?: string
@@ -3036,14 +3248,20 @@ export default function StatementReconciliationTab() {
     const startIso = start.toISOString()
     const endIso = end.toISOString()
 
+    const psYmd = accountExpenseWindow.period_start.trim().slice(0, 10)
+    const peYmd = accountExpenseWindow.period_end.trim().slice(0, 10)
+    const hotelCheckInStartYmd = addCalendarDaysYmd(psYmd, -AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING)
+    const hotelCheckInEndYmd = addCalendarDaysYmd(peYmd, AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING)
+
     let ce: Record<string, unknown>[] = []
     let te: Record<string, unknown>[] = []
     let re: Record<string, unknown>[] = []
     let tb: Record<string, unknown>[] = []
+    let hb: Record<string, unknown>[] = []
     let used: Set<string> = new Set()
 
     try {
-      ;[ce, te, re, tb, used] = await Promise.all([
+      ;[ce, te, re, tb, hb, used] = await Promise.all([
         fetchAllExpenseRowsForAutoMatch(
           'company_expenses',
           'id, amount, submit_on, paid_for, paid_to, standard_paid_for',
@@ -3057,11 +3275,17 @@ export default function StatementReconciliationTab() {
           startIso,
           endIso
         ),
-        fetchAllExpenseRowsForAutoMatch(
-          'ticket_bookings',
-          'id, expense, submit_on, category, company',
+        fetchAllTicketBookingsForAutoMatchMerged(
           startIso,
-          endIso
+          endIso,
+          hotelCheckInStartYmd,
+          hotelCheckInEndYmd
+        ),
+        fetchAllTourHotelBookingsForAutoMatchMerged(
+          startIso,
+          endIso,
+          hotelCheckInStartYmd,
+          hotelCheckInEndYmd
         ),
         fetchAllUsedExpenseKeysForAutoMatch()
       ])
@@ -3097,16 +3321,41 @@ export default function StatementReconciliationTab() {
         paid_for: String(r.paid_for ?? ''),
         standard_paid_for: null
       })),
-      ...tb.map((r: Record<string, unknown>) => ({
-        source_table: 'ticket_bookings' as const,
-        source_id: String(r.id),
-        amount: Number(r.expense ?? 0),
-        occurred_at: String(r.submit_on),
-        label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
-        paid_to: String(r.company ?? ''),
-        paid_for: String(r.category ?? ''),
-        standard_paid_for: null
-      }))
+      ...tb.map((r: Record<string, unknown>) => {
+        const checkInRaw = String(r.check_in_date ?? '').trim()
+        const checkInYmd = checkInRaw.length >= 10 ? checkInRaw.slice(0, 10) : checkInRaw
+        return {
+          source_table: 'ticket_bookings' as const,
+          source_id: String(r.id),
+          amount: Number(r.expense ?? 0),
+          occurred_at: String(r.submit_on ?? ''),
+          auto_match_alt_ymd: checkInYmd.length >= 10 ? checkInYmd : null,
+          label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
+          paid_to: String(r.company ?? ''),
+          paid_for: String(r.category ?? ''),
+          standard_paid_for: null
+        }
+      }),
+      ...hb.map((r: Record<string, unknown>) => {
+        const checkIn = String(r.check_in_date ?? '').trim()
+        const checkInYmd = checkIn.length >= 10 ? checkIn.slice(0, 10) : checkIn
+        const submitYmd = autoMatchComparableYmd(String(r.submit_on ?? ''))
+        return {
+          source_table: 'tour_hotel_bookings' as const,
+          source_id: String(r.id),
+          amount: hotelAmountForSettlement({
+            total_price: (r.total_price ?? null) as number | string | null,
+            unit_price: (r.unit_price ?? null) as number | string | null,
+            rooms: (r.rooms ?? null) as number | string | null
+          }),
+          occurred_at: checkInYmd || checkIn,
+          auto_match_alt_ymd: submitYmd.length >= 10 ? submitYmd : null,
+          label: `${String(r.hotel ?? '')} / ${String(r.reservation_name ?? '')}`,
+          paid_to: String(r.hotel ?? ''),
+          paid_for: String(r.reservation_name ?? '호텔 부킹'),
+          standard_paid_for: null
+        }
+      })
     ]
 
     const proposals: AutoMatchProposalRow[] = []
@@ -3125,7 +3374,7 @@ export default function StatementReconciliationTab() {
             source_table: expense.source_table,
             source_id: expense.source_id,
             expense_label: expense.label,
-            expense_registered_date: expense.occurred_at,
+            expense_registered_date: autoMatchDisplayDateForLine(line.posted_date, expense),
             expense_amount: Number(expense.amount),
             expense_paid_to: expense.paid_to,
             expense_paid_for: expense.paid_for,
@@ -3168,7 +3417,7 @@ export default function StatementReconciliationTab() {
           ? `금액이 거의 같고(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)`
           : '금액이 비슷한 범위(차이 ≤12% 또는 ≤$4, 또는 $0.02 미만)이고'
       setAutoMatchNoCandidateAlert(
-        `명세 ${linesForAutoMatch.length}건에 대해, ${amtPart} 지출 등록일이 명세 거래일 ±${maxDayDiff}일 안에 맞는 후보가 한 건도 없습니다. 지출 등록일·금액을 확인하거나 수동으로 연결하세요.`
+        `명세 ${linesForAutoMatch.length}건에 대해, ${amtPart} 지출 기준일(일반 지출은 등록일, 입장권·호텔 부킹은 등록일·체크인일 중 명세에 더 가까운 쪽)이 명세 거래일 ±${maxDayDiff}일 안에 맞는 후보가 한 건도 없습니다. 등록일·체크인·금액을 확인하거나 수동으로 연결하세요.`
       )
       return
     }
@@ -3181,8 +3430,8 @@ export default function StatementReconciliationTab() {
         : `비슷한 금액 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일`
     setAutoMatchRuleNarrative(
       amountMode === 'exact'
-        ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)이고, 지출 등록일이 명세 거래일 기준 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내입니다. 점수는 거래일 차이를 반영합니다.`
-        : `이 실행의 후보 조건: 명세 금액과 지출 금액이 비슷한 범위(차이가 큰 쪽 대비 12% 이하이거나 $4 이하, 또는 $0.02 미만)이고, 지출 등록일이 명세 거래일 기준 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내입니다. 금액 차이가 허용 범위 안에서도 크면 점수에서 추가로 감점합니다.`
+        ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내입니다. 입장권·호텔 부킹은 DB에서 등록일(submit_on) 또는 체크인일(check_in_date)이 조회 구간에 들어오면 후보에 올라가며, 점수·날짜 비교는 둘 중 명세 거래일에 더 가까운 날짜를 씁니다. 그 외 지출은 등록일(submit_on)만 사용합니다.`
+        : `이 실행의 후보 조건: 명세 금액과 지출 금액이 비슷한 범위(차이가 큰 쪽 대비 12% 이하이거나 $4 이하, 또는 $0.02 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내입니다. 입장권·호텔 부킹은 등록일·체크인일 중 명세에 더 가까운 날짜로 판정하며, 조회는 두 날짜 각각의 기간 확장 창으로 합니다. 금액 차이가 허용 범위 안에서도 크면 점수에서 추가로 감점합니다.`
     )
     setAutoMatchSummaryHint(
       [
@@ -5889,7 +6138,7 @@ export default function StatementReconciliationTab() {
               autoMatchPreviewOpen ||
               autoMatchApplying
             }
-            title={`금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)하고 지출 등록일이 명세 거래일 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내인 지출만 후보로 붙입니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다.`}
+            title={`금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)하고 기준일이 명세 거래일 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내인 행만 후보로 붙입니다. 입장권·호텔은 등록일·체크인일 중 명세에 더 가까운 쪽으로 판정합니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다.`}
           >
             <Wand2 className="h-4 w-4 mr-1 shrink-0" />
             <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>
@@ -5918,7 +6167,7 @@ export default function StatementReconciliationTab() {
               autoMatchPreviewOpen ||
               autoMatchApplying
             }
-            title={`금액이 비슷한 범위(차이 ≤12% 또는 ≤$4, 또는 $0.02 미만)이고 지출 등록일이 명세 거래일 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내인 지출을 후보로 붙입니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다.`}
+            title={`금액이 비슷한 범위(차이 ≤12% 또는 ≤$4, 또는 $0.02 미만)이고 기준일이 명세 거래일 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내인 행을 후보로 붙입니다. 입장권·호텔은 등록일·체크인일 중 더 가까운 날짜로 판정합니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다.`}
           >
             <Wand2 className="h-4 w-4 mr-1 shrink-0" />
             <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>

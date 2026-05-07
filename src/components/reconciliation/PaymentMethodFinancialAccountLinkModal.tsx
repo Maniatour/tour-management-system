@@ -192,7 +192,31 @@ export default function PaymentMethodFinancialAccountLinkModal({
     if (!force && paymentMethodsLoadedRef.current) return
     setPaymentMethodsError(null)
     try {
-      const res = await fetch('/api/payment-methods?limit=5000')
+      const getSessionToken = async () => {
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          return session?.access_token ?? null
+        } catch (e) {
+          if (isAbortLikeError(e)) return getStoredAccessToken()
+          throw e
+        }
+      }
+      let token = getStoredAccessToken() || (await getSessionToken())
+      const fetchPm = (accessToken: string | null) =>
+        fetch('/api/payment-methods?limit=5000', {
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          credentials: 'same-origin',
+        })
+      let res = await fetchPm(token)
+      if (res.status === 401) {
+        const refreshed = await getSessionToken()
+        if (refreshed && refreshed !== token) {
+          token = refreshed
+          res = await fetchPm(refreshed)
+        }
+      }
       const json = (await res.json()) as {
         success?: boolean
         message?: string
