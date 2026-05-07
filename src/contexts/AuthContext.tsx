@@ -83,6 +83,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const userRoleRef = useRef<UserRole | null>(null)
   userRoleRef.current = userRole
 
+  const isInitializedRef = useRef(false)
+  useEffect(() => {
+    isInitializedRef.current = isInitialized
+  }, [isInitialized])
+
+  /** 동일 이메일에 대한 동시 `checkUserRole` 호출을 하나의 team 쿼리로 합침 */
+  const roleCheckInflightRef = useRef<Map<string, Promise<void>>>(new Map())
+
   // 토큰 자동 갱신 함수
   const refreshTokenIfNeeded = useCallback(async () => {
     try {
@@ -140,164 +148,217 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    try {
-      console.log('AuthContext: Checking user role for:', email)
-      
-      if (!supabase) {
-        console.error('AuthContext: Supabase client not available')
-        setUserRole('customer')
-        setUserPosition(null)
-        setPermissions(null)
-        setLoading(false)
-        setIsInitialized(true)
-        return
-      }
+    const dedupeKey = email.trim().toLowerCase()
+    const existing = roleCheckInflightRef.current.get(dedupeKey)
+    if (existing) {
+      await existing
+      return
+    }
 
-      console.log('AuthContext: Querying team table for email:', email)
-      
-      // 먼저 슈퍼관리자 체크 (team 데이터 없이도 작동)
-      const normalizedEmail = email.toLowerCase()
+    let runPromise: Promise<void>
+    runPromise = new Promise<void>((resolve, reject) => {
+      void (async () => {
+        try {
+          console.log('AuthContext: Checking user role for:', email)
 
-      if (isSuperAdminEmail(normalizedEmail)) {
-        console.log('AuthContext: Super admin detected, setting admin role')
-        setUserRole('admin')
-        setUserPosition(null) // 슈퍼관리자는 position 없음
-        setPermissions({
-          canViewAdmin: true,
-          canManageProducts: true,
-          canManageCustomers: true,
-          canManageReservations: true,
-          canManageTours: true,
-          canManageTeam: true,
-          canViewSchedule: true,
-          canManageBookings: true,
-          canViewAuditLogs: true,
-          canManageChannels: true,
-          canManageOptions: true,
-          canViewFinance: true,
-        })
-        setLoading(false)
-        setIsInitialized(true)
-        return
-      }
-      
-      // 일반 사용자: team 쿼리 (모바일망에서 단발 타임아웃 시 가이드가 customer로 떨어지지 않도록 재시도)
-      try {
-        const TEAM_QUERY_TIMEOUT_MS = 5000
-        const MAX_TEAM_ATTEMPTS = 3
+          if (!supabase) {
+            console.error('AuthContext: Supabase client not available')
+            setUserRole('customer')
+            setUserPosition(null)
+            setPermissions(null)
+            setLoading(false)
+            setIsInitialized(true)
+            resolve()
+            return
+          }
 
-        let teamData: {
-          name_ko: string | null
-          email: string
-          position: string | null
-          is_active: boolean | null
-        } | null = null
-        let error: { message?: string; code?: string } | null = null
+          console.log('AuthContext: Querying team table for email:', email)
 
-        for (let attempt = 0; attempt < MAX_TEAM_ATTEMPTS; attempt++) {
+          const normalizedEmail = email.toLowerCase()
+
+          if (isSuperAdminEmail(normalizedEmail)) {
+            console.log('AuthContext: Super admin detected, setting admin role')
+            setUserRole('admin')
+            setUserPosition(null)
+            setPermissions({
+              canViewAdmin: true,
+              canManageProducts: true,
+              canManageCustomers: true,
+              canManageReservations: true,
+              canManageTours: true,
+              canManageTeam: true,
+              canViewSchedule: true,
+              canManageBookings: true,
+              canViewAuditLogs: true,
+              canManageChannels: true,
+              canManageOptions: true,
+              canViewFinance: true,
+            })
+            setLoading(false)
+            setIsInitialized(true)
+            resolve()
+            return
+          }
+
           try {
-            const queryPromise = supabase
-              .from('team')
-              .select('name_ko, email, position, is_active')
-              .ilike('email', normalizedEmail)
-              .or('is_active.is.null,is_active.eq.true')
-              .maybeSingle()
+            const TEAM_QUERY_TIMEOUT_MS = 5000
+            const MAX_TEAM_ATTEMPTS = 3
 
-            const timeoutPromise = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('Query timeout')), TEAM_QUERY_TIMEOUT_MS)
+            let teamData: {
+              name_ko: string | null
+              email: string
+              position: string | null
+              is_active: boolean | null
+            } | null = null
+            let error: { message?: string; code?: string } | null = null
+
+            for (let attempt = 0; attempt < MAX_TEAM_ATTEMPTS; attempt++) {
+              try {
+                const queryPromise = supabase
+                  .from('team')
+                  .select('name_ko, email, position, is_active')
+                  .ilike('email', normalizedEmail)
+                  .or('is_active.is.null,is_active.eq.true')
+                  .maybeSingle()
+
+                const timeoutPromise = new Promise<never>((_, toReject) =>
+                  setTimeout(() => toReject(new Error('Query timeout')), TEAM_QUERY_TIMEOUT_MS)
+                )
+
+                const result = (await Promise.race([queryPromise, timeoutPromise])) as {
+                  data: typeof teamData
+                  error: { message?: string; code?: string } | null
+                }
+                teamData = result.data
+                error = result.error
+                break
+              } catch (attemptErr) {
+                console.warn(
+                  `AuthContext: Team query attempt ${attempt + 1}/${MAX_TEAM_ATTEMPTS} failed:`,
+                  attemptErr
+                )
+                if (attempt < MAX_TEAM_ATTEMPTS - 1) {
+                  await new Promise((r) => setTimeout(r, 400 * (attempt + 1)))
+                  continue
+                }
+                teamData = null
+                error = { message: 'Query timeout', code: 'TIMEOUT' }
+              }
+            }
+
+            console.log('AuthContext: Team query result:', {
+              hasData: !!teamData,
+              error: error?.message,
+              errorCode: error?.code,
+              teamData:
+                teamData && !error
+                  ? {
+                      name_ko: (teamData as Record<string, unknown>).name_ko,
+                      position: (teamData as Record<string, unknown>).position,
+                      is_active: (teamData as Record<string, unknown>).is_active,
+                    }
+                  : null,
+              rawTeamData: teamData,
+              email: email,
+            })
+
+            if (error && error.code !== 'PGRST116') {
+              console.error('AuthContext: Error fetching team data:', error)
+            }
+
+            const role = getUserRole(
+              email,
+              teamData && !error ? (teamData as Record<string, unknown>) : undefined
             )
+            const position =
+              teamData && !error
+                ? ((teamData as Record<string, unknown>).position as string | null)
+                : null
 
-            const result = (await Promise.race([queryPromise, timeoutPromise])) as {
-              data: typeof teamData
-              error: { message?: string; code?: string } | null
+            setUserPosition(position)
+
+            const userPermissions = {
+              canViewAdmin: hasPermission(role, 'canViewAdmin'),
+              canManageProducts: hasPermission(role, 'canManageProducts'),
+              canManageCustomers: hasPermission(role, 'canManageCustomers'),
+              canManageReservations: hasPermission(role, 'canManageReservations'),
+              canManageTours: hasPermission(role, 'canManageTours'),
+              canManageTeam: hasPermission(role, 'canManageTeam'),
+              canViewSchedule: hasPermission(role, 'canViewSchedule'),
+              canManageBookings: hasPermission(role, 'canManageBookings'),
+              canViewAuditLogs: hasPermission(role, 'canViewAuditLogs'),
+              canManageChannels: hasPermission(role, 'canManageChannels'),
+              canManageOptions: hasPermission(role, 'canManageOptions'),
+              canViewFinance: hasPermission(role, 'canViewFinance'),
             }
-            teamData = result.data
-            error = result.error
-            break
-          } catch (attemptErr) {
-            console.warn(`AuthContext: Team query attempt ${attempt + 1}/${MAX_TEAM_ATTEMPTS} failed:`, attemptErr)
-            if (attempt < MAX_TEAM_ATTEMPTS - 1) {
-              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)))
-              continue
+
+            if (teamData && !error && (teamData as Record<string, unknown>).name_ko) {
+              setAuthUser((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      name: (teamData as Record<string, unknown>).name_ko as string,
+                    }
+                  : null
+              )
             }
-            teamData = null
-            error = { message: 'Query timeout', code: 'TIMEOUT' }
+
+            setUserRole(role)
+            setPermissions(userPermissions)
+            setLoading(false)
+            setIsInitialized(true)
+
+            console.log('AuthContext: User role set successfully:', role, 'for user:', email)
+          } catch (teamErr) {
+            console.warn('AuthContext: Team query failed, using customer role:', teamErr)
+            setUserRole('customer')
+            setUserPosition(null)
+            setPermissions(null)
+            setLoading(false)
+            setIsInitialized(true)
+          }
+          resolve()
+        } catch (error) {
+          console.error('AuthContext: Error checking user role:', error)
+          setUserRole('customer')
+          setUserPosition(null)
+          setPermissions(null)
+          setLoading(false)
+          setIsInitialized(true)
+          reject(error instanceof Error ? error : new Error(String(error)))
+        } finally {
+          if (roleCheckInflightRef.current.get(dedupeKey) === runPromise) {
+            roleCheckInflightRef.current.delete(dedupeKey)
           }
         }
+      })()
+    })
 
-        console.log('AuthContext: Team query result:', { 
-          hasData: !!teamData, 
-          error: error?.message, 
-          errorCode: error?.code,
-          teamData: teamData && !error ? { 
-            name_ko: (teamData as Record<string, unknown>).name_ko, 
-            position: (teamData as Record<string, unknown>).position,
-            is_active: (teamData as Record<string, unknown>).is_active 
-          } : null,
-          rawTeamData: teamData,
-          email: email
-        })
-
-        if (error && error.code !== 'PGRST116') {
-          console.error('AuthContext: Error fetching team data:', error)
-        }
-
-        const role = getUserRole(email, teamData && !error ? teamData as Record<string, unknown> : undefined)
-        const position = teamData && !error ? (teamData as Record<string, unknown>).position as string | null : null
-        
-        // position 저장
-        setUserPosition(position)
-        
-        const userPermissions = {
-          canViewAdmin: hasPermission(role, 'canViewAdmin'),
-          canManageProducts: hasPermission(role, 'canManageProducts'),
-          canManageCustomers: hasPermission(role, 'canManageCustomers'),
-          canManageReservations: hasPermission(role, 'canManageReservations'),
-          canManageTours: hasPermission(role, 'canManageTours'),
-          canManageTeam: hasPermission(role, 'canManageTeam'),
-          canViewSchedule: hasPermission(role, 'canViewSchedule'),
-          canManageBookings: hasPermission(role, 'canManageBookings'),
-          canViewAuditLogs: hasPermission(role, 'canViewAuditLogs'),
-          canManageChannels: hasPermission(role, 'canManageChannels'),
-          canManageOptions: hasPermission(role, 'canManageOptions'),
-          canViewFinance: hasPermission(role, 'canViewFinance'),
-        }
-        
-        // team 테이블에서 사용자 이름 업데이트
-        if (teamData && !error && (teamData as Record<string, unknown>).name_ko) {
-          setAuthUser(prev => prev ? {
-            ...prev,
-            name: (teamData as Record<string, unknown>).name_ko as string
-          } : null)
-        }
-        
-        setUserRole(role)
-        setPermissions(userPermissions)
-        setLoading(false)
-        setIsInitialized(true)
-        
-        console.log('AuthContext: User role set successfully:', role, 'for user:', email)
-      } catch (error) {
-        console.warn('AuthContext: Team query failed, using customer role:', error)
-        setUserRole('customer')
-        setUserPosition(null)
-        setPermissions(null)
-        setLoading(false)
-        setIsInitialized(true)
-      }
-    } catch (error) {
-      console.error('AuthContext: Error checking user role:', error)
-      setUserRole('customer')
-      setUserPosition(null)
-      setPermissions(null)
-      setLoading(false)
-      setIsInitialized(true)
+    roleCheckInflightRef.current.set(dedupeKey, runPromise)
+    try {
+      await runPromise
+    } catch {
+      // reject는 이미 catch에서 customer 상태로 정규화됨
     }
   }, [])
 
   const recoverAuthSession = useCallback(async () => {
     if (typeof window === 'undefined' || !supabase) return
     if (isSimulating && simulatedUser) return
+
+    const nowSec = Math.floor(Date.now() / 1000)
+    const expRaw = typeof window !== 'undefined' ? localStorage.getItem('sb-expires-at') : null
+    const expSec = expRaw ? parseInt(expRaw, 10) : NaN
+    if (
+      userRef.current?.email &&
+      isInitializedRef.current &&
+      userRoleRef.current !== null &&
+      localStorage.getItem('sb-access-token') &&
+      Number.isFinite(expSec) &&
+      expSec > nowSec + 120
+    ) {
+      return
+    }
 
     const hasStoredAuth = !!(
       localStorage.getItem('sb-refresh-token') || localStorage.getItem('sb-access-token')
@@ -570,6 +631,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     console.log('AuthContext: Initializing authentication...')
+
+    let delayedAuthTimer: ReturnType<typeof setTimeout> | undefined
     
     // localStorage에서 토큰 확인
     const checkStoredTokens = async () => {
@@ -791,7 +854,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       // 짧은 지연 후 다시 한 번 확인 (토큰 복원 시간 제공)
-      setTimeout(() => {
+      delayedAuthTimer = setTimeout(() => {
+        if (isInitializedRef.current) {
+          return
+        }
+
         const accessToken = localStorage.getItem('sb-access-token')
         const expiresAt = localStorage.getItem('sb-expires-at')
         
@@ -846,6 +913,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
+
+        if (isInitializedRef.current) {
+          return
+        }
         
         // 여전히 토큰이 없으면 customer로 설정
         console.log('AuthContext: No token found after delay, setting customer role')
@@ -866,7 +937,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 인증 상태 변경 리스너만 설정
     if (!supabase) {
       console.error('AuthContext: Supabase client not available')
-      return
+      return () => {
+        if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
+      }
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -996,8 +1069,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // 초기 세션 처리
           console.log('AuthContext: INITIAL_SESSION event received')
           if (session?.user?.email) {
-            console.log('AuthContext: Initial session found for:', session.user.email)
-            
+            const initEmail = session.user.email
+            console.log('AuthContext: Initial session found for:', initEmail)
+
+            const alreadyBootstrapped =
+              userRef.current?.email?.toLowerCase() === initEmail.toLowerCase() &&
+              userRoleRef.current !== null &&
+              isInitializedRef.current
+
+            if (alreadyBootstrapped) {
+              persistSupabaseSessionToStorage(session)
+              updateSupabaseToken(session.access_token)
+              const synced = authUserFromSupabaseSessionUser(session.user)
+              setUser(synced)
+              setAuthUser(synced)
+              return
+            }
+
             // Supabase User를 AuthUser로 변환
             const authUserData: AuthUser = {
               id: session.user.id,
@@ -1029,6 +1117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     )
 
     return () => {
+      if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
       subscription.unsubscribe()
     }
   }, [checkUserRole, isSimulating, simulatedUser])
@@ -1047,6 +1136,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const now = Date.now()
       if (now - lastResumeSync < THROTTLE_MS) return
       lastResumeSync = now
+
+      const nowSec = Math.floor(Date.now() / 1000)
+      const expRaw = localStorage.getItem('sb-expires-at')
+      const expSec = expRaw ? parseInt(expRaw, 10) : NaN
+      if (
+        userRef.current?.email &&
+        isInitializedRef.current &&
+        userRoleRef.current !== null &&
+        localStorage.getItem('sb-access-token') &&
+        Number.isFinite(expSec) &&
+        expSec > nowSec + 120
+      ) {
+        return
+      }
 
       try {
         let { data: { session }, error } = await supabase.auth.getSession()
@@ -1146,6 +1249,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       stopSimulation()
       
       await supabase.auth.signOut()
+
+      roleCheckInflightRef.current.clear()
       
       // localStorage에서 토큰 제거
       localStorage.removeItem('sb-access-token')

@@ -651,14 +651,17 @@ export default function ReservationActionRequiredModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-[min(98vw,2000px)] max-h-[90vh] min-h-0 flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {t('actionRequired.title')}
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+      <div
+        className="flex h-full min-h-0 w-full max-w-none flex-col bg-white pt-[env(safe-area-inset-top)] shadow-xl rounded-none sm:h-auto sm:max-h-[90vh] sm:max-w-[min(98vw,2000px)] sm:rounded-xl sm:pt-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-shrink-0 flex-col gap-3 border-b border-gray-200 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <h2 className="min-w-0 text-base font-semibold text-gray-900 sm:text-lg">
+              <span className="inline align-middle">{t('actionRequired.title')}</span>
               {totalActionCount > 0 && (
-                <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                <span className="ml-2 inline-flex shrink-0 items-center justify-center rounded-full bg-amber-100 px-2 py-0.5 align-middle text-xs font-medium text-amber-800">
                   {totalActionCount}건
                 </span>
               )}
@@ -666,14 +669,14 @@ export default function ReservationActionRequiredModal({
             <button
               type="button"
               onClick={() => setManualOpen(true)}
-              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              className="inline-flex min-h-[44px] min-w-[44px] shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 active:bg-gray-100"
               title={t('actionRequired.helpButton')}
               aria-label={t('actionRequired.helpButton')}
             >
-              <HelpCircle className="w-5 h-5" />
+              <HelpCircle className="h-5 w-5" />
             </button>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
             {showCardTableToggle && (
               <div
                 className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50"
@@ -687,53 +690,53 @@ export default function ReservationActionRequiredModal({
                 <button
                   type="button"
                   onClick={() => setListViewMode('card')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  className={`inline-flex min-h-[40px] touch-manipulation items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                     listViewMode === 'card'
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                   title={t('actionRequired.viewCard')}
                 >
-                  <LayoutGrid className="w-4 h-4" />
+                  <LayoutGrid className="h-4 w-4 shrink-0" />
                   <span className="hidden sm:inline">{t('actionRequired.viewCard')}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setListViewMode('table')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  className={`inline-flex min-h-[40px] touch-manipulation items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                     listViewMode === 'table'
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                   title={t('actionRequired.viewTable')}
                 >
-                  <Table2 className="w-4 h-4" />
+                  <Table2 className="h-4 w-4 shrink-0" />
                   <span className="hidden sm:inline">{t('actionRequired.viewTable')}</span>
                 </button>
                 {activeTab === 'pricing' && pricingSubTab === 'mismatch' && (
                   <button
                     type="button"
                     onClick={() => setListViewMode('detail')}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    className={`inline-flex min-h-[40px] touch-manipulation items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                       listViewMode === 'detail'
                         ? 'bg-white text-blue-600 shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                     title={t('actionRequired.viewDetailTooltip')}
                   >
-                    <GalleryHorizontal className="w-4 h-4" />
+                    <GalleryHorizontal className="h-4 w-4 shrink-0" />
                     <span className="hidden sm:inline">{t('actionRequired.viewDetail')}</span>
                   </button>
                 )}
               </div>
             )}
             {showCardTableToggle && listViewMode === 'table' && (
-              <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
-                <span className="hidden sm:inline whitespace-nowrap">{t('actionRequired.tableRowsPerPage')}</span>
+              <label className="inline-flex min-h-[40px] shrink-0 touch-manipulation items-center gap-1.5 text-xs text-gray-600 sm:min-h-0">
+                <span className="hidden whitespace-nowrap sm:inline">{t('actionRequired.tableRowsPerPage')}</span>
                 <select
                   value={tableRowsPerPage}
                   onChange={(e) => setTableRowsPerPage(Number(e.target.value) as TablePageSize)}
-                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[5.5rem]"
+                  className="max-w-[5.5rem] rounded-md border border-gray-300 bg-white px-2 py-2 text-xs text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:py-1"
                   aria-label={t('actionRequired.tableRowsPerPageAria')}
                 >
                   {TABLE_PAGE_SIZE_OPTIONS.map((n) => (
@@ -747,28 +750,28 @@ export default function ReservationActionRequiredModal({
             <button
               type="button"
               onClick={handleCloseModal}
-              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              className="inline-flex min-h-[44px] min-w-[44px] touch-manipulation items-center justify-center rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 active:bg-gray-100"
               aria-label="닫기"
             >
-              <X className="w-5 h-5" />
+              <X className="h-5 w-5" />
             </button>
           </div>
         </div>
 
-        <div className="flex border-b border-gray-200 overflow-x-auto flex-shrink-0">
+        <div className="flex flex-shrink-0 flex-nowrap overflow-x-auto overscroll-x-contain border-b border-gray-200 [-webkit-overflow-scrolling:touch]">
           {TABS.map(({ id, labelKey, icon: Icon }) => (
             <button
               key={id}
               type="button"
               onClick={() => setActiveTab(id)}
               title={t(`actionRequired.tabTooltips.${id}` as Parameters<typeof t>[0])}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`flex min-h-[48px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium transition-colors sm:min-h-0 sm:px-4 sm:py-3 sm:text-sm ${
                 activeTab === id
                   ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                  : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
+              <Icon className="h-4 w-4 shrink-0" />
               <span>{t(labelKey)}</span>
               <span className={`inline-flex items-center justify-center min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-xs ${
                 counts[id] > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'
@@ -781,15 +784,15 @@ export default function ReservationActionRequiredModal({
 
         {/* 예약 가격 탭 하위 탭 */}
         {activeTab === 'pricing' && (
-          <div className="flex border-b border-gray-200 bg-gray-50/80 flex-shrink-0">
+          <div className="flex flex-shrink-0 flex-nowrap overflow-x-auto overscroll-x-contain border-b border-gray-200 bg-gray-50/80 [-webkit-overflow-scrolling:touch]">
             <button
               type="button"
               onClick={() => setPricingSubTab('noPrice')}
               title={t('actionRequired.pricingSubTabTooltips.noPrice')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 pricingSubTab === 'noPrice'
                   ? 'border-blue-600 text-blue-600 bg-white'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               <span>{t('actionRequired.pricingSubTabs.noPrice')}</span>
@@ -803,10 +806,10 @@ export default function ReservationActionRequiredModal({
               type="button"
               onClick={() => setPricingSubTab('mismatch')}
               title={t('actionRequired.pricingSubTabTooltips.mismatch')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 pricingSubTab === 'mismatch'
                   ? 'border-blue-600 text-blue-600 bg-white'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               <span>{t('actionRequired.pricingSubTabs.mismatch')}</span>
@@ -821,15 +824,15 @@ export default function ReservationActionRequiredModal({
 
         {/* Balance 탭 하위 탭 */}
         {activeTab === 'balance' && (
-          <div className="flex border-b border-gray-200 bg-gray-50/80 flex-shrink-0 overflow-x-auto">
+          <div className="flex flex-shrink-0 flex-nowrap overflow-x-auto overscroll-x-contain border-b border-gray-200 bg-gray-50/80 [-webkit-overflow-scrolling:touch]">
             <button
               type="button"
               onClick={() => setBalanceSubTab('cancelled')}
               title={t('actionRequired.balanceSubTabTooltips.cancelled')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 balanceSubTab === 'cancelled'
                   ? 'border-blue-600 text-blue-600 bg-white'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               <span>{t('actionRequired.balanceSubTabs.cancelled')}</span>
@@ -843,10 +846,10 @@ export default function ReservationActionRequiredModal({
               type="button"
               onClick={() => setBalanceSubTab('unpaid')}
               title={t('actionRequired.balanceSubTabTooltips.unpaid')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 balanceSubTab === 'unpaid'
                   ? 'border-blue-600 text-blue-600 bg-white'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               <span>{t('actionRequired.balanceSubTabs.unpaid')}</span>
@@ -860,10 +863,10 @@ export default function ReservationActionRequiredModal({
               type="button"
               onClick={() => setBalanceSubTab('calcWrong')}
               title={t('actionRequired.balanceSubTabTooltips.calcWrong')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`flex min-h-[44px] touch-manipulation items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                 balanceSubTab === 'calcWrong'
                   ? 'border-blue-600 text-blue-600 bg-white'
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
               <span>{t('actionRequired.balanceSubTabs.calcWrong')}</span>
@@ -877,7 +880,7 @@ export default function ReservationActionRequiredModal({
         )}
 
         {activeTab === 'balance' && (
-          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0">
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-3 py-2 sm:px-4">
             <div
               className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50"
               role="group"
@@ -887,7 +890,7 @@ export default function ReservationActionRequiredModal({
                 type="button"
                 onClick={() => setBalanceTotalFilter('all')}
                 title={t('actionRequired.balanceTotalFilterTooltips.all')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`flex min-h-[40px] touch-manipulation items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                   balanceTotalFilter === 'all'
                     ? 'bg-white text-blue-700 shadow-sm border border-gray-200'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
@@ -906,7 +909,7 @@ export default function ReservationActionRequiredModal({
                 type="button"
                 onClick={() => setBalanceTotalFilter('totalMismatch')}
                 title={t('actionRequired.balanceTotalFilterTooltips.totalMismatch')}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`flex min-h-[40px] touch-manipulation items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:py-1.5 ${
                   balanceTotalFilter === 'totalMismatch'
                     ? 'bg-white text-amber-800 shadow-sm border border-amber-200'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
@@ -925,7 +928,7 @@ export default function ReservationActionRequiredModal({
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-auto p-4 max-lg:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+        <div className="min-h-0 flex-1 overflow-auto p-3 max-lg:pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4">
           {loadingPayments && (activeTab === 'deposit') ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent" />
@@ -1073,35 +1076,35 @@ export default function ReservationActionRequiredModal({
               {((listViewMode === 'detail' && currentList.length > 0) ||
                 (listViewMode === 'table' && currentList.length > 0) ||
                 (listViewMode === 'card' && currentList.length > pageSize)) && (
-                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t border-gray-200">
-                  <div className="flex flex-wrap items-center gap-3 min-w-0">
-                    <span className="text-sm text-gray-600">
+                <div className="mt-4 flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 flex-wrap items-center justify-center gap-3 sm:justify-start">
+                    <span className="text-center text-sm text-gray-600 sm:text-left">
                       {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, currentList.length)} /{' '}
                       {currentList.length}건
                     </span>
                   </div>
                   {totalPages > 1 && (
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex shrink-0 items-center justify-center gap-1 sm:justify-end">
                       <button
                         type="button"
                         onClick={() => setPage((p) => Math.max(1, p - 1))}
                         disabled={safePage <= 1}
-                        className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex min-h-[44px] min-w-[44px] touch-manipulation items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="이전 페이지"
                       >
-                        <ChevronLeft className="w-5 h-5" />
+                        <ChevronLeft className="h-5 w-5" />
                       </button>
-                      <span className="px-3 py-1 text-sm text-gray-700">
+                      <span className="px-3 py-2 text-sm text-gray-700 sm:py-1">
                         {safePage} / {totalPages}
                       </span>
                       <button
                         type="button"
                         onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                         disabled={safePage >= totalPages}
-                        className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex min-h-[44px] min-w-[44px] touch-manipulation items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="다음 페이지"
                       >
-                        <ChevronRight className="w-5 h-5" />
+                        <ChevronRight className="h-5 w-5" />
                       </button>
                     </div>
                   )}
@@ -1113,23 +1116,26 @@ export default function ReservationActionRequiredModal({
       </div>
 
       {manualOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50" onClick={() => setManualOpen(false)}>
+        <div
+          className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          onClick={() => setManualOpen(false)}
+        >
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+            className="flex h-full min-h-0 w-full max-w-none flex-col bg-white pt-[env(safe-area-inset-top)] shadow-xl rounded-none sm:h-auto sm:max-h-[85vh] sm:max-w-lg sm:rounded-xl sm:pt-0"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-              <h3 className="text-base font-semibold text-gray-900">{t('actionRequired.manualTitle')}</h3>
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 p-3 sm:p-4">
+              <h3 className="min-w-0 pr-2 text-base font-semibold text-gray-900">{t('actionRequired.manualTitle')}</h3>
               <button
                 type="button"
                 onClick={() => setManualOpen(false)}
-                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                className="inline-flex min-h-[44px] min-w-[44px] shrink-0 touch-manipulation items-center justify-center rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 active:bg-gray-100"
                 aria-label="닫기"
               >
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-contain p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-4">
               <p className="text-sm text-gray-600">{t('actionRequired.manualIntro')}</p>
               <ul className="space-y-3 text-sm text-gray-700">
                 <li className="flex gap-2">

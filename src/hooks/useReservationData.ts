@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { logSupabaseStatus } from '@/lib/supabaseHealthCheck'
 import { throttledSupabaseRequest } from '@/lib/requestThrottle'
@@ -59,85 +59,162 @@ function customersCreatedAtDescKeysetOr(created_at: string, id: string): string 
 export type UseReservationDataOptions = {
   /** true이면 예약 전량 자동 로드를 하지 않음(예약 관리 목록을 서버 페이지 쿼리로만 채울 때). */
   disableReservationsAutoLoad?: boolean
+  /**
+   * true이면 고객 테이블 전량 키셋 로드 대신, 목록에 필요한 customer_id만 `.in()`으로 조회.
+   * 예약 관리(서버 페이지네이션)와 함께 쓸 것.
+   */
+  customersByReservationIds?: boolean
 }
 
 export function useReservationData(hookOptions?: UseReservationDataOptions) {
   const disableReservationsAutoLoad = hookOptions?.disableReservationsAutoLoad === true
+  const customersByReservationIds = hookOptions?.customersByReservationIds === true
+
+  const fetchAllCustomers = useCallback(async () => {
+    const allCustomers: Customer[] = []
+    const pageSize = 1000
+
+    // 1) created_at 이 있는 행: OFFSET 없이 키셋 (깊은 페이지에서 500/타임아웃 방지)
+    let cursor: { created_at: string; id: string } | null = null
+    for (;;) {
+      let q = supabase
+        .from('customers')
+        .select('*')
+        .not('created_at', 'is', null)
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(pageSize)
+
+      if (cursor) {
+        q = q.or(customersCreatedAtDescKeysetOr(cursor.created_at, cursor.id))
+      }
+
+      const { data, error } = await q
+
+      if (error) {
+        if (!isAbortLikeError(error)) console.warn('Error fetching customers:', error)
+        break
+      }
+
+      const batch = (data || []) as Customer[]
+      if (batch.length === 0) break
+
+      allCustomers.push(...batch)
+      if (batch.length < pageSize) break
+
+      const last = batch[batch.length - 1] as { created_at?: string | null; id: string }
+      const lastTs = last.created_at
+      if (lastTs == null || lastTs === '') break
+      cursor = { created_at: lastTs, id: last.id }
+    }
+
+    // 2) created_at IS NULL (있으면 id 내림차순으로 이어서 로드)
+    let nullCursor: string | null = null
+    for (;;) {
+      let q = supabase
+        .from('customers')
+        .select('*')
+        .is('created_at', null)
+        .order('id', { ascending: false })
+        .limit(pageSize)
+
+      if (nullCursor) {
+        q = q.lt('id', nullCursor)
+      }
+
+      const { data, error } = await q
+
+      if (error) {
+        if (!isAbortLikeError(error)) console.warn('Error fetching customers (null created_at batch):', error)
+        break
+      }
+
+      const batch = (data || []) as Customer[]
+      if (batch.length === 0) break
+
+      allCustomers.push(...batch)
+      if (batch.length < pageSize) break
+
+      nullCursor = (batch[batch.length - 1] as { id: string }).id
+    }
+
+    return allCustomers
+  }, [])
+
   // 최적화된 데이터 로딩
-  const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
-    fetchFn: async () => {
-      const allCustomers: Customer[] = []
-      const pageSize = 1000
-
-      // 1) created_at 이 있는 행: OFFSET 없이 키셋 (깊은 페이지에서 500/타임아웃 방지)
-      let cursor: { created_at: string; id: string } | null = null
-      for (;;) {
-        let q = supabase
-          .from('customers')
-          .select('*')
-          .not('created_at', 'is', null)
-          .order('created_at', { ascending: false, nullsFirst: false })
-          .order('id', { ascending: false })
-          .limit(pageSize)
-
-        if (cursor) {
-          q = q.or(customersCreatedAtDescKeysetOr(cursor.created_at, cursor.id))
-        }
-
-        const { data, error } = await q
-
-        if (error) {
-          if (!isAbortLikeError(error)) console.warn('Error fetching customers:', error)
-          break
-        }
-
-        const batch = (data || []) as Customer[]
-        if (batch.length === 0) break
-
-        allCustomers.push(...batch)
-        if (batch.length < pageSize) break
-
-        const last = batch[batch.length - 1] as { created_at?: string | null; id: string }
-        const lastTs = last.created_at
-        if (lastTs == null || lastTs === '') break
-        cursor = { created_at: lastTs, id: last.id }
-      }
-
-      // 2) created_at IS NULL (있으면 id 내림차순으로 이어서 로드)
-      let nullCursor: string | null = null
-      for (;;) {
-        let q = supabase
-          .from('customers')
-          .select('*')
-          .is('created_at', null)
-          .order('id', { ascending: false })
-          .limit(pageSize)
-
-        if (nullCursor) {
-          q = q.lt('id', nullCursor)
-        }
-
-        const { data, error } = await q
-
-        if (error) {
-          if (!isAbortLikeError(error)) console.warn('Error fetching customers (null created_at batch):', error)
-          break
-        }
-
-        const batch = (data || []) as Customer[]
-        if (batch.length === 0) break
-
-        allCustomers.push(...batch)
-        if (batch.length < pageSize) break
-
-        nullCursor = (batch[batch.length - 1] as { id: string }).id
-      }
-
-      return allCustomers
-    },
+  const {
+    data: customersFullData,
+    loading: customersFullLoading,
+    refetch: refetchCustomers,
+  } = useOptimizedData({
+    fetchFn: fetchAllCustomers,
     cacheKey: 'reservation-customers',
-    cacheTime: 5 * 60 * 1000 // 5분 캐시
+    cacheTime: 5 * 60 * 1000, // 5분 캐시
+    enabled: !customersByReservationIds,
+    dependencies: [customersByReservationIds],
   })
+
+  const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map())
+  const loadedCustomerIdsRef = useRef<Set<string>>(new Set())
+
+  const loadCustomersByIds = useCallback(async (rawIds: string[], opts?: { reload?: boolean }) => {
+    const unique = [...new Set(rawIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+    if (unique.length === 0) return
+
+    if (opts?.reload) {
+      for (const id of unique) {
+        loadedCustomerIdsRef.current.delete(id)
+      }
+    }
+
+    const need = unique.filter((id) => !loadedCustomerIdsRef.current.has(id))
+    if (need.length === 0) return
+
+    const CHUNK = 200
+    const collected: Customer[] = []
+    try {
+      for (let i = 0; i < need.length; i += CHUNK) {
+        const chunk = need.slice(i, i + CHUNK)
+        const { data, error } = await supabase.from('customers').select('*').in('id', chunk)
+        if (error) {
+          if (!isAbortLikeError(error)) console.warn('Error fetching customers by id:', error)
+          continue
+        }
+        for (const row of (data || []) as Customer[]) {
+          collected.push(row)
+          loadedCustomerIdsRef.current.add(row.id)
+        }
+      }
+      if (collected.length > 0) {
+        setCustomersById((prev) => {
+          const next = new Map(prev)
+          for (const row of collected) {
+            next.set(row.id, row)
+          }
+          return next
+        })
+      }
+    } catch (e) {
+      if (!isAbortLikeError(e)) console.warn('loadCustomersByIds:', e)
+    }
+  }, [])
+
+  const mergeCustomers = useCallback((rows: Customer[]) => {
+    if (!rows.length) return
+    setCustomersById((prev) => {
+      const next = new Map(prev)
+      for (const row of rows) {
+        next.set(row.id, row)
+        loadedCustomerIdsRef.current.add(row.id)
+      }
+      return next
+    })
+  }, [])
+
+  const customers = customersByReservationIds
+    ? Array.from(customersById.values())
+    : (customersFullData ?? [])
+  const customersLoading = customersByReservationIds ? false : customersFullLoading
 
   const { data: products = [], loading: productsLoading, refetch: refetchProducts } = useOptimizedData({
     fetchFn: async () => {
@@ -314,6 +391,16 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   })
 
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const reservationsRef = useRef<Reservation[]>([])
+  useEffect(() => {
+    reservationsRef.current = reservations
+  }, [reservations])
+
+  const refreshCustomersByIds = useCallback(async () => {
+    const ids = [...new Set(reservationsRef.current.map((r) => r.customerId).filter(Boolean))]
+    await loadCustomersByIds(ids, { reload: true })
+  }, [loadCustomersByIds])
+
   const [reservationsLoading, setReservationsLoading] = useState(!disableReservationsAutoLoad)
   /** 첫 배치만 반영된 채로 집계하지 않도록: fetchReservations 전체(백그라운드 페이지 포함) 완료 후 true */
   const [reservationsAggregateReady, setReservationsAggregateReady] = useState(disableReservationsAutoLoad)
@@ -734,6 +821,10 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         setReservationOptionsPresenceByReservationId(new Map())
         setToursMap(new Map())
         setLoadingProgress({ current: 0, total: 0 })
+        if (customersByReservationIds) {
+          loadedCustomerIdsRef.current.clear()
+          setCustomersById(new Map())
+        }
         return
       }
       const productIds = [...new Set(raw.map((r) => r.product_id as string).filter(Boolean))]
@@ -763,12 +854,16 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const mapped = mapRawToReservation(raw, productMap, tourMap)
       const resIds = mapped.map((r) => r.id)
       const tourIds = [...new Set(mapped.map((r) => r.tourId).filter((id) => id && id.trim() && id !== 'null' && id !== 'undefined'))]
+      const customerIdsForList = customersByReservationIds
+        ? [...new Set(mapped.map((r) => r.customerId).filter((id) => id && String(id).trim()))]
+        : []
 
       const [pricingMap, toursById, toursByOverlap, optionsPresenceMap] = await Promise.all([
         fetchPricingMap(resIds),
         fetchToursMap(tourIds),
         fetchToursOverlappingReservationIds(resIds),
         fetchReservationOptionsPresenceMap(resIds),
+        customersByReservationIds ? loadCustomersByIds(customerIdsForList) : Promise.resolve(),
       ])
       setReservations(mapped)
       setReservationPricingMap(pricingMap)
@@ -816,7 +911,8 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     replaceReservationsFromQueryResult,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
-    refreshCustomers: refetchCustomers,
+    refreshCustomers: customersByReservationIds ? refreshCustomersByIds : refetchCustomers,
+    mergeCustomers: customersByReservationIds ? mergeCustomers : undefined,
     refreshProducts: refetchProducts,
     refreshChannels: refetchChannels,
     refreshProductOptions: refetchProductOptions,
@@ -825,7 +921,11 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     refreshPickupHotels: refetchPickupHotels,
     refreshCoupons: refetchCoupons,
     refreshAll: () => {
-      refetchCustomers()
+      if (customersByReservationIds) {
+        void refreshCustomersByIds()
+      } else {
+        refetchCustomers()
+      }
       refetchProducts()
       refetchChannels()
       refetchProductOptions()

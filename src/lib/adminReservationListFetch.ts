@@ -14,6 +14,12 @@ function eqQuoted(val: string): string {
   return `"${qIdent(val)}"`
 }
 
+/**
+ * 주간 카드(`card-week`): 한 번에 가져오는 행 수. PostgREST 기본 1000을 한 요청에 쓰지 않고
+ * 여러 번 `.range`로 이어 받아 병합한다.
+ */
+export const ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE = 500
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -59,6 +65,8 @@ export type FetchAdminReservationListArgs = {
   calendarTourDateEnd?: string
   calendarCreatedStartIso?: string
   calendarCreatedEndIso?: string
+  /** `card-week` 다청크 로드 시 진행률(예: 로딩 문구). */
+  onCardWeekFetchProgress?: (info: { loaded: number; total: number | null }) => void
 }
 
 function collectIds(rows: unknown): string[] {
@@ -158,6 +166,104 @@ async function buildSearchOrClause(
   return parts.join(',')
 }
 
+type BuildQueryOpts = { includeExactCount?: boolean }
+
+/**
+ * 필터·정렬까지 적용한 빌더(`.range` / 실행 전). **동기**여야 함 —
+ * Postgrest 쿼리 빌더는 `PromiseLike`라 `async` 함수에서 `return q`하면
+ * `Promise.resolve(q)`가 쿼리를 즉시 실행해 `{ data, error }`만 남는다.
+ */
+function buildAdminReservationListQuery(
+  supabase: SupabaseClient,
+  args: FetchAdminReservationListArgs,
+  searchOr: string | null,
+  opts?: BuildQueryOpts
+) {
+  const includeExactCount = opts?.includeExactCount !== false
+
+  let selectFields = '*, choices, channels(name)'
+  if (args.sortBy === 'customer_name') {
+    selectFields = '*, choices, channels(name), customers(name)'
+  } else if (args.sortBy === 'product_name') {
+    selectFields = '*, choices, channels(name), products(name, name_ko, name_en)'
+  }
+
+  let q = includeExactCount
+    ? supabase.from('reservations').select(selectFields, { count: 'exact' })
+    : supabase.from('reservations').select(selectFields)
+
+  if (args.customerIdFromUrl) {
+    q = q.eq('customer_id', args.customerIdFromUrl)
+  }
+
+  if (args.selectedStatus === 'all') {
+    q = q.neq('status', 'deleted')
+  } else {
+    q = q.eq('status', args.selectedStatus)
+  }
+
+  if (args.selectedChannel !== 'all') {
+    q = q.eq('channel_id', args.selectedChannel)
+  }
+
+  if (args.dateRange.start && args.dateRange.end) {
+    q = q.gte('tour_date', args.dateRange.start).lte('tour_date', args.dateRange.end)
+  }
+
+  if (args.mode === 'card-week' && args.activityRangeStartIso && args.activityRangeEndIso) {
+    const a = qIdent(args.activityRangeStartIso)
+    const b = qIdent(args.activityRangeEndIso)
+    q = q.or(
+      `and(created_at.gte."${a}",created_at.lte."${b}"),and(updated_at.gte."${a}",updated_at.lte."${b}")`
+    )
+  }
+
+  if (args.mode === 'calendar') {
+    const td0 = args.calendarTourDateStart
+    const td1 = args.calendarTourDateEnd
+    const c0 = args.calendarCreatedStartIso
+    const c1 = args.calendarCreatedEndIso
+    if (td0 && td1 && c0 && c1) {
+      const tds = qIdent(td0)
+      const tde = qIdent(td1)
+      const cs = qIdent(c0)
+      const ce = qIdent(c1)
+      q = q.or(
+        `and(tour_date.gte."${tds}",tour_date.lte."${tde}"),and(created_at.gte."${cs}",created_at.lte."${ce}")`
+      )
+    }
+  }
+
+  if (searchOr) {
+    q = q.or(searchOr)
+  }
+
+  const asc = args.sortOrder === 'asc'
+  switch (args.sortBy) {
+    case 'tour_date':
+      q = q.order('tour_date', { ascending: asc, nullsFirst: false }).order('id', { ascending: asc })
+      break
+    case 'customer_name':
+      q = q
+        .order('name', { ascending: asc, referencedTable: 'customers' })
+        .order('id', { ascending: asc })
+      break
+    case 'product_name':
+      q = q
+        .order('name', { ascending: asc, referencedTable: 'products' })
+        .order('id', { ascending: asc })
+      break
+    case 'created_at':
+    default:
+      q = q
+        .order('created_at', { ascending: asc, nullsFirst: false })
+        .order('id', { ascending: asc })
+      break
+  }
+
+  return q
+}
+
 /**
  * 예약 관리: 서버 필터·검색·정렬·페이지네이션(플랫 카드) 또는 주간 전량(날짜 그룹 카드).
  */
@@ -166,84 +272,53 @@ export async function fetchAdminReservationList(
   args: FetchAdminReservationListArgs
 ): Promise<{ data: Record<string, unknown>[] | null; count: number | null; error: Error | null }> {
   try {
-    let selectFields = '*, choices, channels(name)'
-    if (args.sortBy === 'customer_name') {
-      selectFields = '*, choices, channels(name), customers(name)'
-    } else if (args.sortBy === 'product_name') {
-      selectFields = '*, choices, channels(name), products(name, name_ko, name_en)'
-    }
-
-    let q = supabase.from('reservations').select(selectFields, { count: 'exact' })
-
-    if (args.customerIdFromUrl) {
-      q = q.eq('customer_id', args.customerIdFromUrl)
-    }
-
-    if (args.selectedStatus === 'all') {
-      q = q.neq('status', 'deleted')
-    } else {
-      q = q.eq('status', args.selectedStatus)
-    }
-
-    if (args.selectedChannel !== 'all') {
-      q = q.eq('channel_id', args.selectedChannel)
-    }
-
-    if (args.dateRange.start && args.dateRange.end) {
-      q = q.gte('tour_date', args.dateRange.start).lte('tour_date', args.dateRange.end)
-    }
-
-    if (args.mode === 'card-week' && args.activityRangeStartIso && args.activityRangeEndIso) {
-      const a = qIdent(args.activityRangeStartIso)
-      const b = qIdent(args.activityRangeEndIso)
-      q = q.or(
-        `and(created_at.gte."${a}",created_at.lte."${b}"),and(updated_at.gte."${a}",updated_at.lte."${b}")`
-      )
-    }
-
-    if (args.mode === 'calendar') {
-      const td0 = args.calendarTourDateStart
-      const td1 = args.calendarTourDateEnd
-      const c0 = args.calendarCreatedStartIso
-      const c1 = args.calendarCreatedEndIso
-      if (td0 && td1 && c0 && c1) {
-        const tds = qIdent(td0)
-        const tde = qIdent(td1)
-        const cs = qIdent(c0)
-        const ce = qIdent(c1)
-        q = q.or(
-          `and(tour_date.gte."${tds}",tour_date.lte."${tde}"),and(created_at.gte."${cs}",created_at.lte."${ce}")`
-        )
-      }
-    }
-
     const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
-    if (searchOr) {
-      q = q.or(searchOr)
+
+    if (args.mode === 'card-week') {
+      const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
+      const merged: Record<string, unknown>[] = []
+      let totalCount: number | null = null
+      let offset = 0
+      let chunkIndex = 0
+      const maxChunks = 400
+
+      for (;;) {
+        if (chunkIndex >= maxChunks) {
+          return {
+            data: null,
+            count: null,
+            error: new Error(`[admin reservations] card-week chunk limit exceeded (${maxChunks * chunk} rows)`),
+          }
+        }
+        chunkIndex += 1
+
+        const q = buildAdminReservationListQuery(supabase, args, searchOr, {
+          includeExactCount: offset === 0,
+        })
+        const { data, error, count } = await q.range(offset, offset + chunk - 1)
+        if (error) {
+          return { data: null, count: null, error: error as Error }
+        }
+        const batch = (data || []) as Record<string, unknown>[]
+        if (offset === 0) {
+          totalCount = count ?? null
+        }
+        merged.push(...batch)
+        args.onCardWeekFetchProgress?.({ loaded: merged.length, total: totalCount })
+
+        if (batch.length < chunk) {
+          break
+        }
+        if (totalCount != null && merged.length >= totalCount) {
+          break
+        }
+        offset += chunk
+      }
+
+      return { data: merged, count: totalCount, error: null }
     }
 
-    const asc = args.sortOrder === 'asc'
-    switch (args.sortBy) {
-      case 'tour_date':
-        q = q.order('tour_date', { ascending: asc, nullsFirst: false }).order('id', { ascending: asc })
-        break
-      case 'customer_name':
-        q = q
-          .order('name', { ascending: asc, referencedTable: 'customers' })
-          .order('id', { ascending: asc })
-        break
-      case 'product_name':
-        q = q
-          .order('name', { ascending: asc, referencedTable: 'products' })
-          .order('id', { ascending: asc })
-        break
-      case 'created_at':
-      default:
-        q = q
-          .order('created_at', { ascending: asc, nullsFirst: false })
-          .order('id', { ascending: asc })
-        break
-    }
+    let q = buildAdminReservationListQuery(supabase, args, searchOr)
 
     if (args.mode === 'card-flat') {
       const from = (args.page - 1) * args.pageSize

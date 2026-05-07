@@ -1279,6 +1279,25 @@
       "tourCompleted": "Tour completed"
     }
   },
+  "awayChanges": {
+    "title": "Changes by others while you were away",
+    "subtitle": "After your tab was hidden and you were inactive for a while, teammates updated or created these records.",
+    "loading": "Loading changes…",
+    "empty": "Nothing to show.",
+    "close": "Close",
+    "confirm": "OK",
+    "unknownActor": "Unknown",
+    "by": "By: {email}",
+    "openReservation": "Open reservation",
+    "openTour": "Open tour",
+    "openBooking": "Open booking management",
+    "labels": {
+      "reservation": "Reservation",
+      "tour": "Tour",
+      "ticketBooking": "Ticket booking",
+      "hotelBooking": "Hotel booking"
+    }
+  },
   "attendancePage": {
     "loading": "Loading data...",
     "loginRequired": "Login required",
@@ -2017,6 +2036,7 @@
     "addReservation": "Add New Reservation",
     "searchPlaceholder": "Search by reservation number, customer name, other names (English names, etc.), special requests, product name...",
     "loadingReservationData": "Loading reservation data...",
+    "loadingReservationList": "Loading reservation list and card details...",
     "reservationsLoading": "reservations loading",
     "completed": "completed",
     "deleteConfirm": "Are you sure you want to delete this reservation?",
@@ -2073,6 +2093,9 @@
       "more": "more",
       "statsSectionLabel": "Statistics: 7-day view",
       "weekSummaryDays": " days",
+      "weekSummaryAvgShort": "Avg.",
+      "weeklyStatsToggleExpand": "Expand statistics",
+      "weeklyStatsToggleCollapse": "Collapse statistics",
       "weekSummaryReg": "Registered {bookings} bookings · {people} people",
       "weekSummaryCancel": "Cancelled {bookings} bookings · {people} people",
       "weekSummaryNet": "Net (registered − cancelled) {bookings} bookings · {people} people",

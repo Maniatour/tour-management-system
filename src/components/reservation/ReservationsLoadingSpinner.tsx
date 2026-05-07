@@ -8,10 +8,16 @@ interface ReservationsLoadingSpinnerProps {
     current: number
     total: number
   }
+  /** 기본: 예약 데이터(카탈로그) 로딩 문구. 예약 관리 목록 단계 등에서 덮어쓸 때 사용 */
+  headline?: string
 }
 
-export default function ReservationsLoadingSpinner({ loadingProgress }: ReservationsLoadingSpinnerProps) {
+export default function ReservationsLoadingSpinner({
+  loadingProgress,
+  headline,
+}: ReservationsLoadingSpinnerProps) {
   const t = useTranslations('reservations')
+  const title = headline ?? t('loadingReservationData')
 
   return (
     <div className="space-y-6">
@@ -22,7 +28,7 @@ export default function ReservationsLoadingSpinner({ loadingProgress }: Reservat
       <div className="bg-white rounded-lg shadow-lg p-8">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('loadingReservationData')}</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
           {loadingProgress.total > 0 && (
             <div className="space-y-2">
               <div className="text-sm text-gray-600">

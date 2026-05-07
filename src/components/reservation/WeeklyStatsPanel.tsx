@@ -214,198 +214,23 @@ export default function WeeklyStatsPanel({
     <div className="bg-blue-50 border border-blue-200 rounded-lg">
       {/* 주간 네비게이션 헤더 - 초컴팩트 모바일 최적화 */}
       <div className="p-2 sm:p-4 border-b border-blue-200">
-        <div className="flex items-center justify-between">
-          {/* 제목과 통계 정보 - 한 줄에 압축 */}
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:gap-x-4">
-              <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
-                {currentWeek === 0
-                  ? t('stats.regCancelWeekHeadingRecent')
-                  : currentWeek < 0
-                    ? t('stats.regCancelWeekHeadingPast', { days: Math.abs(currentWeek) * 7 })
-                    : t('stats.regCancelWeekHeadingFuture', { days: currentWeek * 7 })}
-              </h3>
-              <div className="text-xs sm:text-sm text-blue-700 whitespace-nowrap tabular-nums">
-                {formatWeekRange(currentWeek).display}
-              </div>
-            </div>
-
-            {/* 한 줄: 7일 합계 뱃지 + 일평균(색 구분) 뱃지 */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
-              <span className="tabular-nums font-semibold text-blue-800">
-                {weekHeaderSummary.calendarDayCount}
-                {t('stats.weekSummaryDays')}
-              </span>
-                <span
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/90 bg-emerald-50/95 pl-1 pr-2 py-0.5 text-emerald-950 shadow-sm ring-1 ring-emerald-100/80"
-                  title={t('stats.weekSummaryReg', {
-                    bookings: weekHeaderSummary.regBookings,
-                    people: weekHeaderSummary.regPeople,
-                  })}
-                >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white" aria-hidden>
-                    <Plus className="h-3 w-3" strokeWidth={2.75} />
-                  </span>
-                  <span className="min-w-0 tabular-nums font-medium">
-                    {t('stats.bookingCountInline', { count: weekHeaderSummary.regBookings })}
-                    <span className="text-emerald-700/80"> · </span>
-                    {weekHeaderSummary.regPeople}
-                    {locale === 'ko' ? '' : ' '}
-                    {t('stats.people')}
-                  </span>
-                </span>
-                <span
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-rose-200/90 bg-rose-50/95 pl-1 pr-2 py-0.5 text-rose-950 shadow-sm ring-1 ring-rose-100/80"
-                  title={t('stats.weekSummaryCancel', {
-                    bookings: weekHeaderSummary.cancelBookings,
-                    people: weekHeaderSummary.cancelPeople,
-                  })}
-                >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white" aria-hidden>
-                    <Minus className="h-3 w-3" strokeWidth={2.75} />
-                  </span>
-                  <span className="min-w-0 tabular-nums font-medium">
-                    {t('stats.bookingCountInline', { count: weekHeaderSummary.cancelBookings })}
-                    <span className="text-rose-700/80"> · </span>
-                    {weekHeaderSummary.cancelPeople}
-                    {locale === 'ko' ? '' : ' '}
-                    {t('stats.people')}
-                  </span>
-                </span>
-                <span
-                  className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
-                    weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
-                      ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
-                      : 'border-sky-200/90 bg-sky-50/95 text-sky-950 ring-sky-100/80'
-                  }`}
-                  title={t('stats.weekSummaryNet', {
-                    bookings: weekHeaderSummary.netBookings,
-                    people: weekHeaderSummary.netPeople,
-                  })}
-                >
-                  <span
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
-                      weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
-                        ? 'bg-amber-600'
-                        : 'bg-sky-600'
-                    }`}
-                    aria-hidden
-                  >
-                    <Equal className="h-3 w-3" strokeWidth={2.75} />
-                  </span>
-                  <span className="min-w-0">
-                    {t('stats.bookingCountInline', { count: weekHeaderSummary.netBookings })}
-                    <span
-                      className={
-                        weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
-                          ? 'text-amber-700/80'
-                          : 'text-sky-700/80'
-                      }
-                    >
-                      {' '}
-                      ·{' '}
-                    </span>
-                    {weekHeaderSummary.netPeople}
-                    {locale === 'ko' ? '' : ' '}
-                    {t('stats.people')}
-                  </span>
-                </span>
-
-              <span className="shrink-0 text-blue-300/90 sm:hidden" aria-hidden>
-                ·
-              </span>
-              <span
-                className="hidden shrink-0 self-center sm:inline-block h-4 w-px bg-blue-200/90"
-                aria-hidden
-              />
-              <span className="shrink-0 font-semibold text-blue-900/90 tabular-nums">
-                {t('stats.weekSummaryAvgRowLabel', {
-                  days: weekHeaderSummary.calendarDayCount,
-                })}
-              </span>
-              <span
-                className="inline-flex max-w-full items-center gap-1 rounded-full border border-indigo-200/95 bg-indigo-50/95 pl-1 pr-2 py-0.5 text-indigo-950 shadow-sm ring-1 ring-indigo-100/80"
-                title={t('stats.weekSummaryAvgRegTooltip', {
-                  bookings: weekHeaderSummary.avgRegBookingsPerDay,
-                  people: weekHeaderSummary.avgRegPeoplePerDay,
-                })}
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white" aria-hidden>
-                  <Plus className="h-3 w-3" strokeWidth={2.75} />
-                </span>
-                <span className="min-w-0 tabular-nums font-medium">
-                  {t('stats.bookingCountInline', { count: weekHeaderSummary.avgRegBookingsPerDay })}
-                  <span className="text-indigo-700/85"> · </span>
-                  {weekHeaderSummary.avgRegPeoplePerDay}
-                  {locale === 'ko' ? '' : ' '}
-                  {t('stats.people')}
-                </span>
-              </span>
-              <span
-                className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-200/95 bg-violet-50/95 pl-1 pr-2 py-0.5 text-violet-950 shadow-sm ring-1 ring-violet-100/80"
-                title={t('stats.weekSummaryAvgCancelTooltip', {
-                  bookings: weekHeaderSummary.avgCancelBookingsPerDay,
-                  people: weekHeaderSummary.avgCancelPeoplePerDay,
-                })}
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white" aria-hidden>
-                  <Minus className="h-3 w-3" strokeWidth={2.75} />
-                </span>
-                <span className="min-w-0 tabular-nums font-medium">
-                  {t('stats.bookingCountInline', { count: weekHeaderSummary.avgCancelBookingsPerDay })}
-                  <span className="text-violet-700/85"> · </span>
-                  {weekHeaderSummary.avgCancelPeoplePerDay}
-                  {locale === 'ko' ? '' : ' '}
-                  {t('stats.people')}
-                </span>
-              </span>
-              <span
-                className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
-                  weekHeaderSummary.avgNetBookingsPerDay < 0 ||
-                  weekHeaderSummary.avgNetPeoplePerDay < 0
-                    ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
-                    : 'border-cyan-200/95 bg-cyan-50/95 text-cyan-950 ring-cyan-100/80'
-                }`}
-                title={t('stats.weekSummaryAvgNetTooltip', {
-                  bookings: weekHeaderSummary.avgNetBookingsPerDay,
-                  people: weekHeaderSummary.avgNetPeoplePerDay,
-                })}
-              >
-                <span
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
-                    weekHeaderSummary.avgNetBookingsPerDay < 0 ||
-                    weekHeaderSummary.avgNetPeoplePerDay < 0
-                      ? 'bg-amber-600'
-                      : 'bg-cyan-600'
-                  }`}
-                  aria-hidden
-                >
-                  <Equal className="h-3 w-3" strokeWidth={2.75} />
-                </span>
-                <span className="min-w-0">
-                  {t('stats.bookingCountInline', { count: weekHeaderSummary.avgNetBookingsPerDay })}
-                  <span
-                    className={
-                      weekHeaderSummary.avgNetBookingsPerDay < 0 ||
-                      weekHeaderSummary.avgNetPeoplePerDay < 0
-                        ? 'text-amber-700/80'
-                        : 'text-cyan-800/85'
-                    }
-                  >
-                    {' '}
-                    ·{' '}
-                  </span>
-                  {weekHeaderSummary.avgNetPeoplePerDay}
-                  {locale === 'ko' ? '' : ' '}
-                  {t('stats.people')}
-                </span>
-              </span>
+        {/* 1줄: 구간 제목·날짜 + 주 이동·접기 (모바일에서도 같은 줄 우선) */}
+        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+          <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:gap-x-4">
+            <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
+              {currentWeek === 0
+                ? t('stats.regCancelWeekHeadingRecent')
+                : currentWeek < 0
+                  ? t('stats.regCancelWeekHeadingPast', { days: Math.abs(currentWeek) * 7 })
+                  : t('stats.regCancelWeekHeadingFuture', { days: currentWeek * 7 })}
+            </h3>
+            <div className="text-xs sm:text-sm text-blue-700 tabular-nums min-w-0">
+              {formatWeekRange(currentWeek).display}
             </div>
           </div>
-          
-          {/* 네비게이션 버튼들 - 초컴팩트 */}
-          <div className="flex items-center space-x-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
+              type="button"
               onClick={() => {
                 onInitialLoadChange(false)
                 onWeekChange(currentWeek - 1)
@@ -414,8 +239,8 @@ export default function WeeklyStatsPanel({
             >
               ←
             </button>
-            
             <button
+              type="button"
               onClick={() => {
                 onInitialLoadChange(false)
                 onWeekChange(0)
@@ -428,8 +253,8 @@ export default function WeeklyStatsPanel({
             >
               {t('pagination.thisWeek')}
             </button>
-            
             <button
+              type="button"
               onClick={() => {
                 onInitialLoadChange(false)
                 onWeekChange(currentWeek + 1)
@@ -438,19 +263,19 @@ export default function WeeklyStatsPanel({
             >
               →
             </button>
-            
-            {/* 아코디언 화살표 */}
             {(weeklyStats.totalReservations > 0 ||
               weekHeaderSummary.regBookings > 0 ||
               weekHeaderSummary.cancelBookings > 0) && (
               <button
+                type="button"
                 onClick={onToggleStatsCollapsed}
                 className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
+                title={isWeeklyStatsCollapsed ? t('stats.weeklyStatsToggleExpand') : t('stats.weeklyStatsToggleCollapse')}
               >
-                <svg 
+                <svg
                   className={`w-3 h-3 transition-transform ${isWeeklyStatsCollapsed ? 'rotate-180' : ''}`}
-                  fill="none" 
-                  stroke="currentColor" 
+                  fill="none"
+                  stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -458,6 +283,169 @@ export default function WeeklyStatsPanel({
               </button>
             )}
           </div>
+        </div>
+
+        {/* 2줄: 기간 합계(등록·취소·순) — + / − / = 한 줄에만 */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
+          <span className="shrink-0 tabular-nums font-semibold text-blue-800">
+            {weekHeaderSummary.calendarDayCount}
+            {t('stats.weekSummaryDays')}:
+          </span>
+          <span
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/90 bg-emerald-50/95 pl-1 pr-2 py-0.5 text-emerald-950 shadow-sm ring-1 ring-emerald-100/80"
+            title={t('stats.weekSummaryReg', {
+              bookings: weekHeaderSummary.regBookings,
+              people: weekHeaderSummary.regPeople,
+            })}
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white" aria-hidden>
+              <Plus className="h-3 w-3" strokeWidth={2.75} />
+            </span>
+            <span className="min-w-0 tabular-nums font-medium">
+              {t('stats.bookingCountInline', { count: weekHeaderSummary.regBookings })}
+              <span className="text-emerald-700/80"> · </span>
+              {weekHeaderSummary.regPeople}
+              {locale === 'ko' ? '' : ' '}
+              {t('stats.people')}
+            </span>
+          </span>
+          <span
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-rose-200/90 bg-rose-50/95 pl-1 pr-2 py-0.5 text-rose-950 shadow-sm ring-1 ring-rose-100/80"
+            title={t('stats.weekSummaryCancel', {
+              bookings: weekHeaderSummary.cancelBookings,
+              people: weekHeaderSummary.cancelPeople,
+            })}
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white" aria-hidden>
+              <Minus className="h-3 w-3" strokeWidth={2.75} />
+            </span>
+            <span className="min-w-0 tabular-nums font-medium">
+              {t('stats.bookingCountInline', { count: weekHeaderSummary.cancelBookings })}
+              <span className="text-rose-700/80"> · </span>
+              {weekHeaderSummary.cancelPeople}
+              {locale === 'ko' ? '' : ' '}
+              {t('stats.people')}
+            </span>
+          </span>
+          <span
+            className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
+              weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
+                ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
+                : 'border-sky-200/90 bg-sky-50/95 text-sky-950 ring-sky-100/80'
+            }`}
+            title={t('stats.weekSummaryNet', {
+              bookings: weekHeaderSummary.netBookings,
+              people: weekHeaderSummary.netPeople,
+            })}
+          >
+            <span
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
+                weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
+                  ? 'bg-amber-600'
+                  : 'bg-sky-600'
+              }`}
+              aria-hidden
+            >
+              <Equal className="h-3 w-3" strokeWidth={2.75} />
+            </span>
+            <span className="min-w-0">
+              {t('stats.bookingCountInline', { count: weekHeaderSummary.netBookings })}
+              <span
+                className={
+                  weekHeaderSummary.netBookings < 0 || weekHeaderSummary.netPeople < 0
+                    ? 'text-amber-700/80'
+                    : 'text-sky-700/80'
+                }
+              >
+                {' '}
+                ·{' '}
+              </span>
+              {weekHeaderSummary.netPeople}
+              {locale === 'ko' ? '' : ' '}
+              {t('stats.people')}
+            </span>
+          </span>
+        </div>
+
+        {/* 3줄: 일평균(등록·취소·순) — 동일 +/−/= 아이콘은 이 줄에만 배치(중복 인상 제거) */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] sm:text-xs leading-snug text-blue-900">
+          <span className="shrink-0 font-semibold text-blue-900/90 tabular-nums" title={t('stats.weekSummaryAvgRowLabel', { days: weekHeaderSummary.calendarDayCount })}>
+            {t('stats.weekSummaryAvgShort')}:
+          </span>
+          <span
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-indigo-200/95 bg-indigo-50/95 pl-1 pr-2 py-0.5 text-indigo-950 shadow-sm ring-1 ring-indigo-100/80"
+            title={t('stats.weekSummaryAvgRegTooltip', {
+              bookings: weekHeaderSummary.avgRegBookingsPerDay,
+              people: weekHeaderSummary.avgRegPeoplePerDay,
+            })}
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white" aria-hidden>
+              <Plus className="h-3 w-3" strokeWidth={2.75} />
+            </span>
+            <span className="min-w-0 tabular-nums font-medium">
+              {t('stats.bookingCountInline', { count: weekHeaderSummary.avgRegBookingsPerDay })}
+              <span className="text-indigo-700/85"> · </span>
+              {weekHeaderSummary.avgRegPeoplePerDay}
+              {locale === 'ko' ? '' : ' '}
+              {t('stats.people')}
+            </span>
+          </span>
+          <span
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-200/95 bg-violet-50/95 pl-1 pr-2 py-0.5 text-violet-950 shadow-sm ring-1 ring-violet-100/80"
+            title={t('stats.weekSummaryAvgCancelTooltip', {
+              bookings: weekHeaderSummary.avgCancelBookingsPerDay,
+              people: weekHeaderSummary.avgCancelPeoplePerDay,
+            })}
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white" aria-hidden>
+              <Minus className="h-3 w-3" strokeWidth={2.75} />
+            </span>
+            <span className="min-w-0 tabular-nums font-medium">
+              {t('stats.bookingCountInline', { count: weekHeaderSummary.avgCancelBookingsPerDay })}
+              <span className="text-violet-700/85"> · </span>
+              {weekHeaderSummary.avgCancelPeoplePerDay}
+              {locale === 'ko' ? '' : ' '}
+              {t('stats.people')}
+            </span>
+          </span>
+          <span
+            className={`inline-flex max-w-full items-center gap-1 rounded-full border pl-1 pr-2 py-0.5 shadow-sm ring-1 tabular-nums font-medium ${
+              weekHeaderSummary.avgNetBookingsPerDay < 0 || weekHeaderSummary.avgNetPeoplePerDay < 0
+                ? 'border-amber-200/90 bg-amber-50/95 text-amber-950 ring-amber-100/80'
+                : 'border-cyan-200/95 bg-cyan-50/95 text-cyan-950 ring-cyan-100/80'
+            }`}
+            title={t('stats.weekSummaryAvgNetTooltip', {
+              bookings: weekHeaderSummary.avgNetBookingsPerDay,
+              people: weekHeaderSummary.avgNetPeoplePerDay,
+            })}
+          >
+            <span
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white ${
+                weekHeaderSummary.avgNetBookingsPerDay < 0 || weekHeaderSummary.avgNetPeoplePerDay < 0
+                  ? 'bg-amber-600'
+                  : 'bg-cyan-600'
+              }`}
+              aria-hidden
+            >
+              <Equal className="h-3 w-3" strokeWidth={2.75} />
+            </span>
+            <span className="min-w-0">
+              {t('stats.bookingCountInline', { count: weekHeaderSummary.avgNetBookingsPerDay })}
+              <span
+                className={
+                  weekHeaderSummary.avgNetBookingsPerDay < 0 || weekHeaderSummary.avgNetPeoplePerDay < 0
+                    ? 'text-amber-700/80'
+                    : 'text-cyan-800/85'
+                }
+              >
+                {' '}
+                ·{' '}
+              </span>
+              {weekHeaderSummary.avgNetPeoplePerDay}
+              {locale === 'ko' ? '' : ' '}
+              {t('stats.people')}
+            </span>
+          </span>
         </div>
       </div>
 

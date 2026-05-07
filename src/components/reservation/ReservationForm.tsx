@@ -59,6 +59,7 @@ import PricingSection from '@/components/reservation/PricingSection'
 import ProductSelectionSection from '@/components/reservation/ProductSelectionSectionNew'
 import ChannelSection from '@/components/reservation/ChannelSection'
 import TourConnectionSection from '@/components/reservation/TourConnectionSection'
+import ImportTourDaySummary from '@/components/reservation/ImportTourDaySummary'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
@@ -6018,6 +6019,14 @@ export default function ReservationForm({
 
               {/* 3열: 예약 옵션 · 입금 · 지출 (각각 별도 박스, 타이틀 한 번, 내역은 가로줄 구분) */}
               <div className="lg:flex lg:flex-col lg:gap-4 lg:min-h-0 lg:overflow-y-auto max-lg:contents">
+              {layout === 'page' && isImportMode && (
+                <ImportTourDaySummary
+                  tourDate={formData.tourDate}
+                  productId={formData.productId}
+                  products={products}
+                  locale={locale}
+                />
+              )}
               {reservation && !isImportMode && effectiveReservationId && (
                 <>
                   <div id="options-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">

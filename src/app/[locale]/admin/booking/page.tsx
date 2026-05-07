@@ -1,14 +1,29 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useParams } from 'next/navigation';
 import TicketBookingList from '@/components/booking/TicketBookingList';
 import TourHotelBookingList from '@/components/booking/TourHotelBookingList';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier';
+import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal';
 
 type TabType = 'tickets' | 'hotels';
 
 export default function BookingManagementPage() {
   const t = useTranslations('booking');
+  const routeParams = useParams() as { locale?: string };
+  const locale = routeParams?.locale || 'ko';
+  const { user } = useAuth();
+  const awayNotifier = useAwayOtherUserChangesNotifier({
+    supabase,
+    storageNamespace: 'admin-booking',
+    scope: { bookings: true },
+    canQueryAuditLogs: false,
+    enabled: Boolean(user?.email),
+  });
   const [activeTab, setActiveTab] = useRoutePersistedState<TabType>('tab', 'tickets');
 
   const tabs = [
@@ -76,6 +91,14 @@ export default function BookingManagementPage() {
           </div>
         </div>
       </div>
+
+      <AwayOtherUserChangesModal
+        open={awayNotifier.open}
+        loading={awayNotifier.loading}
+        items={awayNotifier.items}
+        locale={locale}
+        onClose={awayNotifier.dismiss}
+      />
     </div>
   );
 }

@@ -14,6 +14,8 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
 import { isReservationCancelledStatus, isReservationDeletedStatus, isTourDeletedStatus } from '@/utils/tourUtils'
 import { DeletedToursTableModal } from '@/components/shared/DeletedToursTableModal'
+import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal'
+import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier'
 import { PendingOffSchedulesModal } from '@/components/shared/PendingOffSchedulesModal'
 import { ToursNeedCheckModal } from '@/components/shared/ToursMissingReceiptModal'
 import { fetchToursNeedCheckData } from '@/lib/toursNeedCheckStats'
@@ -62,8 +64,16 @@ export default function AdminTours() {
   const locale = useLocale()
   const router = useRouter()
   const supabase = createClientSupabase()
-  const { userRole, authUser, simulatedUser, isSimulating, user } = useAuth()
+  const { userRole, authUser, simulatedUser, isSimulating, user, hasPermission } = useAuth()
   const adminUserEmail = (isSimulating && simulatedUser?.email) || authUser?.email || user?.email || null
+
+  const awayNotifier = useAwayOtherUserChangesNotifier({
+    supabase,
+    storageNamespace: 'admin-tours',
+    scope: { tours: true },
+    canQueryAuditLogs: hasPermission('canViewAuditLogs'),
+    enabled: Boolean(adminUserEmail),
+  })
 
   const calendarOffRangeRef = useRef({ start: '', end: '' })
   const [calendarOffSchedules, setCalendarOffSchedules] = useState<OffScheduleRow[]>([])
@@ -1341,6 +1351,14 @@ export default function AdminTours() {
           setDeletedToursBin((prev) => prev.filter((x) => x.id !== tourId))
           await refetchTours()
         }}
+      />
+
+      <AwayOtherUserChangesModal
+        open={awayNotifier.open}
+        loading={awayNotifier.loading}
+        items={awayNotifier.items}
+        locale={locale}
+        onClose={awayNotifier.dismiss}
       />
     </div>
   )

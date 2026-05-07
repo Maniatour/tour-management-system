@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { X, Search, SlidersHorizontal, Printer, Archive, ChevronDown, ListChecks } from 'lucide-react'
+import { X, Search, SlidersHorizontal, Printer, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { generateReservationId } from '@/lib/entityIds'
@@ -72,6 +72,8 @@ import type {
 } from '@/types/reservation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
+import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal'
+import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier'
 import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
 import { prefetchAdminReservationCardSideData } from '@/lib/adminReservationCardPrefetch'
 import {
@@ -300,7 +302,7 @@ interface AdminReservationsProps {
 
 export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
-  const { user, userPosition } = useAuth()
+  const { user, userPosition, hasPermission } = useAuth()
   const isSuper = userPosition === 'super'
   
   // ???????????? ?? ??? (??? ??? ?????? ??? ??) - useCallback??? ????????
@@ -476,6 +478,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const routeParams = useParams() as { locale?: string }
   const locale = routeParams?.locale || 'ko'
   const searchParams = useSearchParams()
+
+  const awayNotifier = useAwayOtherUserChangesNotifier({
+    supabase,
+    storageNamespace: 'admin-reservations',
+    scope: { reservations: true },
+    canQueryAuditLogs: hasPermission('canViewAuditLogs'),
+    enabled: Boolean(user?.email),
+  })
   
   // URL??? ?? ID ????? ??????
   const customerIdFromUrl = searchParams.get('customer')
@@ -500,11 +510,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     replaceReservationsFromQueryResult,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
-    refreshCustomers
-  } = useReservationData({ disableReservationsAutoLoad: true })
+    refreshCustomers,
+    mergeCustomers,
+  } = useReservationData({ disableReservationsAutoLoad: true, customersByReservationIds: true })
 
   const [serverListLoading, setServerListLoading] = useState(false)
+  /** 첫 예약 목록 로드 완료 후에는 필터·페이지 변경 시 목록 영역만 로딩(헤더·필터 유지) */
+  const [initialReservationListReady, setInitialReservationListReady] = useState(false)
   const [serverListTotal, setServerListTotal] = useState(0)
+  /** 주간 뷰: 500건 단위 이어 받기 진행률(카탈로그 `loadingProgress`와 별도) */
+  const [adminListChunkProgress, setAdminListChunkProgress] = useState<{
+    loaded: number
+    total: number | null
+  } | null>(null)
   const reservationFilterLayoutResetSkipRef = useRef(true)
   const replaceReservationsFromQueryResultRef = useRef(replaceReservationsFromQueryResult)
   replaceReservationsFromQueryResultRef.current = replaceReservationsFromQueryResult
@@ -1528,8 +1546,20 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
   }, [])
 
+  const reservationsPageLoadingProgress = useMemo(() => {
+    if (adminListChunkProgress) {
+      const t = adminListChunkProgress.total ?? adminListChunkProgress.loaded
+      return {
+        current: adminListChunkProgress.loaded,
+        total: Math.max(t, 1),
+      }
+    }
+    return loadingProgress
+  }, [adminListChunkProgress, loadingProgress])
+
   const loadAdminReservationList = useCallback(async () => {
     setServerListLoading(true)
+    setAdminListChunkProgress(null)
     try {
       const cardsWR = browserLocalWeekRangeFromOffset(cardsWeekPage)
       const statsWR = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
@@ -1601,7 +1631,16 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           ? { activityRangeStartIso: rangeStartIso, activityRangeEndIso: rangeEndIso }
           : {}),
       }
-      const { data, count, error } = await fetchAdminReservationList(supabase, cardArgs)
+      const { data, count, error } = await fetchAdminReservationList(
+        supabase,
+        cardArgs.mode === 'card-week'
+          ? {
+              ...cardArgs,
+              onCardWeekFetchProgress: (info) =>
+                setAdminListChunkProgress({ loaded: info.loaded, total: info.total }),
+            }
+          : cardArgs
+      )
       if (error) throw error
       await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
       await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
@@ -1621,7 +1660,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
       setServerListTotal(0)
     } finally {
+      setAdminListChunkProgress(null)
       setServerListLoading(false)
+      setInitialReservationListReady(true)
     }
   }, [
     cardsWeekPage,
@@ -3452,12 +3493,15 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         return
       }
 
-      // ??? ???? ?? ?????
-      await refreshCustomers()
+      if (data && data[0]) {
+        mergeCustomers?.([data[0] as Customer])
+      }
+      if (!mergeCustomers) {
+        await refreshCustomers()
+      }
       setShowCustomerForm(false)
       alert(t('messages.customerAdded'))
-      
-      // ??? ??????????????? ??? (??? ??? ?????? ??)
+
       if (showAddForm && data && data[0]) {
         const newCustomer = data[0]
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3467,13 +3511,18 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       console.error('Error adding customer:', error)
       alert(t('messages.customerAddErrorGeneric'))
     }
-  }, [showAddForm, refreshCustomers, t])
+  }, [showAddForm, refreshCustomers, mergeCustomers, t])
 
   const reservationFormCatalogOptions: Option[] = (catalogOptions || []) as Option[]
 
-  // ?? ???
-  if (loading) {
-    return <ReservationsLoadingSpinner loadingProgress={loadingProgress} />
+  // 최초 진입: 카탈로그 로딩 → 목록/가격 병합이 한 스피너로 이어짐. 이후 목록 갱신은 아래 인라인만.
+  if (loading || (serverListLoading && !initialReservationListReady)) {
+    return (
+      <ReservationsLoadingSpinner
+        loadingProgress={reservationsPageLoadingProgress}
+        headline={loading ? t('loadingReservationData') : t('loadingReservationList')}
+      />
+    )
   }
 
   return (
@@ -3523,31 +3572,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         <button
           type="button"
           onClick={() => setFilterModalOpen(true)}
-          className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
+          className="flex shrink-0 items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
-          <SlidersHorizontal className="w-4 h-4" />
-          <span>???</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setFollowUpQueueModalOpen(true)}
-          className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium flex-shrink-0 ${
-            followUpQueueUnionCount > 0 ? 'bg-teal-600 text-white hover:bg-teal-700' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-          }`}
-          title={t('followUpPipeline.headerButton')}
-        >
-          <ListChecks className="w-4 h-4 shrink-0" />
-          {followUpQueueUnionCount > 0 ? (
-            <span className="tabular-nums">{followUpQueueUnionCount}</span>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowDeletedReservationsModal(true)}
-          className="bg-gray-700 text-white px-3 py-1.5 rounded-md hover:bg-gray-800 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
-        >
-          <Archive className="w-4 h-4" />
-          <span className="truncate">{t('openDeletedReservationsModal')}</span>
+          <SlidersHorizontal className="h-4 w-4 shrink-0" />
+          <span>{t('filter')}</span>
         </button>
       </div>
 
@@ -3623,38 +3651,40 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       )}
 
       {groupByDate && (
-        <div className="mb-4 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900">{t('stats.cardsListSectionTitle')}</h3>
-            <p className="text-xs text-gray-600 tabular-nums">{formatWeekRange(cardsWeekPage).display}</p>
+        <div className="mb-4 flex flex-col gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+            <h3 className="min-w-0 flex-1 text-sm font-semibold text-gray-900 sm:flex-none">
+              {t('stats.cardsListSectionTitle')}
+            </h3>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCardsWeekPage((p) => p - 1)}
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100"
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                onClick={() => setCardsWeekPage(0)}
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  cardsWeekPage === 0
+                    ? 'border border-blue-600 bg-blue-600 text-white'
+                    : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-100'
+                }`}
+              >
+                {t('stats.cardsWeekNavCurrent')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCardsWeekPage((p) => p + 1)}
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100"
+              >
+                →
+              </button>
+            </div>
           </div>
-          <div className="flex flex-shrink-0 items-center gap-1 self-end sm:self-auto">
-            <button
-              type="button"
-              onClick={() => setCardsWeekPage((p) => p - 1)}
-              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100"
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              onClick={() => setCardsWeekPage(0)}
-              className={`rounded px-2 py-1 text-xs font-medium ${
-                cardsWeekPage === 0
-                  ? 'border border-blue-600 bg-blue-600 text-white'
-                  : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              {t('stats.cardsWeekNavCurrent')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCardsWeekPage((p) => p + 1)}
-              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-gray-100"
-            >
-              →
-            </button>
-          </div>
+          <p className="text-xs text-gray-600 tabular-nums">{formatWeekRange(cardsWeekPage).display}</p>
         </div>
       )}
 
@@ -3680,14 +3710,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         )}
       </div>
 
-      {/* ??? ?? */}
-      {serverListLoading ? (
+      {serverListLoading && initialReservationListReady ? (
         <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">??????? ????? ??..</p>
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+          <p className="mt-4 text-gray-600">{t('loadingReservationList')}</p>
         </div>
       ) : viewMode === 'calendar' ? (
-        /* ?????*/
         <ReservationCalendar 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           reservations={calendarReservations as any} 
@@ -4660,6 +4688,14 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         saving={cancellationReasonSaving}
         onClose={closeCancellationReasonModal}
         onSubmit={submitCancellationReasonModal}
+      />
+
+      <AwayOtherUserChangesModal
+        open={awayNotifier.open}
+        loading={awayNotifier.loading}
+        items={awayNotifier.items}
+        locale={locale}
+        onClose={awayNotifier.dismiss}
       />
     </div>
   )
