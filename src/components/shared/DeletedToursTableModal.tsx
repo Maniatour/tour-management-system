@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, Trash2 } from 'lucide-react'
+import { X, Trash2, RotateCcw } from 'lucide-react'
 import { canPermanentDeleteRecords } from '@/utils/tourUtils'
 
 export type DeletedTourRow = {
@@ -22,6 +22,8 @@ type Props = {
   loading?: boolean
   userEmail: string | null | undefined
   locale: string
+  /** 삭제됨 → scheduled 로 복구 (스케줄·목록에 다시 표시) */
+  onRestoreTour?: (tourId: string) => Promise<void>
   onPermanentDelete: (tourId: string) => Promise<void>
   emptyHint?: string
 }
@@ -36,14 +38,30 @@ export function DeletedToursTableModal({
   loading = false,
   userEmail,
   locale,
+  onRestoreTour,
   onPermanentDelete,
   emptyHint,
 }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
   const canPurge = canPermanentDeleteRecords(userEmail)
   const isKo = locale === 'ko'
 
   if (!isOpen) return null
+
+  const handleRestore = async (id: string) => {
+    if (!onRestoreTour) return
+    const msg = isKo
+      ? '이 투어를 "예정" 상태로 복구합니다. 가이드·차량은 비어 있으니 다시 배정해 주세요. 계속할까요?'
+      : 'Restore this tour to scheduled? Reassign guide and vehicle afterward. Continue?'
+    if (!confirm(msg)) return
+    setRestoringId(id)
+    try {
+      await onRestoreTour(id)
+    } finally {
+      setRestoringId(null)
+    }
+  }
 
   const handlePurge = async (id: string) => {
     const msg = isKo
@@ -98,7 +116,7 @@ export function DeletedToursTableModal({
                   <th className="py-2 pr-2">{isKo ? '투어 ID' : 'Tour'}</th>
                   <th className="py-2 pr-2">{isKo ? '투어일' : 'Date'}</th>
                   <th className="py-2 pr-2">{isKo ? '상태' : 'Status'}</th>
-                  <th className="py-2 pr-2 w-24" />
+                  <th className="py-2 pr-2 w-40 text-right">{isKo ? '작업' : 'Actions'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,7 +125,18 @@ export function DeletedToursTableModal({
                     <td className="py-2 pr-2 font-mono text-xs">{t.id.slice(0, 8)}…</td>
                     <td className="py-2 pr-2">{t.tour_date || '—'}</td>
                     <td className="py-2 pr-2">{t.tour_status || '—'}</td>
-                    <td className="py-2 pr-2 text-right">
+                    <td className="py-2 pr-2 text-right space-x-1">
+                      {onRestoreTour ? (
+                        <button
+                          type="button"
+                          disabled={restoringId === t.id}
+                          onClick={() => void handleRestore(t.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          {isKo ? '복구' : 'Restore'}
+                        </button>
+                      ) : null}
                       {canPurge ? (
                         <button
                           type="button"

@@ -28,11 +28,22 @@ async function isActiveStaffForCustomerInsert(
   client: SupabaseClient<Database>,
   emailLower: string
 ): Promise<boolean> {
-  const { data, error } = await client.rpc('is_staff', { p_email: emailLower })
-  if (!error) {
-    return Boolean(data)
+  const { data: staffOk, error: staffErr } = await client.rpc('is_staff', { p_email: emailLower })
+  if (!staffErr && staffOk) {
+    return true
   }
-  console.error('[api/admin/customers] is_staff rpc:', error.message)
+  const { data: roleOk, error: roleErr } = await client.rpc('customer_insert_team_role_ok', {
+    p_email: emailLower,
+  })
+  if (!roleErr && roleOk) {
+    return true
+  }
+  if (staffErr) {
+    console.error('[api/admin/customers] is_staff rpc:', staffErr.message)
+  }
+  if (roleErr) {
+    console.error('[api/admin/customers] customer_insert_team_role_ok rpc:', roleErr.message)
+  }
   return teamActiveRowExists(client, emailLower)
 }
 

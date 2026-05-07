@@ -47,7 +47,7 @@ import CancellationReasonModal from '@/components/reservation/CancellationReason
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
-import { normalizeReservationIds } from '@/utils/tourUtils'
+import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
@@ -60,7 +60,8 @@ import {
   assignmentStatusOptions,
   openGoogleMaps,
   safeJsonParse,
-  isTourCancelled
+  isTourCancelled,
+  tourStaffVehicleAssignmentClearPatch,
 } from '@/utils/tourStatusUtils'
 import { 
   Info, 
@@ -273,7 +274,8 @@ export default function TourDetailPage() {
     tourData.setTour((prev: TourRow | null) => {
       if (!prev) return null
       console.log('로컬 상태 업데이트:', { 이전: prev.tour_status, 새: status })
-      return { ...prev, tour_status: status }
+      const cleared = isTourCancelled(status) ? tourStaffVehicleAssignmentClearPatch() : {}
+      return { ...prev, tour_status: status, ...cleared }
     })
     
     // 데이터베이스 업데이트
@@ -556,10 +558,11 @@ export default function TourDetailPage() {
 
   // 투어별 저장된 수수료 로드
   const loadTourFees = useCallback(async () => {
-    const tourId = tourData.tour?.id
+    const t = tourData.tour
+    const tourId = t?.id
     if (!tourId) return
 
-    if (isTourCancelled(tourData.tour.tour_status)) {
+    if (isTourCancelled(t.tour_status)) {
       setGuideFee(0)
       setAssistantFee(0)
       setIsGuideFeeFromTour(false)
@@ -1173,6 +1176,42 @@ export default function TourDetailPage() {
     }
   }
 
+  const handleRestoreTour = async () => {
+    if (!tourData.tour || !tourData.isStaff) return
+    if (!isTourDeletedStatus(tourData.tour.tour_status)) return
+    const msg =
+      locale === 'ko'
+        ? '삭제됨 상태를 해제하고 투어를 "예정(scheduled)"으로 복구합니다. 가이드·차량은 비어 있으니 다시 배정해 주세요. 계속할까요?'
+        : 'Restore this tour to scheduled status? Guide and vehicle assignments stay cleared — please reassign. Continue?'
+    if (!confirm(msg)) return
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ tour_status: 'scheduled' })
+        .eq('id', tourData.tour.id)
+      if (error) {
+        console.error('투어 복구 오류:', error)
+        alert(locale === 'ko' ? '복구 실패: ' + error.message : 'Restore failed: ' + error.message)
+        return
+      }
+      alert(locale === 'ko' ? '투어가 복구되었습니다.' : 'Tour restored.')
+      const { data: updatedTour, error: refetchErr } = await supabase
+        .from('tours')
+        .select(`*, products (*)`)
+        .eq('id', tourData.tour.id)
+        .single()
+      if (!refetchErr && updatedTour) {
+        tourData.setTour(updatedTour)
+        tourData.setIsPrivateTour((updatedTour as any)?.is_private_tour || false)
+      } else {
+        router.refresh()
+      }
+    } catch (err) {
+      console.error('투어 복구 오류:', err)
+      alert(locale === 'ko' ? '복구 중 오류가 발생했습니다.' : 'Restore failed.')
+    }
+  }
+
   const handleDeleteTour = async () => {
     if (!tourData.tour) return
     if (!confirm('이 투어를 삭제하시겠습니까? 데이터는 삭제되지 않고 투어 상태만 "삭제됨"으로 변경됩니다.')) return
@@ -1180,7 +1219,7 @@ export default function TourDetailPage() {
     try {
       const { error } = await supabase
         .from('tours')
-        .update({ tour_status: 'Deleted' })
+        .update({ tour_status: 'Deleted', ...tourStaffVehicleAssignmentClearPatch() })
         .eq('id', tourData.tour.id)
 
       if (error) {
@@ -1769,6 +1808,9 @@ export default function TourDetailPage() {
         onEditClick={() => setShowTourEditModal(true)}
         onCopyTour={handleCopyTour}
         onDeleteTour={handleDeleteTour}
+        {...(tourData.isStaff && tourData.tour && isTourDeletedStatus(tourData.tour.tour_status)
+          ? { onRestoreTour: handleRestoreTour }
+          : {})}
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Copy, Trash2, Edit } from 'lucide-react'
+import { Copy, Trash2, Edit, RotateCcw } from 'lucide-react'
 import { TourStatusModal } from './modals/TourStatusModal'
 
 interface StatusManagementProps {
@@ -23,6 +23,7 @@ interface StatusManagementProps {
   onEditClick?: () => void
   onCopyTour?: () => void
   onDeleteTour?: () => void | Promise<void>
+  onRestoreTour?: () => void | Promise<void>
 }
 
 export const StatusManagement: React.FC<StatusManagementProps> = ({
@@ -45,7 +46,8 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
   locale,
   onEditClick,
   onCopyTour,
-  onDeleteTour
+  onDeleteTour,
+  onRestoreTour
 }) => {
   const [showStatusModal, setShowStatusModal] = useState(false)
   
@@ -81,9 +83,20 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
           <button onClick={onCopyTour} className="p-1.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
             <Copy size={16} />
           </button>
-          <button onClick={onDeleteTour} className="p-1.5 text-red-700 bg-red-100 rounded-lg hover:bg-red-200">
-            <Trash2 size={16} />
-          </button>
+          {onRestoreTour ? (
+            <button
+              type="button"
+              onClick={onRestoreTour}
+              className="p-1.5 text-emerald-800 bg-emerald-100 rounded-lg hover:bg-emerald-200"
+              title={locale === 'ko' ? '투어 복구' : 'Restore tour'}
+            >
+              <RotateCcw size={16} />
+            </button>
+          ) : (
+            <button onClick={onDeleteTour} className="p-1.5 text-red-700 bg-red-100 rounded-lg hover:bg-red-200">
+              <Trash2 size={16} />
+            </button>
+          )}
           <button 
             onClick={onEditClick}
             className="p-1.5 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200"

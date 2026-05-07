@@ -72,6 +72,7 @@ export default function AdminTours() {
     storageNamespace: 'admin-tours',
     scope: { tours: true },
     canQueryAuditLogs: hasPermission('canViewAuditLogs'),
+    locale,
     enabled: Boolean(adminUserEmail),
   })
 
@@ -1342,6 +1343,15 @@ export default function AdminTours() {
         }))}
         userEmail={adminUserEmail}
         locale={locale}
+        onRestoreTour={async (tourId) => {
+          const { error } = await supabase.from('tours').update({ tour_status: 'scheduled' }).eq('id', tourId)
+          if (error) {
+            alert(locale === 'ko' ? '복구 실패: ' + error.message : 'Restore failed: ' + error.message)
+            throw error
+          }
+          setDeletedToursBin((prev) => prev.filter((x) => x.id !== tourId))
+          await refetchTours()
+        }}
         onPermanentDelete={async (tourId) => {
           const { error } = await supabase.from('tours').delete().eq('id', tourId)
           if (error) {

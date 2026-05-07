@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -28,6 +28,8 @@ interface TourHeaderProps {
   onEditClick?: () => void
   onCopyTour?: () => void
   onDeleteTour?: () => void | Promise<void>
+  /** 삭제됨(soft delete) 투어를 예정 상태로 되돌릴 때 (스태프 전용) */
+  onRestoreTour?: () => void | Promise<void>
   onPrintReceipts?: () => void
   onPrintTipEnvelopes?: () => void
   onPrintBalanceEnvelopes?: () => void
@@ -55,6 +57,7 @@ export default function TourHeader({
   onEditClick,
   onCopyTour,
   onDeleteTour,
+  onRestoreTour,
   onPrintReceipts,
   onPrintTipEnvelopes,
   onPrintBalanceEnvelopes
@@ -153,6 +156,7 @@ export default function TourHeader({
             onEditClick={onEditClick}
             onCopyTour={onCopyTour}
             onDeleteTour={onDeleteTour}
+            {...(onRestoreTour ? { onRestoreTour } : {})}
           />
 
           {/* 데스크톱 요약/액션 */}
@@ -196,13 +200,24 @@ export default function TourHeader({
                 <Copy size={16} />
                 <span>{t('copy')}</span>
               </button>
-              <button 
-                onClick={onDeleteTour}
-                className="px-4 py-2 text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center space-x-2"
-              >
-                <Trash2 size={16} />
-                <span>{t('delete')}</span>
-              </button>
+              {onRestoreTour ? (
+                <button
+                  type="button"
+                  onClick={onRestoreTour}
+                  className="px-4 py-2 text-emerald-800 bg-emerald-100 rounded-lg hover:bg-emerald-200 flex items-center space-x-2"
+                >
+                  <RotateCcw size={16} />
+                  <span>{params.locale === 'ko' ? '복구' : 'Restore'}</span>
+                </button>
+              ) : (
+                <button 
+                  onClick={onDeleteTour}
+                  className="px-4 py-2 text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center space-x-2"
+                >
+                  <Trash2 size={16} />
+                  <span>{t('delete')}</span>
+                </button>
+              )}
               <button 
                 onClick={onEditClick}
                 className="px-4 py-2 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 flex items-center space-x-2"

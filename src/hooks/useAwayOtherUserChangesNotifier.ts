@@ -52,6 +52,8 @@ export function useAwayOtherUserChangesNotifier(args: {
   scope: AwayChangeDigestScope
   /** 예약·투어 digest: 감사 로그 SELECT 권한 (예: hasPermission(role, 'canViewAuditLogs')) */
   canQueryAuditLogs: boolean
+  /** 카드 문구(날짜·라벨) 로케일 — next-intl useLocale() 값과 동일하게 전달 */
+  locale?: string
   idleMs?: number
   enabled?: boolean
 }) {
@@ -60,6 +62,7 @@ export function useAwayOtherUserChangesNotifier(args: {
     storageNamespace,
     scope,
     canQueryAuditLogs,
+    locale = 'ko',
     idleMs = AWAY_CHANGE_IDLE_MS_DEFAULT,
     enabled = true,
   } = args
@@ -146,6 +149,7 @@ export function useAwayOtherUserChangesNotifier(args: {
         sinceIso: since,
         myEmail,
         scope: effectiveScope,
+        locale,
       })
       if (next.length > 0) {
         setItems(next)
@@ -157,7 +161,7 @@ export function useAwayOtherUserChangesNotifier(args: {
       setLoading(false)
       inFlightRef.current = false
     }
-  }, [enabled, myEmail, supabase, scope, canQueryAuditLogs])
+  }, [enabled, myEmail, supabase, scope, canQueryAuditLogs, locale])
 
   const onResumeIfIdle = useCallback(() => {
     if (!enabled || document.visibilityState !== 'visible') return

@@ -15,7 +15,13 @@ import {
   canonicalReservationIdKey,
 } from '@/utils/tourUtils'
 import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
-import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusLabel, isTourCancelled, tourStatusOptions } from '@/utils/tourStatusUtils'
+import {
+  getStatusColor as getTourStatusColor,
+  getStatusText as getTourStatusLabel,
+  isTourCancelled,
+  tourStaffVehicleAssignmentClearPatch,
+  tourStatusOptions,
+} from '@/utils/tourStatusUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import ReactCountryFlag from 'react-country-flag'
@@ -2033,15 +2039,15 @@ export default function ScheduleView() {
     try {
       const { data, error } = await supabase
         .from('tours')
-        .select('id')
+        .select('id, tour_status')
         .eq('product_id', productId)
         .eq('tour_date', tourDate)
-        .limit(1)
       if (error) {
         console.error('Error checking tour existence:', error)
         return false
       }
-      return Boolean(data && data.length > 0)
+      const rows = data || []
+      return rows.some((row) => !isTourCancelled(row.tour_status))
     } catch (e) {
       console.error('Error checking tour existence:', e)
       return false
@@ -3976,18 +3982,25 @@ export default function ScheduleView() {
       setUpdatingUnassignedTourStatusId(tourId)
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updateBody: Record<string, unknown> = { tour_status: newStatus }
+        if (isTourCancelled(newStatus)) {
+          Object.assign(updateBody, tourStaffVehicleAssignmentClearPatch())
+        }
         const { error } = await (supabase as any)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .from('tours' as any)
-          .update({ tour_status: newStatus })
+          .update(updateBody)
           .eq('id', tourId)
         if (error) throw error
-        setTours((prev) => prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t)))
+        const localPatch = isTourCancelled(newStatus) ? tourStaffVehicleAssignmentClearPatch() : {}
+        setTours((prev) =>
+          prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus, ...localPatch } : t))
+        )
         setUnassignedTours((prev) => {
           if (isStatusExcludedFromUnassignedList(newStatus)) {
             return prev.filter((t) => t.id !== tourId)
           }
-          return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t))
+          return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus, ...localPatch } : t))
         })
         setUnassignedTourStatusModalTourId(null)
       } catch (e) {
@@ -4042,12 +4055,13 @@ export default function ScheduleView() {
       try {
         const ok = await tourHandlers.updateTourStatus({ id: tourId }, newStatus, isScheduleStaff)
         if (!ok) return
-        setTours((prev) => prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t)))
+        const cleared = isTourCancelled(newStatus) ? tourStaffVehicleAssignmentClearPatch() : {}
+        setTours((prev) => prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus, ...cleared } : t)))
         setUnassignedTours((prev) => {
           if (isStatusExcludedFromUnassignedList(newStatus)) {
             return prev.filter((t) => t.id !== tourId)
           }
-          return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus } : t))
+          return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus, ...cleared } : t))
         })
         setTourDetailIframeReloadNonce((n) => n + 1)
       } finally {

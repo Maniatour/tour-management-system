@@ -11,6 +11,21 @@ export function isTourCancelled(tourStatus: string | null | undefined): boolean 
   return false
 }
 
+/**
+ * 투어 취소·삭제 시 가이드/어시/차량 배정과 관련 금액을 비울 때 사용하는 업데이트 필드.
+ * DB에 추가 컬럼이 있어도 무시되도록 최소 필드만 보냄.
+ */
+export function tourStaffVehicleAssignmentClearPatch(): Record<string, unknown> {
+  return {
+    tour_guide_id: null,
+    assistant_id: null,
+    tour_car_id: null,
+    assignment_status: 'pending',
+    guide_fee: 0,
+    assistant_fee: 0,
+  }
+}
+
 export const getStatusColor = (status: string | null) => {
   if (!status) return 'bg-gray-100 text-gray-800'
   

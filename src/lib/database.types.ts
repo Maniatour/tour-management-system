@@ -10613,6 +10613,9 @@ export type Database = {
         Returns: boolean
       }
       create_tour_photos_bucket: { Args: never; Returns: boolean }
+      customer_insert_team_role_ok:
+        | { Args: never; Returns: boolean }
+        | { Args: { p_email: string }; Returns: boolean }
       current_email: { Args: never; Returns: string }
       evaluate_workflow_condition: {
         Args: { p_condition_data?: Json; p_step_id: string }

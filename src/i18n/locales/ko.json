@@ -1297,6 +1297,12 @@
     "confirm": "확인",
     "unknownActor": "알 수 없음",
     "by": "변경: {email}",
+    "colon": ":",
+    "actions": {
+      "insert": "생성",
+      "update": "수정",
+      "delete": "삭제"
+    },
     "openReservation": "예약 상세로 이동",
     "openTour": "투어 상세로 이동",
     "openBooking": "부킹 관리로 이동",

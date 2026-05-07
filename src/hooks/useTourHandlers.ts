@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
-import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { isTourCancelled, tourStaffVehicleAssignmentClearPatch } from '@/utils/tourStatusUtils'
 import {
   normalizeReservationIds,
   reservationIdsLooselyEqual,
@@ -50,8 +50,7 @@ export function useTourHandlers() {
       console.log('데이터베이스 업데이트 시작:', { tourId: tour.id, newStatus })
       const updatePayload: Record<string, unknown> = { tour_status: newStatus }
       if (isTourCancelled(newStatus)) {
-        updatePayload.guide_fee = 0
-        updatePayload.assistant_fee = 0
+        Object.assign(updatePayload, tourStaffVehicleAssignmentClearPatch())
       }
       const { data, error } = await (supabase as any)
         .from('tours')

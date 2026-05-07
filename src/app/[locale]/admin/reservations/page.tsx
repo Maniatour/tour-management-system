@@ -27,7 +27,6 @@ import ResidentInquiryEmailPreviewModal from '@/components/reservation/ResidentI
 import EmailLogsModal from '@/components/reservation/EmailLogsModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ResizableModal from '@/components/reservation/ResizableModal'
-import ReservationsLoadingSpinner from '@/components/reservation/ReservationsLoadingSpinner'
 import ReservationsHeader from '@/components/reservation/ReservationsHeader'
 import ReservationsFilters from '@/components/reservation/ReservationsFilters'
 import WeeklyStatsPanel from '@/components/reservation/WeeklyStatsPanel'
@@ -63,6 +62,7 @@ import {
   isReservationCancelledStatus,
   isReservationDeletedStatus,
 } from '@/utils/tourUtils'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 import type { 
   Customer, 
   Reservation,
@@ -484,6 +484,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     storageNamespace: 'admin-reservations',
     scope: { reservations: true },
     canQueryAuditLogs: hasPermission('canViewAuditLogs'),
+    locale,
     enabled: Boolean(user?.email),
   })
   
@@ -514,9 +515,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     mergeCustomers,
   } = useReservationData({ disableReservationsAutoLoad: true, customersByReservationIds: true })
 
-  const [serverListLoading, setServerListLoading] = useState(false)
-  /** 첫 예약 목록 로드 완료 후에는 필터·페이지 변경 시 목록 영역만 로딩(헤더·필터 유지) */
-  const [initialReservationListReady, setInitialReservationListReady] = useState(false)
+  /** true: 첫 목록 요청 전·진행 중에 본문 스피너 유지(빈 목록 한 프레임 방지) */
+  const [serverListLoading, setServerListLoading] = useState(true)
   const [serverListTotal, setServerListTotal] = useState(0)
   /** 주간 뷰: 500건 단위 이어 받기 진행률(카탈로그 `loadingProgress`와 별도) */
   const [adminListChunkProgress, setAdminListChunkProgress] = useState<{
@@ -569,7 +569,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   )
 
   // ??? ???(?? ??? ??????? ????)
-  const [reservationListUi, setReservationListUi] = useRoutePersistedState(
+  const [reservationListUi, setReservationListUi, reservationListUiHydrated] = useRoutePersistedState(
     'reservations-list',
     RESERVATIONS_LIST_UI_DEFAULT
   )
@@ -1662,7 +1662,6 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     } finally {
       setAdminListChunkProgress(null)
       setServerListLoading(false)
-      setInitialReservationListReady(true)
     }
   }, [
     cardsWeekPage,
@@ -1689,12 +1688,14 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   }, [loadAdminReservationList])
 
   useLayoutEffect(() => {
+    if (!reservationListUiHydrated) return
     if (reservationFilterLayoutResetSkipRef.current) {
       reservationFilterLayoutResetSkipRef.current = false
       return
     }
     setCurrentPage(1)
   }, [
+    reservationListUiHydrated,
     debouncedSearchTerm,
     selectedStatus,
     selectedChannel,
@@ -1709,8 +1710,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   ])
 
   useEffect(() => {
+    if (!reservationListUiHydrated) return
     void loadAdminReservationList()
-  }, [loadAdminReservationList, currentPage])
+  }, [loadAdminReservationList, currentPage, reservationListUiHydrated])
 
   // ??????????? (created_at ???) - ?? ????????????
   const groupedReservations = useMemo(() => {
@@ -2877,17 +2879,17 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     try {
       const { data, error } = await supabase
         .from('tours')
-        .select('id')
+        .select('id, tour_status')
         .eq('product_id', productId)
         .eq('tour_date', tourDate)
-        .limit(1)
 
       if (error) {
         console.error('Error checking tour existence:', error)
         return false
       }
 
-      return data && data.length > 0
+      const rows = data || []
+      return rows.some((row) => !isTourCancelled(row.tour_status))
     } catch (error) {
       console.error('Error checking tour existence:', error)
       return false
@@ -3516,15 +3518,13 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   const reservationFormCatalogOptions: Option[] = (catalogOptions || []) as Option[]
 
-  // 최초 진입: 카탈로그 로딩 → 목록/가격 병합이 한 스피너로 이어짐. 이후 목록 갱신은 아래 인라인만.
-  if (loading || (serverListLoading && !initialReservationListReady)) {
-    return (
-      <ReservationsLoadingSpinner
-        loadingProgress={reservationsPageLoadingProgress}
-        headline={loading ? t('loadingReservationData') : t('loadingReservationList')}
-      />
-    )
-  }
+  /** 헤더·필터는 유지하고, 스토리지 복원·카탈로그·목록 구간은 본문만 로딩 */
+  const showMainBodyLoading =
+    !reservationListUiHydrated || loading || serverListLoading
+  const mainBodyLoadingHeadline =
+    !reservationListUiHydrated || loading
+      ? t('loadingReservationData')
+      : t('loadingReservationList')
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -3651,7 +3651,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         />
       )}
 
-      {groupByDate && (
+      {groupByDate && !showMainBodyLoading && (
         <div className="mb-4 flex flex-col gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <h3 className="min-w-0 flex-1 text-sm font-semibold text-gray-900 sm:flex-none">
@@ -3689,32 +3689,70 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         </div>
       )}
 
-      {/* ?? ??? */}
-      <div className="text-sm text-gray-600">
-        {groupByDate ? (
-          <>
-            {Object.values(groupedReservations).flat().length}{t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}{t('groupingLabels.registrationDates')}
-            {Object.values(groupedReservations).flat().length !== serverListTotal && serverListTotal > 0 && (
-              <span className="ml-2 text-blue-600">
-                ({t('groupingLabels.filteredFromTotal')} {serverListTotal}{t('stats.more')})
-              </span>
-            )}
-          </>
-        ) : (
-          <>
-            {t('paginationDisplay', {
-              total: serverListTotal,
-              start: serverListTotal === 0 ? 0 : startIndex + 1,
-              end: serverListTotal === 0 ? 0 : Math.min(startIndex + filteredReservations.length, serverListTotal),
-            })}
-          </>
-        )}
-      </div>
+      {!showMainBodyLoading && (
+        <div className="text-sm text-gray-600">
+          {groupByDate ? (
+            <>
+              {Object.values(groupedReservations).flat().length}
+              {t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}
+              {t('groupingLabels.registrationDates')}
+              {Object.values(groupedReservations).flat().length !== serverListTotal && serverListTotal > 0 && (
+                <span className="ml-2 text-blue-600">
+                  ({t('groupingLabels.filteredFromTotal')} {serverListTotal}
+                  {t('stats.more')})
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              {t('paginationDisplay', {
+                total: serverListTotal,
+                start: serverListTotal === 0 ? 0 : startIndex + 1,
+                end:
+                  serverListTotal === 0
+                    ? 0
+                    : Math.min(startIndex + filteredReservations.length, serverListTotal),
+              })}
+            </>
+          )}
+        </div>
+      )}
 
-      {serverListLoading && initialReservationListReady ? (
-        <div className="text-center py-12">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
-          <p className="mt-4 text-gray-600">{t('loadingReservationList')}</p>
+      {showMainBodyLoading ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm sm:p-12">
+          <div className="mx-auto max-w-md text-center">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+            <p className="mt-4 text-base font-semibold text-gray-900">{mainBodyLoadingHeadline}</p>
+            {reservationsPageLoadingProgress.total > 0 && (
+              <div className="mt-4 space-y-2 text-left">
+                <div className="text-sm text-gray-600">
+                  {reservationsPageLoadingProgress.current} / {reservationsPageLoadingProgress.total}{' '}
+                  {t('reservationsLoading')}
+                </div>
+                <div className="h-2 w-full rounded-full bg-gray-200">
+                  <div
+                    className="h-2 rounded-full bg-blue-600 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (reservationsPageLoadingProgress.current /
+                          Math.max(reservationsPageLoadingProgress.total, 1)) *
+                          100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-gray-500">
+                  {Math.round(
+                    (reservationsPageLoadingProgress.current /
+                      Math.max(reservationsPageLoadingProgress.total, 1)) *
+                      100
+                  )}
+                  % {t('completed')}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       ) : viewMode === 'calendar' ? (
         <ReservationCalendar 

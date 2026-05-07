@@ -22,6 +22,7 @@ export default function BookingManagementPage() {
     storageNamespace: 'admin-booking',
     scope: { bookings: true },
     canQueryAuditLogs: false,
+    locale,
     enabled: Boolean(user?.email),
   });
   const [activeTab, setActiveTab] = useRoutePersistedState<TabType>('tab', 'tickets');

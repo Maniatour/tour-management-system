@@ -1288,6 +1288,12 @@
     "confirm": "OK",
     "unknownActor": "Unknown",
     "by": "By: {email}",
+    "colon": ":",
+    "actions": {
+      "insert": "Created",
+      "update": "Updated",
+      "delete": "Deleted"
+    },
     "openReservation": "Open reservation",
     "openTour": "Open tour",
     "openBooking": "Open booking management",

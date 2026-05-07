@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { createTourPhotosBucket } from './tourPhotoBucket'
 import { generateTourId } from './entityIds'
 import { normalizeReservationIds } from '@/utils/tourUtils'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 
 export interface TourAutoCreationResult {
   success: boolean
@@ -47,10 +48,10 @@ export async function autoCreateOrUpdateTour(
       }
     }
 
-    // 2. 같은 날짜, 같은 product_id의 기존 투어가 있는지 확인
+    // 2. 같은 날짜·상품의 투어 (삭제/취소는 스케줄 충돌·병합 대상에서 제외)
     const { data: existingTours, error: tourError } = await supabase
       .from('tours')
-      .select('id, reservation_ids')
+      .select('id, reservation_ids, tour_status')
       .eq('product_id', productId)
       .eq('tour_date', tourDate)
 
@@ -67,9 +68,30 @@ export async function autoCreateOrUpdateTour(
       }
     }
 
-    if (existingTours && existingTours.length > 0) {
-      const rid = String(reservationId).trim()
-      for (const t of existingTours) {
+    const allRows = existingTours || []
+    const rid = String(reservationId).trim()
+    const inactiveTours = allRows.filter((t) => isTourCancelled(t.tour_status))
+    const activeTours = allRows.filter((t) => !isTourCancelled(t.tour_status))
+
+    for (const t of inactiveTours) {
+      const ids = normalizeReservationIds(t.reservation_ids)
+      if (!ids.includes(rid)) continue
+      const nextIds = ids.filter((x) => x !== rid)
+      const { error: stripErr } = await supabase
+        .from('tours')
+        .update({ reservation_ids: nextIds })
+        .eq('id', t.id)
+      if (stripErr) {
+        console.error('Error stripping reservation from inactive tour:', stripErr)
+        return {
+          success: false,
+          message: '비활성 투어에서 예약 연결을 정리하는 중 오류가 발생했습니다: ' + stripErr.message,
+        }
+      }
+    }
+
+    if (activeTours.length > 0) {
+      for (const t of activeTours) {
         if (normalizeReservationIds(t.reservation_ids).includes(rid)) {
           return {
             success: true,
@@ -78,8 +100,8 @@ export async function autoCreateOrUpdateTour(
           }
         }
       }
-      // 3. 기존 투어가 있는 경우: reservation_ids에 새 예약 ID 추가
-      const existingTour = existingTours[0]
+      // 3. 활성 투어가 있는 경우: reservation_ids에 새 예약 ID 추가
+      const existingTour = activeTours[0]
       const currentReservationIds = normalizeReservationIds(existingTour.reservation_ids)
       const updatedReservationIds = [...new Set([...currentReservationIds, rid])]
 
@@ -132,7 +154,7 @@ export async function autoCreateOrUpdateTour(
         message: '기존 투어에 예약이 추가되었습니다.'
       }
     } else {
-      // 5. 기존 투어가 없는 경우: 새 투어 생성
+      // 5. 활성 투어가 없는 경우(삭제·취소만 있거나 없음): 새 투어 생성
       const tourId = generateTourId()
       
       const { data: newTour, error: createError } = await supabase
