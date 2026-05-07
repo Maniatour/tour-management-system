@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { X, Search, SlidersHorizontal, Printer, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateReservationId } from '@/lib/entityIds'
 import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
@@ -3483,32 +3484,25 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         created_at: getLasVegasToday()
       }
       
-      // Supabase??????
-      const { data, error } = await supabase
-        .from('customers')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .insert(customerDataWithDate as any)
-        .select('*')
+      const { customer, errorMessage } = await insertCustomerViaAdminApi(
+        customerDataWithDate as Record<string, unknown>
+      )
 
-      if (error) {
-        console.error('Error adding customer:', error)
-        alert(t('messages.customerAddError') + error.message)
+      if (errorMessage || !customer) {
+        console.error('Error adding customer:', errorMessage)
+        alert(t('messages.customerAddError') + (errorMessage || ''))
         return
       }
 
-      if (data && data[0]) {
-        mergeCustomers?.([data[0] as Customer])
-      }
+      mergeCustomers?.([customer as Customer])
       if (!mergeCustomers) {
         await refreshCustomers()
       }
       setShowCustomerForm(false)
       alert(t('messages.customerAdded'))
 
-      if (showAddForm && data && data[0]) {
-        const newCustomer = data[0]
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        alert(t('messages.newCustomerAdded').replace('{name}', (newCustomer as any).name))
+      if (showAddForm && customer) {
+        alert(t('messages.newCustomerAdded').replace('{name}', customer.name || ''))
       }
     } catch (error) {
       console.error('Error adding customer:', error)
@@ -4184,6 +4178,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           onDelete={handleDeleteReservation}
           layout="modal"
           allowPastDateEdit={isSuper}
+          useServerCustomerInsert
           followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
           titleAction={
             editingReservation ? (

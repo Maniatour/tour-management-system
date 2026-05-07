@@ -13,6 +13,7 @@ import {
   canonicalVariantKey,
 } from '@/lib/resolveImportChannelVariant'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateCustomerId } from '@/lib/entityIds'
 import type { Database } from '@/lib/supabase'
 
@@ -22,28 +23,11 @@ async function insertCustomerForReservationForm(
   customerRow: Record<string, unknown>
 ): Promise<{ row: Database['public']['Tables']['customers']['Row'] | null; errorMessage: string | null }> {
   if (useServerApi) {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session?.access_token) {
-      return { row: null, errorMessage: '세션이 없습니다. 다시 로그인해 주세요.' }
+    const { customer, errorMessage } = await insertCustomerViaAdminApi(customerRow)
+    if (errorMessage || !customer) {
+      return { row: null, errorMessage: errorMessage || '고객 생성 실패' }
     }
-    const res = await fetch('/api/admin/customers', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ customer: customerRow }),
-    })
-    const json = (await res.json().catch(() => ({}))) as {
-      error?: string
-      customer?: Database['public']['Tables']['customers']['Row']
-    }
-    if (!res.ok) {
-      return { row: null, errorMessage: json.error || `요청 실패 (${res.status})` }
-    }
-    return { row: json.customer ?? null, errorMessage: null }
+    return { row: customer, errorMessage: null }
   }
   const { data, error } = await (supabase as any).from('customers').insert(customerRow).select('*').maybeSingle()
   if (error) {

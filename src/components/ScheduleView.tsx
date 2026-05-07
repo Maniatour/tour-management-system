@@ -7747,6 +7747,7 @@ export default function ScheduleView() {
             coupons={scheduleReservationFormData.coupons}
             layout="modal"
             allowPastDateEdit={isSuperAdmin}
+            useServerCustomerInsert
             onSubmit={async (reservationData: Record<string, unknown>) => {
               const editingId = String((scheduleEditingReservation as { id?: string }).id || '')
               try {

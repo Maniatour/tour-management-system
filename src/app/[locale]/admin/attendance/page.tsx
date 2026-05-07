@@ -1382,6 +1382,7 @@ export default function AttendancePage() {
             coupons={reservationFormData.coupons}
             layout="modal"
             allowPastDateEdit={isSuper}
+            useServerCustomerInsert
             onSubmit={async (reservationData: any) => {
               try {
                 const dbReservationData = {

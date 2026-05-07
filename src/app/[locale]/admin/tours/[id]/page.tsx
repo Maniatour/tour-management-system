@@ -2233,6 +2233,7 @@ export default function TourDetailPage() {
           options={reservationFormData.options}
           pickupHotels={tourData.pickupHotels}
           coupons={reservationFormData.coupons}
+          useServerCustomerInsert
           titleAction={
             <div className="flex flex-wrap items-center gap-1 sm:gap-2">
               <button

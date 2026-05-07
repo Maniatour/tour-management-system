@@ -26,6 +26,7 @@ import {
   Store
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateReservationId, generateCustomerId } from '@/lib/entityIds'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -1047,14 +1048,13 @@ export default function AdminCustomers() {
         created_at: getLasVegasToday()
       }
       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        .from('customers')
-        .insert(customerDataWithDate)
+      const { customer, errorMessage } = await insertCustomerViaAdminApi(
+        customerDataWithDate as Record<string, unknown>
+      )
 
-      if (error) {
-        console.error('Error adding customer:', error)
-        alert(t('messages.errorAddingCustomer'))
+      if (errorMessage || !customer) {
+        console.error('Error adding customer:', errorMessage)
+        alert(t('messages.errorAddingCustomer') + (errorMessage ? `: ${errorMessage}` : ''))
         return
       }
 
@@ -3620,6 +3620,7 @@ function ReservationFormWithInitialCustomer({
       onDelete={onDelete}
       layout={layout || 'modal'}
       initialCustomerId={customer.id}
+      useServerCustomerInsert
     />
   )
 }
