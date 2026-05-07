@@ -335,3 +335,100 @@ export async function fetchAdminReservationList(
     return { data: null, count: null, error: e instanceof Error ? e : new Error(String(e)) }
   }
 }
+
+export type CardWeekProgressiveHandlers = {
+  /** 정렬·필터 기준 첫 청크(기본 500행) — UI에 먼저 반영. `false` 반환 시 이어 받기 중단(필터 전환 등) */
+  onFirstChunk: (p: {
+    rows: Record<string, unknown>[]
+    totalCount: number | null
+  }) => boolean | void | Promise<boolean | void>
+  /** 이후 청크(백그라운드) */
+  onAdditionalChunk?: (p: {
+    rows: Record<string, unknown>[]
+    mergedLoaded: number
+    totalCount: number | null
+  }) => boolean | void | Promise<boolean | void>
+  onProgress?: (info: { loaded: number; total: number | null }) => void
+}
+
+/**
+ * `card-week`: 첫 청크만 먼저 콜백으로 넘긴 뒤, 동일 쿼리로 나머지 청크를 이어 받는다.
+ * (날짜 그룹 뷰에서 초기 표시 지연을 줄이기 위함)
+ */
+export async function fetchAdminReservationListCardWeekProgressive(
+  supabase: SupabaseClient,
+  args: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress'>,
+  handlers: CardWeekProgressiveHandlers
+): Promise<{ error: Error | null }> {
+  try {
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
+    const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
+    const merged: Record<string, unknown>[] = []
+    let totalCount: number | null = null
+    let offset = 0
+    let chunkIndex = 0
+    const maxChunks = 400
+
+    for (;;) {
+      if (chunkIndex >= maxChunks) {
+        return {
+          error: new Error(`[admin reservations] card-week chunk limit exceeded (${maxChunks * chunk} rows)`),
+        }
+      }
+      chunkIndex += 1
+
+      const q = buildAdminReservationListQuery(supabase, args, searchOr, {
+        includeExactCount: offset === 0,
+      })
+      const { data, error, count } = await q.range(offset, offset + chunk - 1)
+      if (error) {
+        return { error: error as Error }
+      }
+      const batch = (data || []) as Record<string, unknown>[]
+
+      if (offset === 0) {
+        totalCount = count ?? null
+        merged.push(...batch)
+        handlers.onProgress?.({ loaded: merged.length, total: totalCount })
+        try {
+          const keep = await handlers.onFirstChunk({ rows: batch, totalCount })
+          if (keep === false) {
+            return { error: null }
+          }
+        } catch (e) {
+          return { error: e instanceof Error ? e : new Error(String(e)) }
+        }
+      } else {
+        merged.push(...batch)
+        handlers.onProgress?.({ loaded: merged.length, total: totalCount })
+        try {
+          const keep = await handlers.onAdditionalChunk?.({
+            rows: batch,
+            mergedLoaded: merged.length,
+            totalCount,
+          })
+          if (keep === false) {
+            break
+          }
+        } catch (e) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[admin reservations] card-week incremental merge failed:', e)
+          }
+          break
+        }
+      }
+
+      if (batch.length < chunk) {
+        break
+      }
+      if (totalCount != null && merged.length >= totalCount) {
+        break
+      }
+      offset += chunk
+    }
+
+    return { error: null }
+  } catch (e) {
+    return { error: e instanceof Error ? e : new Error(String(e)) }
+  }
+}

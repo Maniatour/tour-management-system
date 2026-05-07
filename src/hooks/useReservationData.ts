@@ -801,13 +801,19 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     })
   }
 
+  type QueryResultListOpts = {
+    skipLoadingFlags?: boolean
+    /** 훅 `loadingProgress` — 예약 관리 주간 뷰에서 서버 total과 맞출 때 사용 */
+    listProgress?: { current: number; total: number | null }
+  }
+
   /**
    * 서버 목록 쿼리 결과만 반영(예약 관리 카드/캘린더).
    * skipLoadingFlags: 예약 관리 페이지에서 자체 로딩 스피너를 쓸 때 true.
    */
   const replaceReservationsFromQueryResult = async (
     raw: Record<string, unknown>[],
-    opts?: { skipLoadingFlags?: boolean }
+    opts?: QueryResultListOpts
   ) => {
     const quiet = opts?.skipLoadingFlags === true
     if (!quiet) {
@@ -869,7 +875,14 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       setReservationPricingMap(pricingMap)
       setReservationOptionsPresenceByReservationId(optionsPresenceMap)
       setToursMap(mergeTourMaps(toursById, toursByOverlap))
-      setLoadingProgress({ current: mapped.length, total: mapped.length })
+      if (opts?.listProgress) {
+        setLoadingProgress({
+          current: opts.listProgress.current,
+          total: opts.listProgress.total ?? opts.listProgress.current,
+        })
+      } else {
+        setLoadingProgress({ current: mapped.length, total: mapped.length })
+      }
     } catch (e) {
       console.warn('replaceReservationsFromQueryResult:', e)
       setReservations([])
@@ -878,6 +891,73 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         setReservationsLoading(false)
         setReservationsAggregateReady(true)
       }
+    }
+  }
+
+  /**
+   * 서버 목록 쿼리 추가 분(주간 뷰 백그라운드 청크). 기존 예약·맵과 id 기준 병합.
+   */
+  const mergeMoreReservationsFromQueryResult = async (
+    raw: Record<string, unknown>[],
+    opts?: QueryResultListOpts
+  ) => {
+    if (raw.length === 0) return
+    try {
+      const productIds = [...new Set(raw.map((r) => r.product_id as string).filter(Boolean))]
+      const tourDates = raw.map((r) => r.tour_date).filter(Boolean) as string[]
+      const productsBatch =
+        productIds.length > 0
+          ? (await throttledSupabaseRequest(() =>
+              supabase.from('products').select('id, sub_category').in('id', productIds)
+            )).data || []
+          : []
+      const productMap = new Map((productsBatch as { id: string; sub_category?: string }[]).map((p) => [p.id, p.sub_category || '']))
+      const maniaIds = productIds.filter((id) => {
+        const sc = productMap.get(id)
+        return sc === 'Mania Tour' || sc === 'Mania Service'
+      })
+      const toursExistence =
+        maniaIds.length === 0 || tourDates.length === 0
+          ? []
+          : (await supabase
+              .from('tours')
+              .select('product_id, tour_date')
+              .in('product_id', maniaIds)
+              .in('tour_date', tourDates)).data || []
+      const tourMap = new Map(
+        (toursExistence as { product_id: string; tour_date: string }[]).map((t) => [`${t.product_id}-${t.tour_date}`, true])
+      )
+      const restMapped = mapRawToReservation(raw, productMap, tourMap)
+      const restResIds = restMapped.map((r) => r.id)
+      const restTourIds = [...new Set(restMapped.map((r) => r.tourId).filter((id) => id && id.trim() && id !== 'null' && id !== 'undefined'))]
+      const customerIdsForList = customersByReservationIds
+        ? [...new Set(restMapped.map((r) => r.customerId).filter((id) => id && String(id).trim()))]
+        : []
+
+      const [restPricingMap, restToursById, restToursByOverlap, restOptionsPresenceMap] = await Promise.all([
+        fetchPricingMap(restResIds),
+        fetchToursMap(restTourIds),
+        fetchToursOverlappingReservationIds(restResIds),
+        fetchReservationOptionsPresenceMap(restResIds),
+        customersByReservationIds ? loadCustomersByIds(customerIdsForList) : Promise.resolve(),
+      ])
+
+      setReservations((prev) => {
+        const ids = new Set(prev.map((r) => r.id))
+        const extra = restMapped.filter((r) => !ids.has(r.id))
+        return extra.length === 0 ? prev : [...prev, ...extra]
+      })
+      setReservationPricingMap((prev) => new Map([...prev, ...restPricingMap]))
+      setReservationOptionsPresenceByReservationId((prev) => new Map([...prev, ...restOptionsPresenceMap]))
+      setToursMap((prev) => mergeTourMaps(prev, restToursById, restToursByOverlap))
+      if (opts?.listProgress) {
+        setLoadingProgress({
+          current: opts.listProgress.current,
+          total: opts.listProgress.total ?? opts.listProgress.current,
+        })
+      }
+    } catch (e) {
+      console.warn('mergeMoreReservationsFromQueryResult:', e)
     }
   }
 
@@ -909,6 +989,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     // 리프레시 함수들
     refreshReservations: fetchReservations,
     replaceReservationsFromQueryResult,
+    mergeMoreReservationsFromQueryResult,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
     refreshCustomers: customersByReservationIds ? refreshCustomersByIds : refetchCustomers,

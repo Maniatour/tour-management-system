@@ -75,7 +75,10 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
 import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal'
 import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier'
-import { fetchAdminReservationList } from '@/lib/adminReservationListFetch'
+import {
+  fetchAdminReservationList,
+  fetchAdminReservationListCardWeekProgressive,
+} from '@/lib/adminReservationListFetch'
 import { prefetchAdminReservationCardSideData } from '@/lib/adminReservationCardPrefetch'
 import {
   browserLocalInclusiveDateKeys,
@@ -510,6 +513,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     loadingProgress,
     reservationsAggregateReady,
     replaceReservationsFromQueryResult,
+    mergeMoreReservationsFromQueryResult,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
     refreshCustomers,
@@ -527,6 +531,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const reservationFilterLayoutResetSkipRef = useRef(true)
   const replaceReservationsFromQueryResultRef = useRef(replaceReservationsFromQueryResult)
   replaceReservationsFromQueryResultRef.current = replaceReservationsFromQueryResult
+  const mergeMoreReservationsFromQueryResultRef = useRef(mergeMoreReservationsFromQueryResult)
+  mergeMoreReservationsFromQueryResultRef.current = mergeMoreReservationsFromQueryResult
+  /** 주간 카드 점진 로드: 필터 바꾸면 이전 백그라운드 병합 무시 */
+  const adminCardWeekFetchGenRef = useRef(0)
 
   const refreshReservationPricingForIdsRef = useRef(refreshReservationPricingForIds)
   const refreshReservationOptionsPresenceForIdsRef = useRef(refreshReservationOptionsPresenceForIds)
@@ -1552,6 +1560,23 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
   }, [])
 
+  const mergeReservationListSideDataPrefetch = useCallback(async (rows: Record<string, unknown>[] | null) => {
+    const ids = (rows || [])
+      .map((r) =>
+        r && typeof r === 'object' && 'id' in r ? String((r as { id: unknown }).id ?? '').trim() : ''
+      )
+      .filter(Boolean)
+    if (ids.length === 0) return
+    try {
+      const m = await prefetchAdminReservationCardSideData(supabase, ids, choicesCacheRef)
+      setResidentCustomerBatchMap((prev) => new Map([...prev, ...m]))
+    } catch (e) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[admin reservations] card side merge prefetch failed:', e)
+      }
+    }
+  }, [])
+
   const reservationsPageLoadingProgress = useMemo(() => {
     if (adminListChunkProgress) {
       const t = adminListChunkProgress.total ?? adminListChunkProgress.loaded
@@ -1564,6 +1589,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   }, [adminListChunkProgress, loadingProgress])
 
   const loadAdminReservationList = useCallback(async () => {
+    adminCardWeekFetchGenRef.current += 1
+    const fetchGen = adminCardWeekFetchGenRef.current
     setServerListLoading(true)
     setAdminListChunkProgress(null)
     try {
@@ -1637,20 +1664,50 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           ? { activityRangeStartIso: rangeStartIso, activityRangeEndIso: rangeEndIso }
           : {}),
       }
-      const { data, count, error } = await fetchAdminReservationList(
-        supabase,
-        cardArgs.mode === 'card-week'
-          ? {
-              ...cardArgs,
-              onCardWeekFetchProgress: (info) =>
-                setAdminListChunkProgress({ loaded: info.loaded, total: info.total }),
+      if (cardArgs.mode === 'card-week') {
+        const { error: progError } = await fetchAdminReservationListCardWeekProgressive(supabase, cardArgs, {
+          onProgress: (info) => {
+            if (fetchGen !== adminCardWeekFetchGenRef.current) return
+            setAdminListChunkProgress({ loaded: info.loaded, total: info.total })
+          },
+          onFirstChunk: async ({ rows, totalCount }) => {
+            if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+            if (rows.length === 0) {
+              await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+              setResidentCustomerBatchMap(new Map())
+              setServerListTotal(totalCount ?? 0)
+              setServerListLoading(false)
+              return true
             }
-          : cardArgs
-      )
-      if (error) throw error
-      await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
-      await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
-      setServerListTotal(count ?? 0)
+            await replaceReservationsFromQueryResultRef.current(rows, {
+              skipLoadingFlags: true,
+              listProgress: { current: rows.length, total: totalCount },
+            })
+            await applyReservationListSideDataPrefetch(rows)
+            setServerListTotal(totalCount ?? rows.length)
+            setServerListLoading(false)
+            return true
+          },
+          onAdditionalChunk: async ({ rows, mergedLoaded, totalCount }) => {
+            if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+            if (rows.length === 0) return true
+            await mergeMoreReservationsFromQueryResultRef.current(rows, {
+              skipLoadingFlags: true,
+              listProgress: { current: mergedLoaded, total: totalCount },
+            })
+            await mergeReservationListSideDataPrefetch(rows)
+            setServerListTotal(totalCount ?? mergedLoaded)
+            return true
+          },
+        })
+        if (progError) throw progError
+      } else {
+        const { data, count, error } = await fetchAdminReservationList(supabase, cardArgs)
+        if (error) throw error
+        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+        await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
+        setServerListTotal(count ?? 0)
+      }
     } catch (e) {
       // Strict Mode·탭 전환·필터 변경 등으로 이전 요청이 Abort된 경우 — 목록을 비우지 않고 무시
       if (isAbortLikeError(e)) {
@@ -1666,8 +1723,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
       setServerListTotal(0)
     } finally {
-      setAdminListChunkProgress(null)
-      setServerListLoading(false)
+      if (fetchGen === adminCardWeekFetchGenRef.current) {
+        setAdminListChunkProgress(null)
+        setServerListLoading(false)
+      }
     }
   }, [
     cardsWeekPage,
@@ -1687,6 +1746,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     regCancelMonthOffset,
     regCancelYearOffset,
     applyReservationListSideDataPrefetch,
+    mergeReservationListSideDataPrefetch,
   ])
 
   const refreshReservations = useCallback(async () => {
