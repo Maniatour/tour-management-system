@@ -51,6 +51,7 @@ import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import type { Customer } from '@/types/reservation'
 import { 
   getStatusColor,
   getStatusText,
@@ -829,11 +830,12 @@ export default function TourDetailPage() {
       return `${m}/${d}`
     }
 
-    const baseLabel = `${(vehicle as any).nick?.trim() || vehicle.vehicle_number || t('detail.noNumber')} - ${vehicle.vehicle_type || t('detail.noType')}`
-    if ((vehicle as any).vehicle_category === 'company') return baseLabel
+    const v = vehicle as Database['public']['Tables']['vehicles']['Row']
+    const baseLabel = `${v.memo?.trim() || v.vehicle_number || t('detail.noNumber')} - ${v.vehicle_type || t('detail.noType')}`
+    if (v.vehicle_category === 'company') return baseLabel
 
-    const start = formatRentalDateShort((vehicle as any).rental_start_date)
-    const end = formatRentalDateShort((vehicle as any).rental_end_date)
+    const start = formatRentalDateShort(v.rental_start_date)
+    const end = formatRentalDateShort(v.rental_end_date)
     if (start && end) {
       return `${baseLabel} (${start}~${end})`
     }
@@ -1923,7 +1925,9 @@ export default function TourDetailPage() {
               getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) || ''}
           openGoogleMaps={openGoogleMaps}
               residentStatusIndicatorsEnabled={productShowsResidentStatusSectionByCode(
-                tourData.product?.product_code
+                tourData.product?.product_code != null
+                  ? String(tourData.product.product_code)
+                  : null
               )}
         />
         </div>
@@ -2247,7 +2251,7 @@ export default function TourDetailPage() {
               <div className="hidden sm:block h-6 w-px bg-gray-200 shrink-0" aria-hidden />
               <ReservationFormEmailSendButtons
                 reservation={editingReservation}
-                customers={tourData.customers}
+                customers={tourData.customers as Customer[]}
                 sentBy={authUser?.email ?? null}
                 uiLocale={locale === 'en' ? 'en' : 'ko'}
               />

@@ -1116,17 +1116,22 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
               const chunk = vehicleIdsArray.slice(i, i + chunkSize)
               const { data: vehicles } = await supabase
                 .from('vehicles')
-                .select('id, nick, vehicle_number, vehicle_type')
+                .select('id, memo, vehicle_number, vehicle_type')
                 .in('id', chunk)
               
               if (vehicles) {
-                vehicles.forEach((vehicle: { id: string; nick?: string | null; vehicle_number: string | null; vehicle_type: string | null }) => {
+                const rows = vehicles as Pick<
+                  Database['public']['Tables']['vehicles']['Row'],
+                  'id' | 'memo' | 'vehicle_number' | 'vehicle_type'
+                >[]
+                rows.forEach((vehicle) => {
                   if (vehicle.id) {
-                    const nick = vehicle.nick?.trim()
-                    vehicleMap.set(
-                      vehicle.id,
-                      nick || vehicle.vehicle_number || vehicle.vehicle_type || '-'
-                    )
+                    const label =
+                      vehicle.memo?.trim() ||
+                      vehicle.vehicle_number ||
+                      vehicle.vehicle_type ||
+                      '-'
+                    vehicleMap.set(vehicle.id, label)
                   }
                 })
               }
@@ -4503,8 +4508,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           tourDate={emailPreviewData.tourDate}
           productName={emailPreviewData.productName || ''}
           channelRN={emailPreviewData.channelRN}
-          productCode={emailPreviewData.productCode}
-          productTags={emailPreviewData.productTags}
+          productCode={emailPreviewData.productCode ?? null}
+          productTags={emailPreviewData.productTags ?? null}
           onSend={handleSendEmailFromPreview}
         />
       )}
