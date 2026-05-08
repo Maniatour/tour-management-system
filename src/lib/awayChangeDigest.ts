@@ -103,6 +103,7 @@ function peopleLabel(n: unknown, locale: string): string {
 function reservationStatusLabel(status: unknown, locale: string): string {
   const s = str(status).toLowerCase()
   const mapKo: Record<string, string> = {
+    inquiry: '문의중',
     pending: '대기중',
     confirmed: '확정',
     completed: '완료',
@@ -113,6 +114,7 @@ function reservationStatusLabel(status: unknown, locale: string): string {
     'payment requested': '입금요청',
   }
   const mapEn: Record<string, string> = {
+    inquiry: 'Inquiry',
     pending: 'Pending',
     confirmed: 'Confirmed',
     completed: 'Completed',

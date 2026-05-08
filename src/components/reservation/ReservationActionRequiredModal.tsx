@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal } from 'lucide-react'
+import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -21,10 +21,11 @@ import {
   reservationMatchesExtendedPricingMismatchCriteria,
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
+import { reservationNeedsCancelFinancialCleanup } from '@/lib/reservationActionRequiredCancelTab'
 import type { Reservation, Customer } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 
-export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'balance'
+export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'cancel' | 'balance'
 export type PricingSubTabId = 'noPrice' | 'mismatch'
 export type BalanceSubTabId = 'cancelled' | 'unpaid' | 'calcWrong'
 export type BalanceTotalFilterId = 'all' | 'totalMismatch'
@@ -128,6 +129,7 @@ const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType
   { id: 'tour', labelKey: 'actionRequired.tabs.tour', icon: MapPin },
   { id: 'pricing', labelKey: 'actionRequired.tabs.pricing', icon: DollarSign },
   { id: 'deposit', labelKey: 'actionRequired.tabs.deposit', icon: CreditCard },
+  { id: 'cancel', labelKey: 'actionRequired.tabs.cancel', icon: Ban },
   { id: 'balance', labelKey: 'actionRequired.tabs.balance', icon: Scale },
 ]
 
@@ -247,64 +249,154 @@ export default function ReservationActionRequiredModal({
     return d.toISOString().split('T')[0]
   }, [])
 
+  /** 부모가 매 렌더 `reservations` 새 배열을 넘겨도 id 집합이 같으면 입금/옵션 집계 effect가 다시 돌지 않음 */
+  const reservationsPaymentLoadKey = useMemo(
+    () =>
+      [...new Set(reservations.map((r) => r.id).filter(Boolean))]
+        .sort()
+        .join(','),
+    [reservations]
+  )
+
+  const mergePaymentAndOptionAggregates = useCallback(async (reservationIds: string[]) => {
+    const ids = [...new Set(reservationIds)].filter(Boolean)
+    if (ids.length === 0) return
+    const chunkSize = 200
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize)
+      const [{ data }, { data: optRows }] = await Promise.all([
+        supabase
+          .from('payment_records')
+          .select('reservation_id, payment_status, amount')
+          .in('reservation_id', chunk),
+        supabase
+          .from('reservation_options')
+          .select('reservation_id, total_price, price, ea, status')
+          .in('reservation_id', chunk),
+      ])
+      const chunkByRes = new Map<string, PaymentRecordLike[]>()
+      for (const id of chunk) {
+        chunkByRes.set(id, [])
+      }
+      if (data) {
+        for (const row of data as {
+          reservation_id: string
+          payment_status: string
+          amount: unknown
+        }[]) {
+          const rec: PaymentRecordLike = {
+            payment_status: row.payment_status || '',
+            amount: Number(row.amount) || 0,
+          }
+          const arr = chunkByRes.get(row.reservation_id) ?? []
+          arr.push(rec)
+          chunkByRes.set(row.reservation_id, arr)
+        }
+      }
+      setReservationIdsWithPayments((prev) => {
+        const next = new Set(prev)
+        for (const id of chunk) {
+          const rows = chunkByRes.get(id) ?? []
+          if (rows.length > 0) next.add(id)
+        }
+        return next
+      })
+      setPaymentRecordsByReservationId((prev) => {
+        const next = new Map(prev)
+        for (const id of chunk) {
+          next.set(id, chunkByRes.get(id) ?? [])
+        }
+        return next
+      })
+      const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
+      setReservationOptionSumByReservationId((prev) => {
+        const n = new Map(prev)
+        for (const id of chunk) {
+          n.set(id, chunkSums.get(id) ?? 0)
+        }
+        return n
+      })
+      setReservationOptionsPresenceByReservationId((prev) => {
+        const n = new Map(prev)
+        for (const id of chunk) {
+          n.set(id, false)
+        }
+        for (const row of optRows ?? []) {
+          const rid = (row as { reservation_id?: string }).reservation_id
+          if (rid) n.set(rid, true)
+        }
+        return n
+      })
+    }
+  }, [])
+
   useEffect(() => {
-    if (!isOpen || reservations.length === 0) {
+    if (!isOpen || !reservationsPaymentLoadKey) {
       setReservationIdsWithPayments(new Set())
       setPaymentRecordsByReservationId(new Map())
       setReservationOptionSumByReservationId(new Map())
       setReservationOptionsPresenceByReservationId(new Map())
+      setLoadingPayments(false)
       return
     }
-    const ids = reservations.map(r => r.id)
+    const ids = reservationsPaymentLoadKey.split(',').filter(Boolean)
+    let cancelled = false
     setLoadingPayments(true)
-    const load = async () => {
+    void (async () => {
       const set = new Set<string>()
       const byRes = new Map<string, PaymentRecordLike[]>()
       const mergedOptionSums = new Map<string, number>()
       const mergedOptionsPresence = new Map<string, boolean>()
       ids.forEach((id) => mergedOptionsPresence.set(id, false))
       const chunkSize = 200
-      for (let i = 0; i < ids.length; i += chunkSize) {
-        const chunk = ids.slice(i, i + chunkSize)
-        const [{ data }, { data: optRows }] = await Promise.all([
-          supabase
-            .from('payment_records')
-            .select('reservation_id, payment_status, amount')
-            .in('reservation_id', chunk),
-          supabase
-            .from('reservation_options')
-            .select('reservation_id, total_price, price, ea, status')
-            .in('reservation_id', chunk),
-        ])
-        if (data) {
-          data.forEach((row: { reservation_id: string; payment_status: string; amount: unknown }) => {
-            set.add(row.reservation_id)
-            const rec: PaymentRecordLike = {
-              payment_status: row.payment_status || '',
-              amount: Number(row.amount) || 0,
-            }
-            const arr = byRes.get(row.reservation_id) ?? []
-            arr.push(rec)
-            byRes.set(row.reservation_id, arr)
-          })
+      try {
+        for (let i = 0; i < ids.length; i += chunkSize) {
+          const chunk = ids.slice(i, i + chunkSize)
+          const [{ data }, { data: optRows }] = await Promise.all([
+            supabase
+              .from('payment_records')
+              .select('reservation_id, payment_status, amount')
+              .in('reservation_id', chunk),
+            supabase
+              .from('reservation_options')
+              .select('reservation_id, total_price, price, ea, status')
+              .in('reservation_id', chunk),
+          ])
+          if (cancelled) return
+          if (data) {
+            data.forEach((row: { reservation_id: string; payment_status: string; amount: unknown }) => {
+              set.add(row.reservation_id)
+              const rec: PaymentRecordLike = {
+                payment_status: row.payment_status || '',
+                amount: Number(row.amount) || 0,
+              }
+              const arr = byRes.get(row.reservation_id) ?? []
+              arr.push(rec)
+              byRes.set(row.reservation_id, arr)
+            })
+          }
+          const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
+          for (const [rid, v] of chunkSums) {
+            mergedOptionSums.set(rid, v)
+          }
+          for (const row of optRows ?? []) {
+            const rid = (row as { reservation_id?: string }).reservation_id
+            if (rid) mergedOptionsPresence.set(rid, true)
+          }
         }
-        const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
-        for (const [rid, v] of chunkSums) {
-          mergedOptionSums.set(rid, v)
-        }
-        for (const row of optRows ?? []) {
-          const rid = (row as { reservation_id?: string }).reservation_id
-          if (rid) mergedOptionsPresence.set(rid, true)
-        }
+        if (cancelled) return
+        setReservationIdsWithPayments(set)
+        setPaymentRecordsByReservationId(byRes)
+        setReservationOptionSumByReservationId(mergedOptionSums)
+        setReservationOptionsPresenceByReservationId(mergedOptionsPresence)
+      } finally {
+        if (!cancelled) setLoadingPayments(false)
       }
-      setReservationIdsWithPayments(set)
-      setPaymentRecordsByReservationId(byRes)
-      setReservationOptionSumByReservationId(mergedOptionSums)
-      setReservationOptionsPresenceByReservationId(mergedOptionsPresence)
-      setLoadingPayments(false)
+    })()
+    return () => {
+      cancelled = true
     }
-    load()
-  }, [isOpen, reservations])
+  }, [isOpen, reservationsPaymentLoadKey])
 
   const handleReservationOptionsMutated = useCallback(
     (reservationId: string) => {
@@ -410,6 +502,16 @@ export default function ReservationActionRequiredModal({
     const confirmedNoDeposit = list.filter(r => statusConfirmed(r) && !hasPayment(r))
     const depositList = [...new Map([...depositNoTour.map(r => [r.id, r]), ...confirmedNoDeposit.map(r => [r.id, r])]).values()]
 
+    const cancelFinancialList = list.filter((r) =>
+      reservationNeedsCancelFinancialCleanup(
+        r,
+        reservationPricingMap as Map<string, ReservationPricingMapValue>,
+        paymentRecordsByReservationId,
+        channels as BalanceChannelRowInput[],
+        reservationOptionSumByReservationId
+      )
+    )
+
     const pricingNum = (v: unknown): number => {
       if (v == null || v === '') return 0
       if (typeof v === 'number' && !Number.isNaN(v)) return v
@@ -462,6 +564,7 @@ export default function ReservationActionRequiredModal({
       pricingNoPrice: noPricing,
       pricingMismatch,
       deposit: depositList,
+      cancel: cancelFinancialList,
       balance: balanceAllUnion,
       balanceCancelled: balanceCancelledList,
       balanceUnpaid: balanceUnpaidList,
@@ -486,6 +589,7 @@ export default function ReservationActionRequiredModal({
     tour: filteredByTab.tour.length,
     pricing: filteredByTab.pricing.length,
     deposit: filteredByTab.deposit.length,
+    cancel: filteredByTab.cancel.length,
     balance: filteredByTab.balance.length,
   }), [filteredByTab])
 
@@ -495,6 +599,7 @@ export default function ReservationActionRequiredModal({
       ...filteredByTab.tour.map(r => r.id),
       ...filteredByTab.pricing.map(r => r.id),
       ...filteredByTab.deposit.map(r => r.id),
+      ...filteredByTab.cancel.map(r => r.id),
       ...filteredByTab.balance.map(r => r.id),
     ]).size
   , [filteredByTab])
@@ -595,6 +700,7 @@ export default function ReservationActionRequiredModal({
 
   const actionRequiredTableVariant = useMemo((): ActionRequiredTableVariant => {
     if (activeTab === 'balance') return 'balance'
+    if (activeTab === 'cancel') return 'balance'
     if (activeTab === 'status') return 'status'
     if (activeTab === 'tour') return 'tour'
     if (activeTab === 'pricing') return pricingSubTab === 'noPrice' ? 'pricingNoPrice' : 'pricingMismatch'
@@ -602,7 +708,7 @@ export default function ReservationActionRequiredModal({
   }, [activeTab, pricingSubTab])
 
   const showCardTableToggle =
-    currentList.length > 0 && !(loadingPayments && activeTab === 'deposit')
+    currentList.length > 0 && !(loadingPayments && (activeTab === 'deposit' || activeTab === 'cancel'))
 
   // 현재 탭 목록이 줄었을 때 페이지 범위 맞추기
   useEffect(() => {
@@ -929,7 +1035,7 @@ export default function ReservationActionRequiredModal({
         )}
 
         <div className="min-h-0 flex-1 overflow-auto p-3 max-lg:pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4">
-          {loadingPayments && (activeTab === 'deposit') ? (
+          {loadingPayments && (activeTab === 'deposit' || activeTab === 'cancel') ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent" />
               <span className="ml-2 text-sm text-gray-600">입금 데이터 조회 중...</span>
@@ -1070,7 +1176,11 @@ export default function ReservationActionRequiredModal({
                   choicesCacheRef={choicesCacheRef}
                   onRefreshReservations={onRefreshReservations}
                   onRefreshReservationPricing={onRefreshReservationPricing}
-                  balanceReservationsForApply={activeTab === 'balance' ? currentList : undefined}
+                  balanceReservationsForApply={
+                    activeTab === 'balance' || activeTab === 'cancel' ? currentList : undefined
+                  }
+                  showPartnerCancelRefundAction={activeTab === 'cancel'}
+                  onRefreshPaymentAggregates={mergePaymentAndOptionAggregates}
                 />
               )}
               {((listViewMode === 'detail' && currentList.length > 0) ||
@@ -1153,6 +1263,10 @@ export default function ReservationActionRequiredModal({
                 <li className="flex gap-2">
                   <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.deposit')}:</span>
                   <span>{renderManualText(t('actionRequired.manualDeposit'))}</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.cancel')}:</span>
+                  <span>{renderManualText(t('actionRequired.manualCancel'))}</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.balance')}:</span>

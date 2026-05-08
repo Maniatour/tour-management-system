@@ -9,6 +9,7 @@ import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { Plus, Calendar, Users, MapPin, Clock, CheckCircle, AlertCircle, X } from 'lucide-react'
 import type { Reservation } from '@/types/reservation'
 import { getReservationPartySize } from '@/utils/reservationUtils'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 
 /** tours.reservation_ids: UUID 배열·JSON 문자열·콤마 구분 등 정규화 */
 function normalizeTourReservationIds(raw: unknown): string[] {
@@ -671,12 +672,7 @@ export default function TourConnectionSection({
                 </div>
               </div>
               <div className="min-h-0 flex-1 bg-gray-50">
-                <iframe
-                  key={tourDetailModalTourId}
-                  title={t('card.tourDetailModalTitle')}
-                  src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                  className="h-full w-full min-h-0 border-0"
-                />
+                <TourDetailModalContent tourId={tourDetailModalTourId} />
               </div>
             </div>
           </div>,

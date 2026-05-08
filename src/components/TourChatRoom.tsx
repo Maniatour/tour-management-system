@@ -15,7 +15,6 @@ import PickupScheduleModal from './PickupScheduleModal'
 import TourPhotoGallery from './TourPhotoGallery'
 // import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
-import { formatTimeWithAMPM } from '@/lib/utils'
 import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { useChatRoom } from '@/hooks/useChatRoom'
@@ -26,6 +25,15 @@ import ChatHeader from './chat/ChatHeader'
 import MessageList from './chat/MessageList'
 import MessageInput from './chat/MessageInput'
 import ChatSidebar from './chat/ChatSidebar'
+import GuidePickupProgressBar from '@/components/chat/GuidePickupProgressBar'
+import {
+  isWithinGuidePickupShareWindow,
+  buildPickupCompleteChatMessages
+} from '@/lib/tourPickupLiveWindow'
+import { usePickupGeofenceAutoComplete } from '@/hooks/usePickupGeofenceAutoComplete'
+import { useGuidePickupGeofenceOptional } from '@/contexts/GuidePickupGeofenceContext'
+import { fetchPickupScheduleForTour } from '@/lib/fetchPickupScheduleForTour'
+import { guideChatSendTextMessage } from '@/lib/guideChatSendTextMessage'
 
 // 타입은 @/types/chat에서 import
 
@@ -35,36 +43,6 @@ interface ChatBan {
   client_id?: string
   customer_name?: string
   banned_until?: string
-}
-
-interface Tour {
-  id: string
-  product_id: string
-  tour_date: string
-  reservation_ids: string[]
-}
-
-interface Reservation {
-  id: string
-  pickup_hotel: string
-  pickup_time: string
-  total_people: number
-  customer_id: string
-  status: string
-}
-
-interface Customer {
-  id: string
-  name: string
-}
-
-interface PickupHotel {
-  id: string
-  hotel: string
-  pick_up_location: string
-  media?: string[]
-  link?: string
-  youtube_link?: string
 }
 
 interface SupabaseInsertBuilder {
@@ -248,13 +226,45 @@ export default function TourChatRoom({
   const [showPhotoGallery, setShowPhotoGallery] = useState(false)
   const [showPickupHotelPhotoGallery, setShowPickupHotelPhotoGallery] = useState(false)
   const [selectedPickupHotel, setSelectedPickupHotel] = useState<{name: string, mediaUrls: string[]} | null>(null)
+  /** 픽업 지오펜스·진행 바는 배정 가이드 본인에게만 (어시스턴트 제외) */
+  const [isGeofenceOperatorForTour, setIsGeofenceOperatorForTour] = useState(false)
+
   const [pickupSchedule, setPickupSchedule] = useState<Array<{
     time: string
     date: string
     hotel: string
     location: string
     people: number
+    sortMinutes: number
+    lat: number | null
+    lng: number | null
   }>>([])
+  /** 가이드 픽업 완료 버튼으로 확정한 마지막 스케줄 인덱스 (-1: 미시작) */
+  const [lastPickupCompletedIndex, setLastPickupCompletedIndex] = useState(-1)
+  const guidePickupGeofenceCtx = useGuidePickupGeofenceOptional()
+  /** 가이드 레이아웃 밖(관리자 플로팅 채팅 등)에서는 로컬 상태 + localStorage */
+  const [fallbackGeofenceAuto, setFallbackGeofenceAuto] = useState(() => {
+    if (typeof window === 'undefined') return true
+    try {
+      return localStorage.getItem('tms_guide_geofence_auto') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const setFallbackGeofenceAutoPersist = useCallback((v: boolean) => {
+    setFallbackGeofenceAuto(v)
+    try {
+      localStorage.setItem('tms_guide_geofence_auto', v ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+  const geofenceAuto =
+    guidePickupGeofenceCtx != null ? guidePickupGeofenceCtx.geofenceAuto : fallbackGeofenceAuto
+  const setGeofenceAutoPersist =
+    guidePickupGeofenceCtx != null
+      ? guidePickupGeofenceCtx.setGeofenceAutoPersist
+      : setFallbackGeofenceAutoPersist
   const [showTeamInfo, setShowTeamInfo] = useState(false)
   const [teamInfo, setTeamInfo] = useState<{
     guide?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] }
@@ -810,243 +820,35 @@ export default function TourChatRoom({
 
       console.log('Loading pickup schedule for tourId:', tourId)
 
-      // 투어 정보 가져오기 (배정된 예약 포함)
-      const { data: tour, error: tourError } = await supabase
-        .from('tours')
-        .select('product_id, tour_date, reservation_ids')
-        .eq('id', tourId)
-        .single()
+      const dateForSchedule = tourDate || ''
+      const schedule = await fetchPickupScheduleForTour(supabase, tourId, dateForSchedule)
 
-      if (tourError || !tour) {
-        console.error('Error loading tour for pickup schedule:', tourError)
-        return
-      }
-
-      const tourData = tour as Tour
-      console.log('Tour data for pickup schedule:', tourData)
-
-      // 투어에 배정된 예약이 있는지 확인
-      if (!tourData.reservation_ids || tourData.reservation_ids.length === 0) {
-        console.log('No reservations assigned to this tour')
-        setPickupSchedule([])
-        return
-      }
-
-      // 투어에 배정된 예약 정보만 조회
-      const { data: reservations, error: reservationsError } = await supabase
-        .from('reservations')
-        .select(`
-          id,
-          pickup_hotel,
-          pickup_time,
-          total_people,
-          customer_id,
-          status
-        `)
-        .in('id', tourData.reservation_ids)
-        .not('pickup_hotel', 'is', null)
-        .not('pickup_time', 'is', null)
-
-      if (reservationsError) {
-        console.error('Error loading reservations for pickup schedule:', reservationsError)
-        return
-      }
-
-      const reservationsData = reservations as Reservation[]
-      console.log('Found reservations assigned to tour:', reservationsData?.length || 0, 'out of', tourData.reservation_ids?.length || 0, 'assigned reservation IDs')
-      console.log('Assigned reservation IDs:', tourData.reservation_ids)
-      console.log('Found reservation data:', reservationsData)
-      
-      // 고객용 채팅에서 디버깅 정보 추가
       if (isPublicView) {
-        console.log('=== 고객용 채팅 픽업 스케줄 디버깅 ===')
+        console.log('=== 고객용 채팅 픽업 스케줄 ===')
         console.log('투어 ID:', tourId)
-        console.log('투어 데이터:', tourData)
-        console.log('예약 데이터:', reservationsData)
-        console.log('예약 개수:', reservationsData?.length || 0)
-        console.log('배정된 예약 ID들:', tourData.reservation_ids)
+        console.log('스케줄 개수:', schedule.length)
         console.log('=====================================')
       }
-
-      // 고객 정보 별도로 가져오기
-      let customersData: Customer[] = []
-      if (reservationsData && reservationsData.length > 0) {
-        const customerIds = reservationsData.map((r: Reservation) => r.customer_id).filter(Boolean)
-        if (customerIds.length > 0) {
-          const { data: customers, error: customersError } = await supabase
-            .from('customers')
-            .select('id, name')
-            .in('id', customerIds)
-          
-          if (customersError) {
-            console.error('Error loading customers:', customersError)
-          } else {
-            customersData = customers as Customer[] || []
-          }
-        }
-      }
-
-      // 예약 데이터에 고객 정보 병합
-      const reservationsWithCustomers: Array<Reservation & { customers?: Customer }> = reservationsData?.map((reservation: Reservation) => {
-        const customer = customersData.find((c: Customer) => c.id === reservation.customer_id)
-        return {
-          ...reservation,
-          ...(customer ? { customers: customer } : {})
-        }
-      }) || []
-
-      console.log('Reservations for pickup schedule:', reservationsWithCustomers)
-
-      // 픽업 호텔 정보 별도로 가져오기
-      const pickupHotelIds = [...new Set(reservationsWithCustomers.map((r: Reservation & { customers?: Customer }) => r.pickup_hotel).filter(Boolean))]
-      console.log('Pickup hotel IDs:', pickupHotelIds)
-      
-      let pickupHotels: PickupHotel[] = []
-      
-      if (pickupHotelIds.length > 0) {
-        const { data: hotelsData, error: hotelsError } = await supabase
-          .from('pickup_hotels')
-          .select('id, hotel, pick_up_location')
-          .in('id', pickupHotelIds)
-          .eq('is_active', true)
-        
-        if (hotelsError) {
-          console.error('Error loading pickup hotels:', hotelsError)
-        } else {
-          pickupHotels = hotelsData as PickupHotel[] || []
-          console.log('Pickup hotels data:', pickupHotels)
-        }
-      }
-
-      // 픽업 스케줄 데이터 생성 (호텔별로 그룹화)
-      const groupedByHotel = reservationsWithCustomers.reduce<Record<string, {
-        time: string;
-        date: string;
-        hotel: string;
-        location: string;
-        people: number;
-        customers: Array<{ name: string; people: number }>;
-      }>>((acc, reservation) => {
-        const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
-        if (!hotel) {
-          // 호텔 정보가 없으면 기본값 사용
-          console.log('No hotel found for reservation:', reservation.id, 'hotel ID:', reservation.pickup_hotel)
-          const hotelKey = `unknown-${reservation.pickup_hotel}`
-          if (!acc[hotelKey]) {
-            const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : ''
-            const timeHour = pickupTime ? parseInt(pickupTime.split(':')[0]) : 0
-            
-            // 오후 9시(21:00) 이후면 날짜를 하루 빼기
-            let displayDate = tourDate || ''
-            if (timeHour >= 21 && tourDate) {
-              const date = new Date(tourDate)
-              date.setDate(date.getDate() - 1)
-              displayDate = date.toISOString().split('T')[0]
-            }
-            
-            acc[hotelKey] = {
-              time: formatTimeWithAMPM(pickupTime),
-              date: displayDate,
-              hotel: `호텔 ID: ${reservation.pickup_hotel}`,
-              location: '위치 미상',
-              people: 0,
-              customers: []
-            }
-          }
-          acc[hotelKey].people += reservation.total_people || 0
-          acc[hotelKey].customers.push({
-            name: reservation.customers?.name || 'Unknown Customer',
-            people: reservation.total_people || 0
-          })
-          return acc
-        }
-        
-        const hotelKey = `${hotel.hotel}-${hotel.pick_up_location}`
-        if (!acc[hotelKey]) {
-          const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : ''
-          const timeHour = pickupTime ? parseInt(pickupTime.split(':')[0]) : 0
-          
-          // 오후 9시(21:00) 이후면 날짜를 하루 빼기
-          let displayDate = tourDate || ''
-          if (timeHour >= 21 && tourDate) {
-            const date = new Date(tourDate)
-            date.setDate(date.getDate() - 1)
-            displayDate = date.toISOString().split('T')[0]
-          }
-          
-          acc[hotelKey] = {
-            time: formatTimeWithAMPM(pickupTime),
-            date: displayDate,
-            hotel: hotel.hotel || '',
-            location: hotel.pick_up_location || '',
-            people: 0,
-            customers: []
-          }
-        }
-        acc[hotelKey].people += reservation.total_people || 0
-        acc[hotelKey].customers.push({
-          name: reservation.customers?.name || 'Unknown Customer',
-          people: reservation.total_people || 0
-        })
-        return acc
-      }, {})
-
-      const schedule: Array<{
-        time: string;
-        date: string;
-        hotel: string;
-        location: string;
-        people: number;
-      }> = Object.values(groupedByHotel)
-        .sort((a, b) => {
-          if (!a || !b) return 0
-          return a.time.localeCompare(b.time)
-        })
-        .map(item => ({
-          time: item.time,
-          date: item.date,
-          hotel: item.hotel,
-          location: item.location,
-          people: item.people
-        }))
 
       console.log('Generated pickup schedule:', schedule)
-      console.log('Final pickup schedule array length:', schedule.length)
-      
-      // 고객용 채팅에서 최종 픽업 스케줄 디버깅
-      if (isPublicView) {
-        console.log('=== 고객용 채팅 최종 픽업 스케줄 ===')
-        console.log('생성된 스케줄:', schedule)
-        console.log('스케줄 개수:', schedule.length)
-        console.log('호텔별 그룹화 데이터:', groupedByHotel)
-        console.log('=====================================')
-      }
-      
       setPickupSchedule(schedule)
-      
-      // 디버깅을 위한 추가 정보
+
       if (schedule.length === 0) {
-        console.log('No pickup schedule generated. Debug info:')
-        console.log('- Reservations:', reservationsWithCustomers.length)
-        console.log('- Pickup hotels:', pickupHotels.length)
-        console.log('- Customers:', customersData.length)
-        console.log('- Grouped by hotel:', Object.keys(groupedByHotel))
+        console.log('No pickup schedule generated for tour', tourId)
       }
     } catch (error) {
       console.error('Error loading pickup schedule:', error)
-      
-      // 고객용 채팅에서 오류 디버깅
+
       if (isPublicView) {
         console.log('=== 고객용 채팅 픽업 스케줄 오류 ===')
         console.log('오류 내용:', error)
         console.log('투어 ID:', tourId)
         console.log('=====================================')
       }
-      
-      // 오류가 발생해도 빈 배열로 설정하여 무한 로딩 방지
+
       setPickupSchedule([])
     }
-  }, [tourId, tourDate, isPublicView])
+  }, [tourId, tourDate, isPublicView, supabase])
   
   // loadPickupSchedule을 ref에 저장
   useEffect(() => {
@@ -1069,6 +871,36 @@ export default function TourChatRoom({
     }
   }, [tourId, isPublicView, loadPickupSchedule])
 
+  useEffect(() => {
+    setLastPickupCompletedIndex(-1)
+  }, [tourId, tourDate])
+
+  useEffect(() => {
+    if (!tourId || !tourDate || pickupSchedule.length === 0) return
+    try {
+      if (typeof window === 'undefined') return
+      const raw = localStorage.getItem(`tms_guide_pickup_idx_${tourId}_${tourDate}`)
+      if (raw == null) return
+      const n = parseInt(raw, 10)
+      if (Number.isNaN(n)) return
+      const maxIdx = pickupSchedule.length - 1
+      const clamped = Math.min(Math.max(-1, n), maxIdx)
+      setLastPickupCompletedIndex(clamped)
+    } catch {
+      /* ignore */
+    }
+  }, [tourId, tourDate, pickupSchedule])
+
+  const showGuidePickupBar = useMemo(
+    () =>
+      !isPublicView &&
+      isGeofenceOperatorForTour &&
+      Boolean(tourDate) &&
+      pickupSchedule.length > 0 &&
+      isWithinGuidePickupShareWindow(tourDate!, pickupSchedule),
+    [isPublicView, isGeofenceOperatorForTour, tourDate, pickupSchedule]
+  )
+
   // loadChatParticipants와 Presence 채널은 useChatParticipants 훅에서 처리됨
   // ref로 접근하기 위해 저장
   useEffect(() => {
@@ -1078,7 +910,10 @@ export default function TourChatRoom({
   // 팀 정보 로드 (가이드, 어시스턴트, 드라이버)
   const loadTeamInfo = useCallback(async () => {
     try {
-      if (!tourId) return
+      if (!tourId) {
+        setIsGeofenceOperatorForTour(false)
+        return
+      }
 
       // 투어 정보 가져오기
       const { data: tour, error: tourError } = await supabase
@@ -1088,8 +923,15 @@ export default function TourChatRoom({
         .single<{ tour_guide_id: string | null; assistant_id: string | null; tour_car_id: string | null }>()
 
       if (tourError || !tour) {
+        setIsGeofenceOperatorForTour(false)
         console.error('Error loading tour for team info:', tourError)
         return
+      }
+
+      {
+        const g = tour.tour_guide_id?.trim().toLowerCase()
+        const u = guideEmail?.trim().toLowerCase()
+        setIsGeofenceOperatorForTour(Boolean(g && u && g === u))
       }
 
       const teamData: {
@@ -1179,9 +1021,10 @@ export default function TourChatRoom({
 
       setTeamInfo(teamData)
     } catch (error) {
+      setIsGeofenceOperatorForTour(false)
       console.error('Error loading team info:', error)
     }
-  }, [tourId])
+  }, [tourId, guideEmail])
   
   // loadTeamInfo를 ref에 저장
   useEffect(() => {
@@ -2149,6 +1992,128 @@ export default function TourChatRoom({
     }
   }
 
+  const sendGuideAutomatedMessage = useCallback(
+    async (messageText: string): Promise<boolean> => {
+      if (!room) return false
+      setSending(true)
+      const tempMessage = {
+        id: `temp_${Date.now()}`,
+        room_id: room.id,
+        sender_type: 'guide' as const,
+        sender_name: guideStaffChatLabel,
+        sender_email: guideEmail,
+        message: messageText,
+        message_type: 'text' as const,
+        is_read: false,
+        created_at: new Date().toISOString()
+      } as ChatMessage
+
+      setMessages((prev) => [...prev, tempMessage])
+      scrollToBottom()
+
+      try {
+        const result = await guideChatSendTextMessage(supabase, {
+          roomId: room.id,
+          guideEmail,
+          senderName: guideStaffChatLabel,
+          messageText
+        })
+        if (!result.ok) throw result.error
+        setMessages((prev) => prev.map((msg) => (msg.id === tempMessage.id ? result.data : msg)))
+        return true
+      } catch (error) {
+        console.error('Error sending pickup update message:', error)
+        alert(
+          selectedLanguage === 'ko'
+            ? '메시지 전송에 실패했습니다.'
+            : 'Failed to send message.'
+        )
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id))
+        return false
+      } finally {
+        setSending(false)
+      }
+    },
+    [room, guideStaffChatLabel, guideEmail, scrollToBottom, selectedLanguage]
+  )
+
+  const handleGuidePickupStopComplete = useCallback(async () => {
+    if (!room || !tourId || !tourDate || pickupSchedule.length === 0) return
+    const idx = lastPickupCompletedIndex + 1
+    if (idx >= pickupSchedule.length) return
+    const current = pickupSchedule[idx]
+    const next = idx + 1 < pickupSchedule.length ? pickupSchedule[idx + 1] : null
+    const { ko, en } = buildPickupCompleteChatMessages(locale, current, next)
+    const text = locale === 'ko' ? ko : en
+    const ok = await sendGuideAutomatedMessage(text)
+    if (!ok) return
+    setLastPickupCompletedIndex(idx)
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`tms_guide_pickup_idx_${tourId}_${tourDate}`, String(idx))
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [
+    room,
+    tourId,
+    tourDate,
+    pickupSchedule,
+    lastPickupCompletedIndex,
+    locale,
+    sendGuideAutomatedMessage
+  ])
+
+  const nextPickupGeofenceIndex = useMemo(
+    () => lastPickupCompletedIndex + 1,
+    [lastPickupCompletedIndex]
+  )
+
+  const nextStopCoords = useMemo(() => {
+    const row = pickupSchedule[nextPickupGeofenceIndex]
+    if (!row || row.lat == null || row.lng == null) {
+      return { lat: null as number | null, lng: null as number | null }
+    }
+    return { lat: row.lat, lng: row.lng }
+  }, [pickupSchedule, nextPickupGeofenceIndex])
+
+  const pickupRunAllDone =
+    pickupSchedule.length > 0 && lastPickupCompletedIndex >= pickupSchedule.length - 1
+
+  const geofenceTrackingEnabled =
+    showGuidePickupBar &&
+    geofenceAuto &&
+    !pickupRunAllDone &&
+    nextPickupGeofenceIndex < pickupSchedule.length &&
+    nextStopCoords.lat != null &&
+    !sending
+
+  /** 가이드 앱 레이아웃 러너가 같은 투어를 추적 중이면 채팅 탭의 watch 중복 방지 */
+  const useLayoutGeofence =
+    Boolean(
+      guidePickupGeofenceCtx &&
+        guidePickupGeofenceCtx.layoutTrackingTourId != null &&
+        guidePickupGeofenceCtx.layoutTrackingTourId === tourId
+    )
+
+  const localGeofenceStatus = usePickupGeofenceAutoComplete({
+    enabled: geofenceTrackingEnabled && !useLayoutGeofence,
+    nextStopIndex: nextPickupGeofenceIndex,
+    targetLat: nextStopCoords.lat,
+    targetLng: nextStopCoords.lng,
+    onAutoComplete: handleGuidePickupStopComplete
+  })
+
+  const geofenceStatus = useLayoutGeofence
+    ? guidePickupGeofenceCtx!.layoutGeofenceStatus
+    : localGeofenceStatus
+
+  const nextStopHasCoords =
+    nextPickupGeofenceIndex < pickupSchedule.length &&
+    pickupSchedule[nextPickupGeofenceIndex]?.lat != null &&
+    pickupSchedule[nextPickupGeofenceIndex]?.lng != null
+
   const copyRoomLink = () => {
     if (!room) return
     const link = `https://www.kovegas.com/chat/${room.room_code}`
@@ -2455,6 +2420,22 @@ export default function TourChatRoom({
           return m.sender_name
         }}
       />
+
+      {showGuidePickupBar && room && (
+        <GuidePickupProgressBar
+          schedule={pickupSchedule}
+          language={locale}
+          lastCompletedIndex={lastPickupCompletedIndex}
+          onMarkCurrentComplete={handleGuidePickupStopComplete}
+          onShareLocation={shareLocation}
+          sending={sending}
+          gettingLocation={gettingLocation}
+          geofenceAuto={geofenceAuto}
+          onGeofenceAutoChange={setGeofenceAutoPersist}
+          geofenceStatus={geofenceStatus}
+          nextStopHasCoords={nextStopHasCoords}
+        />
+      )}
 
       {/* 메시지 입력 */}
       {room && (

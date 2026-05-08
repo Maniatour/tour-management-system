@@ -70,7 +70,7 @@ export default function TourPhotoUpload({
       // 먼저 데이터베이스에서 썸네일 경로가 있는 사진 조회
       const { data: dbPhotos, error: dbError } = await supabase
         .from('tour_photos')
-        .select('id, file_name, file_path, thumbnail_path, file_size, mime_type, created_at, uploaded_by')
+        .select('id, file_name, file_path, thumbnail_path, file_size, mime_type, created_at, uploaded_by, share_token')
         .eq('tour_id', tourId)
         .order('created_at', { ascending: false })
 
@@ -159,36 +159,64 @@ export default function TourPhotoUpload({
       const dbThumbnailMap = new Map<string, string>()
       if (dbPhotos && !dbError) {
         dbPhotos.forEach((photo: any) => {
-          if (photo.file_name) {
-            dbPhotoByFileName.set(photo.file_name, {
-              id: photo.id,
-              uploaded_by: photo.uploaded_by || '',
-              share_token: photo.share_token,
-              thumbnail_path: photo.thumbnail_path,
-              created_at: photo.created_at
-            })
-            if (photo.thumbnail_path && photo.file_name) {
-              dbThumbnailMap.set(photo.file_name, photo.thumbnail_path)
-            }
+          const rowData = {
+            id: photo.id,
+            uploaded_by: photo.uploaded_by || '',
+            share_token: photo.share_token,
+            thumbnail_path: photo.thumbnail_path,
+            created_at: photo.created_at
+          }
+          // Storage 객체 이름은 file_path 마지막 세그먼트와 같고, DB file_name은 업로드 시 원본 파일명일 수 있음 → 둘 다 키로 등록
+          const keys = new Set<string>()
+          if (photo.file_name) keys.add(photo.file_name)
+          if (typeof photo.file_path === 'string' && photo.file_path.length > 0) {
+            const base = photo.file_path.split('/').filter(Boolean).pop()
+            if (base) keys.add(base)
+          }
+          keys.forEach((k) => dbPhotoByFileName.set(k, rowData))
+          if (photo.thumbnail_path && photo.file_name) {
+            dbThumbnailMap.set(photo.file_name, photo.thumbnail_path)
           }
         })
       }
 
-      // 업로더 이메일 목록 수집 (uploaded_by가 이메일 형태인 경우 team에서 nick_name 조회)
-      const uploaderEmails = Array.from(new Set(
-        Array.from(dbPhotoByFileName.values())
-          .map((p) => p.uploaded_by)
-          .filter((v) => typeof v === 'string' && v.includes('@'))
-      )) as string[]
+      // 업로더 이메일 목록 수집 (team 조회 — 표시는 nick_name 우선)
+      const rawUploaderEmails = Array.from(dbPhotoByFileName.values())
+        .map((p) => p.uploaded_by)
+        .filter((v): v is string => typeof v === 'string' && v.includes('@'))
+      const uploaderEmails = Array.from(
+        new Set(
+          rawUploaderEmails.flatMap((e) => {
+            const t = e.trim()
+            return t ? [t, t.toLowerCase()] : []
+          })
+        )
+      )
       const teamMap = new Map<string, string>()
       if (uploaderEmails.length > 0) {
         const { data: teamRows } = await supabase
           .from('team')
-          .select('email, nick_name, name_ko')
+          .select('email, display_name, nick_name, name_ko, name_en')
           .in('email', uploaderEmails)
-        ;(teamRows || []).forEach((row: { email: string; nick_name?: string | null; name_ko?: string | null }) => {
-          const name = row.nick_name || row.name_ko || row.email
+        ;(teamRows || []).forEach((row: {
+          email: string
+          display_name?: string | null
+          nick_name?: string | null
+          name_ko?: string | null
+          name_en?: string | null
+        }) => {
+          const nn = row.nick_name?.trim()
+          const dn = row.display_name?.trim()
+          const ko = row.name_ko?.trim()
+          const en = row.name_en?.trim()
+          const name =
+            (nn && nn.length > 0 ? nn : null) ||
+            (dn && dn.length > 0 ? dn : null) ||
+            (ko && ko.length > 0 ? ko : null) ||
+            (en && en.length > 0 ? en : null) ||
+            row.email
           teamMap.set(row.email, name)
+          teamMap.set(row.email.trim().toLowerCase(), name)
         })
       }
       
@@ -203,10 +231,18 @@ export default function TourPhotoUpload({
           thumbnailPath = `${tourId}/${thumbnailPath}`
         }
         
-        const photoUploadedBy = dbRow?.uploaded_by ?? uploadedBy
-        const uploadedByName = photoUploadedBy && photoUploadedBy.includes('@')
-          ? (teamMap.get(photoUploadedBy) || photoUploadedBy)
-          : (photoUploadedBy ? '알 수 없음' : null)
+        // DB에 tour_photos 행이 없을 때 현재 로그인 이메일(uploadedBy)로 대체하면 관리자 화면에서 잘못 표시됨 — Storage만 있는 레거시 파일은 업로더 미표시
+        const photoUploadedBy = (dbRow?.uploaded_by ?? '').trim()
+        const emailLookup =
+          photoUploadedBy && photoUploadedBy.includes('@')
+            ? teamMap.get(photoUploadedBy) || teamMap.get(photoUploadedBy.toLowerCase())
+            : undefined
+        const uploadedByName =
+          photoUploadedBy && photoUploadedBy.includes('@')
+            ? emailLookup || photoUploadedBy
+            : photoUploadedBy
+              ? '알 수 없음'
+              : null
         
         // 디버깅: 첫 번째 사진만 로그
         if (photoFiles.indexOf(file) === 0) {
@@ -253,7 +289,7 @@ export default function TourPhotoUpload({
       console.error('Error loading photos:', error)
       setPhotos([])
     }
-  }, [tourId, uploadedBy, isAdmin])
+  }, [tourId, isAdmin])
 
   const onPhotosUpdatedRef = useRef(onPhotosUpdated)
   onPhotosUpdatedRef.current = onPhotosUpdated

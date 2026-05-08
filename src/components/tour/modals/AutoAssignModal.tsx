@@ -108,6 +108,7 @@ function reservationStatusLabel(status: string | null | undefined): string {
   if (status == null || String(status).trim() === '') return '-'
   const s = String(status).toLowerCase().trim()
   const map: Record<string, string> = {
+    inquiry: '문의중',
     pending: '대기',
     confirmed: '확정',
     recruiting: '모집중',
@@ -133,6 +134,8 @@ function reservationStatusBadgeClass(status: string | null | undefined): string 
       return 'bg-gray-100 text-gray-800 border border-gray-200'
     case 'pending':
       return 'bg-amber-100 text-amber-900 border border-amber-200'
+    case 'inquiry':
+      return 'bg-sky-100 text-sky-900 border border-sky-200'
     case 'deleted':
       return 'bg-slate-200 text-slate-700 border border-slate-300'
     default:

@@ -658,7 +658,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
             <label className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">상태 선택:</label>
             <div className="flex flex-wrap gap-1">
-              {(['pending', 'confirmed', 'completed', 'cancelled', 'recruiting'] as const).map((status) => {
+              {(['inquiry', 'pending', 'confirmed', 'completed', 'cancelled', 'recruiting'] as const).map((status) => {
                 const isSelected = selectedStatuses.some(s => s.toLowerCase() === status.toLowerCase())
                 return (
                   <button
@@ -677,7 +677,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    {status === 'pending' ? '대기' : 
+                    {status === 'inquiry' ? '문의중' :
+                     status === 'pending' ? '대기' : 
                      status === 'confirmed' ? '확정' : 
                      status === 'completed' ? '완료' : 
                      status === 'cancelled' ? '취소' : 

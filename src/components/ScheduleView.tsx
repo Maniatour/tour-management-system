@@ -60,6 +60,7 @@ import {
   canRequestTicketBookingSoftDelete,
 } from '@/lib/ticketBookingSoftDelete'
 import { isSuperAdminActor } from '@/lib/superAdmin'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -1829,7 +1830,7 @@ export default function ScheduleView() {
       addedBy: reservation.added_by || '',
       addedTime: reservation.created_at || '',
       tourId: reservation.tour_id || '',
-      status: (reservation.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+      status: (reservation.status as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
       selectedOptions:
         typeof reservation.selected_options === 'string'
           ? (() => {
@@ -1927,7 +1928,7 @@ export default function ScheduleView() {
   )
 
   /** 상품별 인원 모달에서 상태만 빠르게 변경 */
-  const productCellQuickStatusValues = ['pending', 'recruiting', 'confirmed', 'completed', 'cancelled', 'deleted'] as const
+  const productCellQuickStatusValues = ['inquiry', 'pending', 'recruiting', 'confirmed', 'completed', 'cancelled', 'deleted'] as const
   const [productCellStatusSavingId, setProductCellStatusSavingId] = useState<string | null>(null)
   const [productCellCreateTourLoading, setProductCellCreateTourLoading] = useState(false)
   const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
@@ -8319,11 +8320,9 @@ export default function ScheduleView() {
             ) : null}
           </DialogHeader>
           {tourDetailModal?.tourId ? (
-            <iframe
-              key={`${tourDetailModal.tourId}-${tourDetailIframeReloadNonce}`}
-              title={tourDetailModal.title ? `${tourDetailModal.title} 투어 상세` : '투어 상세'}
-              src={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
-              className="w-full flex-1 min-h-0 border-0 bg-white"
+            <TourDetailModalContent
+              tourId={tourDetailModal.tourId}
+              refreshNonce={tourDetailIframeReloadNonce}
             />
           ) : null}
         </DialogContent>

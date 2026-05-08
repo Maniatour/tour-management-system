@@ -23,6 +23,7 @@ import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
 import GuideTourChatNotificationModal from '@/components/guide/GuideTourChatNotificationModal'
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
+import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceContext'
 
 interface GuideLayoutProps {
   children: React.ReactNode
@@ -489,6 +490,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
    return (
      <AudioPlayerProvider>
+       <GuidePickupGeofenceProvider
+         guideEmail={currentUser.email}
+         locale={locale === 'en' ? 'en' : 'ko'}
+       >
        <div className="min-h-screen bg-gray-50 flex flex-col">
          {/* 상단 Navigation은 [locale]/layout.tsx(가이드 분기)에서만 렌더 */}
 
@@ -644,6 +649,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
       <TourPhotoUploadProgressOverlay />
       </div>
+      </GuidePickupGeofenceProvider>
     </AudioPlayerProvider>
   )
 }

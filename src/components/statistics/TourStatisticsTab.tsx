@@ -45,6 +45,7 @@ import TicketBookingReservationDetailModal, {
 } from '@/components/booking/TicketBookingReservationDetailModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import BookingHistory from '@/components/booking/BookingHistory'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   filterTicketBookingsExcludedFromMainUi,
@@ -219,12 +220,9 @@ function TourStatisticsTourDetailModal({
           ) : null}
         </DialogHeader>
         {tourId ? (
-          <iframe
-            key={tourId}
-            title={productName ? `${productName} 투어 상세` : '투어 상세'}
-            src={href}
-            className="w-full flex-1 min-h-0 border-0 bg-white"
-          />
+          <div className="flex min-h-0 flex-1 flex-col bg-white">
+            <TourDetailModalContent tourId={tourId} />
+          </div>
         ) : null}
       </DialogContent>
     </Dialog>

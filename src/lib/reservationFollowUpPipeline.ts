@@ -38,6 +38,11 @@ export function reservationExcludedFromFollowUpPipeline(status: string | null | 
   return s === 'cancelled' || s === 'canceled' || s === 'deleted'
 }
 
+/** 문의만(inquiry) 단계 — 결제 전 등. 컨펌·거주·출발·픽업 Follow-up 집계에서 제외 */
+export function reservationExcludedFromOperationalFollowUps(status: string | null | undefined): boolean {
+  return String(status ?? '').toLowerCase() === 'inquiry'
+}
+
 export function isReservationCancelledOnly(status: string | null | undefined): boolean {
   const s = String(status ?? '').toLowerCase()
   return s === 'cancelled' || s === 'canceled'
@@ -101,6 +106,7 @@ export function reservationNeedsConfirmationMail(
   s: ReservationFollowUpPipelineSnapshot
 ): boolean {
   if (reservationExcludedFromFollowUpPipeline(status)) return false
+  if (reservationExcludedFromOperationalFollowUps(status)) return false
   return !s.confirmationSent
 }
 
@@ -110,6 +116,7 @@ export function reservationNeedsResidentPipelineAttention(
   s: ReservationFollowUpPipelineSnapshot
 ): boolean {
   if (reservationExcludedFromFollowUpPipeline(status)) return false
+  if (reservationExcludedFromOperationalFollowUps(status)) return false
   if (!s.needsResidentFlow) return false
   return !s.residentInquirySent || !s.guestResidentFlowCompleted
 }
@@ -120,6 +127,7 @@ export function reservationNeedsDepartureMail(
   s: ReservationFollowUpPipelineSnapshot
 ): boolean {
   if (reservationExcludedFromFollowUpPipeline(status)) return false
+  if (reservationExcludedFromOperationalFollowUps(status)) return false
   return !s.departureSent
 }
 
@@ -129,6 +137,7 @@ export function reservationNeedsPickupNotification(
   s: ReservationFollowUpPipelineSnapshot
 ): boolean {
   if (reservationExcludedFromFollowUpPipeline(status)) return false
+  if (reservationExcludedFromOperationalFollowUps(status)) return false
   if (!prerequisitesMetForPickup(s)) return false
   return !s.pickupSent
 }

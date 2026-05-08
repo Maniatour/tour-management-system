@@ -73,6 +73,7 @@ import type {
 } from '@/types/reservation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { DeletedReservationsTableModal } from '@/components/shared/DeletedReservationsTableModal'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal'
 import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier'
 import {
@@ -103,6 +104,8 @@ import {
   reservationMatchesExtendedPricingMismatchCriteria,
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
+import type { PaymentRecordLike } from '@/utils/reservationPricingBalance'
+import { reservationNeedsCancelFinancialCleanup } from '@/lib/reservationActionRequiredCancelTab'
 import {
   reservationNeedsAnyFollowUpAttention,
   reservationNeedsCancelFollowUpQueueAttention,
@@ -793,6 +796,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   const [followUpFormPipelineRefresh, setFollowUpFormPipelineRefresh] = useState(0)
   const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
+  const [paymentRecordsByReservationIdForActionBadge, setPaymentRecordsByReservationIdForActionBadge] =
+    useState<Map<string, PaymentRecordLike[]>>(() => new Map())
 
   // ??????? ??????
   const [emailDropdownOpen, setEmailDropdownOpen] = useState<string | null>(null)
@@ -1256,23 +1261,35 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   useEffect(() => {
     if (!reservations.length) {
       setReservationIdsWithPayments(new Set())
+      setPaymentRecordsByReservationIdForActionBadge(new Map())
       return
     }
     const ids = reservations.map(r => r.id)
     const load = async () => {
       const set = new Set<string>()
+      const byRes = new Map<string, PaymentRecordLike[]>()
       const chunkSize = 200
       for (let i = 0; i < ids.length; i += chunkSize) {
         const chunk = ids.slice(i, i + chunkSize)
         const { data } = await supabase
           .from('payment_records')
-          .select('reservation_id')
+          .select('reservation_id, payment_status, amount')
           .in('reservation_id', chunk)
         if (data) {
-          data.forEach((row: { reservation_id: string }) => set.add(row.reservation_id))
+          data.forEach((row: { reservation_id: string; payment_status: string; amount: unknown }) => {
+            set.add(row.reservation_id)
+            const rec: PaymentRecordLike = {
+              payment_status: row.payment_status || '',
+              amount: Number(row.amount) || 0,
+            }
+            const arr = byRes.get(row.reservation_id) ?? []
+            arr.push(rec)
+            byRes.set(row.reservation_id, arr)
+          })
         }
       }
       setReservationIdsWithPayments(set)
+      setPaymentRecordsByReservationIdForActionBadge(byRes)
     }
     load()
   }, [reservations])
@@ -1333,6 +1350,15 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const depositNoTour = arReservations.filter(r => hasPayment(r) && !hasTourAssigned(r))
     const confirmedNoDeposit = arReservations.filter(r => statusConfirmed(r) && !hasPayment(r))
     const balanceList = arReservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
+    const cancelFinancialList = arReservations.filter((r) =>
+      reservationNeedsCancelFinancialCleanup(
+        r,
+        reservationPricingMap,
+        paymentRecordsByReservationIdForActionBadge,
+        (channels || []) as BalanceChannelRowInput[],
+        undefined
+      )
+    )
     const allIds = new Set<string>()
     statusList.forEach(r => allIds.add(r.id))
     tourList.forEach(r => allIds.add(r.id))
@@ -1340,9 +1366,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     pricingMismatch.forEach(r => allIds.add(r.id))
     depositNoTour.forEach(r => allIds.add(r.id))
     confirmedNoDeposit.forEach(r => allIds.add(r.id))
+    cancelFinancialList.forEach(r => allIds.add(r.id))
     balanceList.forEach(r => allIds.add(r.id))
     return allIds.size
-  }, [reservations, reservationPricingMap, reservationIdsWithPayments, tourIdByReservationId, channels])
+  }, [reservations, reservationPricingMap, reservationIdsWithPayments, paymentRecordsByReservationIdForActionBadge, tourIdByReservationId, channels])
 
   /** 서버에서 필터·검색·정렬·페이지 반영된 목록 */
   const filteredAndSortedReservations = useMemo(
@@ -1878,7 +1905,10 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             .contains('changed_fields', '{"status"}')
           if (cancelled) return
           if (error) {
-            console.error('audit_logs (reg-cancel chart):', error)
+            if (!isAbortLikeError(error) && !cancelled) {
+              console.error('audit_logs (reg-cancel chart):', error)
+            }
+            if (isAbortLikeError(error)) return
             break
           }
           for (const row of data || []) {
@@ -1890,7 +1920,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           }
         }
       } catch (e) {
-        if (!cancelled) console.error('audit_logs chart fetch failed:', e)
+        if (!cancelled && !isAbortLikeError(e)) console.error('audit_logs chart fetch failed:', e)
       }
       if (cancelled) return
       const next: Record<string, ReservationStatusAuditRow[]> = {}
@@ -2146,7 +2176,13 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
             .contains('changed_fields', '{"status"}')
           if (cancelled) return
           if (error) {
-            console.error('audit_logs (status transitions):', error)
+            if (!isAbortLikeError(error) && !cancelled) {
+              console.error('audit_logs (status transitions):', error)
+            }
+            if (isAbortLikeError(error)) {
+              if (!cancelled) setSimpleCardStatusTransitionLoading(false)
+              return
+            }
             break
           }
           for (const row of data || []) {
@@ -2154,7 +2190,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           }
         }
       } catch (e) {
-        if (!cancelled) console.error('audit_logs fetch failed:', e)
+        if (!cancelled && !isAbortLikeError(e)) console.error('audit_logs fetch failed:', e)
       }
 
       if (cancelled) return
@@ -4369,6 +4405,9 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
               <PaymentRecordsList
                 reservationId={selectedReservationForPayment.id}
                 customerName={getCustomerName(selectedReservationForPayment.customerId, (customers as Customer[]) || [])}
+                suggestedCancelRefundAmountUsd={
+                  Number(reservationPricingMap.get(selectedReservationForPayment.id)?.deposit_amount) || 0
+                }
               />
             </div>
           </div>
@@ -4692,12 +4731,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
               </div>
             </div>
             <div className="min-h-0 flex-1 bg-gray-50">
-              <iframe
-                key={tourDetailModalTourId}
-                title={t('card.tourDetailModalTitle')}
-                src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                className="h-full w-full min-h-0 border-0"
-              />
+              <TourDetailModalContent tourId={tourDetailModalTourId} />
             </div>
           </div>
         </div>

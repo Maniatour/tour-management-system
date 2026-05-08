@@ -1027,6 +1027,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         
         // 실제 데이터 처리
         data?.forEach((reservation: { tour_date: string; total_people: number; status: string }) => {
+          const st = String(reservation.status ?? '').toLowerCase()
+          if (st.includes('cancel') || st === 'inquiry') return
           const date = reservation.tour_date
           counts[date] = (counts[date] || 0) + (reservation.total_people || 0)
         })
@@ -1774,7 +1776,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         total_people: bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants,
         total_price: totalPrice,
         choices_total: 0,
-        status: transactionId ? 'confirmed' : 'pending',
+        status: transactionId ? 'confirmed' : 'inquiry',
         notes: bookingData.customerInfo.specialRequests || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()

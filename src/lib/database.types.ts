@@ -6582,6 +6582,7 @@ export type Database = {
           cpr_expired: string | null
           created_at: string | null
           date_of_birth: string | null
+          display_name: string | null
           email: string
           emergency_contact: string | null
           hire_date: string | null
@@ -6615,6 +6616,7 @@ export type Database = {
           cpr_expired?: string | null
           created_at?: string | null
           date_of_birth?: string | null
+          display_name?: string | null
           email: string
           emergency_contact?: string | null
           hire_date?: string | null
@@ -6648,6 +6650,7 @@ export type Database = {
           cpr_expired?: string | null
           created_at?: string | null
           date_of_birth?: string | null
+          display_name?: string | null
           email?: string
           emergency_contact?: string | null
           hire_date?: string | null
@@ -6658,6 +6661,7 @@ export type Database = {
           medical_expired?: string | null
           medical_report?: boolean | null
           name_en?: string | null
+          nick_name?: string | null
           name_ko?: string
           personal_car_model?: string | null
           phone?: string | null

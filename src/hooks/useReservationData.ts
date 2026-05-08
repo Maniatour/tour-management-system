@@ -464,7 +464,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         addedBy: (item.added_by as string) || '',
         addedTime: (item.created_at as string) || '',
         tourId: (item.tour_id as string) || '',
-        status: ((item.status as string) as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+        status: ((item.status as string) as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
         updated_at: (item.updated_at as string | null) ?? null,
         selectedOptions: (typeof item.selected_options === 'string'
           ? (() => { try { return JSON.parse(item.selected_options as string) } catch { return {} } })()

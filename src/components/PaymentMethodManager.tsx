@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentMethodUsageModal from '@/components/PaymentMethodUsageModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
@@ -48,6 +49,17 @@ const MERGE_REF_TABLE_LABELS: Record<string, string> = {
   tour_expenses: '투어 지출',
   ticket_bookings: '티켓 부킹',
   tour_hotel_bookings: '투어 호텔 부킹',
+}
+
+function fetchWithApiAuth(input: RequestInfo | URL, init?: RequestInit) {
+  return fetch(input, {
+    ...init,
+    credentials: init?.credentials ?? 'same-origin',
+    headers: {
+      ...apiBearerAuthHeaders(),
+      ...((init?.headers as Record<string, string> | undefined) ?? {}),
+    },
+  })
 }
 
 function paymentMethodFinancialLabel(m: PaymentMethod): string {
@@ -434,7 +446,7 @@ export default function PaymentMethodManager({
       if (filters.status) params.append('status', filters.status)
       if (filters.method_type) params.append('method_type', filters.method_type)
 
-      const response = await fetch(`/api/payment-methods?${params}`)
+      const response = await fetchWithApiAuth(`/api/payment-methods?${params}`)
       const result = await response.json()
       
       if (result.success) {
@@ -556,7 +568,7 @@ export default function PaymentMethodManager({
         const maxRetries = 5
         
         while (retryCount < maxRetries) {
-          const response = await fetch('/api/payment-methods', {
+          const response = await fetchWithApiAuth('/api/payment-methods', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -589,7 +601,7 @@ export default function PaymentMethodManager({
           // 사용자가 명시적으로 ID를 입력한 경우, 기존 레코드를 불러와서 수정 모드로 전환
           if (inputId) {
             try {
-              const existingResponse = await fetch(`/api/payment-methods/${id}`)
+              const existingResponse = await fetchWithApiAuth(`/api/payment-methods/${id}`)
               const existingResult = await existingResponse.json()
               
               if (existingResult.success && existingResult.data) {
@@ -646,7 +658,7 @@ export default function PaymentMethodManager({
         
         console.log('사용자 없이 생성할 ID:', id, '입력한 ID:', inputId)
         
-        const response = await fetch('/api/payment-methods', {
+        const response = await fetchWithApiAuth('/api/payment-methods', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -678,7 +690,7 @@ export default function PaymentMethodManager({
         if (!result.success && result.message?.includes('already exists')) {
           // 기존 레코드를 불러와서 수정 모드로 전환
           try {
-            const existingResponse = await fetch(`/api/payment-methods/${id}`)
+            const existingResponse = await fetchWithApiAuth(`/api/payment-methods/${id}`)
             const existingResult = await existingResponse.json()
             
             if (existingResult.success && existingResult.data) {
@@ -741,7 +753,7 @@ export default function PaymentMethodManager({
     try {
       // 수정 시에는 첫 번째 선택된 사용자만 사용 (기존 레코드 업데이트)
       // 사용자가 선택되지 않은 경우 null로 설정
-      const response = await fetch(`/api/payment-methods/${editingMethod.id}`, {
+      const response = await fetchWithApiAuth(`/api/payment-methods/${editingMethod.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -804,7 +816,7 @@ export default function PaymentMethodManager({
     }
     
     try {
-      const response = await fetch(`/api/payment-methods/${encodeURIComponent(normalizedId)}`, {
+      const response = await fetchWithApiAuth(`/api/payment-methods/${encodeURIComponent(normalizedId)}`, {
         method: 'DELETE'
       })
 
@@ -827,7 +839,7 @@ export default function PaymentMethodManager({
     const newStatus = method.status === 'active' ? 'inactive' : 'active'
     
     try {
-      const response = await fetch(`/api/payment-methods/${method.id}`, {
+      const response = await fetchWithApiAuth(`/api/payment-methods/${method.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -1004,7 +1016,7 @@ export default function PaymentMethodManager({
             }
 
             // API 호출
-            const response = await fetch('/api/payment-methods', {
+            const response = await fetchWithApiAuth('/api/payment-methods', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
@@ -1134,7 +1146,7 @@ export default function PaymentMethodManager({
       params.append('limit', String(pageSize))
       params.append('offset', String(offset))
 
-      const response = await fetch(`/api/payment-methods?${params}`)
+      const response = await fetchWithApiAuth(`/api/payment-methods?${params}`)
       const result = await response.json()
 
       if (!result.success || !Array.isArray(result.data)) {
@@ -1235,7 +1247,7 @@ export default function PaymentMethodManager({
         const row = bulkEditRows[i]
         const id = row.id.trim()
         try {
-          const response = await fetch(`/api/payment-methods/${encodeURIComponent(id)}`, {
+          const response = await fetchWithApiAuth(`/api/payment-methods/${encodeURIComponent(id)}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json'

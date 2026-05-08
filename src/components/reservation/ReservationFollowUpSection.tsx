@@ -684,8 +684,18 @@ export default function ReservationFollowUpSection({
 
   // 취소 사유 프리셋 (클릭 시 바로 기록)
   const CANCELLATION_REASON_PRESETS = isEn
-    ? ['No Show', 'Canceled by customer', 'Not recruited', 'Weather', 'Schedule conflict', 'Duplicate booking', 'Price / Policy', 'Other']
-    : ['No Show', '고객 취소', '미모집', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타']
+    ? [
+        'No Show',
+        'Canceled by customer',
+        'Not recruited',
+        'Closed out',
+        'Weather',
+        'Schedule conflict',
+        'Duplicate booking',
+        'Price / Policy',
+        'Other',
+      ]
+    : ['No Show', '고객 취소', '미모집', '마감', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타']
 
   const saveCancellationReasonWithValue = async (value: string) => {
     if (!reservationId || !userEmail) return

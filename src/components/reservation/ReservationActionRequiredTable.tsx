@@ -118,6 +118,10 @@ export interface ReservationActionRequiredTableProps {
   onRefreshReservationPricing?: (reservationIds: string[]) => void | Promise<void>
   /** Balance 테이블: 페이지 밖에서 선택한 id의 예약 조회용(전체 필터 목록) */
   balanceReservationsForApply?: Reservation[]
+  /** 취소 탭 등: 파트너 보증금 반환(-$취소) 행 추가 */
+  showPartnerCancelRefundAction?: boolean
+  /** 입금/옵션 집계 일부 갱신(예: 반환 라인 추가 후) */
+  onRefreshPaymentAggregates?: (reservationIds: string[]) => void | Promise<void>
 }
 
 function pickupSummary(reservation: Reservation): { date: string; time: string } {
@@ -180,6 +184,7 @@ function ReservationStatusDropdown({
   }, [statusOpen])
 
   const statusOptions = [
+    { value: 'inquiry', labelKey: 'status.inquiry' },
     { value: 'pending', labelKey: 'status.pending' },
     { value: 'confirmed', labelKey: 'status.confirmed' },
     { value: 'completed', labelKey: 'status.completed' },
@@ -803,7 +808,7 @@ function FollowUpModal({
 }
 
 export function ReservationActionRequiredTable(props: ReservationActionRequiredTableProps) {
-  const { reservations, tableVariant, ...rest } = props
+  const { reservations, tableVariant, showPartnerCancelRefundAction, onRefreshPaymentAggregates, ...rest } = props
   const [followUpReservation, setFollowUpReservation] = useState<Reservation | null>(null)
 
   const useBalanceLayout =
@@ -844,6 +849,8 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
           }
           actionsColumnEditOnly
           enableMismatchFormulaBundleApply={tableVariant === 'pricingMismatch'}
+          showPartnerCancelRefundAction={showPartnerCancelRefundAction}
+          onRefreshPaymentAggregates={onRefreshPaymentAggregates}
         />
         {followUpReservation && <FollowUpModal followUpReservation={followUpReservation} onClose={() => setFollowUpReservation(null)} />}
       </>

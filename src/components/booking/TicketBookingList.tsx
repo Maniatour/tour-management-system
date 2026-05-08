@@ -53,6 +53,7 @@ import TicketBookingQtyTimeChangeModal from './TicketBookingQtyTimeChangeModal';
 import TicketBookingPaymentCompleteModal from './TicketBookingPaymentCompleteModal';
 import TicketBookingVendorConfirmModal from './TicketBookingVendorConfirmModal';
 import TicketBookingLinkTourModal from './TicketBookingLinkTourModal';
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent';
 import {
   getCancelDeadlineDays,
   getCancelDueDateForTicketBooking,
@@ -5875,12 +5876,7 @@ export default function TicketBookingList() {
               </div>
             </div>
             <div className="min-h-0 flex-1 bg-gray-50">
-              <iframe
-                key={tourDetailModalTourId}
-                title="투어 상세"
-                src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                className="h-full min-h-0 w-full border-0"
-              />
+              <TourDetailModalContent tourId={tourDetailModalTourId} />
             </div>
           </div>
         </div>

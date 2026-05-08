@@ -91,7 +91,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 유효한 상태인지 확인
-    const validStatuses = ['confirmed', 'pending', 'cancelled', 'completed']
+    const validStatuses = ['inquiry', 'confirmed', 'pending', 'cancelled', 'completed']
     if (!validStatuses.includes(status)) {
       return NextResponse.json({ 
         error: '유효하지 않은 상태입니다' 

@@ -309,7 +309,10 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
       'Need to Refund': 'cancelled',
       'Recruiting': 'pending',
       'Pending': 'pending',
-      'Payment Requested': 'pending'
+      'Payment Requested': 'pending',
+      'Inquiry': 'inquiry',
+      '문의': 'inquiry',
+      '문의중': 'inquiry'
     }
     
     // 대소문자 구분 없이 매핑 (정확한 매칭 우선, 없으면 대소문자 무시)

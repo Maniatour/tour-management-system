@@ -367,6 +367,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   }, [cardLayout, isReservationCancelled, reservation.id, cancelReasonFetchIx])
 
   const statusOptions = [
+    { value: 'inquiry', labelKey: 'status.inquiry' },
     { value: 'pending', labelKey: 'status.pending' },
     { value: 'confirmed', labelKey: 'status.confirmed' },
     { value: 'completed', labelKey: 'status.completed' },

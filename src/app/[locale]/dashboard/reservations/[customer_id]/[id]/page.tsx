@@ -2134,6 +2134,7 @@ export default function CustomerReservations() {
   // 상태 텍스트 변환
   const getStatusText = (status: string) => {
     switch (status) {
+      case 'inquiry': return t('inquiry')
       case 'pending': return t('pending')
       case 'confirmed': return t('confirmed')
       case 'completed': return t('completed')
@@ -2146,6 +2147,7 @@ export default function CustomerReservations() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed': return 'bg-green-100 text-green-800'
+      case 'inquiry': return 'bg-sky-100 text-sky-900'
       case 'pending': return 'bg-yellow-100 text-yellow-800'
       case 'completed': return 'bg-blue-100 text-blue-800'
       case 'cancelled': return 'bg-red-100 text-red-800'
@@ -2269,6 +2271,7 @@ export default function CustomerReservations() {
             <div className="flex space-x-2 overflow-x-auto pb-2 sm:pb-0">
               {[
                 { value: 'all', label: t('all') },
+                { value: 'inquiry', label: t('inquiry') },
                 { value: 'pending', label: t('pending') },
                 { value: 'confirmed', label: t('confirmed') },
                 { value: 'completed', label: t('completed') },

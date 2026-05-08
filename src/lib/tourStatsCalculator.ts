@@ -8,7 +8,12 @@ export function reservationExcludedFromTourSettlementAggregates(
   status: string | null | undefined
 ): boolean {
   const lower = String(status ?? '').toLowerCase().trim()
-  return lower === 'cancelled' || lower === 'canceled' || lower === 'refunded'
+  return (
+    lower === 'cancelled' ||
+    lower === 'canceled' ||
+    lower === 'refunded' ||
+    lower === 'inquiry'
+  )
 }
 export type ReservationPricingRow = {
   reservation_id: string

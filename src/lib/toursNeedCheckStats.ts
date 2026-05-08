@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isAbortLikeError } from '@/lib/isAbortLikeError'
 import {
   isTourDeletedStatus,
   isReservationCancelledStatus,
@@ -138,6 +139,11 @@ function numBalance(v: unknown): number {
   return Number(v) || 0
 }
 
+function logToursNeedCheckError(label: string, err: unknown): void {
+  if (isAbortLikeError(err)) return
+  console.error(label, err)
+}
+
 async function fetchTourRowsWithMeta(supabase: SupabaseClient): Promise<{
   rows: TourNeedCheckRow[]
   reservationIdsByTourId: Map<string, unknown>
@@ -151,7 +157,7 @@ async function fetchTourRowsWithMeta(supabase: SupabaseClient): Promise<{
     .order('tour_date', { ascending: false })
 
   if (toursErr) {
-    console.error('toursNeedCheckStats: tours', toursErr)
+    logToursNeedCheckError('toursNeedCheckStats: tours', toursErr)
     return {
       rows: [],
       reservationIdsByTourId: new Map(),
@@ -286,7 +292,7 @@ async function fetchUnassignedReservationsForNeedCheck(
       .range(from, from + pageSize - 1)
 
     if (error) {
-      console.error('toursNeedCheckStats: unassigned reservations page', error)
+      logToursNeedCheckError('toursNeedCheckStats: unassigned reservations page', error)
       break
     }
     const batch = (data || []) as RawUnassignedRes[]
@@ -321,7 +327,8 @@ async function fetchUnassignedReservationsForNeedCheck(
       .select('id, name, name_ko, name_en, sub_category')
       .in('id', chunk)
     if (pErr) {
-      console.error('toursNeedCheckStats: unassigned products', pErr)
+      logToursNeedCheckError('toursNeedCheckStats: unassigned products', pErr)
+      if (isAbortLikeError(pErr)) return []
       continue
     }
     for (const p of products || []) {
@@ -363,7 +370,8 @@ async function fetchUnassignedReservationsForNeedCheck(
       .gte('tour_date', startD)
       .lte('tour_date', endD)
     if (tErr) {
-      console.error('toursNeedCheckStats: unassigned candidate tours', tErr)
+      logToursNeedCheckError('toursNeedCheckStats: unassigned candidate tours', tErr)
+      if (isAbortLikeError(tErr)) return []
       continue
     }
     for (const t of data || []) {
@@ -459,7 +467,8 @@ async function fetchTourIdsHavingExpenses(
     const { data, error } = await supabase.from('tour_expenses').select('tour_id').in('tour_id', chunk)
 
     if (error) {
-      console.error('toursNeedCheckStats: tour_expenses by tour_id', error)
+      logToursNeedCheckError('toursNeedCheckStats: tour_expenses by tour_id', error)
+      if (isAbortLikeError(error)) return out
       continue
     }
     for (const row of data || []) {
@@ -485,7 +494,8 @@ async function fetchReservationDisplayLabels(
       .in('id', chunk)
 
     if (error) {
-      console.error('toursNeedCheckStats: reservations labels', error)
+      logToursNeedCheckError('toursNeedCheckStats: reservations labels', error)
+      if (isAbortLikeError(error)) return map
       continue
     }
     const customerIds = [
@@ -503,7 +513,8 @@ async function fetchReservationDisplayLabels(
         .select('id, name')
         .in('id', customerIds)
       if (cErr) {
-        console.error('toursNeedCheckStats: customers labels', cErr)
+        logToursNeedCheckError('toursNeedCheckStats: customers labels', cErr)
+        if (isAbortLikeError(cErr)) return map
       } else {
         for (const c of customers || []) {
           const row = c as { id: string; name?: string | null }
@@ -542,7 +553,8 @@ async function fetchReservationPeopleMeta(
       .in('id', chunk)
 
     if (error) {
-      console.error('toursNeedCheckStats: reservations people meta', error)
+      logToursNeedCheckError('toursNeedCheckStats: reservations people meta', error)
+      if (isAbortLikeError(error)) return map
       continue
     }
     for (const r of data || []) {
@@ -654,7 +666,8 @@ async function fetchBalanceByReservationId(
       .in('reservation_id', chunk)
 
     if (error) {
-      console.error('toursNeedCheckStats: reservation_pricing', error)
+      logToursNeedCheckError('toursNeedCheckStats: reservation_pricing', error)
+      if (isAbortLikeError(error)) return map
       continue
     }
     for (const row of data || []) {

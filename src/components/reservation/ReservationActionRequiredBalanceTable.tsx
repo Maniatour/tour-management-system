@@ -16,7 +16,7 @@ import {
   RefreshCw,
   UserRound,
 } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import type { Reservation, Customer } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import {
@@ -27,6 +27,10 @@ import {
   getStatusColor,
 } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
+import {
+  CANCEL_DEPOSIT_REFUND_NOTE_MANUAL,
+  insertCancelDepositRefundPaymentRecord,
+} from '@/lib/cancelDepositRefundPaymentRecord'
 import type { PaymentRecordLike } from '@/utils/reservationPricingBalance'
 import {
   pricingFieldToNumber,
@@ -495,6 +499,9 @@ type BalanceProps = {
   enablePricingDbApply?: boolean
   /** ② 산식 불일치 탭: 고객 총액·채널 결제·수수료·정산 계산식 일괄 반영 버튼 */
   enableMismatchFormulaBundleApply?: boolean
+  /** 예약 처리 필요 취소 탭: 입금 내역과 동일 「-$취소」파트너 반환 라인 */
+  showPartnerCancelRefundAction?: boolean
+  onRefreshPaymentAggregates?: (reservationIds: string[]) => void | Promise<void>
 }
 
 function StatusDropdown({
@@ -519,6 +526,7 @@ function StatusDropdown({
   }, [open])
 
   const statusOptions = [
+    { value: 'inquiry', labelKey: 'status.inquiry' },
     { value: 'pending', labelKey: 'status.pending' },
     { value: 'confirmed', labelKey: 'status.confirmed' },
     { value: 'completed', labelKey: 'status.completed' },
@@ -646,7 +654,11 @@ function BalanceRow(props: BalanceRowProps) {
     inlineEditBusyKey,
     actionsColumnEditOnly = false,
     enableMismatchFormulaBundleApply = false,
+    showPartnerCancelRefundAction = false,
+    onRefreshPaymentAggregates,
   } = props
+  const paymentLocale = useLocale()
+  const [partnerRefundBusy, setPartnerRefundBusy] = useState(false)
 
   const p = reservationPricingMap.get(reservation.id)
   const pLine = useMemo(
@@ -701,6 +713,48 @@ function BalanceRow(props: BalanceRowProps) {
     fromPayments.hasRecords &&
     p != null &&
     Math.abs(fromPayments.balanceReceivedTotal - balanceComputedOutstanding) > 0.01
+
+  /** 입금 내역「-$취소」와 동일: DB 보증금 우선, 없으면 입금 집계 보증금 순액 */
+  const suggestedPartnerRefundUsd = useMemo(() => {
+    const sm = summarizePaymentRecordsForBalance(paymentRecords)
+    const dbDep = pricingFieldToNumber(p?.deposit_amount)
+    return round2(
+      dbDep > 0.01 ? dbDep : sm.depositTotalNet > 0.01 ? sm.depositTotalNet : 0
+    )
+  }, [p, paymentRecords])
+
+  const handlePartnerCancelRefundClick = async () => {
+    if (!showPartnerCancelRefundAction || !onRefreshPaymentAggregates) return
+    const amt = suggestedPartnerRefundUsd
+    if (amt <= 0.01) {
+      alert(
+        paymentLocale === 'en'
+          ? 'Set deposit in pricing first, or ensure deposit payment lines exist.'
+          : '가격 정보의 보증금을 먼저 입력하거나, 보증금 입금 라인이 있는지 확인하세요.'
+      )
+      return
+    }
+    setPartnerRefundBusy(true)
+    try {
+      const res = await insertCancelDepositRefundPaymentRecord({
+        supabase,
+        reservationId: reservation.id,
+        amountUsd: amt,
+        note: CANCEL_DEPOSIT_REFUND_NOTE_MANUAL,
+      })
+      if (!res.ok) {
+        alert(
+          res.error ??
+            (paymentLocale === 'en' ? 'Failed to add payment line.' : '입금 내역 추가에 실패했습니다.')
+        )
+        return
+      }
+      if (res.skipped) return
+      await onRefreshPaymentAggregates([reservation.id])
+    } finally {
+      setPartnerRefundBusy(false)
+    }
+  }
 
   const product = products?.find((pr) => pr.id === reservation.productId)
   const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
@@ -1218,7 +1272,20 @@ function BalanceRow(props: BalanceRowProps) {
 
       <td className="px-0.5 py-1 bg-white">
         {actionsColumnEditOnly ? (
-          <div className="flex flex-wrap gap-0.5 justify-end">
+          <div className="flex flex-wrap gap-0.5 justify-end items-center">
+            {showPartnerCancelRefundAction && (
+              <button
+                type="button"
+                disabled={partnerRefundBusy}
+                title={t('actionRequired.partnerCancelRefundTitle', {
+                  amount: fmtUsd(suggestedPartnerRefundUsd) ?? '$0.00',
+                })}
+                onClick={() => void handlePartnerCancelRefundClick()}
+                className="inline-flex items-center px-1.5 py-1 rounded-md border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100 text-[10px] font-semibold leading-none disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('actionRequired.partnerCancelRefundLabel')}
+              </button>
+            )}
             <button
               type="button"
               title={t('card.editReservationTitle')}
@@ -1354,6 +1421,8 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
     actionsColumnEditOnly = false,
     enablePricingDbApply = true,
     enableMismatchFormulaBundleApply = false,
+    showPartnerCancelRefundAction = false,
+    onRefreshPaymentAggregates,
     ...rest
   } = props
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -1844,6 +1913,8 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
               {...({
                 ...rest,
                 actionsColumnEditOnly,
+                showPartnerCancelRefundAction,
+                onRefreshPaymentAggregates,
                 reservationPricingMap,
                 reservationOptionSumByReservationId,
                 reservation,

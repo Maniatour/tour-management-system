@@ -225,7 +225,7 @@ export default function AttendancePage() {
       addedBy: reservation.added_by || '',
       addedTime: reservation.created_at || '',
       tourId: reservation.tour_id || '',
-      status: (reservation.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+      status: (reservation.status as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
       selectedOptions: (typeof reservation.selected_options === 'string'
         ? (() => { try { return JSON.parse(reservation.selected_options) } catch { return {} } })()
         : (reservation.selected_options as { [optionId: string]: string[] }) || {}),

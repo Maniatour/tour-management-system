@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { ArrowLeft, ChevronDown, Menu, User, Bell, BellOff, Download } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Menu, User, Bell, BellOff, Download, BookOpen } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -554,8 +554,8 @@ export default function PublicChatPage() {
                   }
                 }}
               />
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex-1 min-w-0">
-                {publicChatRoomTitle}
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex-1 min-w-0 tracking-tight">
+                MANIATOUR
               </h1>
             </div>
             <div className="flex items-center gap-2 ml-2 flex-shrink-0">
@@ -566,6 +566,18 @@ export default function PublicChatPage() {
                 title={selectedLanguage === 'ko' ? '홈 화면에 추가' : 'Add to Home Screen'}
               >
                 <Download size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPublicTutorial(true)}
+                className="flex items-center gap-1 p-1.5 sm:pl-2 sm:pr-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+                title={selectedLanguage === 'ko' ? '메뉴얼 보기' : 'View guide'}
+                aria-label={selectedLanguage === 'ko' ? '메뉴얼 보기' : 'View guide'}
+              >
+                <BookOpen size={16} className="flex-shrink-0" />
+                <span className="hidden sm:inline text-xs font-medium whitespace-nowrap">
+                  {selectedLanguage === 'ko' ? '메뉴얼' : 'Guide'}
+                </span>
               </button>
               {/* 푸시 알림 토글 버튼 (국기 아이콘 왼쪽) */}
               {isPushSupported && room && (
@@ -974,7 +986,7 @@ export default function PublicChatPage() {
         />
 
         <PublicChatTutorialOverlay
-          open={Boolean(customerName && showPublicTutorial)}
+          open={showPublicTutorial}
           language={selectedLanguage}
           onClose={() => setShowPublicTutorial(false)}
           onComplete={markPublicTutorialSeen}

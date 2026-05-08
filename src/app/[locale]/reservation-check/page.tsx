@@ -131,6 +131,8 @@ export default function ReservationCheckPage() {
     switch (status) {
       case 'confirmed':
         return 'bg-green-100 text-green-800'
+      case 'inquiry':
+        return 'bg-sky-100 text-sky-900'
       case 'pending':
         return 'bg-yellow-100 text-yellow-800'
       case 'cancelled':
@@ -146,6 +148,8 @@ export default function ReservationCheckPage() {
     switch (status) {
       case 'confirmed':
         return '확정'
+      case 'inquiry':
+        return '문의중'
       case 'pending':
         return '대기중'
       case 'cancelled':

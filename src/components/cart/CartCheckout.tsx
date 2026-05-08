@@ -366,7 +366,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
           total_people: item.participants.adults + item.participants.children + item.participants.infants,
           total_price: item.totalPrice,
           choices_total: 0,
-          status: transactionId ? 'confirmed' : 'pending',
+          status: transactionId ? 'confirmed' : 'inquiry',
           notes: item.customerInfo.specialRequests || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()

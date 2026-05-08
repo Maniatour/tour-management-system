@@ -39,6 +39,8 @@ export function StatusTransitionByTargetBlock({
     switch (target) {
       case 'confirmed':
         return t('stats.statusBucketConfirmedTitle')
+      case 'inquiry':
+        return t('stats.statusBucketInquiryTitle')
       case 'pending':
         return t('stats.statusBucketPendingTitle')
       case 'cancelled':
@@ -52,6 +54,8 @@ export function StatusTransitionByTargetBlock({
     switch (target) {
       case 'confirmed':
         return t('stats.statusBucketTotalNetPeople')
+      case 'inquiry':
+        return t('stats.statusBucketTotalInquiryPeople')
       case 'pending':
         return t('stats.statusBucketTotalPeople')
       case 'cancelled':

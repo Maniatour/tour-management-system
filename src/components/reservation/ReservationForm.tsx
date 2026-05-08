@@ -513,7 +513,7 @@ export default function ReservationForm({
     addedBy: string
     addedTime: string
     tourId: string
-    status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+    status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled'
     selectedOptions: { [optionId: string]: string[] }
     selectedOptionPrices: { [key: string]: number }
     // 새로운 간결한 초이스 시스템
@@ -764,7 +764,7 @@ export default function ReservationForm({
     addedBy: reservation?.addedBy || rez.added_by || '',
     addedTime: reservation?.addedTime || rez.created_at || new Date().toISOString().slice(0, 16).replace('T', ' '),
     tourId: reservation?.tourId || rez.tour_id || '',
-    status: (reservation?.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+    status: (reservation?.status as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
     selectedOptions: reservation?.selectedOptions || rez.selected_options || {},
     selectedOptionPrices: reservation?.selectedOptionPrices || rez.selected_option_prices || {},
     // 초이스 정보 초기값
@@ -5537,9 +5537,10 @@ export default function ReservationForm({
               <select
                 id="reservation-status-mobile"
                 value={formData.status}
-                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
                 className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"
               >
+                <option value="inquiry">{t('status.inquiry')}</option>
                 <option value="pending">{t('status.pending')}</option>
                 <option value="confirmed">{t('status.confirmed')}</option>
                 <option value="completed">{t('status.completed')}</option>
@@ -5562,9 +5563,10 @@ export default function ReservationForm({
               <select
                 id="reservation-status-desktop"
                 value={formData.status}
-                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
                 className="w-full min-w-[6.5rem] sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
               >
+                <option value="inquiry">{t('status.inquiry')}</option>
                 <option value="pending">{t('status.pending')}</option>
                 <option value="confirmed">{t('status.confirmed')}</option>
                 <option value="completed">{t('status.completed')}</option>
@@ -5900,9 +5902,10 @@ export default function ReservationForm({
                     <select
                       id="reservation-status-section"
                       value={formData.status}
-                      onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                      onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
                       className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
+                      <option value="inquiry">{t('status.inquiry')}</option>
                       <option value="pending">{t('status.pending')}</option>
                       <option value="confirmed">{t('status.confirmed')}</option>
                       <option value="completed">{t('status.completed')}</option>
@@ -6031,6 +6034,7 @@ export default function ReservationForm({
                       title="입금 내역"
                       itemVariant="line"
                       onPaymentRecordsUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
+                      suggestedCancelRefundAmountUsd={Number(formData.depositAmount) || 0}
                     />
                   </div>
                   <div id="expense-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">

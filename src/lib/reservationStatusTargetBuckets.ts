@@ -8,7 +8,7 @@ import {
 /** UI·집계에서 “신규” 출발을 표시할 때 from 자리 표식 */
 export const STATUS_TRANSITION_NEW_FROM_MARKER = '__new__'
 
-export type StatusTransitionTargetKey = 'confirmed' | 'pending' | 'cancelled'
+export type StatusTransitionTargetKey = 'confirmed' | 'inquiry' | 'pending' | 'cancelled'
 
 export type StatusTransitionSubLineAgg = {
   key: string
@@ -36,6 +36,7 @@ export function classifyStatusTransitionTarget(tr: { from: string; to: string })
   if (isIntoCancelledLikeTransition(tr)) return 'cancelled'
   const to = tr.to.toLowerCase()
   if (to === 'confirmed') return 'confirmed'
+  if (to === 'inquiry') return 'inquiry'
   if (to === 'pending') return 'pending'
   return null
 }
@@ -50,7 +51,7 @@ export function aggregateStatusTransitionBucketsForReservationWindow(params: {
   auditRowsByReservationId: Record<string, ReservationStatusAuditRow[]>
   dayKeys: string[]
 }): StatusTransitionTargetBucketAgg[] {
-  const order: StatusTransitionTargetKey[] = ['confirmed', 'pending', 'cancelled']
+  const order: StatusTransitionTargetKey[] = ['confirmed', 'inquiry', 'pending', 'cancelled']
   const maps = new Map<StatusTransitionTargetKey, Map<string, StatusTransitionSubLineAgg>>()
   for (const o of order) maps.set(o, new Map())
 

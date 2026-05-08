@@ -84,6 +84,8 @@ const STATUS_TRANSITION_SORT_ORDER = new Map<string, number>([
   ['recruiting:confirmed', 10],
   ['recruiting:cancelled', 20],
   ['recruiting:canceled', 21],
+  ['inquiry:pending', 25],
+  ['inquiry:confirmed', 26],
   ['pending:confirmed', 30],
   ['pending:cancelled', 40],
   ['pending:canceled', 41],
@@ -91,6 +93,8 @@ const STATUS_TRANSITION_SORT_ORDER = new Map<string, number>([
   ['confirmed:canceled', 51],
   ['confirmed:completed', 60],
   ['pending:completed', 65],
+  ['inquiry:cancelled', 68],
+  ['inquiry:canceled', 69],
 ])
 
 export function statusTransitionSortIndex(from: string, to: string): number {

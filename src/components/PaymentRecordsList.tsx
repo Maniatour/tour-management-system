@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, CreditCard, AlertTriangle } from 'lucide-react'
+import { useLocale } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import {
+  CANCEL_DEPOSIT_REFUND_NOTE_MANUAL,
+  insertCancelDepositRefundPaymentRecord,
+} from '@/lib/cancelDepositRefundPaymentRecord'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentRecordForm from './PaymentRecordForm'
 import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
@@ -39,9 +44,21 @@ interface PaymentRecordsListProps {
   itemVariant?: 'card' | 'line'
   /** 입금 내역 추가/수정/삭제 시 호출 (가격 섹션의 고객 실제 지불액 등 재계산용) */
   onPaymentRecordsUpdated?: () => void
+  /**
+   * 고객 실제 지불액(보증금) USD — 「-$취소」로 환불됨(파트너)·Partner Received(transfer) 라인 추가 시 금액으로 사용
+   */
+  suggestedCancelRefundAmountUsd?: number
 }
 
-export default function PaymentRecordsList({ reservationId, customerName, hideTitle, title: titleProp, itemVariant = 'card', onPaymentRecordsUpdated }: PaymentRecordsListProps) {
+export default function PaymentRecordsList({
+  reservationId,
+  customerName,
+  hideTitle,
+  title: titleProp,
+  itemVariant = 'card',
+  onPaymentRecordsUpdated,
+  suggestedCancelRefundAmountUsd = 0,
+}: PaymentRecordsListProps) {
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -49,6 +66,8 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
   const [error, setError] = useState('')
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
   const [teamDisplayByEmail, setTeamDisplayByEmail] = useState<Record<string, string>>({})
+  const [addingCancelRefund, setAddingCancelRefund] = useState(false)
+  const locale = useLocale()
 
   // 결제 방법 정보 로드
   const loadPaymentMethods = async () => {
@@ -333,6 +352,36 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
     }).format(amount)
   }
 
+  const handleAddCancelDepositRefund = async () => {
+    const amt = Math.round((Number(suggestedCancelRefundAmountUsd) || 0) * 100) / 100
+    if (amt <= 0) {
+      alert(
+        locale === 'en'
+          ? 'Set “Customer payment (deposit)” in pricing first, or add a payment line manually.'
+          : '가격 정보의 고객 실제 지불액(보증금)을 먼저 입력하거나, 입금 추가로 직접 입력하세요.'
+      )
+      return
+    }
+    setAddingCancelRefund(true)
+    try {
+      const res = await insertCancelDepositRefundPaymentRecord({
+        supabase,
+        reservationId,
+        amountUsd: amt,
+        note: CANCEL_DEPOSIT_REFUND_NOTE_MANUAL,
+      })
+      if (!res.ok) {
+        alert(res.error ?? (locale === 'en' ? 'Failed to add payment line.' : '입금 내역 추가에 실패했습니다.'))
+        return
+      }
+      if (res.skipped) return
+      await fetchPaymentRecords()
+      onPaymentRecordsUpdated?.()
+    } finally {
+      setAddingCancelRefund(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-4">
@@ -353,14 +402,29 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
             {titleText}
           </h3>
         )}
-        <button
-          type="button"
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 ml-auto"
-        >
-          <Plus size={12} />
-          추가
-        </button>
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
+          <button
+            type="button"
+            onClick={() => void handleAddCancelDepositRefund()}
+            disabled={addingCancelRefund}
+            title={
+              locale === 'en'
+                ? `Add partner refund line (deposit ${formatCurrency(Math.max(0, suggestedCancelRefundAmountUsd || 0), 'USD')})`
+                : `취소 보증금 반환 라인 추가 (보증금 ${formatCurrency(Math.max(0, suggestedCancelRefundAmountUsd || 0), 'USD')})`
+            }
+            className="inline-flex items-center gap-1 px-2 py-1.5 border border-rose-300 bg-rose-50 text-rose-900 rounded-lg hover:bg-rose-100 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {locale === 'en' ? '−$ Cancel' : '-$취소'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors"
+          >
+            <Plus size={12} />
+            추가
+          </button>
+        </div>
       </div>
 
       {error && (

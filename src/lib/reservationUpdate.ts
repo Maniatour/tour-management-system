@@ -11,6 +11,12 @@ import {
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
 import { isReturnedPaymentStatus } from '@/utils/reservationPricingBalance'
+import {
+  CANCEL_DEPOSIT_REFUND_NOTE_AUTO,
+  fetchReservationDepositAmountUsd,
+  insertCancelDepositRefundPaymentRecord,
+  reservationHasPartnerReturnedRefundLine,
+} from '@/lib/cancelDepositRefundPaymentRecord'
 
 const UNDECIDED_OPTION_ID = '__undecided__'
 const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
@@ -98,7 +104,7 @@ export async function updateReservation(
   try {
     const { data: existingReservation, error: existingErr } = await supabase
       .from('reservations')
-      .select('product_id, tour_date')
+      .select('product_id, tour_date, status')
       .eq('id', reservationId)
       .maybeSingle()
 
@@ -442,6 +448,37 @@ export async function updateReservation(
       )
     } catch {
       // 무시
+    }
+
+    const oldStatus = String((existingReservation as { status?: string | null }).status ?? '').toLowerCase()
+    const newStatus = String(payload.status ?? '').toLowerCase()
+    const becameCancelled =
+      (newStatus === 'cancelled' || newStatus === 'canceled') &&
+      oldStatus !== 'cancelled' &&
+      oldStatus !== 'canceled'
+
+    if (becameCancelled) {
+      const pricingInfoForDeposit = payload.pricingInfo as Record<string, unknown> | undefined
+      let depositUsd = pricingInfoForDeposit
+        ? Math.round(toNum(pricingInfoForDeposit.depositAmount) * 100) / 100
+        : 0
+      if (depositUsd <= 0) {
+        depositUsd = await fetchReservationDepositAmountUsd(supabase, reservationId)
+      }
+      if (depositUsd > 0) {
+        const alreadyReturned = await reservationHasPartnerReturnedRefundLine(supabase, reservationId)
+        if (!alreadyReturned) {
+          const pr = await insertCancelDepositRefundPaymentRecord({
+            supabase,
+            reservationId,
+            amountUsd: depositUsd,
+            note: CANCEL_DEPOSIT_REFUND_NOTE_AUTO,
+          })
+          if (!pr.ok && pr.error) {
+            console.warn('[updateReservation] 취소 보증금 반환 입금 자동 추가 실패:', pr.error)
+          }
+        }
+      }
     }
 
     return { success: true }

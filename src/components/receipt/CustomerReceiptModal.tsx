@@ -972,7 +972,11 @@ export default function CustomerReceiptModal({
                 const tip10Total = customerTotalPayment * 0.10
                 const tip15Total = customerTotalPayment * 0.15
                 const tip20Total = customerTotalPayment * 0.20
-                const statusLabel = (d.reservation.status || 'pending').toLowerCase()
+                const statusLabel = (() => {
+                  const s = (d.reservation.status || 'pending').toLowerCase()
+                  if (s === 'inquiry') return isEn ? 'Inquiry' : isJa ? '問い合わせ中' : '문의중'
+                  return s
+                })()
 
                 return (
                   <div

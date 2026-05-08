@@ -16,6 +16,15 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 const CHUNK = 100
 
+/** effect 정리·의존성 변경으로 요청이 끊긴 경우 — 실패로 로그하지 않음 */
+function isLikelyAbortError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const o = e as { name?: string; message?: string; details?: string }
+  if (o.name === 'AbortError') return true
+  const blob = `${o.message ?? ''}\n${o.details ?? ''}`
+  return blob.includes('AbortError') || blob.includes('signal is aborted')
+}
+
 /** productFingerprint 문자열 → 예약별 product_code (안정 키용, effect 의존성에서 배열 참조 제거) */
 function productCodeMapFromFingerprint(fp: string): Map<string, string | null> {
   const m = new Map<string, string | null>()
@@ -229,6 +238,7 @@ export function useReservationFollowUpSnapshots(
         }
         if (!cancelled) setSnapshotsByReservationId(next)
       } catch (e) {
+        if (cancelled || isLikelyAbortError(e)) return
         console.error('useReservationFollowUpSnapshots:', e)
         if (!cancelled) setSnapshotsByReservationId(new Map())
       } finally {
