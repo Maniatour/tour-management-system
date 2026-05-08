@@ -4,6 +4,11 @@ import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+import {
+  computeChannelPaymentAfterReturn,
+  computeChannelSettlementAmount,
+  deriveCommissionGrossForSettlement,
+} from '@/utils/channelSettlement'
 
 /** 입금 자동 기록: Wix Website (payment_methods.id) */
 const PAYMENT_METHOD_WIX_WEBSITE = 'PAYM030'
@@ -62,6 +67,12 @@ interface PricingInfo {
   privateTourAdditionalCost?: number
   commission_percent?: number
   commission_amount?: number
+  /** 폼「채널 결제 금액」net 또는 gross 후보 — gross 복원에 사용 */
+  commission_base_price?: number
+  /** DB `commission_base_price` 산식용 gross — 폼 `onlinePaymentAmount` */
+  onlinePaymentAmount?: number
+  /** UI에서 직접 넣은 채널 정산 금액이 있으면 우선 (없으면 서버에서 동일 산식 계산) */
+  channel_settlement_amount?: number
   /** 상품가 계산용 성인 수 (없으면 예약 adults) */
   pricingAdults?: number
 }
@@ -238,6 +249,66 @@ export async function POST(
         : Math.max(0, Math.floor(Number(body.adults) || 0))
     const billingPax = billingAdults + (body.child ?? 0) + (body.infant ?? 0)
     const notIncludedTotal = (Number(pricingInfo.not_included_price) || 0) * (billingPax || 1)
+    const productPriceTotalRow = (Number(pricingInfo.productPriceTotal) || 0) + notIncludedTotal
+
+    let isOTAChannel = false
+    const { data: chRow } = await client
+      .from('channels')
+      .select('type, category')
+      .eq('id', body.channel_id)
+      .maybeSingle()
+    if (chRow) {
+      const row = chRow as { type?: string | null; category?: string | null }
+      isOTAChannel =
+        String(row.type || '').toLowerCase() === 'ota' || row.category === 'OTA'
+    }
+
+    // 가격 행 생성 시점에는 payment_records 없음 → Returned/Partner Received 0 (savePricingInfo와 동일 산식)
+    const depAmt = Number(pricingInfo.depositAmount) || 0
+    const storedCb = Number(pricingInfo.commission_base_price) || 0
+    const onlineGross = Number(pricingInfo.onlinePaymentAmount) || 0
+    const commissionGross =
+      onlineGross ||
+      depAmt ||
+      deriveCommissionGrossForSettlement(storedCb, {
+        returnedAmount: 0,
+        depositAmount: depAmt,
+        productPriceTotal: productPriceTotalRow,
+        isOTAChannel,
+      }) ||
+      storedCb
+
+    const channelSettlementComputeInput = {
+      depositAmount: depAmt,
+      onlinePaymentAmount: commissionGross,
+      productPriceTotal: productPriceTotalRow,
+      couponDiscount: Number(pricingInfo.couponDiscount) || 0,
+      additionalDiscount: Number(pricingInfo.additionalDiscount) || 0,
+      optionTotalSum: Number(pricingInfo.optionTotal) || 0,
+      additionalCost: Number(pricingInfo.additionalCost) || 0,
+      tax: Number(pricingInfo.tax) || 0,
+      cardFee: Number(pricingInfo.cardFee) || 0,
+      prepaymentTip: Number(pricingInfo.prepaymentTip) || 0,
+      onSiteBalanceAmount: Number(pricingInfo.balanceAmount) || 0,
+      returnedAmount: 0,
+      partnerReceivedAmount: 0,
+      commissionAmount: Number(pricingInfo.commission_amount) || 0,
+      reservationStatus: body.status ?? 'confirmed',
+      isOTAChannel,
+    }
+
+    const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
+    const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
+
+    const manualChSettle = pricingInfo.channel_settlement_amount
+    const channelSettlementStored =
+      manualChSettle !== undefined &&
+      manualChSettle !== null &&
+      String(manualChSettle) !== '' &&
+      Number.isFinite(Number(manualChSettle))
+        ? Math.round(Number(manualChSettle) * 100) / 100
+        : Math.round(channelSettlementComputed * 100) / 100
+
     const pricingId = crypto.randomUUID()
     const pricingData = {
       id: pricingId,
@@ -245,7 +316,7 @@ export async function POST(
       adult_product_price: Number(pricingInfo.adultProductPrice) || 0,
       child_product_price: Number(pricingInfo.childProductPrice) || 0,
       infant_product_price: Number(pricingInfo.infantProductPrice) || 0,
-      product_price_total: (Number(pricingInfo.productPriceTotal) || 0) + notIncludedTotal,
+      product_price_total: productPriceTotalRow,
       not_included_price: Number(pricingInfo.not_included_price) || 0,
       required_options: pricingInfo.requiredOptions ?? {},
       required_option_total: Number(pricingInfo.requiredOptionTotal) || 0,
@@ -265,11 +336,14 @@ export async function POST(
       selected_options: pricingInfo.selectedOptionalOptions ?? {},
       option_total: Number(pricingInfo.optionTotal) || 0,
       total_price: (Number(pricingInfo.totalPrice) || 0) + notIncludedTotal,
-      deposit_amount: Number(pricingInfo.depositAmount) || 0,
+      deposit_amount: depAmt,
       balance_amount: Number(pricingInfo.balanceAmount) || 0,
       private_tour_additional_cost: Number(pricingInfo.privateTourAdditionalCost) || 0,
       commission_percent: Number(pricingInfo.commission_percent) || 0,
       commission_amount: Number(pricingInfo.commission_amount) || 0,
+      /** UI「채널 결제 금액」과 동일 — Returned 차감 후 net (신규 행은 payment_records 없음) */
+      commission_base_price: Math.round(channelPayNet * 100) / 100,
+      channel_settlement_amount: channelSettlementStored,
       pricing_adults: Math.max(0, Math.floor(billingAdults)),
     }
     const { error: pricingError } = await client

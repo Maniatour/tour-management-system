@@ -5315,6 +5315,14 @@ export default function ReservationForm({
           commission_base_price: toNum(fd.commission_base_price),
           onlinePaymentAmount:
             toNum(fd.onlinePaymentAmount) || toNum(fd.commission_base_price),
+          /** 이메일 가져오기 confirm API 등 — 수동 입력 시 우선 저장 */
+          channel_settlement_amount: (() => {
+            const m = fd.channelSettlementAmount
+            if (m !== undefined && m !== null && String(m) !== '' && Number.isFinite(Number(m))) {
+              return Math.round(Number(m) * 100) / 100
+            }
+            return undefined
+          })(),
         }
       }
       
