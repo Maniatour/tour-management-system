@@ -6,7 +6,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Wrench } from 'lucide-react'
-import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
+import { useTranslations } from 'next-intl'
+import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import { Database } from '@/lib/database.types'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 
@@ -52,6 +53,7 @@ type Props = {
   expenses: CompanyExpense[]
   handleEdit: (e: CompanyExpense) => void
   reconciledExpenseIds: Set<string>
+  onOpenStatementRecon: (e: CompanyExpense) => void
   paymentMethodMap: Record<string, string>
   getCategoryLabel: (c: string) => string
   getStatusBadge: (s: string | null) => React.ReactNode
@@ -78,6 +80,7 @@ export function CompanyExpenseListDesktopTableBody({
   expenses,
   handleEdit,
   reconciledExpenseIds,
+  onOpenStatementRecon,
   paymentMethodMap,
   getCategoryLabel,
   getStatusBadge,
@@ -96,62 +99,79 @@ export function CompanyExpenseListDesktopTableBody({
   onOpenQuickVehicle,
   formatCurrency,
 }: Props) {
+  const tStmt = useTranslations('expenses.statementRecon')
   return (
     <TableBody>
       {expenses.map((expense) => (
         <TableRow key={expense.id} onClick={() => handleEdit(expense)} className="cursor-pointer hover:bg-gray-50">
-          <TableCell className="py-2 w-10 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+          <TableCell className="w-10 text-center align-middle px-1 py-1" onClick={(e) => e.stopPropagation()}>
             <Checkbox
               checked={selectedExpenseIds.has(expense.id)}
               onCheckedChange={(c) => onToggleExpenseSelect(expense.id, c === true)}
               aria-label={t('listBatchStandard.selectRowAria')}
+              className="h-3.5 w-3.5"
             />
           </TableCell>
-          <TableCell className="py-2 text-center" onClick={(e) => e.stopPropagation()}>
-            <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
+          <TableCell className="text-center px-0.5 py-1" onClick={(e) => e.stopPropagation()}>
+            <span className="inline-flex scale-90 origin-center">
+              <ExpenseStatementReconIcon
+                matched={reconciledExpenseIds.has(expense.id)}
+                titleMatched={tStmt('matchedTitle')}
+                titleUnmatched={tStmt('unmatchedTitle')}
+                onClick={() => onOpenStatementRecon(expense)}
+              />
+            </span>
           </TableCell>
-          <TableCell className="py-2">
+          <TableCell className="min-w-0 px-1.5 py-1 text-[11px] tabular-nums whitespace-nowrap">
             {expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}
           </TableCell>
-          <TableCell className="py-2">{expense.paid_to}</TableCell>
-          <TableCell className="max-w-[11rem] py-2">
+          <TableCell className="min-w-0 px-1.5 py-1">
+            <span className="line-clamp-2 break-words text-[11px] leading-snug" title={expense.paid_to ?? undefined}>
+              {expense.paid_to}
+            </span>
+          </TableCell>
+          <TableCell className="min-w-0 px-1.5 py-1">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-sm" title={expense.paid_for ?? undefined}>
+              <span className="truncate text-[11px] leading-snug" title={expense.paid_for ?? undefined}>
                 {expense.paid_for}
               </span>
               {paidForLabelBadge(expense, paidForLabels, locale, t)}
             </div>
           </TableCell>
-          <TableCell className="max-w-[10rem] py-2 text-sm align-top" onClick={(e) => e.stopPropagation()}>
+          <TableCell className="min-w-0 px-1.5 py-1 align-top" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
-              className={`${cellClickableCls} w-full text-left`}
+              className={`${cellClickableCls} w-full min-w-0 text-left`}
               title={t('listQuickEdit.openStandardHint')}
               onClick={() => onOpenQuickStandard(expense)}
             >
               {expense.standard_paid_for ? (
-                <span className="line-clamp-3 text-gray-800">{expense.standard_paid_for}</span>
+                <span className="line-clamp-2 text-[11px] leading-snug text-gray-800">{expense.standard_paid_for}</span>
               ) : (
-                <span className="text-muted-foreground">{t('listQuickEdit.tapToSetStandard')}</span>
+                <span className="text-muted-foreground text-[11px]">{t('listQuickEdit.tapToSetStandard')}</span>
               )}
             </button>
           </TableCell>
-          <TableCell className="max-w-xs truncate py-2">{expense.description || '-'}</TableCell>
-          <TableCell className="font-medium py-2">
+          <TableCell className="min-w-0 px-1.5 py-1">
+            <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground" title={expense.description || undefined}>
+              {expense.description || '-'}
+            </span>
+          </TableCell>
+          <TableCell className="min-w-0 px-1.5 py-1 text-right text-[11px] font-medium tabular-nums whitespace-nowrap">
             ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
           </TableCell>
-          <TableCell className="py-2 text-sm tabular-nums">
+          <TableCell className="min-w-0 px-1.5 py-1 text-right text-[11px] tabular-nums whitespace-nowrap">
             {formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}
           </TableCell>
-          <TableCell className="py-2 text-sm tabular-nums">
+          <TableCell className="min-w-0 px-1.5 py-1 text-right text-[11px] tabular-nums whitespace-nowrap">
             {formatCurrency(
               reimbursementOutstanding(expense.amount ?? 0, expense.reimbursed_amount)
             )}
           </TableCell>
-          <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+          <TableCell className="min-w-0 px-1.5 py-1" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
-              className={`${cellClickableCls} max-w-full truncate text-left text-sm`}
+              className={`${cellClickableCls} block w-full min-w-0 truncate text-left text-[11px]`}
               title={t('listQuickEdit.openPaymentHint')}
               onClick={() => onOpenQuickPayment(expense)}
             >
@@ -160,16 +180,17 @@ export function CompanyExpenseListDesktopTableBody({
                 : t('listQuickEdit.tapToSetPayment')}
             </button>
           </TableCell>
-          <TableCell className="w-32 py-2">
-            {expense.category && <Badge variant="outline">{getCategoryLabel(expense.category)}</Badge>}
+          <TableCell className="min-w-0 px-1.5 py-1">
+            {expense.category && (
+              <Badge variant="outline" className="max-w-full truncate px-1 py-0 text-[10px] font-normal leading-tight">
+                <span className="truncate">{getCategoryLabel(expense.category)}</span>
+              </Badge>
+            )}
           </TableCell>
-          <TableCell
-            className="max-w-[12rem] py-2 text-xs text-gray-800 align-top"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <TableCell className="min-w-0 px-1.5 py-1 align-top" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
-              className={`${cellClickableCls} line-clamp-2 w-full break-words text-left`}
+              className={`${cellClickableCls} line-clamp-2 w-full min-w-0 break-words text-left text-[11px]`}
               title={t('listQuickEdit.openVehicleHint')}
               onClick={() => onOpenQuickVehicle(expense)}
             >
@@ -180,37 +201,41 @@ export function CompanyExpenseListDesktopTableBody({
               )}
             </button>
           </TableCell>
-          <TableCell className="w-12 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+          <TableCell className="px-0.5 py-1 text-center" onClick={(e) => e.stopPropagation()}>
             {hasUsableVehicleId(expense.vehicle_id) ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-7 w-7"
                 onClick={() => openVehicleMaintenanceHistory(expense.vehicle_id!)}
                 title={`${t('vehicleMaintenanceHistory.openButton')} — ${getVehicleLineLabel(expense.vehicle_id!)}`}
               >
-                <Wrench className="w-4 h-4" />
+                <Wrench className="w-3.5 h-3.5" />
               </Button>
             ) : (
-              <span className="text-muted-foreground">—</span>
+              <span className="text-muted-foreground text-[11px]">—</span>
             )}
           </TableCell>
-          <TableCell className="w-28 py-2">{getStatusBadge(expense.status || 'pending')}</TableCell>
+          <TableCell className="min-w-0 px-1.5 py-1 align-middle">
+            {getStatusBadge(expense.status || 'pending')}
+          </TableCell>
           {renderEmployeeEmailCell(expense)}
-          <TableCell className="py-2">
-            {(() => {
-              if (!expense.submit_by) return '-'
-              try {
-                const member = teamMembers.get(expense.submit_by.toLowerCase())
-                if (member) {
-                  return locale === 'ko' ? member.name_ko : member.name_en || member.name_ko
+          <TableCell className="min-w-0 px-1.5 py-1">
+            <span className="line-clamp-2 text-[11px] leading-snug" title={expense.submit_by ?? undefined}>
+              {(() => {
+                if (!expense.submit_by) return '-'
+                try {
+                  const member = teamMembers.get(expense.submit_by.toLowerCase())
+                  if (member) {
+                    return locale === 'ko' ? member.name_ko : member.name_en || member.name_ko
+                  }
+                  return expense.submit_by
+                } catch {
+                  return expense.submit_by
                 }
-                return expense.submit_by
-              } catch {
-                return expense.submit_by
-              }
-            })()}
+              })()}
+            </span>
           </TableCell>
         </TableRow>
       ))}

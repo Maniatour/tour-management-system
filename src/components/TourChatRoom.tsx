@@ -96,6 +96,8 @@ interface TourChatRoomProps {
   tourDate?: string
   customerName?: string
   customerLanguage?: SupportedLanguage
+  /** 고객 공개 뷰에서 헤더·공유 문구에 쓸 현지화된 채팅방 제목 */
+  publicDisplayRoomName?: string
   externalMobileMenuOpen?: boolean
   onExternalMobileMenuToggle?: () => void
   // isModalView?: boolean // 사용되지 않음
@@ -109,6 +111,7 @@ export default function TourChatRoom({
   tourDate,
   customerName,
   customerLanguage = 'en',
+  publicDisplayRoomName,
   externalMobileMenuOpen,
   onExternalMobileMenuToggle
   // isModalView = false // 사용되지 않음
@@ -2361,6 +2364,7 @@ export default function TourChatRoom({
       {room && (
         <ChatHeader
           room={room}
+          {...(publicDisplayRoomName ? { displayRoomName: publicDisplayRoomName } : {})}
           isPublicView={isPublicView}
           isMobileMenuOpen={isMobileMenuOpen}
           selectedLanguage={selectedLanguage}
@@ -2476,7 +2480,7 @@ export default function TourChatRoom({
           isOpen={showShareModal}
           onClose={() => setShowShareModal(false)}
           roomCode={room.room_code}
-          roomName={room.room_name}
+          roomName={isPublicView && publicDisplayRoomName ? publicDisplayRoomName : room.room_name}
           {...(tourDate ? { tourDate } : {})}
           isPublicView={isPublicView}
           language={selectedLanguage as 'en' | 'ko'}

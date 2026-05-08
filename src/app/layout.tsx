@@ -14,7 +14,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Tour Management System",
+  title: "MANIATOUR",
   description: "Tour schedule and customer management system for guides",
   manifest: '/manifest.json',
 };

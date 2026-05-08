@@ -768,12 +768,16 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 onChange={(e) => {
                   const start = e.target.value
                   setDateRange(prev => ({ ...prev, start }))
-                  setTimeout(() => {
-                    endDateInputRef.current?.focus()
-                    if (typeof endDateInputRef.current?.showPicker === 'function') {
-                      endDateInputRef.current.showPicker()
+                  const endEl = endDateInputRef.current
+                  if (!endEl) return
+                  endEl.focus()
+                  if (typeof endEl.showPicker === 'function') {
+                    try {
+                      endEl.showPicker()
+                    } catch {
+                      // showPicker는 사용자 제스처가 끊기면 실패할 수 있음
                     }
-                  }, 100)
+                  }
                 }}
                 className="px-2 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 max-w-[140px]"
               />

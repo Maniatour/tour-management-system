@@ -12,6 +12,7 @@ type PmRow = {
   user_email: string | null
   status: string | null
   card_holder_name: string | null
+  financial_account_id?: string | null
 }
 
 export type PaymentMethodOption = {
@@ -34,12 +35,23 @@ type TeamRow = {
 export function usePaymentMethodOptions() {
   const [paymentMethodOptions, setPaymentMethodOptions] = useState<PaymentMethodOption[]>([])
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
+  /** `payment_methods.id` → 연결된 `financial_accounts.name` (없으면 맵에 없음) */
+  const [paymentMethodFinancialAccountNameByPmId, setPaymentMethodFinancialAccountNameByPmId] = useState<
+    Record<string, string>
+  >({})
+  /**
+   * `payment_methods.method` 코드 → 금융 계정명 (해당 코드를 쓰는 행이 모두 같은 계정일 때만)
+   * 원장에 method 문자열이 저장된 레거시용
+   */
+  const [paymentMethodFinancialAccountNameByMethodKey, setPaymentMethodFinancialAccountNameByMethodKey] = useState<
+    Record<string, string>
+  >({})
 
   const loadPaymentMethods = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('payment_methods')
-        .select('id, method, method_type, display_name, user_email, status, card_holder_name')
+        .select('id, method, method_type, display_name, user_email, status, card_holder_name, financial_account_id')
         .order('method')
       if (error) throw error
 
@@ -56,8 +68,25 @@ export function usePaymentMethodOptions() {
       })
 
       const map: Record<string, string> = {}
+      const faNameByPmId: Record<string, string> = {}
       const options: PaymentMethodOption[] = []
       const rows: PmRow[] = (data || []) as PmRow[]
+
+      const faIds = [...new Set(rows.map((r) => r.financial_account_id).filter(Boolean) as string[])]
+      const faNameById = new Map<string, string>()
+      if (faIds.length > 0) {
+        for (let i = 0; i < faIds.length; i += 80) {
+          const chunk = faIds.slice(i, i + 80)
+          const { data: faRows, error: faErr } = await supabase.from('financial_accounts').select('id,name').in('id', chunk)
+          if (faErr) {
+            console.warn('financial_accounts 로드(결제방법·계정 표시용):', faErr)
+            break
+          }
+          for (const fa of (faRows || []) as { id: string; name: string }[]) {
+            faNameById.set(fa.id, fa.name)
+          }
+        }
+      }
 
       rows.forEach((pm) => {
         const em = pm.user_email ? String(pm.user_email).toLowerCase() : ''
@@ -74,6 +103,11 @@ export function usePaymentMethodOptions() {
         )
         map[pm.id] = name
         map[pm.method] = name
+        const faId = pm.financial_account_id ? String(pm.financial_account_id).trim() : ''
+        if (faId) {
+          const faName = faNameById.get(faId)
+          if (faName) faNameByPmId[pm.id] = faName
+        }
         options.push({
           id: pm.id,
           name,
@@ -83,7 +117,27 @@ export function usePaymentMethodOptions() {
           status: pm.status,
         })
       })
+
+      const methodKeyToFaNames = new Map<string, Set<string>>()
+      for (const pm of rows) {
+        const faName = faNameByPmId[pm.id]
+        if (!faName) continue
+        const mk = pm.method
+        let set = methodKeyToFaNames.get(mk)
+        if (!set) {
+          set = new Set<string>()
+          methodKeyToFaNames.set(mk, set)
+        }
+        set.add(faName)
+      }
+      const faNameByMethodKey: Record<string, string> = {}
+      methodKeyToFaNames.forEach((set, mk) => {
+        if (set.size === 1) faNameByMethodKey[mk] = [...set][0]!
+      })
+
       setPaymentMethodMap(map)
+      setPaymentMethodFinancialAccountNameByPmId(faNameByPmId)
+      setPaymentMethodFinancialAccountNameByMethodKey(faNameByMethodKey)
       setPaymentMethodOptions(options)
     } catch (error) {
       if (!isAbortLikeError(error)) {
@@ -96,5 +150,11 @@ export function usePaymentMethodOptions() {
     void loadPaymentMethods()
   }, [loadPaymentMethods])
 
-  return { paymentMethodOptions, paymentMethodMap, reloadPaymentMethods: loadPaymentMethods }
+  return {
+    paymentMethodOptions,
+    paymentMethodMap,
+    paymentMethodFinancialAccountNameByPmId,
+    paymentMethodFinancialAccountNameByMethodKey,
+    reloadPaymentMethods: loadPaymentMethods
+  }
 }

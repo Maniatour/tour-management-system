@@ -41,7 +41,9 @@ import {
   BarChart3,
   BookOpen,
 } from 'lucide-react'
-import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
+import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
 import { toast } from 'sonner'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
@@ -70,6 +72,8 @@ import {
 } from '@/lib/companyExpenseStandardLeafDoubleCheck'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 import { cn } from '@/lib/utils'
+import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
@@ -229,6 +233,11 @@ export default function CompanyExpenseManager({
   >([])
   const [paidForNormModalOpen, setPaidForNormModalOpen] = useState(false)
   const [ledgerDupModalOpen, setLedgerDupModalOpen] = useState(false)
+  const tStmtRecon = useTranslations('expenses.statementRecon')
+  const [stmtReconOpen, setStmtReconOpen] = useState(false)
+  const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [companyTableSortKey, setCompanyTableSortKey] = useState<string>('submit_on')
+  const [companyTableSortDir, setCompanyTableSortDir] = useState<SortDir>('desc')
 
   useEffect(() => {
     registerOpenLedgerDuplicateCheck?.(() => setLedgerDupModalOpen(true))
@@ -281,6 +290,19 @@ export default function CompanyExpenseManager({
     const msg = typeof (err as { message?: string })?.message === 'string' ? (err as { message: string }).message : ''
     return msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')
   }
+
+  const openStmtReconForExpense = useCallback((expense: CompanyExpense) => {
+    const ymd = expense.submit_on ? new Date(expense.submit_on).toISOString().slice(0, 10) : ''
+    if (!ymd) return
+    setStmtReconCtx({
+      sourceTable: 'company_expenses',
+      sourceId: expense.id,
+      dateYmd: ymd,
+      amount: Math.abs(Number(expense.amount ?? 0)),
+      direction: 'outflow'
+    })
+    setStmtReconOpen(true)
+  }, [])
 
   const limit = 20
   const loadExpenses = useCallback(async () => {
@@ -1139,6 +1161,109 @@ export default function CompanyExpenseManager({
 
   const hasUsableVehicleId = (id: string | null | undefined) => Boolean(id && id !== 'none')
 
+  const handleCompanyTableSort = useCallback(
+    (key: string) => {
+      if (companyTableSortKey === key) {
+        setCompanyTableSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setCompanyTableSortKey(key)
+        setCompanyTableSortDir('asc')
+      }
+    },
+    [companyTableSortKey]
+  )
+
+  const sortedExpenses = useMemo(() => {
+    const rows = [...expenses]
+    const loc = locale === 'en' ? 'en' : 'ko'
+    rows.sort((a, b) => {
+      let va: unknown
+      let vb: unknown
+      switch (companyTableSortKey) {
+        case 'submit_on':
+          va = a.submit_on || ''
+          vb = b.submit_on || ''
+          break
+        case 'paid_to':
+          va = a.paid_to
+          vb = b.paid_to
+          break
+        case 'paid_for':
+          va = a.paid_for
+          vb = b.paid_for
+          break
+        case 'standard_paid_for':
+          va = a.standard_paid_for
+          vb = b.standard_paid_for
+          break
+        case 'description':
+          va = a.description
+          vb = b.description
+          break
+        case 'amount':
+          va = parseExpenseAmount(a)
+          vb = parseExpenseAmount(b)
+          break
+        case 'reimbursed':
+          va = parseReimbursedAmount(a.reimbursed_amount)
+          vb = parseReimbursedAmount(b.reimbursed_amount)
+          break
+        case 'outstanding':
+          va = reimbursementOutstanding(parseExpenseAmount(a), a.reimbursed_amount)
+          vb = reimbursementOutstanding(parseExpenseAmount(b), b.reimbursed_amount)
+          break
+        case 'payment_method':
+          va = paymentMethodMap[a.payment_method || ''] || a.payment_method
+          vb = paymentMethodMap[b.payment_method || ''] || b.payment_method
+          break
+        case 'category':
+          va = a.category ? getCategoryLabel(a.category) : ''
+          vb = b.category ? getCategoryLabel(b.category) : ''
+          break
+        case 'vehicle':
+          va = hasUsableVehicleId(a.vehicle_id) ? getVehicleLineLabel(a.vehicle_id!) : ''
+          vb = hasUsableVehicleId(b.vehicle_id) ? getVehicleLineLabel(b.vehicle_id!) : ''
+          break
+        case 'status':
+          va = a.status
+          vb = b.status
+          break
+        case 'employee': {
+          const ae = (a as { paid_to_employee_email?: string | null }).paid_to_employee_email
+          const be = (b as { paid_to_employee_email?: string | null }).paid_to_employee_email
+          va = ae || ''
+          vb = be || ''
+          break
+        }
+        case 'submit_by': {
+          const la = !a.submit_by
+            ? ''
+            : teamMembers.get(a.submit_by.toLowerCase())?.name_ko || a.submit_by
+          const lb = !b.submit_by
+            ? ''
+            : teamMembers.get(b.submit_by.toLowerCase())?.name_ko || b.submit_by
+          va = la
+          vb = lb
+          break
+        }
+        default:
+          va = a.submit_on || ''
+          vb = b.submit_on || ''
+      }
+      return compareSortValues(va, vb, companyTableSortDir, loc)
+    })
+    return rows
+  }, [
+    expenses,
+    companyTableSortKey,
+    companyTableSortDir,
+    locale,
+    paymentMethodMap,
+    getCategoryLabel,
+    getVehicleLineLabel,
+    teamMembers,
+  ])
+
   const selectedPaidForLabel = useMemo(
     () => paidForLabels.find((l) => l.id === formData.paid_for_label_id),
     [paidForLabels, formData.paid_for_label_id]
@@ -1373,7 +1498,7 @@ export default function CompanyExpenseManager({
   }, [listQuickField, listQuickVehicleId, putExpenseFromListRow])
 
   const renderEmployeeEmailCell = (expense: CompanyExpense) => (
-    <TableCell className="w-48 py-2" onClick={(e) => e.stopPropagation()}>
+    <TableCell className="min-w-0 px-1.5 py-1 align-middle" onClick={(e) => e.stopPropagation()}>
       {(() => {
         const currentEmail = (expense as { paid_to_employee_email?: string | null }).paid_to_employee_email || null
         const filtered = employeeEmailTab === 'active' ? teamList.filter((m) => m.is_active) : teamList.filter((m) => !m.is_active)
@@ -1385,7 +1510,7 @@ export default function CompanyExpenseManager({
             value={currentEmail || '__none__'}
             onValueChange={(value) => updatePaidToEmployeeEmail(expense.id, value === '__none__' ? null : value)}
           >
-            <SelectTrigger className="h-8 text-xs">
+            <SelectTrigger className="h-7 max-w-full min-w-0 text-[11px] px-1.5 [&>span]:truncate">
               <SelectValue placeholder="미지정" />
             </SelectTrigger>
             <SelectContent>
@@ -2322,7 +2447,7 @@ export default function CompanyExpenseManager({
             <>
               {/* 모바일: 카드 리스트 - 라벨/값 구조로 가독성 개선 */}
               <div className="md:hidden space-y-3">
-                {expenses.map((expense) => (
+                {sortedExpenses.map((expense) => (
                   <div
                     key={expense.id}
                     onClick={() => handleEdit(expense)}
@@ -2343,7 +2468,12 @@ export default function CompanyExpenseManager({
                       </div>
                       <div className="font-semibold text-gray-900 text-sm flex-1 flex flex-col gap-1 min-w-0">
                         <p className="flex items-center gap-1.5 min-w-0">
-                          <StatementReconciledBadge matched={reconciledExpenseIds.has(expense.id)} />
+                          <ExpenseStatementReconIcon
+                            matched={reconciledExpenseIds.has(expense.id)}
+                            titleMatched={tStmtRecon('matchedTitle')}
+                            titleUnmatched={tStmtRecon('unmatchedTitle')}
+                            onClick={() => openStmtReconForExpense(expense)}
+                          />
                           <span className="truncate">{expense.paid_for}</span>
                         </p>
                         {expense.paid_for_label_id ? (
@@ -2466,46 +2596,175 @@ export default function CompanyExpenseManager({
                   </div>
                 ))}
               </div>
-              {/* 데스크톱: 테이블 */}
-              <div className="hidden md:block overflow-x-auto">
-              <Table className="min-w-[1480px]">
+              {/* 데스크톱: 테이블 — 화면 너비에 맞춤(table-fixed), 가로 스크롤 없음 */}
+              <div className="hidden md:block w-full min-w-0">
+              <Table
+                wrapperClassName="max-w-full overflow-x-hidden"
+                className="w-full table-fixed border-collapse text-xs [&_th]:h-auto [&_th]:px-1.5 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:leading-tight [&_td]:px-1.5 [&_td]:py-1"
+              >
+                <colgroup>
+                  <col style={{ width: '2.2%' }} />
+                  <col style={{ width: '2.2%' }} />
+                  <col style={{ width: '4.8%' }} />
+                  <col style={{ width: '8.5%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '7.5%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '5.5%' }} />
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '5.5%' }} />
+                  <col style={{ width: '7.5%' }} />
+                  <col style={{ width: '2.8%' }} />
+                  <col style={{ width: '5.5%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '6%' }} />
+                </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="py-2 w-10 text-center">
+                    <TableHead className="text-center">
                       <Checkbox
                         checked={listAllPageSelected ? true : listSomePageSelected ? 'indeterminate' : false}
                         onCheckedChange={() => toggleListSelectAllPage()}
                         aria-label={t('listBatchStandard.selectAllPageAria')}
+                        className="h-3.5 w-3.5"
                       />
                     </TableHead>
-                    <TableHead className="py-2 w-10 text-center" title="명세 대조">
-                      명세
+                    <TableHead className="text-center" title={tStmtRecon('unmatchedTitle')}>
+                      {tStmtRecon('columnHeaderShort')}
                     </TableHead>
-                    <TableHead className="py-2">제출일</TableHead>
-                    <TableHead className="py-2">결제처</TableHead>
-                    <TableHead className="py-2">결제내용</TableHead>
-                    <TableHead className="py-2 min-w-[6.5rem] max-w-[11rem]" title={t('listStandardPaidFor.columnHint')}>
-                      {t('listStandardPaidFor.column')}
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="제출일"
+                        active={companyTableSortKey === 'submit_on'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('submit_on')}
+                      />
                     </TableHead>
-                    <TableHead className="py-2">설명</TableHead>
-                    <TableHead className="py-2">금액</TableHead>
-                    <TableHead className="py-2 whitespace-nowrap">{tTour('reimbursedShort')}</TableHead>
-                    <TableHead className="py-2 whitespace-nowrap">{tTour('outstandingShort')}</TableHead>
-                    <TableHead className="py-2">결제방법</TableHead>
-                    <TableHead className="w-32 py-2">카테고리</TableHead>
-                    <TableHead className="w-40 py-2 min-w-[7rem] max-w-[12rem]">{t('filters.vehicle')}</TableHead>
-                    <TableHead className="w-12 py-2 text-center" title={t('vehicleMaintenanceHistory.modalTitle')}>
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="결제처"
+                        active={companyTableSortKey === 'paid_to'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('paid_to')}
+                      />
+                    </TableHead>
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="결제내용"
+                        active={companyTableSortKey === 'paid_for'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('paid_for')}
+                      />
+                    </TableHead>
+                    <TableHead className="whitespace-normal align-bottom" title={t('listStandardPaidFor.columnHint')}>
+                      <TableSortHeaderButton
+                        label={t('listStandardPaidFor.column')}
+                        active={companyTableSortKey === 'standard_paid_for'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('standard_paid_for')}
+                      />
+                    </TableHead>
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="설명"
+                        active={companyTableSortKey === 'description'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('description')}
+                      />
+                    </TableHead>
+                    <TableHead className="text-right align-bottom">
+                      <div className="flex justify-end">
+                        <TableSortHeaderButton
+                          label="금액"
+                          active={companyTableSortKey === 'amount'}
+                          dir={companyTableSortDir}
+                          onClick={() => handleCompanyTableSort('amount')}
+                          className="text-right"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="whitespace-normal text-right leading-tight align-bottom">
+                      <div className="flex justify-end">
+                        <TableSortHeaderButton
+                          label={tTour('reimbursedShort')}
+                          active={companyTableSortKey === 'reimbursed'}
+                          dir={companyTableSortDir}
+                          onClick={() => handleCompanyTableSort('reimbursed')}
+                          className="text-right"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="whitespace-normal text-right leading-tight align-bottom">
+                      <div className="flex justify-end">
+                        <TableSortHeaderButton
+                          label={tTour('outstandingShort')}
+                          active={companyTableSortKey === 'outstanding'}
+                          dir={companyTableSortDir}
+                          onClick={() => handleCompanyTableSort('outstanding')}
+                          className="text-right"
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="결제방법"
+                        active={companyTableSortKey === 'payment_method'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('payment_method')}
+                      />
+                    </TableHead>
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="카테고리"
+                        active={companyTableSortKey === 'category'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('category')}
+                      />
+                    </TableHead>
+                    <TableHead className="whitespace-normal align-bottom">
+                      <TableSortHeaderButton
+                        label={t('filters.vehicle')}
+                        active={companyTableSortKey === 'vehicle'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('vehicle')}
+                      />
+                    </TableHead>
+                    <TableHead className="text-center px-1" title={t('vehicleMaintenanceHistory.modalTitle')}>
                       {t('vehicleMaintenanceHistory.listColumnHeader')}
                     </TableHead>
-                    <TableHead className="w-28 py-2">상태</TableHead>
-                    <TableHead className="w-48 py-2">직원(이메일)</TableHead>
-                    <TableHead className="py-2">제출자</TableHead>
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="상태"
+                        active={companyTableSortKey === 'status'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('status')}
+                      />
+                    </TableHead>
+                    <TableHead className="whitespace-normal align-bottom">
+                      <TableSortHeaderButton
+                        label="직원(이메일)"
+                        active={companyTableSortKey === 'employee'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('employee')}
+                      />
+                    </TableHead>
+                    <TableHead className="align-bottom">
+                      <TableSortHeaderButton
+                        label="제출자"
+                        active={companyTableSortKey === 'submit_by'}
+                        dir={companyTableSortDir}
+                        onClick={() => handleCompanyTableSort('submit_by')}
+                      />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <CompanyExpenseListDesktopTableBody
-                  expenses={expenses}
+                  expenses={sortedExpenses}
                   handleEdit={handleEdit}
                   reconciledExpenseIds={reconciledExpenseIds}
+                  onOpenStatementRecon={openStmtReconForExpense}
                   paymentMethodMap={paymentMethodMap}
                   getCategoryLabel={getCategoryLabel}
                   getStatusBadge={getStatusBadge}
@@ -2846,6 +3105,18 @@ export default function CompanyExpenseManager({
         onApplied={() => {
           void loadExpenses()
           void loadPaidForLabels()
+        }}
+      />
+
+      <ExpenseStatementSimilarLinesModal
+        open={stmtReconOpen}
+        onOpenChange={(o) => {
+          setStmtReconOpen(o)
+          if (!o) setStmtReconCtx(null)
+        }}
+        context={stmtReconCtx}
+        onApplied={() => {
+          void loadExpenses()
         }}
       />
 

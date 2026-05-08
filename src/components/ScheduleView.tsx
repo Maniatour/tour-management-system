@@ -117,6 +117,11 @@ const SCHEDULE_VEHICLE_EDIT_SELECT = `
   updated_at
 `
 
+/** 가이드 상세 모달 Select — 실제 이메일과 겹치지 않도록 함 */
+const SCHEDULE_GUIDE_MODAL_NO_GUIDE = '__schedule_guide_modal_no_guide__'
+const SCHEDULE_GUIDE_MODAL_NO_ASSISTANT = '__schedule_guide_modal_no_assistant__'
+const SCHEDULE_GUIDE_MODAL_NO_VEHICLE = '__schedule_guide_modal_no_vehicle__'
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4356,6 +4361,100 @@ export default function ScheduleView() {
     [monthVehiclesWithColors.vehicleList, requestSaveAfterDragAssignment],
   )
 
+  /** 가이드 상세 모달: 가이드 배정·해제 (handleUnassignDrop / handleDrop와 동일한 pendingChanges·미배정 목록 규칙) */
+  const applyGuideModalGuideValue = useCallback(
+    (tourId: string, guideEmail: string | null) => {
+      const tour = tours.find((t) => t.id === tourId)
+      if (!tour) return
+      let next: Tour
+      if (guideEmail === null) {
+        next = { ...tour, tour_guide_id: null, assistant_id: null }
+        setPendingChanges((prev) => ({
+          ...prev,
+          [tourId]: {
+            ...(prev[tourId] || {}),
+            tour_guide_id: null,
+            assistant_id: null,
+          },
+        }))
+        setUnassignedTours((prev) => {
+          const exists = prev.some((t) => t.id === tourId)
+          return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
+        })
+      } else {
+        const teamType = tour.team_type || ''
+        next = {
+          ...tour,
+          tour_guide_id: guideEmail,
+          ...(teamType === '1guide' ? { assistant_id: null } : {}),
+        }
+        setPendingChanges((prev) => ({
+          ...prev,
+          [tourId]: {
+            ...(prev[tourId] || {}),
+            tour_guide_id: guideEmail,
+            ...(teamType === '1guide' ? { assistant_id: null } : {}),
+          },
+        }))
+        setUnassignedTours((prev) => {
+          const exists = prev.some((t) => t.id === tourId)
+          const needsGuide = !next.tour_guide_id
+          const needsAssistant = next.team_type !== '1guide' && !next.assistant_id
+          if (needsGuide || needsAssistant) {
+            return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
+          }
+          return prev.filter((t) => t.id !== tourId)
+        })
+      }
+      setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
+      requestSaveAfterDragAssignment()
+    },
+    [tours, requestSaveAfterDragAssignment],
+  )
+
+  const applyGuideModalAssistantValue = useCallback(
+    (tourId: string, assistantEmail: string | null) => {
+      const tour = tours.find((t) => t.id === tourId)
+      if (!tour || tour.team_type === '1guide') return
+      const next: Tour = { ...tour, assistant_id: assistantEmail }
+      setPendingChanges((prev) => ({
+        ...prev,
+        [tourId]: { ...(prev[tourId] || {}), assistant_id: assistantEmail },
+      }))
+      setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
+      setUnassignedTours((prev) => {
+        const needsGuide = !next.tour_guide_id
+        const needsAssistant = next.team_type !== '1guide' && !next.assistant_id
+        const exists = prev.some((t) => t.id === tourId)
+        if (needsGuide || needsAssistant) {
+          return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
+        }
+        return prev.filter((t) => t.id !== tourId)
+      })
+      requestSaveAfterDragAssignment()
+    },
+    [tours, requestSaveAfterDragAssignment],
+  )
+
+  const applyGuideModalVehicleValue = useCallback(
+    (tourId: string, vehicleId: string | null) => {
+      const tour = tours.find((t) => t.id === tourId)
+      if (!tour) return
+      const newLabel = vehicleId
+        ? monthVehiclesWithColors.vehicleList.find((v) => v.id === vehicleId)?.label ?? null
+        : null
+      const next: Tour = { ...tour, tour_car_id: vehicleId, vehicle_number: newLabel }
+      setPendingChanges((prev) => ({
+        ...prev,
+        [tourId]: { ...(prev[tourId] || {}), tour_car_id: vehicleId },
+      }))
+      setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
+      setUnassignedTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
+      requestSaveAfterDragAssignment()
+    },
+    [tours, monthVehiclesWithColors.vehicleList, requestSaveAfterDragAssignment],
+  )
+
   // 차량별·날짜별 배차 수, 가이드/어시스턴트/드라이버 이름, 투어(상품) 색상 (차량 스케줄 테이블용)
   // 1박2일 등 멀티데이 투어는 투어 기간 내 모든 날짜에 표시 (가이드 스케줄과 동일)
   const vehicleScheduleData = useMemo(() => {
@@ -5943,6 +6042,11 @@ export default function ScheduleView() {
                                   }
                                 }}
                                 onDragEnd={handleAssignedTourDragEnd}
+                                onClick={() => {
+                                  if (mdRowTours.length > 0) {
+                                    showGuideModalContent('투어 상세 정보', getTourSummary(mdRowTours[0]), mdRowTours[0].id)
+                                  }
+                                }}
                                 onDoubleClick={() => {
                                   if (mdRowTours.length > 0) {
                                     openTourDetailModal(mdRowTours[0].id)
@@ -7992,7 +8096,7 @@ export default function ScheduleView() {
       {/* 가이드 모달 */}
       {showGuideModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
                 {guideModalContent.title}
@@ -8005,37 +8109,156 @@ export default function ScheduleView() {
               </button>
             </div>
             <div className="text-sm text-gray-700 whitespace-pre-line">
-              {guideModalContent.content}
+              {guideModalTour ? getTourSummary(guideModalTour) : guideModalContent.content}
             </div>
             {guideModalContent.tourId && isScheduleStaff ? (
-              <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
-                <label className="block text-sm font-medium text-gray-800">
-                  {locale === 'ko' ? '투어 상태' : 'Tour status'}
-                </label>
-                <Select
-                  value={guideModalStatusSelectValue || undefined}
-                  onValueChange={(v) => {
-                    if (!guideModalContent.tourId) return
-                    void updateTourDetailModalTourStatus(guideModalContent.tourId, v)
-                  }}
-                  disabled={updatingTourDetailModalStatusId === guideModalContent.tourId}
-                >
-                  <SelectTrigger
-                    className="h-10 w-full text-sm bg-white"
-                    aria-label={locale === 'ko' ? '투어 상태 빠른 변경' : 'Quick change tour status'}
+              <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                {guideModalTour ? (
+                  <>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-800">
+                        {locale === 'ko' ? '가이드' : 'Guide'}
+                      </label>
+                      <Select
+                        value={
+                          guideModalTour.tour_guide_id && String(guideModalTour.tour_guide_id).trim()
+                            ? guideModalTour.tour_guide_id
+                            : SCHEDULE_GUIDE_MODAL_NO_GUIDE
+                        }
+                        onValueChange={(v) => {
+                          if (!guideModalContent.tourId) return
+                          if (v === SCHEDULE_GUIDE_MODAL_NO_GUIDE) {
+                            applyGuideModalGuideValue(guideModalContent.tourId, null)
+                          } else {
+                            applyGuideModalGuideValue(guideModalContent.tourId, v)
+                          }
+                        }}
+                      >
+                        <SelectTrigger
+                          className="h-10 w-full text-sm bg-white"
+                          aria-label={locale === 'ko' ? '가이드 배정' : 'Assign guide'}
+                        >
+                          <SelectValue placeholder={locale === 'ko' ? '선택' : 'Select'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SCHEDULE_GUIDE_MODAL_NO_GUIDE}>
+                            {locale === 'ko' ? '미배정' : 'Unassigned'}
+                          </SelectItem>
+                          {teamMembersSortedForAssignModal.map((member) => (
+                            <SelectItem key={member.email} value={member.email}>
+                              {(member as { nick_name?: string }).nick_name || member.name_ko || member.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {guideModalTour.team_type !== '1guide' ? (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-800">
+                          {locale === 'ko' ? '어시스턴트' : 'Assistant'}
+                        </label>
+                        <Select
+                          value={
+                            guideModalTour.assistant_id && String(guideModalTour.assistant_id).trim()
+                              ? guideModalTour.assistant_id
+                              : SCHEDULE_GUIDE_MODAL_NO_ASSISTANT
+                          }
+                          onValueChange={(v) => {
+                            if (!guideModalContent.tourId) return
+                            if (v === SCHEDULE_GUIDE_MODAL_NO_ASSISTANT) {
+                              applyGuideModalAssistantValue(guideModalContent.tourId, null)
+                            } else {
+                              applyGuideModalAssistantValue(guideModalContent.tourId, v)
+                            }
+                          }}
+                        >
+                          <SelectTrigger
+                            className="h-10 w-full text-sm bg-white"
+                            aria-label={locale === 'ko' ? '어시스턴트 배정' : 'Assign assistant'}
+                          >
+                            <SelectValue placeholder={locale === 'ko' ? '선택' : 'Select'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={SCHEDULE_GUIDE_MODAL_NO_ASSISTANT}>
+                              {locale === 'ko' ? '미배정' : 'Unassigned'}
+                            </SelectItem>
+                            {teamMembersSortedForAssignModal.map((member) => (
+                              <SelectItem key={`asst-${member.email}`} value={member.email}>
+                                {(member as { nick_name?: string }).nick_name || member.name_ko || member.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-800">
+                        {locale === 'ko' ? '차량' : 'Vehicle'}
+                      </label>
+                      <Select
+                        value={
+                          guideModalTour.tour_car_id && String(guideModalTour.tour_car_id).trim()
+                            ? String(guideModalTour.tour_car_id).trim()
+                            : SCHEDULE_GUIDE_MODAL_NO_VEHICLE
+                        }
+                        onValueChange={(v) => {
+                          if (!guideModalContent.tourId) return
+                          if (v === SCHEDULE_GUIDE_MODAL_NO_VEHICLE) {
+                            applyGuideModalVehicleValue(guideModalContent.tourId, null)
+                          } else {
+                            applyGuideModalVehicleValue(guideModalContent.tourId, v)
+                          }
+                        }}
+                      >
+                        <SelectTrigger
+                          className="h-10 w-full text-sm bg-white"
+                          aria-label={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
+                        >
+                          <SelectValue placeholder={locale === 'ko' ? '선택' : 'Select'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SCHEDULE_GUIDE_MODAL_NO_VEHICLE}>
+                            {locale === 'ko' ? '배정 안 함' : 'None'}
+                          </SelectItem>
+                          {monthVehiclesWithColors.vehicleList.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>
+                              {v.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                ) : null}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-800">
+                    {locale === 'ko' ? '투어 상태' : 'Tour status'}
+                  </label>
+                  <Select
+                    value={guideModalStatusSelectValue || undefined}
+                    onValueChange={(v) => {
+                      if (!guideModalContent.tourId) return
+                      void updateTourDetailModalTourStatus(guideModalContent.tourId, v)
+                    }}
+                    disabled={updatingTourDetailModalStatusId === guideModalContent.tourId}
                   >
-                    <SelectValue
-                      placeholder={locale === 'ko' ? '상태 선택' : 'Select status'}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {guideModalStatusSelectOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {getTourStatusLabel(option.value, locale)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger
+                      className="h-10 w-full text-sm bg-white"
+                      aria-label={locale === 'ko' ? '투어 상태 빠른 변경' : 'Quick change tour status'}
+                    >
+                      <SelectValue
+                        placeholder={locale === 'ko' ? '상태 선택' : 'Select status'}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {guideModalStatusSelectOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {getTourStatusLabel(option.value, locale)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             ) : null}
             <div className="mt-6 flex justify-between">

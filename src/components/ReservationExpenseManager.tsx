@@ -8,6 +8,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
+import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
+import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
+import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 interface ReservationExpense {
   id: string
@@ -196,6 +202,12 @@ export default function ReservationExpenseManager({
   /** 관리자 목록: 명세 대조 미연결만 API에서 조회 */
   const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; paidFor: string } | null>(null)
+  const tStmtRecon = useTranslations('expenses.statementRecon')
+  const [reconciledReservationIds, setReconciledReservationIds] = useState<Set<string>>(() => new Set())
+  const [stmtReconOpen, setStmtReconOpen] = useState(false)
+  const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [tableSortKey, setTableSortKey] = useState<string>('submit_on')
+  const [tableSortDir, setTableSortDir] = useState<SortDir>('desc')
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -808,6 +820,115 @@ export default function ReservationExpenseManager({
 
   const displayExpenses = adminList ? filteredExpenses : expenses
 
+  const reservationCustomerLabel = useCallback((expense: ReservationExpense) => {
+    const r = expense.reservations
+    if (!r) return null
+    const name = r.customer_name ?? r.customers?.name ?? null
+    return name ? `${name} · ${r.product_id}` : r.product_id ?? null
+  }, [])
+
+  const handleReservationTableSort = useCallback(
+    (key: string) => {
+      if (tableSortKey === key) {
+        setTableSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setTableSortKey(key)
+        setTableSortDir('asc')
+      }
+    },
+    [tableSortKey]
+  )
+
+  const sortLocale = locale === 'en' ? 'en' : 'ko'
+
+  const sortedDisplayExpenses = useMemo(() => {
+    const rows = [...displayExpenses]
+    rows.sort((a, b) => {
+      let va: unknown
+      let vb: unknown
+      switch (tableSortKey) {
+        case 'submit_on':
+          va = a.submit_on || ''
+          vb = b.submit_on || ''
+          break
+        case 'paid_for':
+          va = a.paid_for
+          vb = b.paid_for
+          break
+        case 'paid_to':
+          va = a.paid_to
+          vb = b.paid_to
+          break
+        case 'reservation':
+          va = reservationCustomerLabel(a) ?? ''
+          vb = reservationCustomerLabel(b) ?? ''
+          break
+        case 'deposit':
+          va = a.reservation_payments_total ?? null
+          vb = b.reservation_payments_total ?? null
+          break
+        case 'amount':
+          va = a.amount
+          vb = b.amount
+          break
+        case 'reimbursed':
+          va = parseReimbursedAmount(a.reimbursed_amount)
+          vb = parseReimbursedAmount(b.reimbursed_amount)
+          break
+        case 'outstanding':
+          va = reimbursementOutstanding(a.amount, a.reimbursed_amount)
+          vb = reimbursementOutstanding(b.amount, b.reimbursed_amount)
+          break
+        case 'submitter':
+          va = teamMembers[a.submitted_by] || a.submitted_by
+          vb = teamMembers[b.submitted_by] || b.submitted_by
+          break
+        case 'status':
+          va = a.status
+          vb = b.status
+          break
+        default:
+          va = a.submit_on || ''
+          vb = b.submit_on || ''
+      }
+      return compareSortValues(va, vb, tableSortDir, sortLocale)
+    })
+    return rows
+  }, [displayExpenses, tableSortKey, tableSortDir, sortLocale, teamMembers, reservationCustomerLabel])
+
+  const reconcilableReservationIds = useMemo(
+    () => (adminList ? filteredExpenses : expenses).map((e) => e.id).filter(Boolean),
+    [adminList, filteredExpenses, expenses]
+  )
+  const reconciledReservationIdKey = useMemo(() => [...reconcilableReservationIds].sort().join('|'), [reconcilableReservationIds])
+
+  useEffect(() => {
+    if (reconcilableReservationIds.length === 0) {
+      setReconciledReservationIds(new Set())
+      return
+    }
+    let cancelled = false
+    void fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reconcilableReservationIds).then((s) => {
+      if (!cancelled) setReconciledReservationIds(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [reconciledReservationIdKey])
+
+  const openReservationStmtRecon = useCallback((expense: ReservationExpense) => {
+    const ymd = expense.submit_on ? expense.submit_on.slice(0, 10) : ''
+    if (!ymd) return
+    setStmtReconCtx({
+      sourceTable: 'reservation_expenses',
+      sourceId: expense.id,
+      dateYmd: ymd,
+      amount: Math.abs(Number(expense.amount ?? 0)),
+      direction: 'outflow'
+    })
+    setStmtReconOpen(true)
+  }, [])
+
   const depositTotalForSingleReservation = useMemo(() => {
     if (!reservationId) return null
     const row = expenses.find((e) => e.reservation_payments_total != null)
@@ -817,13 +938,6 @@ export default function ReservationExpenseManager({
   const formatDepositCell = (v: number | null | undefined) => {
     if (v == null) return '—'
     return formatCurrency(v)
-  }
-
-  const reservationCustomerLabel = (expense: ReservationExpense) => {
-    const r = expense.reservations
-    if (!r) return null
-    const name = r.customer_name ?? r.customers?.name ?? null
-    return name ? `${name} · ${r.product_id}` : r.product_id ?? null
   }
 
   const resetAdminFilters = () => {
@@ -1340,17 +1454,25 @@ export default function ReservationExpenseManager({
           <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto" />
           <p className="text-gray-500 mt-2 text-sm">{t('loading')}</p>
         </div>
-      ) : displayExpenses.length > 0 ? (
+      ) : sortedDisplayExpenses.length > 0 ? (
         adminList ? (
           <>
             <div className="md:hidden space-y-3">
-              {displayExpenses.map((expense) => (
+              {sortedDisplayExpenses.map((expense) => (
                 <div
                   key={expense.id}
                   className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
-                    <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
+                    <div className="flex items-start gap-1 min-w-0 flex-1">
+                      <ExpenseStatementReconIcon
+                        matched={reconciledReservationIds.has(expense.id)}
+                        titleMatched={tStmtRecon('matchedTitle')}
+                        titleUnmatched={tStmtRecon('unmatchedTitle')}
+                        onClick={() => openReservationStmtRecon(expense)}
+                      />
+                      <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
+                    </div>
                     <p className={`text-lg font-bold whitespace-nowrap ${amountDisplayClass(expense.amount)}`}>{formatCurrency(expense.amount)}</p>
                   </div>
                   <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
@@ -1420,30 +1542,122 @@ export default function ReservationExpenseManager({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('date')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidFor')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidTo')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {t('form.reservationId')}
+                    <th
+                      className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"
+                      title={tStmtRecon('unmatchedTitle')}
+                    >
+                      {tStmtRecon('columnHeaderShort')}
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                      <TableSortHeaderButton
+                        label={tTour('date')}
+                        active={tableSortKey === 'submit_on'}
+                        dir={tableSortDir}
+                        onClick={() => handleReservationTableSort('submit_on')}
+                      />
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                      <TableSortHeaderButton
+                        label={t('paidFor')}
+                        active={tableSortKey === 'paid_for'}
+                        dir={tableSortDir}
+                        onClick={() => handleReservationTableSort('paid_for')}
+                      />
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                      <TableSortHeaderButton
+                        label={t('paidTo')}
+                        active={tableSortKey === 'paid_to'}
+                        dir={tableSortDir}
+                        onClick={() => handleReservationTableSort('paid_to')}
+                      />
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                      <TableSortHeaderButton
+                        label={t('form.reservationId')}
+                        active={tableSortKey === 'reservation'}
+                        dir={tableSortDir}
+                        onClick={() => handleReservationTableSort('reservation')}
+                      />
                     </th>
                     <th
-                      className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom"
                       title={t('depositPaymentsTotalHint')}
                     >
-                      {t('depositPaymentsTotal')}
+                      <div className="flex justify-end">
+                        <TableSortHeaderButton
+                          label={t('depositPaymentsTotal')}
+                          active={tableSortKey === 'deposit'}
+                          dir={tableSortDir}
+                          onClick={() => handleReservationTableSort('deposit')}
+                          className="text-right"
+                        />
+                      </div>
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('amount')}</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('reimbursedShort')}</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('outstandingShort')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('submitter')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('statusLabel')}</th>
+                    <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
+                      <div className="flex justify-end">
+                        <TableSortHeaderButton
+                          label={tTour('amount')}
+                          active={tableSortKey === 'amount'}
+                          dir={tableSortDir}
+                          onClick={() => handleReservationTableSort('amount')}
+                          className="text-right"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
+                      <div className="flex justify-end">
+                        <TableSortHeaderButton
+                          label={tTour('reimbursedShort')}
+                          active={tableSortKey === 'reimbursed'}
+                          dir={tableSortDir}
+                          onClick={() => handleReservationTableSort('reimbursed')}
+                          className="text-right"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
+                      <div className="flex justify-end">
+                        <TableSortHeaderButton
+                          label={tTour('outstandingShort')}
+                          active={tableSortKey === 'outstanding'}
+                          dir={tableSortDir}
+                          onClick={() => handleReservationTableSort('outstanding')}
+                          className="text-right"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                      <TableSortHeaderButton
+                        label={tTour('submitter')}
+                        active={tableSortKey === 'submitter'}
+                        dir={tableSortDir}
+                        onClick={() => handleReservationTableSort('submitter')}
+                      />
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                      <TableSortHeaderButton
+                        label={tTour('statusLabel')}
+                        active={tableSortKey === 'status'}
+                        dir={tableSortDir}
+                        onClick={() => handleReservationTableSort('status')}
+                      />
+                    </th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('receipt')}</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{tTour('action')}</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {displayExpenses.map((expense) => (
+                  {sortedDisplayExpenses.map((expense) => (
                     <tr key={expense.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
+                        <ExpenseStatementReconIcon
+                          matched={reconciledReservationIds.has(expense.id)}
+                          titleMatched={tStmtRecon('matchedTitle')}
+                          titleUnmatched={tStmtRecon('unmatchedTitle')}
+                          onClick={() => openReservationStmtRecon(expense)}
+                        />
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                         {expense.submit_on ? expense.submit_on.slice(0, 10) : '—'}
                       </td>
@@ -1528,11 +1742,17 @@ export default function ReservationExpenseManager({
           </>
         ) : (
         <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-1.5'}>
-          {displayExpenses.map((expense) => (
+                  {sortedDisplayExpenses.map((expense) => (
             <div key={expense.id} className={isLine ? 'py-2 first:pt-0' : 'border border-gray-200 rounded-xl px-2.5 py-2 bg-white hover:bg-gray-50/80 shadow-sm transition-colors'}>
               {/* 1행: 결제내용 + 금액 + 상태 + 액션 */}
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
+                <div className="min-w-0 flex-1 flex items-center gap-1 flex-wrap">
+                  <ExpenseStatementReconIcon
+                    matched={reconciledReservationIds.has(expense.id)}
+                    titleMatched={tStmtRecon('matchedTitle')}
+                    titleUnmatched={tStmtRecon('unmatchedTitle')}
+                    onClick={() => openReservationStmtRecon(expense)}
+                  />
                   <span className="font-medium text-gray-900 text-xs truncate">{expense.paid_for}</span>
                   <span className={`text-sm font-semibold flex-shrink-0 ${amountDisplayClass(expense.amount)}`}>{formatCurrency(expense.amount)}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${getStatusColor(expense.status)}`}>{getStatusText(expense.status)}</span>
@@ -1831,6 +2051,16 @@ export default function ReservationExpenseManager({
           )}
         </DialogContent>
       </Dialog>
+
+      <ExpenseStatementSimilarLinesModal
+        open={stmtReconOpen}
+        onOpenChange={(o) => {
+          setStmtReconOpen(o)
+          if (!o) setStmtReconCtx(null)
+        }}
+        context={stmtReconCtx}
+        onApplied={() => void loadExpenses()}
+      />
     </div>
   )
 }

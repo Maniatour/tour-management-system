@@ -30,6 +30,11 @@ interface TourHotelBooking {
   uploaded_file_urls?: string[]; // 업로드된 파일 URL들
 }
 
+/** USD 금액 표시·저장용 2자리 반올림 (부동소수점 오차 제거) */
+function roundUsdTotal(product: number): number {
+  return Math.round(product * 100) / 100;
+}
+
 function teamMemberMatchesReservation(
   member: { name_ko: string | null; name_en: string | null },
   reservationName: string
@@ -497,10 +502,15 @@ export default function TourHotelBookingForm({
           ? raw.trim()
           : raw
         : raw;
-    setFormData(prev => ({
-      ...prev,
-      [name]: nextVal
-    }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: nextVal } as TourHotelBooking;
+      if (name === 'rooms' || name === 'unit_price') {
+        const roomsNum = name === 'rooms' ? (Number(nextVal) || 0) : prev.rooms;
+        const unitNum = name === 'unit_price' ? (Number(nextVal) || 0) : prev.unit_price;
+        next.total_price = roundUsdTotal(roomsNum * unitNum);
+      }
+      return next;
+    });
 
     // 투어 선택 시 날짜 자동 설정
     if (name === 'tour_id' && value) {
@@ -555,15 +565,6 @@ export default function TourHotelBookingForm({
       [field]: formattedDate
     }));
   };
-
-  const calculateTotalPrice = () => {
-    const total = formData.rooms * formData.unit_price;
-    setFormData(prev => ({ ...prev, total_price: total }));
-  };
-
-  useEffect(() => {
-    calculateTotalPrice();
-  }, [formData.rooms, formData.unit_price]);
 
   const reservationInTeamList = teamMembers.some((m) =>
     teamMemberMatchesReservation(m, formData.reservation_name || '')
@@ -886,8 +887,16 @@ export default function TourHotelBookingForm({
                 type="number"
                 name="total_price"
                 value={formData.total_price}
-                readOnly
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100"
+                onChange={handleChange}
+                onBlur={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    total_price: roundUsdTotal(Number(prev.total_price) || 0),
+                  }))
+                }
+                step="0.01"
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 

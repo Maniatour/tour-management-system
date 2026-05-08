@@ -6,7 +6,13 @@ import { useParams } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
 import { RefreshCw, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
+import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
+import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
+import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 type PaymentRecordRow = {
   id: string
@@ -175,6 +181,12 @@ export default function PaymentRecordsHistoryTab() {
   const [tourDateTo, setTourDateTo] = useState('')
   const [filterChannel, setFilterChannel] = useState<string>('all')
   const [uiPage, setUiPage] = useState(1)
+  const tStmt = useTranslations('expenses.statementRecon')
+  const [reconciledPaymentIds, setReconciledPaymentIds] = useState<Set<string>>(() => new Set())
+  const [stmtReconOpen, setStmtReconOpen] = useState(false)
+  const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [sortKey, setSortKey] = useState<string>('submitOn')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const statusLabel = useCallback(
     (raw: string | null | undefined) => {
@@ -383,6 +395,18 @@ export default function PaymentRecordsHistoryTab() {
       .sort((a, b) => a.name.localeCompare(b.name, uiLocale === 'en' ? 'en' : 'ko'))
   }, [allRows, resMap, channelMap, uiLocale])
 
+  const handlePaymentSort = useCallback(
+    (key: string) => {
+      if (sortKey === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setSortKey(key)
+        setSortDir('asc')
+      }
+    },
+    [sortKey]
+  )
+
   const filteredRows = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
     return allRows.filter((r) => {
@@ -448,6 +472,85 @@ export default function PaymentRecordsHistoryTab() {
     submitByDisplay,
   ])
 
+  const sortLocale = uiLocale === 'en' ? 'en' : 'ko'
+
+  const sortedFilteredRows = useMemo(() => {
+    const rows = [...filteredRows]
+    rows.sort((ra, rb) => {
+      const resA = resMap.get(ra.reservation_id)
+      const resB = resMap.get(rb.reservation_id)
+      let va: unknown
+      let vb: unknown
+      switch (sortKey) {
+        case 'status':
+          va = ra.payment_status
+          vb = rb.payment_status
+          break
+        case 'submitOn':
+          va = ra.submit_on || ra.created_at || ''
+          vb = rb.submit_on || rb.created_at || ''
+          break
+        case 'reservation':
+          va = ra.reservation_id
+          vb = rb.reservation_id
+          break
+        case 'customer':
+          va = customerLabel(ra.reservation_id)
+          vb = customerLabel(rb.reservation_id)
+          break
+        case 'product':
+          va = resA?.product_id ?? ''
+          vb = resB?.product_id ?? ''
+          break
+        case 'tourDate':
+          va = tourDateYmd(resA?.tour_date)
+          vb = tourDateYmd(resB?.tour_date)
+          break
+        case 'channel':
+          va = channelLabel(ra.reservation_id)
+          vb = channelLabel(rb.reservation_id)
+          break
+        case 'amount': {
+          va = signedDisplayNumber(ra.amount, ra.payment_status)
+          vb = signedDisplayNumber(rb.amount, rb.payment_status)
+          break
+        }
+        case 'amountKrw': {
+          va = signedDisplayNumber(ra.amount_krw, ra.payment_status)
+          vb = signedDisplayNumber(rb.amount_krw, rb.payment_status)
+          break
+        }
+        case 'method':
+          va = methodLabel(ra.payment_method)
+          vb = methodLabel(rb.payment_method)
+          break
+        case 'submitBy':
+          va = submitByDisplay(ra.submit_by)
+          vb = submitByDisplay(rb.submit_by)
+          break
+        case 'note':
+          va = ra.note
+          vb = rb.note
+          break
+        default:
+          va = ra.submit_on || ra.created_at || ''
+          vb = rb.submit_on || rb.created_at || ''
+      }
+      return compareSortValues(va, vb, sortDir, sortLocale)
+    })
+    return rows
+  }, [
+    filteredRows,
+    sortKey,
+    sortDir,
+    sortLocale,
+    resMap,
+    customerLabel,
+    channelLabel,
+    methodLabel,
+    submitByDisplay,
+  ])
+
   const amountStats = useMemo(() => {
     let sumUsd = 0
     let sumKrw = 0
@@ -468,12 +571,51 @@ export default function PaymentRecordsHistoryTab() {
     return { sumUsd, sumKrw, nUsd, nKrw, rowCount: filteredRows.length }
   }, [filteredRows])
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / UI_PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(sortedFilteredRows.length / UI_PAGE_SIZE))
   const safePage = Math.min(Math.max(1, uiPage), totalPages)
   const pageSlice = useMemo(() => {
     const start = (safePage - 1) * UI_PAGE_SIZE
-    return filteredRows.slice(start, start + UI_PAGE_SIZE)
-  }, [filteredRows, safePage])
+    return sortedFilteredRows.slice(start, start + UI_PAGE_SIZE)
+  }, [sortedFilteredRows, safePage])
+
+  const paymentReconPageKey = useMemo(
+    () =>
+      pageSlice
+        .map((r) => String(r.id || '').trim())
+        .filter(Boolean)
+        .join('|'),
+    [pageSlice]
+  )
+
+  useEffect(() => {
+    const ids = pageSlice.map((r) => String(r.id || '').trim()).filter(Boolean)
+    if (ids.length === 0) {
+      setReconciledPaymentIds(new Set())
+      return
+    }
+    let cancelled = false
+    void fetchReconciledSourceIds(supabase, 'payment_records', ids).then((s) => {
+      if (!cancelled) setReconciledPaymentIds(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [paymentReconPageKey])
+
+  const openPaymentStmtRecon = (r: PaymentRecordRow) => {
+    const id = String(r.id || '').trim()
+    if (!id) return
+    const ymd = rowYmd(r)
+    if (!ymd) return
+    setStmtReconCtx({
+      sourceTable: 'payment_records',
+      sourceId: id,
+      dateYmd: ymd,
+      amount: Math.abs(Number(r.amount ?? 0)),
+      direction: 'inflow'
+    })
+    setStmtReconOpen(true)
+  }
 
   useEffect(() => {
     if (uiPage > totalPages) setUiPage(totalPages)
@@ -548,8 +690,8 @@ export default function PaymentRecordsHistoryTab() {
     setUiPage(1)
   }
 
-  const fromIdx = filteredRows.length === 0 ? 0 : (safePage - 1) * UI_PAGE_SIZE + 1
-  const toIdx = filteredRows.length === 0 ? 0 : Math.min(filteredRows.length, safePage * UI_PAGE_SIZE)
+  const fromIdx = sortedFilteredRows.length === 0 ? 0 : (safePage - 1) * UI_PAGE_SIZE + 1
+  const toIdx = sortedFilteredRows.length === 0 ? 0 : Math.min(sortedFilteredRows.length, safePage * UI_PAGE_SIZE)
 
   const StatusBadge = ({ status }: { status: string | null | undefined }) => (
     <span
@@ -719,12 +861,12 @@ export default function PaymentRecordsHistoryTab() {
           <div>{t('loading')}</div>
           {fetchedCount > 0 && <div className="text-xs text-gray-400">{t('loadingBatches', { count: fetchedCount })}</div>}
         </div>
-      ) : filteredRows.length === 0 ? (
+      ) : sortedFilteredRows.length === 0 ? (
         <div className="text-center py-10 text-gray-500 text-sm">{allRows.length === 0 ? t('empty') : t('emptyFiltered')}</div>
       ) : (
         <>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs sm:text-sm text-gray-600">
-            <span>{t('pageRange', { from: fromIdx, to: toIdx, total: filteredRows.length })}</span>
+            <span>{t('pageRange', { from: fromIdx, to: toIdx, total: sortedFilteredRows.length })}</span>
             <div className="flex items-center gap-1 flex-wrap justify-end">
               <button
                 type="button"
@@ -761,6 +903,14 @@ export default function PaymentRecordsHistoryTab() {
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={r.payment_status} />
+                    <ExpenseStatementReconIcon
+                      matched={Boolean(r.id) && reconciledPaymentIds.has(String(r.id))}
+                      disabled={!String(r.id || '').trim()}
+                      titleMatched={tStmt('matchedTitle')}
+                      titleUnmatched={tStmt('unmatchedTitle')}
+                      titleDisabled={tStmt('disabledTitle')}
+                      onClick={() => openPaymentStmtRecon(r)}
+                    />
                   </div>
                   <div className="flex justify-between gap-2">
                     <span className="text-gray-500 text-xs">{t('columns.submitOn')}</span>
@@ -819,41 +969,110 @@ export default function PaymentRecordsHistoryTab() {
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[1%] whitespace-nowrap">
-                    {t('columns.status')}
+                  <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12" title={tStmt('unmatchedTitle')}>
+                    {tStmt('columnHeaderShort')}
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.submitOn')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.status')}
+                      active={sortKey === 'status'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('status')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.reservation')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.submitOn')}
+                      active={sortKey === 'submitOn'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('submitOn')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.customer')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.reservation')}
+                      active={sortKey === 'reservation'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('reservation')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.product')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.customer')}
+                      active={sortKey === 'customer'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('customer')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    {t('columns.tourDate')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.product')}
+                      active={sortKey === 'product'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('product')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.channel')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider whitespace-nowrap align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.tourDate')}
+                      active={sortKey === 'tourDate'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('tourDate')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.amount')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.channel')}
+                      active={sortKey === 'channel'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('channel')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.amountKrw')}
+                  <th className="px-3 py-2.5 text-right text-xs uppercase tracking-wider align-bottom">
+                    <div className="flex justify-end">
+                      <TableSortHeaderButton
+                        label={t('columns.amount')}
+                        active={sortKey === 'amount'}
+                        dir={sortDir}
+                        onClick={() => handlePaymentSort('amount')}
+                        className="text-right"
+                      />
+                    </div>
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.method')}
+                  <th className="px-3 py-2.5 text-right text-xs uppercase tracking-wider align-bottom">
+                    <div className="flex justify-end">
+                      <TableSortHeaderButton
+                        label={t('columns.amountKrw')}
+                        active={sortKey === 'amountKrw'}
+                        dir={sortDir}
+                        onClick={() => handlePaymentSort('amountKrw')}
+                        className="text-right"
+                      />
+                    </div>
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.submitBy')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.method')}
+                      active={sortKey === 'method'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('method')}
+                    />
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.note')}
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.submitBy')}
+                      active={sortKey === 'submitBy'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('submitBy')}
+                    />
+                  </th>
+                  <th className="px-3 py-2.5 text-left text-xs uppercase tracking-wider align-bottom">
+                    <TableSortHeaderButton
+                      label={t('columns.note')}
+                      active={sortKey === 'note'}
+                      dir={sortDir}
+                      onClick={() => handlePaymentSort('note')}
+                    />
                   </th>
                 </tr>
               </thead>
@@ -863,6 +1082,16 @@ export default function PaymentRecordsHistoryTab() {
                   const gIdx = (safePage - 1) * UI_PAGE_SIZE + idx
                   return (
                     <tr key={rowListKey(r, gIdx)} className="hover:bg-gray-50/80">
+                      <td className="px-3 py-2 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+                        <ExpenseStatementReconIcon
+                          matched={Boolean(r.id) && reconciledPaymentIds.has(String(r.id))}
+                          disabled={!String(r.id || '').trim()}
+                          titleMatched={tStmt('matchedTitle')}
+                          titleUnmatched={tStmt('unmatchedTitle')}
+                          titleDisabled={tStmt('disabledTitle')}
+                          onClick={() => openPaymentStmtRecon(r)}
+                        />
+                      </td>
                       <td className="px-3 py-2 align-middle">
                         <StatusBadge status={r.payment_status} />
                       </td>
@@ -933,7 +1162,7 @@ export default function PaymentRecordsHistoryTab() {
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1 text-xs sm:text-sm text-gray-600 border-t border-gray-100">
-            <span>{t('pageRange', { from: fromIdx, to: toIdx, total: filteredRows.length })}</span>
+            <span>{t('pageRange', { from: fromIdx, to: toIdx, total: sortedFilteredRows.length })}</span>
             <div className="flex items-center gap-1 flex-wrap justify-end">
               <button
                 type="button"
@@ -960,6 +1189,16 @@ export default function PaymentRecordsHistoryTab() {
           </div>
         </>
       )}
+
+      <ExpenseStatementSimilarLinesModal
+        open={stmtReconOpen}
+        onOpenChange={(o) => {
+          setStmtReconOpen(o)
+          if (!o) setStmtReconCtx(null)
+        }}
+        context={stmtReconCtx}
+        onApplied={() => void loadAllBatches()}
+      />
     </div>
   )
 }

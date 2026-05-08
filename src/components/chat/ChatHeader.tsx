@@ -1,13 +1,14 @@
 'use client'
 
-import React from 'react'
-import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, ChevronDown, ChevronUp, Bell, BellOff, X } from 'lucide-react'
+import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, ChevronDown, ChevronUp, Bell, BellOff } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import type { SupportedLanguage } from '@/lib/translation'
 import type { ChatRoom } from '@/types/chat'
 
 interface ChatHeaderProps {
   room: ChatRoom
+  /** 고객 공개 화면 등에서 DB room_name 대신 표시할 제목 */
+  displayRoomName?: string
   isPublicView: boolean
   isMobileMenuOpen: boolean
   selectedLanguage: SupportedLanguage
@@ -38,6 +39,7 @@ interface ChatHeaderProps {
 
 export default function ChatHeader({
   room,
+  displayRoomName,
   isPublicView,
   isMobileMenuOpen,
   selectedLanguage,
@@ -64,6 +66,11 @@ export default function ChatHeader({
   getLanguageFlag,
   totalMessageCount = 0
 }: ChatHeaderProps) {
+  const headingText =
+    displayRoomName?.trim() ||
+    room.room_name ||
+    (selectedLanguage === 'ko' ? '채팅방' : 'Chat room')
+
   const countLabel =
     selectedLanguage === 'ko'
       ? `총 ${totalMessageCount}개 메시지`
@@ -74,11 +81,11 @@ export default function ChatHeader({
       <div className="mb-1.5 flex items-center gap-2 min-w-0 pr-1">
         <div
           className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0 leading-tight"
-          title={room.room_name}
+          title={headingText}
           role="heading"
           aria-level={2}
         >
-          {room.room_name || (selectedLanguage === 'ko' ? '채팅방' : 'Chat room')}
+          {headingText}
         </div>
         <span
           className="flex-shrink-0 tabular-nums rounded-full bg-blue-600 text-white px-2 py-0.5 text-[11px] font-semibold shadow-sm"

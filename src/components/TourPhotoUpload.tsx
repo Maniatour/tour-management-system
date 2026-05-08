@@ -9,6 +9,7 @@ import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, c
 import { useTourPhotoFolder } from '@/hooks/useTourPhotoFolder'
 import { useAuth } from '@/contexts/AuthContext'
 import { createThumbnail, getThumbnailFileName } from '@/lib/imageUtils'
+import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
 
 interface TourPhoto {
   id: string
@@ -47,7 +48,6 @@ export default function TourPhotoUpload({
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, batch: 0, totalBatches: 0 })
   const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
   const [showModal, setShowModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -255,6 +255,21 @@ export default function TourPhotoUpload({
     }
   }, [tourId, uploadedBy, isAdmin])
 
+  const onPhotosUpdatedRef = useRef(onPhotosUpdated)
+  onPhotosUpdatedRef.current = onPhotosUpdated
+
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const d = (ev as CustomEvent<{ tourId: string }>).detail
+      if (d?.tourId !== tourId) return
+      void loadPhotos().then(() => {
+        onPhotosUpdatedRef.current?.()
+      })
+    }
+    window.addEventListener('tour-photo-upload-finished', handler)
+    return () => window.removeEventListener('tour-photo-upload-finished', handler)
+  }, [tourId, loadPhotos])
+
   // Storage 버킷 확인 및 생성
   const ensureStorageBucket = async () => {
     try {
@@ -435,201 +450,60 @@ export default function TourPhotoUpload({
     
     // Storage 버킷 확인 (디버깅용)
     await ensureStorageBucket()
-    
-    setUploading(true)
-    
-    // 파일 개수 제한 체크 (최대 500개)
+
     if (fileArray.length > 500) {
       alert('한번에 최대 500개의 파일만 업로드할 수 있습니다.')
-      setUploading(false)
       return
     }
 
     console.log(`총 ${fileArray.length}개 파일 업로드 시작`)
 
-    // 대량 파일 처리를 위한 배치 업로드 (한번에 500개씩으로 조정)
-    const batchSize = 500
-    const batches = []
-    
-    for (let i = 0; i < fileArray.length; i += batchSize) {
-      batches.push(fileArray.slice(i, i + batchSize))
-    }
+    setUploading(true)
 
-    console.log(`${batches.length}개 배치로 나누어 업로드 (배치당 ${batchSize}개)`)
-    
-    // 업로드 진행 상황 초기화
-    setUploadProgress({ current: 0, total: fileArray.length, batch: 0, totalBatches: batches.length })
-
-
-    try {
-      let totalSuccessful = 0
-      let totalFailed = 0
-      const failedFiles: string[] = []
-      
-      // 배치별로 순차 업로드
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex]
-        console.log(`배치 ${batchIndex + 1}/${batches.length} 업로드 중... (${batch.length}개 파일)`)
-        
-        // 진행 상황 업데이트
-        setUploadProgress((prev: { current: number; total: number; batch: number; totalBatches: number }) => ({ 
-          ...prev, 
-          batch: batchIndex + 1,
-          current: batchIndex * batchSize
-        }))
-        
-        const batchPromises = batch.map(async (file) => {
-          try {
-            console.log(`Processing file: ${file.name}, size: ${file.size}, type: ${file.type}`)
-            
-            // 파일 크기 체크 (50MB로 증가)
-            if (file.size > 50 * 1024 * 1024) {
-              throw new Error(`파일 크기가 너무 큽니다: ${file.name} (최대 50MB)`)
-            }
-
-            // MIME 타입 체크
-            if (!file.type.startsWith('image/')) {
-              throw new Error(`${t('imageOnlyError')}: ${file.name}`)
-            }
-
-            // 고유한 파일명 생성 (타임스탬프 추가로 중복 방지)
-            const fileExt = file.name.split('.').pop()
-            const timestamp = Date.now() + Math.random().toString(36).substring(2)
-            const fileName = `${timestamp}.${fileExt}`
-            const filePath = `${tourId}/${fileName}` // 투어별 폴더 구조
-
-            console.log(`Uploading to storage: ${filePath}`)
-
-            // Supabase Storage에 원본 업로드
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('tour-photos')
-              .upload(filePath, file, {
-                cacheControl: '3600',
-                upsert: false
-              })
-
-            if (uploadError) {
-              console.error('Storage upload error:', uploadError)
-              throw uploadError
-            }
-
-            console.log('Storage upload successful:', uploadData)
-
-            // 썸네일 생성 및 업로드
-            let thumbnailPath: string | null = null
-            try {
-              console.log('Creating thumbnail for:', file.name)
-              const thumbnailBlob = await createThumbnail(file, 400, 400, 0.8)
-              const thumbnailFileName = getThumbnailFileName(fileName)
-              thumbnailPath = `${tourId}/${thumbnailFileName}`
-              
-              const thumbnailFile = new File([thumbnailBlob], thumbnailFileName, { type: 'image/jpeg' })
-              
-              const { error: thumbnailUploadError } = await supabase.storage
-                .from('tour-photos')
-                .upload(thumbnailPath, thumbnailFile, {
-                  cacheControl: '3600',
-                  upsert: false
-                })
-
-              if (thumbnailUploadError) {
-                console.warn('Thumbnail upload error (continuing anyway):', thumbnailUploadError)
-                // 썸네일 업로드 실패해도 계속 진행
-              } else {
-                console.log('Thumbnail uploaded successfully:', thumbnailPath)
-              }
-            } catch (thumbnailError) {
-              console.warn('Thumbnail creation error (continuing anyway):', thumbnailError)
-              // 썸네일 생성 실패해도 계속 진행
-            }
-
-            // 공유 토큰 생성
-            const shareToken = crypto.randomUUID()
-
-            console.log('Inserting photo metadata to database')
-
-            // 데이터베이스에 메타데이터 저장
-            const { data: photoData, error: dbError } = await supabase
-              .from('tour_photos')
-              .insert({
-                tour_id: tourId,
-                file_path: uploadData.path,
-                file_name: file.name,
-                file_size: file.size,
-                mime_type: file.type,
-                uploaded_by: (user?.email || uploadedBy || ''),
-                share_token: shareToken,
-                thumbnail_path: thumbnailPath // 썸네일 경로 저장
-              })
-              .select()
-              .single()
-
-            if (dbError) {
-              console.error('Database insert error:', dbError)
-              // Storage에서 파일 삭제
-              await supabase.storage.from('tour-photos').remove([uploadData.path])
-              if (thumbnailPath) {
-                await supabase.storage.from('tour-photos').remove([thumbnailPath])
-              }
-              throw dbError
-            }
-
-            console.log(`Successfully uploaded ${file.name}`)
-            return photoData
-          } catch (error) {
-            console.error(`Error uploading ${file.name}:`, error)
-            failedFiles.push(`${file.name}: ${error instanceof Error ? error.message : String(error)}`)
-            return null
-          }
+    void (async () => {
+      try {
+        const result = await runTourPhotoUploadQueue({
+          files: fileArray,
+          tourId,
+          uploadedBy: user?.email || uploadedBy || '',
+          imageOnlyErrorLabel: t('imageOnlyError'),
         })
 
-        const batchResults = await Promise.allSettled(batchPromises)
-        const batchSuccessful = batchResults.filter(r => r.status === 'fulfilled' && r.value !== null).length
-        const batchFailed = batchResults.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value === null)).length
-        
-        totalSuccessful += batchSuccessful
-        totalFailed += batchFailed
-        
-        console.log(`배치 ${batchIndex + 1} 완료: ${batchSuccessful}개 성공, ${batchFailed}개 실패`)
-        
-        // 진행 상황 업데이트
-        setUploadProgress((prev: { current: number; total: number; batch: number; totalBatches: number }) => ({ 
-          ...prev, 
-          current: Math.min((batchIndex + 1) * batchSize, fileArray.length)
-        }))
-        
-        // 배치 간 잠시 대기 (서버 부하 방지)
-        if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500)) // 1초에서 0.5초로 단축
+        if (result.userMessages?.length) {
+          alert(result.userMessages.join('\n'))
+          return
         }
-        
-        // 배치 실패율이 높으면 대기 시간 증가
-        if (batchFailed > batchSuccessful) {
-          console.log('배치 실패율이 높음, 추가 대기 시간 적용')
-          await new Promise(resolve => setTimeout(resolve, 1000))
+
+        const skipNote: string[] = []
+        if (result.skippedDuplicateContent > 0) {
+          skipNote.push(`선택 목록에서 동일 이미지 ${result.skippedDuplicateContent}장 생략`)
         }
-      }
-      
-      if (totalSuccessful > 0) {
-        console.log(`전체 업로드 완료: ${totalSuccessful}개 성공, ${totalFailed}개 실패`)
-        // 사진 목록 새로고침
-        await loadPhotos()
-        onPhotosUpdated?.()
-        
-        if (totalFailed > 0) {
-          alert(`📊 업로드 완료: ${totalSuccessful}개 성공, ${totalFailed}개 실패\n\n실패한 파일들:\n${failedFiles.slice(0, 5).join('\n')}${failedFiles.length > 5 ? `\n... 외 ${failedFiles.length - 5}개` : ''}`)
+        if (result.skippedAlreadyUploaded > 0) {
+          skipNote.push(`이미 업로드된 파일(이름·크기 동일) ${result.skippedAlreadyUploaded}장 생략`)
+        }
+        const skipSuffix = skipNote.length > 0 ? `\n\n${skipNote.join('\n')}` : ''
+
+        if (result.totalSuccessful > 0) {
+          console.log(`전체 업로드 완료: ${result.totalSuccessful}개 성공, ${result.totalFailed}개 실패`)
+          if (result.totalFailed > 0) {
+            alert(
+              `업로드 완료: ${result.totalSuccessful}장 성공, ${result.totalFailed}장 실패${skipSuffix}\n\n실패한 파일:\n${result.failedFiles.slice(0, 5).join('\n')}${result.failedFiles.length > 5 ? `\n... 외 ${result.failedFiles.length - 5}개` : ''}`
+            )
+          } else {
+            alert(`성공적으로 ${result.totalSuccessful}장을 업로드했습니다.${skipSuffix}`)
+          }
         } else {
-          alert(`✅ 성공적으로 ${totalSuccessful}개 파일을 업로드했습니다.`)
+          alert(
+            `모든 파일 업로드에 실패했습니다. (${result.totalFailed}장)${skipSuffix}\n\n실패 원인:\n${result.failedFiles.slice(0, 10).join('\n')}${result.failedFiles.length > 10 ? `\n... 외 ${result.failedFiles.length - 10}개` : ''}`
+          )
         }
-      } else {
-        alert(`❌ 모든 파일 업로드에 실패했습니다. (${totalFailed}개 파일)\n\n실패 원인:\n${failedFiles.slice(0, 10).join('\n')}${failedFiles.length > 10 ? `\n... 외 ${failedFiles.length - 10}개` : ''}`)
+      } catch (error) {
+        console.error('Error uploading photos:', error)
+        alert(`업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
+      } finally {
+        setUploading(false)
       }
-    } catch (error) {
-      console.error('Error uploading photos:', error)
-      alert(`❌ 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setUploading(false)
-    }
+    })()
   }
 
   // 기존 사진들에 대한 썸네일 생성
@@ -1249,25 +1123,7 @@ export default function TourPhotoUpload({
         <div className="text-center py-8 text-gray-500">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p>{t('uploading')}</p>
-          
-          {/* 업로드 진행 상황 */}
-          {uploadProgress.total > 0 && (
-            <div className="mt-4 max-w-md mx-auto">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>배치 {uploadProgress.batch}/{uploadProgress.totalBatches}</span>
-                <span>{uploadProgress.current}/{uploadProgress.total} 파일</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
-                ></div>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% 완료
-              </p>
-            </div>
-          )}
+          <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto px-2">{t('uploadProgressBackgroundNote')}</p>
         </div>
       )}
 

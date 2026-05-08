@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ChevronDown, SquarePen, Menu, User, Bell, BellOff, Download } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { ArrowLeft, ChevronDown, Menu, User, Bell, BellOff, Download } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -10,6 +10,8 @@ import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
 import { supabase } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import { usePushNotification } from '@/hooks/usePushNotification'
+import { formatPublicChatRoomTitle } from '@/lib/formatPublicChatRoomTitle'
+import PublicChatTutorialOverlay from '@/components/chat/PublicChatTutorialOverlay'
 
 interface ChatRoom {
   id: string
@@ -35,7 +37,7 @@ interface ProductNames {
   name_en?: string | null
 }
 
-export default function PublicChatPage({ params }: { params: Promise<{ code: string }> }) {
+export default function PublicChatPage() {
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -50,8 +52,9 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [selectedAvatar, setSelectedAvatar] = useState<string>('')
   const [showAvatarSelector, setShowAvatarSelector] = useState(false)
   const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
+  const [showPublicTutorial, setShowPublicTutorial] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
-  const [showInstallButton, setShowInstallButton] = useState(false)
+  const [, setShowInstallButton] = useState(false)
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
@@ -63,7 +66,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     isLoading: isPushLoading,
     subscribe: subscribeToPush,
     unsubscribe: unsubscribeFromPush
-  } = usePushNotification(room?.id, undefined, selectedLanguage)
+  } = usePushNotification(room?.id, undefined, selectedLanguage === 'ko' ? 'ko' : 'en')
 
   useEffect(() => {
     console.log('PublicChatPage useEffect triggered with code:', code)
@@ -212,22 +215,51 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     }
   }
 
-  // Favicon 로드
+  // 홈페이지와 동일: 홈페이지 채널(M00001 등) 파비콘 우선, self(카카오 등)는 그 다음 ([locale]/layout generateMetadata 와 동일 순서)
   const loadFavicon = async () => {
+    const fallback = '/favicon.png'
     try {
-      const { data } = await supabase
+      if (!supabase) {
+        setFaviconUrl(fallback)
+        return
+      }
+      let url: string | undefined
+
+      const { data: homepageChannel } = await supabase
         .from('channels')
         .select('favicon_url')
-        .eq('type', 'self')
+        .or('id.eq.M00001,name.ilike.%homepage%,name.ilike.%홈페이지%')
         .not('favicon_url', 'is', null)
         .limit(1)
-        .single()
-      
-      if (data?.favicon_url) {
-        setFaviconUrl(data.favicon_url)
+        .maybeSingle()
+
+      url = (homepageChannel as { favicon_url?: string } | null)?.favicon_url
+
+      if (!url) {
+        const { data: selfChannel } = await supabase
+          .from('channels')
+          .select('favicon_url')
+          .eq('type', 'self')
+          .not('favicon_url', 'is', null)
+          .limit(1)
+          .maybeSingle()
+        url = (selfChannel as { favicon_url?: string } | null)?.favicon_url
       }
+
+      if (!url) {
+        const { data: anyChannel } = await supabase
+          .from('channels')
+          .select('favicon_url')
+          .not('favicon_url', 'is', null)
+          .limit(1)
+          .maybeSingle()
+        url = (anyChannel as { favicon_url?: string } | null)?.favicon_url
+      }
+
+      setFaviconUrl(url || fallback)
     } catch (error) {
       console.error('Error loading favicon:', error)
+      setFaviconUrl(fallback)
     }
   }
 
@@ -424,6 +456,39 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     console.log('Customer name updated:', trimmedName)
   }
 
+  const publicChatRoomTitle = useMemo(() => {
+    if (!room) return ''
+    return formatPublicChatRoomTitle(
+      selectedLanguage === 'ko' ? 'ko' : 'en',
+      productNames,
+      room.room_name
+    )
+  }, [room, selectedLanguage, productNames])
+
+  useEffect(() => {
+    if (!customerName || !code) return
+    try {
+      if (typeof window === 'undefined') return
+      const key = `tms_public_chat_tutorial_v1_${code}`
+      if (!localStorage.getItem(key)) {
+        setShowPublicTutorial(true)
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }, [customerName, code])
+
+  const markPublicTutorialSeen = () => {
+    try {
+      if (code && typeof window !== 'undefined') {
+        localStorage.setItem(`tms_public_chat_tutorial_v1_${code}`, '1')
+      }
+    } catch {
+      /* ignore */
+    }
+    setShowPublicTutorial(false)
+  }
+
   if (loading) {
     return (
       <div className="h-screen bg-gray-50 flex items-center justify-center">
@@ -475,25 +540,22 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 flex-1 min-w-0">
               {/* Favicon */}
-              {faviconUrl ? (
-                <img
-                  src={faviconUrl}
-                  alt="Company favicon"
-                  className="w-6 h-6 sm:w-7 sm:h-7 rounded flex-shrink-0"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.style.display = 'none'
-                  }}
-                />
-              ) : (
-                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-gray-400 text-xs">🌐</span>
-                </div>
-              )}
+              <img
+                src={faviconUrl || '/favicon.png'}
+                alt=""
+                className="w-6 h-6 sm:w-7 sm:h-7 rounded flex-shrink-0 object-contain"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement
+                  if (target.dataset.fallbackTried !== '1') {
+                    target.dataset.fallbackTried = '1'
+                    target.src = '/favicon.png'
+                  } else {
+                    target.style.visibility = 'hidden'
+                  }
+                }}
+              />
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex-1 min-w-0">
-                {selectedLanguage === 'en'
-                  ? (productNames?.name_en || productNames?.name || room.room_name)
-                  : (productNames?.name_ko || productNames?.name || room.room_name)}
+                {publicChatRoomTitle}
               </h1>
             </div>
             <div className="flex items-center gap-2 ml-2 flex-shrink-0">
@@ -789,6 +851,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                 tourDate={tourInfo.tour_date}
                 customerName={customerName}
                 customerLanguage={selectedLanguage}
+                publicDisplayRoomName={publicChatRoomTitle}
                 externalMobileMenuOpen={isMobileMenuOpen}
                 onExternalMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               />
@@ -908,6 +971,13 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
           currentAvatar={selectedAvatar}
           usedAvatars={new Set()} // 초기 입장 시에는 사용 중인 아바타 정보가 없으므로 빈 Set
           language={selectedLanguage as 'ko' | 'en'}
+        />
+
+        <PublicChatTutorialOverlay
+          open={Boolean(customerName && showPublicTutorial)}
+          language={selectedLanguage}
+          onClose={() => setShowPublicTutorial(false)}
+          onComplete={markPublicTutorialSeen}
         />
       </div>
     </div>

@@ -161,6 +161,9 @@ export default function TourExpenseManager({
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const receiptOnlyInputRef = useRef<HTMLInputElement>(null)
   const receiptOnlyCameraInputRef = useRef<HTMLInputElement>(null)
+  const [webcamTarget, setWebcamTarget] = useState<null | 'toolbar' | 'addForm'>(null)
+  const receiptWebcamVideoRef = useRef<HTMLVideoElement>(null)
+  const receiptWebcamStreamRef = useRef<MediaStream | null>(null)
   /** 카메라·갤러리 확인 직후 합성 click이 배경으로 전달되며 모달이 닫히는 것을 막음 (특히 iOS). */
   const expenseModalBackdropSuppressedUntilRef = useRef(0)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
@@ -939,23 +942,97 @@ export default function TourExpenseManager({
     }
   }
 
-  // 영수증 이미지 업로드 처리
-  const handleFileUpload = async (files: FileList) => {
-    if (!files.length) return
+  // 영수증만 첨부: 여러 장이면 각각 별도 tour_expenses 행으로 저장
+  const processReceiptOnlyFiles = async (files: File[]) => {
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
+      alert(t('imageOnlyError'))
+      return
+    }
 
+    try {
+      setUploading(true)
+      const effectiveSubmittedBy = await resolveSubmitterEmail()
+      if (!effectiveSubmittedBy) {
+        alert(t('submitterEmailRequired'))
+        return
+      }
+
+      const finalProductId = productId || tourData?.product_id || null
+      const inserted: TourExpense[] = []
+      let failCount = 0
+
+      for (const file of imageFiles) {
+        try {
+          const { filePath, imageUrl } = await handleImageUpload(file)
+          const { data, error } = await supabase
+            .from('tour_expenses')
+            .insert({
+              tour_id: tourId,
+              paid_to: null,
+              paid_for: receiptOnlyPaidFor,
+              amount: 0,
+              payment_method: null,
+              note: 'Receipt uploaded first; expense details pending.',
+              tour_date: tourDate,
+              product_id: finalProductId,
+              submitted_by: effectiveSubmittedBy,
+              image_url: imageUrl,
+              file_path: filePath,
+              status: 'pending'
+            })
+            .select()
+            .single()
+
+          if (error) throw error
+          if (data) inserted.push(data)
+        } catch (itemErr) {
+          console.error('Receipt-only batch item error:', itemErr)
+          failCount += 1
+        }
+      }
+
+      if (inserted.length > 0) {
+        setExpenses((prev) => [...inserted, ...prev])
+        onExpenseUpdated?.()
+      }
+
+      if (inserted.length === 0) {
+        alert(t('expenseRegistrationError'))
+      } else if (failCount === 0) {
+        alert(
+          inserted.length === 1
+            ? t('receiptOnlyUploadSuccess')
+            : t('receiptOnlyBatchSuccess', { count: inserted.length })
+        )
+      } else {
+        alert(t('receiptOnlyBatchPartialSuccess', { saved: inserted.length, failed: failCount }))
+      }
+    } catch (error) {
+      console.error('Receipt-only batch error:', error)
+      alert(error instanceof Error ? translateReceiptImageError(error) : t('expenseRegistrationError'))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleReceiptOnlyUpload = async (files: FileList | null) => {
+    if (!files?.length) return
+    await processReceiptOnlyFiles(Array.from(files))
+  }
+
+  const applyUploadedImageToForm = async (file: File) => {
     try {
       expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
       setUploading(true)
-      const file = files[0] // 첫 번째 파일만 사용
-      
-      // 파일 유효성 검사
+
       if (!file.type.startsWith('image/')) {
-        throw new Error('이미지 파일만 업로드할 수 있습니다.')
+        throw new Error(t('imageOnlyError'))
       }
 
       const { filePath, imageUrl } = await handleImageUpload(file)
-      
-      setFormData(prev => ({
+
+      setFormData((prev) => ({
         ...prev,
         file_path: filePath,
         image_url: imageUrl
@@ -972,57 +1049,98 @@ export default function TourExpenseManager({
     }
   }
 
-  const handleReceiptOnlyUpload = async (files: FileList | null) => {
-    if (!files?.length) return
+  const handleFileUpload = async (files: FileList) => {
+    if (!files.length) return
 
-    try {
-      setUploading(true)
-      const file = files[0]
-
-      if (!file.type.startsWith('image/')) {
-        throw new Error('이미지 파일만 업로드할 수 있습니다.')
-      }
-
-      const effectiveSubmittedBy = await resolveSubmitterEmail()
-      if (!effectiveSubmittedBy) {
-        alert(t('submitterEmailRequired'))
-        return
-      }
-
-      const { filePath, imageUrl } = await handleImageUpload(file)
-      const finalProductId = productId || tourData?.product_id || null
-
-      const { data, error } = await supabase
-        .from('tour_expenses')
-        .insert({
-          tour_id: tourId,
-          paid_to: null,
-          paid_for: receiptOnlyPaidFor,
-          amount: 0,
-          payment_method: null,
-          note: 'Receipt uploaded first; expense details pending.',
-          tour_date: tourDate,
-          product_id: finalProductId,
-          submitted_by: effectiveSubmittedBy,
-          image_url: imageUrl,
-          file_path: filePath,
-          status: 'pending'
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      setExpenses(prev => [data, ...prev])
-      onExpenseUpdated?.()
-      alert(t('receiptOnlyUploadSuccess'))
-    } catch (error) {
-      console.error('Receipt-only upload error:', error)
-      alert(error instanceof Error ? translateReceiptImageError(error) : t('expenseRegistrationError'))
-    } finally {
-      setUploading(false)
+    if (files.length > 1 && editingExpense) {
+      await applyUploadedImageToForm(files[0])
+      alert(t('receiptEditSingleImageOnly'))
+      return
     }
+
+    if (files.length > 1 && !editingExpense) {
+      if (typeof window !== 'undefined' && window.confirm(t('receiptBatchFromFormConfirm', { count: files.length }))) {
+        await processReceiptOnlyFiles(Array.from(files))
+      }
+      return
+    }
+
+    await applyUploadedImageToForm(files[0])
   }
+
+  const captureReceiptWebcamFrame = () => {
+    const video = receiptWebcamVideoRef.current
+    const target = webcamTarget
+    if (!video || !target || video.videoWidth === 0) return
+
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0)
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return
+        const file = new File([blob], `receipt-${Date.now()}.jpg`, { type: 'image/jpeg' })
+        setWebcamTarget(null)
+        if (target === 'toolbar') {
+          void processReceiptOnlyFiles([file])
+        } else {
+          void applyUploadedImageToForm(file)
+        }
+      },
+      'image/jpeg',
+      0.88
+    )
+  }
+
+  useEffect(() => {
+    if (!webcamTarget) {
+      if (receiptWebcamStreamRef.current) {
+        receiptWebcamStreamRef.current.getTracks().forEach((tr) => tr.stop())
+        receiptWebcamStreamRef.current = null
+      }
+      return
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      alert(t('webcamError'))
+      setWebcamTarget(null)
+      return
+    }
+
+    let cancelled = false
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((tr) => tr.stop())
+          return
+        }
+        receiptWebcamStreamRef.current = stream
+        const el = receiptWebcamVideoRef.current
+        if (el) {
+          el.srcObject = stream
+          void el.play().catch(() => {})
+        }
+      })
+      .catch(() => {
+        alert(t('webcamError'))
+        setWebcamTarget(null)
+      })
+
+    return () => {
+      cancelled = true
+      if (receiptWebcamStreamRef.current) {
+        receiptWebcamStreamRef.current.getTracks().forEach((tr) => tr.stop())
+        receiptWebcamStreamRef.current = null
+      }
+      const el = receiptWebcamVideoRef.current
+      if (el) el.srcObject = null
+    }
+  }, [webcamTarget, t])
 
   // 드래그 앤 드롭 핸들러
   const handleDragOver = (e: React.DragEvent) => {
@@ -1784,6 +1902,7 @@ export default function TourExpenseManager({
                 ref={receiptOnlyInputRef}
                 type="file"
                 accept="image/*"
+                multiple
                 onChange={(e) => {
                   void handleReceiptOnlyUpload(e.target.files)
                   e.target.value = ''
@@ -1792,7 +1911,13 @@ export default function TourExpenseManager({
               />
               <button
                 type="button"
-                onClick={() => receiptOnlyCameraInputRef.current?.click()}
+                onClick={() => {
+                  if (typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                    receiptOnlyCameraInputRef.current?.click()
+                  } else {
+                    setWebcamTarget('toolbar')
+                  }
+                }}
                 disabled={uploading}
                 className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 title={t('camera')}
@@ -2969,6 +3094,7 @@ export default function TourExpenseManager({
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={(e) => {
                       e.stopPropagation()
                       if (e.target.files && e.target.files.length > 0) {
@@ -3012,7 +3138,11 @@ export default function TourExpenseManager({
                       onClick={(e) => {
                         e.stopPropagation()
                         expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
-                        cameraInputRef.current?.click()
+                        if (typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                          cameraInputRef.current?.click()
+                        } else {
+                          setWebcamTarget('addForm')
+                        }
                       }}
                       disabled={uploading}
                       className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -3065,6 +3195,44 @@ export default function TourExpenseManager({
         </div>
       )}
       
+      {webcamTarget && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setWebcamTarget(null)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-lg w-full p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">{t('webcamTitle')}</h3>
+            <video
+              ref={receiptWebcamVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full rounded-lg bg-black aspect-video object-cover"
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setWebcamTarget(null)}
+                className="flex-1 px-4 py-2 text-sm bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200"
+              >
+                {t('webcamCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={captureReceiptWebcamFrame}
+                disabled={uploading}
+                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {t('webcamCapture')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 선택지 관리 모달 */}
       <OptionManagementModal
         isOpen={showOptionManagement}

@@ -5,6 +5,7 @@ import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { X, Camera, Upload, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle } from 'lucide-react'
+import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -176,67 +177,67 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
     setSelectedFiles(files)
   }
 
-  const handleUpload = async () => {
+  const handleUpload = () => {
     if (!selectedTour || selectedFiles.length === 0) return
-
-    try {
-      setUploading(true)
-      setUploadProgress(0)
-      setUploadStatus('idle')
-
-      const uploadPromises = selectedFiles.map(async (file, index) => {
-        // 파일명 생성: tour_id_timestamp_originalname
-        const timestamp = new Date().getTime()
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${selectedTour.id}_${timestamp}_${index}.${fileExt}`
-        
-        // Supabase Storage에 업로드
-        const { data, error } = await supabase.storage
-          .from('tour-photos')
-          .upload(fileName, file)
-
-        if (error) {
-          throw error
-        }
-
-        // 데이터베이스에 메타데이터 저장
-        const { error: dbError } = await supabase
-          .from('tour_photos')
-          .insert({
-            tour_id: selectedTour.id,
-            file_name: fileName,
-            original_name: file.name,
-            file_size: file.size,
-            file_type: file.type,
-            uploaded_by: currentUserEmail,
-            uploaded_at: new Date().toISOString()
-          })
-
-        if (dbError) {
-          throw dbError
-        }
-
-        setUploadProgress(((index + 1) / selectedFiles.length) * 100)
-      })
-
-      await Promise.all(uploadPromises)
-      setUploadStatus('success')
-      
-      // 성공 후 상태 초기화
-      setTimeout(() => {
-        setSelectedTour(null)
-        setSelectedFiles([])
-        setUploadProgress(0)
-        setUploadStatus('idle')
-        onClose()
-      }, 2000)
-
-    } catch (error) {
-      console.error('Error uploading photos:', error)
-      setUploadStatus('error')
-    } finally {
-      setUploading(false)
+    if (!currentUserEmail) {
+      alert('로그인이 필요합니다.')
+      return
     }
+
+    const tourId = selectedTour.id
+    const imageOnlyErrorLabel =
+      locale === 'en' ? 'Only image files can be uploaded' : '이미지 파일만 업로드할 수 있습니다'
+
+    setUploading(true)
+    setUploadProgress(0)
+    setUploadStatus('idle')
+
+    void (async () => {
+      try {
+        const result = await runTourPhotoUploadQueue({
+          files: selectedFiles,
+          tourId,
+          uploadedBy: currentUserEmail,
+          imageOnlyErrorLabel,
+        })
+
+        if (result.userMessages?.length) {
+          alert(result.userMessages.join('\n'))
+          setUploadStatus('idle')
+          return
+        }
+
+        const skipMsg =
+          (result.skippedDuplicateContent > 0 ? `\n동일 이미지 ${result.skippedDuplicateContent}장 생략` : '') +
+          (result.skippedAlreadyUploaded > 0
+            ? `\n이미 업로드됨(이름·크기 동일) ${result.skippedAlreadyUploaded}장 생략`
+            : '')
+
+        if (result.totalSuccessful > 0) {
+          setUploadStatus('success')
+          alert(
+            `업로드 완료: ${result.totalSuccessful}장 성공${result.totalFailed > 0 ? `, ${result.totalFailed}장 실패` : ''}${skipMsg}`
+          )
+          setTimeout(() => {
+            setSelectedTour(null)
+            setSelectedFiles([])
+            setUploadProgress(0)
+            setUploadStatus('idle')
+            onClose()
+          }, 1500)
+        } else {
+          setUploadStatus('error')
+          alert(`업로드에 실패했습니다. (${result.totalFailed}장)${skipMsg}`)
+        }
+      } catch (error) {
+        console.error('Error uploading photos:', error)
+        setUploadStatus('error')
+        alert(error instanceof Error ? error.message : '업로드 중 오류가 발생했습니다.')
+      } finally {
+        setUploading(false)
+        setUploadProgress(0)
+      }
+    })()
   }
 
   const formatDateWithDay = (dateString: string) => {

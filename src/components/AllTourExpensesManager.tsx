@@ -8,6 +8,12 @@ import { useAuth } from '@/contexts/AuthContext'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
+import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
+import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
+import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 interface TourExpense {
   id: string
@@ -48,6 +54,7 @@ interface TourExpense {
 
 export default function AllTourExpensesManager() {
   const t = useTranslations('tours.tourExpense')
+  const tStmt = useTranslations('expenses.statementRecon')
   const locale = useLocale()
   const { user, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
@@ -81,6 +88,11 @@ export default function AllTourExpensesManager() {
     reimbursement_note: ''
   })
   const [reimburseSaving, setReimburseSaving] = useState(false)
+  const [reconciledTourExpenseIds, setReconciledTourExpenseIds] = useState<Set<string>>(() => new Set())
+  const [stmtReconOpen, setStmtReconOpen] = useState(false)
+  const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [tourTableSortKey, setTourTableSortKey] = useState<string>('tour_date')
+  const [tourTableSortDir, setTourTableSortDir] = useState<SortDir>('desc')
 
   // 팀 멤버 정보 로드
   const loadTeamMembers = async () => {
@@ -247,6 +259,114 @@ export default function AllTourExpensesManager() {
     return true
   })
 
+  const handleTourTableSort = useCallback(
+    (key: string) => {
+      if (tourTableSortKey === key) {
+        setTourTableSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setTourTableSortKey(key)
+        setTourTableSortDir('asc')
+      }
+    },
+    [tourTableSortKey]
+  )
+
+  const tourSortLocale = locale === 'en' ? 'en' : 'ko'
+
+  const getProductDisplayName = useCallback(
+    (product: TourExpense['products']) => {
+      if (!product) return '-'
+      if (locale === 'en') {
+        const en = (product.name_en || '').trim()
+        return en || '-'
+      }
+      return product.name_ko || product.name || product.name_en || '-'
+    },
+    [locale]
+  )
+
+  const sortedFilteredExpenses = useMemo(() => {
+    const rows = [...filteredExpenses]
+    rows.sort((a, b) => {
+      let va: unknown
+      let vb: unknown
+      switch (tourTableSortKey) {
+        case 'tour_date':
+          va = a.tour_date || ''
+          vb = b.tour_date || ''
+          break
+        case 'product':
+          va = getProductDisplayName(a.products)
+          vb = getProductDisplayName(b.products)
+          break
+        case 'paid_for':
+          va = a.paid_for
+          vb = b.paid_for
+          break
+        case 'paid_to':
+          va = a.paid_to
+          vb = b.paid_to
+          break
+        case 'amount':
+          va = a.amount
+          vb = b.amount
+          break
+        case 'reimbursed':
+          va = parseReimbursedAmount(a.reimbursed_amount)
+          vb = parseReimbursedAmount(b.reimbursed_amount)
+          break
+        case 'outstanding':
+          va = reimbursementOutstanding(a.amount, a.reimbursed_amount)
+          vb = reimbursementOutstanding(b.amount, b.reimbursed_amount)
+          break
+        case 'submitter':
+          va = teamMembers[a.submitted_by] || a.submitted_by
+          vb = teamMembers[b.submitted_by] || b.submitted_by
+          break
+        case 'status':
+          va = a.status
+          vb = b.status
+          break
+        default:
+          va = a.tour_date || ''
+          vb = b.tour_date || ''
+      }
+      return compareSortValues(va, vb, tourTableSortDir, tourSortLocale)
+    })
+    return rows
+  }, [filteredExpenses, tourTableSortKey, tourTableSortDir, tourSortLocale, teamMembers, getProductDisplayName])
+
+  const tourReconIds = useMemo(() => filteredExpenses.map((e) => e.id), [filteredExpenses])
+  const tourReconIdKey = useMemo(() => [...tourReconIds].sort().join('|'), [tourReconIds])
+
+  useEffect(() => {
+    if (tourReconIds.length === 0) {
+      setReconciledTourExpenseIds(new Set())
+      return
+    }
+    let cancelled = false
+    void fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', tourReconIds).then((s) => {
+      if (!cancelled) setReconciledTourExpenseIds(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [tourReconIdKey])
+
+  const openTourStmtRecon = (expense: TourExpense) => {
+    const raw = expense.submit_on || expense.tour_date
+    const ymd = raw ? String(raw).trim().slice(0, 10) : ''
+    if (!ymd) return
+    setStmtReconCtx({
+      sourceTable: 'tour_expenses',
+      sourceId: expense.id,
+      dateYmd: ymd,
+      amount: Math.abs(Number(expense.amount ?? 0)),
+      direction: 'outflow'
+    })
+    setStmtReconOpen(true)
+  }
+
   const persistReimbursement = async () => {
     if (!reimburseModal) return
     const amountNum = reimburseModal.amount
@@ -312,15 +432,6 @@ export default function AllTourExpensesManager() {
       default:
         return t('status.pending')
     }
-  }
-
-  const getProductDisplayName = (product: TourExpense['products']) => {
-    if (!product) return '-'
-    if (locale === 'en') {
-      const en = (product.name_en || '').trim()
-      return en || '-'
-    }
-    return product.name_ko || product.name || product.name_en || '-'
   }
 
   // 통화 포맷
@@ -482,14 +593,22 @@ export default function AllTourExpensesManager() {
           <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto"></div>
           <p className="text-gray-500 mt-2 text-sm">{t('loading')}</p>
         </div>
-      ) : filteredExpenses.length > 0 ? (
+      ) : sortedFilteredExpenses.length > 0 ? (
         <>
           {/* 모바일: 카드 리스트 - 라벨/값 구조 */}
           <div className="md:hidden space-y-3">
-            {filteredExpenses.map((expense) => (
+            {sortedFilteredExpenses.map((expense) => (
               <div key={expense.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
                 <div className="flex items-start justify-between gap-3 mb-3">
-                  <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
+                  <div className="flex items-start gap-1 min-w-0 flex-1">
+                    <ExpenseStatementReconIcon
+                      matched={reconciledTourExpenseIds.has(expense.id)}
+                      titleMatched={tStmt('matchedTitle')}
+                      titleUnmatched={tStmt('unmatchedTitle')}
+                      onClick={() => openTourStmtRecon(expense)}
+                    />
+                    <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
+                  </div>
                   <p className="text-lg font-bold text-green-600 whitespace-nowrap">{formatCurrency(expense.amount)}</p>
                 </div>
                 <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
@@ -563,22 +682,108 @@ export default function AllTourExpensesManager() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('date')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('tourProduct')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paymentDetails')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidTo')}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('amount')}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('reimbursedShort')}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('outstandingShort')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('submitter')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('statusLabel')}</th>
+                <th
+                  className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"
+                  title={tStmt('unmatchedTitle')}
+                >
+                  {tStmt('columnHeaderShort')}
+                </th>
+                <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                  <TableSortHeaderButton
+                    label={t('date')}
+                    active={tourTableSortKey === 'tour_date'}
+                    dir={tourTableSortDir}
+                    onClick={() => handleTourTableSort('tour_date')}
+                  />
+                </th>
+                <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                  <TableSortHeaderButton
+                    label={t('tourProduct')}
+                    active={tourTableSortKey === 'product'}
+                    dir={tourTableSortDir}
+                    onClick={() => handleTourTableSort('product')}
+                  />
+                </th>
+                <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                  <TableSortHeaderButton
+                    label={t('paymentDetails')}
+                    active={tourTableSortKey === 'paid_for'}
+                    dir={tourTableSortDir}
+                    onClick={() => handleTourTableSort('paid_for')}
+                  />
+                </th>
+                <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                  <TableSortHeaderButton
+                    label={t('paidTo')}
+                    active={tourTableSortKey === 'paid_to'}
+                    dir={tourTableSortDir}
+                    onClick={() => handleTourTableSort('paid_to')}
+                  />
+                </th>
+                <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
+                  <div className="flex justify-end">
+                    <TableSortHeaderButton
+                      label={t('amount')}
+                      active={tourTableSortKey === 'amount'}
+                      dir={tourTableSortDir}
+                      onClick={() => handleTourTableSort('amount')}
+                      className="text-right"
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
+                  <div className="flex justify-end">
+                    <TableSortHeaderButton
+                      label={t('reimbursedShort')}
+                      active={tourTableSortKey === 'reimbursed'}
+                      dir={tourTableSortDir}
+                      onClick={() => handleTourTableSort('reimbursed')}
+                      className="text-right"
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
+                  <div className="flex justify-end">
+                    <TableSortHeaderButton
+                      label={t('outstandingShort')}
+                      active={tourTableSortKey === 'outstanding'}
+                      dir={tourTableSortDir}
+                      onClick={() => handleTourTableSort('outstanding')}
+                      className="text-right"
+                    />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                  <TableSortHeaderButton
+                    label={t('submitter')}
+                    active={tourTableSortKey === 'submitter'}
+                    dir={tourTableSortDir}
+                    onClick={() => handleTourTableSort('submitter')}
+                  />
+                </th>
+                <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                  <TableSortHeaderButton
+                    label={t('statusLabel')}
+                    active={tourTableSortKey === 'status'}
+                    dir={tourTableSortDir}
+                    onClick={() => handleTourTableSort('status')}
+                  />
+                </th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('receipt')}</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('action')}</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredExpenses.map((expense) => (
+              {sortedFilteredExpenses.map((expense) => (
                 <tr key={expense.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-center align-middle">
+                    <ExpenseStatementReconIcon
+                      matched={reconciledTourExpenseIds.has(expense.id)}
+                      titleMatched={tStmt('matchedTitle')}
+                      titleUnmatched={tStmt('unmatchedTitle')}
+                      onClick={() => openTourStmtRecon(expense)}
+                    />
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                     {expense.tour_date}
                   </td>
@@ -797,6 +1002,16 @@ export default function AllTourExpensesManager() {
           </div>
         </div>
       )}
+
+      <ExpenseStatementSimilarLinesModal
+        open={stmtReconOpen}
+        onOpenChange={(o) => {
+          setStmtReconOpen(o)
+          if (!o) setStmtReconCtx(null)
+        }}
+        context={stmtReconCtx}
+        onApplied={() => void loadExpenses()}
+      />
     </div>
   )
 }

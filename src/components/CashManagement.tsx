@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -17,6 +17,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
+import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
+import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
+import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 interface CashTransaction {
   id: string
@@ -75,6 +81,27 @@ const categories = [
  */
 const CASH_PAYMENT_METHOD_DB_VALUES = ['PAYM032', 'PAYM001', 'cash', 'Cash'] as const
 
+function reconSourceFromCashTransaction(
+  tx: CashTransaction
+): { sourceTable: 'payment_records' | 'company_expenses' | 'reservation_expenses'; sourceId: string } | null {
+  if (tx.source === 'payment_records' && tx.id.startsWith('pr_')) {
+    return { sourceTable: 'payment_records', sourceId: tx.id.slice(3) }
+  }
+  if (tx.source === 'company_expenses' && tx.id.startsWith('ce_')) {
+    return { sourceTable: 'company_expenses', sourceId: tx.id.slice(3) }
+  }
+  if (tx.source === 'reservation_expenses' && tx.id.startsWith('re_')) {
+    return { sourceTable: 'reservation_expenses', sourceId: tx.id.slice(3) }
+  }
+  return null
+}
+
+function cashTransactionDateYmd(tx: CashTransaction): string {
+  const d = new Date(tx.transaction_date)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toISOString().slice(0, 10)
+}
+
 export default function CashManagement() {
   const t = useTranslations('cashManagement')
   let locale = 'ko'
@@ -84,6 +111,10 @@ export default function CashManagement() {
     console.warn('로케일을 가져올 수 없습니다. 기본값(ko)을 사용합니다.', error)
   }
   const { user } = useAuth()
+  const tStmt = useTranslations('expenses.statementRecon')
+  const [reconciledCashRowKeys, setReconciledCashRowKeys] = useState<Set<string>>(() => new Set())
+  const [stmtReconOpen, setStmtReconOpen] = useState(false)
+  const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
   const [transactions, setTransactions] = useState<CashTransaction[]>([])
   const [balance, setBalance] = useState<number>(0)
   const [loading, setLoading] = useState(true)
@@ -109,7 +140,9 @@ export default function CashManagement() {
   const [editingReservationExpense, setEditingReservationExpense] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
-  
+  const [cashTableSortKey, setCashTableSortKey] = useState<string>('date')
+  const [cashTableSortDir, setCashTableSortDir] = useState<SortDir>('desc')
+
   const [formData, setFormData] = useState<CashTransactionFormData>({
     transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
     transaction_type: 'deposit',
@@ -794,11 +827,158 @@ export default function CashManagement() {
   
   const periodBalance = periodDeposits - periodWithdrawals
 
+  const handleCashTableSort = useCallback(
+    (key: string) => {
+      if (cashTableSortKey === key) {
+        setCashTableSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setCashTableSortKey(key)
+        setCashTableSortDir('asc')
+      }
+    },
+    [cashTableSortKey]
+  )
+
+  const cashSortLocale = locale === 'en' ? 'en' : 'ko'
+
+  const cashTypeSortValue = useCallback((tx: CashTransaction) => {
+    const isBankDeposit = tx.description?.includes('은행 Deposit') || tx.description === '은행 Deposit'
+    if (isBankDeposit) return 'bank_deposit'
+    return tx.transaction_type
+  }, [])
+
+  const cashSourceSortValue = useCallback((tx: CashTransaction) => {
+    if (tx.source === 'payment_records') return 'payment_records'
+    if (tx.source === 'company_expenses') return 'company_expenses'
+    if (tx.source === 'reservation_expenses') return 'reservation_expenses'
+    return 'cash_transactions'
+  }, [])
+
+  const sortedTransactions = useMemo(() => {
+    const rows = [...transactions]
+    rows.sort((a, b) => {
+      let va: unknown
+      let vb: unknown
+      switch (cashTableSortKey) {
+        case 'date':
+          va = a.transaction_date
+          vb = b.transaction_date
+          break
+        case 'type':
+          va = cashTypeSortValue(a)
+          vb = cashTypeSortValue(b)
+          break
+        case 'amount':
+          va = a.amount
+          vb = b.amount
+          break
+        case 'description':
+          va = a.description
+          vb = b.description
+          break
+        case 'category':
+          va = a.category
+          vb = b.category
+          break
+        case 'source':
+          va = cashSourceSortValue(a)
+          vb = cashSourceSortValue(b)
+          break
+        case 'payment_status':
+          va = a.payment_status
+          vb = b.payment_status
+          break
+        case 'notes':
+          va = a.notes
+          vb = b.notes
+          break
+        case 'author':
+          va = teamMembers.get(a.created_by) || a.created_by
+          vb = teamMembers.get(b.created_by) || b.created_by
+          break
+        default:
+          va = a.transaction_date
+          vb = b.transaction_date
+      }
+      return compareSortValues(va, vb, cashTableSortDir, cashSortLocale)
+    })
+    return rows
+  }, [
+    transactions,
+    cashTableSortKey,
+    cashTableSortDir,
+    cashSortLocale,
+    teamMembers,
+    cashTypeSortValue,
+    cashSourceSortValue,
+  ])
+
   // 페이지네이션 계산
-  const totalPages = Math.ceil(transactions.length / itemsPerPage)
+  const totalPages = Math.ceil(sortedTransactions.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const paginatedTransactions = transactions.slice(startIndex, endIndex)
+  const paginatedTransactions = sortedTransactions.slice(startIndex, endIndex)
+
+  const cashReconPageKey = useMemo(
+    () =>
+      paginatedTransactions
+        .map((tx) => {
+          const r = reconSourceFromCashTransaction(tx)
+          return r ? `${r.sourceTable}:${r.sourceId}` : `—:${tx.id}`
+        })
+        .join('|'),
+    [paginatedTransactions]
+  )
+
+  useEffect(() => {
+    const byTable = new Map<string, string[]>()
+    for (const tx of paginatedTransactions) {
+      const r = reconSourceFromCashTransaction(tx)
+      if (!r) continue
+      const arr = byTable.get(r.sourceTable) ?? []
+      arr.push(r.sourceId)
+      byTable.set(r.sourceTable, arr)
+    }
+    if (byTable.size === 0) {
+      setReconciledCashRowKeys(new Set())
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const keys = new Set<string>()
+      for (const [table, ids] of byTable) {
+        const unique = [...new Set(ids)]
+        if (unique.length === 0) continue
+        try {
+          const matched = await fetchReconciledSourceIds(supabase, table, unique)
+          for (const id of matched) {
+            keys.add(`${table}:${id}`)
+          }
+        } catch {
+          /* ignore row errors */
+        }
+      }
+      if (!cancelled) setReconciledCashRowKeys(keys)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [cashReconPageKey])
+
+  const openCashStmtRecon = useCallback((tx: CashTransaction) => {
+    const src = reconSourceFromCashTransaction(tx)
+    if (!src) return
+    const ymd = cashTransactionDateYmd(tx)
+    if (!ymd) return
+    setStmtReconCtx({
+      sourceTable: src.sourceTable,
+      sourceId: src.sourceId,
+      dateYmd: ymd,
+      amount: Math.abs(Number(tx.amount ?? 0)),
+      direction: tx.transaction_type === 'deposit' ? 'inflow' : 'outflow'
+    })
+    setStmtReconOpen(true)
+  }, [])
 
   // 필터 변경 시 첫 페이지로 리셋
   useEffect(() => {
@@ -1158,11 +1338,24 @@ export default function CashManagement() {
                     return (
                       <div key={transaction.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
                         <div className="flex items-start justify-between gap-3 mb-3">
-                          <div>
-                            <p className="text-xs text-gray-500">{dateStr}</p>
-                            <Badge variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'} className="text-xs mt-1">
-                              {displayType}
-                            </Badge>
+                          <div className="flex items-start gap-1">
+                            <ExpenseStatementReconIcon
+                              matched={(() => {
+                                const r = reconSourceFromCashTransaction(transaction)
+                                return r ? reconciledCashRowKeys.has(`${r.sourceTable}:${r.sourceId}`) : false
+                              })()}
+                              disabled={!reconSourceFromCashTransaction(transaction)}
+                              titleMatched={tStmt('matchedTitle')}
+                              titleUnmatched={tStmt('unmatchedTitle')}
+                              titleDisabled={tStmt('disabledTitle')}
+                              onClick={() => openCashStmtRecon(transaction)}
+                            />
+                            <div>
+                              <p className="text-xs text-gray-500">{dateStr}</p>
+                              <Badge variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'} className="text-xs mt-1">
+                                {displayType}
+                              </Badge>
+                            </div>
                           </div>
                           <p className={`text-lg font-bold ${transaction.transaction_type === 'deposit' ? 'text-blue-600' : 'text-red-600'}`}>
                             {transaction.transaction_type === 'deposit' ? '+' : '-'}
@@ -1219,15 +1412,81 @@ export default function CashManagement() {
                 <Table>
                   <TableHeader>
                     <TableRow className="h-10">
-                      <TableHead className="py-2 w-48">날짜</TableHead>
-                      <TableHead className="w-32 py-2">유형</TableHead>
-                      <TableHead className="py-2">금액</TableHead>
-                      <TableHead className="py-2">설명</TableHead>
-                      <TableHead className="w-40 py-2">카테고리</TableHead>
-                      <TableHead className="w-32 py-2">출처</TableHead>
-                      <TableHead className="min-w-[7rem] max-w-[10rem] py-2">결제 상태</TableHead>
-                      <TableHead className="py-2">메모</TableHead>
-                      <TableHead className="py-2">작성자</TableHead>
+                      <TableHead className="py-2 w-12 text-center" title={tStmt('unmatchedTitle')}>
+                        {tStmt('columnHeaderShort')}
+                      </TableHead>
+                      <TableHead className="py-2 w-48 align-bottom">
+                        <TableSortHeaderButton
+                          label="날짜"
+                          active={cashTableSortKey === 'date'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('date')}
+                        />
+                      </TableHead>
+                      <TableHead className="w-32 py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="유형"
+                          active={cashTableSortKey === 'type'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('type')}
+                        />
+                      </TableHead>
+                      <TableHead className="py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="금액"
+                          active={cashTableSortKey === 'amount'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('amount')}
+                        />
+                      </TableHead>
+                      <TableHead className="py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="설명"
+                          active={cashTableSortKey === 'description'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('description')}
+                        />
+                      </TableHead>
+                      <TableHead className="w-40 py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="카테고리"
+                          active={cashTableSortKey === 'category'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('category')}
+                        />
+                      </TableHead>
+                      <TableHead className="w-32 py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="출처"
+                          active={cashTableSortKey === 'source'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('source')}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[7rem] max-w-[10rem] py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="결제 상태"
+                          active={cashTableSortKey === 'payment_status'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('payment_status')}
+                        />
+                      </TableHead>
+                      <TableHead className="py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="메모"
+                          active={cashTableSortKey === 'notes'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('notes')}
+                        />
+                      </TableHead>
+                      <TableHead className="py-2 align-bottom">
+                        <TableSortHeaderButton
+                          label="작성자"
+                          active={cashTableSortKey === 'author'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('author')}
+                        />
+                      </TableHead>
                       <TableHead className="text-right w-40 py-2">작업</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1242,6 +1501,19 @@ export default function CashManagement() {
                       
                       return (
                         <TableRow key={transaction.id} className="h-10">
+                          <TableCell className="py-1 w-12 text-center align-middle">
+                            <ExpenseStatementReconIcon
+                              matched={(() => {
+                                const r = reconSourceFromCashTransaction(transaction)
+                                return r ? reconciledCashRowKeys.has(`${r.sourceTable}:${r.sourceId}`) : false
+                              })()}
+                              disabled={!reconSourceFromCashTransaction(transaction)}
+                              titleMatched={tStmt('matchedTitle')}
+                              titleUnmatched={tStmt('unmatchedTitle')}
+                              titleDisabled={tStmt('disabledTitle')}
+                              onClick={() => openCashStmtRecon(transaction)}
+                            />
+                          </TableCell>
                           <TableCell className="py-1 w-48">
                             {(() => {
                               // ISO 형식의 날짜를 로컬 시간대로 변환하여 날짜만 표시
@@ -1933,6 +2205,16 @@ export default function CashManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ExpenseStatementSimilarLinesModal
+        open={stmtReconOpen}
+        onOpenChange={(o) => {
+          setStmtReconOpen(o)
+          if (!o) setStmtReconCtx(null)
+        }}
+        context={stmtReconCtx}
+        onApplied={() => void loadTransactions()}
+      />
     </div>
   )
 }

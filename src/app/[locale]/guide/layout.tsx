@@ -15,6 +15,7 @@ import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, 
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
+import TourPhotoUploadProgressOverlay from '@/components/TourPhotoUploadProgressOverlay'
 import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
@@ -640,6 +641,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
         locale={locale === 'en' ? 'en' : 'ko'}
       />
+
+      <TourPhotoUploadProgressOverlay />
       </div>
     </AudioPlayerProvider>
   )

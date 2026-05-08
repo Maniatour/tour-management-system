@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams, usePathname, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import ReservationExpenseManager from '@/components/ReservationExpenseManager'
+import ReservationExpenseTabPanel from '@/components/expenses/ReservationExpenseTabPanel'
 import CompanyExpenseManager from '@/components/CompanyExpenseManager'
 import AllTourExpensesManager from '@/components/AllTourExpensesManager'
 import CashManagement from '@/components/CashManagement'
@@ -176,7 +176,7 @@ export default function ExpensesManagementPage() {
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionReservationTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionReservationDesc')}</p>
             </div>
-            <ReservationExpenseManager />
+            <ReservationExpenseTabPanel />
           </div>
         )}
 
