@@ -29,12 +29,32 @@ function localYmdFromTimestamp(iso: string): string {
   return `${y}-${mo}-${day}`
 }
 
+/**
+ * 그랜드서클 멀티나잇 등: DB `tour_end_datetime` 없이도 달력 칸 수 고정.
+ * `ScheduleView` `getMultiDayTourDays` · `TicketBookingList` `ticketCalendarTourFixedSpanDays`와 동일 규칙.
+ */
+function ticketCalendarTourFixedSpanDays(productId: string | null | undefined): number | null {
+  const pid = (productId || '').trim()
+  if (!pid) return null
+  if (pid.startsWith('MNGC1N') || pid.startsWith('MNM1')) return 2
+  if (pid.startsWith('MNGC2N')) return 3
+  if (pid.startsWith('MNGC3N')) return 4
+  return null
+}
+
 function getTourCalendarEndYmd(tour: {
   tour_date: string
   tour_end_datetime?: string | null
+  product_id?: string | null
 }): string {
   const start = ymdFromDbDate(tour.tour_date)
   if (!start) return ''
+
+  const fixedDays = ticketCalendarTourFixedSpanDays(tour.product_id)
+  if (fixedDays !== null && fixedDays >= 1) {
+    return addCalendarDays(start, fixedDays - 1)
+  }
+
   if (tour.tour_end_datetime) {
     const end = localYmdFromTimestamp(String(tour.tour_end_datetime))
     if (!end) return start
@@ -46,7 +66,7 @@ function getTourCalendarEndYmd(tour: {
 
 function checkInWithinTourCalendarSpan(
   checkInYmd: string,
-  tour: { tour_date: string; tour_end_datetime?: string | null }
+  tour: { tour_date: string; tour_end_datetime?: string | null; product_id?: string | null }
 ): boolean {
   const start = ymdFromDbDate(tour.tour_date)
   const end = getTourCalendarEndYmd(tour)
