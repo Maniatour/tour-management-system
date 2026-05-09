@@ -33,6 +33,8 @@ export type BalanceTotalFilterId = 'all' | 'totalMismatch'
 export interface ReservationActionRequiredModalProps {
   isOpen: boolean
   onClose: () => void
+  /** 운영 큐용 전역 목록을 처음 채우는 동안 */
+  bulkReservationsLoading?: boolean
   reservations: Reservation[]
   customers: Customer[]
   products: Array<{ id: string; name: string; sub_category?: string; base_price?: number }>
@@ -140,6 +142,7 @@ type TablePageSize = (typeof TABLE_PAGE_SIZE_OPTIONS)[number]
 export default function ReservationActionRequiredModal({
   isOpen,
   onClose,
+  bulkReservationsLoading = false,
   reservations,
   customers,
   products,
@@ -755,6 +758,27 @@ export default function ReservationActionRequiredModal({
   }, [isOpen, pricingMismatchDetailMode, currentList.length, totalPages])
 
   if (!isOpen) return null
+
+  if (bulkReservationsLoading) {
+    const loadingMsg =
+      locale === 'en' ? 'Loading all reservations for this queue…' : '처리 큐용 전체 예약을 불러오는 중…'
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose()
+        }}
+      >
+        <div
+          className="flex flex-col items-center gap-3 rounded-xl bg-white px-8 py-10 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+          <p className="text-center text-sm text-gray-700">{loadingMsg}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4">

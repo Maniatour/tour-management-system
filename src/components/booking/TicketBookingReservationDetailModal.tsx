@@ -201,9 +201,9 @@ export type TicketBookingReservationDetailModalProps = {
   readOnly?: boolean
   onEdit?: (booking: TicketBookingReservationDetailRow) => void
   onViewHistory?: (bookingId: string) => void
-  /** OP·매니저 — 삭제 요청(소프트) */
+  /** op·office_manager·manager·super 등 — 삭제 요청(소프트) */
   onRequestSoftDelete?: (bookingId: string) => void
-  /** SUPER — 영구 삭제 */
+  /** SUPER — 삭제 요청된 행만 영구 삭제 */
   onHardDelete?: (bookingId: string) => void
   /** 데이터 로딩 중 (통계에서 비동기 조회 시) */
   loading?: boolean
@@ -607,11 +607,12 @@ export default function TicketBookingReservationDetailModal({
                                           {!readOnly &&
                                           (onEdit ||
                                             onViewHistory ||
-                                            (onHardDelete && canHardDeleteBooking) ||
                                             (onRequestSoftDelete &&
                                               canSoftDeleteRequest &&
-                                              !canHardDeleteBooking &&
-                                              !booking.deletion_requested_at)) ? (
+                                              !booking.deletion_requested_at) ||
+                                            (onHardDelete &&
+                                              canHardDeleteBooking &&
+                                              !!booking.deletion_requested_at)) ? (
                                             <div className="flex flex-col items-stretch gap-1">
                                               {onEdit ? (
                                                 <button
@@ -644,7 +645,6 @@ export default function TicketBookingReservationDetailModal({
                                               ) : null}
                                               {onRequestSoftDelete &&
                                               canSoftDeleteRequest &&
-                                              !canHardDeleteBooking &&
                                               !booking.deletion_requested_at ? (
                                                 <button
                                                   type="button"
@@ -657,7 +657,9 @@ export default function TicketBookingReservationDetailModal({
                                                   {locale === 'en' ? 'Delete' : '삭제'}
                                                 </button>
                                               ) : null}
-                                              {onHardDelete && canHardDeleteBooking ? (
+                                              {onHardDelete &&
+                                              canHardDeleteBooking &&
+                                              booking.deletion_requested_at ? (
                                                 <button
                                                   type="button"
                                                   onClick={() => {
@@ -666,7 +668,7 @@ export default function TicketBookingReservationDetailModal({
                                                   }}
                                                   className="rounded bg-red-600 px-2 py-0.5 text-[10px] text-white hover:bg-red-700"
                                                 >
-                                                  {locale === 'en' ? 'Delete' : '삭제'}
+                                                  {locale === 'en' ? 'Purge' : '영구 삭제'}
                                                 </button>
                                               ) : null}
                                             </div>

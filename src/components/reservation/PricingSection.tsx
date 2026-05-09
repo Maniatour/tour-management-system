@@ -2472,7 +2472,7 @@ export default function PricingSection({
     setFormData,
   ])
   
-  // commission_base_price / commission_amount 자동 업데이트 (값이 실제로 다를 때만 set, 무한 루프 방지)
+  // commission_base_price 자동 동기화(자체 채널): 상품가 기준 베이스만 — 카드 수수료 $는 %로부터 역산하지 않음
   useEffect(() => {
     if (isOTAChannel) return
     if (nonOtaChannelPaymentUserEditedRef.current) return
@@ -2484,27 +2484,20 @@ export default function PricingSection({
     if (basePrice <= 0) return
     if (formData.commission_base_price !== undefined && Math.abs(currentCommissionBase - basePrice) >= 0.01) return
 
-    const calculatedAmount = formData.commission_percent > 0 ? basePrice * (formData.commission_percent / 100) : 0
     const needBase = formData.commission_base_price === undefined || Math.abs(currentCommissionBase - basePrice) >= 0.01
-    const needAmount = formData.commission_percent > 0 && (formData.commission_amount === undefined || Math.abs((formData.commission_amount ?? 0) - calculatedAmount) >= 0.01)
-    if (!needBase && !needAmount) return
+    if (!needBase) return
 
     setFormData((prev: typeof formData) => {
       const newBase = basePrice
-      const newAmount = (prev.commission_percent ?? 0) > 0 ? newBase * ((prev.commission_percent ?? 0) / 100) : (prev.commission_amount ?? 0)
-      if (Math.abs((prev.commission_base_price ?? 0) - newBase) < 0.01 && Math.abs((prev.commission_amount ?? 0) - newAmount) < 0.01) return prev
-      return prev.commission_percent > 0
-        ? { ...prev, commission_base_price: newBase, commission_amount: newAmount }
-        : { ...prev, commission_base_price: newBase }
+      if (Math.abs((prev.commission_base_price ?? 0) - newBase) < 0.01) return prev
+      return { ...prev, commission_base_price: newBase }
     })
   }, [
     discountedProductPrice,
     otaSalePrice,
     formData.subtotal,
     currentCommissionBase,
-    formData.commission_percent,
     formData.commission_base_price,
-    formData.commission_amount,
     formData.productPriceTotal,
     formData.couponDiscount,
     formData.additionalDiscount,
@@ -2529,76 +2522,6 @@ export default function PricingSection({
       }
     }
   }, [isExistingPricingLoaded, formData.commission_amount, formData.commission_percent])
-
-  // 자체 채널: 채널 결제 금액 변경 시 카드 수수료 기본값 자동 업데이트
-  useEffect(() => {
-    if (isReservationCancelled) return
-    if (isOTAChannel) return // OTA 채널은 제외
-    if (nonOtaChannelPaymentUserEditedRef.current) return
-    if (channelPaymentAmountFieldFocusedRef.current) return
-    if (isCardFeeManuallyEdited.current) return // 사용자가 수동으로 입력한 경우 자동 업데이트 안 함
-    if (hasDbCommissionRef.current || isExistingPricingLoaded) return // DB에 값이 있으면 덮어쓰지 않음
-    
-    // 데이터베이스에서 불러온 commission_amount가 있으면 절대 덮어쓰지 않음
-    if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) return
-    if (formData.commission_amount > 0) return
-    
-    // 채널 결제 금액 계산 (잔금 제외)
-    const channelPaymentAmount = (
-      (formData.productPriceTotal - formData.couponDiscount) + 
-      reservationOptionsTotalPrice + 
-      (formData.additionalCost - formData.additionalDiscount) + 
-      formData.tax + 
-      formData.cardFee +
-      formData.prepaymentTip -
-      (formData.onSiteBalanceAmount || 0)
-    )
-    
-    // 고객 실제 지불액 기준으로 카드 수수료 계산
-    const customerPaymentAmount = formData.depositAmount || 0
-    const defaultCommissionPercent = 2.9
-    
-    // 채널 결제 금액이 변경되면 카드 수수료 기준값도 자동 업데이트
-    // 단, commission_amount가 0일 때만 자동 업데이트 (데이터베이스에서 불러온 값이 있으면 절대 덮어쓰지 않음)
-    if (channelPaymentAmount > 0 && customerPaymentAmount > 0 && formData.commission_amount === 0) {
-      const currentBasePrice = formData.commission_base_price || 0
-      
-      // 현재 값이 기본값과 같거나, commission_base_price가 설정되지 않았으면 자동 업데이트
-      if (formData.commission_base_price === undefined || 
-          Math.abs(currentBasePrice - customerPaymentAmount) < 0.01) {
-        const commissionPercent =
-          formData.commission_percent != null ? formData.commission_percent : defaultCommissionPercent
-        // 15센트를 더한 최종 카드 수수료 (0%는 금액 0 — 필요 시 $ 필드에서 직접 입력)
-        const calculatedCommissionAmount =
-          commissionPercent > 0
-            ? Number((customerPaymentAmount * (commissionPercent / 100) + 0.15).toFixed(2))
-            : 0
-        setFormData((prev: typeof formData) => ({ 
-          ...prev, 
-          commission_base_price: customerPaymentAmount,
-          commission_percent: commissionPercent,
-          commission_amount: calculatedCommissionAmount
-        }))
-      }
-    }
-  }, [
-    isOTAChannel,
-    formData.productPriceTotal,
-    formData.couponDiscount,
-    formData.additionalCost,
-    formData.additionalDiscount,
-    formData.tax,
-    formData.cardFee,
-    formData.prepaymentTip,
-    formData.onSiteBalanceAmount,
-    formData.depositAmount,
-    reservationOptionsTotalPrice,
-    formData.commission_base_price,
-    formData.commission_amount,
-    isExistingPricingLoaded,
-    setFormData,
-    isReservationCancelled
-  ])
 
   return (
     <div className="relative">
@@ -4063,25 +3986,12 @@ export default function PricingSection({
                             type="number"
                             value={formData.commission_percent ?? 2.9}
                             onChange={(e) => {
-                              isCardFeeManuallyEdited.current = true
-                              markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
+                              markPricingEdited('commission_percent', 'channel_settlement_amount')
                               const newPercent = Number(e.target.value) || 0
-                              setFormData((prev: typeof formData) => {
-                                const bp =
-                                  prev.commission_base_price !== undefined
-                                    ? prev.commission_base_price
-                                    : (prev.depositAmount || 0)
-                                const amt =
-                                  newPercent > 0
-                                    ? Number((bp * (newPercent / 100) + 0.15).toFixed(2))
-                                    : 0
-                                return {
-                                  ...omitChannelSettlementAmount(prev),
-                                  commission_base_price: bp,
-                                  commission_percent: newPercent,
-                                  commission_amount: amt,
-                                }
-                              })
+                              setFormData((prev: typeof formData) => ({
+                                ...omitChannelSettlementAmount(prev),
+                                commission_percent: newPercent,
+                              }))
                             }}
                             className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                             step="0.01"
@@ -4143,24 +4053,6 @@ export default function PricingSection({
                           placeholder="0"
                         />
                       </div>
-                      {(() => {
-                        const basePrice = formData.commission_base_price !== undefined 
-                          ? formData.commission_base_price 
-                          : (formData.depositAmount || 0)
-                        const commissionPercent = formData.commission_percent ?? 2.9
-                        const calculatedAmount = basePrice * (commissionPercent / 100)
-                        const currentAmount = effectiveCommissionAmount
-                        // 15센트가 포함되어 있는지 확인 (계산된 값 + 0.15와 현재 값이 거의 같으면)
-                        const isWith15Cents = Math.abs(currentAmount - (calculatedAmount + 0.15)) < 0.01
-                        if (isWith15Cents && basePrice > 0) {
-                          return (
-                            <span className="text-xs text-gray-500">
-                              ({basePrice.toFixed(2)} × {commissionPercent}% + $0.15)
-                            </span>
-                          )
-                        }
-                        return null
-                      })()}
                     </div>
                   </div>
                 </>

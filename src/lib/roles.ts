@@ -146,7 +146,12 @@ export function hasPermission(userRole: UserRole, permission: keyof UserPermissi
 /** team.position — DB에는 `office manager`·`매니저` 등으로 저장되는 경우가 있음 */
 export function isManagerTeamPosition(rawPosition: string | null | undefined): boolean {
   const p = String(rawPosition ?? '').toLowerCase().trim()
-  return p === 'manager' || p === 'office manager' || p === '매니저'
+  return (
+    p === 'manager' ||
+    p === 'office manager' ||
+    p === 'office_manager' ||
+    p === '매니저'
+  )
 }
 
 export function canViewEmployeeHourlyRatesHistory(

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { X, Save, Calendar, DollarSign, Users, Printer, CheckCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
@@ -453,9 +453,26 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   }, [isOpen, selectedStaffEmails, startDate, endDate, opMembers, fetchAttendanceForStaff])
 
   const unsettledTours = tours.filter(t => !t.settled_at)
+  const settledTours = tours.filter(t => !!t.settled_at)
   const totalOfficeTips = unsettledTours.reduce((s, row) => s + (row.office_tip_amount || 0), 0)
   const totalPrepaidTips = unsettledTours.reduce((s, row) => s + (row.prepaid_tips_office_share || 0), 0)
   const totalToDistribute = totalOfficeTips + totalPrepaidTips
+
+  const totalPeriodOfficeTips = tours.reduce((s, row) => s + (row.office_tip_amount || 0), 0)
+  const totalPeriodPrepaidTips = tours.reduce((s, row) => s + (row.prepaid_tips_office_share || 0), 0)
+  const totalPeriodGrand = totalPeriodOfficeTips + totalPeriodPrepaidTips
+
+  const totalSettledOfficeTips = settledTours.reduce((s, row) => s + (row.office_tip_amount || 0), 0)
+  const totalSettledPrepaidTips = settledTours.reduce((s, row) => s + (row.prepaid_tips_office_share || 0), 0)
+  const totalSettledPool = totalSettledOfficeTips + totalSettledPrepaidTips
+
+  const sumShareForPool = useCallback((pool: number) => {
+    const raw = employeeStats.reduce((sum, e) => sum + pool * (e.sharePercent / 100), 0)
+    return Math.round(raw * 100) / 100
+  }, [employeeStats])
+
+  const shareSumUnsettled = useMemo(() => sumShareForPool(totalToDistribute), [sumShareForPool, totalToDistribute])
+  const shareSumSettled = useMemo(() => sumShareForPool(totalSettledPool), [sumShareForPool, totalSettledPool])
 
   useEffect(() => {
     setEmployeeStats(prev =>
@@ -823,10 +840,51 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                   </table>
                 </div>
               )}
-              <div className="mt-2 space-y-1 text-sm font-medium text-gray-700">
-                <div>{t('officeTipsTotal') || '총 오피스 팁'} (미정산): ${totalOfficeTips.toFixed(2)}</div>
-                <div>Prepaid Tips 총합 (미정산): ${totalPrepaidTips.toFixed(2)}</div>
-                <div className="border-t border-gray-200 pt-1 mt-1 font-semibold">배분 할 금액: ${totalToDistribute.toFixed(2)}</div>
+              <div className="mt-2 space-y-1.5 text-sm text-gray-700">
+                {tours.length > 0 && (
+                  <>
+                    <div className="font-semibold text-gray-900">{t('officeTipsPeriodSummaryTitle')}</div>
+                    <div className="font-medium">
+                      {t('officeTipsPeriodTotalOfficeTips')}: ${totalPeriodOfficeTips.toFixed(2)}
+                    </div>
+                    <div className="font-medium">
+                      {t('officeTipsPeriodTotalPrepaid')}: ${totalPeriodPrepaidTips.toFixed(2)}
+                    </div>
+                    <div className="font-semibold text-gray-900 border-b border-gray-200 pb-2">
+                      {t('officeTipsPeriodGrandTotal')}: ${totalPeriodGrand.toFixed(2)}
+                    </div>
+                    <div className="font-semibold text-green-800 pt-1">
+                      {t('officeTipsSettledTotal')}: ${totalSettledPool.toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500 -mt-1">
+                      {t('officeTipsSettledBreakdown', {
+                        office: `$${totalSettledOfficeTips.toFixed(2)}`,
+                        prepaid: `$${totalSettledPrepaidTips.toFixed(2)}`,
+                      })}
+                    </div>
+                    <div className="font-semibold text-amber-900">{t('officeTipsUnsettledTotal')}: ${totalToDistribute.toFixed(2)}</div>
+                    <div className="text-xs text-gray-500 -mt-1">
+                      {t('officeTipsUnsettledBreakdown', {
+                        office: `$${totalOfficeTips.toFixed(2)}`,
+                        prepaid: `$${totalPrepaidTips.toFixed(2)}`,
+                      })}
+                    </div>
+                  </>
+                )}
+                {employeeStats.length > 0 && (totalToDistribute > 0 || totalSettledPool > 0) && (
+                  <div className="border-t border-gray-200 pt-2 mt-1 space-y-1 font-medium">
+                    {totalToDistribute > 0 && (
+                      <div className="text-amber-900">
+                        {t('officeTipsShareSumUnsettled')}: ${shareSumUnsettled.toFixed(2)}
+                      </div>
+                    )}
+                    {totalSettledPool > 0 && (
+                      <div className="text-green-900">
+                        {t('officeTipsShareSumSettled')}: ${shareSumSettled.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

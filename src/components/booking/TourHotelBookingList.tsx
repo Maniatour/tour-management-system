@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
 import BookingHistory from './BookingHistory';
+import TourHotelBookingDeletionReviewModal from './TourHotelBookingDeletionReviewModal';
 import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar } from 'lucide-react';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
+import { useAuth } from '@/contexts/AuthContext';
+import { isSuperAdminActor } from '@/lib/superAdmin';
+import { canRequestTicketBookingSoftDelete } from '@/lib/ticketBookingSoftDelete';
 
 interface TourHotelBooking {
   id: string;
@@ -29,6 +33,8 @@ interface TourHotelBooking {
   status: string;
   created_at: string;
   updated_at: string;
+  deletion_requested_at?: string | null;
+  deletion_requested_by?: string | null;
   tours?: {
     tour_date: string;
     products?: {
@@ -41,6 +47,15 @@ interface TourHotelBooking {
 export default function TourHotelBookingList() {
   const locale = useLocale();
   const t = useTranslations('booking.calendar');
+  const { user, userPosition } = useAuth();
+  const canBookingMgmtSoftDelete = useMemo(
+    () => canRequestTicketBookingSoftDelete(userPosition),
+    [userPosition]
+  );
+  const canSuperPurgeHotelBookings = useMemo(
+    () => isSuperAdminActor(user?.email, userPosition),
+    [user?.email, userPosition]
+  );
   const [bookings, setBookings] = useState<TourHotelBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -105,6 +120,7 @@ export default function TourHotelBookingList() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TourHotelBooking[]>([]);
+  const [hotelDeletionReviewOpen, setHotelDeletionReviewOpen] = useState(false);
 
   useEffect(() => {
     fetchBookings();
@@ -118,6 +134,7 @@ export default function TourHotelBookingList() {
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('tour_hotel_bookings')
         .select('*')
+        .is('deletion_requested_at', null)
         .order('check_in_date', { ascending: false }) as { data: TourHotelBooking[] | null; error: Error | null };
 
       if (bookingsError) throw bookingsError;
@@ -204,21 +221,42 @@ export default function TourHotelBookingList() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('정말로 이 부킹을 삭제하시겠습니까?')) return;
+  const handleRequestSoftDelete = async (id: string) => {
+    if (!canBookingMgmtSoftDelete) {
+      alert(
+        locale === 'ko'
+          ? '삭제 권한이 없습니다.'
+          : 'You do not have permission to delete this booking.'
+      );
+      return;
+    }
+    const msg =
+      locale === 'ko'
+        ? '삭제를 요청하시겠습니까? (목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.)'
+        : 'Request deletion? It will be hidden until a super admin permanently deletes it.';
+    if (!confirm(msg)) return;
 
+    const email = user?.email || '';
     try {
       const { error } = await supabase
         .from('tour_hotel_bookings')
-        .delete()
+        .update({
+          deletion_requested_at: new Date().toISOString(),
+          deletion_requested_by: email || null,
+        })
         .eq('id', id);
 
       if (error) throw error;
-      
-      setBookings(prev => prev.filter(booking => booking.id !== id));
+
+      setBookings((prev) => prev.filter((booking) => booking.id !== id));
+      alert(
+        locale === 'ko'
+          ? '삭제 요청되었습니다. 목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.'
+          : 'Deletion requested. Hidden from the list until a super admin permanently deletes it.'
+      );
     } catch (error) {
-      console.error('투어 호텔 부킹 삭제 오류:', error);
-      alert('삭제 중 오류가 발생했습니다.');
+      console.error('투어 호텔 부킹 삭제 요청 오류:', error);
+      alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Failed to request deletion.');
     }
   };
 
@@ -341,6 +379,15 @@ export default function TourHotelBookingList() {
       <div className="flex items-center justify-between px-1 sm:px-6 py-4">
         <h2 className="text-lg sm:text-2xl font-bold">{t('tourHotelBookingManagement')}</h2>
         <div className="flex items-center space-x-2">
+          {canSuperPurgeHotelBookings ? (
+            <button
+              type="button"
+              onClick={() => setHotelDeletionReviewOpen(true)}
+              className="px-2 sm:px-3 py-1.5 rounded-md border border-amber-300 bg-amber-50 text-amber-900 text-xs sm:text-sm font-medium hover:bg-amber-100"
+            >
+              {locale === 'ko' ? '삭제 요청 목록' : 'Pending deletions'}
+            </button>
+          ) : null}
           {/* 뷰 전환 버튼 */}
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
@@ -781,12 +828,15 @@ export default function TourHotelBookingList() {
                       >
                         {t('history')}
                       </button>
-                      <button
-                        onClick={() => handleDelete(booking.id)}
-                        className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
-                      >
-                        {t('delete')}
-                      </button>
+                      {canBookingMgmtSoftDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRequestSoftDelete(booking.id)}
+                          className="flex-1 bg-amber-600 text-white py-2 px-3 rounded-md hover:bg-amber-700 text-sm font-medium transition-colors"
+                        >
+                          {t('delete')}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -840,6 +890,15 @@ export default function TourHotelBookingList() {
           }}
         />
       )}
+
+      <TourHotelBookingDeletionReviewModal
+        open={hotelDeletionReviewOpen}
+        onOpenChange={setHotelDeletionReviewOpen}
+        allowBulkPermanentDelete={canSuperPurgeHotelBookings}
+        onAfterBulkDelete={() => {
+          void fetchBookings();
+        }}
+      />
 
       {/* 부킹 상세 모달 */}
       {showBookingModal && (
@@ -955,15 +1014,18 @@ export default function TourHotelBookingList() {
                         >
                           {t('history')}
                         </button>
-                        <button
-                          onClick={() => {
-                            handleDelete(booking.id);
-                            setShowBookingModal(false);
-                          }}
-                          className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
-                        >
-                          {t('delete')}
-                        </button>
+                        {canBookingMgmtSoftDelete ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleRequestSoftDelete(booking.id);
+                              setShowBookingModal(false);
+                            }}
+                            className="flex-1 bg-amber-600 text-white py-2 px-3 rounded-md hover:bg-amber-700 text-sm font-medium transition-colors"
+                          >
+                            {t('delete')}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </div>

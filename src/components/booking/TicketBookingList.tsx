@@ -10,12 +10,10 @@ import {
   canRequestTicketBookingSoftDelete,
 } from '@/lib/ticketBookingSoftDelete';
 import TicketBookingDeletionReviewModal from '@/components/booking/TicketBookingDeletionReviewModal';
-import { supabase } from '@/lib/supabase';
+import { supabase, isAbortLikeError } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import TicketBookingBulkAddModal from './TicketBookingBulkAddModal';
-import TicketBookingAxisSummary, {
-  buildTicketBookingAxisTooltipLine,
-} from '@/components/booking/TicketBookingAxisSummary';
+import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSummary';
 import TicketInvoiceUploadModal from './TicketInvoiceUploadModal';
 import BookingHistory from './BookingHistory';
 import TicketBookingReservationDetailModal, {
@@ -495,6 +493,11 @@ interface TourEvent {
   };
 }
 
+/** 수량·시간 변경 요청 진행 중(`change_status === requested`) */
+function isTicketBookingChangeRequestPending(booking: Pick<TicketBooking, 'change_status'>): boolean {
+  return String(booking.change_status ?? 'none').toLowerCase().trim() === 'requested';
+}
+
 function ticketCalendarProductKey(tour: TourEvent): string {
   const pid = (tour.product_id || '').trim();
   if (pid) return `pid:${pid}`;
@@ -535,11 +538,21 @@ function ticketCalendarLegendChipDisplayProps(
   return { style: { backgroundColor: preset.bgHex, color: preset.textHex } };
 }
 
+/** 공급업체 이름이 See Canyon 계열이면 달력·목록 칩을 하늘색으로 고정 */
+function isSeeCanyonSupplierCompany(company: string | null | undefined): boolean {
+  const k = (company || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!k) return false;
+  return k === 'see canyon' || k.includes('see canyon');
+}
+
 /** 티켓 부킹 공급처(company)별 구분색 — 스케줄 프리셋 팔레트와 동일 소스, 문자열 해시로 고정 */
 function ticketBookingSupplierColors(company: string | null | undefined): {
   backgroundColor: string;
   color: string;
 } {
+  if (isSeeCanyonSupplierCompany(company)) {
+    return { backgroundColor: '#e0f2fe', color: '#0c4a6e' };
+  }
   const key = (company || '').trim().toLowerCase() || '__none__';
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
@@ -710,17 +723,173 @@ function mergeTicketBookingAxesFromRpcRow(
   return next;
 }
 
-/** 탭 전환·언마운트·중복 요청 등으로 fetch 가 취소될 때 — 네트워크 실패와 구분 */
-function isAbortLikeError(error: unknown): boolean {
-  if (error == null) return false;
-  if (typeof error === 'object') {
-    const name = (error as { name?: string }).name;
-    if (name === 'AbortError') return true;
-    const msg = String((error as { message?: unknown }).message ?? '');
-    if (/abort/i.test(msg)) return true;
-  }
-  if (typeof error === 'string' && /abort/i.test(error)) return true;
-  return false;
+/** 달력 RN 칩 호버: 테이블과 동일한 축 뱃지 + 변경 요청 시 시간·수량 전후 */
+function TicketCalendarRnBookingChipTooltip({
+  rows,
+  locale,
+  tAxis,
+  tAct,
+  titleLine,
+  supplierStyle,
+  chipClassName,
+  onClick,
+  children,
+}: {
+  rows: TicketBooking[];
+  locale: string;
+  tAxis: (key: string) => string;
+  tAct: (key: string) => string;
+  titleLine: string;
+  supplierStyle: { backgroundColor: string; color: string };
+  chipClassName: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHide = () => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  };
+  const show = () => {
+    clearHide();
+    setOpen(true);
+  };
+  const hideSoon = () => {
+    clearHide();
+    hideTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+
+  useEffect(() => {
+    return () => clearHide();
+  }, []);
+
+  return (
+    <div className="relative min-w-0" onMouseEnter={show} onMouseLeave={hideSoon}>
+      <button
+        type="button"
+        className={`font-inherit text-inherit ${chipClassName}`}
+        style={{
+          backgroundColor: supplierStyle.backgroundColor,
+          color: supplierStyle.color,
+        }}
+        aria-label={titleLine}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+      {open ? (
+        <div
+          className="absolute left-0 top-full z-[100] min-w-[15rem] max-w-[min(94vw,22rem)] pt-1"
+          onMouseEnter={show}
+          onMouseLeave={hideSoon}
+        >
+          <div
+            className="rounded-lg border border-gray-200 bg-white p-2.5 text-left shadow-xl ring-1 ring-black/5"
+            role="tooltip"
+          >
+            <div className="mb-2 border-b border-gray-100 pb-2 text-[10px] font-medium leading-snug text-gray-600">
+              {titleLine}
+            </div>
+            <div className="space-y-3">
+              {rows.map((b) => {
+                const changePending = isTicketBookingChangeRequestPending(b);
+                const cs = String(b.change_status ?? 'none').toLowerCase();
+                const showChangeBadge = !isWorkflowInitialPhase(b) && cs !== 'none';
+                return (
+                  <div
+                    key={b.id}
+                    className="space-y-1.5 border-b border-gray-100 pb-2 last:border-0 last:pb-0"
+                  >
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span
+                        className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBookingAxisStatusBadgeClass(b.booking_status)}`}
+                      >
+                        <TicketBookingBookingStatusIcon
+                          status={b.booking_status}
+                          className="h-3 w-3 shrink-0"
+                          title={formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
+                        />
+                        <span className="truncate">
+                          {formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
+                        </span>
+                      </span>
+                      <span
+                        className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getVendorAxisStatusBadgeClass(b.vendor_status)}`}
+                      >
+                        <TicketBookingVendorStatusIcon
+                          status={b.vendor_status}
+                          className="h-3 w-3 shrink-0"
+                          title={formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
+                        />
+                        <span className="truncate">
+                          {formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
+                        </span>
+                      </span>
+                      {showChangeBadge ? (
+                        <span
+                          className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getChangeAxisStatusBadgeClass(b.change_status)}`}
+                        >
+                          {formatTicketBookingAxisLabel(tAxis, 'change', b.change_status)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {changePending ? (
+                      <div className="space-y-1 rounded-md bg-red-50 px-2 py-1.5 ring-1 ring-red-200">
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-red-800">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
+                        </div>
+                        <div className="text-[10px] font-medium text-gray-900">
+                          <span className="text-red-700">
+                            {locale.startsWith('en') ? 'Time' : '시간'}
+                          </span>{' '}
+                          <span className="tabular-nums">{formatTimeArrow(b)}</span>
+                        </div>
+                        <div className="text-[10px] font-medium text-gray-900">
+                          <span className="text-red-700">
+                            {locale.startsWith('en') ? 'Quantity' : '수량'}
+                          </span>{' '}
+                          <span className="tabular-nums">{formatQtyArrow(b)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5 text-[10px] font-medium text-gray-900">
+                        <div>
+                          <span className="text-gray-500">
+                            {locale.startsWith('en') ? 'Time' : '시간'}
+                          </span>{' '}
+                          <span className="tabular-nums">{formatTimeArrow(b)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">
+                            {locale.startsWith('en') ? 'Quantity' : '수량'}
+                          </span>{' '}
+                          <span className="tabular-nums">{formatQtyArrow(b)}</span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-gray-600">
+                      <span>
+                        {tAct('axisPayment')}{' '}
+                        {formatTicketBookingAxisLabel(tAxis, 'payment', b.payment_status)}
+                      </span>
+                      <span>
+                        {tAct('axisRefund')}{' '}
+                        {formatTicketBookingAxisLabel(tAxis, 'refund', b.refund_status)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** 테이블 축 드롭다운 저장 후 Ctrl+Z 되돌리기 스택 최대 길이 */
@@ -733,7 +902,7 @@ export default function TicketBookingList() {
     () => isSuperAdminActor(user?.email, userPosition),
     [user?.email, userPosition]
   );
-  const canRequestTicketBookingSoftDeleteUi = useMemo(
+  const canBookingMgmtSoftDeleteUi = useMemo(
     () => canRequestTicketBookingSoftDelete(userPosition),
     [userPosition]
   );
@@ -1095,10 +1264,15 @@ export default function TicketBookingList() {
         bookingsData = filterTicketBookingsExcludedFromMainUi(bookingsData)
       }
 
-      // supplier_ticket_purchases — 배치를 묶어 병렬 조회
-      if (bookingsData && bookingsData.length > 0) {
+      const emptyRefundMap = (): Record<string, TicketRefundLineRow[]> => ({});
+
+      const loadSupplierProductMap = async (
+        list: TicketBooking[]
+      ): Promise<Map<string, { season_dates: SeasonDate[] | null }>> => {
+        const out = new Map<string, { season_dates: SeasonDate[] | null }>();
+        if (!list.length) return out;
         try {
-          const bookingIds = bookingsData.map((b: TicketBooking) => b.id);
+          const bookingIds = list.map((b) => b.id);
           const BATCH_SIZE = 120;
           const PARALLEL = 6;
           const batches: string[][] = [];
@@ -1136,47 +1310,42 @@ export default function TicketBookingList() {
               );
             }
           }
-
-          const productMap = new Map<string, { season_dates: SeasonDate[] | null }>();
           for (const purchase of purchasesData) {
             if (purchase.booking_id && purchase.supplier_products) {
-              productMap.set(purchase.booking_id, {
+              out.set(purchase.booking_id, {
                 season_dates: purchase.supplier_products.season_dates,
               });
             }
           }
-          setSupplierProductsMap(productMap);
+          return out;
         } catch (error) {
           console.warn('Supplier product 정보 조회 오류:', error);
+          return out;
         }
-      }
+      };
 
-      if (!bookingsData || bookingsData.length === 0) {
-        setBookings([]);
-        setRefundLinesByBookingId({});
-        setInvoiceAttachmentMap(new Map());
-        setZelleAttachmentMap(new Map());
-        return;
-      }
-
-      const bookingsWithTourId = (bookingsData || []).filter((booking: TicketBooking) => booking.tour_id);
-
-      if (bookingsWithTourId.length === 0) {
-        setBookings(bookingsData);
-        setRefundLinesByBookingId({});
-        await refreshInvoiceAttachmentMapForBookings(bookingsData);
-        return;
-      }
-
-      // tour_id 목록 배치 조회
-      const tourIds = [...new Set(bookingsWithTourId.map((booking: TicketBooking) => booking.tour_id))];
-      let toursData: any[] = [];
-      const TOUR_BATCH = 100
-      for (let i = 0; i < tourIds.length; i += TOUR_BATCH) {
-        const batch = tourIds.slice(i, i + TOUR_BATCH) as string[]
-        const { data: batchTours, error: batchError } = await supabase
-          .from('tours')
-          .select(`
+      const mergeToursRefundsAndBookings = async (
+        list: TicketBooking[]
+      ): Promise<{
+        rows: TicketBooking[];
+        refundMap: Record<string, TicketRefundLineRow[]>;
+      }> => {
+        const withTour = list.filter((b) => b.tour_id);
+        if (withTour.length === 0) {
+          return { rows: list, refundMap: emptyRefundMap() };
+        }
+        const tourIds = [
+          ...new Set(
+            withTour.map((b) => b.tour_id).filter((id): id is string => typeof id === 'string' && id.length > 0)
+          ),
+        ];
+        let toursData: TourEvent[] = [];
+        const TOUR_BATCH = 100;
+        for (let i = 0; i < tourIds.length; i += TOUR_BATCH) {
+          const batch = tourIds.slice(i, i + TOUR_BATCH);
+          const { data: batchTours, error: batchError } = await supabase
+            .from('tours')
+            .select(`
             id,
             tour_date,
             tour_status,
@@ -1186,132 +1355,140 @@ export default function TicketBookingList() {
               name_en
             )
           `)
-          .in('id', batch)
-        if (batchError) {
-          console.warn('투어 정보 조회 오류:', batchError)
-          break
+            .in('id', batch);
+          if (batchError) {
+            console.warn('투어 정보 조회 오류:', batchError);
+            break;
+          }
+          if (batchTours?.length) {
+            const activeOnly = batchTours.filter(
+              (t: { tour_status?: string | null }) => !isTourCancelled(t.tour_status)
+            );
+            toursData = toursData.concat(activeOnly as TourEvent[]);
+          }
         }
-        if (batchTours?.length) {
-          const activeOnly = batchTours.filter(
-            (t: { tour_status?: string | null }) => !isTourCancelled(t.tour_status)
+        const toursMap = new Map<string, TourEvent>();
+        for (const tour of toursData) {
+          toursMap.set(tour.id, tour);
+        }
+        const allResIds = new Set<string>();
+        for (const tour of toursData) {
+          for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
+            allResIds.add(rid);
+          }
+        }
+        const resIdList = [...allResIds];
+        type ResPeopleRow = { id: string; total_people: number | null; status: string | null };
+        let reservationsRows: ResPeopleRow[] = [];
+        const RES_BATCH = 100;
+        const RES_PARALLEL = 5;
+        for (let i = 0; i < resIdList.length; i += RES_BATCH * RES_PARALLEL) {
+          const slice = resIdList.slice(i, i + RES_BATCH * RES_PARALLEL);
+          const chunks: string[][] = [];
+          for (let j = 0; j < slice.length; j += RES_BATCH) {
+            chunks.push(slice.slice(j, j + RES_BATCH));
+          }
+          const pages = await Promise.all(
+            chunks.map((chunk) =>
+              supabase
+                .from('reservations')
+                .select('id, total_people, status')
+                .in('id', chunk)
+                .then(({ data }) => data ?? [])
+            )
           );
-          toursData = toursData.concat(activeOnly);
+          for (const resPage of pages) {
+            if (resPage.length) reservationsRows = reservationsRows.concat(resPage as ResPeopleRow[]);
+          }
         }
-      }
-      const toursError = null
+        const resById = new Map<string, ResPeopleRow>();
+        for (const r of reservationsRows) resById.set(r.id, r);
+        const tourTotalPeopleByTourId = new Map<string, number>();
+        for (const tour of toursData) {
+          let sum = 0;
+          for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
+            const r = resById.get(rid);
+            if (!r || isReservationCancelledStatus(r.status)) continue;
+            sum += Number(r.total_people) || 0;
+          }
+          tourTotalPeopleByTourId.set(tour.id, sum);
+        }
+        const rows = list.map((booking) => {
+          const baseBooking = {
+            ...booking,
+            check_in_date: booking.check_in_date || booking.submit_on,
+          };
+          if (booking.tour_id && toursMap.has(booking.tour_id)) {
+            const tour = toursMap.get(booking.tour_id);
+            const toursPart: NonNullable<TicketBooking['tours']> = {
+              tour_date: tour?.tour_date || '',
+              total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
+            };
+            if (tour?.products != null) {
+              const p = tour.products;
+              toursPart.products = {
+                name: p.name,
+                ...(typeof p.name_en === 'string' ? { name_en: p.name_en } : {}),
+              };
+            }
+            return { ...baseBooking, tours: toursPart };
+          }
+          return baseBooking;
+        });
+        const bookingIds = [
+          ...new Set(list.map((b) => b.id).filter((id): id is string => typeof id === 'string' && id.length > 0)),
+        ];
+        const refundMap: Record<string, TicketRefundLineRow[]> = {};
+        if (bookingIds.length > 0) {
+          try {
+            const REFUND_ANCHOR_BATCH = 100;
+            for (let i = 0; i < bookingIds.length; i += REFUND_ANCHOR_BATCH) {
+              const batch = bookingIds.slice(i, i + REFUND_ANCHOR_BATCH);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const { data: rlRows, error: rlErr } = await (supabase as any)
+                .from('ticket_booking_refund_lines')
+                .select('id, anchor_booking_id, status, amount, ea, note')
+                .in('anchor_booking_id', batch);
+              if (rlErr) {
+                console.warn('환불 라인 조회 오류:', rlErr.message ?? rlErr);
+                continue;
+              }
+              if (rlRows && Array.isArray(rlRows)) {
+                for (const row of rlRows as unknown as TicketRefundLineRow[]) {
+                  const k = row.anchor_booking_id;
+                  if (!refundMap[k]) refundMap[k] = [];
+                  refundMap[k].push(row);
+                }
+              }
+            }
+          } catch {
+            /* 마이그레이션 미적용 등 */
+          }
+        }
+        return { rows, refundMap };
+      };
 
-      if (toursError) {
-        console.warn('투어 정보 조회 오류:', toursError);
-        setBookings(bookingsData);
+      if (!bookingsData || bookingsData.length === 0) {
+        setBookings([]);
         setRefundLinesByBookingId({});
-        await refreshInvoiceAttachmentMapForBookings(bookingsData);
+        setInvoiceAttachmentMap(new Map());
+        setZelleAttachmentMap(new Map());
         return;
       }
 
-      // tours 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
-      const toursMap = new Map<string, TourEvent>();
-      (toursData || []).forEach((tour: TourEvent) => {
-        toursMap.set(tour.id, tour);
-      });
+      const [supplierMap, merged] = await Promise.all([
+        loadSupplierProductMap(bookingsData),
+        mergeToursRefundsAndBookings(bookingsData),
+      ]);
 
-      const allResIds = new Set<string>();
-      for (const tour of toursData || []) {
-        for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
-          allResIds.add(rid);
-        }
-      }
-      const resIdList = [...allResIds];
-      type ResPeopleRow = { id: string; total_people: number | null; status: string | null };
-      let reservationsRows: ResPeopleRow[] = [];
-      const RES_BATCH = 100;
-      for (let i = 0; i < resIdList.length; i += RES_BATCH) {
-        const chunk = resIdList.slice(i, i + RES_BATCH);
-        const { data: resPage } = await supabase
-          .from('reservations')
-          .select('id, total_people, status')
-          .in('id', chunk);
-        if (resPage?.length) reservationsRows = reservationsRows.concat(resPage as ResPeopleRow[]);
-      }
-      const resById = new Map<string, ResPeopleRow>();
-      for (const r of reservationsRows) resById.set(r.id, r);
+      if (gen !== fetchBookingsGenRef.current) return;
 
-      const tourTotalPeopleByTourId = new Map<string, number>();
-      for (const tour of toursData || []) {
-        let sum = 0;
-        for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
-          const r = resById.get(rid);
-          if (!r || isReservationCancelledStatus(r.status)) continue;
-          sum += Number(r.total_people) || 0;
-        }
-        tourTotalPeopleByTourId.set((tour as { id: string }).id, sum);
-      }
+      setSupplierProductsMap(supplierMap);
+      setRefundLinesByBookingId(merged.refundMap);
+      setBookings(merged.rows);
+      if (gen === fetchBookingsGenRef.current) setLoading(false);
 
-      const bookingsWithTours = (bookingsData || []).map((booking: TicketBooking) => {
-        const baseBooking = {
-          ...booking,
-          check_in_date: booking.check_in_date || booking.submit_on,
-        };
-
-        if (booking.tour_id && toursMap.has(booking.tour_id)) {
-          const tour = toursMap.get(booking.tour_id);
-          const toursPart: NonNullable<TicketBooking['tours']> = {
-            tour_date: tour?.tour_date || '',
-            total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
-          };
-          if (tour?.products != null) {
-            const p = tour.products;
-            toursPart.products = {
-              name: p.name,
-              ...(typeof p.name_en === 'string' ? { name_en: p.name_en } : {}),
-            };
-          }
-          return {
-            ...baseBooking,
-            tours: toursPart,
-          };
-        }
-        return baseBooking;
-      });
-
-      const bookingIds = [
-        ...new Set(
-          (bookingsData || [])
-            .map((b: TicketBooking) => b.id)
-            .filter((id): id is string => typeof id === 'string' && id.length > 0)
-        ),
-      ];
-      const refundMap: Record<string, TicketRefundLineRow[]> = {};
-      if (bookingIds.length > 0) {
-        try {
-          // GET 쿼리스트링 한도 — anchor_booking_id=in.(…) 가 길면 400 (Bad Request) 발생 가능
-          const REFUND_ANCHOR_BATCH = 100;
-          for (let i = 0; i < bookingIds.length; i += REFUND_ANCHOR_BATCH) {
-            const batch = bookingIds.slice(i, i + REFUND_ANCHOR_BATCH);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: rlRows, error: rlErr } = await (supabase as any)
-              .from('ticket_booking_refund_lines')
-              .select('id, anchor_booking_id, status, amount, ea, note')
-              .in('anchor_booking_id', batch);
-            if (rlErr) {
-              console.warn('환불 라인 조회 오류:', rlErr.message ?? rlErr);
-              continue;
-            }
-            if (rlRows && Array.isArray(rlRows)) {
-              for (const row of rlRows as unknown as TicketRefundLineRow[]) {
-                const k = row.anchor_booking_id;
-                if (!refundMap[k]) refundMap[k] = [];
-                refundMap[k].push(row);
-              }
-            }
-          }
-        } catch {
-          /* 마이그레이션 미적용 등 */
-        }
-      }
-      setRefundLinesByBookingId(refundMap);
-
-      setBookings(bookingsWithTours);
-      await refreshInvoiceAttachmentMapForBookings(bookingsWithTours);
+      await refreshInvoiceAttachmentMapForBookings(merged.rows);
 
       // submitted_by 이메일로 team 테이블에서 name_ko 조회
       const submittedByEmails = [...new Set(
@@ -1538,6 +1715,7 @@ export default function TicketBookingList() {
         .order('tour_date', { ascending: true });
 
       if (toursError) {
+        if (isAbortLikeError(toursError)) return;
         console.error('투어 데이터 조회 오류:', toursError);
         throw toursError;
       }
@@ -1686,6 +1864,7 @@ export default function TicketBookingList() {
 
       setTourEvents(tourEventsWithStaff);
     } catch (error) {
+      if (isAbortLikeError(error)) return;
       console.error('투어 이벤트 조회 오류:', error);
       setTourEvents([]);
     }
@@ -1733,12 +1912,12 @@ export default function TicketBookingList() {
     if (!canSuperDeleteTicketBooking) {
       alert(
         locale === 'ko'
-          ? '입장권 부킹 행 삭제는 SUPER 관리자만 할 수 있습니다.'
-          : 'Only SUPER admins can delete ticket booking rows.'
+          ? '영구 삭제는 SUPER 관리자만 할 수 있습니다.'
+          : 'Only super admins can permanently delete booking rows.'
       );
       return;
     }
-    if (!confirm('정말로 이 부킹을 삭제하시겠습니까?')) return;
+    if (!confirm('정말로 이 부킹을 영구 삭제하시겠습니까?')) return;
 
     try {
       const { error } = await supabase
@@ -2880,6 +3059,7 @@ export default function TicketBookingList() {
     opts?: { variant?: 'default' | 'modalForm' }
   ) => {
     const isModalForm = opts?.variant === 'modalForm';
+    const changePending = isTicketBookingChangeRequestPending(booking);
     const cancelDueDate = getCancelDueDate(booking);
     const isOverdue = cancelDueDate ? new Date(cancelDueDate) < new Date() : false;
     const supplierStyle = ticketBookingSupplierColors(booking.company);
@@ -2912,11 +3092,21 @@ export default function TicketBookingList() {
         key={booking.id}
         className={
           isModalForm
-            ? 'max-w-full rounded-xl border border-gray-200 bg-white p-3 shadow-sm space-y-3 touch-manipulation'
-            : 'border border-gray-200 rounded-xl p-3 bg-white shadow-sm space-y-2'
+            ? `max-w-full rounded-xl border bg-white p-3 shadow-sm space-y-3 touch-manipulation ${
+                changePending ? 'border-red-600 ring-2 ring-red-500' : 'border-gray-200'
+              }`
+            : `rounded-xl p-3 bg-white shadow-sm space-y-2 ${
+                changePending ? 'border-2 border-red-600 ring-2 ring-red-500/80' : 'border border-gray-200'
+              }`
         }
         style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
       >
+        {changePending ? (
+          <div className="flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-1.5 text-[11px] font-bold text-red-800 ring-1 ring-red-300">
+            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+            {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
+          </div>
+        ) : null}
         {isModalForm ? (
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
@@ -3365,7 +3555,7 @@ export default function TicketBookingList() {
           >
             히스토리
           </button>
-          {isModalForm && canRequestTicketBookingSoftDeleteUi ? (
+          {isModalForm && canBookingMgmtSoftDeleteUi ? (
             <button
               type="button"
               onClick={(e) => {
@@ -3381,18 +3571,6 @@ export default function TicketBookingList() {
                 }
               }}
               className="px-2 py-1 bg-amber-600 text-white text-xs rounded-lg hover:bg-amber-700"
-            >
-              {locale === 'ko' ? '삭제' : 'Delete'}
-            </button>
-          ) : null}
-          {isModalForm && canSuperDeleteTicketBooking ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleDelete(booking.id);
-              }}
-              className="px-2 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700"
             >
               {locale === 'ko' ? '삭제' : 'Delete'}
             </button>
@@ -3499,6 +3677,7 @@ export default function TicketBookingList() {
   );
 
   const renderDesktopRow = (booking: TicketBooking, rnRowStripe = '', cancelDueColorMap: Map<string, string>) => {
+    const changePending = isTicketBookingChangeRequestPending(booking);
     const cancelDueDateRow = getCancelDueDate(booking);
     const bgColor = cancelDueDateRow 
       ? (cancelDueColorMap.get(cancelDueDateRow) || 'bg-white')
@@ -3576,13 +3755,21 @@ export default function TicketBookingList() {
     return (
       <tr
         key={booking.id}
-        className={`align-middle ${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''}`}
+        className={`align-middle ${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''} ${changePending ? 'outline outline-2 outline-red-600 -outline-offset-2' : ''}`}
         style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
       >
     <td
       className={`align-middle px-2.5 py-2 text-xs sticky left-0 ${bgColor} z-10 ${rnRowStripe} max-w-[12rem]`}
     >
       <div className="relative z-50 space-y-1.5 px-0.5 py-0.5">
+        {changePending ? (
+          <div className="flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-1 text-[10px] font-bold text-red-800 ring-1 ring-red-400">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
+            </span>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-1.5">
           {bookingStatusBadge}
           {showChangeRequestButton(booking) ? (
@@ -3987,7 +4174,7 @@ export default function TicketBookingList() {
         >
           히스토리
         </button>
-        {canRequestTicketBookingSoftDeleteUi ? (
+        {canBookingMgmtSoftDeleteUi ? (
           <button
             type="button"
             onClick={(e) => {
@@ -4007,20 +4194,6 @@ export default function TicketBookingList() {
             title={locale === 'ko' ? '삭제 (목록에서 숨김)' : 'Delete (hide from list)'}
           >
             {locale === 'ko' ? '삭제' : 'Delete'}
-          </button>
-        ) : null}
-        {canSuperDeleteTicketBooking ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              void handleDelete(booking.id);
-            }}
-            className="px-1.5 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors relative z-20"
-            title="삭제 (SUPER)"
-          >
-            삭제
           </button>
         ) : null}
       </div>
@@ -4338,8 +4511,12 @@ export default function TicketBookingList() {
                       const totalEa = g.rows.reduce((s, b) => s + b.ea, 0);
                       const totalPrice = g.rows.reduce((s, b) => s + (Number(b.total_price) || 0), 0);
                       const palette = RN_TABLE_GROUP_STYLES[gi % RN_TABLE_GROUP_STYLES.length];
+                      const anyChangePending = g.rows.some(isTicketBookingChangeRequestPending);
                       return (
-                        <div key={g.key} className={palette.mobileSection}>
+                        <div
+                          key={g.key}
+                          className={`${palette.mobileSection} ${anyChangePending ? 'ring-2 ring-red-600 ring-offset-2' : ''}`}
+                        >
                           <div className={`${palette.mobileHeader} text-xs`}>
                             <div className="text-sm font-bold text-neutral-900 tracking-tight">RN# {g.label}</div>
                             <div className="mt-1 text-neutral-700 font-medium">
@@ -4623,13 +4800,18 @@ export default function TicketBookingList() {
                                   'border-2 border-red-500 shadow-sm shadow-red-200/70'
                                 : 'border border-gray-200';
 
+                              const cellBgClass = tourBookingHeadcountMismatch
+                                ? 'bg-yellow-50'
+                                : isCurrentMonth
+                                  ? 'bg-white'
+                                  : 'bg-gray-50';
+
                               return (
                                 <div
                                   key={`cal-${dateString}-${index}`}
                                   style={{ paddingTop: cellPadTop }}
-                                  className={`relative min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] px-1 pb-1 sm:px-2 sm:pb-2 rounded-sm ${cellOutlineClass} ${
-                                    isCurrentMonth ? 'bg-white' : 'bg-gray-50'
-                                  } ${isToday ? 'ring-2 ring-blue-500 ring-offset-0' : ''}`}
+                                  className={`relative min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] px-1 pb-1 sm:px-2 sm:pb-2 rounded-sm ${cellOutlineClass} ${cellBgClass} ${
+                                    isToday ? 'ring-2 ring-blue-500 ring-offset-0' : ''}`}
                                 >
                                   <div
                                     className={`absolute left-1 top-1 z-[15] text-xs sm:text-sm font-medium leading-none ${
@@ -4655,6 +4837,7 @@ export default function TicketBookingList() {
                                         })}
                                       </div>
                                       {buildTicketRnGroups(dayBookings).map((g) => {
+                                        const groupChangePending = g.rows.some(isTicketBookingChangeRequestPending);
                                         const totalEa = g.rows.reduce((sum, booking) => sum + booking.ea, 0);
                                         const firstBooking = g.rows[0]!;
                                         const withTour = g.rows.filter((b) => Boolean(b.tour_id));
@@ -4684,32 +4867,40 @@ export default function TicketBookingList() {
                                         const detailTail =
                                           g.rows.length > 1 ? ` · +${g.rows.length - 1}` : '';
                                         const titleLine = `${clipTitle} · ${subtitleParts.join(' · ')}${detailTail}`;
-                                        const axisTooltipLines = g.rows
-                                          .map((b) =>
-                                            buildTicketBookingAxisTooltipLine(b, tTbAxis, tTbActUi, ['operation'])
-                                          )
-                                          .filter((x): x is string => Boolean(x))
-                                        const calendarBookingChipTitle =
-                                          axisTooltipLines.length > 0
-                                            ? `${titleLine}\n\n${axisTooltipLines.join('\n')}`
-                                            : titleLine
 
                                         const timeShort = (firstBooking.time || '').replace(/:\d{2}$/, '');
                                         const companyShort = (firstBooking.company || '').trim();
                                         const supplierStyle = ticketBookingSupplierColors(firstBooking.company);
 
                                         return (
-                                          <div
+                                          <TicketCalendarRnBookingChipTooltip
                                             key={`${dateString}-rn-${g.key}`}
-                                            className="min-w-0 px-0.5 py-0.5 rounded ring-1 ring-black/15 text-[7px] sm:text-[10px] lg:text-[11px] cursor-pointer hover:opacity-90 overflow-hidden transition-opacity"
-                                            style={{
-                                              backgroundColor: supplierStyle.backgroundColor,
-                                              color: supplierStyle.color,
-                                            }}
-                                            title={calendarBookingChipTitle}
+                                            rows={g.rows}
+                                            locale={locale}
+                                            tAxis={tTbAxis}
+                                            tAct={tTbActUi}
+                                            titleLine={titleLine}
+                                            supplierStyle={supplierStyle}
+                                            chipClassName={`min-w-0 w-full px-0.5 py-0.5 rounded text-left text-[7px] sm:text-[10px] lg:text-[11px] cursor-pointer hover:opacity-90 overflow-hidden transition-opacity ${
+                                              groupChangePending
+                                                ? 'ring-2 ring-red-600 ring-offset-0'
+                                                : 'ring-1 ring-black/15'
+                                            }`}
                                             onClick={() => handleBookingClick(g.rows)}
                                           >
                                             <div className="flex min-w-0 items-center gap-0.5 sm:gap-1 whitespace-nowrap">
+                                              {groupChangePending ? (
+                                                <span
+                                                  className="shrink-0 rounded-sm bg-red-600 px-0.5 text-[6px] font-extrabold uppercase tracking-tight text-white sm:text-[8px]"
+                                                  title={
+                                                    locale.startsWith('en')
+                                                      ? 'Change request in progress'
+                                                      : '변경 요청 진행 중'
+                                                  }
+                                                >
+                                                  {locale.startsWith('en') ? 'CHG' : '변경'}
+                                                </span>
+                                              ) : null}
                                               <span
                                                 className="inline-flex shrink-0 items-center"
                                                 title={clipTitle}
@@ -4780,7 +4971,7 @@ export default function TicketBookingList() {
                                                 {g.label === 'RN# 없음' ? '—' : g.label}
                                               </span>
                                             </div>
-                                          </div>
+                                          </TicketCalendarRnBookingChipTooltip>
                                         );
                                       })}
                                     </div>
@@ -4953,13 +5144,22 @@ export default function TicketBookingList() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
             {pagedSortedBookings.map((booking) => {
               const supplierStyle = ticketBookingSupplierColors(booking.company);
+              const changePending = isTicketBookingChangeRequestPending(booking);
               return (
               <div
                 key={booking.id}
-                className="bg-white rounded-xl sm:rounded-lg shadow-sm sm:shadow-md border border-gray-200 hover:shadow-md sm:hover:shadow-lg transition-shadow"
+                className={`bg-white rounded-xl sm:rounded-lg shadow-sm sm:shadow-md hover:shadow-md sm:hover:shadow-lg transition-shadow ${
+                  changePending ? 'border-2 border-red-600 ring-2 ring-red-500/40' : 'border border-gray-200'
+                }`}
                 style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
               >
                 <div className="p-3 sm:p-4 lg:p-6">
+                  {changePending ? (
+                    <div className="mb-3 flex items-center gap-2 rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-800 ring-1 ring-red-400">
+                      <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+                      {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
+                    </div>
+                  ) : null}
                   {/* 카드 헤더 - 모바일 컴팩트 */}
                   <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
                     <div className="flex-1 min-w-0">
@@ -5103,7 +5303,7 @@ export default function TicketBookingList() {
                       >
                         히스토리
                       </button>
-                      {canRequestTicketBookingSoftDeleteUi ? (
+                      {canBookingMgmtSoftDeleteUi ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -5120,15 +5320,6 @@ export default function TicketBookingList() {
                           className="flex-1 bg-amber-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-amber-700 text-xs sm:text-sm font-medium transition-colors"
                         >
                           {locale === 'ko' ? '삭제' : 'Delete'}
-                        </button>
-                      ) : null}
-                      {canSuperDeleteTicketBooking ? (
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(booking.id)}
-                          className="flex-1 bg-red-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-red-700 text-xs sm:text-sm font-medium transition-colors"
-                        >
-                          삭제
                         </button>
                       ) : null}
                     </div>
@@ -5279,7 +5470,7 @@ export default function TicketBookingList() {
                   setEditingBooking(null);
                 }}
                 isSuper={canSuperDeleteTicketBooking}
-                canRequestSoftDelete={canRequestTicketBookingSoftDeleteUi}
+                canRequestSoftDelete={canBookingMgmtSoftDeleteUi}
                 onRequestDelete={handleRequestSoftDelete}
                 onDelete={(id) => {
                   handleDelete(id);
@@ -5348,7 +5539,7 @@ export default function TicketBookingList() {
           setSelectedBookingId(id);
           setShowHistory(true);
         }}
-        {...(canRequestTicketBookingSoftDeleteUi ? { onRequestSoftDelete: handleRequestSoftDelete } : {})}
+        {...(canBookingMgmtSoftDeleteUi ? { onRequestSoftDelete: handleRequestSoftDelete } : {})}
         {...(canSuperDeleteTicketBooking ? { onHardDelete: handleDelete } : {})}
         onActionApplied={() => {
           void fetchBookings();

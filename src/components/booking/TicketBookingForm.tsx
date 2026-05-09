@@ -1819,17 +1819,11 @@ export default function TicketBookingForm({
               const bookingId = booking.id;
               return (
               <div className="flex items-center gap-2">
-                {isSuper && onDelete && (
+                {isSuper && booking.deletion_requested_at && onDelete && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (
-                        confirm(
-                          booking.deletion_requested_at
-                            ? '정말로 이 부킹을 삭제하시겠습니까? (실제 삭제)'
-                            : 'SUPER 관리자 권한으로 이 부킹을 영구 삭제합니다. 계속할까요?'
-                        )
-                      ) {
+                      if (confirm('정말로 이 부킹을 삭제하시겠습니까? (실제 삭제)')) {
                         onDelete(bookingId);
                       }
                     }}
@@ -1838,7 +1832,7 @@ export default function TicketBookingForm({
                     {t('deleteActual')}
                   </button>
                 )}
-                {!isSuper && !booking.deletion_requested_at && onRequestDelete && canRequestSoftDelete && (
+                {!booking.deletion_requested_at && onRequestDelete && canRequestSoftDelete && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1851,7 +1845,7 @@ export default function TicketBookingForm({
                     {t('deleteRequest')}
                   </button>
                 )}
-                {!isSuper && booking.deletion_requested_at && (
+                {booking.deletion_requested_at && !isSuper && (
                   <span className="text-sm text-amber-700 bg-amber-50 px-3 py-1.5 rounded">
                     {t('deleteRequestedWaiting')}
                   </span>

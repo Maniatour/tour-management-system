@@ -8207,6 +8207,8 @@ export type Database = {
           check_out_date: string
           city: string
           created_at: string | null
+          deletion_requested_at: string | null
+          deletion_requested_by: string | null
           event_date: string
           hotel: string
           id: string
@@ -8231,6 +8233,8 @@ export type Database = {
           check_out_date: string
           city: string
           created_at?: string | null
+          deletion_requested_at?: string | null
+          deletion_requested_by?: string | null
           event_date: string
           hotel: string
           id?: string
@@ -8255,6 +8259,8 @@ export type Database = {
           check_out_date?: string
           city?: string
           created_at?: string | null
+          deletion_requested_at?: string | null
+          deletion_requested_by?: string | null
           event_date?: string
           hotel?: string
           id?: string

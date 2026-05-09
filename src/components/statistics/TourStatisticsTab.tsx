@@ -943,8 +943,8 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
   )
 
   const canSoftDeleteFromStats = useMemo(
-    () => !isSuper && canRequestTicketBookingSoftDelete(userPosition),
-    [isSuper, userPosition]
+    () => canRequestTicketBookingSoftDelete(userPosition),
+    [userPosition]
   )
   const [filters, setFilters] = useRoutePersistedState<TourStatsFiltersState>(
     'tour-filters',
@@ -2803,7 +2803,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 onSave={handleTicketFormSave}
                 onCancel={handleTicketFormCancel}
                 isSuper={isSuper}
-                canRequestSoftDelete={canRequestTicketBookingSoftDelete(userPosition) && !isSuper}
+                canRequestSoftDelete={canRequestTicketBookingSoftDelete(userPosition)}
                 onRequestDelete={handleRequestTicketBookingDeleteFromForm}
                 onDelete={isSuper ? handleActualTicketBookingDeleteFromForm : undefined}
               />

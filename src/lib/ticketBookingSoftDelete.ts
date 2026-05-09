@@ -15,11 +15,11 @@ export function filterTicketBookingsExcludedFromMainUi<T extends { deletion_requ
 }
 
 /**
- * OP 또는 Office Manager(및 team에 저장된 매니저 표기) — 티켓 부킹 삭제 요청(소프트)만 가능.
- * SUPER·그 외 직책은 false.
+ * 입장권·호텔 부킹 관리: 소프트 삭제(deletion_requested) 가능 직책.
+ * op · office_manager/office manager · manager · super · admin
  */
 export function canRequestTicketBookingSoftDelete(rawPosition: string | null | undefined): boolean {
   const p = String(rawPosition ?? '').toLowerCase().trim();
-  if (p === 'op') return true;
+  if (p === 'op' || p === 'super' || p === 'admin') return true;
   return isManagerTeamPosition(rawPosition);
 }

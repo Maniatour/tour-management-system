@@ -19,7 +19,7 @@ import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import ReservationCalendar from '@/components/ReservationCalendar'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
-import { useReservationData } from '@/hooks/useReservationData'
+import { useReservationData, type AdminListHydratedSnapshot } from '@/hooks/useReservationData'
 import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
@@ -79,6 +79,7 @@ import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChanges
 import {
   fetchAdminReservationList,
   fetchAdminReservationListCardWeekProgressive,
+  fetchAdminReservationListAllFlat,
 } from '@/lib/adminReservationListFetch'
 import { prefetchAdminReservationCardSideData } from '@/lib/adminReservationCardPrefetch'
 import {
@@ -521,7 +522,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     refreshReservationOptionsPresenceForIds,
     refreshCustomers,
     mergeCustomers,
+    hydrateAdminListRawRows,
   } = useReservationData({ disableReservationsAutoLoad: true, customersByReservationIds: true })
+
+  /** 예약 처리 필요 / Follow up — 주간 뷰와 무관하게 전역 스냅샷(삭제 제외 전 예약) */
+  const [operationalQueueSnapshot, setOperationalQueueSnapshot] = useState<AdminListHydratedSnapshot | null>(null)
+  const [operationalQueueLoading, setOperationalQueueLoading] = useState(false)
+  const operationalQueueFetchGenRef = useRef(0)
 
   /** true: 첫 목록 요청 전·진행 중에 본문 스피너 유지(빈 목록 한 프레임 방지) */
   const [serverListLoading, setServerListLoading] = useState(true)
@@ -550,8 +557,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
    * 그중 첫 번째(비삭제 우선)를 대표 투어로 사용.
    */
   const tourIdByReservationId = useMemo(() => {
+    const mergedTours = new Map(hookToursMap)
+    operationalQueueSnapshot?.toursMap.forEach((v, k) => mergedTours.set(k, v))
     const byRes = new Map<string, { tourId: string; deletedRank: number }[]>()
-    hookToursMap.forEach((tour, tourId) => {
+    mergedTours.forEach((tour, tourId) => {
       const deletedRank = isTourDeletedStatus(tour.tour_status) ? 1 : 0
       for (const rid of tour.reservation_ids || []) {
         const id = String(rid ?? '').trim()
@@ -570,7 +579,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       if (sorted[0]) m.set(reservationId, sorted[0].tourId)
     })
     return m
-  }, [hookToursMap])
+  }, [hookToursMap, operationalQueueSnapshot])
 
   const handleReservationOptionsMutated = useCallback(
     (reservationId: string) => {
@@ -792,6 +801,33 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   // ??? ?? ??? ?? ????? ???????? ?????)
   const [showActionRequiredModal, setShowActionRequiredModal] = useState(false)
   const [followUpQueueModalOpen, setFollowUpQueueModalOpen] = useState(false)
+  const showActionRequiredModalRef = useRef(false)
+  const followUpQueueModalOpenRef = useRef(false)
+  useEffect(() => {
+    showActionRequiredModalRef.current = showActionRequiredModal
+  }, [showActionRequiredModal])
+  useEffect(() => {
+    followUpQueueModalOpenRef.current = followUpQueueModalOpen
+  }, [followUpQueueModalOpen])
+
+  /** 운영 큐 모달이 열려 있고 전역 스냅샷이 있으면 투어 요약 맵을 전 예약 기준으로 계산 */
+  const reservationsForTourInfo = useMemo(() => {
+    if (
+      operationalQueueSnapshot?.reservations.length &&
+      (showActionRequiredModal || followUpQueueModalOpen)
+    ) {
+      return operationalQueueSnapshot.reservations
+    }
+    return reservations
+  }, [operationalQueueSnapshot, showActionRequiredModal, followUpQueueModalOpen, reservations])
+
+  const toursMapForTourInfo = useMemo(() => {
+    if (!operationalQueueSnapshot?.toursMap.size) return hookToursMap
+    const m = new Map(hookToursMap)
+    operationalQueueSnapshot.toursMap.forEach((v, k) => m.set(k, v))
+    return m
+  }, [hookToursMap, operationalQueueSnapshot])
+
   const [followUpPipelineManualRefresh, setFollowUpPipelineManualRefresh] = useState(0)
   const [followUpFormPipelineRefresh, setFollowUpFormPipelineRefresh] = useState(0)
   const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
@@ -1043,7 +1079,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     }
 
     const buildTourInfoMap = async () => {
-      if (!reservations.length || hookToursMap.size === 0) {
+      if (!reservationsForTourInfo.length || toursMapForTourInfo.size === 0) {
         setTourInfoMap(new Map())
         return
       }
@@ -1070,7 +1106,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         const assistantEmails = new Set<string>()
         const vehicleIds = new Set<string>()
         
-        hookToursMap.forEach(tour => {
+        toursMapForTourInfo.forEach(tour => {
           if (tour.tour_guide_id) guideEmails.add(tour.tour_guide_id)
           if (tour.assistant_id) assistantEmails.add(tour.assistant_id)
           if (tour.tour_car_id) vehicleIds.add(tour.tour_car_id)
@@ -1157,7 +1193,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         // ??? ??????? ID ?? Map??? ?? ?????(O(1) ????
         const reservationById = new Map<string, Reservation>()
         const reservationByTourId = new Map<string, Reservation>()
-        reservations.forEach(r => {
+        reservationsForTourInfo.forEach(r => {
           reservationById.set(r.id, r)
           if (r.tourId) {
             reservationByTourId.set(r.tourId, r)
@@ -1171,7 +1207,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         }
         const dateProductAllPeopleMap = new Map<string, number>()
         const dateProductConfirmedRecruitingMap = new Map<string, number>()
-        reservations.forEach(r => {
+        reservationsForTourInfo.forEach(r => {
           const productId = String(r.productId ?? '').trim()
           const tourDate = normalizeTourDateKey(r.tourDate)
           if (!productId || !tourDate) return
@@ -1186,7 +1222,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         })
 
         // ?????????????? ?? (????? O(1) ?? ???)
-        hookToursMap.forEach((tour, tourId) => {
+        toursMapForTourInfo.forEach((tour, tourId) => {
           let guideName = '-'
           let assistantName = '-'
           let vehicleName = '-'
@@ -1255,16 +1291,21 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
     buildTourInfoMap()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reservations, hookToursMap, reservationsAggregateReady])
+  }, [reservationsForTourInfo, toursMapForTourInfo, reservationsAggregateReady])
 
   // ??? ?? ??? ????? ???????? ??? ID ???
   useEffect(() => {
-    if (!reservations.length) {
+    const idSet = new Set<string>()
+    for (const r of reservations) idSet.add(r.id)
+    if (operationalQueueSnapshot) {
+      for (const r of operationalQueueSnapshot.reservations) idSet.add(r.id)
+    }
+    const ids = [...idSet]
+    if (!ids.length) {
       setReservationIdsWithPayments(new Set())
       setPaymentRecordsByReservationIdForActionBadge(new Map())
       return
     }
-    const ids = reservations.map(r => r.id)
     const load = async () => {
       const set = new Set<string>()
       const byRes = new Map<string, PaymentRecordLike[]>()
@@ -1276,15 +1317,16 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
           .select('reservation_id, payment_status, amount')
           .in('reservation_id', chunk)
         if (data) {
-          data.forEach((row: { reservation_id: string; payment_status: string; amount: unknown }) => {
-            set.add(row.reservation_id)
+          data.forEach((row) => {
+            const rid = (row as { reservation_id: string }).reservation_id
+            set.add(rid)
             const rec: PaymentRecordLike = {
-              payment_status: row.payment_status || '',
-              amount: Number(row.amount) || 0,
+              payment_status: String((row as { payment_status?: string | null }).payment_status ?? ''),
+              amount: Number((row as { amount?: unknown }).amount) || 0,
             }
-            const arr = byRes.get(row.reservation_id) ?? []
+            const arr = byRes.get(rid) ?? []
             arr.push(rec)
-            byRes.set(row.reservation_id, arr)
+            byRes.set(rid, arr)
           })
         }
       }
@@ -1292,7 +1334,15 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       setPaymentRecordsByReservationIdForActionBadge(byRes)
     }
     load()
-  }, [reservations])
+  }, [reservations, operationalQueueSnapshot])
+
+  const reservationsForOperationalMetrics = operationalQueueSnapshot?.reservations ?? reservations
+
+  const pricingForOperationalMetrics = useMemo(() => {
+    const m = new Map(reservationPricingMap)
+    operationalQueueSnapshot?.pricingMap.forEach((v, k) => m.set(k, v))
+    return m
+  }, [reservationPricingMap, operationalQueueSnapshot])
 
   // ??? ?? ??? ?? (??? ?????
   const actionRequiredCount = useMemo(() => {
@@ -1300,7 +1350,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       const s = (r.status as string)?.trim?.() ?? ''
       return s.toLowerCase() === 'deleted'
     }
-    const arReservations = reservations.filter((r) => !isDeleted(r))
+    const arReservations = reservationsForOperationalMetrics.filter((r) => !isDeleted(r))
     const todayStr = new Date().toISOString().split('T')[0]
     const d = new Date()
     d.setDate(d.getDate() + 7)
@@ -1314,7 +1364,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       return tourIdByReservationId.has(r.id)
     }
     const hasPricing = (r: Reservation) => {
-      const p = reservationPricingMap.get(r.id)
+      const p = pricingForOperationalMetrics.get(r.id)
       return !!(p && (p.total_price != null && p.total_price > 0))
     }
     const isNotCancelledPricing = (r: Reservation) => {
@@ -1322,7 +1372,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       return !s.toLowerCase().startsWith('cancelled')
     }
     const getBalance = (r: Reservation) => {
-      const p = reservationPricingMap.get(r.id)
+      const p = pricingForOperationalMetrics.get(r.id)
       const b = p?.balance_amount
       if (b == null) return 0
       return typeof b === 'number' ? b : parseFloat(String(b)) || 0
@@ -1341,7 +1391,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         isNotCancelledPricing(r) &&
         reservationMatchesExtendedPricingMismatchCriteria(
           r,
-          reservationPricingMap,
+          pricingForOperationalMetrics,
           (channels || []) as BalanceChannelRowInput[],
           new Map(),
           undefined
@@ -1353,7 +1403,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     const cancelFinancialList = arReservations.filter((r) =>
       reservationNeedsCancelFinancialCleanup(
         r,
-        reservationPricingMap,
+        pricingForOperationalMetrics,
         paymentRecordsByReservationIdForActionBadge,
         (channels || []) as BalanceChannelRowInput[],
         undefined
@@ -1369,7 +1419,14 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     cancelFinancialList.forEach(r => allIds.add(r.id))
     balanceList.forEach(r => allIds.add(r.id))
     return allIds.size
-  }, [reservations, reservationPricingMap, reservationIdsWithPayments, paymentRecordsByReservationIdForActionBadge, tourIdByReservationId, channels])
+  }, [
+    reservationsForOperationalMetrics,
+    pricingForOperationalMetrics,
+    reservationIdsWithPayments,
+    paymentRecordsByReservationIdForActionBadge,
+    tourIdByReservationId,
+    channels,
+  ])
 
   /** 서버에서 필터·검색·정렬·페이지 반영된 목록 */
   const filteredAndSortedReservations = useMemo(
@@ -1379,9 +1436,15 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
   
   const filteredReservations = filteredAndSortedReservations
 
+  /** 운영 큐 스냅샷이 있으면 Follow up 스냅샷·배지도 전역 예약 기준 */
+  const reservationsForFollowUpPipeline = useMemo(
+    () => operationalQueueSnapshot?.reservations ?? filteredReservations,
+    [operationalQueueSnapshot, filteredReservations]
+  )
+
   const reservationsLiteForFollowUp = useMemo(
-    () => filteredReservations.map((r) => ({ id: r.id, productId: r.productId })),
-    [filteredReservations]
+    () => reservationsForFollowUpPipeline.map((r) => ({ id: r.id, productId: r.productId })),
+    [reservationsForFollowUpPipeline]
   )
 
   const {
@@ -1537,7 +1600,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
 
   const followUpQueueUnionCount = useMemo(() => {
     let n = 0
-    for (const r of filteredReservations) {
+    for (const r of reservationsForFollowUpPipeline) {
       if (isReservationTourDatePastLocal(r.tourDate)) continue
       const snap = followUpSnapshotsByReservationId.get(r.id)
       if (reservationNeedsCancelFollowUpQueueAttention(r.status as string | undefined, r.tourDate, snap)) {
@@ -1548,7 +1611,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
-  }, [filteredReservations, followUpSnapshotsByReservationId])
+  }, [reservationsForFollowUpPipeline, followUpSnapshotsByReservationId])
   
   // 최근 7일: 브라우저 로컬 달력 기준 오늘을 말일로 한 7일 — 등록일 그룹 키·조회 구간과 동일.
   const formatWeekRange = useCallback(
@@ -1776,9 +1839,53 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
     mergeReservationListSideDataPrefetch,
   ])
 
+  const loadOperationalQueueSnapshot = useCallback(async () => {
+    const gen = ++operationalQueueFetchGenRef.current
+    setOperationalQueueLoading(true)
+    try {
+      const { data, error } = await fetchAdminReservationListAllFlat(supabase, {
+        selectedStatus: 'all',
+        selectedChannel: 'all',
+        dateRange: { start: '', end: '' },
+        customerIdFromUrl,
+        debouncedSearchTerm: '',
+        sortBy: 'created_at',
+        sortOrder: 'desc',
+      })
+      if (error) throw error
+      if (gen !== operationalQueueFetchGenRef.current) return
+      const hydrated = await hydrateAdminListRawRows(data || [])
+      if (gen !== operationalQueueFetchGenRef.current) return
+      setOperationalQueueSnapshot(hydrated)
+    } catch (e) {
+      if (gen !== operationalQueueFetchGenRef.current) return
+      console.error(`loadOperationalQueueSnapshot: ${describeError(e)}`, serializeError(e))
+      setOperationalQueueSnapshot(null)
+    } finally {
+      if (gen === operationalQueueFetchGenRef.current) {
+        setOperationalQueueLoading(false)
+      }
+    }
+  }, [customerIdFromUrl, hydrateAdminListRawRows])
+
+  useEffect(() => {
+    if (!showActionRequiredModal && !followUpQueueModalOpen) return
+    void loadOperationalQueueSnapshot()
+  }, [showActionRequiredModal, followUpQueueModalOpen, loadOperationalQueueSnapshot])
+
+  useLayoutEffect(() => {
+    setOperationalQueueSnapshot(null)
+    operationalQueueFetchGenRef.current += 1
+  }, [customerIdFromUrl])
+
   const refreshReservations = useCallback(async () => {
+    setOperationalQueueSnapshot(null)
+    operationalQueueFetchGenRef.current += 1
     await loadAdminReservationList()
-  }, [loadAdminReservationList])
+    if (showActionRequiredModalRef.current || followUpQueueModalOpenRef.current) {
+      void loadOperationalQueueSnapshot()
+    }
+  }, [loadAdminReservationList, loadOperationalQueueSnapshot])
 
   useLayoutEffect(() => {
     if (!reservationListUiHydrated) return
@@ -4427,7 +4534,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       <ReservationActionRequiredModal
         isOpen={showActionRequiredModal}
         onClose={() => setShowActionRequiredModal(false)}
-        reservations={reservations}
+        bulkReservationsLoading={operationalQueueLoading && !operationalQueueSnapshot}
+        reservations={operationalQueueSnapshot?.reservations ?? reservations}
         customers={(customers as Customer[]) || []}
         products={(products as Array<{ id: string; name: string; sub_category?: string; base_price?: number }>) || []}
         channels={
@@ -4444,7 +4552,7 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
         optionChoices={(optionChoices as Array<{ id: string; name: string; option_id?: string; adult_price?: number; child_price?: number; infant_price?: number }>) || []}
         tourInfoMap={tourInfoMap}
-        reservationPricingMap={reservationPricingMap}
+        reservationPricingMap={pricingForOperationalMetrics}
         locale={locale}
         onPricingInfoClick={handlePricingInfoClick}
         onCreateTour={handleCreateTour}
@@ -4478,7 +4586,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       <ReservationFollowUpQueueModal
         isOpen={followUpQueueModalOpen}
         onClose={() => setFollowUpQueueModalOpen(false)}
-        reservations={filteredReservations as Reservation[]}
+        bulkReservationsLoading={operationalQueueLoading && !operationalQueueSnapshot}
+        reservations={reservationsForFollowUpPipeline as Reservation[]}
         customers={(customers as Customer[]) || []}
         snapshotsByReservationId={followUpSnapshotsByReservationId}
         loadingSnapshots={followUpSnapshotsLoading}

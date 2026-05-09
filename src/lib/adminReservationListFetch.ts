@@ -336,6 +336,66 @@ export async function fetchAdminReservationList(
   }
 }
 
+/** `card-flat` 한 페이지 크기 — 운영 큐(전량) 로드 시 페이지 루프에 사용 */
+export const ADMIN_RESERVATION_CARD_FLAT_PAGE_SIZE = 500
+
+/**
+ * 활동 구간 없이 `card-flat` 조건으로 예약 전량을 페이지 단위로 이어 받는다.
+ * (예약 처리 필요 / Follow up 큐 — 주간 뷰와 별도)
+ */
+export async function fetchAdminReservationListAllFlat(
+  supabase: SupabaseClient,
+  args: Omit<
+    FetchAdminReservationListArgs,
+    | 'mode'
+    | 'page'
+    | 'pageSize'
+    | 'activityRangeStartIso'
+    | 'activityRangeEndIso'
+    | 'onCardWeekFetchProgress'
+  > & { pageSize?: number }
+): Promise<{ data: Record<string, unknown>[] | null; error: Error | null }> {
+  const pageSize = args.pageSize ?? ADMIN_RESERVATION_CARD_FLAT_PAGE_SIZE
+  const { pageSize: _omit, ...rest } = args
+  const merged: Record<string, unknown>[] = []
+  let page = 1
+  const maxPages = 500
+
+  try {
+    for (;;) {
+      if (page > maxPages) {
+        return {
+          data: null,
+          error: new Error(
+            `[admin reservations] card-flat all-pages limit exceeded (${maxPages} pages × ${pageSize} rows)`
+          ),
+        }
+      }
+      const { data, count, error } = await fetchAdminReservationList(supabase, {
+        ...rest,
+        mode: 'card-flat',
+        page,
+        pageSize,
+      })
+      if (error) {
+        return { data: null, error }
+      }
+      const batch = (data || []) as Record<string, unknown>[]
+      merged.push(...batch)
+      if (batch.length < pageSize) {
+        break
+      }
+      if (count != null && merged.length >= count) {
+        break
+      }
+      page += 1
+    }
+    return { data: merged, error: null }
+  } catch (e) {
+    return { data: null, error: e instanceof Error ? e : new Error(String(e)) }
+  }
+}
+
 export type CardWeekProgressiveHandlers = {
   /** 정렬·필터 기준 첫 청크(기본 500행) — UI에 먼저 반영. `false` 반환 시 이어 받기 중단(필터 전환 등) */
   onFirstChunk: (p: {

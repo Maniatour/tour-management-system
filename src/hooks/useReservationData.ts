@@ -22,6 +22,26 @@ import {
 } from '@/lib/syncReservationPricingAggregates'
 import { parseEmbeddedChannelNameFromReservationRow } from '@/utils/reservationUtils'
 
+/** `useReservationData`의 tours 맵 행 — 운영 큐 전량 하이드레이트 결과에도 동일 구조 사용 */
+export type ReservationListTourMapRow = {
+  id: string
+  tour_status: string | null
+  tour_guide_id: string | null
+  assistant_id: string | null
+  reservation_ids: string[]
+  tour_car_id: string | null
+  tour_date: string | null
+  tour_start_datetime: string | null
+  product_id: string | null
+}
+
+export type AdminListHydratedSnapshot = {
+  reservations: Reservation[]
+  pricingMap: Map<string, ReservationPricingMapValue>
+  reservationOptionsPresenceByReservationId: Map<string, boolean>
+  toursMap: Map<string, ReservationListTourMapRow>
+}
+
 /** PostgREST 400: `select`에 원격 DB에 없는 컬럼이 포함된 경우(마이그레이션 미적용 등) */
 function isReservationPricingSelectSchemaError(err: { code?: string; message?: string } | null): boolean {
   if (!err) return false
@@ -424,19 +444,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, ReservationPricingMapValue>>(new Map())
   const [reservationOptionsPresenceByReservationId, setReservationOptionsPresenceByReservationId] =
     useState<Map<string, boolean>>(new Map())
-  type TourMapRow = {
-    id: string
-    tour_status: string | null
-    tour_guide_id: string | null
-    assistant_id: string | null
-    reservation_ids: string[]
-    tour_car_id: string | null
-    tour_date: string | null
-    tour_start_datetime: string | null
-    product_id: string | null
-  }
-
-  const [toursMap, setToursMap] = useState<Map<string, TourMapRow>>(new Map())
+  const [toursMap, setToursMap] = useState<Map<string, ReservationListTourMapRow>>(new Map())
 
   const loading = reservationsLoading || customersLoading || productsLoading || channelsLoading || productOptionsLoading || optionChoicesLoading || optionsLoading || pickupHotelsLoading || couponsLoading
 
@@ -616,7 +624,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   const TOUR_LIST_SELECT =
     'id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime, product_id'
 
-  const parseTourRow = (tour: Record<string, unknown>): TourMapRow => {
+  const parseTourRow = (tour: Record<string, unknown>): ReservationListTourMapRow => {
     const resIds = Array.isArray(tour.reservation_ids)
       ? (tour.reservation_ids as string[])
       : tour.reservation_ids
@@ -638,8 +646,10 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     }
   }
 
-  const mergeTourMaps = (...maps: Array<Map<string, TourMapRow>>): Map<string, TourMapRow> => {
-    const out = new Map<string, TourMapRow>()
+  const mergeTourMaps = (
+    ...maps: Array<Map<string, ReservationListTourMapRow>>
+  ): Map<string, ReservationListTourMapRow> => {
+    const out = new Map<string, ReservationListTourMapRow>()
     for (const m of maps) {
       m.forEach((v, k) => out.set(k, v))
     }
@@ -647,7 +657,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   }
 
   const fetchToursMap = async (tourIds: string[]) => {
-    const toursMap = new Map<string, TourMapRow>()
+    const toursMap = new Map<string, ReservationListTourMapRow>()
     for (let i = 0; i < tourIds.length; i += CHUNK_SIZE) {
       const chunk = tourIds.slice(i, i + CHUNK_SIZE)
       const { data } = await supabase.from('tours').select(TOUR_LIST_SELECT).in('id', chunk)
@@ -663,7 +673,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
 
   /** 예약 row의 tour_id가 비어 있어도 tours.reservation_ids에만 포함된 배정을 찾기 */
   const fetchToursOverlappingReservationIds = async (reservationIds: string[]) => {
-    const toursMap = new Map<string, TourMapRow>()
+    const toursMap = new Map<string, ReservationListTourMapRow>()
     const unique = [...new Set(reservationIds.filter((id) => id && String(id).trim()))]
     if (unique.length === 0) return toursMap
     for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
@@ -1013,6 +1023,80 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     }
   }
 
+  /**
+   * 예약 관리 목록 쿼리 raw 행 → Reservation + pricing/tours 맵 (메인 `reservations` 상태는 건드리지 않음).
+   * 운영 큐(처리 필요 / Follow up) 전량 로드에 사용.
+   */
+  const hydrateAdminListRawRows = useCallback(
+    async (raw: Record<string, unknown>[]): Promise<AdminListHydratedSnapshot> => {
+      if (raw.length === 0) {
+        return {
+          reservations: [],
+          pricingMap: new Map(),
+          reservationOptionsPresenceByReservationId: new Map(),
+          toursMap: new Map(),
+        }
+      }
+      const productIds = [...new Set(raw.map((r) => r.product_id as string).filter(Boolean))]
+      const tourDates = raw.map((r) => r.tour_date).filter(Boolean) as string[]
+      const productsBatch =
+        productIds.length > 0
+          ? (await throttledSupabaseRequest(() =>
+              supabase.from('products').select('id, sub_category').in('id', productIds)
+            )).data || []
+          : []
+      const productMap = new Map(
+        (productsBatch as { id: string; sub_category?: string }[]).map((p) => [p.id, p.sub_category || ''])
+      )
+      const maniaIds = productIds.filter((id) => {
+        const sc = productMap.get(id)
+        return sc === 'Mania Tour' || sc === 'Mania Service'
+      })
+      const toursExistence =
+        maniaIds.length === 0 || tourDates.length === 0
+          ? []
+          : (await supabase
+              .from('tours')
+              .select('product_id, tour_date')
+              .in('product_id', maniaIds)
+              .in('tour_date', tourDates)).data || []
+      const tourMap = new Map(
+        (toursExistence as { product_id: string; tour_date: string }[]).map((t) => [
+          `${t.product_id}-${t.tour_date}`,
+          true,
+        ])
+      )
+      const mapped = mapRawToReservation(raw, productMap, tourMap)
+      const resIds = mapped.map((r) => r.id)
+      const tourIds = [
+        ...new Set(
+          mapped.map((r) => r.tourId).filter((id) => id && id.trim() && id !== 'null' && id !== 'undefined')
+        ),
+      ]
+      const customerIdsForList = customersByReservationIds
+        ? [...new Set(mapped.map((r) => r.customerId).filter((id) => id && String(id).trim()))]
+        : []
+
+      const [pricingMap, toursById, toursByOverlap, optionsPresenceMap] = await Promise.all([
+        fetchPricingMap(resIds),
+        fetchToursMap(tourIds),
+        fetchToursOverlappingReservationIds(resIds),
+        fetchReservationOptionsPresenceMap(resIds),
+        customersByReservationIds ? loadCustomersByIds(customerIdsForList) : Promise.resolve(),
+      ])
+
+      return {
+        reservations: mapped,
+        pricingMap,
+        reservationOptionsPresenceByReservationId: optionsPresenceMap,
+        toursMap: mergeTourMaps(toursById, toursByOverlap),
+      }
+    },
+    // fetchPricingMap 등은 렌더마다 새 참조 — 고객 로드 모드만 의존성으로 둔다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 내부 Supabase·맵 로직은 마운트 단위로 안정적
+    [customersByReservationIds]
+  )
+
   // 예약 데이터만 별도로 로드
   useEffect(() => {
     if (!disableReservationsAutoLoad) {
@@ -1042,6 +1126,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     refreshReservations: fetchReservations,
     replaceReservationsFromQueryResult,
     mergeMoreReservationsFromQueryResult,
+    hydrateAdminListRawRows,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
     refreshCustomers: customersByReservationIds ? refreshCustomersByIds : refetchCustomers,

@@ -25,6 +25,8 @@ export type CancelFollowUpManualKind = 'cancel_follow_up' | 'cancel_rebooking'
 export interface ReservationFollowUpQueueModalProps {
   isOpen: boolean
   onClose: () => void
+  /** 운영 큐용 전역 목록을 처음 채우는 동안 */
+  bulkReservationsLoading?: boolean
   reservations: Reservation[]
   /** 탭 목록 정렬용 */
   customers: Customer[]
@@ -138,6 +140,7 @@ function CancelFollowUpToolbarForReservation({
 export default function ReservationFollowUpQueueModal({
   isOpen,
   onClose,
+  bulkReservationsLoading = false,
   reservations,
   customers,
   snapshotsByReservationId,
@@ -269,6 +272,27 @@ export default function ReservationFollowUpQueueModal({
   }
 
   if (!isOpen) return null
+
+  if (bulkReservationsLoading) {
+    const loadingMsg =
+      uiLocale === 'en' ? 'Loading all reservations for follow-up…' : 'Follow up 큐용 전체 예약을 불러오는 중…'
+    return (
+      <div
+        className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose()
+        }}
+      >
+        <div
+          className="flex flex-col items-center gap-3 rounded-xl bg-white px-8 py-10 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-teal-600 border-t-transparent" />
+          <p className="text-center text-sm text-gray-700">{loadingMsg}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
