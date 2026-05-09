@@ -15,6 +15,8 @@ import {
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateCustomerId } from '@/lib/entityIds'
+import { useAuth } from '@/contexts/AuthContext'
+import { isSuperAdminActor } from '@/lib/superAdmin'
 import type { Database } from '@/lib/supabase'
 
 /** 브라우저에서 customers INSERT 시 RLS(team↔is_staff 재귀 등)로 실패할 때 API+service role 경로 사용 */
@@ -75,7 +77,17 @@ import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
-import { isReturnedPaymentStatus } from '@/utils/reservationPricingBalance'
+import {
+  isReturnedPaymentStatus,
+  summarizePaymentRecordsForBalance,
+  type PaymentRecordLike,
+} from '@/utils/reservationPricingBalance'
+import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
+import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
+import {
+  computeRefundAmountForCompanyRevenueBlock,
+  computeStoredCompanyRevenueFields,
+} from '@/utils/storedCompanyRevenue'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
@@ -108,6 +120,24 @@ const PRODUCT_DEFAULT_TOUR_TIMES: Record<string, string> = {
 }
 
 const UNDECIDED_OPTION_ID_PRICING = '__undecided__'
+type TeamAuditProfile = {
+  email: string
+  name: string
+  nickName: string
+  position: string | null
+}
+
+type ReservationPricingAuditState = {
+  audited: boolean
+  auditedAt: string | null
+  auditedByEmail: string | null
+  auditedByName: string | null
+  auditedByNickName: string | null
+}
+
+function auditDisplayName(profile: TeamAuditProfile | null, fallbackEmail?: string | null): string {
+  return profile?.nickName || profile?.name || fallbackEmail || ''
+}
 /** 동적가격(choices_pricing) 조회용: 미정(__undecided__)이면 미국 거주자 옵션 UUID로 치환 (DB 키에 미정 없음) */
 function normalizeUndecidedChoicesForDynamicPricing(
   selectedChoices: Array<{ choice_id?: string; option_id?: string; id?: string; option_key?: string }>,
@@ -374,6 +404,8 @@ export default function ReservationForm({
   const t = useTranslations('reservations')
   const tCommon = useTranslations('common')
   const locale = useLocale()
+  const { authUser, userPosition } = useAuth()
+  const isSuperPricingAdmin = isSuperAdminActor(authUser?.email, userPosition)
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
   const reservationFormRef = useRef<HTMLFormElement>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
@@ -825,6 +857,22 @@ export default function ReservationForm({
   const [pricingLoadComplete, setPricingLoadComplete] = useState<boolean>(false)
   // reservation_pricing 행 id (상세/폼 가격 섹션 표시용)
   const [reservationPricingId, setReservationPricingId] = useState<string | null>(null)
+  /** reservation_pricing 행이 있을 때 현재 채널·초이스 기준 dynamic_pricing 계산 결과(입력칸과 비교·「계산식 적용」용) */
+  const [dynamicPriceFormula, setDynamicPriceFormula] = useState<{
+    adultPrice: number
+    childPrice: number
+    infantPrice: number
+    commissionPercent: number
+    notIncludedPrice: number
+  } | null>(null)
+  const [pricingAudit, setPricingAudit] = useState<ReservationPricingAuditState>({
+    audited: false,
+    auditedAt: null,
+    auditedByEmail: null,
+    auditedByName: null,
+    auditedByNickName: null,
+  })
+  const [currentTeamProfile, setCurrentTeamProfile] = useState<TeamAuditProfile | null>(null)
   /** 비동기 loadPricingInfo 중에도 최신 여부를 반영 — state보다 앞서 자동 쿠폰이 도는 것 방지 */
   const reservationPricingIdRef = useRef<string | null>(null)
   reservationPricingIdRef.current = reservationPricingId
@@ -1226,6 +1274,35 @@ export default function ReservationForm({
     getCurrentUser()
     return () => { cancelled = true }
   }, [reservationId])
+
+  useEffect(() => {
+    if (!authUser?.email) {
+      setCurrentTeamProfile(null)
+      return
+    }
+
+    let cancelled = false
+    void (async () => {
+      const email = authUser.email.trim().toLowerCase()
+      const { data } = await (supabase as any)
+        .from('team')
+        .select('email, name_ko, name_en, nick_name, position')
+        .ilike('email', email)
+        .maybeSingle()
+
+      if (cancelled) return
+      setCurrentTeamProfile({
+        email,
+        name: data?.name_ko || data?.name_en || authUser.name || email,
+        nickName: data?.nick_name || data?.name_ko || authUser.name || email,
+        position: data?.position ?? userPosition ?? null,
+      })
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [authUser?.email, authUser?.name, userPosition])
 
   // 예약 가져오기(import) 모드: initialDataFromImport가 들어오면 고객/언어 필드 동기화
   useEffect(() => {
@@ -2802,6 +2879,7 @@ export default function ReservationForm({
     const pricingReservationId =
       reservationId && !String(reservationId).startsWith('import-') ? String(reservationId) : undefined
     setPricingFieldsFromDb({})
+    setDynamicPriceFormula(null)
 
     try {
       // reservation_pricing에 행이 있을 때 dynamic_pricing으로 채운 뒤에도 불포함 가격은 DB 컬럼 값 유지
@@ -2932,12 +3010,577 @@ export default function ReservationForm({
         )
       }
 
-      // 1. 먼저 reservation_pricing에서 기존 가격 정보 확인 (편집 모드인 경우)
-      // 단, 폼에서 채널을 변경한 경우에는 기존 가격(이전 채널 기준)을 쓰지 않고 dynamic_pricing에서 새 채널 가격 로드
-      const reservationChannelId = (reservation as any)?.channelId ?? (reservation as any)?.channel_id ?? (rez as any)?.channel_id ?? null
-      const channelChangedInForm = reservationChannelId != null && channelId !== reservationChannelId
+      const loadDynamicPricingFromDb = async (): Promise<{
+        adultPrice: number
+        childPrice: number
+        infantPrice: number
+        commissionPercent: number
+        notIncludedPrice: number
+      }> => {
+              let adultPrice = 0
+              let childPrice = 0
+              let infantPrice = 0
+              let commissionPercent = 0
+              let notIncludedPrice = 0
+        
+              console.log('Dynamic pricing 조회 시작:', {
+                productId,
+                tourDate,
+                tourDateNormalized,
+                channelId,
+                variantKey: variantKeyForDp,
+                variantKeyForm: formDataRef.current.variantKey || formData.variantKey || 'default',
+              })
+                // variantKeyForDp: channel_products로 라벨·시맨틱 해석 후 조회 (순서와 무관)
+                let pricingData: any[] | null = null
+                let pricingError: any = null
+                let dpRes = await queryDynamicPricingByVariant(DP_SELECT_FULL, variantKeyForDp)
+                pricingData = dpRes.data
+                pricingError = dpRes.error
+                if ((!pricingData || pricingData.length === 0) && !pricingError) {
+                  if (variantKeyForDp !== 'default') {
+                    dpRes = await queryDynamicPricingByVariant(DP_SELECT_FULL, 'default')
+                    if (dpRes.error) pricingError = dpRes.error
+                    else if (dpRes.data?.length) pricingData = dpRes.data
+                  }
+                }
+                // variant_key를 특정했는데(all_inclusive 등) 해당 행이 없을 때 임의 variant로 채우면 With Exclusions 가격이 들어가는 버그
+                if ((!pricingData || pricingData.length === 0) && !pricingError && variantKeyForDp === 'default') {
+                  dpRes = await queryDynamicPricingAnyVariant(DP_SELECT_FULL)
+                  if (dpRes.error) pricingError = dpRes.error
+                  else if (dpRes.data?.length) pricingData = dpRes.data
+                }
+        
+                if (pricingError) {
+                  console.log('Dynamic pricing 조회 오류:', pricingError.message)
+                  return { adultPrice: 0, childPrice: 0, infantPrice: 0, commissionPercent: 0, notIncludedPrice: 0 }
+                }
+        
+                if (!pricingData || pricingData.length === 0) {
+                  console.log('Dynamic pricing 데이터가 없습니다.')
+                  return { adultPrice: 0, childPrice: 0, infantPrice: 0, commissionPercent: 0, notIncludedPrice: 0 }
+                }
+        
+                const pricing = pricingData[0] as any
+                console.log('Dynamic pricing 데이터 조회 성공:', pricing)
+                
+                commissionPercent = (pricing?.commission_percent as number) || 0
+                
+                // 채널 정보 확인
+                const selectedChannel = channels.find(c => c.id === channelId)
+                const isOTAChannel = selectedChannel && (
+                  (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
+                  (selectedChannel as any)?.category === 'OTA'
+                )
+                const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
+                const isSinglePrice = pricingType === 'single'
+                
+                console.log('채널 정보:', { channelId, isOTAChannel, pricingType, isSinglePrice })
+        
+                // choices_pricing이 있는지 확인
+                let hasChoicesPricing = false
+                let choicesPricing: Record<string, any> = {}
+                try {
+                  if (pricing?.choices_pricing) {
+                    choicesPricing = typeof pricing.choices_pricing === 'string' 
+                      ? JSON.parse(pricing.choices_pricing) 
+                      : pricing.choices_pricing
+                    hasChoicesPricing = choicesPricing && typeof choicesPricing === 'object' && Object.keys(choicesPricing).length > 0
+                  }
+                } catch (e) {
+                  console.warn('choices_pricing 확인 중 오류:', e)
+                }
+        
+                // 필수 초이스가 모두 선택되었는지 확인
+                // productChoices가 아직 비어 있으면(로드 전) requiredChoices도 비어 vacuously true가 되어
+                // choices_pricing 있는 상품에서 판매가·불포함이 0으로 덮어써지는 버그가 난다 → 로드 전에는 "필수 미충족"으로 본다
+                const productChoicesLoaded = (formData.productChoices?.length ?? 0) > 0
+                const requiredChoices = formData.productChoices?.filter(choice => choice.is_required) || []
+                const selectedChoiceIds = new Set(currentSelectedChoices?.map(c => c.choice_id || (c as any).id).filter(Boolean) || [])
+                const allRequiredChoicesSelected = !productChoicesLoaded
+                  ? false
+                  : (requiredChoices.length === 0 || requiredChoices.every(choice => selectedChoiceIds.has(choice.id)))
+                
+                // choices_pricing이 있고 (필수 초이스 완료 또는 OTA 채널)이면 초이스별 가격 우선 시도
+                // 이메일 가져오기 직후 productChoices 미로드 시 allRequiredChoicesSelected가 항상 false라
+                // choices_pricing을 건너뛰고 행 adult_price(기본가)만 쓰는 문제 방지 — OTA는 선택된 초이스만으로도 OTA가 로드되게 함
+                // 초이스별 가격이 있으면 기본 가격(adult_price, child_price, infant_price)은 무시
+                let useChoicePricing = false
+                if (
+                  hasChoicesPricing &&
+                  pricingSelectedChoices &&
+                  pricingSelectedChoices.length > 0 &&
+                  (allRequiredChoicesSelected || isOTAChannel)
+                ) {
+                  try {
+                    
+                    console.log('choices_pricing 데이터:', choicesPricing)
+                    console.log('선택된 초이스(동적가격 조회용·미정→미국 거주자 치환):', pricingSelectedChoices)
+                    
+                    // normalizeUndecidedChoicesForDynamicPricing에서 미정→미국 거주자 치환 후, 남은 미정만 제외
+                    const UNDECIDED_OPTION_ID = UNDECIDED_OPTION_ID_PRICING
+                    const choicesForPricingLookup = pricingSelectedChoices || []
+                    const choicesForPricing = choicesForPricingLookup.filter((c: any) => c.option_id !== UNDECIDED_OPTION_ID && c.option_key !== UNDECIDED_OPTION_ID)
+                    const selectedOptionIds = choicesForPricing
+                      .map(c => c.option_id)
+                      .filter(Boolean)
+                      .sort()
+                    const selectedOptionKeys = choicesForPricing
+                      .map(c => (c as any).option_key)
+                      .filter(Boolean)
+                      .sort()
+                    const selectedChoiceIds = choicesForPricing
+                      .map(c => c.choice_id || (c as any).id)
+                      .filter(Boolean)
+                      .sort()
+                    
+                    // choices_pricing 키 형식: DB는 "choice_id+option_id" (전체 UUID) 사용 → 이 형식 우선 시도
+                    const buildChoicePricingKeys = (c: { choice_id?: string; option_id?: string; option_key?: string; id?: string }) => {
+                      const cid = c.choice_id || (c as any).id
+                      const oid = c.option_id
+                      const okey = (c as any).option_key
+                      const keys: string[] = []
+                      if (cid && oid) keys.push(`${cid}+${oid}`)
+                      if (cid && okey) keys.push(`${cid}+${okey}`)
+                      return keys
+                    }
+                    // DB 키와 매칭 (UUID 대시 유무 차이 무시)
+                    const findChoicePricingEntry = (choiceId: string, optionId: string): any => {
+                      const exact = `${choiceId}+${optionId}`
+                      if (choicesPricing[exact]) return choicesPricing[exact]
+                      const normalized = exact.replace(/-/g, '')
+                      const foundKey = Object.keys(choicesPricing).find(k => k.replace(/-/g, '') === normalized)
+                      return foundKey ? choicesPricing[foundKey] : null
+                    }
+                    
+                    const combinationKey = selectedOptionKeys.length > 0
+                      ? selectedOptionKeys.join('+')
+                      : selectedOptionIds.length > 0
+                        ? selectedOptionIds.join('+')
+                        : selectedChoiceIds.join('+')
+                    let foundChoicePricing = false
+                    let choiceData: any = null
+        
+                    // 1. 조합 키 우선 (밤도깨비 등 복수 초이스 시 불포함 가격이 조합 키에만 있는 경우 대비)
+                    if (combinationKey && choicesPricing[combinationKey]) {
+                      choiceData = choicesPricing[combinationKey]
+                      console.log('choices_pricing 조합 키로 초이스 가격 찾음:', { combinationKey, choiceData })
+                      foundChoicePricing = true
+                    }
+                    if (!choiceData && combinationKey) {
+                      const sortedKey = combinationKey.split('+').sort().join('+')
+                      const availableKeys = Object.keys(choicesPricing)
+                      const matchingKey = availableKeys.find(key => {
+                        const sortedAvailableKey = key.split('+').sort().join('+')
+                        return sortedAvailableKey === sortedKey
+                      })
+                      if (matchingKey) {
+                        choiceData = choicesPricing[matchingKey]
+                        console.log('정렬된 조합 키로 초이스 가격 찾음:', { matchingKey, sortedKey, choiceData })
+                        foundChoicePricing = true
+                      }
+                    }
+        
+                    // 1b. product_choices에서 option_key를 풀어 조합 (구 useChoiceManagement: option_key1+option_key2)
+                    if (!choiceData && productChoicesLoaded && formData.productChoices?.length && choicesForPricing.length) {
+                      const optKeysSorted = choicesForPricing
+                        .map((c: any) => {
+                          const cid = c.choice_id || (c as any).id
+                          const pc = formData.productChoices!.find((p: any) => p.id === cid)
+                          const opt = pc?.options?.find((o: any) => o.id === c.option_id)
+                          return (opt as any)?.option_key as string | undefined
+                        })
+                        .filter(Boolean)
+                        .sort()
+                        .join('+')
+                      if (optKeysSorted) {
+                        if (choicesPricing[optKeysSorted]) {
+                          choiceData = choicesPricing[optKeysSorted]
+                          foundChoicePricing = true
+                          console.log('choices_pricing option_key 조합으로 찾음:', { optKeysSorted, choiceData })
+                        }
+                        if (!choiceData) {
+                          const mk = Object.keys(choicesPricing).find((k) => {
+                            const a = k.split('+').sort().join('+')
+                            const b = optKeysSorted.split('+').sort().join('+')
+                            return a === b
+                          })
+                          if (mk) {
+                            choiceData = choicesPricing[mk]
+                            foundChoicePricing = true
+                            console.log('choices_pricing 정렬 option_key 조합으로 찾음:', { mk, choiceData })
+                          }
+                        }
+                      }
+                    }
+        
+                    // 1c. choice_id+option_key (동적가격에 option UUID 대신 option_key로 저장된 경우)
+                    if (!choiceData && productChoicesLoaded && formData.productChoices?.length) {
+                      for (const c of choicesForPricing) {
+                        const cid = c.choice_id || (c as any).id
+                        const pc = formData.productChoices!.find((p: any) => p.id === cid)
+                        const opt = pc?.options?.find((o: any) => o.id === c.option_id)
+                        const ok = (opt as any)?.option_key as string | undefined
+                        if (cid && ok && choicesPricing[`${cid}+${ok}`]) {
+                          choiceData = choicesPricing[`${cid}+${ok}`]
+                          foundChoicePricing = true
+                          console.log('choices_pricing choice_id+option_key로 찾음:', { key: `${cid}+${ok}`, choiceData })
+                          break
+                        }
+                      }
+                    }
+                    
+                    // 2. DB 형식: choice_id+option_id 우선 (UUID 대시 유무 무시), 그다음 choice_id+option_key
+                    if (!choiceData) {
+                      for (const c of choicesForPricing) {
+                        const cid = c.choice_id || (c as any).id
+                        const oid = c.option_id
+                        if (cid && oid) {
+                          const entry = findChoicePricingEntry(cid, oid)
+                          if (entry) {
+                            choiceData = entry
+                            console.log('choices_pricing choice_id+option_id로 초이스 가격 찾음:', { cid, oid, choiceData })
+                            foundChoicePricing = true
+                            break
+                          }
+                        }
+                        if (!choiceData) {
+                          for (const key of buildChoicePricingKeys(c)) {
+                            if (choicesPricing[key]) {
+                              choiceData = choicesPricing[key]
+                              console.log('choices_pricing 키(choice_id+option)로 초이스 가격 찾음:', { key, choiceData })
+                              foundChoicePricing = true
+                              break
+                            }
+                          }
+                        }
+                        if (choiceData) break
+                      }
+                    }
+        
+                    // 3. 복수 초이스: DB 키가 choice_id+option_id 한 쌍짜리만 있을 때, 선택별 행을 찾아 OTA 합산
+                    if (!choiceData && choicesForPricing.length > 0 && productChoicesLoaded) {
+                      const pcs = formData.productChoices || []
+                      const entries: any[] = []
+                      for (const c of choicesForPricing) {
+                        const cid = c.choice_id || (c as any).id
+                        const oid = c.option_id
+                        let e: any = null
+                        if (cid && oid) e = findChoicePricingEntry(cid, oid)
+                        if (!e && cid && oid) {
+                          const pc = pcs.find((p: any) => p.id === cid)
+                          const opt = pc?.options?.find((o: any) => o.id === oid)
+                          const ok = (opt as any)?.option_key as string | undefined
+                          if (cid && ok && choicesPricing[`${cid}+${ok}`]) e = choicesPricing[`${cid}+${ok}`]
+                        }
+                        if (e) entries.push(e)
+                      }
+                      if (entries.length === choicesForPricing.length && entries.every((x) => x && x.ota_sale_price != null)) {
+                        const sumOta = entries.reduce((s, x) => s + (Number(x.ota_sale_price) || 0), 0)
+                        if (sumOta > 0) {
+                          let maxNi = 0
+                          for (const x of entries) {
+                            const ni = Number(x.not_included_price) || 0
+                            if (ni > maxNi) maxNi = ni
+                          }
+                          choiceData = { ota_sale_price: sumOta, not_included_price: maxNi || undefined }
+                          foundChoicePricing = true
+                          console.log('choices_pricing 복수 초이스 OTA 합산:', { sumOta, pairCount: entries.length })
+                        }
+                      }
+                    }
+                    
+                    // 4. 개별 초이스로 찾기 (조합 키로 찾지 못한 경우) — 미정→미국 거주자 치환된 목록 사용
+                    if (!choiceData) {
+                      for (const selectedChoice of choicesForPricingLookup) {
+                        const choiceId = selectedChoice.choice_id || (selectedChoice as any).id
+                        const optionId = selectedChoice.option_id
+                        const optionKey = (selectedChoice as any).option_key
+                        
+                        // 다양한 키 형식으로 찾기 시도 (우선순위: option_key > option_id > choice_id)
+                        // 3-1. option_key로 먼저 찾기 (가장 우선)
+                        if (optionKey && choicesPricing[optionKey]) {
+                          choiceData = choicesPricing[optionKey]
+                          console.log('option_key로 초이스 가격 찾음:', { optionKey, choiceData })
+                          break
+                        }
+                        // 3-2. option_id로 찾기
+                        else if (optionId && choicesPricing[optionId]) {
+                          choiceData = choicesPricing[optionId]
+                          console.log('option_id로 초이스 가격 찾음:', { optionId, choiceData })
+                          break
+                        }
+                        // 3-3. choice_id로 찾기
+                        else if (choiceId && choicesPricing[choiceId]) {
+                          choiceData = choicesPricing[choiceId]
+                          console.log('choice_id로 초이스 가격 찾음:', { choiceId, choiceData })
+                          break
+                        }
+                        // 3-4. choice_id + option_id 조합 형식 찾기
+                        else if (choiceId && optionId) {
+                          const combinedKey1 = `${choiceId}+${optionId}`
+                          const combinedKey2 = `${choiceId}_${optionId}`
+                          if (choicesPricing[combinedKey1]) {
+                            choiceData = choicesPricing[combinedKey1]
+                            console.log('조합 키(형식1)로 초이스 가격 찾음:', { combinedKey1, choiceData })
+                            break
+                          } else if (choicesPricing[combinedKey2]) {
+                            choiceData = choicesPricing[combinedKey2]
+                            console.log('조합 키(형식2)로 초이스 가격 찾음:', { combinedKey2, choiceData })
+                            break
+                          }
+                        }
+                        // 3-5. choice_id + option_key 조합 형식 찾기
+                        else if (choiceId && optionKey) {
+                          const combinedKey1 = `${choiceId}+${optionKey}`
+                          const combinedKey2 = `${choiceId}_${optionKey}`
+                          if (choicesPricing[combinedKey1]) {
+                            choiceData = choicesPricing[combinedKey1]
+                            console.log('조합 키(choice_id+option_key 형식1)로 초이스 가격 찾음:', { combinedKey1, choiceData })
+                            break
+                          } else if (choicesPricing[combinedKey2]) {
+                            choiceData = choicesPricing[combinedKey2]
+                            console.log('조합 키(choice_id+option_key 형식2)로 초이스 가격 찾음:', { combinedKey2, choiceData })
+                            break
+                          }
+                        }
+                        // 3-6. 조합 키만 정확히 매칭 (로어 vs X 앤텔롭 등 같은 choice 내 다른 옵션 오매칭 방지)
+                        if (!choiceData) {
+                          const exactCombinationKeys =
+                            choiceId && optionId ? [`${choiceId}+${optionId}`, `${choiceId}_${optionId}`] : []
+                          const exactWithOptionKey =
+                            choiceId && optionKey ? [`${choiceId}+${optionKey}`, `${choiceId}_${optionKey}`] : []
+                          for (const key of [...exactCombinationKeys, ...exactWithOptionKey]) {
+                            if (choicesPricing[key]) {
+                              choiceData = choicesPricing[key]
+                              console.log('조합 키 정확 매칭으로 초이스 가격 찾음:', { key, choiceData })
+                              break
+                            }
+                          }
+                        }
+                        
+                        if (choiceData) break
+                      }
+                    }
+                    
+                    // 5. choice_id 불일치 시 option_id/option_key만으로 매칭 (폼 choice_id와 pricing 키의 choice_id가 다른 경우)
+                    if (!choiceData && choicesForPricingLookup.length > 0) {
+                      const ourOptionIds = new Set(
+                        choicesForPricingLookup.map((c: any) => c.option_id).filter(Boolean)
+                      )
+                      const ourOptionKeys = new Set(
+                        choicesForPricingLookup.map((c: any) => (c as any).option_key).filter(Boolean)
+                      )
+                      const matches: { key: string; entry: any }[] = []
+                      for (const key of Object.keys(choicesPricing)) {
+                        const parts = key.split(/[+_]/)
+                        const optionPart = parts.length >= 2 ? parts[parts.length - 1] : key
+                        if (ourOptionIds.has(optionPart) || ourOptionKeys.has(optionPart)) {
+                          matches.push({ key, entry: choicesPricing[key] })
+                        }
+                        if (ourOptionIds.has(key) || ourOptionKeys.has(key)) matches.push({ key, entry: choicesPricing[key] })
+                      }
+                      if (matches.length > 0) {
+                        const best = matches.reduce((a, b) => 
+                          (Number((b.entry as any)?.ota_sale_price) || 0) > (Number((a.entry as any)?.ota_sale_price) || 0) ? b : a
+                        )
+                        choiceData = best.entry
+                        const maxNi = matches.reduce((m, x) => {
+                          const ni = Number((x.entry as any)?.not_included_price)
+                          return ni > 0 && ni > m ? ni : m
+                        }, 0)
+                        if (choiceData && (choiceData as any).ota_sale_price != null) {
+                          foundChoicePricing = true
+                          if (maxNi > 0) (choiceData as any).not_included_price = maxNi
+                          console.log('option_id/option_key만으로 초이스 가격 찾음 (choice_id 불일치 폴백):', { matchesCount: matches.length, bestKey: best.key, ota_sale_price: (choiceData as any).ota_sale_price, not_included_price: maxNi || (choiceData as any).not_included_price })
+                        }
+                      }
+                    }
+                    
+                    if (choiceData) {
+                      const data = choiceData as any
+                      
+                      // 초이스별 가격 설정에서 OTA 판매가만 사용 (adult_price, child_price, infant_price는 저장하지 않음)
+                      if (data.ota_sale_price !== undefined && data.ota_sale_price !== null && data.ota_sale_price >= 0) {
+                        adultPrice = data.ota_sale_price
+                        childPrice = isSinglePrice ? data.ota_sale_price : data.ota_sale_price
+                        infantPrice = isSinglePrice ? data.ota_sale_price : data.ota_sale_price
+                        // 선택된 초이스의 불포함 가격 사용 (단일 조합 키에서 온 경우)
+                        if (data.not_included_price !== undefined && data.not_included_price !== null) {
+                          notIncludedPrice = data.not_included_price
+                        }
+                        // 복수 초이스인 경우: DB는 키당 하나의 행(choice_id+option_id)이므로, 각 초이스의 choice_id+option_id로 매칭된 항목 중 not_included_price 사용 (최대값으로 해당 조합 행 값 반영, 25de6afe+8f8a7270 → 95 등)
+                        if (choicesForPricing.length > 1) {
+                          let maxNotIncluded = notIncludedPrice
+                          for (const c of choicesForPricing) {
+                            const cid = c.choice_id || (c as any).id
+                            const oid = c.option_id
+                            if (cid && oid) {
+                              const entry = findChoicePricingEntry(cid, oid)
+                              if (entry && entry.not_included_price !== undefined && entry.not_included_price !== null) {
+                                const ni = Number(entry.not_included_price)
+                                if (ni > 0 && ni > maxNotIncluded) maxNotIncluded = ni
+                              }
+                            }
+                          }
+                          if (maxNotIncluded > 0) notIncludedPrice = maxNotIncluded
+                        }
+                        foundChoicePricing = true
+                        console.log('선택된 초이스의 OTA 판매가 사용:', { combinationKey, otaSalePrice: data.ota_sale_price, adultPrice, childPrice, infantPrice, notIncludedPrice })
+                      } else {
+                        // OTA 판매가가 없으면 가격을 로드하지 않음
+                        console.log('초이스별 가격 설정에 OTA 판매가가 없어 가격을 로드하지 않음:', { combinationKey, data })
+                        foundChoicePricing = false
+                      }
+                    }
+                    
+                    // 선택된 초이스의 가격을 찾은 경우
+                    if (foundChoicePricing) {
+                      useChoicePricing = true
+                      console.log('초이스별 가격 사용 완료:', { adultPrice, childPrice, infantPrice, notIncludedPrice })
+                    } else if (choicesForPricingLookup.length > 0) {
+                      // 매칭 실패 시: 폼 choice_id/option_id가 DB 키와 다를 때(가져오기 등) OTA·불포함 폴백 조회
+                      const fallbackCombinationKey = choicesForPricingLookup
+                        .map((c: any) => `${c.choice_id || c.id}+${(c.option_id ?? c.option_key) ?? ''}`)
+                        .filter(Boolean)
+                        .sort()
+                        .join('+')
+                      const fallbackResult = fallbackCombinationKey
+                        ? getFallbackOtaAndNotIncluded(
+                            { id: fallbackCombinationKey, combination_key: fallbackCombinationKey },
+                            choicesPricing
+                          )
+                        : undefined
+                      const fallbackOta = fallbackResult?.ota_sale_price
+                      if (fallbackOta !== undefined && fallbackOta > 0) {
+                        adultPrice = fallbackOta
+                        childPrice = isSinglePrice ? fallbackOta : fallbackOta
+                        infantPrice = isSinglePrice ? fallbackOta : fallbackOta
+                        if (fallbackResult?.not_included_price !== undefined && fallbackResult.not_included_price !== null && Number(fallbackResult.not_included_price) > 0) {
+                          notIncludedPrice = Number(fallbackResult.not_included_price)
+                        }
+                        useChoicePricing = true
+                        foundChoicePricing = true
+                        console.log('초이스 가격 폴백 OTA·불포함 사용:', { fallbackCombinationKey, fallbackOta, notIncludedPrice })
+                      }
+                      if (!foundChoicePricing) {
+                        console.log('선택된 초이스의 가격을 찾지 못함, 기본 가격으로 폴백:', { 
+                          choicesPricingKeys: Object.keys(choicesPricing),
+                          selectedChoices: pricingSelectedChoices
+                        })
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('choices_pricing 파싱 오류:', e)
+                  }
+                }
+        
+                // 초이스 없는 상품: VIATOR OTA 등은 choices_pricing['no_choice'].ota_sale_price 에만 저장됨 (행 adult_price는 기본가)
+                if (!useChoicePricing && isOTAChannel && hasChoicesPricing) {
+                  const hasDefiniteSelection = (pricingSelectedChoices || []).some(
+                    (c: any) =>
+                      c.option_id !== UNDECIDED_OPTION_ID_PRICING &&
+                      (c as any).option_key !== UNDECIDED_OPTION_ID_PRICING
+                  )
+                  if (!hasDefiniteSelection) {
+                    const nc = getNoChoiceOtaAndNotIncluded(choicesPricing)
+                    if (nc && nc.ota_sale_price > 0) {
+                      adultPrice = nc.ota_sale_price
+                      childPrice = isSinglePrice ? nc.ota_sale_price : nc.ota_sale_price
+                      infantPrice = isSinglePrice ? nc.ota_sale_price : nc.ota_sale_price
+                      if (nc.not_included_price != null && nc.not_included_price > 0) {
+                        notIncludedPrice = nc.not_included_price
+                      }
+                      useChoicePricing = true
+                      console.log('choices_pricing no_choice OTA 적용 (확정 초이스 없음):', {
+                        ota_sale_price: nc.ota_sale_price,
+                        not_included_price: nc.not_included_price,
+                      })
+                    }
+                  }
+                }
+                
+                // 초이스별 가격을 사용하지 않은 경우
+                // 초이스가 있는 상품은 무조건 choices_pricing만 참조, 기본 가격(adult_price 등) 사용 금지
+                const productHasChoices = (formData.productChoices?.length ?? 0) > 0
+                const mustUseChoicePricingOnly = hasChoicesPricing || productHasChoices
+        
+                if (!useChoicePricing) {
+                  // 초이스가 있는 상품(choices_pricing 있음 또는 productChoices 있음)
+                  if (mustUseChoicePricingOnly) {
+                    // 필수 초이스가 모두 선택되지 않은 경우: 기본 상품가(판매가·불포함)는 dynamic_pricing 행에서 로드
+                    if (!allRequiredChoicesSelected) {
+                      const baseAdult = (pricing?.adult_price as number) ?? 0
+                      const baseChild = isSinglePrice ? baseAdult : ((pricing?.child_price as number) ?? 0)
+                      const baseInfant = isSinglePrice ? baseAdult : ((pricing?.infant_price as number) ?? 0)
+                      const baseNotIncluded = (pricing?.not_included_price as number) ?? 0
+                      adultPrice = baseAdult
+                      childPrice = baseChild
+                      infantPrice = baseInfant
+                      notIncludedPrice = baseNotIncluded
+                      console.log('필수 초이스 미선택 — 기본 상품가(판매가·불포함) 로드:', {
+                        adultPrice,
+                        childPrice,
+                        infantPrice,
+                        notIncludedPrice
+                      })
+        
+                    } else {
+                      // 필수 초이스는 모두 선택되었지만 초이스별 가격을 찾지 못한 경우
+                      console.log('초이스별 가격 설정이 있지만 해당 초이스의 가격을 찾지 못함. 기본 가격을 로드하지 않음:', {
+                        hasChoicesPricing: !!pricing?.choices_pricing,
+                        choicesPricingKeys: Object.keys(choicesPricing || {}),
+                        selectedChoices: pricingSelectedChoices
+                      })
+                      // 가격을 0으로 설정하고 메시지 표시
+                      adultPrice = 0
+                      childPrice = 0
+                      infantPrice = 0
+                      notIncludedPrice = 0
+        
+                    }
+                  } else {
+                    // formData.productChoices는 아직 로드 전일 수 있으므로, DB에서 상품 초이스 여부 확인
+                    // 초이스 상품이면 기본가(236 등) 사용 금지 → 0으로 두고 초이스 선택 후 로드 유도
+                    let productHasChoicesFromDb = false
+                    try {
+                      const { data: productChoicesRows } = await (supabase as any)
+                        .from('product_choices')
+                        .select('id')
+                        .eq('product_id', productId)
+                        .limit(1)
+                      productHasChoicesFromDb = Array.isArray(productChoicesRows) && productChoicesRows.length > 0
+                    } catch {
+                      // 조회 실패 시 기존 로직 유지
+                    }
+                    if (productHasChoicesFromDb) {
+                      console.log('초이스 상품인데 choices_pricing/폼 초이스 없음 → 기본가 미사용, 0으로 설정:', { productId })
+                      adultPrice = 0
+                      childPrice = 0
+                      infantPrice = 0
+                      notIncludedPrice = 0
+        
+                    } else {
+                      // 실제로 초이스가 없는 상품에만 기본 가격 사용
+                      adultPrice = (pricing?.adult_price as number) || 0
+                      childPrice = isSinglePrice ? adultPrice : ((pricing?.child_price as number) || 0)
+                      infantPrice = isSinglePrice ? adultPrice : ((pricing?.infant_price as number) || 0)
+                      notIncludedPrice = (pricing?.not_included_price as number) || 0
+                      console.log('기본 가격 사용 (초이스가 없는 상품):', { 
+                        hasChoicesPricing: false,
+                        adultPrice, 
+                        childPrice, 
+                        infantPrice 
+                      })
+                    }
+                  }
+                }
+        return { adultPrice, childPrice, infantPrice, commissionPercent, notIncludedPrice }
+      }
 
-      if (pricingReservationId && !channelChangedInForm) {
+
+      // 1. 먼저 reservation_pricing에서 기존 가격 정보 확인 (편집 모드인 경우)
+      if (pricingReservationId) {
         const toNum = (v: unknown): number => {
           if (v === null || v === undefined) return 0
           if (typeof v === 'number' && !Number.isNaN(v)) return v
@@ -2947,7 +3590,7 @@ export default function ReservationForm({
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
           .select(
-            'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, choices, choices_total, pricing_adults'
+            'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, choices, choices_total, pricing_adults, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name'
           )
           .eq('reservation_id', pricingReservationId)
           .maybeSingle()
@@ -2958,6 +3601,13 @@ export default function ReservationForm({
           // 오류가 발생해도 계속 진행 (dynamic_pricing 조회)
         } else if (existingPricing) {
           setReservationPricingId((existingPricing as { id?: string }).id ?? null)
+          setPricingAudit({
+            audited: Boolean((existingPricing as any).audited),
+            auditedAt: (existingPricing as any).audited_at ?? null,
+            auditedByEmail: (existingPricing as any).audited_by_email ?? null,
+            auditedByName: (existingPricing as any).audited_by_name ?? null,
+            auditedByNickName: (existingPricing as any).audited_by_nick_name ?? null,
+          })
           console.log('기존 가격 정보 사용:', existingPricing)
 
           // reservation_pricing에 commission_percent가 있으면 그대로 사용(계산하지 않음). 없을 때만 $ 기준 역산
@@ -3256,11 +3906,27 @@ export default function ReservationForm({
               (existingPricing as any).channel_settlement_amount !== '',
             pricingAdults:
               (existingPricing as any).pricing_adults != null && (existingPricing as any).pricing_adults !== '',
+            adultProductPrice:
+              (existingPricing as any).adult_product_price != null &&
+              (existingPricing as any).adult_product_price !== '',
+            childProductPrice:
+              (existingPricing as any).child_product_price != null &&
+              (existingPricing as any).child_product_price !== '',
+            infantProductPrice:
+              (existingPricing as any).infant_product_price != null &&
+              (existingPricing as any).infant_product_price !== '',
           })
 
           // 상품 단가·불포함이 모두 0이면 dynamic_pricing에서 채우기 위해 아래로 진행 (불포함은 DB 컬럼 값 유지)
           const hasAnySavedPrice = hasSavedProductPrices || (Number((existingPricing as any).not_included_price) || 0) > 0
           if (hasAnySavedPrice) {
+            try {
+              const formula = await loadDynamicPricingFromDb()
+              setDynamicPriceFormula(formula)
+            } catch (e) {
+              console.warn('동적 가격 계산식 스냅샷 실패:', e)
+              setDynamicPriceFormula(null)
+            }
             setIsExistingPricingLoaded(true)
             setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
             return
@@ -3268,596 +3934,34 @@ export default function ReservationForm({
           notIncludedPriceFromReservationPricing = Number((existingPricing as any).not_included_price) || 0
         } else {
           setReservationPricingId(null)
+          setPricingAudit({
+            audited: false,
+            auditedAt: null,
+            auditedByEmail: null,
+            auditedByName: null,
+            auditedByNickName: null,
+          })
         }
       }
 
-      // 2. reservation_pricing에 가격 정보가 없거나 상품·불포함이 모두 0이면 dynamic_pricing에서 조회
-      let adultPrice = 0
-      let childPrice = 0
-      let infantPrice = 0
-      let commissionPercent = 0
-      let notIncludedPrice = 0
-
-      console.log('Dynamic pricing 조회 시작:', {
-        productId,
-        tourDate,
-        tourDateNormalized,
-        channelId,
-        variantKey: variantKeyForDp,
-        variantKeyForm: formDataRef.current.variantKey || formData.variantKey || 'default',
-      })
-        // variantKeyForDp: channel_products로 라벨·시맨틱 해석 후 조회 (순서와 무관)
-        let pricingData: any[] | null = null
-        let pricingError: any = null
-        let dpRes = await queryDynamicPricingByVariant(DP_SELECT_FULL, variantKeyForDp)
-        pricingData = dpRes.data
-        pricingError = dpRes.error
-        if ((!pricingData || pricingData.length === 0) && !pricingError) {
-          if (variantKeyForDp !== 'default') {
-            dpRes = await queryDynamicPricingByVariant(DP_SELECT_FULL, 'default')
-            if (dpRes.error) pricingError = dpRes.error
-            else if (dpRes.data?.length) pricingData = dpRes.data
-          }
-        }
-        // variant_key를 특정했는데(all_inclusive 등) 해당 행이 없을 때 임의 variant로 채우면 With Exclusions 가격이 들어가는 버그
-        if ((!pricingData || pricingData.length === 0) && !pricingError && variantKeyForDp === 'default') {
-          dpRes = await queryDynamicPricingAnyVariant(DP_SELECT_FULL)
-          if (dpRes.error) pricingError = dpRes.error
-          else if (dpRes.data?.length) pricingData = dpRes.data
-        }
-
-        if (pricingError) {
-          console.log('Dynamic pricing 조회 오류:', pricingError.message)
-          setFormData(prev => ({
-            ...prev,
-            adultProductPrice: 0,
-            childProductPrice: 0,
-            infantProductPrice: 0
-          }))
-          setPriceAutoFillMessage('가격 조회 중 오류가 발생했습니다. 수동으로 입력해주세요.')
-          return
-        }
-
-        if (!pricingData || pricingData.length === 0) {
-          console.log('Dynamic pricing 데이터가 없습니다. 가격을 0으로 설정합니다.')
-          setFormData(prev => ({
-            ...prev,
-            adultProductPrice: 0,
-            childProductPrice: 0,
-            infantProductPrice: 0
-          }))
-          setPriceAutoFillMessage('가격 정보가 없어 0으로 설정되었습니다. 수동으로 입력해주세요.')
-          return
-        }
-
-        const pricing = pricingData[0] as any
-        console.log('Dynamic pricing 데이터 조회 성공:', pricing)
-        
-        commissionPercent = (pricing?.commission_percent as number) || 0
-        
-        // 채널 정보 확인
-        const selectedChannel = channels.find(c => c.id === channelId)
-        const isOTAChannel = selectedChannel && (
-          (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
-          (selectedChannel as any)?.category === 'OTA'
-        )
-        const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
-        const isSinglePrice = pricingType === 'single'
-        
-        console.log('채널 정보:', { channelId, isOTAChannel, pricingType, isSinglePrice })
-
-        // choices_pricing이 있는지 확인
-        let hasChoicesPricing = false
-        let choicesPricing: Record<string, any> = {}
-        try {
-          if (pricing?.choices_pricing) {
-            choicesPricing = typeof pricing.choices_pricing === 'string' 
-              ? JSON.parse(pricing.choices_pricing) 
-              : pricing.choices_pricing
-            hasChoicesPricing = choicesPricing && typeof choicesPricing === 'object' && Object.keys(choicesPricing).length > 0
-          }
-        } catch (e) {
-          console.warn('choices_pricing 확인 중 오류:', e)
-        }
-
-        // 필수 초이스가 모두 선택되었는지 확인
-        // productChoices가 아직 비어 있으면(로드 전) requiredChoices도 비어 vacuously true가 되어
-        // choices_pricing 있는 상품에서 판매가·불포함이 0으로 덮어써지는 버그가 난다 → 로드 전에는 "필수 미충족"으로 본다
-        const productChoicesLoaded = (formData.productChoices?.length ?? 0) > 0
-        const requiredChoices = formData.productChoices?.filter(choice => choice.is_required) || []
-        const selectedChoiceIds = new Set(currentSelectedChoices?.map(c => c.choice_id || (c as any).id).filter(Boolean) || [])
-        const allRequiredChoicesSelected = !productChoicesLoaded
-          ? false
-          : (requiredChoices.length === 0 || requiredChoices.every(choice => selectedChoiceIds.has(choice.id)))
-        
-        // choices_pricing이 있고 (필수 초이스 완료 또는 OTA 채널)이면 초이스별 가격 우선 시도
-        // 이메일 가져오기 직후 productChoices 미로드 시 allRequiredChoicesSelected가 항상 false라
-        // choices_pricing을 건너뛰고 행 adult_price(기본가)만 쓰는 문제 방지 — OTA는 선택된 초이스만으로도 OTA가 로드되게 함
-        // 초이스별 가격이 있으면 기본 가격(adult_price, child_price, infant_price)은 무시
-        let useChoicePricing = false
-        if (
-          hasChoicesPricing &&
-          pricingSelectedChoices &&
-          pricingSelectedChoices.length > 0 &&
-          (allRequiredChoicesSelected || isOTAChannel)
-        ) {
-          try {
-            
-            console.log('choices_pricing 데이터:', choicesPricing)
-            console.log('선택된 초이스(동적가격 조회용·미정→미국 거주자 치환):', pricingSelectedChoices)
-            
-            // normalizeUndecidedChoicesForDynamicPricing에서 미정→미국 거주자 치환 후, 남은 미정만 제외
-            const UNDECIDED_OPTION_ID = UNDECIDED_OPTION_ID_PRICING
-            const choicesForPricingLookup = pricingSelectedChoices || []
-            const choicesForPricing = choicesForPricingLookup.filter((c: any) => c.option_id !== UNDECIDED_OPTION_ID && c.option_key !== UNDECIDED_OPTION_ID)
-            const selectedOptionIds = choicesForPricing
-              .map(c => c.option_id)
-              .filter(Boolean)
-              .sort()
-            const selectedOptionKeys = choicesForPricing
-              .map(c => (c as any).option_key)
-              .filter(Boolean)
-              .sort()
-            const selectedChoiceIds = choicesForPricing
-              .map(c => c.choice_id || (c as any).id)
-              .filter(Boolean)
-              .sort()
-            
-            // choices_pricing 키 형식: DB는 "choice_id+option_id" (전체 UUID) 사용 → 이 형식 우선 시도
-            const buildChoicePricingKeys = (c: { choice_id?: string; option_id?: string; option_key?: string; id?: string }) => {
-              const cid = c.choice_id || (c as any).id
-              const oid = c.option_id
-              const okey = (c as any).option_key
-              const keys: string[] = []
-              if (cid && oid) keys.push(`${cid}+${oid}`)
-              if (cid && okey) keys.push(`${cid}+${okey}`)
-              return keys
-            }
-            // DB 키와 매칭 (UUID 대시 유무 차이 무시)
-            const findChoicePricingEntry = (choiceId: string, optionId: string): any => {
-              const exact = `${choiceId}+${optionId}`
-              if (choicesPricing[exact]) return choicesPricing[exact]
-              const normalized = exact.replace(/-/g, '')
-              const foundKey = Object.keys(choicesPricing).find(k => k.replace(/-/g, '') === normalized)
-              return foundKey ? choicesPricing[foundKey] : null
-            }
-            
-            const combinationKey = selectedOptionKeys.length > 0
-              ? selectedOptionKeys.join('+')
-              : selectedOptionIds.length > 0
-                ? selectedOptionIds.join('+')
-                : selectedChoiceIds.join('+')
-            let foundChoicePricing = false
-            let choiceData: any = null
-
-            // 1. 조합 키 우선 (밤도깨비 등 복수 초이스 시 불포함 가격이 조합 키에만 있는 경우 대비)
-            if (combinationKey && choicesPricing[combinationKey]) {
-              choiceData = choicesPricing[combinationKey]
-              console.log('choices_pricing 조합 키로 초이스 가격 찾음:', { combinationKey, choiceData })
-              foundChoicePricing = true
-            }
-            if (!choiceData && combinationKey) {
-              const sortedKey = combinationKey.split('+').sort().join('+')
-              const availableKeys = Object.keys(choicesPricing)
-              const matchingKey = availableKeys.find(key => {
-                const sortedAvailableKey = key.split('+').sort().join('+')
-                return sortedAvailableKey === sortedKey
-              })
-              if (matchingKey) {
-                choiceData = choicesPricing[matchingKey]
-                console.log('정렬된 조합 키로 초이스 가격 찾음:', { matchingKey, sortedKey, choiceData })
-                foundChoicePricing = true
-              }
-            }
-
-            // 1b. product_choices에서 option_key를 풀어 조합 (구 useChoiceManagement: option_key1+option_key2)
-            if (!choiceData && productChoicesLoaded && formData.productChoices?.length && choicesForPricing.length) {
-              const optKeysSorted = choicesForPricing
-                .map((c: any) => {
-                  const cid = c.choice_id || (c as any).id
-                  const pc = formData.productChoices!.find((p: any) => p.id === cid)
-                  const opt = pc?.options?.find((o: any) => o.id === c.option_id)
-                  return (opt as any)?.option_key as string | undefined
-                })
-                .filter(Boolean)
-                .sort()
-                .join('+')
-              if (optKeysSorted) {
-                if (choicesPricing[optKeysSorted]) {
-                  choiceData = choicesPricing[optKeysSorted]
-                  foundChoicePricing = true
-                  console.log('choices_pricing option_key 조합으로 찾음:', { optKeysSorted, choiceData })
-                }
-                if (!choiceData) {
-                  const mk = Object.keys(choicesPricing).find((k) => {
-                    const a = k.split('+').sort().join('+')
-                    const b = optKeysSorted.split('+').sort().join('+')
-                    return a === b
-                  })
-                  if (mk) {
-                    choiceData = choicesPricing[mk]
-                    foundChoicePricing = true
-                    console.log('choices_pricing 정렬 option_key 조합으로 찾음:', { mk, choiceData })
-                  }
-                }
-              }
-            }
-
-            // 1c. choice_id+option_key (동적가격에 option UUID 대신 option_key로 저장된 경우)
-            if (!choiceData && productChoicesLoaded && formData.productChoices?.length) {
-              for (const c of choicesForPricing) {
-                const cid = c.choice_id || (c as any).id
-                const pc = formData.productChoices!.find((p: any) => p.id === cid)
-                const opt = pc?.options?.find((o: any) => o.id === c.option_id)
-                const ok = (opt as any)?.option_key as string | undefined
-                if (cid && ok && choicesPricing[`${cid}+${ok}`]) {
-                  choiceData = choicesPricing[`${cid}+${ok}`]
-                  foundChoicePricing = true
-                  console.log('choices_pricing choice_id+option_key로 찾음:', { key: `${cid}+${ok}`, choiceData })
-                  break
-                }
-              }
-            }
-            
-            // 2. DB 형식: choice_id+option_id 우선 (UUID 대시 유무 무시), 그다음 choice_id+option_key
-            if (!choiceData) {
-              for (const c of choicesForPricing) {
-                const cid = c.choice_id || (c as any).id
-                const oid = c.option_id
-                if (cid && oid) {
-                  const entry = findChoicePricingEntry(cid, oid)
-                  if (entry) {
-                    choiceData = entry
-                    console.log('choices_pricing choice_id+option_id로 초이스 가격 찾음:', { cid, oid, choiceData })
-                    foundChoicePricing = true
-                    break
-                  }
-                }
-                if (!choiceData) {
-                  for (const key of buildChoicePricingKeys(c)) {
-                    if (choicesPricing[key]) {
-                      choiceData = choicesPricing[key]
-                      console.log('choices_pricing 키(choice_id+option)로 초이스 가격 찾음:', { key, choiceData })
-                      foundChoicePricing = true
-                      break
-                    }
-                  }
-                }
-                if (choiceData) break
-              }
-            }
-
-            // 3. 복수 초이스: DB 키가 choice_id+option_id 한 쌍짜리만 있을 때, 선택별 행을 찾아 OTA 합산
-            if (!choiceData && choicesForPricing.length > 0 && productChoicesLoaded) {
-              const pcs = formData.productChoices || []
-              const entries: any[] = []
-              for (const c of choicesForPricing) {
-                const cid = c.choice_id || (c as any).id
-                const oid = c.option_id
-                let e: any = null
-                if (cid && oid) e = findChoicePricingEntry(cid, oid)
-                if (!e && cid && oid) {
-                  const pc = pcs.find((p: any) => p.id === cid)
-                  const opt = pc?.options?.find((o: any) => o.id === oid)
-                  const ok = (opt as any)?.option_key as string | undefined
-                  if (cid && ok && choicesPricing[`${cid}+${ok}`]) e = choicesPricing[`${cid}+${ok}`]
-                }
-                if (e) entries.push(e)
-              }
-              if (entries.length === choicesForPricing.length && entries.every((x) => x && x.ota_sale_price != null)) {
-                const sumOta = entries.reduce((s, x) => s + (Number(x.ota_sale_price) || 0), 0)
-                if (sumOta > 0) {
-                  let maxNi = 0
-                  for (const x of entries) {
-                    const ni = Number(x.not_included_price) || 0
-                    if (ni > maxNi) maxNi = ni
-                  }
-                  choiceData = { ota_sale_price: sumOta, not_included_price: maxNi || undefined }
-                  foundChoicePricing = true
-                  console.log('choices_pricing 복수 초이스 OTA 합산:', { sumOta, pairCount: entries.length })
-                }
-              }
-            }
-            
-            // 4. 개별 초이스로 찾기 (조합 키로 찾지 못한 경우) — 미정→미국 거주자 치환된 목록 사용
-            if (!choiceData) {
-              for (const selectedChoice of choicesForPricingLookup) {
-                const choiceId = selectedChoice.choice_id || (selectedChoice as any).id
-                const optionId = selectedChoice.option_id
-                const optionKey = (selectedChoice as any).option_key
-                
-                // 다양한 키 형식으로 찾기 시도 (우선순위: option_key > option_id > choice_id)
-                // 3-1. option_key로 먼저 찾기 (가장 우선)
-                if (optionKey && choicesPricing[optionKey]) {
-                  choiceData = choicesPricing[optionKey]
-                  console.log('option_key로 초이스 가격 찾음:', { optionKey, choiceData })
-                  break
-                }
-                // 3-2. option_id로 찾기
-                else if (optionId && choicesPricing[optionId]) {
-                  choiceData = choicesPricing[optionId]
-                  console.log('option_id로 초이스 가격 찾음:', { optionId, choiceData })
-                  break
-                }
-                // 3-3. choice_id로 찾기
-                else if (choiceId && choicesPricing[choiceId]) {
-                  choiceData = choicesPricing[choiceId]
-                  console.log('choice_id로 초이스 가격 찾음:', { choiceId, choiceData })
-                  break
-                }
-                // 3-4. choice_id + option_id 조합 형식 찾기
-                else if (choiceId && optionId) {
-                  const combinedKey1 = `${choiceId}+${optionId}`
-                  const combinedKey2 = `${choiceId}_${optionId}`
-                  if (choicesPricing[combinedKey1]) {
-                    choiceData = choicesPricing[combinedKey1]
-                    console.log('조합 키(형식1)로 초이스 가격 찾음:', { combinedKey1, choiceData })
-                    break
-                  } else if (choicesPricing[combinedKey2]) {
-                    choiceData = choicesPricing[combinedKey2]
-                    console.log('조합 키(형식2)로 초이스 가격 찾음:', { combinedKey2, choiceData })
-                    break
-                  }
-                }
-                // 3-5. choice_id + option_key 조합 형식 찾기
-                else if (choiceId && optionKey) {
-                  const combinedKey1 = `${choiceId}+${optionKey}`
-                  const combinedKey2 = `${choiceId}_${optionKey}`
-                  if (choicesPricing[combinedKey1]) {
-                    choiceData = choicesPricing[combinedKey1]
-                    console.log('조합 키(choice_id+option_key 형식1)로 초이스 가격 찾음:', { combinedKey1, choiceData })
-                    break
-                  } else if (choicesPricing[combinedKey2]) {
-                    choiceData = choicesPricing[combinedKey2]
-                    console.log('조합 키(choice_id+option_key 형식2)로 초이스 가격 찾음:', { combinedKey2, choiceData })
-                    break
-                  }
-                }
-                // 3-6. 조합 키만 정확히 매칭 (로어 vs X 앤텔롭 등 같은 choice 내 다른 옵션 오매칭 방지)
-                if (!choiceData) {
-                  const exactCombinationKeys =
-                    choiceId && optionId ? [`${choiceId}+${optionId}`, `${choiceId}_${optionId}`] : []
-                  const exactWithOptionKey =
-                    choiceId && optionKey ? [`${choiceId}+${optionKey}`, `${choiceId}_${optionKey}`] : []
-                  for (const key of [...exactCombinationKeys, ...exactWithOptionKey]) {
-                    if (choicesPricing[key]) {
-                      choiceData = choicesPricing[key]
-                      console.log('조합 키 정확 매칭으로 초이스 가격 찾음:', { key, choiceData })
-                      break
-                    }
-                  }
-                }
-                
-                if (choiceData) break
-              }
-            }
-            
-            // 5. choice_id 불일치 시 option_id/option_key만으로 매칭 (폼 choice_id와 pricing 키의 choice_id가 다른 경우)
-            if (!choiceData && choicesForPricingLookup.length > 0) {
-              const ourOptionIds = new Set(
-                choicesForPricingLookup.map((c: any) => c.option_id).filter(Boolean)
-              )
-              const ourOptionKeys = new Set(
-                choicesForPricingLookup.map((c: any) => (c as any).option_key).filter(Boolean)
-              )
-              const matches: { key: string; entry: any }[] = []
-              for (const key of Object.keys(choicesPricing)) {
-                const parts = key.split(/[+_]/)
-                const optionPart = parts.length >= 2 ? parts[parts.length - 1] : key
-                if (ourOptionIds.has(optionPart) || ourOptionKeys.has(optionPart)) {
-                  matches.push({ key, entry: choicesPricing[key] })
-                }
-                if (ourOptionIds.has(key) || ourOptionKeys.has(key)) matches.push({ key, entry: choicesPricing[key] })
-              }
-              if (matches.length > 0) {
-                const best = matches.reduce((a, b) => 
-                  (Number((b.entry as any)?.ota_sale_price) || 0) > (Number((a.entry as any)?.ota_sale_price) || 0) ? b : a
-                )
-                choiceData = best.entry
-                const maxNi = matches.reduce((m, x) => {
-                  const ni = Number((x.entry as any)?.not_included_price)
-                  return ni > 0 && ni > m ? ni : m
-                }, 0)
-                if (choiceData && (choiceData as any).ota_sale_price != null) {
-                  foundChoicePricing = true
-                  if (maxNi > 0) (choiceData as any).not_included_price = maxNi
-                  console.log('option_id/option_key만으로 초이스 가격 찾음 (choice_id 불일치 폴백):', { matchesCount: matches.length, bestKey: best.key, ota_sale_price: (choiceData as any).ota_sale_price, not_included_price: maxNi || (choiceData as any).not_included_price })
-                }
-              }
-            }
-            
-            if (choiceData) {
-              const data = choiceData as any
-              
-              // 초이스별 가격 설정에서 OTA 판매가만 사용 (adult_price, child_price, infant_price는 저장하지 않음)
-              if (data.ota_sale_price !== undefined && data.ota_sale_price !== null && data.ota_sale_price >= 0) {
-                adultPrice = data.ota_sale_price
-                childPrice = isSinglePrice ? data.ota_sale_price : data.ota_sale_price
-                infantPrice = isSinglePrice ? data.ota_sale_price : data.ota_sale_price
-                // 선택된 초이스의 불포함 가격 사용 (단일 조합 키에서 온 경우)
-                if (data.not_included_price !== undefined && data.not_included_price !== null) {
-                  notIncludedPrice = data.not_included_price
-                }
-                // 복수 초이스인 경우: DB는 키당 하나의 행(choice_id+option_id)이므로, 각 초이스의 choice_id+option_id로 매칭된 항목 중 not_included_price 사용 (최대값으로 해당 조합 행 값 반영, 25de6afe+8f8a7270 → 95 등)
-                if (choicesForPricing.length > 1) {
-                  let maxNotIncluded = notIncludedPrice
-                  for (const c of choicesForPricing) {
-                    const cid = c.choice_id || (c as any).id
-                    const oid = c.option_id
-                    if (cid && oid) {
-                      const entry = findChoicePricingEntry(cid, oid)
-                      if (entry && entry.not_included_price !== undefined && entry.not_included_price !== null) {
-                        const ni = Number(entry.not_included_price)
-                        if (ni > 0 && ni > maxNotIncluded) maxNotIncluded = ni
-                      }
-                    }
-                  }
-                  if (maxNotIncluded > 0) notIncludedPrice = maxNotIncluded
-                }
-                foundChoicePricing = true
-                console.log('선택된 초이스의 OTA 판매가 사용:', { combinationKey, otaSalePrice: data.ota_sale_price, adultPrice, childPrice, infantPrice, notIncludedPrice })
-              } else {
-                // OTA 판매가가 없으면 가격을 로드하지 않음
-                console.log('초이스별 가격 설정에 OTA 판매가가 없어 가격을 로드하지 않음:', { combinationKey, data })
-                foundChoicePricing = false
-              }
-            }
-            
-            // 선택된 초이스의 가격을 찾은 경우
-            if (foundChoicePricing) {
-              useChoicePricing = true
-              console.log('초이스별 가격 사용 완료:', { adultPrice, childPrice, infantPrice, notIncludedPrice })
-            } else if (choicesForPricingLookup.length > 0) {
-              // 매칭 실패 시: 폼 choice_id/option_id가 DB 키와 다를 때(가져오기 등) OTA·불포함 폴백 조회
-              const fallbackCombinationKey = choicesForPricingLookup
-                .map((c: any) => `${c.choice_id || c.id}+${(c.option_id ?? c.option_key) ?? ''}`)
-                .filter(Boolean)
-                .sort()
-                .join('+')
-              const fallbackResult = fallbackCombinationKey
-                ? getFallbackOtaAndNotIncluded(
-                    { id: fallbackCombinationKey, combination_key: fallbackCombinationKey },
-                    choicesPricing
-                  )
-                : undefined
-              const fallbackOta = fallbackResult?.ota_sale_price
-              if (fallbackOta !== undefined && fallbackOta > 0) {
-                adultPrice = fallbackOta
-                childPrice = isSinglePrice ? fallbackOta : fallbackOta
-                infantPrice = isSinglePrice ? fallbackOta : fallbackOta
-                if (fallbackResult?.not_included_price !== undefined && fallbackResult.not_included_price !== null && Number(fallbackResult.not_included_price) > 0) {
-                  notIncludedPrice = Number(fallbackResult.not_included_price)
-                }
-                useChoicePricing = true
-                foundChoicePricing = true
-                console.log('초이스 가격 폴백 OTA·불포함 사용:', { fallbackCombinationKey, fallbackOta, notIncludedPrice })
-              }
-              if (!foundChoicePricing) {
-                console.log('선택된 초이스의 가격을 찾지 못함, 기본 가격으로 폴백:', { 
-                  choicesPricingKeys: Object.keys(choicesPricing),
-                  selectedChoices: pricingSelectedChoices
-                })
-              }
-            }
-          } catch (e) {
-            console.warn('choices_pricing 파싱 오류:', e)
-          }
-        }
-
-        // 초이스 없는 상품: VIATOR OTA 등은 choices_pricing['no_choice'].ota_sale_price 에만 저장됨 (행 adult_price는 기본가)
-        if (!useChoicePricing && isOTAChannel && hasChoicesPricing) {
-          const hasDefiniteSelection = (pricingSelectedChoices || []).some(
-            (c: any) =>
-              c.option_id !== UNDECIDED_OPTION_ID_PRICING &&
-              (c as any).option_key !== UNDECIDED_OPTION_ID_PRICING
-          )
-          if (!hasDefiniteSelection) {
-            const nc = getNoChoiceOtaAndNotIncluded(choicesPricing)
-            if (nc && nc.ota_sale_price > 0) {
-              adultPrice = nc.ota_sale_price
-              childPrice = isSinglePrice ? nc.ota_sale_price : nc.ota_sale_price
-              infantPrice = isSinglePrice ? nc.ota_sale_price : nc.ota_sale_price
-              if (nc.not_included_price != null && nc.not_included_price > 0) {
-                notIncludedPrice = nc.not_included_price
-              }
-              useChoicePricing = true
-              console.log('choices_pricing no_choice OTA 적용 (확정 초이스 없음):', {
-                ota_sale_price: nc.ota_sale_price,
-                not_included_price: nc.not_included_price,
-              })
-            }
-          }
-        }
-        
-        // 초이스별 가격을 사용하지 않은 경우
-        // 초이스가 있는 상품은 무조건 choices_pricing만 참조, 기본 가격(adult_price 등) 사용 금지
-        const productHasChoices = (formData.productChoices?.length ?? 0) > 0
-        const mustUseChoicePricingOnly = hasChoicesPricing || productHasChoices
-
-        if (!useChoicePricing) {
-          // 초이스가 있는 상품(choices_pricing 있음 또는 productChoices 있음)
-          if (mustUseChoicePricingOnly) {
-            // 필수 초이스가 모두 선택되지 않은 경우: 기본 상품가(판매가·불포함)는 dynamic_pricing 행에서 로드
-            if (!allRequiredChoicesSelected) {
-              const baseAdult = (pricing?.adult_price as number) ?? 0
-              const baseChild = isSinglePrice ? baseAdult : ((pricing?.child_price as number) ?? 0)
-              const baseInfant = isSinglePrice ? baseAdult : ((pricing?.infant_price as number) ?? 0)
-              const baseNotIncluded = (pricing?.not_included_price as number) ?? 0
-              adultPrice = baseAdult
-              childPrice = baseChild
-              infantPrice = baseInfant
-              notIncludedPrice = baseNotIncluded
-              console.log('필수 초이스 미선택 — 기본 상품가(판매가·불포함) 로드:', {
-                adultPrice,
-                childPrice,
-                infantPrice,
-                notIncludedPrice
-              })
-              setPriceAutoFillMessage(baseAdult > 0 || baseNotIncluded > 0 ? 'Dynamic pricing에서 기본 가격이 입력되었습니다. 필수 초이스 선택 시 정확한 가격으로 갱신됩니다.' : '모든 필수 초이스를 선택하면 가격이 자동으로 로드됩니다.')
-            } else {
-              // 필수 초이스는 모두 선택되었지만 초이스별 가격을 찾지 못한 경우
-              console.log('초이스별 가격 설정이 있지만 해당 초이스의 가격을 찾지 못함. 기본 가격을 로드하지 않음:', {
-                hasChoicesPricing: !!pricing?.choices_pricing,
-                choicesPricingKeys: Object.keys(choicesPricing || {}),
-                selectedChoices: pricingSelectedChoices
-              })
-              // 가격을 0으로 설정하고 메시지 표시
-              adultPrice = 0
-              childPrice = 0
-              infantPrice = 0
-              notIncludedPrice = 0
-              setPriceAutoFillMessage('선택한 초이스에 대한 가격 정보가 없습니다. 수동으로 입력해주세요.')
-            }
-          } else {
-            // formData.productChoices는 아직 로드 전일 수 있으므로, DB에서 상품 초이스 여부 확인
-            // 초이스 상품이면 기본가(236 등) 사용 금지 → 0으로 두고 초이스 선택 후 로드 유도
-            let productHasChoicesFromDb = false
-            try {
-              const { data: productChoicesRows } = await (supabase as any)
-                .from('product_choices')
-                .select('id')
-                .eq('product_id', productId)
-                .limit(1)
-              productHasChoicesFromDb = Array.isArray(productChoicesRows) && productChoicesRows.length > 0
-            } catch {
-              // 조회 실패 시 기존 로직 유지
-            }
-            if (productHasChoicesFromDb) {
-              console.log('초이스 상품인데 choices_pricing/폼 초이스 없음 → 기본가 미사용, 0으로 설정:', { productId })
-              adultPrice = 0
-              childPrice = 0
-              infantPrice = 0
-              notIncludedPrice = 0
-              setPriceAutoFillMessage('모든 필수 초이스를 선택하면 가격이 자동으로 로드됩니다.')
-            } else {
-              // 실제로 초이스가 없는 상품에만 기본 가격 사용
-              adultPrice = (pricing?.adult_price as number) || 0
-              childPrice = isSinglePrice ? adultPrice : ((pricing?.child_price as number) || 0)
-              infantPrice = isSinglePrice ? adultPrice : ((pricing?.infant_price as number) || 0)
-              notIncludedPrice = (pricing?.not_included_price as number) || 0
-              console.log('기본 가격 사용 (초이스가 없는 상품):', { 
-                hasChoicesPricing: false,
-                adultPrice, 
-                childPrice, 
-                infantPrice 
-              })
-            }
-          }
-        }
-        
-        setPriceAutoFillMessage('Dynamic pricing에서 가격 정보가 자동으로 입력되었습니다!')
+      const pricingFromDynamic = await loadDynamicPricingFromDb()
+      setDynamicPriceFormula(null)
+      setPriceAutoFillMessage('Dynamic pricing에서 가격 정보가 자동으로 입력되었습니다!')
 
       setFormData(prev => {
-        const notIncludedToUse = notIncludedPriceFromReservationPricing !== null ? notIncludedPriceFromReservationPricing : notIncludedPrice
+        const notIncludedToUse =
+          notIncludedPriceFromReservationPricing !== null
+            ? notIncludedPriceFromReservationPricing
+            : pricingFromDynamic.notIncludedPrice
         const updated = {
           ...prev,
-          adultProductPrice: adultPrice,
-          childProductPrice: childPrice,
-          infantProductPrice: infantPrice,
-          commission_percent: commissionPercent,
+          adultProductPrice: pricingFromDynamic.adultPrice,
+          childProductPrice: pricingFromDynamic.childPrice,
+          infantProductPrice: pricingFromDynamic.infantPrice,
+          commission_percent: pricingFromDynamic.commissionPercent,
           not_included_price: notIncludedToUse,
           onlinePaymentAmount: notIncludedToUse != null
-            ? Math.max(0, (adultPrice - (notIncludedToUse || 0)) * (prev.pricingAdults || 0))
+            ? Math.max(0, (pricingFromDynamic.adultPrice - (notIncludedToUse || 0)) * (prev.pricingAdults || 0))
             : prev.onlinePaymentAmount || 0
         }
         
@@ -3949,6 +4053,97 @@ export default function ReservationForm({
       })
     }
       }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey, formData.productChoices, reservation?.id, (reservation as any)?.channel_id, isImportMode, initialVariantKeyFromImport, initialChannelVariantLabelFromImport])
+
+  /** 동적 가격 계산식 → 입력칸 반영(저장 시 DB 반영). reservation_pricing 행이 있을 때만 의미 있음 */
+  const applyDynamicProductPriceFormula = useCallback(() => {
+    if (!dynamicPriceFormula || !reservationPricingId) return
+    const ch = channels.find((c) => c.id === formData.channelId)
+    const isSingle = ((ch as { pricing_type?: string })?.pricing_type || 'separate') === 'single'
+    const a = dynamicPriceFormula.adultPrice
+    const c = isSingle ? a : dynamicPriceFormula.childPrice
+    const i = isSingle ? a : dynamicPriceFormula.infantPrice
+    const ni = dynamicPriceFormula.notIncludedPrice
+    const channelIdForCalc = formData.channelId
+    setPricingFieldsFromDb((prev) => ({
+      ...prev,
+      adultProductPrice: false,
+      childProductPrice: false,
+      infantProductPrice: false,
+      not_included_price: false,
+      productPriceTotal: false,
+      totalPrice: false,
+      onSiteBalanceAmount: false,
+    }))
+    setFormData((prev) => {
+      const updated = {
+        ...prev,
+        adultProductPrice: a,
+        childProductPrice: c,
+        infantProductPrice: i,
+        not_included_price: ni,
+        commission_percent: dynamicPriceFormula.commissionPercent,
+        onlinePaymentAmount:
+          ni != null
+            ? Math.max(0, (a - (ni || 0)) * (prev.pricingAdults || 0))
+            : prev.onlinePaymentAmount || 0,
+      }
+      const newProductPriceTotal =
+        updated.adultProductPrice * updated.pricingAdults +
+        updated.childProductPrice * updated.child +
+        updated.infantProductPrice * updated.infant
+      let requiredOptionTotal = 0
+      Object.entries(updated.requiredOptions).forEach(([optionId, option]) => {
+        const isSelected =
+          updated.selectedOptions &&
+          updated.selectedOptions[optionId] &&
+          updated.selectedOptions[optionId].length > 0
+        if (isSelected && option && typeof option === 'object' && 'adult' in option) {
+          const optionData = option as { adult: number; child: number; infant: number }
+          requiredOptionTotal +=
+            optionData.adult * updated.pricingAdults +
+            optionData.child * updated.child +
+            optionData.infant * updated.infant
+        }
+      })
+      const selectedChannelForCheck = channels.find((c) => c.id === channelIdForCalc)
+      const isOTAChannel = !!(
+        selectedChannelForCheck &&
+        ((selectedChannelForCheck as { type?: string; category?: string })?.type?.toLowerCase() === 'ota' ||
+          (selectedChannelForCheck as { category?: string })?.category === 'OTA')
+      )
+      const optionTotal = requiredOptionTotal
+      let optionalOptionTotal = 0
+      Object.values(updated.selectedOptionalOptions).forEach((option) => {
+        if (option && typeof option === 'object' && 'price' in option && 'quantity' in option) {
+          optionalOptionTotal += (option as { price: number; quantity: number }).price * (option as { price: number; quantity: number }).quantity
+        }
+      })
+      const notIncludedTotal = updated.choiceNotIncludedTotal || 0
+      const newSubtotal = isOTAChannel
+        ? newProductPriceTotal + optionalOptionTotal + notIncludedTotal
+        : newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
+      const totalDiscount = updated.couponDiscount + updated.additionalDiscount
+      const refundAmount = Number(updated.refundAmount) || 0
+      const totalAdditional =
+        updated.additionalCost +
+        updated.cardFee +
+        updated.tax +
+        updated.prepaymentCost +
+        updated.prepaymentTip +
+        (updated.isPrivateTour ? updated.privateTourAdditionalCost : 0) +
+        reservationOptionsTotalPrice
+      const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
+      const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
+      return {
+        ...updated,
+        productPriceTotal: newProductPriceTotal,
+        requiredOptionTotal,
+        subtotal: newSubtotal,
+        totalPrice: newTotalPrice,
+        balanceAmount: updated.onSiteBalanceAmount !== 0 ? updated.onSiteBalanceAmount : newBalance,
+      }
+    })
+  }, [channels, dynamicPriceFormula, formData.channelId, reservationPricingId, reservationOptionsTotalPrice, setFormData])
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
@@ -4806,6 +5001,150 @@ export default function ReservationForm({
     }
   }, [formData.productId, formData.tourDate, formData.channelId, formData.variantKey])
 
+  const getSuperNotificationRecipients = useCallback(async () => {
+    const { data } = await (supabase as any)
+      .from('team')
+      .select('email')
+      .eq('is_active', true)
+      .ilike('position', 'super')
+
+    const emails = new Set<string>(
+      ((data || []) as Array<{ email?: string | null }>)
+        .map((row) => row.email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email))
+    )
+    emails.add('info@maniatour.com')
+    emails.add('wooyong.shim09@gmail.com')
+    if (authUser?.email) emails.delete(authUser.email.trim().toLowerCase())
+    return [...emails]
+  }, [authUser?.email])
+
+  const insertPricingAuditNotifications = useCallback(
+    async (
+      reservationId: string,
+      type: 'modification_request' | 'audited_pricing_updated',
+      message: string,
+      requestId?: string | null
+    ) => {
+      const recipients = await getSuperNotificationRecipients()
+      if (recipients.length === 0 || !authUser?.email) return
+
+      const actorName = auditDisplayName(currentTeamProfile, authUser.email)
+      const rows = recipients.map((recipientEmail) => ({
+        reservation_id: reservationId,
+        reservation_pricing_id: reservationPricingId,
+        request_id: requestId ?? null,
+        recipient_email: recipientEmail,
+        actor_email: authUser.email,
+        actor_name: currentTeamProfile?.name || actorName,
+        actor_nick_name: currentTeamProfile?.nickName || actorName,
+        notification_type: type,
+        message,
+      }))
+
+      const { error } = await (supabase as any)
+        .from('reservation_pricing_audit_notifications')
+        .insert(rows)
+      if (error) {
+        console.error('가격 감사 알림 생성 오류:', error)
+      }
+    },
+    [authUser?.email, currentTeamProfile, getSuperNotificationRecipients, reservationPricingId]
+  )
+
+  const handleRequestPricingAuditModification = useCallback(async () => {
+    if (!effectiveReservationId || !authUser?.email) {
+      alert('예약 저장 후 수정 요청을 보낼 수 있습니다.')
+      return
+    }
+    const reason = window.prompt('super 관리자에게 보낼 가격 정보 수정 요청 내용을 입력해 주세요.')
+    if (!reason?.trim()) return
+
+    const requesterName = auditDisplayName(currentTeamProfile, authUser.email)
+    const { data, error } = await (supabase as any)
+      .from('reservation_pricing_modification_requests')
+      .insert({
+        reservation_id: effectiveReservationId,
+        reservation_pricing_id: reservationPricingId,
+        requested_by_email: authUser.email,
+        requested_by_name: currentTeamProfile?.name || requesterName,
+        requested_by_nick_name: currentTeamProfile?.nickName || requesterName,
+        reason: reason.trim(),
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      console.error('가격 정보 수정 요청 오류:', error)
+      alert('수정 요청을 보내는 중 오류가 발생했습니다.')
+      return
+    }
+
+    await insertPricingAuditNotifications(
+      effectiveReservationId,
+      'modification_request',
+      `Audited 가격 정보 수정 요청이 도착했습니다.\n\n요청자: ${requesterName}\n내용: ${reason.trim()}`,
+      data?.id ?? null
+    )
+    alert('super 관리자에게 수정 요청을 보냈습니다.')
+  }, [
+    authUser?.email,
+    currentTeamProfile,
+    effectiveReservationId,
+    insertPricingAuditNotifications,
+    reservationPricingId,
+  ])
+
+  const handleTogglePricingAudited = useCallback(
+    async (nextAudited: boolean) => {
+      if (!effectiveReservationId || !reservationPricingId) {
+        alert('가격 정보를 먼저 저장한 뒤 Audited 체크를 할 수 있습니다.')
+        return
+      }
+      if (!isSuperPricingAdmin || !authUser?.email) {
+        alert('Audited 체크는 super 관리자만 변경할 수 있습니다.')
+        return
+      }
+
+      const actorName = auditDisplayName(currentTeamProfile, authUser.email)
+      const patch = nextAudited
+        ? {
+            audited: true,
+            audited_at: new Date().toISOString(),
+            audited_by_email: authUser.email,
+            audited_by_name: currentTeamProfile?.name || actorName,
+            audited_by_nick_name: currentTeamProfile?.nickName || actorName,
+          }
+        : {
+            audited: false,
+            audited_at: null,
+            audited_by_email: null,
+            audited_by_name: null,
+            audited_by_nick_name: null,
+          }
+
+      const { error } = await (supabase as any)
+        .from('reservation_pricing')
+        .update(patch)
+        .eq('id', reservationPricingId)
+
+      if (error) {
+        console.error('Audited 상태 변경 오류:', error)
+        alert('Audited 상태 변경 중 오류가 발생했습니다.')
+        return
+      }
+
+      setPricingAudit({
+        audited: nextAudited,
+        auditedAt: nextAudited ? patch.audited_at : null,
+        auditedByEmail: nextAudited ? authUser.email : null,
+        auditedByName: nextAudited ? patch.audited_by_name : null,
+        auditedByNickName: nextAudited ? patch.audited_by_nick_name : null,
+      })
+    },
+    [authUser?.email, currentTeamProfile, effectiveReservationId, isSuperPricingAdmin, reservationPricingId]
+  )
+
   // 가격 정보 저장 함수 (외부에서 호출 가능)
   // overrides: 입금 내역 반영 등으로 보증금/잔액만 갱신할 때 사용. 항상 formDataRef에서 최신 formData 사용.
   // 주의: 가격 로드 전에는 pricingAdults가 adults와 동일한 초기값이라, 입금만 갱신 시 pricing_adults를 UPDATE에 넣으면
@@ -4818,7 +5157,7 @@ export default function ReservationForm({
       const fd = formDataRef.current
       const isPartialPaymentSync = overrides != null
       // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격·수수료·잔액 컬럼 포함)
-      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount'
+      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name'
       const { data: existingRow, error: checkError } = await (supabase as any)
         .from('reservation_pricing')
         .select(selectColumns)
@@ -4831,6 +5170,17 @@ export default function ReservationForm({
         pricingId = existing.id
       } else {
         pricingId = crypto.randomUUID()
+      }
+
+      const existingAudited = Boolean((existing as any)?.audited)
+      if (existingAudited && !isSuperPricingAdmin) {
+        throw new Error('Audited 된 가격 정보는 super 관리자만 수정할 수 있습니다. 수정 요청을 보내 주세요.')
+      }
+      if (existingAudited && isSuperPricingAdmin && !isPartialPaymentSync) {
+        const ok = window.confirm(
+          '이 가격 정보는 Audited 상태입니다.\n수정 내용을 저장하면 다른 super 관리자에게 수정 알림이 전송됩니다.\n계속 저장할까요?'
+        )
+        if (!ok) throw new Error('AUDIT_SAVE_CANCELLED')
       }
 
       // 불포함 가격 합계(인원별) = product_price_total·subtotal·total_price에 포함하여 저장 (청구 인원 = pricingAdults+아동+유아)
@@ -4851,12 +5201,17 @@ export default function ReservationForm({
 
       let returnedAmount = 0
       let partnerReceivedAmount = 0
+      let paymentRecords: PaymentRecordLike[] = []
       try {
         const { data: payRows } = await (supabase as any)
           .from('payment_records')
           .select('amount, payment_status')
           .eq('reservation_id', reservationId)
-        ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
+        paymentRecords = (payRows || []).map((row: { payment_status?: string; amount?: number }) => ({
+          payment_status: String(row.payment_status || ''),
+          amount: Number(row.amount) || 0,
+        }))
+        paymentRecords.forEach((row) => {
           const status = row.payment_status || ''
           if (status === 'Partner Received') {
             partnerReceivedAmount += Number(row.amount) || 0
@@ -4868,20 +5223,27 @@ export default function ReservationForm({
       } catch {
         returnedAmount = 0
         partnerReceivedAmount = 0
+        paymentRecords = []
       }
 
       let isOTAChannel = false
+      let isHomepageBooking = String(fd.channelId ?? '').trim() === 'M00001'
       try {
         if (fd.channelId) {
           const { data: chRow } = await (supabase as any)
             .from('channels')
-            .select('type, category')
+            .select('type, category, name')
             .eq('id', fd.channelId)
             .maybeSingle()
           if (chRow) {
             isOTAChannel =
               String((chRow as any).type || '').toLowerCase() === 'ota' ||
               (chRow as any).category === 'OTA'
+            const nm = String((chRow as { name?: string }).name || '')
+            isHomepageBooking =
+              isHomepageBooking ||
+              nm.toLowerCase().includes('homepage') ||
+              nm.includes('홈페이지')
           }
         }
       } catch {
@@ -4925,6 +5287,76 @@ export default function ReservationForm({
       const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
       const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
+      const channelSettlementToSave = (() => {
+        const m = fd.channelSettlementAmount
+        if (m !== undefined && m !== null && String(m) !== '' && Number.isFinite(Number(m))) {
+          return Math.round(Number(m) * 100) / 100
+        }
+        return Math.round(channelSettlementComputed * 100) / 100
+      })()
+
+      let storedMetrics: { company_total_revenue: number; operating_profit: number } | null = null
+      if (!isPartialPaymentSync) {
+        let reservationOptionsRows: Array<{
+          reservation_id: string
+          total_price?: unknown
+          price?: unknown
+          ea?: unknown
+          status?: string | null
+        }> = []
+        try {
+          const { data: optRows } = await (supabase as any)
+            .from('reservation_options')
+            .select('reservation_id, total_price, price, ea, status')
+            .eq('reservation_id', reservationId)
+          reservationOptionsRows = (optRows || []) as typeof reservationOptionsRows
+        } catch {
+          reservationOptionsRows = []
+        }
+        const optionActiveSum =
+          aggregateReservationOptionSumsByReservationId(reservationOptionsRows).get(reservationId) ?? 0
+        const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
+          reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
+        )
+        const paySm = summarizePaymentRecordsForBalance(paymentRecords)
+        const manualRefundAmt = Number(fd.refundAmount) || 0
+        const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
+          refundedFromRecords: paySm.refundedTotal,
+          reservationOptionsActiveSum: optionActiveSum,
+          optionCancelRefundUsd,
+          manualRefundAmount: manualRefundAmt,
+          isOTAChannel,
+          returnedAmount,
+        })
+        const pricingAdultsVal = Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0))
+        storedMetrics = computeStoredCompanyRevenueFields({
+          channelSettlementBase: channelSettlementToSave,
+          reservationStatus: fd.status,
+          isOTAChannel,
+          isHomepageBooking,
+          reservationOptionsActiveSum: optionActiveSum,
+          omitCtx: {
+            usesStoredChannelSettlement: Number.isFinite(channelSettlementToSave),
+            depositAmount: depAmt,
+            onlinePaymentAmount: toNum(fd.onlinePaymentAmount),
+            channelPaymentGross: commissionGross,
+          },
+          notIncludedPerPerson: toNum(fd.not_included_price),
+          pricingAdults: pricingAdultsVal,
+          child: fd.child || 0,
+          infant: fd.infant || 0,
+          ...(fd.residentStatusAmounts && Object.keys(fd.residentStatusAmounts).length > 0
+            ? { residentStatusAmounts: fd.residentStatusAmounts }
+            : {}),
+          additionalDiscount: Number(fd.additionalDiscount) || 0,
+          additionalCost: Number(fd.additionalCost) || 0,
+          tax: Number(fd.tax) || 0,
+          prepaymentCost: Number(fd.prepaymentCost) || 0,
+          prepaymentTip: Number(fd.prepaymentTip) || 0,
+          refundAmountForCompanyRevenueBlock: refundForRevenue,
+        })
+      }
+
       // 업데이트 시: 가격이 0이면 기존 DB 값을 유지 (의도치 않은 0 덮어쓰기 방지)
       const keep = (newVal: number, existingVal: unknown) =>
         existing && newVal === 0 && (toNum(existingVal) || 0) > 0 ? toNum(existingVal) : newVal
@@ -4967,13 +5399,13 @@ export default function ReservationForm({
           Math.round(channelPayNet * 100) / 100,
           (existing as any)?.commission_base_price
         ),
-        channel_settlement_amount: (() => {
-          const m = fd.channelSettlementAmount
-          if (m !== undefined && m !== null && String(m) !== '' && Number.isFinite(Number(m))) {
-            return Math.round(Number(m) * 100) / 100
-          }
-          return Math.round(channelSettlementComputed * 100) / 100
-        })(),
+        channel_settlement_amount: channelSettlementToSave,
+        ...(storedMetrics
+          ? {
+              company_total_revenue: storedMetrics.company_total_revenue,
+              operating_profit: storedMetrics.operating_profit,
+            }
+          : {}),
       }
 
       const pricingDataForUpdate =
@@ -5014,12 +5446,20 @@ export default function ReservationForm({
       }
 
       console.log('가격 정보가 성공적으로 저장되었습니다.')
+      if (existingAudited && isSuperPricingAdmin && !isPartialPaymentSync) {
+        const actorName = auditDisplayName(currentTeamProfile, authUser?.email)
+        await insertPricingAuditNotifications(
+          reservationId,
+          'audited_pricing_updated',
+          `Audited 가격 정보가 super 관리자에 의해 수정되었습니다.\n\n수정자: ${actorName || authUser?.email || ''}`
+        )
+      }
       await Promise.resolve(onPricingSaved?.(reservationId))
     } catch (error) {
       console.error('가격 정보 저장 중 오류:', error)
       throw error
     }
-  }, [onPricingSaved])
+  }, [authUser?.email, currentTeamProfile, insertPricingAuditNotifications, isSuperPricingAdmin, onPricingSaved])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -5356,8 +5796,29 @@ export default function ReservationForm({
           cancellationReasonForSave = reason
         }
 
+        if (pricingAudit.audited && !isSuperPricingAdmin) {
+          ;(reservationPayload as { pricingInfo?: unknown }).pricingInfo = undefined
+        }
+        if (pricingAudit.audited && isSuperPricingAdmin) {
+          const ok = window.confirm(
+            '이 예약의 가격 정보는 Audited 상태입니다.\n예약 저장 시 가격 정보가 함께 수정될 수 있고, 다른 super 관리자에게 수정 알림이 전송됩니다.\n계속 저장할까요?'
+          )
+          if (!ok) {
+            setIsSubmitting(false)
+            return
+          }
+        }
+
         console.log('ReservationForm: onSubmit 호출 시작')
         await onSubmit(reservationPayload)
+        if (pricingAudit.audited && isSuperPricingAdmin && reservation?.id) {
+          const actorName = auditDisplayName(currentTeamProfile, authUser?.email)
+          await insertPricingAuditNotifications(
+            reservation.id,
+            'audited_pricing_updated',
+            `Audited 가격 정보가 포함된 예약 정보가 super 관리자에 의해 저장되었습니다.\n\n수정자: ${actorName || authUser?.email || ''}`
+          )
+        }
         if (isMovingToCancelled && reservation?.id && cancellationReasonForSave) {
           await upsertReservationCancellationReason(reservation.id, cancellationReasonForSave)
         }
@@ -5368,7 +5829,8 @@ export default function ReservationForm({
       }
     } catch (error) {
       console.error('예약 저장 중 오류:', error)
-      alert('예약 저장 중 오류가 발생했습니다.')
+      const message = error instanceof Error ? error.message : ''
+      alert(message.includes('Audited') ? message : '예약 저장 중 오류가 발생했습니다.')
     } finally {
       setIsSubmitting(false)
     }
@@ -6057,7 +6519,7 @@ export default function ReservationForm({
                       userRole="admin"
                       onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
                       title="예약 지출"
-                      itemVariant="line"
+                      itemVariant="card"
                       isPersisted={!isStubReservationOnlyId || reservationDraftReady}
                       {...(isStubReservationOnlyId &&
                       (!reservationDraftReady || reservationDraftError != null)
@@ -6093,6 +6555,21 @@ export default function ReservationForm({
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  {reservationPricingId && dynamicPriceFormula ? (
+                    <button
+                      type="button"
+                      onClick={applyDynamicProductPriceFormula}
+                      disabled={pricingAudit.audited && !isSuperPricingAdmin}
+                      title={
+                        pricingAudit.audited && !isSuperPricingAdmin
+                          ? 'Audited 가격 정보는 super 관리자만 수정할 수 있습니다.'
+                          : '현재 채널·날짜·초이스 기준 dynamic_pricing 계산값을 판매가·불포함·수수료% 입력칸에 반영합니다. 저장 시 DB에 반영됩니다.'
+                      }
+                      className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      계산식 적용
+                    </button>
+                  ) : null}
                   <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 cursor-pointer hover:bg-violet-100 focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-1">
                     <input
                       type="checkbox"
@@ -6131,11 +6608,20 @@ export default function ReservationForm({
                         }
                         await savePricingInfo(effectiveReservationId)
                         alert('가격 정보가 저장되었습니다!')
-                      } catch {
-                        alert('가격 정보 저장 중 오류가 발생했습니다.')
+                      } catch (error) {
+                        const message = error instanceof Error ? error.message : ''
+                        if (message === 'AUDIT_SAVE_CANCELLED') {
+                          alert('Audited 가격 정보 저장을 취소했습니다.')
+                        } else if (message.includes('Audited')) {
+                          alert(message)
+                        } else {
+                          alert('가격 정보 저장 중 오류가 발생했습니다.')
+                        }
                       }
                     }}
-                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                    disabled={pricingAudit.audited && !isSuperPricingAdmin}
+                    title={pricingAudit.audited && !isSuperPricingAdmin ? 'Audited 가격 정보는 super 관리자만 저장할 수 있습니다.' : undefined}
+                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     저장
                   </button>
@@ -6204,6 +6690,13 @@ export default function ReservationForm({
                 onChannelSettlementEdited={() =>
                   setPricingFieldsFromDb((prev) => ({ ...prev, channel_settlement_amount: false }))
                 }
+                pricingAudit={{
+                  ...pricingAudit,
+                  canToggle: isSuperPricingAdmin,
+                  isLockedForCurrentUser: pricingAudit.audited && !isSuperPricingAdmin,
+                }}
+                onTogglePricingAudited={handleTogglePricingAudited}
+                onRequestPricingAuditModification={handleRequestPricingAuditModification}
                 priceCalculationPending={
                   Boolean(formData.productId && formData.tourDate && formData.channelId) &&
                   !pricingLoadComplete &&
@@ -6211,6 +6704,8 @@ export default function ReservationForm({
                 }
                 {...(effectiveReservationId ? { reservationId: effectiveReservationId } : {})}
                 reservationPricingId={reservationPricingId}
+                dynamicProductPriceFormula={dynamicPriceFormula}
+                showDynamicPricingFormula={Boolean(reservationPricingId)}
                 expenseUpdateTrigger={expenseUpdateTrigger}
                 channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
                 products={products}

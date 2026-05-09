@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
 import AdminAuthGuard from '@/components/auth/AdminAuthGuard'
 import AdminChrome from '@/components/admin/AdminChrome'
+import ReservationPricingAuditNotificationListener from '@/components/admin/ReservationPricingAuditNotificationListener'
 import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
 import { GmailReservationImportSyncProvider } from '@/contexts/GmailReservationImportSyncContext'
 
@@ -26,7 +27,10 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
       <AudioPlayerProvider>
         <AdminAuthGuard locale={locale}>
           <GmailReservationImportSyncProvider>
-            <AdminChrome locale={locale}>{children}</AdminChrome>
+            <AdminChrome locale={locale}>
+              {children}
+              <ReservationPricingAuditNotificationListener locale={locale} />
+            </AdminChrome>
           </GmailReservationImportSyncProvider>
         </AdminAuthGuard>
       </AudioPlayerProvider>

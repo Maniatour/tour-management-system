@@ -80,6 +80,10 @@ export interface Reservation {
   status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'deleted'
   /** DB updated_at (상태 변경 순 정렬 등에 사용) */
   updated_at?: string | null
+  /** reservations.amount_audited — 채널 정산·예약 처리 필요 등에서 금액 더블체크 완료 여부 */
+  amount_audited?: boolean
+  amount_audited_at?: string | null
+  amount_audited_by?: string | null
   selectedOptions?: { [optionId: string]: string[] }
   selectedOptionPrices?: { [key: string]: number }
   isPrivateTour?: boolean

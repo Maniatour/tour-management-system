@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { useReservationOptions } from '@/hooks/useReservationOptions'
 import {
-  useReservationOptions,
   type ReservationOption,
   type CreateReservationOptionData,
   reservationOptionCountsTowardPricingTotal,
   sumReservationOptionCancelledRefundTotals,
-} from '@/hooks/useReservationOptions'
+} from '@/utils/reservationOptionsShared'
 
 /** 기존 옵션 목록(options 테이블) 항목 */
 type OptionListItem = {

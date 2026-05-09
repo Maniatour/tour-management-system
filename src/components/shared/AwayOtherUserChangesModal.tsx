@@ -117,12 +117,12 @@ export default function AwayOtherUserChangesModal({
                   {it.diffLines.length > 0 ? (
                     <ul className="mt-3 space-y-2 border-t border-gray-100 pt-2 text-xs text-gray-800">
                       {it.diffLines.map((line, idx) => (
-                        <li key={`${it.id}-d-${idx}`}>
+                        <li key={`${it.id}-d-${idx}`} className="min-w-0 break-words">
                           <span className="font-medium text-gray-700">{line.label}</span>
                           <span className="text-gray-500">{t('colon')}</span>{' '}
-                          <span className="text-gray-600">{line.beforeText}</span>
-                          <span className="mx-0.5 text-gray-400">&gt;</span>
-                          <span className="text-gray-900">{line.afterText}</span>
+                          <span className="text-gray-600 break-words">{line.beforeText}</span>
+                          <span className="mx-0.5 shrink-0 text-gray-400">&gt;</span>
+                          <span className="text-gray-900 break-words">{line.afterText}</span>
                         </li>
                       ))}
                     </ul>

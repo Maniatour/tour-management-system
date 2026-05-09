@@ -64,6 +64,22 @@ function isInsufficientResourcesError(e: unknown): boolean {
   )
 }
 
+function requestUrlString(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  if (input instanceof Request) return input.url
+  return String(input)
+}
+
+/** Storage 업로드·다운로드는 대용량이라 짧은 fetch 타임아웃이면 `signal is aborted` 로 실패한다. */
+function getSupabaseFetchTimeoutMs(url: RequestInfo | URL): number {
+  const href = requestUrlString(url)
+  if (href.includes('/storage/v1/')) {
+    return 60 * 60 * 1000 // 1시간 (예: 100MB 느린 회선)
+  }
+  return typeof window === 'undefined' ? 60000 : 30000
+}
+
 // 재시도 로직이 포함된 fetch 함수
 const fetchWithRetry = async (
   url: RequestInfo | URL,
@@ -78,33 +94,36 @@ const fetchWithRetry = async (
   // 여기서만 타임아웃(AbortController)을 건다.
   const { signal: _supabaseSignal, ...restOptions } = options
 
-  // 서버(API 라우트)에서는 중첩 조회 등으로 30초를 넘기기 쉬움 — 클라이언트는 기존 유지
-  const fetchTimeoutMs = typeof window === 'undefined' ? 60000 : 30000
-
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs)
-
       const headers = new Headers(restOptions.headers)
-      
+
       if (!headers.has('Connection')) {
         headers.set('Connection', 'keep-alive')
       }
-      
+
       if (!headers.has('Accept')) {
         headers.set('Accept', 'application/json, application/vnd.pgjson.object+json, application/vnd.pgjson.array+json')
       }
 
-      const response = await runSupabaseOutboundBounded(() =>
-        fetch(url, {
-          ...restOptions,
-          signal: controller.signal,
-          headers: headers
-        })
-      )
-
-      clearTimeout(timeoutId)
+      // 타임아웃은 동시 요청 슬롯을 얻은 뒤에만 시작한다. 그렇지 않으면 대기 큐에서
+      // 시간이 소모되어 업로드가 곧바로 abort 될 수 있다.
+      const response = await runSupabaseOutboundBounded(async () => {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          getSupabaseFetchTimeoutMs(url)
+        )
+        try {
+          return await fetch(url, {
+            ...restOptions,
+            signal: controller.signal,
+            headers: headers
+          })
+        } finally {
+          clearTimeout(timeoutId)
+        }
+      })
 
       if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408)) {
         return response

@@ -15,7 +15,8 @@
     "clean:all": "rm -rf .next out dist node_modules package-lock.json && npm install",
     "generate-thumbnails": "node scripts/generate-thumbnails.js",
     "generate-thumbnails:tour": "node scripts/generate-thumbnails.js",
-    "cleanup-tour-photos-buckets": "node scripts/cleanup-tour-photos-buckets.js"
+    "cleanup-tour-photos-buckets": "node scripts/cleanup-tour-photos-buckets.js",
+    "backfill:pricing-revenue": "npx tsx --tsconfig tsconfig.json scripts/backfill-reservation-pricing-revenue.ts"
   },
   "dependencies": {
     "@formatjs/intl": "^3.1.6",
@@ -90,6 +91,7 @@
     "postcss": "^8.5.6",
     "supabase": "^2.72.8",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.21.0",
     "typescript": "^5",
     "webpack-bundle-analyzer": "^4.10.2"
   },

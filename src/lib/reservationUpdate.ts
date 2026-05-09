@@ -10,7 +10,17 @@ import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
-import { isReturnedPaymentStatus } from '@/utils/reservationPricingBalance'
+import {
+  isReturnedPaymentStatus,
+  summarizePaymentRecordsForBalance,
+  type PaymentRecordLike,
+} from '@/utils/reservationPricingBalance'
+import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
+import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
+import {
+  computeRefundAmountForCompanyRevenueBlock,
+  computeStoredCompanyRevenueFields,
+} from '@/utils/storedCompanyRevenue'
 import {
   CANCEL_DEPOSIT_REFUND_NOTE_AUTO,
   fetchReservationDepositAmountUsd,
@@ -305,12 +315,17 @@ export async function updateReservation(
 
       let returnedAmount = 0
       let partnerReceivedAmount = 0
+      let paymentRecords: PaymentRecordLike[] = []
       try {
         const { data: payRows } = await (supabase as any)
           .from('payment_records')
           .select('amount, payment_status')
           .eq('reservation_id', reservationId)
-        ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
+        paymentRecords = (payRows || []).map((row: { payment_status?: string; amount?: number }) => ({
+          payment_status: String(row.payment_status || ''),
+          amount: Number(row.amount) || 0,
+        }))
+        paymentRecords.forEach((row) => {
           const status = row.payment_status || ''
           if (status === 'Partner Received') {
             partnerReceivedAmount += Number(row.amount) || 0
@@ -322,20 +337,27 @@ export async function updateReservation(
       } catch {
         returnedAmount = 0
         partnerReceivedAmount = 0
+        paymentRecords = []
       }
 
       let isOTAChannel = false
+      let isHomepageBooking = String(payload.channelId ?? '').trim() === 'M00001'
       try {
         if (payload.channelId) {
           const { data: chRow } = await (supabase as any)
             .from('channels')
-            .select('type, category')
+            .select('type, category, name')
             .eq('id', payload.channelId)
             .maybeSingle()
           if (chRow) {
             isOTAChannel =
               String((chRow as { type?: string }).type || '').toLowerCase() === 'ota' ||
               (chRow as { category?: string }).category === 'OTA'
+            const nm = String((chRow as { name?: string }).name || '')
+            isHomepageBooking =
+              isHomepageBooking ||
+              nm.toLowerCase().includes('homepage') ||
+              nm.includes('홈페이지')
           }
         }
       } catch {
@@ -380,6 +402,76 @@ export async function updateReservation(
       const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
       const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
+      const channelSettlementToSave = (() => {
+        const raw =
+          pricingInfo.channelSettlementAmount ??
+          (pricingInfo as { channel_settlement_amount?: unknown }).channel_settlement_amount
+        if (
+          raw !== undefined &&
+          raw !== null &&
+          String(raw) !== '' &&
+          Number.isFinite(Number(raw))
+        ) {
+          return Math.round(Number(raw) * 100) / 100
+        }
+        return Math.round(channelSettlementComputed * 100) / 100
+      })()
+
+      let reservationOptionsRows: Array<{
+        reservation_id: string
+        total_price?: unknown
+        price?: unknown
+        ea?: unknown
+        status?: string | null
+      }> = []
+      try {
+        const { data: optRows } = await supabase
+          .from('reservation_options')
+          .select('reservation_id, total_price, price, ea, status')
+          .eq('reservation_id', reservationId)
+        reservationOptionsRows = (optRows || []) as typeof reservationOptionsRows
+      } catch {
+        reservationOptionsRows = []
+      }
+      const optionActiveSum =
+        aggregateReservationOptionSumsByReservationId(reservationOptionsRows).get(reservationId) ?? 0
+      const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
+        reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
+      )
+      const paySm = summarizePaymentRecordsForBalance(paymentRecords)
+      const manualRefundAmount = toNum(pricingInfo.refundAmount)
+      const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
+        refundedFromRecords: paySm.refundedTotal,
+        reservationOptionsActiveSum: optionActiveSum,
+        optionCancelRefundUsd,
+        manualRefundAmount,
+        isOTAChannel,
+        returnedAmount,
+      })
+      const storedMetrics = computeStoredCompanyRevenueFields({
+        channelSettlementBase: channelSettlementToSave,
+        reservationStatus: payload.status,
+        isOTAChannel,
+        isHomepageBooking,
+        reservationOptionsActiveSum: optionActiveSum,
+        omitCtx: {
+          usesStoredChannelSettlement: Number.isFinite(channelSettlementToSave),
+          depositAmount: toNum(pricingInfo.depositAmount),
+          onlinePaymentAmount: toNum(pricingInfo.onlinePaymentAmount),
+          channelPaymentGross: commissionGross,
+        },
+        notIncludedPerPerson: newNotIncluded,
+        pricingAdults: pricingAdultsVal,
+        child: payload.child || 0,
+        infant: payload.infant || 0,
+        additionalDiscount: toNum(pricingInfo.additionalDiscount),
+        additionalCost: toNum(pricingInfo.additionalCost),
+        tax: toNum(pricingInfo.tax),
+        prepaymentCost: toNum(pricingInfo.prepaymentCost),
+        prepaymentTip: toNum(pricingInfo.prepaymentTip),
+        refundAmountForCompanyRevenueBlock: refundForRevenue,
+      })
+
       // DB에 저장할 컬럼을 모두 명시 (card_fee, balance_amount, commission_amount 등 누락 방지)
       const pricingData = {
         reservation_id: reservationId,
@@ -417,7 +509,9 @@ export async function updateReservation(
           Math.round(channelPayNet * 100) / 100,
           (existingRow as { commission_base_price?: number } | null)?.commission_base_price
         ),
-        channel_settlement_amount: Math.round(channelSettlementComputed * 100) / 100,
+        channel_settlement_amount: channelSettlementToSave,
+        company_total_revenue: storedMetrics.company_total_revenue,
+        operating_profit: storedMetrics.operating_profit,
       }
 
       if (existingRow?.id) {

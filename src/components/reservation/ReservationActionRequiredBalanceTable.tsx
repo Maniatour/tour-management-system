@@ -383,7 +383,7 @@ function partyFromReservation(r: Reservation) {
   return { adults: r.adults, children: r.child, infants: r.infant }
 }
 
-/** 고객 총액 라인 산식 문자열(표시용, 빨간색) */
+/** 고객 총액 라인 산식 문자열(표시용, 빨간색) — 취소가 아닌 예약용 */
 function lineFormulaExpressionText(
   p: ReservationPricingMapValue | undefined,
   party: ReturnType<typeof partyFromReservation>
@@ -404,6 +404,24 @@ function lineFormulaExpressionText(
     pricingFieldToNumber(p.refund_amount)
   const computed = round2(computeCustomerPaymentTotalLineFormula(p, party))
   return `${fmtUsd(productSum)} − ${fmtUsd(discount)} + ${fmtUsd(optionsSub)} + ${fmtUsdSigned(extras)} = ${fmtUsd(computed)}`
+}
+
+/** 취소 예약: 보증금(입금) − 가격 환불 기록이 우선 */
+function cancelledCustomerPaymentMoneyHint(
+  depositBasis: number,
+  refundFromPricing: number,
+  t: (key: string, values?: Record<string, string>) => string
+): string | null {
+  const dep = round2(depositBasis)
+  const ref = round2(refundFromPricing)
+  const net = round2(dep - ref)
+  const line1 = t('actionRequired.balanceTable.cols.cancelledMoneyHintLine', {
+    deposit: fmtUsd(dep) ?? '$0.00',
+    refund: fmtUsd(ref) ?? '$0.00',
+    net: fmtUsd(net) ?? '$0.00',
+  })
+  const line2 = t('actionRequired.balanceTable.cols.cancelledMoneyHintNote')
+  return `${line1}\n${line2}`
 }
 
 /**
@@ -587,8 +605,8 @@ function StatusDropdown({
 
 /** 가격 정보 흐름: 상품합(DB·effective) ~ 옵션 Subtotal(DB·실시간) */
 const PRICING_FLOW_COLUMN_COUNT = 15
-/** 고객 결제: 총액·보증금·잔액 등 */
-const PAYMENT_COLUMN_COUNT = 5
+/** 고객 결제: 총액·보증금·입금집계·환불·잔액 등 */
+const PAYMENT_COLUMN_COUNT = 6
 /** 채널 결제·수수료·정산·총매출·운영이익 (보증금은 고객 결제 열과 중복이므로 제외) */
 const CHANNEL_COLUMN_COUNT = 6
 
@@ -671,7 +689,6 @@ function BalanceRow(props: BalanceRowProps) {
   const party = partyFromReservation(reservation)
   const storedGross = customerPaymentStoredTotalDb(p)
   const computedGross = customerPaymentComputedGross(pLine, reservation)
-  const formulaExpression = lineFormulaExpressionText(pLine, party)
   const totalMismatch = pLine != null && isStoredCustomerTotalMismatchWithFormula(party, pLine)
   const lineGrossForPaymentCompare = computedGross ?? storedGross ?? 0
   const fromPayments = computeDepositBalanceFromPaymentRecordsForLineGross(lineGrossForPaymentCompare, paymentRecords)
@@ -679,6 +696,13 @@ function BalanceRow(props: BalanceRowProps) {
   const balanceDb = pricingFieldToNumber(p?.balance_amount)
   const rsvStatus = String(reservation.status || '').toLowerCase().trim()
   const isCancelledRsv = rsvStatus === 'cancelled' || rsvStatus === 'canceled'
+  const depositBasisForCancelHint = fromPayments.hasRecords
+    ? fromPayments.depositBucketGross
+    : depositDb
+  const refundAmountDb = pricingFieldToNumber(p?.refund_amount)
+  const formulaExpression = isCancelledRsv
+    ? cancelledCustomerPaymentMoneyHint(depositBasisForCancelHint, refundAmountDb, t)
+    : lineFormulaExpressionText(pLine, party)
   const balanceComputedOutstanding = balanceOutstandingTotalMinusDeposit(
     lineGrossForPaymentCompare,
     paymentRecords,
@@ -896,6 +920,24 @@ function BalanceRow(props: BalanceRowProps) {
           reservation={reservation}
           {...(onStatusChange ? { onStatusChange } : {})}
         />
+        {showPartnerCancelRefundAction ? (
+          <div className="mt-1 text-[8px] leading-tight">
+            {reservation.amount_audited ? (
+              <span
+                className="text-emerald-800 font-medium"
+                title={
+                  reservation.amount_audited_at || reservation.amount_audited_by
+                    ? `${reservation.amount_audited_by ?? '—'} · ${reservation.amount_audited_at ? new Date(reservation.amount_audited_at).toLocaleString(paymentLocale) : '—'}`
+                    : undefined
+                }
+              >
+                {t('actionRequired.balanceTable.cols.amountAuditDone')}
+              </span>
+            ) : (
+              <span className="text-rose-700 font-medium">{t('actionRequired.balanceTable.cols.amountAuditPending')}</span>
+            )}
+          </div>
+        ) : null}
       </td>
       <td
         className={`px-0.5 py-1 max-w-[7.75rem] align-top ${reservationColSticky(4, selectionEnabled, 'tbody')}`}
@@ -1084,7 +1126,11 @@ function BalanceRow(props: BalanceRowProps) {
           />
         </div>
         {formulaExpression ? (
-          <div className="text-red-600 text-[8px] font-normal leading-snug mt-1 text-right break-words max-w-[9rem] ml-auto">
+          <div
+            className={`text-[8px] font-normal leading-snug mt-1 text-right break-words max-w-[11rem] ml-auto whitespace-pre-line ${
+              isCancelledRsv ? 'text-amber-900' : 'text-red-600'
+            }`}
+          >
             {formulaExpression}
           </div>
         ) : null}
@@ -1126,6 +1172,39 @@ function BalanceRow(props: BalanceRowProps) {
             computedVal={fromPayments.hasRecords ? fromPayments.depositBucketGross : null}
           />
         </div>
+      </td>
+      <td
+        className={`px-0.5 py-1 text-right align-top tabular-nums border-r border-gray-100 bg-rose-50/20 ${
+          isCancelledRsv && Math.abs(refundAmountDb) < 0.01 ? 'ring-1 ring-inset ring-rose-200/90' : ''
+        }`}
+        title={t('actionRequired.balanceTable.cols.customerRefundColHint')}
+      >
+        <div
+          className={
+            isCancelledRsv && Math.abs(refundAmountDb) < 0.01
+              ? '[&_.tabular-nums]:text-red-600 [&_.text-gray-900]:text-red-600 [&_.text-gray-800]:text-red-600'
+              : ''
+          }
+        >
+          <DbFormulaMoneyCell
+            dbVal={refundAmountDb}
+            computedVal={refundAmountDb}
+            inlineEdit={pricingInline('refund_amount', (n) => ({ refund_amount: n }))}
+          />
+        </div>
+        {showPartnerCancelRefundAction && isCancelledRsv ? (
+          <button
+            type="button"
+            disabled={partnerRefundBusy}
+            title={t('actionRequired.partnerCancelRefundTitle', {
+              amount: fmtUsd(suggestedPartnerRefundUsd) ?? '$0.00',
+            })}
+            onClick={() => void handlePartnerCancelRefundClick()}
+            className="mt-1 inline-flex items-center justify-end w-full px-1 py-0.5 rounded border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100 text-[9px] font-semibold leading-none disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {t('actionRequired.partnerCancelRefundLabel')}
+          </button>
+        ) : null}
       </td>
       <td
         className={`px-0.5 py-1 text-right tabular-nums font-medium border-r border-gray-100 bg-amber-50/40 ${
@@ -1273,19 +1352,6 @@ function BalanceRow(props: BalanceRowProps) {
       <td className="px-0.5 py-1 bg-white">
         {actionsColumnEditOnly ? (
           <div className="flex flex-wrap gap-0.5 justify-end items-center">
-            {showPartnerCancelRefundAction && (
-              <button
-                type="button"
-                disabled={partnerRefundBusy}
-                title={t('actionRequired.partnerCancelRefundTitle', {
-                  amount: fmtUsd(suggestedPartnerRefundUsd) ?? '$0.00',
-                })}
-                onClick={() => void handlePartnerCancelRefundClick()}
-                className="inline-flex items-center px-1.5 py-1 rounded-md border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100 text-[10px] font-semibold leading-none disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {t('actionRequired.partnerCancelRefundLabel')}
-              </button>
-            )}
             <button
               type="button"
               title={t('card.editReservationTitle')}
@@ -1612,7 +1678,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
     return sel + 5 + PRICING_FLOW_COLUMN_COUNT + PAYMENT_COLUMN_COUNT + CHANNEL_COLUMN_COUNT + 1
   }, [selectionEnabled])
 
-  const tableMinWClass = selectionEnabled ? 'min-w-[2760px]' : 'min-w-[2700px]'
+  const tableMinWClass = selectionEnabled ? 'min-w-[2830px]' : 'min-w-[2770px]'
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white">
@@ -1845,6 +1911,12 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
             </th>
             <th className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-slate-50/80" title={t('actionRequired.balanceTable.cols.paymentRecordsAgg')}>
               {s('depositFromRecords')}
+            </th>
+            <th
+              className="px-0.5 py-0.5 border-r border-gray-100 text-right bg-rose-50/30"
+              title={t('actionRequired.balanceTable.cols.customerRefundColHint')}
+            >
+              {s('customerRefundCol')}
             </th>
             <th className="px-0.5 py-0.5 border-r border-gray-100 text-right" title={rpCol('balance_amount')}>
               {s('balanceDb')}

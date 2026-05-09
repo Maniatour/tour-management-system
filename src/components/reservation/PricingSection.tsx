@@ -22,7 +22,10 @@ import {
   findUsResidentClassificationChoice,
   sumResidentFeeAmountsUsd,
 } from '@/utils/usResidentChoiceSync'
+import type { ChannelSettlementComputeInput } from '@/utils/channelSettlement'
 import {
+  computeChannelPaymentAfterReturn,
+  computeChannelPaymentGrossBeforeReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
@@ -36,6 +39,10 @@ import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
+}
+
+function formulaUsdDiffers(current: number, formula: number): boolean {
+  return Math.abs((Number(current) || 0) - (Number(formula) || 0)) > 0.009
 }
 
 /** exactOptionalPropertyTypes: `channelSettlementAmount: undefined` 불가 — 키를 제거해 DB 정산 캐시 무효화 */
@@ -170,6 +177,14 @@ interface PricingSectionProps {
   reservationId?: string
   /** `reservation_pricing` 행이 있으면 할인/쿠폰은 DB 값 유지·드롭다운은 저장 쿠폰만 표시 */
   reservationPricingId?: string | null
+  /** 현재 채널 기준 dynamic_pricing 계산 스냅샷 — 입력값과 다르면 제목 옆 빨간색으로 표시 */
+  dynamicProductPriceFormula?: {
+    adultPrice: number
+    childPrice: number
+    infantPrice: number
+    notIncludedPrice: number
+  } | null
+  showDynamicPricingFormula?: boolean
   expenseUpdateTrigger?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -203,6 +218,17 @@ interface PricingSectionProps {
   onPricingFieldEdited?: (field: string) => void
   /** 사용자가 채널 정산 금액을 직접 수정하면 DB 출처 표시(검정)를 끔 */
   onChannelSettlementEdited?: () => void
+  pricingAudit?: {
+    audited: boolean
+    auditedAt: string | null
+    auditedByEmail: string | null
+    auditedByName: string | null
+    auditedByNickName: string | null
+    canToggle: boolean
+    isLockedForCurrentUser: boolean
+  }
+  onTogglePricingAudited?: (audited: boolean) => void
+  onRequestPricingAuditModification?: () => void
 }
 
 export default function PricingSection({
@@ -221,8 +247,13 @@ export default function PricingSection({
   priceCalculationPending = false,
   onPricingFieldEdited,
   onChannelSettlementEdited,
+  pricingAudit,
+  onTogglePricingAudited,
+  onRequestPricingAuditModification,
   reservationId,
   reservationPricingId,
+  dynamicProductPriceFormula = null,
+  showDynamicPricingFormula = false,
   expenseUpdateTrigger,
   channels = [],
   products = [],
@@ -1218,9 +1249,6 @@ export default function PricingSection({
     selectedChannel.type?.toLowerCase() === 'ota' || 
     selectedChannel.category === 'OTA'
   )
-  const selectedProductForPricing = products?.find((p) => p.id === formData.productId)
-  const isScenicProduct =
-    String(selectedProductForPricing?.sub_category ?? '').trim() === 'Scenic'
   // Homepage 채널 (채널 type이 ota가 아닐 때 쿠폰 선택에 함께 사용). id M00001 또는 이름에 Homepage/홈페이지 포함
   const homepageChannel = Array.isArray(channels) ? channels.find(ch =>
     ch.id === 'M00001' ||
@@ -1398,6 +1426,70 @@ export default function PricingSection({
     isOTAChannel,
   ])
 
+  /** 자체(비-OTA) 채널: `computeChannelPaymentAfterReturn` / 정산과 동일 입력(상품+불포함·옵션·추가비용·카드수수료 등). */
+  const selfChannelPaymentEngineInput = useMemo((): ChannelSettlementComputeInput | null => {
+    if (isOTAChannel) return null
+    const pricingAdultsVal = Math.max(
+      0,
+      Math.floor(Number(formData.pricingAdults ?? formData.adults) || 0)
+    )
+    const billingPax = pricingAdultsVal + (formData.child || 0) + (formData.infant || 0)
+    const cancelledOtaSettle = isReservationCancelled && !!isOTAChannel
+    const notIncludedTotal =
+      cancelledOtaSettle ? 0 : (Number(formData.not_included_price) || 0) * (billingPax || 1)
+    const productTotalForSettlement = (Number(formData.productPriceTotal) || 0) + notIncludedTotal
+    const ret = Math.max(0, Number(returnedAmount) || 0)
+    const manualR = Math.max(0, Number(formData.refundAmount) || 0)
+    const returnedForSettlementCompute = Math.max(ret, manualR)
+    return {
+      depositAmount: Number(formData.depositAmount) || 0,
+      onlinePaymentAmount: Number(formData.onlinePaymentAmount) || channelPaymentGrossDb,
+      productPriceTotal: productTotalForSettlement,
+      couponDiscount: Number(formData.couponDiscount) || 0,
+      additionalDiscount: Number(formData.additionalDiscount) || 0,
+      optionTotalSum: cancelledOtaSettle ? 0 : Number(formData.optionTotal) || 0,
+      additionalCost: Number(formData.additionalCost) || 0,
+      tax: Number(formData.tax) || 0,
+      cardFee: Number(formData.cardFee) || 0,
+      prepaymentTip: Number(formData.prepaymentTip) || 0,
+      onSiteBalanceAmount: Number(formData.onSiteBalanceAmount ?? formData.balanceAmount) || 0,
+      returnedAmount: returnedForSettlementCompute,
+      commissionAmount: Number(formData.commission_amount) || 0,
+      reservationStatus: formData.status ?? null,
+      isOTAChannel: false,
+    }
+  }, [
+    isOTAChannel,
+    isReservationCancelled,
+    formData.pricingAdults,
+    formData.adults,
+    formData.child,
+    formData.infant,
+    formData.not_included_price,
+    formData.productPriceTotal,
+    formData.depositAmount,
+    formData.onlinePaymentAmount,
+    channelPaymentGrossDb,
+    formData.couponDiscount,
+    formData.additionalDiscount,
+    formData.optionTotal,
+    formData.additionalCost,
+    formData.tax,
+    formData.cardFee,
+    formData.prepaymentTip,
+    formData.onSiteBalanceAmount,
+    formData.balanceAmount,
+    returnedAmount,
+    formData.refundAmount,
+    formData.commission_amount,
+    formData.status,
+  ])
+
+  const selfChannelPaymentGrossBeforeReturn = useMemo(() => {
+    if (!selfChannelPaymentEngineInput) return null
+    return computeChannelPaymentGrossBeforeReturn(selfChannelPaymentEngineInput)
+  }, [selfChannelPaymentEngineInput])
+
   /** 「채널 결제 금액」입력칸: OTA는 commission_base_price가 순액(할인후−max(Returned,투어환불))이므로 우선. online이 이미 순액만 담긴 경우 cg−환불 이중 차감 방지. */
   const channelPaymentAmountAfterReturn = useMemo(() => {
     const ret = Math.max(0, Number(returnedAmount) || 0)
@@ -1411,6 +1503,10 @@ export default function PricingSection({
     const hasCommissionBase =
       cbRaw !== undefined && cbRaw !== null && String(cbRaw) !== '' && Number.isFinite(Number(cbRaw))
     const cb = hasCommissionBase ? Number(cbRaw) : NaN
+
+    if (selfChannelPaymentEngineInput) {
+      return roundUsd2(computeChannelPaymentAfterReturn(selfChannelPaymentEngineInput))
+    }
 
     if (isOTAChannel && hasCommissionBase && cb > 0.005) {
       /**
@@ -1456,6 +1552,7 @@ export default function PricingSection({
     discountedProductPrice,
     isOTAChannel,
     formData.commission_base_price,
+    selfChannelPaymentEngineInput,
   ])
 
   /** 폼에 `channelSettlementAmount`가 있으면 그 값(수동·DB 로드), 없으면 `computeChannelSettlementAmount`. */
@@ -1505,10 +1602,6 @@ export default function PricingSection({
       reservationStatus: formData.status ?? null,
       isOTAChannel: !!isOTAChannel,
     })
-    if (isScenicProduct && !isOTAChannel) {
-      const fee = Number(formData.commission_amount) || 0
-      return Math.max(0, roundUsd2(channelPaymentAmountAfterReturn - fee))
-    }
     return baseSettled
   }, [
     formData.channelSettlementAmount,
@@ -1537,7 +1630,6 @@ export default function PricingSection({
     formData.status,
     isOTAChannel,
     isReservationCancelled,
-    isScenicProduct,
     channelPaymentAmountAfterReturn,
   ])
 
@@ -1575,8 +1667,17 @@ export default function PricingSection({
 
     if (isReservationCancelled && isOTAChannel) {
       const ch = channelSettlementBeforePartnerReturn
+      const rex = Number(reservationExpensesTotal) || 0
       const refb = refundAmountForCompanyRevenueBlock
       lines.push({ sign: '+', labelKo: '채널 정산 금액', labelEn: 'Channel settlement', amount: ch })
+      if (Math.abs(rex) > 0.005) {
+        lines.push({
+          sign: rex >= 0 ? '-' : '+',
+          labelKo: '예약 지출 금액',
+          labelEn: 'Reservation expenses',
+          amount: Math.abs(rex),
+        })
+      }
       if (refb > 0.005) {
         lines.push({
           sign: '-',
@@ -1585,7 +1686,7 @@ export default function PricingSection({
           amount: refb,
         })
       }
-      const tr = roundUsd2(ch - refb)
+      const tr = roundUsd2(ch - rex - refb)
       return {
         lines,
         totalRevenue: tr,
@@ -1600,6 +1701,17 @@ export default function PricingSection({
       labelEn: 'Channel settlement',
       amount: channelSettlementBeforePartnerReturn,
     })
+
+    const rex = Number(reservationExpensesTotal) || 0
+    if (Math.abs(rex) > 0.005) {
+      lines.push({
+        sign: rex >= 0 ? '-' : '+',
+        labelKo: '예약 지출 금액',
+        labelEn: 'Reservation expenses',
+        amount: Math.abs(rex),
+      })
+      tr -= rex
+    }
 
     if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
       const a = reservationOptionsTotalPrice
@@ -1682,6 +1794,7 @@ export default function PricingSection({
     isOTAChannel,
     isHomepageBooking,
     channelSettlementBeforePartnerReturn,
+    reservationExpensesTotal,
     refundAmountForCompanyRevenueBlock,
     reservationOptionsTotalPrice,
     notIncludedBreakdown,
@@ -2362,7 +2475,6 @@ export default function PricingSection({
   // commission_base_price / commission_amount 자동 업데이트 (값이 실제로 다를 때만 set, 무한 루프 방지)
   useEffect(() => {
     if (isOTAChannel) return
-    if (isScenicProduct) return
     if (nonOtaChannelPaymentUserEditedRef.current) return
     if (channelPaymentAmountFieldFocusedRef.current) return
     // DB에 commission이 있으면 계산하지 말고 그 값 유지
@@ -2398,7 +2510,6 @@ export default function PricingSection({
     formData.additionalDiscount,
     isExistingPricingLoaded,
     isOTAChannel,
-    isScenicProduct,
     returnedAmount,
     setFormData
   ])
@@ -2423,7 +2534,6 @@ export default function PricingSection({
   useEffect(() => {
     if (isReservationCancelled) return
     if (isOTAChannel) return // OTA 채널은 제외
-    if (isScenicProduct) return
     if (nonOtaChannelPaymentUserEditedRef.current) return
     if (channelPaymentAmountFieldFocusedRef.current) return
     if (isCardFeeManuallyEdited.current) return // 사용자가 수동으로 입력한 경우 자동 업데이트 안 함
@@ -2473,7 +2583,6 @@ export default function PricingSection({
     }
   }, [
     isOTAChannel,
-    isScenicProduct,
     formData.productPriceTotal,
     formData.couponDiscount,
     formData.additionalCost,
@@ -2551,7 +2660,53 @@ export default function PricingSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {pricingAudit && (
+        <div className={`mb-3 rounded-lg border p-3 text-xs ${
+          pricingAudit.audited
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+            : 'border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <label className="inline-flex items-center gap-2 font-semibold">
+                <input
+                  type="checkbox"
+                  checked={pricingAudit.audited}
+                  disabled={!pricingAudit.canToggle}
+                  onChange={(e) => onTogglePricingAudited?.(e.target.checked)}
+                  className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
+                />
+                Audited
+                {!pricingAudit.canToggle && <span className="text-[11px] font-normal text-gray-500">(super 관리자만 체크 가능)</span>}
+              </label>
+              {pricingAudit.audited ? (
+                <div className="text-[11px] text-emerald-800">
+                  검수자: {pricingAudit.auditedByNickName || pricingAudit.auditedByName || pricingAudit.auditedByEmail || '-'}
+                  {pricingAudit.auditedAt ? ` · ${new Date(pricingAudit.auditedAt).toLocaleString('ko-KR')}` : ''}
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-800">아직 super 관리자 검수가 완료되지 않았습니다.</div>
+              )}
+            </div>
+            {pricingAudit.isLockedForCurrentUser && (
+              <button
+                type="button"
+                onClick={onRequestPricingAuditModification}
+                className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+              >
+                수정 요청 보내기
+              </button>
+            )}
+          </div>
+          {pricingAudit.isLockedForCurrentUser && (
+            <p className="mt-2 text-[11px] text-amber-800">
+              Audited 된 가격 정보는 OP/Manager/Office Manager가 직접 수정할 수 없습니다.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className={`grid grid-cols-1 md:grid-cols-3 gap-3 ${pricingAudit?.isLockedForCurrentUser ? 'pointer-events-none opacity-70' : ''}`}>
         {/* 왼쪽 열: 상품 가격 + 초이스 (위) + 할인/추가 비용 (아래) - 1/3 너비 */}
         <div className="space-y-3 md:col-span-1">
           {/* 상품 가격 */}
@@ -2588,8 +2743,18 @@ export default function PricingSection({
                 {/* 판매가 + 불포함 가격 입력 */}
                 <div className="space-y-2 mb-2">
                   {/* 판매가 */}
-                  <div className="flex items-center space-x-1">
-                    <span className="text-xs text-gray-500 w-16">판매가</span>
+                  <div className="flex items-center space-x-1 flex-wrap gap-x-1">
+                    <span className="text-xs text-gray-500 w-16 shrink-0">판매가</span>
+                    {showDynamicPricingFormula &&
+                      dynamicProductPriceFormula &&
+                      formulaUsdDiffers(
+                        formData.adultProductPrice,
+                        dynamicProductPriceFormula.adultPrice
+                      ) && (
+                        <span className="text-[11px] text-red-600 font-medium shrink-0">
+                          (계산 ${dynamicProductPriceFormula.adultPrice.toFixed(2)})
+                        </span>
+                      )}
                     <span className="font-medium text-xs">$</span>
                     <input
                       type="number"
@@ -2598,7 +2763,12 @@ export default function PricingSection({
                       onBlur={onProductSalePriceFocusOut}
                       onChange={(e) => {
                         const salePrice = Number(e.target.value) || 0
-                        markPricingEdited('productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
+                        markPricingEdited(
+                          'adultProductPrice',
+                          'productPriceTotal',
+                          'totalPrice',
+                          'onSiteBalanceAmount'
+                        )
                         // 상품 가격 총합 계산 (불포함 가격 제외)
                         const childPrice = isSinglePrice ? salePrice : (formData.childProductPrice || 0)
                         const infantPrice = isSinglePrice ? salePrice : (formData.infantProductPrice || 0)
@@ -2617,14 +2787,24 @@ export default function PricingSection({
                           productPriceTotal: newProductPriceTotal
                         })
                       }}
-                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      className={`w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('adultProductPrice')}`}
                       step="0.01"
                       placeholder="0"
                     />
                   </div>
                   {/* 불포함 가격 */}
-                  <div className="flex items-center space-x-1">
-                    <span className="text-xs text-gray-500 w-16">불포함</span>
+                  <div className="flex items-center space-x-1 flex-wrap gap-x-1">
+                    <span className="text-xs text-gray-500 w-16 shrink-0">불포함</span>
+                    {showDynamicPricingFormula &&
+                      dynamicProductPriceFormula &&
+                      formulaUsdDiffers(
+                        formData.not_included_price || 0,
+                        dynamicProductPriceFormula.notIncludedPrice
+                      ) && (
+                        <span className="text-[11px] text-red-600 font-medium shrink-0">
+                          (계산 ${dynamicProductPriceFormula.notIncludedPrice.toFixed(2)})
+                        </span>
+                      )}
                     <span className="font-medium text-xs">$</span>
                     <input
                       type="number"
@@ -2648,7 +2828,7 @@ export default function PricingSection({
                           productPriceTotal: newProductPriceTotal
                         })
                       }}
-                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      className={`w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('not_included_price')}`}
                       step="0.01"
                       placeholder="0"
                     />
@@ -2689,8 +2869,20 @@ export default function PricingSection({
               {/* 단일 가격 모드일 때는 아동/유아 필드 숨김 */}
               {!isSinglePrice && (
                 <>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-600">아동</span>
+                  <div className="flex items-center justify-between text-xs gap-2">
+                    <span className="text-gray-600 inline-flex items-center gap-1 flex-wrap shrink-0">
+                      아동
+                      {showDynamicPricingFormula &&
+                        dynamicProductPriceFormula &&
+                        formulaUsdDiffers(
+                          formData.childProductPrice,
+                          dynamicProductPriceFormula.childPrice
+                        ) && (
+                          <span className="text-[11px] text-red-600 font-medium">
+                            (계산 ${dynamicProductPriceFormula.childPrice.toFixed(2)})
+                          </span>
+                        )}
+                    </span>
                     <div className="flex items-center space-x-1">
                       <span className="font-medium">$</span>
                       <input
@@ -2700,7 +2892,12 @@ export default function PricingSection({
                         onBlur={onProductSalePriceFocusOut}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
-                          markPricingEdited('productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
+                          markPricingEdited(
+                            'childProductPrice',
+                            'productPriceTotal',
+                            'totalPrice',
+                            'onSiteBalanceAmount'
+                          )
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
                           const childTotalPrice = newPrice + (formData.not_included_price || 0)
                           const infantTotalPrice = (formData.infantProductPrice || 0) + (formData.not_included_price || 0)
@@ -2714,7 +2911,7 @@ export default function PricingSection({
                             productPriceTotal: newProductPriceTotal
                           })
                         }}
-                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        className={`w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('childProductPrice')}`}
                         step="0.01"
                         placeholder="0"
                       />
@@ -2722,8 +2919,20 @@ export default function PricingSection({
                       <span className="font-medium">${((formData.childProductPrice || 0) * formData.child).toFixed(2)}</span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-600">유아</span>
+                  <div className="flex items-center justify-between text-xs gap-2">
+                    <span className="text-gray-600 inline-flex items-center gap-1 flex-wrap shrink-0">
+                      유아
+                      {showDynamicPricingFormula &&
+                        dynamicProductPriceFormula &&
+                        formulaUsdDiffers(
+                          formData.infantProductPrice,
+                          dynamicProductPriceFormula.infantPrice
+                        ) && (
+                          <span className="text-[11px] text-red-600 font-medium">
+                            (계산 ${dynamicProductPriceFormula.infantPrice.toFixed(2)})
+                          </span>
+                        )}
+                    </span>
                     <div className="flex items-center space-x-1">
                       <span className="font-medium">$</span>
                       <input
@@ -2733,7 +2942,12 @@ export default function PricingSection({
                         onBlur={onProductSalePriceFocusOut}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
-                          markPricingEdited('productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
+                          markPricingEdited(
+                            'infantProductPrice',
+                            'productPriceTotal',
+                            'totalPrice',
+                            'onSiteBalanceAmount'
+                          )
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
                           const childTotalPrice = (formData.childProductPrice || 0) + (formData.not_included_price || 0)
                           const infantTotalPrice = newPrice + (formData.not_included_price || 0)
@@ -2747,7 +2961,7 @@ export default function PricingSection({
                             productPriceTotal: newProductPriceTotal
                           })
                         }}
-                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        className={`w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('infantProductPrice')}`}
                         step="0.01"
                         placeholder="0"
                       />
@@ -3563,22 +3777,18 @@ export default function PricingSection({
                         {channelPaymentAmountAfterReturn.toFixed(2)}
                       </span>
                     )}
-                  {!isOTAChannel && returnedAmount > 0 && (
+                  {!isOTAChannel && selfChannelPaymentGrossBeforeReturn != null && (
                     <span className="text-xs text-gray-500">
-                      (${(() => {
-                        const productSubtotal =
-                          (formData.productPriceTotal - formData.couponDiscount) +
-                          reservationOptionsTotalPrice +
-                          (formData.additionalCost - formData.additionalDiscount) +
-                          formData.tax +
-                          formData.cardFee +
-                          formData.prepaymentTip -
-                          (formData.onSiteBalanceAmount || 0)
-                        const defaultAmount = productSubtotal
-                        const originalAmount =
-                          channelPaymentGrossDb || (defaultAmount > 0 ? defaultAmount : 0)
-                        return originalAmount.toFixed(2)
-                      })()} - ${returnedAmount.toFixed(2)}) = ${channelPaymentAmountAfterReturn.toFixed(2)}
+                      ($
+                      {selfChannelPaymentGrossBeforeReturn.toFixed(2)}
+                      {Math.max(Number(returnedAmount) || 0, manualRefundAmount) > 0.005 ? (
+                        <>
+                          {' '}
+                          − $
+                          {Math.max(Number(returnedAmount) || 0, manualRefundAmount).toFixed(2)}
+                        </>
+                      ) : null}
+                      ) = ${channelPaymentAmountAfterReturn.toFixed(2)}
                     </span>
                   )}
                   {formData.prepaymentTip > 0 && isOTAChannel && (
@@ -3841,62 +4051,56 @@ export default function PricingSection({
                 </div>
               ) : (
                 <>
-                  {!isScenicProduct && (
-                    <>
-                      {/* 자체 채널: 카드 수수료 % */}
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-medium text-gray-700">
-                          {isKorean ? '카드 수수료 %' : 'Card Processing Fee %'}
-                        </span>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs text-gray-500">x</span>
-                          <div className="flex items-center space-x-1">
-                            <input
-                              type="number"
-                              value={formData.commission_percent ?? 2.9}
-                              onChange={(e) => {
-                                isCardFeeManuallyEdited.current = true
-                                markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
-                                const newPercent = Number(e.target.value) || 0
-                                setFormData((prev: typeof formData) => {
-                                  const bp =
-                                    prev.commission_base_price !== undefined
-                                      ? prev.commission_base_price
-                                      : (prev.depositAmount || 0)
-                                  const amt =
-                                    newPercent > 0
-                                      ? Number((bp * (newPercent / 100) + 0.15).toFixed(2))
-                                      : 0
-                                  return {
-                                    ...omitChannelSettlementAmount(prev),
-                                    commission_base_price: bp,
-                                    commission_percent: newPercent,
-                                    commission_amount: amt,
-                                  }
-                                })
-                              }}
-                              className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
-                              step="0.01"
-                              min="0"
-                              max="100"
-                              placeholder="2.9"
-                            />
-                            <span className="text-xs text-gray-500">%</span>
-                          </div>
+                  {/* 자체 채널: 카드 수수료 % */}
+                  <div className="flex justify-between items-center">
+                      <span className="text-xs font-medium text-gray-700">
+                        {isKorean ? '카드 수수료 %' : 'Card Processing Fee %'}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-gray-500">x</span>
+                        <div className="flex items-center space-x-1">
+                          <input
+                            type="number"
+                            value={formData.commission_percent ?? 2.9}
+                            onChange={(e) => {
+                              isCardFeeManuallyEdited.current = true
+                              markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
+                              const newPercent = Number(e.target.value) || 0
+                              setFormData((prev: typeof formData) => {
+                                const bp =
+                                  prev.commission_base_price !== undefined
+                                    ? prev.commission_base_price
+                                    : (prev.depositAmount || 0)
+                                const amt =
+                                  newPercent > 0
+                                    ? Number((bp * (newPercent / 100) + 0.15).toFixed(2))
+                                    : 0
+                                return {
+                                  ...omitChannelSettlementAmount(prev),
+                                  commission_base_price: bp,
+                                  commission_percent: newPercent,
+                                  commission_amount: amt,
+                                }
+                              })
+                            }}
+                            className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            placeholder="2.9"
+                          />
+                          <span className="text-xs text-gray-500">%</span>
                         </div>
                       </div>
-                  
-                      {/* 구분선 */}
-                      <div className="border-t border-gray-200 my-2"></div>
-                    </>
-                  )}
+                  </div>
+
+                  {/* 구분선 */}
+                  <div className="border-t border-gray-200 my-2"></div>
                   
                   {/* 자체 채널: 카드 수수료 $ */}
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-medium text-gray-700">
-                      {isScenicProduct
-                        ? (isKorean ? 'Scenic 수수료' : 'Scenic fee')
-                        : (isKorean ? '카드 수수료 $' : 'Card Processing Fee $')}
+                      {isKorean ? '카드 수수료 $' : 'Card Processing Fee $'}
                     </span>
                     <div className="flex items-center space-x-2">
                       <div className="relative">
@@ -3939,7 +4143,7 @@ export default function PricingSection({
                           placeholder="0"
                         />
                       </div>
-                      {!isScenicProduct && (() => {
+                      {(() => {
                         const basePrice = formData.commission_base_price !== undefined 
                           ? formData.commission_base_price 
                           : (formData.depositAmount || 0)

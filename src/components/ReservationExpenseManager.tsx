@@ -199,6 +199,8 @@ export default function ReservationExpenseManager({
   const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
   /** 수정 모달: 환급 입력란 표시 */
   const [reimbursementSectionOpen, setReimbursementSectionOpen] = useState(false)
+  /** 예약 상세 목록: 환급 요약(카드) 표시 — 토글 ON일 때만 */
+  const [showReimbursementInList, setShowReimbursementInList] = useState(false)
   /** 관리자 목록: 명세 대조 미연결만 API에서 조회 */
   const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; paidFor: string } | null>(null)
@@ -230,8 +232,13 @@ export default function ReservationExpenseManager({
     try {
       setLoading(true)
       const params = new URLSearchParams()
-      if (reservationId) params.append('reservation_id', reservationId)
-      if (submittedBy) params.append('submitted_by', submittedBy)
+      if (reservationId) {
+        params.append('reservation_id', reservationId)
+        params.append('limit', '500')
+      }
+      // 예약 상세에서는 PricingSection·매출 산식과 동일하게 이 예약에 연결된 지출 전체를 불러온다.
+      // submittedBy는 신규 등록 시 submitted_by 기본값에만 쓰고, 목록 GET에는 넣지 않는다.
+      if (submittedBy && !reservationId) params.append('submitted_by', submittedBy)
       if (statementMatchFilter === 'unmatched') params.append('statement_match', 'unmatched')
 
       const response = await fetch(`/api/reservation-expenses?${params}`)
@@ -929,12 +936,6 @@ export default function ReservationExpenseManager({
     setStmtReconOpen(true)
   }, [])
 
-  const depositTotalForSingleReservation = useMemo(() => {
-    if (!reservationId) return null
-    const row = expenses.find((e) => e.reservation_payments_total != null)
-    return row?.reservation_payments_total ?? null
-  }, [reservationId, expenses])
-
   const formatDepositCell = (v: number | null | undefined) => {
     if (v == null) return '—'
     return formatCurrency(v)
@@ -1107,12 +1108,42 @@ export default function ReservationExpenseManager({
 
       {!adminList && (
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
           {showTitle && (
             <>
               <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
-              <h3 className="text-xs font-semibold text-gray-900 truncate">{titleText}</h3>
+              <h3 className="text-xs font-semibold text-gray-900 truncate">
+                {titleText}
+                {reservationId ? (
+                  <span className="ml-1 font-normal text-gray-500">
+                    ({sortedDisplayExpenses.length}건)
+                  </span>
+                ) : null}
+              </h3>
             </>
+          )}
+          {reservationId && (
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none shrink-0">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showReimbursementInList}
+                aria-label={t('showReimbursementDetails')}
+                onClick={() => setShowReimbursementInList((v) => !v)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 ${
+                  showReimbursementInList ? 'bg-amber-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+                    showReimbursementInList ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span className="text-[10px] sm:text-xs text-gray-600 whitespace-nowrap">
+                {t('showReimbursementDetails')}
+              </span>
+            </label>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
@@ -1121,12 +1152,6 @@ export default function ReservationExpenseManager({
               {t('totalAmountLabel')}:{' '}
               <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
             </span>
-            {depositTotalForSingleReservation != null && (
-              <span title={t('depositPaymentsTotalHint')}>
-                {t('depositPaymentsTotal')}:{' '}
-                <span className="font-semibold text-blue-700">{formatCurrency(depositTotalForSingleReservation)}</span>
-              </span>
-            )}
           </div>
           <button
             type="button"
@@ -1741,9 +1766,24 @@ export default function ReservationExpenseManager({
             </div>
           </>
         ) : (
-        <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-1.5'}>
+        <div
+          className={
+            isLine
+              ? 'divide-y divide-gray-200'
+              : reservationId
+                ? 'space-y-2 max-h-[min(480px,55vh)] overflow-y-auto pr-0.5'
+                : 'space-y-1.5'
+          }
+        >
                   {sortedDisplayExpenses.map((expense) => (
-            <div key={expense.id} className={isLine ? 'py-2 first:pt-0' : 'border border-gray-200 rounded-xl px-2.5 py-2 bg-white hover:bg-gray-50/80 shadow-sm transition-colors'}>
+            <div
+              key={expense.id}
+              className={
+                isLine
+                  ? 'py-2 first:pt-0'
+                  : `border border-gray-200 rounded-xl bg-white hover:bg-gray-50/80 shadow-sm transition-colors ${reservationId ? 'px-3 py-3' : 'px-2.5 py-2'}`
+              }
+            >
               {/* 1행: 결제내용 + 금액 + 상태 + 액션 */}
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 flex items-center gap-1 flex-wrap">
@@ -1800,15 +1840,12 @@ export default function ReservationExpenseManager({
               {!reservationId && expense.reservations && reservationCustomerLabel(expense) && (
                 <p className="mt-0.5 text-[10px] text-gray-400 truncate">{reservationCustomerLabel(expense)}</p>
               )}
-              {expense.reservation_payments_total != null && (
-                <p className="mt-0.5 text-[10px] text-blue-800/90 truncate" title={t('depositPaymentsTotalHint')}>
-                  {t('depositPaymentsTotal')}: {formatCurrency(expense.reservation_payments_total)}
-                </p>
-              )}
               {expense.note && (
                 <p className="mt-0.5 text-[10px] text-gray-500 truncate max-w-full" title={expense.note}>{expense.note}</p>
               )}
-              {expense.amount > 0 &&
+              {reservationId &&
+                showReimbursementInList &&
+                expense.amount > 0 &&
                 (parseReimbursedAmount(expense.reimbursed_amount) > 0 ||
                   reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009) && (
                   <p className="mt-0.5 text-[10px] text-amber-900/90 truncate max-w-full">

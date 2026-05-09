@@ -108,8 +108,12 @@ export function deriveCommissionGrossForSettlement(
   return sum
 }
 
-/** 채널 결제(표시) = gross − Returned (gross는 분기별 base) */
-export function computeChannelPaymentAfterReturn(inp: ChannelSettlementComputeInput): number {
+/**
+ * 채널 결제 gross(Returned 차감 전).
+ * 자체(비-OTA) 채널은 보증금만 쓰는 조기 분기를 두지 않음 — 추가비용·카드수수료·옵션 등이 베이스에 포함되도록
+ * `productSubtotal` 경로와 동일한 산식을 사용한다. (OTA만 예금 우선 조기 분기)
+ */
+export function computeChannelPaymentGrossBeforeReturn(inp: ChannelSettlementComputeInput): number {
   const depositAmount = toN(inp.depositAmount)
   const onlinePaymentAmount = toN(inp.onlinePaymentAmount)
   const productPriceTotal = toN(inp.productPriceTotal)
@@ -121,22 +125,20 @@ export function computeChannelPaymentAfterReturn(inp: ChannelSettlementComputeIn
   const cardFee = toN(inp.cardFee)
   const prepaymentTip = toN(inp.prepaymentTip)
   const onSiteBalanceAmount = toN(inp.onSiteBalanceAmount)
-  const returnedAmount = toN(inp.returnedAmount)
 
   const discountedProductPrice = productPriceTotal - couponDiscount - additionalDiscount
   const otaChannelProductPaymentGross =
     couponDiscount > 0 ? Math.max(0, discountedProductPrice) : productPriceTotal
 
-  if (depositAmount > 0) {
-    const base = onlinePaymentAmount || depositAmount
-    return Math.max(0, base - returnedAmount)
+  if (depositAmount > 0 && inp.isOTAChannel) {
+    return Math.max(0, onlinePaymentAmount || depositAmount)
   }
   if (inp.isOTAChannel) {
     const base =
       onlinePaymentAmount ||
       depositAmount ||
       (otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : 0)
-    return Math.max(0, base - returnedAmount)
+    return Math.max(0, base)
   }
   const productSubtotal =
     productPriceTotal -
@@ -148,7 +150,14 @@ export function computeChannelPaymentAfterReturn(inp: ChannelSettlementComputeIn
     prepaymentTip -
     onSiteBalanceAmount
   const base = onlinePaymentAmount || (productSubtotal > 0 ? productSubtotal : 0)
-  return Math.max(0, base - returnedAmount)
+  return Math.max(0, base)
+}
+
+/** 채널 결제(표시) = gross − Returned (gross는 분기별 base) */
+export function computeChannelPaymentAfterReturn(inp: ChannelSettlementComputeInput): number {
+  const returnedAmount = toN(inp.returnedAmount)
+  const gross = computeChannelPaymentGrossBeforeReturn(inp)
+  return Math.max(0, gross - returnedAmount)
 }
 
 /** 채널 정산 금액 = 채널 결제(표시) − 수수료$ (취소 후에도 플랫폼 부분 정산이 있으면 수수료 $를 직접 입력) */

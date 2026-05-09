@@ -281,15 +281,138 @@ function buildTourDiffLines(args: {
   return lines
 }
 
+/** 예약 JSON(choices / selected_options 등)의 ID를 사람이 읽을 수 있는 라벨로 바꿀 때 사용 */
+type AwayChoiceFormatCtx = {
+  choiceGroupById: Map<string, { ko: string; en: string }>
+  optionById: Map<string, { ko: string; en: string }>
+}
+
+function harvestChoiceOptionIdsFromReservationRecord(
+  rec: JsonRecord,
+  choiceIds: Set<string>,
+  optionIds: Set<string>
+): void {
+  const ch = rec.choices
+  if (ch && typeof ch === 'object' && !Array.isArray(ch)) {
+    const req = (ch as { required?: unknown }).required
+    if (Array.isArray(req)) {
+      for (const item of req) {
+        if (!item || typeof item !== 'object') continue
+        const o = item as Record<string, unknown>
+        const cid = str(o.choice_id)
+        const oid = str(o.option_id)
+        if (cid) choiceIds.add(cid)
+        if (oid && oid !== '__undecided__') optionIds.add(oid)
+      }
+    }
+  }
+  const so = rec.selected_options
+  if (so && typeof so === 'object' && !Array.isArray(so)) {
+    for (const [k, val] of Object.entries(so as Record<string, unknown>)) {
+      if (k) choiceIds.add(k)
+      const vals = Array.isArray(val) ? val : val != null ? [val] : []
+      for (const v of vals) {
+        const s = str(v)
+        if (s && s !== '__undecided__') optionIds.add(s)
+      }
+    }
+  }
+  const sop = rec.selected_option_prices
+  if (sop && typeof sop === 'object' && !Array.isArray(sop)) {
+    for (const k of Object.keys(sop as Record<string, unknown>)) {
+      if (k) optionIds.add(k)
+    }
+  }
+}
+
+function choiceGroupLabel(ctx: AwayChoiceFormatCtx, choiceId: string, locale: string): string {
+  const row = ctx.choiceGroupById.get(choiceId)
+  if (!row) return choiceId || '—'
+  if (locale === 'en') return str(row.en || row.ko) || choiceId
+  return str(row.ko || row.en) || choiceId
+}
+
+function optionDisplayLabel(ctx: AwayChoiceFormatCtx, optionId: string, locale: string): string {
+  if (optionId === '__undecided__') return lo(locale, '미정', 'Undecided')
+  const row = ctx.optionById.get(optionId)
+  if (!row) return optionId || '—'
+  if (locale === 'en') return str(row.en || row.ko) || optionId
+  return str(row.ko || row.en) || optionId
+}
+
+function formatReservationChoicesJson(v: unknown, ctx: AwayChoiceFormatCtx, locale: string): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v !== 'object' || Array.isArray(v)) return formatPrimitive(v, locale)
+  const obj = v as Record<string, unknown>
+  const req = obj.required
+  if (!Array.isArray(req)) return formatPrimitive(v, locale)
+  const parts: string[] = []
+  for (const item of req) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Record<string, unknown>
+    const choiceId = str(o.choice_id)
+    const optionId = str(o.option_id)
+    const qtyRaw = o.quantity
+    const qty = typeof qtyRaw === 'number' ? qtyRaw : Number.parseInt(String(qtyRaw), 10)
+    const q = Number.isFinite(qty) ? qty : 1
+    const total = o.total_price
+    const g = choiceGroupLabel(ctx, choiceId, locale)
+    const opt = optionDisplayLabel(ctx, optionId, locale)
+    const priceNum = typeof total === 'number' ? total : Number(total)
+    const pricePart =
+      Number.isFinite(priceNum) && priceNum !== 0
+        ? locale === 'en'
+          ? ` (+${priceNum})`
+          : ` (+${priceNum.toLocaleString('ko-KR')}원)`
+        : ''
+    parts.push(`${g}: ${opt} × ${q}${pricePart}`)
+  }
+  return parts.length ? parts.join(locale === 'en' ? '; ' : ' · ') : formatPrimitive(v, locale)
+}
+
+function formatReservationSelectedOptions(v: unknown, ctx: AwayChoiceFormatCtx, locale: string): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v !== 'object' || Array.isArray(v)) return formatPrimitive(v, locale)
+  const o = v as Record<string, unknown>
+  const keys = Object.keys(o)
+  if (!keys.length) return '—'
+  const parts: string[] = []
+  for (const choiceKey of keys) {
+    const group = choiceGroupLabel(ctx, choiceKey, locale)
+    const rawVal = o[choiceKey]
+    const vals = Array.isArray(rawVal) ? rawVal : rawVal != null ? [rawVal] : []
+    const opts = vals
+      .map((x) => optionDisplayLabel(ctx, str(x), locale))
+      .filter((s) => s && s !== '—')
+    parts.push(`${group}: ${opts.length ? opts.join(', ') : '—'}`)
+  }
+  return parts.join(locale === 'en' ? '; ' : ' · ')
+}
+
+function formatReservationSelectedOptionPrices(v: unknown, ctx: AwayChoiceFormatCtx, locale: string): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v !== 'object' || Array.isArray(v)) return formatPrimitive(v, locale)
+  const o = v as Record<string, unknown>
+  const keys = Object.keys(o)
+  if (!keys.length) return '—'
+  const parts: string[] = []
+  for (const k of keys) {
+    const label = optionDisplayLabel(ctx, k, locale)
+    parts.push(`${label}: ${o[k]}`)
+  }
+  return parts.join(locale === 'en' ? '; ' : ' · ')
+}
+
 function buildReservationDiffLines(args: {
   action: string
   oldR: JsonRecord
   newR: JsonRecord
   changed_fields: string[] | null
   productMap: Map<string, { name: string | null; name_ko: string | null; name_en: string | null }>
+  choiceFormatCtx: AwayChoiceFormatCtx
   locale: string
 }): AwayChangeDiffLine[] {
-  const { action, oldR, newR, changed_fields, productMap, locale } = args
+  const { action, oldR, newR, changed_fields, productMap, choiceFormatCtx, locale } = args
   if (action === 'INSERT') {
     return [
       {
@@ -357,6 +480,21 @@ function buildReservationDiffLines(args: {
         label = lo(locale, '연결 투어', 'Linked tour')
         bText = str(before) || '—'
         aText = str(after) || '—'
+        break
+      case 'choices':
+        label = lo(locale, '필수 선택(초이스)', 'Required choices')
+        bText = formatReservationChoicesJson(before, choiceFormatCtx, locale)
+        aText = formatReservationChoicesJson(after, choiceFormatCtx, locale)
+        break
+      case 'selected_options':
+        label = lo(locale, '선택 옵션', 'Selected options')
+        bText = formatReservationSelectedOptions(before, choiceFormatCtx, locale)
+        aText = formatReservationSelectedOptions(after, choiceFormatCtx, locale)
+        break
+      case 'selected_option_prices':
+        label = lo(locale, '옵션 가격', 'Option prices')
+        bText = formatReservationSelectedOptionPrices(before, choiceFormatCtx, locale)
+        aText = formatReservationSelectedOptionPrices(after, choiceFormatCtx, locale)
         break
       default:
         break
@@ -499,6 +637,49 @@ async function enrichAuditItems(
     vehicleMap.set(str(v.id), str(v.vehicle_number))
   }
 
+  const reservationChoiceIds = new Set<string>()
+  const reservationOptionIds = new Set<string>()
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].table_name !== 'reservations') continue
+    harvestChoiceOptionIdsFromReservationRecord(oldRecords[i], reservationChoiceIds, reservationOptionIds)
+    harvestChoiceOptionIdsFromReservationRecord(newRecords[i], reservationChoiceIds, reservationOptionIds)
+  }
+
+  const choiceIdList = [...reservationChoiceIds]
+  const optionIdList = [...reservationOptionIds]
+
+  const [{ data: productChoicesData }, { data: choiceOptionsData }] = await Promise.all([
+    choiceIdList.length
+      ? supabase
+          .from('product_choices')
+          .select('id, choice_group_ko, choice_group_en, choice_group')
+          .in('id', choiceIdList)
+      : Promise.resolve({ data: [] as Array<{ id: string; choice_group_ko: string; choice_group_en: string | null; choice_group: string }>, error: null }),
+    optionIdList.length
+      ? supabase
+          .from('choice_options')
+          .select('id, choice_id, option_name, option_name_ko')
+          .in('id', optionIdList)
+      : Promise.resolve({ data: [] as Array<{ id: string; choice_id: string | null; option_name: string; option_name_ko: string }>, error: null }),
+  ])
+
+  const choiceFormatCtx: AwayChoiceFormatCtx = {
+    choiceGroupById: new Map(),
+    optionById: new Map(),
+  }
+  for (const pc of productChoicesData || []) {
+    choiceFormatCtx.choiceGroupById.set(str(pc.id), {
+      ko: str(pc.choice_group_ko || pc.choice_group),
+      en: str(pc.choice_group_en || pc.choice_group || pc.choice_group_ko),
+    })
+  }
+  for (const co of choiceOptionsData || []) {
+    choiceFormatCtx.optionById.set(str(co.id), {
+      ko: str(co.option_name_ko || co.option_name),
+      en: str(co.option_name || co.option_name_ko),
+    })
+  }
+
   const items: AwayChangeItem[] = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -575,6 +756,7 @@ async function enrichAuditItems(
         newR,
         changed_fields: row.changed_fields,
         productMap,
+        choiceFormatCtx,
         locale,
       })
 

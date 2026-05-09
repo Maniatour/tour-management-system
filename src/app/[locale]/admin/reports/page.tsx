@@ -92,7 +92,8 @@ export default function AdminReports({ }: AdminReportsProps) {
     products,
     channels,
     loading,
-    refreshReservations
+    refreshReservations,
+    reservationsAggregateReady,
   } = useReservationData()
 
   // 상태 관리 (탭·기간 — 새로고침 유지)
@@ -479,6 +480,7 @@ export default function AdminReports({ }: AdminReportsProps) {
             products={products}
             channels={channels}
             customers={customers}
+            reservationsAggregateReady={reservationsAggregateReady}
           />
         )}
         {activeTab === 'reservations' && (
@@ -489,6 +491,7 @@ export default function AdminReports({ }: AdminReportsProps) {
             products={products}
             channels={channels}
             customers={customers}
+            reservationsAggregateReady={reservationsAggregateReady}
           />
         )}
         {activeTab === 'tours' && (

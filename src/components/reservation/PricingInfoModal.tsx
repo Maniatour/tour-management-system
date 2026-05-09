@@ -4,10 +4,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
-import {
-  useReservationOptions,
-  reservationOptionCountsTowardPricingTotal,
-} from '@/hooks/useReservationOptions'
+import { useReservationOptions } from '@/hooks/useReservationOptions'
+import { reservationOptionCountsTowardPricingTotal } from '@/utils/reservationOptionsShared'
 import { roundUsd2, splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import {
   computePricingSectionCustomerPaymentGrossLike,
@@ -24,6 +22,8 @@ import {
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
+import { useAuth } from '@/contexts/AuthContext'
+import { isSuperAdminActor } from '@/lib/superAdmin'
 
 interface PricingInfoModalProps {
   reservation: Reservation | null
@@ -63,6 +63,18 @@ interface PricingData {
   commission_base_price?: number
   channel_settlement_amount?: number
   pricing_adults?: number | null
+  audited?: boolean
+  audited_at?: string | null
+  audited_by_email?: string | null
+  audited_by_name?: string | null
+  audited_by_nick_name?: string | null
+}
+
+type TeamAuditProfile = {
+  email: string
+  name: string
+  nickName: string
+  position: string | null
 }
 
 interface Coupon {
@@ -80,6 +92,8 @@ interface Coupon {
 }
 
 export default function PricingInfoModal({ reservation, isOpen, onClose }: PricingInfoModalProps) {
+  const { authUser, userPosition } = useAuth()
+  const isSuperPricingAdmin = isSuperAdminActor(authUser?.email, userPosition)
   const [pricingData, setPricingData] = useState<PricingData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,11 +105,13 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const [returnedAmount, setReturnedAmount] = useState(0)
   const [refundedAmount, setRefundedAmount] = useState(0)
   const [partnerReceivedForSettlement, setPartnerReceivedForSettlement] = useState(0)
+  const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
   const [isOTAChannel, setIsOTAChannel] = useState(false)
   /** 홈페이지 채널 판별용 — `channels` 목록 없이 현재 예약 채널명만으로 검사 */
   const [channelDisplayName, setChannelDisplayName] = useState<string | null>(null)
   const [channelSettlementFocused, setChannelSettlementFocused] = useState(false)
   const [channelSettlementDraft, setChannelSettlementDraft] = useState('')
+  const [currentTeamProfile, setCurrentTeamProfile] = useState<TeamAuditProfile | null>(null)
 
   const reservationOptionsHookId = isOpen && reservation?.id ? String(reservation.id) : ''
   const { reservationOptions: reservationOptionsRows } = useReservationOptions(reservationOptionsHookId)
@@ -112,6 +128,32 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       setChannelSettlementDraft('')
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !authUser?.email) {
+      setCurrentTeamProfile(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const email = authUser.email.trim().toLowerCase()
+      const { data } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en, nick_name, position')
+        .ilike('email', email)
+        .maybeSingle()
+      if (cancelled) return
+      setCurrentTeamProfile({
+        email,
+        name: data?.name_ko || data?.name_en || authUser.name || email,
+        nickName: data?.nick_name || data?.name_ko || authUser.name || email,
+        position: data?.position ?? userPosition ?? null,
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [authUser?.email, authUser?.name, isOpen, userPosition])
 
   // pricingData가 로드된 후 쿠폰 로드 (채널 변경 시에도 다시 로드)
   useEffect(() => {
@@ -153,6 +195,50 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         }
       }
     })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, reservation?.id])
+
+  useEffect(() => {
+    if (!isOpen || !reservation?.id) {
+      setReservationExpensesTotal(0)
+      return
+    }
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('reservation_expenses')
+          .select('amount, status')
+          .eq('reservation_id', reservation.id)
+          .not('status', 'eq', 'rejected')
+
+        if (cancelled) return
+
+        if (error) {
+          if (!isAbortLikeError(error)) {
+            console.error('예약 지출 조회 오류:', error)
+          }
+          setReservationExpensesTotal(0)
+          return
+        }
+
+        const total =
+          data?.reduce((sum: number, expense: { amount: number | string | null }) => {
+            const amount = Number(expense.amount) || 0
+            return sum + amount
+          }, 0) || 0
+        setReservationExpensesTotal(roundUsd2(total))
+      } catch (error) {
+        if (!cancelled && !isAbortLikeError(error)) {
+          console.error('예약 지출 조회 중 오류:', error)
+          setReservationExpensesTotal(0)
+        }
+      }
+    })()
+
     return () => {
       cancelled = true
     }
@@ -205,7 +291,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       const reservationId = String(reservation.id)
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, commission_base_price, channel_settlement_amount, pricing_adults')
+        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, commission_base_price, channel_settlement_amount, pricing_adults, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name')
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -397,11 +483,132 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     }
   }
 
+  const getActorName = () =>
+    currentTeamProfile?.nickName || currentTeamProfile?.name || authUser?.email || ''
+
+  const getSuperNotificationRecipients = async () => {
+    const { data } = await supabase
+      .from('team')
+      .select('email')
+      .eq('is_active', true)
+      .ilike('position', 'super')
+    const emails = new Set(
+      (data || [])
+        .map((row) => row.email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email))
+    )
+    emails.add('info@maniatour.com')
+    emails.add('wooyong.shim09@gmail.com')
+    if (authUser?.email) emails.delete(authUser.email.trim().toLowerCase())
+    return [...emails]
+  }
+
+  const insertPricingAuditNotifications = async (
+    reservationId: string,
+    type: 'modification_request' | 'audited_pricing_updated',
+    message: string,
+    requestId?: string | null
+  ) => {
+    if (!authUser?.email) return
+    const recipients = await getSuperNotificationRecipients()
+    if (recipients.length === 0) return
+    const actorName = getActorName()
+    const rows = recipients.map((recipientEmail) => ({
+      reservation_id: reservationId,
+      reservation_pricing_id: pricingData?.id ?? editData?.id ?? null,
+      request_id: requestId ?? null,
+      recipient_email: recipientEmail,
+      actor_email: authUser.email,
+      actor_name: currentTeamProfile?.name || actorName,
+      actor_nick_name: currentTeamProfile?.nickName || actorName,
+      notification_type: type,
+      message,
+    }))
+    const { error } = await (supabase as any).from('reservation_pricing_audit_notifications').insert(rows)
+    if (error) console.error('가격 감사 알림 생성 오류:', error)
+  }
+
+  const handleRequestPricingAuditModification = async () => {
+    if (!reservation?.id || !authUser?.email) return
+    const reason = window.prompt('super 관리자에게 보낼 가격 정보 수정 요청 내용을 입력해 주세요.')
+    if (!reason?.trim()) return
+    const requesterName = getActorName()
+    const { data, error } = await (supabase as any)
+      .from('reservation_pricing_modification_requests')
+      .insert({
+        reservation_id: String(reservation.id),
+        reservation_pricing_id: pricingData?.id ?? editData?.id ?? null,
+        requested_by_email: authUser.email,
+        requested_by_name: currentTeamProfile?.name || requesterName,
+        requested_by_nick_name: currentTeamProfile?.nickName || requesterName,
+        reason: reason.trim(),
+      })
+      .select('id')
+      .single()
+    if (error) {
+      setError('수정 요청을 보내는 중 오류가 발생했습니다.')
+      return
+    }
+    await insertPricingAuditNotifications(
+      String(reservation.id),
+      'modification_request',
+      `Audited 가격 정보 수정 요청이 도착했습니다.\n\n요청자: ${requesterName}\n내용: ${reason.trim()}`,
+      data?.id ?? null
+    )
+    alert('super 관리자에게 수정 요청을 보냈습니다.')
+  }
+
+  const handleToggleAudited = async (nextAudited: boolean) => {
+    if (!editData?.id || !authUser?.email) {
+      alert('가격 정보를 먼저 저장한 뒤 Audited 체크를 할 수 있습니다.')
+      return
+    }
+    if (!isSuperPricingAdmin) {
+      alert('Audited 체크는 super 관리자만 변경할 수 있습니다.')
+      return
+    }
+    const actorName = getActorName()
+    const patch = nextAudited
+      ? {
+          audited: true,
+          audited_at: new Date().toISOString(),
+          audited_by_email: authUser.email,
+          audited_by_name: currentTeamProfile?.name || actorName,
+          audited_by_nick_name: currentTeamProfile?.nickName || actorName,
+        }
+      : {
+          audited: false,
+          audited_at: null,
+          audited_by_email: null,
+          audited_by_name: null,
+          audited_by_nick_name: null,
+        }
+    const { error } = await supabase.from('reservation_pricing').update(patch).eq('id', editData.id)
+    if (error) {
+      setError('Audited 상태 변경 중 오류가 발생했습니다.')
+      return
+    }
+    const next = { ...editData, ...patch }
+    setEditData(next)
+    setPricingData(next)
+  }
+
   const handleSave = async () => {
     if (!editData || !reservation) return
 
     setSaving(true)
     try {
+      if (editData.audited && !isSuperPricingAdmin) {
+        setError('Audited 된 가격 정보는 super 관리자만 수정할 수 있습니다. 수정 요청을 보내 주세요.')
+        return
+      }
+      if (editData.audited && isSuperPricingAdmin) {
+        const ok = window.confirm(
+          '이 가격 정보는 Audited 상태입니다.\n수정 내용을 저장하면 다른 super 관리자에게 수정 알림이 전송됩니다.\n계속 저장할까요?'
+        )
+        if (!ok) return
+      }
+
       // reservation_pricing에는 is_private_tour 컬럼이 없음(예약 테이블 전용)
       const { is_private_tour: _omitPrivateTour, ...rowForDb } = editData
       void _omitPrivateTour
@@ -416,6 +623,13 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
 
         if (error) throw error
         setPricingData(editData)
+        if (editData.audited && isSuperPricingAdmin) {
+          await insertPricingAuditNotifications(
+            reservationId,
+            'audited_pricing_updated',
+            `Audited 가격 정보가 super 관리자에 의해 수정되었습니다.\n\n수정자: ${getActorName()}`
+          )
+        }
       } else {
         const newId = crypto.randomUUID()
         const { error } = await supabase.from('reservation_pricing').insert({
@@ -762,6 +976,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       isReservationCancelled,
       isOTAChannel,
       channelSettlementBeforePartnerReturn: channelSettlementForDisplay,
+      reservationExpensesTotal,
       reservationOptionsTotalPrice: reservationOptionsTotalUsd,
       notIncludedTotalUsd: notIncludedBreakdownModal.totalUsd,
       additionalDiscount: editData.additional_discount || 0,
@@ -779,6 +994,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     isReservationCancelled,
     isOTAChannel,
     channelSettlementForDisplay,
+    reservationExpensesTotal,
     reservationOptionsTotalUsd,
     notIncludedBreakdownModal.totalUsd,
     refundedAmount,
@@ -1081,6 +1297,53 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                             {/* 3. Pricing calc - same formulas as PricingSection */}
               <div className="bg-white p-3 rounded border border-gray-200 overflow-y-auto max-h-[70vh]">
                 <h4 className="text-xs font-semibold text-gray-900 mb-2">가격 계산</h4>
+                {editData && (
+                  <div className={`mb-3 rounded-lg border p-3 text-xs ${
+                    editData.audited
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                      : 'border-amber-200 bg-amber-50 text-amber-900'
+                  }`}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-1">
+                        <label className="inline-flex items-center gap-2 font-semibold">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editData.audited)}
+                            disabled={!isSuperPricingAdmin}
+                            onChange={(e) => void handleToggleAudited(e.target.checked)}
+                            className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
+                          />
+                          Audited
+                          {!isSuperPricingAdmin && (
+                            <span className="text-[11px] font-normal text-gray-500">(super 관리자만 체크 가능)</span>
+                          )}
+                        </label>
+                        {editData.audited ? (
+                          <div className="text-[11px] text-emerald-800">
+                            검수자: {editData.audited_by_nick_name || editData.audited_by_name || editData.audited_by_email || '-'}
+                            {editData.audited_at ? ` · ${new Date(editData.audited_at).toLocaleString('ko-KR')}` : ''}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-amber-800">아직 super 관리자 검수가 완료되지 않았습니다.</div>
+                        )}
+                      </div>
+                      {editData.audited && !isSuperPricingAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => void handleRequestPricingAuditModification()}
+                          className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                        >
+                          수정 요청 보내기
+                        </button>
+                      )}
+                    </div>
+                    {editData.audited && !isSuperPricingAdmin && (
+                      <p className="mt-2 text-[11px] text-amber-800">
+                        Audited 된 가격 정보는 OP/Manager/Office Manager가 직접 수정할 수 없습니다.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-3 text-xs">
                   <div className="pb-2 border-b border-gray-200">
                     <div className="flex items-center mb-1.5">
@@ -1332,6 +1595,15 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                         <span className="text-gray-700">채널 정산금액 (표시 기준)</span>
                         <span className="font-medium">${channelSettlementForDisplay.toFixed(2)}</span>
                       </div>
+                      {Math.abs(reservationExpensesTotal) > 0.005 && (
+                        <div className={`flex justify-between ${reservationExpensesTotal >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          <span className="text-gray-600">예약 지출 금액</span>
+                          <span>
+                            {reservationExpensesTotal >= 0 ? '-' : '+'}$
+                            {Math.abs(reservationExpensesTotal).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
                       {refundedAmount > 0.005 && (
                         <div className="flex justify-between text-red-600">
                           <span className="text-gray-600">환불금 (우리)</span>
@@ -1382,8 +1654,9 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           {pricingData && (
             <button
               onClick={handleSave}
-              disabled={saving}
-              className="flex items-center space-x-2 px-6 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:opacity-50"
+              disabled={saving || (Boolean(editData?.audited) && !isSuperPricingAdmin)}
+              title={Boolean(editData?.audited) && !isSuperPricingAdmin ? 'Audited 가격 정보는 super 관리자만 저장할 수 있습니다.' : undefined}
+              className="flex items-center space-x-2 px-6 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               <span>{saving ? '저장중...' : '저장'}</span>

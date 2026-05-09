@@ -5,6 +5,7 @@ import { MessageCircle, Plus, Settings, Pin, Search, X, Paperclip, Image, File, 
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
+import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -293,10 +294,14 @@ export default function GuideChatPage() {
         if (reservationIds.length > 0) {
           const { data: reservationsData } = await supabaseClient
             .from('reservations')
-            .select('id, total_people')
+            .select('id, total_people, status')
             .in('id', reservationIds)
-          
-          reservationMap = new Map((reservationsData || []).map(r => [r.id, r.total_people || 0]))
+
+          reservationMap = new Map(
+            (reservationsData || [])
+              .filter((r) => !reservationExcludedFromTourSettlementAggregates(r.status))
+              .map((r) => [r.id, r.total_people || 0])
+          )
         }
 
         // 투어 채팅방 데이터 생성

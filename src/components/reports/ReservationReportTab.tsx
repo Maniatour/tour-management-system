@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { Users, Package, Link, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { mapIdsInConcurrentChunks } from '@/lib/fetchSupabaseInChunks'
 
 interface ReservationReportTabProps {
   dateRange: { start: string; end: string }
@@ -11,6 +12,7 @@ interface ReservationReportTabProps {
   products: any[]
   channels: any[]
   customers: any[]
+  reservationsAggregateReady?: boolean
 }
 
 export default function ReservationReportTab({
@@ -19,7 +21,8 @@ export default function ReservationReportTab({
   reservations,
   products,
   channels,
-  customers
+  customers,
+  reservationsAggregateReady = true,
 }: ReservationReportTabProps) {
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -53,8 +56,12 @@ export default function ReservationReportTab({
   }, [stats])
 
   useEffect(() => {
+    if (!reservationsAggregateReady) {
+      setLoading(true)
+      return
+    }
     loadReservationStats()
-  }, [dateRange, period, reservations])
+  }, [dateRange, period, reservationsAggregateReady])
 
   const loadReservationStats = async () => {
     setLoading(true)
@@ -74,20 +81,53 @@ export default function ReservationReportTab({
       })
 
       const reservationIds = filteredReservations.map(r => r.id)
-      let reservationPricing: any[] = []
-      if (reservationIds.length > 0) {
-        const { data: pricing } = await supabase
-          .from('reservation_pricing')
-          .select('reservation_id, total_price, commission_amount, additional_cost')
-          .in('reservation_id', reservationIds)
-        reservationPricing = pricing || []
-      }
+      const REPORT_IN_CHUNK = 100
+      const REPORT_IN_CONCURRENCY = 8
+
+      const [reservationPricing, allExpenses] = await Promise.all([
+        reservationIds.length === 0
+          ? Promise.resolve([] as any[])
+          : mapIdsInConcurrentChunks(
+              reservationIds,
+              REPORT_IN_CHUNK,
+              REPORT_IN_CONCURRENCY,
+              async (chunk) => {
+                const { data: pricing, error } = await supabase
+                  .from('reservation_pricing')
+                  .select('reservation_id, total_price, commission_amount, additional_cost')
+                  .in('reservation_id', chunk)
+                if (error) return []
+                return pricing || []
+              }
+            ),
+        reservationIds.length === 0
+          ? Promise.resolve([] as { reservation_id: string; amount: number }[])
+          : mapIdsInConcurrentChunks(
+              reservationIds,
+              REPORT_IN_CHUNK,
+              REPORT_IN_CONCURRENCY,
+              async (chunk) => {
+                const { data: expensesData, error } = await supabase
+                  .from('reservation_expenses')
+                  .select('reservation_id, amount')
+                  .in('reservation_id', chunk)
+                if (error) return []
+                return expensesData || []
+              }
+            ),
+      ])
+
+      const pricingFullById = new Map(
+        reservationPricing.map((p: { reservation_id: string }) => [p.reservation_id, p])
+      )
 
       // 채널별 통계
       const channelMap = new Map<string, { count: number; people: number; revenue: number; commission: number }>()
       filteredReservations.forEach(r => {
         const channelName = channels.find(c => c.id === r.channelId)?.name || 'Unknown'
-        const pricing = reservationPricing.find(p => p.reservation_id === r.id)
+        const pricing = pricingFullById.get(r.id) as
+          | { total_price?: number; commission_amount?: number }
+          | undefined
         
         if (!channelMap.has(channelName)) {
           channelMap.set(channelName, { count: 0, people: 0, revenue: 0, commission: 0 })
@@ -103,7 +143,7 @@ export default function ReservationReportTab({
       const productMap = new Map<string, { count: number; people: number; revenue: number }>()
       filteredReservations.forEach(r => {
         const productName = products.find(p => p.id === r.productId)?.name || 'Unknown'
-        const pricing = reservationPricing.find(p => p.reservation_id === r.id)
+        const pricing = pricingFullById.get(r.id) as { total_price?: number } | undefined
         
         if (!productMap.has(productName)) {
           productMap.set(productName, { count: 0, people: 0, revenue: 0 })
@@ -113,16 +153,6 @@ export default function ReservationReportTab({
         stats.people += r.totalPeople || 0
         stats.revenue += pricing?.total_price || 0
       })
-
-      // 예약별 정산 (수익 - 지출) - 최적화: 단일 쿼리로 모든 지출 조회
-      let allExpenses: { reservation_id: string; amount: number }[] = []
-      if (reservationIds.length > 0) {
-        const { data: expensesData } = await supabase
-          .from('reservation_expenses')
-          .select('reservation_id, amount')
-          .in('reservation_id', reservationIds)
-        allExpenses = expensesData || []
-      }
 
       // 예약별 지출 합계를 Map으로 미리 계산
       const expensesByReservation = new Map<string, number>()
@@ -135,7 +165,12 @@ export default function ReservationReportTab({
       const channelNameMap = new Map(channels.map(c => [c.id, c.name]))
       const productNameMap = new Map(products.map(p => [p.id, p.name]))
       const customerNameMap = new Map(customers.map(c => [c.id, c.name]))
-      const pricingMap = new Map(reservationPricing.map(p => [p.reservation_id, p.total_price || 0]))
+      const pricingMap = new Map(
+        reservationPricing.map((p: { reservation_id: string; total_price?: number }) => [
+          p.reservation_id,
+          p.total_price || 0,
+        ])
+      )
 
       const reservationSettlements = filteredReservations.map(r => {
         const revenue = pricingMap.get(r.id) || 0

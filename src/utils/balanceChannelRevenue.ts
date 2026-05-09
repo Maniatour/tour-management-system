@@ -4,6 +4,14 @@
 
 import type { Reservation } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
+import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
+import type { ReservationOptionSumRow } from '@/lib/syncReservationPricingAggregates'
+import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
+import {
+  computeRefundAmountForCompanyRevenueBlock,
+  computeStoredCompanyRevenueFields,
+} from '@/utils/storedCompanyRevenue'
+import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import {
   pricingFieldToNumber,
   mergePricingWithLiveOptionTotal,
@@ -20,7 +28,6 @@ import {
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
   type ChannelSettlementComputeInput,
 } from '@/utils/channelSettlement'
-import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
@@ -88,6 +95,8 @@ export function commissionPercentFromChannelMaster(
 }
 
 export type BalanceChannelMetrics = {
+  /** `computeCompanyTotalRevenueLikePricingSection` / ④ 스냅샷용 */
+  omitAdditionalDiscountAndCostFromCompanyRevenueSum: boolean
   /** DB 또는 산식으로 정한 정산 베이스(총매출 가산의 시작) */
   channelSettlementBaseForRevenue: number
   /** `computeChannelSettlementAmount`만 — DB와 비교용 */
@@ -276,6 +285,7 @@ export function computeBalanceChannelMetrics(
   const operatingProfit = round2(Math.max(0, companyTotalRevenue - prepTip))
 
   return {
+    omitAdditionalDiscountAndCostFromCompanyRevenueSum: omitAdditionalDiscountAndCostFromSum,
     channelSettlementBaseForRevenue,
     channelSettlementFromFormula,
     companyTotalRevenue,
@@ -290,8 +300,84 @@ export function computeBalanceChannelMetrics(
 }
 
 /**
+ * `reservation_pricing`에 저장할 ④ 최종 매출·운영이익 — 가격 정보 UI `companyViewRevenueLedger`와 동일 산식.
+ * (채널 정산 베이스·omit은 `computeBalanceChannelMetrics`와 맞춤)
+ */
+export function computeReservationPricingStoredRevenueColumns(
+  p: ReservationPricingMapValue,
+  reservation: Reservation,
+  channels: BalanceChannelRowInput[],
+  paymentRecords: PaymentRecordLike[],
+  reservationOptionRows: ReservationOptionSumRow[],
+  reservationOptionSumByReservationId?: Map<string, number>
+): { company_total_revenue: number; operating_profit: number } | null {
+  const optMapFromRows = aggregateReservationOptionSumsByReservationId(reservationOptionRows)
+  const mergedOptMap = new Map<string, number>(reservationOptionSumByReservationId ?? [])
+  for (const [k, v] of optMapFromRows) {
+    mergedOptMap.set(k, v)
+  }
+  const pLine =
+    (mergePricingWithLiveOptionTotal(p, reservation.id, mergedOptMap) as
+      | ReservationPricingMapValue
+      | undefined) ?? p
+  const m = computeBalanceChannelMetrics(pLine, reservation, channels, paymentRecords, mergedOptMap)
+  if (!m) return null
+
+  const paySm = summarizePaymentRecordsForBalance(paymentRecords)
+  const returnedAmount = paySm.returnedTotal
+  const activeSum = mergedOptMap.get(reservation.id) ?? 0
+  const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
+    reservationOptionRows as Array<{ status?: string | null; total_price?: number | null }>
+  )
+  const chRow = findChannelRowForBalance(String(reservation.channelId ?? '').trim(), channels)
+  const isOta = channelIsOtaForBalance(chRow)
+  const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
+    refundedFromRecords: paySm.refundedTotal,
+    reservationOptionsActiveSum: activeSum,
+    optionCancelRefundUsd,
+    manualRefundAmount: pricingFieldToNumber(pLine.refund_amount),
+    isOTAChannel: isOta,
+    returnedAmount,
+  })
+
+  const pricingAdultsVal = Math.max(
+    0,
+    Math.floor(
+      Number(
+        (pLine as { pricing_adults?: number | null }).pricing_adults ?? reservation.adults ?? 0
+      ) || 0
+    )
+  )
+
+  return computeStoredCompanyRevenueFields({
+    channelSettlementBase: m.channelSettlementBaseForRevenue,
+    reservationStatus: reservation.status,
+    isOTAChannel: isOta,
+    isHomepageBooking: isHomepageBookingChannel(reservation.channelId, channels),
+    reservationOptionsActiveSum: activeSum,
+    omitCtx: {
+      usesStoredChannelSettlement: false,
+      depositAmount: 0,
+      onlinePaymentAmount: 0,
+      channelPaymentGross: 0,
+    },
+    omitAdditionalDiscountAndCostFromSumOverride: m.omitAdditionalDiscountAndCostFromCompanyRevenueSum,
+    notIncludedPerPerson: pricingFieldToNumber(pLine.not_included_price),
+    pricingAdults: pricingAdultsVal,
+    child: reservation.child ?? 0,
+    infant: reservation.infant ?? 0,
+    additionalDiscount: pricingFieldToNumber(pLine.additional_discount),
+    additionalCost: pricingFieldToNumber(pLine.additional_cost),
+    tax: pricingFieldToNumber(pLine.tax),
+    prepaymentCost: pricingFieldToNumber(pLine.prepayment_cost),
+    prepaymentTip: pricingFieldToNumber(pLine.prepayment_tip),
+    refundAmountForCompanyRevenueBlock: refundForRevenue,
+  })
+}
+
+/**
  * 예약 처리 필요「② 총액·채널 결제·정산 불일치」탭 — 고객 총액·채널 결제·수수료·정산을 가격 정보와 동일 산식으로 한 번에 DB 반영.
- * 최종 매출·운영이익은 저장 컬럼이 없으며, 반영 후 산식 표시와 일치한다.
+ * `company_total_revenue`·`operating_profit` 컬럼도 동일 ④ 산식으로 함께 채운다.
  */
 export function buildReservationPricingMismatchFormulaPatch(
   r: Reservation,
@@ -339,6 +425,20 @@ export function buildReservationPricingMismatchFormulaPatch(
 
   if (masterPct != null || m.commissionAmountFromFormula != null) {
     patch.commission_amount = feeUsd
+  }
+
+  const pMerged = { ...p, ...patch } as ReservationPricingMapValue
+  const stored = computeReservationPricingStoredRevenueColumns(
+    pMerged,
+    r,
+    channels,
+    records,
+    [],
+    reservationOptionSumByReservationId
+  )
+  if (stored) {
+    patch.company_total_revenue = stored.company_total_revenue
+    patch.operating_profit = stored.operating_profit
   }
 
   return patch

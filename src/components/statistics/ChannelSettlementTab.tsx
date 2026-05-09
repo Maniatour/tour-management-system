@@ -7,6 +7,7 @@ import { useReservationData } from '@/hooks/useReservationData'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { getChannelName, getProductName, getCustomerName, getStatusColor } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
+import { mapIdsInConcurrentChunks } from '@/lib/fetchSupabaseInChunks'
 import { useAuth } from '@/contexts/AuthContext'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
@@ -23,7 +24,18 @@ import {
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import { type SystemReservationForOta } from '@/utils/otaSettlementReconciliation'
-import { isRefundedPaymentStatus, isReturnedPaymentStatus } from '@/utils/reservationPricingBalance'
+import {
+  isRefundedPaymentStatus,
+  isReturnedPaymentStatus,
+  summarizePaymentRecordsForBalance,
+  type PaymentRecordLike,
+} from '@/utils/reservationPricingBalance'
+import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
+import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
+import {
+  computeRefundAmountForCompanyRevenueBlock,
+  computeStoredCompanyRevenueFields,
+} from '@/utils/storedCompanyRevenue'
 
 interface ChannelSettlementTabProps {
   dateRange: { start: string; end: string }
@@ -98,6 +110,43 @@ function reservationItemsToOtaSystemRows(items: ReservationItem[]): SystemReserv
     channelSettlementAmount: item.channelSettlementAmount ?? null,
     status: item.status,
   }))
+}
+
+/** 금액 Audit 체크를 텍스트로 표시 — 취소 행은 검증 여부를 구분 */
+function AuditedStatusLabel({
+  item,
+  effectiveAudited,
+  effectiveAuditedAt,
+  effectiveAuditedBy,
+}: {
+  item: ReservationItem
+  effectiveAudited: boolean
+  effectiveAuditedAt?: string | null
+  effectiveAuditedBy?: string | null
+}) {
+  const st = String(item.status || '').toLowerCase().trim()
+  const isCancelled = st === 'cancelled' || st === 'canceled'
+  const at = effectiveAuditedAt ?? null
+  const by = effectiveAuditedBy ?? null
+  const detail =
+    effectiveAudited && (by || at)
+      ? `Audit: ${by ?? '-'} / ${at ? new Date(at).toLocaleString('ko-KR') : '-'}`
+      : undefined
+  if (effectiveAudited) {
+    return (
+      <span className={isCancelled ? 'text-emerald-800 font-semibold' : 'text-emerald-700'} title={detail}>
+        {isCancelled ? '취소·검증' : '검증'}
+      </span>
+    )
+  }
+  if (isCancelled) {
+    return (
+      <span className="text-rose-600 font-medium" title="취소 예약 — 금액 Audit 미체크">
+        취소·미검증
+      </span>
+    )
+  }
+  return <span className="text-gray-400">—</span>
 }
 
 /** PricingSection 가격계산 4번「총 매출」용 부가 필드 (reservation_pricing) */
@@ -364,6 +413,10 @@ function commissionBasePriceFromRow(row: { commission_base_price?: unknown }): n
 /** `online_payment_amount` 등은 스키마에 없을 수 있어 SELECT에 넣지 않음 — 매퍼에서 없으면 0 */
 const CHANNEL_SETTLEMENT_PRICING_SELECT =
   'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, prepayment_cost, channel_settlement_amount, commission_base_price, pricing_adults, not_included_price'
+
+/** `.in()` URL 한도 대응 + 청크 간 병렬로 왕복 횟수 감소 */
+const RESERVATION_REL_CHUNK = 100
+const RESERVATION_REL_CONCURRENCY = 8
 
 /** DB 수수료율 → 표시·검증용 % (0.22 → 22) */
 function commissionPercentFromPricingRow(raw: unknown): number | null {
@@ -834,12 +887,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
           let returnedAmount = 0
           let partnerReceivedAmount = 0
+          let paymentRecords: PaymentRecordLike[] = []
           try {
             const { data: payRows } = await (supabase as any)
               .from('payment_records')
               .select('amount, payment_status')
               .eq('reservation_id', editingReservation.id)
-            ;(payRows || []).forEach((row: { payment_status?: string; amount?: number }) => {
+            paymentRecords = (payRows || []).map((row: { payment_status?: string; amount?: number }) => ({
+              payment_status: String(row.payment_status || ''),
+              amount: Number(row.amount) || 0,
+            }))
+            paymentRecords.forEach((row) => {
               const status = row.payment_status || ''
               if (status === 'Partner Received') {
                 partnerReceivedAmount += Number(row.amount) || 0
@@ -851,6 +909,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           } catch {
             returnedAmount = 0
             partnerReceivedAmount = 0
+            paymentRecords = []
           }
 
           const { data: existingPricing } = await supabase
@@ -897,6 +956,73 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
           const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
+          const channelSettlementToSave = (() => {
+            const m = pricingInfo.channelSettlementAmount
+            if (m !== undefined && m !== null && String(m) !== '' && Number.isFinite(Number(m))) {
+              return Math.round(Number(m) * 100) / 100
+            }
+            return Math.round(channelSettlementComputed * 100) / 100
+          })()
+
+          const isOTA = isOtaChannelId(reservation.channelId)
+          const isHomepageBooking = isHomepageBookingChannel(reservation.channelId, channels)
+
+          let reservationOptionsRows: Array<{
+            reservation_id: string
+            total_price?: unknown
+            price?: unknown
+            ea?: unknown
+            status?: string | null
+          }> = []
+          try {
+            const { data: optRows } = await supabase
+              .from('reservation_options')
+              .select('reservation_id, total_price, price, ea, status')
+              .eq('reservation_id', editingReservation.id)
+            reservationOptionsRows = (optRows || []) as typeof reservationOptionsRows
+          } catch {
+            reservationOptionsRows = []
+          }
+          const optionActiveSum =
+            aggregateReservationOptionSumsByReservationId(reservationOptionsRows).get(editingReservation.id) ?? 0
+          const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
+            reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
+          )
+          const paySm = summarizePaymentRecordsForBalance(paymentRecords)
+          const manualRefundAmount = toNum(pricingInfo.refundAmount)
+          const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
+            refundedFromRecords: paySm.refundedTotal,
+            reservationOptionsActiveSum: optionActiveSum,
+            optionCancelRefundUsd,
+            manualRefundAmount,
+            isOTAChannel: isOTA,
+            returnedAmount,
+          })
+          const depAmt = toNum(pricingInfo.depositAmount)
+          const storedMetrics = computeStoredCompanyRevenueFields({
+            channelSettlementBase: channelSettlementToSave,
+            reservationStatus: reservation.status,
+            isOTAChannel: isOTA,
+            isHomepageBooking,
+            reservationOptionsActiveSum: optionActiveSum,
+            omitCtx: {
+              usesStoredChannelSettlement: Number.isFinite(channelSettlementToSave),
+              depositAmount: depAmt,
+              onlinePaymentAmount: toNum(pricingInfo.onlinePaymentAmount),
+              channelPaymentGross: commissionGross,
+            },
+            notIncludedPerPerson: toNum(pricingInfo.not_included_price),
+            pricingAdults: pricingAdultsVal,
+            child: reservation.child || 0,
+            infant: reservation.infant || 0,
+            additionalDiscount: toNum(pricingInfo.additionalDiscount),
+            additionalCost: toNum(pricingInfo.additionalCost),
+            tax: toNum(pricingInfo.tax),
+            prepaymentCost: toNum(pricingInfo.prepaymentCost),
+            prepaymentTip: toNum(pricingInfo.prepaymentTip),
+            refundAmountForCompanyRevenueBlock: refundForRevenue,
+          })
+
           await supabase.from('reservation_pricing').upsert({
             reservation_id: editingReservation.id,
             adult_product_price: pricingInfo.adultProductPrice,
@@ -927,7 +1053,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             commission_amount: pricingInfo.commission_amount || 0,
             pricing_adults: pricingAdultsVal,
             commission_base_price: Math.round(channelPayNet * 100) / 100,
-            channel_settlement_amount: Math.round(channelSettlementComputed * 100) / 100,
+            channel_settlement_amount: channelSettlementToSave,
+            company_total_revenue: storedMetrics.company_total_revenue,
+            operating_profit: storedMetrics.operating_profit,
           } as any, { onConflict: 'reservation_id', ignoreDuplicates: false })
         } catch {
           // 가격 저장 실패해도 예약 수정은 성공
@@ -1135,91 +1263,119 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         const pricesMap: Record<string, number> = {}
         const pricingDataMap: Record<string, ChannelTabPricingState> = {}
 
-        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
-        const chunkSize = 100
-        for (let i = 0; i < reservationIds.length; i += chunkSize) {
-          const chunk = reservationIds.slice(i, i + chunkSize)
-          
-          const { data: pricingData, error } = await supabase
-            .from('reservation_pricing')
-            .select(CHANNEL_SETTLEMENT_PRICING_SELECT)
-            .in('reservation_id', chunk)
+        const [pricingRows, paymentRows, optRows, auditRows] = await Promise.all([
+          mapIdsInConcurrentChunks(
+            reservationIds,
+            RESERVATION_REL_CHUNK,
+            RESERVATION_REL_CONCURRENCY,
+            async (chunk) => {
+              const { data: pricingData, error } = await supabase
+                .from('reservation_pricing')
+                .select(CHANNEL_SETTLEMENT_PRICING_SELECT)
+                .in('reservation_id', chunk)
+              if (error) {
+                console.error('예약 가격 조회 오류 (청크):', error, { chunkLen: chunk.length })
+                return []
+              }
+              return pricingData || []
+            }
+          ),
+          mapIdsInConcurrentChunks(
+            reservationIds,
+            RESERVATION_REL_CHUNK,
+            RESERVATION_REL_CONCURRENCY,
+            async (chunk) => {
+              const { data: paymentData, error } = await supabase
+                .from('payment_records')
+                .select('reservation_id, amount, payment_status')
+                .in('reservation_id', chunk)
+              if (error) return []
+              return paymentData || []
+            }
+          ),
+          mapIdsInConcurrentChunks(
+            reservationIds,
+            RESERVATION_REL_CHUNK,
+            RESERVATION_REL_CONCURRENCY,
+            async (chunk) => {
+              const { data: rows, error } = await supabase
+                .from('reservation_options')
+                .select('reservation_id, total_price, status')
+                .in('reservation_id', chunk)
+              if (error) return []
+              return rows || []
+            }
+          ),
+          mapIdsInConcurrentChunks(
+            reservationIds,
+            RESERVATION_REL_CHUNK,
+            RESERVATION_REL_CONCURRENCY,
+            async (chunk) => {
+              try {
+                const { data: auditData, error } = await supabase
+                  .from('reservations')
+                  .select('id, amount_audited, amount_audited_at, amount_audited_by')
+                  .in('id', chunk)
+                if (error) return []
+                return auditData || []
+              } catch {
+                return []
+              }
+            }
+          ),
+        ])
 
-          if (error) {
-            console.error('예약 가격 조회 오류 (청크):', error, { chunkSize: chunk.length, chunkIndex: i / chunkSize })
-            continue // 다음 청크 계속 처리
-          }
-
-          pricingData?.forEach((p: any) => {
-            pricesMap[p.reservation_id] = p.total_price || 0
-            pricingDataMap[p.reservation_id] = mapPricingRowToChannelTabState(p)
-          })
+        for (const p of pricingRows as any[]) {
+          pricesMap[p.reservation_id] = p.total_price || 0
+          pricingDataMap[p.reservation_id] = mapPricingRowToChannelTabState(p)
         }
 
         const partnerReceivedMap: Record<string, number> = {}
         const returnedMap: Record<string, number> = {}
         const refundedOurMap: Record<string, number> = {}
-        for (let i = 0; i < reservationIds.length; i += chunkSize) {
-          const chunk = reservationIds.slice(i, i + chunkSize)
-          const { data: paymentData } = await supabase
-            .from('payment_records')
-            .select('reservation_id, amount, payment_status')
-            .in('reservation_id', chunk)
-          paymentData?.forEach((row: { reservation_id: string; amount: number | null; payment_status?: string | null }) => {
-            const rid = row.reservation_id
-            const amt = Number(row.amount) || 0
-            if (row.payment_status === 'Partner Received') {
-              partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
-            }
-            const st = row.payment_status || ''
-            if (isRefundedPaymentStatus(st)) {
-              refundedOurMap[rid] = (refundedOurMap[rid] ?? 0) + amt
-            } else if (isReturnedPaymentStatus(st)) {
-              returnedMap[rid] = (returnedMap[rid] ?? 0) + amt
-            }
-          })
+        for (const row of paymentRows as {
+          reservation_id: string
+          amount: number | null
+          payment_status?: string | null
+        }[]) {
+          const rid = row.reservation_id
+          const amt = Number(row.amount) || 0
+          if (row.payment_status === 'Partner Received') {
+            partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
+          }
+          const st = row.payment_status || ''
+          if (isRefundedPaymentStatus(st)) {
+            refundedOurMap[rid] = (refundedOurMap[rid] ?? 0) + amt
+          } else if (isReturnedPaymentStatus(st)) {
+            returnedMap[rid] = (returnedMap[rid] ?? 0) + amt
+          }
         }
         setPartnerReceivedByReservation(prev => ({ ...prev, ...partnerReceivedMap }))
         setReturnedAmountByReservation(prev => ({ ...prev, ...returnedMap }))
         setRefundedOurByReservation(prev => ({ ...prev, ...refundedOurMap }))
 
         const optionsSumMap: Record<string, number> = {}
-        for (let i = 0; i < reservationIds.length; i += chunkSize) {
-          const chunk = reservationIds.slice(i, i + chunkSize)
-          const { data: optRows } = await supabase
-            .from('reservation_options')
-            .select('reservation_id, total_price, status')
-            .in('reservation_id', chunk)
-          optRows?.forEach((row: { reservation_id: string; total_price?: number | null; status?: string | null }) => {
-            const rid = row.reservation_id
-            const ost = String(row.status || '').toLowerCase()
-            if (ost === 'cancelled' || ost === 'refunded') return
-            optionsSumMap[rid] = (optionsSumMap[rid] ?? 0) + (Number(row.total_price) || 0)
-          })
+        for (const row of optRows as {
+          reservation_id: string
+          total_price?: number | null
+          status?: string | null
+        }[]) {
+          const rid = row.reservation_id
+          const ost = String(row.status || '').toLowerCase()
+          if (ost === 'cancelled' || ost === 'refunded') continue
+          optionsSumMap[rid] = (optionsSumMap[rid] ?? 0) + (Number(row.total_price) || 0)
         }
         setReservationOptionsSumByReservation(prev => ({ ...prev, ...optionsSumMap }))
 
-        // 금액 Audit 여부 조회 (amount_audited, amount_audited_at, amount_audited_by)
         const auditMap: Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }> = {}
-        try {
-          for (let i = 0; i < reservationIds.length; i += chunkSize) {
-            const chunk = reservationIds.slice(i, i + chunkSize)
-            const { data: auditData } = await supabase
-              .from('reservations')
-              .select('id, amount_audited, amount_audited_at, amount_audited_by')
-              .in('id', chunk)
-            auditData?.forEach((row: any) => {
-              auditMap[row.id] = {
-                amount_audited: !!row.amount_audited,
-                amount_audited_at: row.amount_audited_at ?? null,
-                amount_audited_by: row.amount_audited_by ?? null
-              }
-            })
+        for (const row of auditRows as any[]) {
+          auditMap[row.id] = {
+            amount_audited: !!row.amount_audited,
+            amount_audited_at: row.amount_audited_at ?? null,
+            amount_audited_by: row.amount_audited_by ?? null
           }
-          setReservationAudit(prev => ({ ...prev, ...auditMap }))
-        } catch {
-          // 컬럼 미존재 시 무시
         }
+        setReservationAudit(prev => ({ ...prev, ...auditMap }))
 
         setReservationPrices(pricesMap)
         setReservationPricingData(pricingDataMap)
@@ -1384,95 +1540,127 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           return
         }
 
-        // 예약 가격 정보 가져오기
+        // 예약 가격 정보 가져오기 (청크 병렬 + 가격/결제/옵션/감사 동시 요청)
         const reservationIds = tourDateFilteredReservations.map(r => r.id)
         
         const pricesMap: Record<string, number> = {}
         const pricingDataMap: Record<string, ChannelTabPricingState> = {}
 
-        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
-        if (reservationIds.length > 0) {
-          const chunkSize = 100
-          for (let i = 0; i < reservationIds.length; i += chunkSize) {
-            const chunk = reservationIds.slice(i, i + chunkSize)
-
-            // 투어 상세「채널 정산 금액」은 channel_settlement_amount만 사용. commission_base_price는 인보이스 PDF 산식용으로만 매핑.
-            const { data: pricingData, error } = await supabase
-              .from('reservation_pricing')
-              .select(CHANNEL_SETTLEMENT_PRICING_SELECT)
-              .in('reservation_id', chunk)
-
-            if (error) {
-              console.error('예약 가격 조회 오류 (청크):', error, { chunkSize: chunk.length, chunkIndex: i / chunkSize })
-              continue // 다음 청크 계속 처리
-            }
-            
-            pricingData?.forEach((p: any) => {
-              pricesMap[p.reservation_id] = p.total_price || 0
-              pricingDataMap[p.reservation_id] = mapPricingRowToChannelTabState(p)
-            })
-          }
-        }
-
-        // 입금내역 (Partner Received / Returned / Refunded) 및 Audit 조회 (투어 탭용)
         const partnerReceivedMap: Record<string, number> = {}
         const returnedMapTour: Record<string, number> = {}
         const refundedOurTourMap: Record<string, number> = {}
         const auditMap: Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }> = {}
+
         if (reservationIds.length > 0) {
-          const chunkSize = 100
-          for (let i = 0; i < reservationIds.length; i += chunkSize) {
-            const chunk = reservationIds.slice(i, i + chunkSize)
-            const { data: paymentData } = await supabase
-              .from('payment_records')
-              .select('reservation_id, amount, payment_status')
-              .in('reservation_id', chunk)
-            paymentData?.forEach((row: { reservation_id: string; amount: number | null; payment_status?: string | null }) => {
-              const rid = row.reservation_id
-              const amt = Number(row.amount) || 0
-              if (row.payment_status === 'Partner Received') {
-                partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
-              }
-              const st = row.payment_status || ''
-              if (isRefundedPaymentStatus(st)) {
-                refundedOurTourMap[rid] = (refundedOurTourMap[rid] ?? 0) + amt
-              } else if (isReturnedPaymentStatus(st)) {
-                returnedMapTour[rid] = (returnedMapTour[rid] ?? 0) + amt
-              }
-            })
-            try {
-              const { data: auditData } = await supabase
-                .from('reservations')
-                .select('id, amount_audited, amount_audited_at, amount_audited_by')
-                .in('id', chunk)
-              auditData?.forEach((row: any) => {
-                auditMap[row.id] = {
-                  amount_audited: !!row.amount_audited,
-                  amount_audited_at: row.amount_audited_at ?? null,
-                  amount_audited_by: row.amount_audited_by ?? null
+          const [pricingRowsTour, paymentRowsTour, optRowsTour, auditRowsTour] = await Promise.all([
+            mapIdsInConcurrentChunks(
+              reservationIds,
+              RESERVATION_REL_CHUNK,
+              RESERVATION_REL_CONCURRENCY,
+              async (chunk) => {
+                const { data: pricingData, error } = await supabase
+                  .from('reservation_pricing')
+                  .select(CHANNEL_SETTLEMENT_PRICING_SELECT)
+                  .in('reservation_id', chunk)
+                if (error) {
+                  console.error('예약 가격 조회 오류 (투어 탭 청크):', error, { chunkLen: chunk.length })
+                  return []
                 }
-              })
-            } catch { /* 컬럼 미존재 시 무시 */ }
+                return pricingData || []
+              }
+            ),
+            mapIdsInConcurrentChunks(
+              reservationIds,
+              RESERVATION_REL_CHUNK,
+              RESERVATION_REL_CONCURRENCY,
+              async (chunk) => {
+                const { data: paymentData, error } = await supabase
+                  .from('payment_records')
+                  .select('reservation_id, amount, payment_status')
+                  .in('reservation_id', chunk)
+                if (error) return []
+                return paymentData || []
+              }
+            ),
+            mapIdsInConcurrentChunks(
+              reservationIds,
+              RESERVATION_REL_CHUNK,
+              RESERVATION_REL_CONCURRENCY,
+              async (chunk) => {
+                const { data: rows, error } = await supabase
+                  .from('reservation_options')
+                  .select('reservation_id, total_price, status')
+                  .in('reservation_id', chunk)
+                if (error) return []
+                return rows || []
+              }
+            ),
+            mapIdsInConcurrentChunks(
+              reservationIds,
+              RESERVATION_REL_CHUNK,
+              RESERVATION_REL_CONCURRENCY,
+              async (chunk) => {
+                try {
+                  const { data: auditData, error } = await supabase
+                    .from('reservations')
+                    .select('id, amount_audited, amount_audited_at, amount_audited_by')
+                    .in('id', chunk)
+                  if (error) return []
+                  return auditData || []
+                } catch {
+                  return []
+                }
+              }
+            ),
+          ])
+
+          for (const p of pricingRowsTour as any[]) {
+            pricesMap[p.reservation_id] = p.total_price || 0
+            pricingDataMap[p.reservation_id] = mapPricingRowToChannelTabState(p)
           }
+
+          for (const row of paymentRowsTour as {
+            reservation_id: string
+            amount: number | null
+            payment_status?: string | null
+          }[]) {
+            const rid = row.reservation_id
+            const amt = Number(row.amount) || 0
+            if (row.payment_status === 'Partner Received') {
+              partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
+            }
+            const st = row.payment_status || ''
+            if (isRefundedPaymentStatus(st)) {
+              refundedOurTourMap[rid] = (refundedOurTourMap[rid] ?? 0) + amt
+            } else if (isReturnedPaymentStatus(st)) {
+              returnedMapTour[rid] = (returnedMapTour[rid] ?? 0) + amt
+            }
+          }
+
+          for (const row of auditRowsTour as any[]) {
+            auditMap[row.id] = {
+              amount_audited: !!row.amount_audited,
+              amount_audited_at: row.amount_audited_at ?? null,
+              amount_audited_by: row.amount_audited_by ?? null
+            }
+          }
+
+          const optionsSumTourMap: Record<string, number> = {}
+          for (const row of optRowsTour as {
+            reservation_id: string
+            total_price?: number | null
+            status?: string | null
+          }[]) {
+            const rid = row.reservation_id
+            const ost = String(row.status || '').toLowerCase()
+            if (ost === 'cancelled' || ost === 'refunded') continue
+            optionsSumTourMap[rid] = (optionsSumTourMap[rid] ?? 0) + (Number(row.total_price) || 0)
+          }
+
           setPartnerReceivedByReservation(prev => ({ ...prev, ...partnerReceivedMap }))
           setReturnedAmountByReservation(prev => ({ ...prev, ...returnedMapTour }))
           setRefundedOurByReservation(prev => ({ ...prev, ...refundedOurTourMap }))
           setReservationAudit(prev => ({ ...prev, ...auditMap }))
-
-          const optionsSumTourMap: Record<string, number> = {}
-          for (let i = 0; i < reservationIds.length; i += chunkSize) {
-            const chunk = reservationIds.slice(i, i + chunkSize)
-            const { data: optRows } = await supabase
-              .from('reservation_options')
-              .select('reservation_id, total_price, status')
-              .in('reservation_id', chunk)
-            optRows?.forEach((row: { reservation_id: string; total_price?: number | null; status?: string | null }) => {
-              const rid = row.reservation_id
-              const ost = String(row.status || '').toLowerCase()
-              if (ost === 'cancelled' || ost === 'refunded') return
-              optionsSumTourMap[rid] = (optionsSumTourMap[rid] ?? 0) + (Number(row.total_price) || 0)
-            })
-          }
           setReservationOptionsSumByReservation(prev => ({ ...prev, ...optionsSumTourMap }))
         }
 
@@ -2171,13 +2359,19 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                           입금내역 (Partner Received)
                                         </th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
+                                        <th
+                                          className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-[4.5rem]"
+                                          title="금액 Audit 완료 여부(취소 행은 취소·검증 / 취소·미검증)"
+                                        >
+                                          Audited
+                                        </th>
                                         <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                       {channelItems.length === 0 ? (
                                         <tr>
-                                          <td colSpan={18} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                          <td colSpan={19} className="px-2 py-3 text-center text-gray-500 text-xs">
                                             예약 내역이 없습니다.
                                           </td>
                                         </tr>
@@ -2266,6 +2460,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
                                                 {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                               </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-center text-xs w-[4.5rem]">
+                                                <AuditedStatusLabel
+                                                  item={item}
+                                                  effectiveAudited={!!effectiveAudited}
+                                                  effectiveAuditedAt={effectiveAuditedAt ?? null}
+                                                  effectiveAuditedBy={effectiveAuditedBy ?? null}
+                                                />
+                                              </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                                 <input
                                                   type="checkbox"
@@ -2322,6 +2524,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
                                           ${formatUsd2(channelRowTotals.channelSettlement)}
                                         </td>
+                                        <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                   </tr>
                 </tfoot>
@@ -2447,13 +2650,19 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                   입금내역 (Partner Received)
                                 </th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
+                                <th
+                                  className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-[4.5rem]"
+                                  title="금액 Audit 완료 여부(취소 행은 취소·검증 / 취소·미검증)"
+                                >
+                                  Audited
+                                </th>
                                 <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                               {allTourItems.length === 0 ? (
                       <tr>
-                                  <td colSpan={19} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                  <td colSpan={20} className="px-2 py-3 text-center text-gray-500 text-xs">
                                     투어 진행 내역이 없습니다.
                         </td>
                       </tr>
@@ -2560,6 +2769,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                       >
                                         {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                       </td>
+                                      <td className="px-2 py-2 whitespace-nowrap text-center text-xs w-[4.5rem]">
+                                        <AuditedStatusLabel
+                                          item={item}
+                                          effectiveAudited={!!effectiveAudited}
+                                          effectiveAuditedAt={effectiveAuditedAt ?? null}
+                                          effectiveAuditedBy={effectiveAuditedBy ?? null}
+                                        />
+                                      </td>
                                       <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                         <input
                                           type="checkbox"
@@ -2625,6 +2842,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                 <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
                                   ${allTourItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
                                 </td>
+                                <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                                 <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                               </tr>
                             </tfoot>
@@ -2850,13 +3068,19 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                           입금내역 (Partner Received)
                                         </th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
+                                        <th
+                                          className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-[4.5rem]"
+                                          title="금액 Audit 완료 여부(취소 행은 취소·검증 / 취소·미검증)"
+                                        >
+                                          Audited
+                                        </th>
                                         <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                       {displayTourChannelItems.length === 0 ? (
                                         <tr>
-                                          <td colSpan={18} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                          <td colSpan={19} className="px-2 py-3 text-center text-gray-500 text-xs">
                                             투어 진행 내역이 없습니다.
                                           </td>
                                         </tr>
@@ -2960,6 +3184,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                               >
                                                 {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                               </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-center text-xs w-[4.5rem]">
+                                                <AuditedStatusLabel
+                                                  item={item}
+                                                  effectiveAudited={!!effectiveAudited}
+                                                  effectiveAuditedAt={effectiveAuditedAt ?? null}
+                                                  effectiveAuditedBy={effectiveAuditedBy ?? null}
+                                                />
+                                              </td>
                                               <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                                 <input
                                                   type="checkbox"
@@ -3015,6 +3247,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
                                           ${formatUsd2(channelRowTotals.channelSettlement)}
                                         </td>
+                                        <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                     </tr>
                   </tfoot>

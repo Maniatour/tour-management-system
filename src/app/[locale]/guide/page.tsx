@@ -8,6 +8,7 @@ import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations, useLocale } from 'next-intl'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
+import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -400,11 +401,14 @@ export default function GuideDashboard() {
         if (reservationIds.length > 0) {
           const { data: reservationsData } = await supabase
             .from('reservations')
-            .select('id, total_people')
+            .select('id, total_people, status')
             .in('id', reservationIds)
-            .not('status', 'ilike', 'cancelled')
-          
-          reservationMap = new Map((reservationsData || []).map(r => [r.id, r.total_people || 0]))
+
+          reservationMap = new Map(
+            (reservationsData || [])
+              .filter((r) => !reservationExcludedFromTourSettlementAggregates(r.status))
+              .map((r) => [r.id, r.total_people || 0])
+          )
         }
 
         // 투어 채팅방 데이터 생성
@@ -757,7 +761,7 @@ export default function GuideDashboard() {
           try {
             const { data: reservationsData, error: reservationsError } = await supabase
               .from('reservations')
-              .select('id, adults, child, infant, total_people')
+              .select('id, adults, child, infant, total_people, status')
               .in('id', reservationIds)
             
             if (reservationsError) {
@@ -778,7 +782,10 @@ export default function GuideDashboard() {
                   child?: number | null;
                   infant?: number | null;
                   total_people?: number | null;
-                }>).map(r => {
+                  status?: string | null;
+                }>)
+                  .filter((r) => !reservationExcludedFromTourSettlementAggregates(r.status))
+                  .map(r => {
                   const adults = r.adults || 0
                   const children = r.child || 0
                   const infants = r.infant || 0

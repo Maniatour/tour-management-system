@@ -39,6 +39,9 @@ export function mapDbReservationRowsToReservations(
       tourId: (item.tour_id as string) || '',
       status: ((item.status as string) || 'pending') as Reservation['status'],
       updated_at: (item.updated_at as string | null) ?? null,
+      amount_audited: !!item.amount_audited,
+      amount_audited_at: (item.amount_audited_at as string | null) ?? null,
+      amount_audited_by: (item.amount_audited_by as string | null) ?? null,
       selectedOptions:
         typeof item.selected_options === 'string'
           ? (() => {

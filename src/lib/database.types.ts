@@ -5562,8 +5562,11 @@ export type Database = {
           child_product_price: number | null
           choices: Json | null
           choices_total: number | null
+          channel_settlement_amount: number | null
           commission_amount: number | null
+          commission_base_price: number | null
           commission_percent: number | null
+          company_total_revenue: number | null
           coupon_code: string | null
           coupon_discount: number | null
           created_at: string | null
@@ -5572,6 +5575,8 @@ export type Database = {
           infant_product_price: number | null
           not_included_price: number | null
           option_total: number | null
+          operating_profit: number | null
+          pricing_adults: number | null
           prepayment_cost: number | null
           prepayment_tip: number | null
           private_tour_additional_cost: number | null
@@ -5596,8 +5601,11 @@ export type Database = {
           child_product_price?: number | null
           choices?: Json | null
           choices_total?: number | null
+          channel_settlement_amount?: number | null
           commission_amount?: number | null
+          commission_base_price?: number | null
           commission_percent?: number | null
+          company_total_revenue?: number | null
           coupon_code?: string | null
           coupon_discount?: number | null
           created_at?: string | null
@@ -5606,6 +5614,8 @@ export type Database = {
           infant_product_price?: number | null
           not_included_price?: number | null
           option_total?: number | null
+          operating_profit?: number | null
+          pricing_adults?: number | null
           prepayment_cost?: number | null
           prepayment_tip?: number | null
           private_tour_additional_cost?: number | null
@@ -5630,8 +5640,11 @@ export type Database = {
           child_product_price?: number | null
           choices?: Json | null
           choices_total?: number | null
+          channel_settlement_amount?: number | null
           commission_amount?: number | null
+          commission_base_price?: number | null
           commission_percent?: number | null
+          company_total_revenue?: number | null
           coupon_code?: string | null
           coupon_discount?: number | null
           created_at?: string | null
@@ -5640,6 +5653,8 @@ export type Database = {
           infant_product_price?: number | null
           not_included_price?: number | null
           option_total?: number | null
+          operating_profit?: number | null
+          pricing_adults?: number | null
           prepayment_cost?: number | null
           prepayment_tip?: number | null
           private_tour_additional_cost?: number | null

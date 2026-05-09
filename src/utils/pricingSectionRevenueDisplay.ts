@@ -5,6 +5,7 @@ export type PricingSectionRevenueDisplayInput = {
   isReservationCancelled: boolean
   isOTAChannel: boolean
   channelSettlementBeforePartnerReturn: number
+  reservationExpensesTotal: number
   reservationOptionsTotalPrice: number
   notIncludedTotalUsd: number
   additionalDiscount: number
@@ -21,10 +22,12 @@ export type PricingSectionRevenueDisplayInput = {
 
 export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionRevenueDisplayInput): number {
   if (inp.isReservationCancelled) {
-    if (inp.isOTAChannel) return roundUsd2(inp.channelSettlementBeforePartnerReturn)
+    if (inp.isOTAChannel) {
+      return roundUsd2(inp.channelSettlementBeforePartnerReturn - inp.reservationExpensesTotal)
+    }
     return 0
   }
-  let totalRevenue = inp.channelSettlementBeforePartnerReturn
+  let totalRevenue = inp.channelSettlementBeforePartnerReturn - inp.reservationExpensesTotal
   if (inp.reservationOptionsTotalPrice > 0 && inp.isOTAChannel) {
     totalRevenue += inp.reservationOptionsTotalPrice
   }

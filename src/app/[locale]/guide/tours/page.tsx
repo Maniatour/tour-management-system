@@ -11,6 +11,7 @@ import ScheduleView from '@/components/ScheduleView'
 import SunriseTime from '@/components/SunriseTime'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
+import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -325,6 +326,7 @@ export default function GuideTours({ params }: GuideToursProps) {
           reservationIdToPeople.set(rid, res.total_people || 0)
           reservationIdToRow.set(rid, res)
         }
+        if (reservationExcludedFromTourSettlementAggregates(res?.status)) continue
         const productId = (res?.product_id ? String(res.product_id) : '').trim()
         const date = (res?.tour_date ? String(res.tour_date) : '').trim()
         const key = `${productId}__${date}`
@@ -367,6 +369,7 @@ export default function GuideTours({ params }: GuideToursProps) {
           counted.add(rid)
           const row = reservationIdToRow.get(rid)
           if (!row) continue
+          if (reservationExcludedFromTourSettlementAggregates(row.status)) continue
           // 동일한 상품/날짜에 속하는 예약만 합산 (잘못 연결된 ID 방지)
           if ((row.product_id || '') === (tour.product_id || '') && (row.tour_date || '') === (tour.tour_date || '')) {
             assignedPeople += row.total_people || 0

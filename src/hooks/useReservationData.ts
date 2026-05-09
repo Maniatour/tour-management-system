@@ -22,6 +22,19 @@ import {
 } from '@/lib/syncReservationPricingAggregates'
 import { parseEmbeddedChannelNameFromReservationRow } from '@/utils/reservationUtils'
 
+/** PostgREST 400: `select`에 원격 DB에 없는 컬럼이 포함된 경우(마이그레이션 미적용 등) */
+function isReservationPricingSelectSchemaError(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false
+  const code = String(err.code ?? '')
+  const msg = (err.message ?? '').toLowerCase()
+  return (
+    code === '42703' ||
+    code === 'PGRST204' ||
+    (/column/.test(msg) && /does not exist/.test(msg)) ||
+    (/could not find/.test(msg) && /column/.test(msg))
+  )
+}
+
 /** 예약 목록용: mapRawToReservation 에 필요한 컬럼만 (전체 행 스캔·전송량 감소) + 채널명 embed */
 const RESERVATION_LIST_SELECT =
   [
@@ -45,6 +58,9 @@ const RESERVATION_LIST_SELECT =
     'tour_id',
     'status',
     'updated_at',
+    'amount_audited',
+    'amount_audited_at',
+    'amount_audited_by',
     'selected_options',
     'selected_option_prices',
     'choices',
@@ -466,6 +482,9 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         tourId: (item.tour_id as string) || '',
         status: ((item.status as string) as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
         updated_at: (item.updated_at as string | null) ?? null,
+        amount_audited: !!item.amount_audited,
+        amount_audited_at: (item.amount_audited_at as string | null) ?? null,
+        amount_audited_by: (item.amount_audited_by as string | null) ?? null,
         selectedOptions: (typeof item.selected_options === 'string'
           ? (() => { try { return JSON.parse(item.selected_options as string) } catch { return {} } })()
           : (item.selected_options as { [k: string]: string[] }) || {}),
@@ -479,11 +498,36 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
 
   const fetchPricingMap = async (reservationIds: string[]) => {
     const map = new Map<string, ReservationPricingMapValue>()
-    const PRICING_SELECT =
+    const PRICING_SELECT_WITH_REVENUE =
+      'reservation_id, id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, option_total, choices_total, not_included_price, private_tour_additional_cost, refund_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, deposit_amount, company_total_revenue, operating_profit'
+    const PRICING_SELECT_BASE =
       'reservation_id, id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, option_total, choices_total, not_included_price, private_tour_additional_cost, refund_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, deposit_amount'
+
+    let pricingSelect = PRICING_SELECT_WITH_REVENUE
     for (let i = 0; i < reservationIds.length; i += CHUNK_SIZE) {
       const chunk = reservationIds.slice(i, i + CHUNK_SIZE)
-      const { data } = await supabase.from('reservation_pricing').select(PRICING_SELECT).in('reservation_id', chunk)
+      let { data, error } = await supabase.from('reservation_pricing').select(pricingSelect).in('reservation_id', chunk)
+
+      if (
+        error &&
+        pricingSelect === PRICING_SELECT_WITH_REVENUE &&
+        isReservationPricingSelectSchemaError(error)
+      ) {
+        if (!isAbortLikeError(error)) {
+          console.warn(
+            '[useReservationData] reservation_pricing에 총매출/운영이익 컬럼이 없어 select에서 제외 후 재시도합니다. Supabase에 supabase/migrations/20260508200000_reservation_pricing_company_revenue.sql 을 적용하는 것을 권장합니다.'
+          )
+        }
+        pricingSelect = PRICING_SELECT_BASE
+        const retry = await supabase.from('reservation_pricing').select(pricingSelect).in('reservation_id', chunk)
+        data = retry.data
+        error = retry.error
+      }
+
+      if (error && !isAbortLikeError(error)) {
+        console.warn('[useReservationData] reservation_pricing 조회 오류:', error.message)
+      }
+
       if (data) {
         data.forEach((p: Record<string, unknown>) => {
           map.set(p.reservation_id as string, {
@@ -517,6 +561,14 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
             commission_base_price: toNumber(p.commission_base_price),
             channel_settlement_amount: toNumber(p.channel_settlement_amount),
             deposit_amount: toNumber(p.deposit_amount),
+            company_total_revenue:
+              p.company_total_revenue === null || p.company_total_revenue === undefined
+                ? undefined
+                : toNumber(p.company_total_revenue),
+            operating_profit:
+              p.operating_profit === null || p.operating_profit === undefined
+                ? undefined
+                : toNumber(p.operating_profit),
             currency: 'USD'
           })
         })

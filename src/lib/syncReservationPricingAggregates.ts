@@ -10,6 +10,9 @@ import {
   type PaymentRecordLike,
   type PartySizeSource,
 } from '@/utils/reservationPricingBalance'
+import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
+import type { Reservation } from '@/types/reservation'
+import { computeReservationPricingStoredRevenueColumns } from '@/utils/balanceChannelRevenue'
 
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
@@ -66,7 +69,7 @@ export async function syncReservationPricingAggregates(
   try {
     const { data: res, error: resErr } = await supabase
       .from('reservations')
-      .select('adults, child, infant, status')
+      .select('adults, child, infant, status, channel_id')
       .eq('id', reservationId)
       .maybeSingle()
 
@@ -136,12 +139,61 @@ export async function syncReservationPricingAggregates(
       deposit_amount = depositBucketGross
     }
 
+    let channels: Array<{
+      id: string
+      name?: string | null
+      type?: string | null
+      category?: string | null
+      sub_channels?: string[] | null
+      commission_percent?: number | null
+      commission_rate?: number | null
+      commission?: number | null
+    }> = []
+    const cid = String((res as { channel_id?: string | null }).channel_id ?? '').trim()
+    if (cid) {
+      const { data: chRow } = await supabase
+        .from('channels')
+        .select('id, name, type, category, sub_channels, commission_percent, commission_rate, commission')
+        .eq('id', cid)
+        .maybeSingle()
+      if (chRow) channels = [chRow as (typeof channels)[0]]
+    }
+
+    const reservationLike = {
+      id: reservationId,
+      channelId: cid,
+      adults: res.adults ?? 0,
+      child: res.child ?? 0,
+      infant: res.infant ?? 0,
+      status: res.status as Reservation['status'],
+    } as Reservation
+
+    const reservationOptionRows = (optionRows || []).map((r) => ({
+      ...r,
+      reservation_id: reservationId,
+    }))
+
+    const storedCols = computeReservationPricingStoredRevenueColumns(
+      pricingMerged as ReservationPricingMapValue,
+      reservationLike,
+      channels,
+      records,
+      reservationOptionRows,
+      new Map([[reservationId, optionSum]])
+    )
+
     const { error: upErr } = await supabase
       .from('reservation_pricing')
       .update({
         option_total: optionSum,
         deposit_amount,
         balance_amount,
+        ...(storedCols
+          ? {
+              company_total_revenue: storedCols.company_total_revenue,
+              operating_profit: storedCols.operating_profit,
+            }
+          : {}),
       })
       .eq('id', pricing.id)
 

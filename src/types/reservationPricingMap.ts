@@ -28,5 +28,9 @@ export interface ReservationPricingMapValue {
   commission_base_price?: number
   channel_settlement_amount?: number
   deposit_amount?: number
+  /** 가격 정보 ④ 최종 매출 DB 스냅샷 */
+  company_total_revenue?: number
+  /** 가격 정보 ④ 운영이익 DB 스냅샷 */
+  operating_profit?: number
   currency?: string
 }
