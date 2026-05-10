@@ -568,10 +568,11 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       return
     }
     const actorName = getActorName()
+    const auditedAtIso = nextAudited ? new Date().toISOString() : null
     const patch = nextAudited
       ? {
           audited: true,
-          audited_at: new Date().toISOString(),
+          audited_at: auditedAtIso,
           audited_by_email: authUser.email,
           audited_by_name: currentTeamProfile?.name || actorName,
           audited_by_nick_name: currentTeamProfile?.nickName || actorName,
@@ -588,6 +589,24 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       setError('Audited 상태 변경 중 오류가 발생했습니다.')
       return
     }
+
+    const reservationId = reservation ? String(reservation.id) : ''
+    if (reservationId) {
+      const amountAuditPayload = nextAudited
+        ? { amount_audited: true, amount_audited_at: auditedAtIso, amount_audited_by: authUser.email }
+        : { amount_audited: false, amount_audited_at: null, amount_audited_by: null }
+      const { error: amountAuditSyncError } = await supabase
+        .from('reservations')
+        .update(amountAuditPayload)
+        .eq('id', reservationId)
+      if (amountAuditSyncError) {
+        console.error('예약 금액 검증(통계) 동기화 오류:', amountAuditSyncError)
+        setError(
+          '가격 Audited는 저장되었으나, 예약 통계의 금액 검증 표시와 동기화하지 못했습니다. 잠시 후 통계에서 다시 시도해 주세요.'
+        )
+      }
+    }
+
     const next = { ...editData, ...patch }
     setEditData(next)
     setPricingData(next)

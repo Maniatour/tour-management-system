@@ -250,21 +250,26 @@ const RN_TABLE_GROUP_STYLES: Array<{
 interface TicketBooking {
   id: string;
   tour_id?: string;
+  /** `reservations.id` — 예약자명은 별도 조회해 `reservation_name`에 채움 */
+  reservation_id?: string | null;
   submit_on: string;
   check_in_date: string;
   time: string;
   category: string;
   ea: number;
-  /** UI/히스토리 호환용 (DB ticket_bookings에는 없을 수 있음) */
+  /** UI용: `reservation_id` → customers.name 조회 결과 (DB 컬럼 아님) */
   reservation_name?: string;
   submitted_by: string;
+  /** UI 호환: ticket_bookings에 cc 컬럼 없음 — 미설정 시 배지만 기본값 */
   cc?: string;
+  /** UI 호환: DB 컬럼 없음 — income/paid_amount 등에서 파생 */
   unit_price?: number;
   total_price?: number;
   expense?: number;
   income?: number;
   paid_amount?: number | null;
   payment_method: string;
+  /** UI 호환: ticket_bookings에 website 컬럼 없음 */
   website?: string;
   rn_number: string;
   note?: string | null;
@@ -306,6 +311,32 @@ function bookingCheckInYmd(booking: TicketBooking): string {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
   return localYmdFromDate(d);
+}
+
+/** ticket_bookings에는 unit_price/total_price 컬럼 없음 — 목록·합계용으로 파생 */
+function deriveTicketBookingListFields(row: TicketBooking): TicketBooking {
+  const n = (v: unknown): number | null => {
+    const x = typeof v === 'number' ? v : v != null ? Number(v) : NaN;
+    return Number.isFinite(x) ? x : null;
+  };
+  const eaNum = Math.max(1, n(row.ea) ?? 1);
+  const income = n(row.income);
+  const paid = n(row.paid_amount);
+  const expense = n(row.expense);
+  let total = n(row.total_price);
+  if (total == null) {
+    if (income != null) total = income;
+    else if (paid != null) total = paid;
+    else if (expense != null) total = expense * eaNum;
+  }
+  let unit = n(row.unit_price);
+  if (unit == null && total != null) unit = total / eaNum;
+  if (total == null && unit == null) return row;
+  return {
+    ...row,
+    ...(total != null ? { total_price: total } : {}),
+    ...(unit != null ? { unit_price: unit } : {}),
+  };
 }
 
 function isTicketBookingCountingStatus(booking: TicketBooking): boolean {
@@ -916,6 +947,8 @@ export default function TicketBookingList() {
   const fetchBookingsGenRef = useRef(0);
   const tableAxesUndoStackRef = useRef<{ bookingId: string; patch: TicketBookingAxisPatch }[]>([]);
   const [loading, setLoading] = useState(true);
+  /** 첫 페이지를 그린 뒤 나머지 페이지·메타 정보를 백그라운드에서 채우는 동안 true */
+  const [enriching, setEnriching] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [deletionReviewOpen, setDeletionReviewOpen] = useState(false);
   const [showBulkAddModal, setShowBulkAddModal] = useState(false);
@@ -1228,41 +1261,136 @@ export default function TicketBookingList() {
     const gen = ++fetchBookingsGenRef.current;
     try {
       setLoading(true);
+      setEnriching(false);
 
       const submitOnSince = ticketBookingListSubmitOnLowerBoundYmd();
 
       // ticket_bookings 배치 조회 (기간 필터 + 큰 페이지로 왕복 횟수 축소)
+      // 점진적 표시 전략: 첫 페이지를 받은 즉시 화면에 그리고(setLoading=false),
+      // 나머지 페이지·메타 정보(투어/환불/공급사)는 enriching=true 상태에서 백그라운드 누적.
+      // select * 대신 화면에서 사용하는 컬럼만 명시 → 페이로드/직렬화 비용 감소
+      const TICKET_BOOKING_SELECT_COLUMNS = [
+        'id',
+        'tour_id',
+        'reservation_id',
+        'submit_on',
+        'check_in_date',
+        'time',
+        'category',
+        'ea',
+        'submitted_by',
+        'expense',
+        'income',
+        'paid_amount',
+        'credit_amount',
+        'payment_due_at',
+        'hold_expires_at',
+        'refund_amount',
+        'payment_method',
+        'rn_number',
+        'note',
+        'invoice_number',
+        'zelle_confirmation_number',
+        'uploaded_file_urls',
+        'status',
+        'booking_status',
+        'vendor_status',
+        'change_status',
+        'payment_status',
+        'refund_status',
+        'operation_status',
+        'pending_ea',
+        'pending_time',
+        'booking_status_before_change',
+        'company',
+        'created_at',
+        'updated_at',
+        'deletion_requested_at',
+        'deletion_requested_by',
+        'season',
+        'statement_line_id',
+        'vendor_confirmation_number',
+      ].join(', ');
+
       const PAGE_SIZE = 1000;
-      let bookingsData: TicketBooking[] | null = [];
-      let offset = 0;
-      while (true) {
-        const { data: page, error: pageError } = await supabase
-          .from('ticket_bookings')
-          .select('*')
-          .gte('submit_on', submitOnSince)
-          .order('submit_on', { ascending: false })
-          .order('id', { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1);
-        if (pageError) throw pageError;
-        if (!page?.length) break;
-        bookingsData = (bookingsData || []).concat(page as TicketBooking[]);
-        if (page.length < PAGE_SIZE) break;
-        offset += PAGE_SIZE;
+      const seenIds = new Set<string>();
+      const accumulated: TicketBooking[] = [];
+
+      // check_in_date 폴백을 row 단위 push 시점에 한 번만 적용 → row 참조가 페이지 진행 중에도 안정적.
+      // (이전엔 setBookings 시 accumulated.map(spread) 로 모든 누적 row 를 매번 복제 → 카드 React.memo 무력화 + dev 환경에서 큰 리렌더 비용 발생.)
+      const appendDedupedFiltered = (page: TicketBooking[]): TicketBooking[] => {
+        const fresh: TicketBooking[] = [];
+        for (const row of page) {
+          if (!row?.id || seenIds.has(row.id)) continue;
+          seenIds.add(row.id);
+          // 폴백을 적용해야 할 때만 새 객체 생성, 그 외엔 원본 참조 그대로 사용
+          const withCheckIn: TicketBooking = row.check_in_date
+            ? row
+            : ({ ...row, check_in_date: row.submit_on } as TicketBooking);
+          fresh.push(deriveTicketBookingListFields(withCheckIn));
+        }
+        if (fresh.length === 0) return [];
+        const filtered = filterTicketBookingsExcludedFromMainUi(fresh);
+        for (const row of filtered) accumulated.push(row);
+        return filtered;
+      };
+
+      // 큰 데이터셋에서 매 페이지마다 setBookings + useMemo 재계산이 누적되지 않도록
+      // 추가 페이지의 화면 반영은 throttle(ms) — 마지막 페이지는 즉시 반영.
+      const FLUSH_INTERVAL_MS = 350;
+      let lastFlushAt = 0;
+      const flushAccumulatedToState = (force: boolean) => {
+        if (gen !== fetchBookingsGenRef.current) return;
+        const now = Date.now();
+        if (!force && now - lastFlushAt < FLUSH_INTERVAL_MS) return;
+        lastFlushAt = now;
+        // 동일 row 참조 유지(배열만 새 슬라이스) → 카드 메모이제이션 살아남음
+        setBookings(accumulated.slice());
+      };
+
+      // 1) 첫 페이지: 즉시 화면에 표시(check_in_date 폴백만 적용)
+      const { data: firstPage, error: firstErr } = await supabase
+        .from('ticket_bookings')
+        .select(TICKET_BOOKING_SELECT_COLUMNS)
+        .gte('submit_on', submitOnSince)
+        .order('submit_on', { ascending: false })
+        .order('id', { ascending: false })
+        .range(0, PAGE_SIZE - 1);
+      if (firstErr) throw firstErr;
+      if (gen !== fetchBookingsGenRef.current) return;
+
+      appendDedupedFiltered((firstPage ?? []) as unknown as TicketBooking[]);
+      // 첫 페이지를 즉시 노출(메타 병합 전 상태)
+      flushAccumulatedToState(true);
+      setLoading(false);
+
+      // 2) 추가 페이지가 더 있으면 백그라운드로 이어 받기
+      if ((firstPage?.length ?? 0) >= PAGE_SIZE) {
+        setEnriching(true);
+        let offset = PAGE_SIZE;
+        while (true) {
+          const { data: page, error: pageError } = await supabase
+            .from('ticket_bookings')
+            .select(TICKET_BOOKING_SELECT_COLUMNS)
+            .gte('submit_on', submitOnSince)
+            .order('submit_on', { ascending: false })
+            .order('id', { ascending: false })
+            .range(offset, offset + PAGE_SIZE - 1);
+          if (gen !== fetchBookingsGenRef.current) return;
+          if (pageError) throw pageError;
+          if (!page?.length) break;
+          appendDedupedFiltered(page as unknown as TicketBooking[]);
+          const isLastPage = page.length < PAGE_SIZE;
+          // throttle 로 화면 반영 — 마지막 페이지는 즉시 반영
+          flushAccumulatedToState(isLastPage);
+          if (isLastPage) break;
+          offset += PAGE_SIZE;
+        }
+        // 루프 종료 후 마지막 강제 flush (throttle 사이 간격 보장)
+        flushAccumulatedToState(true);
       }
 
-      // submit_on 동률 시 페이지 경계에서 행이 겹칠 수 있음 → id 기준 중복 제거
-      if (bookingsData?.length) {
-        const seen = new Set<string>()
-        bookingsData = bookingsData.filter((b: TicketBooking) => {
-          if (seen.has(b.id)) return false
-          seen.add(b.id)
-          return true
-        })
-      }
-
-      if (bookingsData?.length) {
-        bookingsData = filterTicketBookingsExcludedFromMainUi(bookingsData)
-      }
+      const bookingsData: TicketBooking[] = accumulated;
 
       const emptyRefundMap = (): Record<string, TicketRefundLineRow[]> => ({});
 
@@ -1330,9 +1458,81 @@ export default function TicketBookingList() {
         rows: TicketBooking[];
         refundMap: Record<string, TicketRefundLineRow[]>;
       }> => {
+        const RES_LINK_BATCH = 100;
+        const linkResIds = [
+          ...new Set(
+            list
+              .map((b) => (typeof b.reservation_id === 'string' ? b.reservation_id.trim() : ''))
+              .filter((id) => id.length > 0)
+          ),
+        ];
+        const reservationNameById = new Map<string, string>();
+        if (linkResIds.length > 0) {
+          let allReservations: { id: string; customer_id: string | null }[] = [];
+          for (let i = 0; i < linkResIds.length; i += RES_LINK_BATCH) {
+            const chunk = linkResIds.slice(i, i + RES_LINK_BATCH);
+            const { data: resPage, error: resErr } = await supabase
+              .from('reservations')
+              .select('id, customer_id')
+              .in('id', chunk);
+            if (resErr) {
+              console.warn('입장권 연결 예약 조회 오류:', resErr.message ?? resErr);
+              continue;
+            }
+            allReservations = allReservations.concat(
+              (resPage ?? []) as { id: string; customer_id: string | null }[]
+            );
+          }
+          const custIds = [
+            ...new Set(
+              allReservations
+                .map((r) => r.customer_id)
+                .filter((id): id is string => typeof id === 'string' && id.length > 0)
+            ),
+          ];
+          const customerNameById = new Map<string, string>();
+          for (let i = 0; i < custIds.length; i += RES_LINK_BATCH) {
+            const chunk = custIds.slice(i, i + RES_LINK_BATCH);
+            const { data: custPage, error: custErr } = await supabase
+              .from('customers')
+              .select('id, name')
+              .in('id', chunk);
+            if (custErr) {
+              console.warn('고객명 조회 오류:', custErr.message ?? custErr);
+              continue;
+            }
+            for (const c of custPage ?? []) {
+              const nm = typeof c.name === 'string' ? c.name.trim() : '';
+              if (c.id && nm) customerNameById.set(c.id, nm);
+            }
+          }
+          for (const r of allReservations) {
+            if (!r.customer_id) continue;
+            const nm = customerNameById.get(r.customer_id);
+            if (nm) reservationNameById.set(r.id, nm);
+          }
+        }
+
+        const attachReservationName = (booking: TicketBooking): TicketBooking => {
+          const rid =
+            typeof booking.reservation_id === 'string' && booking.reservation_id.trim()
+              ? booking.reservation_id.trim()
+              : '';
+          if (!rid) return booking;
+          const rn = reservationNameById.get(rid);
+          if (!rn) return booking;
+          return { ...booking, reservation_name: rn };
+        };
+
         const withTour = list.filter((b) => b.tour_id);
         if (withTour.length === 0) {
-          return { rows: list, refundMap: emptyRefundMap() };
+          const rows = list.map((booking) =>
+            attachReservationName({
+              ...booking,
+              check_in_date: booking.check_in_date || booking.submit_on,
+            })
+          );
+          return { rows, refundMap: emptyRefundMap() };
         }
         const tourIds = [
           ...new Set(
@@ -1414,10 +1614,10 @@ export default function TicketBookingList() {
           tourTotalPeopleByTourId.set(tour.id, sum);
         }
         const rows = list.map((booking) => {
-          const baseBooking = {
+          const baseBooking = attachReservationName({
             ...booking,
             check_in_date: booking.check_in_date || booking.submit_on,
-          };
+          });
           if (booking.tour_id && toursMap.has(booking.tour_id)) {
             const tour = toursMap.get(booking.tour_id);
             const toursPart: NonNullable<TicketBooking['tours']> = {
@@ -1473,9 +1673,12 @@ export default function TicketBookingList() {
         setRefundLinesByBookingId({});
         setInvoiceAttachmentMap(new Map());
         setZelleAttachmentMap(new Map());
+        setEnriching(false);
         return;
       }
 
+      // 3) 메타 정보(투어/환불/공급사) 병합도 백그라운드로 진행 후 결과 갱신
+      setEnriching(true);
       const [supplierMap, merged] = await Promise.all([
         loadSupplierProductMap(bookingsData),
         mergeToursRefundsAndBookings(bookingsData),
@@ -1486,7 +1689,7 @@ export default function TicketBookingList() {
       setSupplierProductsMap(supplierMap);
       setRefundLinesByBookingId(merged.refundMap);
       setBookings(merged.rows);
-      if (gen === fetchBookingsGenRef.current) setLoading(false);
+      setEnriching(false);
 
       await refreshInvoiceAttachmentMapForBookings(merged.rows);
 
@@ -1532,6 +1735,7 @@ export default function TicketBookingList() {
     } finally {
       if (gen === fetchBookingsGenRef.current) {
         setLoading(false);
+        setEnriching(false);
       }
     }
   };
@@ -2612,19 +2816,20 @@ export default function TicketBookingList() {
     return cancelDeadline <= today && checkInDate >= today;
   };
 
+  // 검색어를 매 행마다 lowercase 변환하지 않도록 한 번만 정규화
+  const searchTermLower = useMemo(() => searchTerm.trim().toLowerCase(), [searchTerm]);
+
   // 검색 필터
   const matchesSearch = (booking: TicketBooking): boolean => {
-    if (!searchTerm) return true;
-    
-    const searchLower = searchTerm.toLowerCase();
+    if (!searchTermLower) return true;
     return (
-      (booking.category || '').toLowerCase().includes(searchLower) ||
-      (booking.reservation_name || '').toLowerCase().includes(searchLower) ||
-      (booking.rn_number || '').toLowerCase().includes(searchLower) ||
-      (booking.invoice_number || '').toLowerCase().includes(searchLower) ||
-      (booking.zelle_confirmation_number || '').toLowerCase().includes(searchLower) ||
-      (booking.note || '').toLowerCase().includes(searchLower) ||
-      (booking.company || '').toLowerCase().includes(searchLower)
+      (booking.category || '').toLowerCase().includes(searchTermLower) ||
+      (booking.reservation_name || '').toLowerCase().includes(searchTermLower) ||
+      (booking.rn_number || '').toLowerCase().includes(searchTermLower) ||
+      (booking.invoice_number || '').toLowerCase().includes(searchTermLower) ||
+      (booking.zelle_confirmation_number || '').toLowerCase().includes(searchTermLower) ||
+      (booking.note || '').toLowerCase().includes(searchTermLower) ||
+      (booking.company || '').toLowerCase().includes(searchTermLower)
     );
   };
 
@@ -2666,45 +2871,56 @@ export default function TicketBookingList() {
     return true;
   };
 
-  // 모든 필터를 적용한 부킹 목록
-  const filteredBookings = bookings.filter(booking => {
-    const base =
-      matchesSearch(booking) &&
-      matchesDate(booking) &&
-      matchesTour(booking) &&
-      matchesFutureEvent(booking) &&
-      matchesCancelDeadline(booking);
-    if (!base) return false;
-    if (viewMode === 'table' && needsReviewEaMismatch) {
-      return isConfirmedEaHeadcountMismatch(booking);
-    }
-    return matchesStatus(booking);
-  });
+  // 모든 필터를 적용한 부킹 목록 (입력/필터/뷰 변경 시에만 재계산)
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((booking) => {
+      const base =
+        matchesSearch(booking) &&
+        matchesDate(booking) &&
+        matchesTour(booking) &&
+        matchesFutureEvent(booking) &&
+        matchesCancelDeadline(booking);
+      if (!base) return false;
+      if (viewMode === 'table' && needsReviewEaMismatch) {
+        return isConfirmedEaHeadcountMismatch(booking);
+      }
+      return matchesStatus(booking);
+    });
+    // matchesXxx 헬퍼들은 컴포넌트 내부 함수라 매 렌더링마다 새로 만들어지지만
+    // 실제 동작은 아래 의존성 값들에만 영향을 받으므로 의존성에 명시적으로 나열한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    bookings,
+    searchTerm,
+    statusFilter,
+    dateFilter,
+    tourFilter,
+    futureEventFilter,
+    cancelDeadlineFilter,
+    needsReviewEaMismatch,
+    viewMode,
+    supplierProductsMap,
+  ]);
 
-  // 정렬된 부킹 목록
-  const sortedBookings = [...filteredBookings].sort((a, b) => {
-    if (!sortField) return 0;
-
+  // 정렬된 부킹 목록 (정렬 필드/방향 변경 시에만 재계산)
+  const sortedBookings = useMemo(() => {
+    if (!sortField) return filteredBookings;
+    const arr = [...filteredBookings];
     if (sortField === 'date') {
-      const dateA = a.check_in_date 
-        ? new Date(a.check_in_date).getTime() 
-        : 0;
-      const dateB = b.check_in_date 
-        ? new Date(b.check_in_date).getTime() 
-        : 0;
-      
-      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      arr.sort((a, b) => {
+        const dateA = a.check_in_date ? new Date(a.check_in_date).getTime() : 0;
+        const dateB = b.check_in_date ? new Date(b.check_in_date).getTime() : 0;
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+    } else if (sortField === 'submit_on') {
+      arr.sort((a, b) => {
+        const dateA = a.submit_on ? new Date(a.submit_on).getTime() : 0;
+        const dateB = b.submit_on ? new Date(b.submit_on).getTime() : 0;
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      });
     }
-
-    if (sortField === 'submit_on') {
-      const dateA = a.submit_on ? new Date(a.submit_on).getTime() : 0;
-      const dateB = b.submit_on ? new Date(b.submit_on).getTime() : 0;
-      
-      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
-    }
-
-    return 0;
-  });
+    return arr;
+  }, [filteredBookings, sortField, sortDirection]);
 
   const listTotalPages = Math.max(1, Math.ceil(sortedBookings.length / listPageSize) || 1);
   const listPageEffective = Math.min(listPage, listTotalPages);
@@ -4228,6 +4444,16 @@ export default function TicketBookingList() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {enriching && (
+        <div
+          className="fixed top-2 right-2 z-[1200] flex items-center gap-2 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm px-3 py-1.5 text-xs text-gray-600"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" aria-hidden />
+          <span>추가 정보 불러오는 중…</span>
+        </div>
+      )}
       {/* 헤더 - 모바일: 세로 배치, 데스크톱: 가로 */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4">
         <h2 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{t('ticketBookingManagement')}</h2>

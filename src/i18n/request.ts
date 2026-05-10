@@ -18,6 +18,30 @@ function shouldKeepFileStringInsteadOfDb(fileValue: unknown, dbValue: unknown): 
   return fileHasLetters && dbLooksCorrupted
 }
 
+function isPlainMessageObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+/**
+ * DB 번역 병합 후에도 locale JSON에만 있는 키를 유지합니다.
+ * DB에 오래된 namespace 스냅샷만 있거나 중간 노드가 문자열로 덮여 MISSING_MESSAGE가 나는 경우를 막습니다.
+ */
+function restoreMissingMessageKeysFromFile(fileBranch: unknown, dbBranch: unknown): unknown {
+  if (!isPlainMessageObject(fileBranch)) return dbBranch
+  if (!isPlainMessageObject(dbBranch)) return structuredClone(fileBranch)
+  const out: Record<string, unknown> = { ...dbBranch }
+  for (const key of Object.keys(fileBranch)) {
+    const f = fileBranch[key]
+    const d = out[key]
+    if (!(key in out) || d === undefined || d === null) {
+      out[key] = isPlainMessageObject(f) ? structuredClone(f) : f
+    } else if (isPlainMessageObject(f) && isPlainMessageObject(d)) {
+      out[key] = restoreMissingMessageKeysFromFile(f, d)
+    }
+  }
+  return out
+}
+
 export default getRequestConfig(async ({ locale }) => {
   // 지원하는 언어 목록
   const supportedLocales = ['ko', 'en']
@@ -114,7 +138,13 @@ export default getRequestConfig(async ({ locale }) => {
             current[leafKey] = incoming
           }
         }
-        
+
+        const fileRoot = fileMessages as Record<string, unknown>
+        const mergedRoot = dbMessages as Record<string, unknown>
+        for (const ns of Object.keys(fileRoot)) {
+          mergedRoot[ns] = restoreMissingMessageKeysFromFile(fileRoot[ns], mergedRoot[ns])
+        }
+
         return {
           locale,
           messages: dbMessages

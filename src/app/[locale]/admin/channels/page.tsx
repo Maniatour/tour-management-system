@@ -695,12 +695,13 @@ export default function AdminChannels() {
                     <div className="flex items-center space-x-2">
                       <div className="flex-shrink-0 h-6 w-6">
                         {channel.favicon_url ? (
-                          <Image 
-                            src={channel.favicon_url} 
-                            alt={`${channel.name} favicon`} 
+                          <Image
+                            src={channel.favicon_url}
+                            alt={`${channel.name} favicon`}
                             width={24}
                             height={24}
                             className="h-6 w-6 rounded-full object-cover"
+                            style={{ width: 'auto', height: 'auto' }}
                             onError={(e) => {
                               const target = e.target as HTMLImageElement
                               target.style.display = 'none'
@@ -1021,12 +1022,13 @@ export default function AdminChannels() {
                       <div className="flex items-center space-x-3 mb-1">
                         {/* 파비콘 */}
                         {channel.favicon_url ? (
-                          <Image 
-                            src={channel.favicon_url} 
-                            alt={`${channel.name} favicon`} 
+                          <Image
+                            src={channel.favicon_url}
+                            alt={`${channel.name} favicon`}
                             width={24}
                             height={24}
-                            className="w-6 h-6 rounded flex-shrink-0"
+                            className="h-6 w-6 shrink-0 rounded"
+                            style={{ width: 'auto', height: 'auto' }}
                             onError={(e) => {
                               // 파비콘 로드 실패 시 기본 아이콘으로 대체
                               const target = e.target as HTMLImageElement

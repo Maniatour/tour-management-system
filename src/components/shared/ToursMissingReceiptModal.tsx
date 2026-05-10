@@ -1,7 +1,8 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X, Receipt } from 'lucide-react'
+import { X, Receipt, ExternalLink } from 'lucide-react'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import { useTranslations } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import { generateTourId } from '@/lib/entityIds'
@@ -19,7 +20,7 @@ export type { TourNeedCheckRow, DuplicateAssignmentReservationRow, UnassignedRes
 /** @deprecated Use TourNeedCheckRow */
 export type TourRowMissingReceipt = TourNeedCheckRow
 
-type TabKey = 'noReceipt' | 'balance' | 'duplicate' | 'unassigned'
+type TabKey = 'noReceipt' | 'receiptPending' | 'balance' | 'noChatRoom' | 'duplicate' | 'unassigned'
 
 type DuplicateGroupFilter = 'all' | 'crossTour' | 'listInTour'
 type BalanceReservationItem = {
@@ -35,7 +36,9 @@ type Props = {
   title: string
   subtitle?: string
   tabNoReceiptLabel: string
+  tabReceiptPendingLabel: string
   tabBalanceLabel: string
+  tabNoChatRoomLabel: string
   tabDuplicateLabel: string
   tabUnassignedLabel: string
   locale: string
@@ -44,7 +47,9 @@ type Props = {
   onDataLoaded?: (payload: {
     unionCount: number
     noReceiptCount: number
+    receiptPendingCount: number
     balanceCount: number
+    guideNoChatRoomCount: number
     duplicateCount: number
     unassignedCount: number
   }) => void
@@ -56,7 +61,9 @@ export function ToursNeedCheckModal({
   title,
   subtitle,
   tabNoReceiptLabel,
+  tabReceiptPendingLabel,
   tabBalanceLabel,
+  tabNoChatRoomLabel,
   tabDuplicateLabel,
   tabUnassignedLabel,
   locale,
@@ -70,7 +77,9 @@ export function ToursNeedCheckModal({
   const [loading, setLoading] = useState(false)
   const [tab, setTab] = useState<TabKey>('noReceipt')
   const [noReceipt, setNoReceipt] = useState<TourNeedCheckRow[]>([])
+  const [receiptPendingReview, setReceiptPendingReview] = useState<TourNeedCheckRow[]>([])
   const [balanceRemaining, setBalanceRemaining] = useState<TourNeedCheckRow[]>([])
+  const [guideAssignedNoChatRoom, setGuideAssignedNoChatRoom] = useState<TourNeedCheckRow[]>([])
   const [duplicateByReservation, setDuplicateByReservation] = useState<DuplicateAssignmentReservationRow[]>([])
   const [unassignedReservations, setUnassignedReservations] = useState<UnassignedReservationNeedCheckRow[]>([])
   const [duplicateGroupFilter, setDuplicateGroupFilter] = useState<DuplicateGroupFilter>('all')
@@ -84,6 +93,23 @@ export function ToursNeedCheckModal({
   const [collectingBalanceKey, setCollectingBalanceKey] = useState<string | null>(null)
   const [previewReservationId, setPreviewReservationId] = useState<string | null>(null)
   const [previewTourId, setPreviewTourId] = useState<string | null>(null)
+  const [tourDetailPreviewNonce, setTourDetailPreviewNonce] = useState(0)
+
+  const openTourDetailPreview = useCallback((tourId: string) => {
+    setPreviewReservationId(null)
+    setPreviewTourId(tourId)
+    setTourDetailPreviewNonce((n) => n + 1)
+  }, [])
+
+  const openReservationDetailPreview = useCallback((reservationId: string) => {
+    setPreviewTourId(null)
+    setPreviewReservationId(reservationId)
+  }, [])
+
+  const closeDetailPreview = useCallback(() => {
+    setPreviewReservationId(null)
+    setPreviewTourId(null)
+  }, [])
   const onDataLoadedRef = useRef(onDataLoaded)
   onDataLoadedRef.current = onDataLoaded
 
@@ -92,13 +118,17 @@ export function ToursNeedCheckModal({
     try {
       const data = await fetchToursNeedCheckData(supabase)
       setNoReceipt(data.noReceipt)
+      setReceiptPendingReview(data.receiptPendingReview)
       setBalanceRemaining(data.balanceRemaining)
+      setGuideAssignedNoChatRoom(data.guideAssignedNoChatRoom)
       setDuplicateByReservation(data.duplicateByReservation)
       setUnassignedReservations(data.unassignedReservations)
       onDataLoadedRef.current?.({
         unionCount: data.unionCount,
         noReceiptCount: data.noReceiptCount,
+        receiptPendingCount: data.receiptPendingCount,
         balanceCount: data.balanceCount,
+        guideNoChatRoomCount: data.guideNoChatRoomCount,
         duplicateCount: data.duplicateCount,
         unassignedCount: data.unassignedCount,
       })
@@ -509,14 +539,20 @@ export function ToursNeedCheckModal({
 
   if (!isOpen) return null
 
-  const rows = tab === 'noReceipt' ? noReceipt : tab === 'balance' ? balanceRemaining : null
+  const simpleTourRows =
+    tab === 'noReceipt'
+      ? noReceipt
+      : tab === 'receiptPending'
+        ? receiptPendingReview
+        : tab === 'noChatRoom'
+          ? guideAssignedNoChatRoom
+          : null
   const formatUsd = (v: number) => `$${v.toFixed(2)}`
-  const previewSrc =
-    previewReservationId != null
-      ? `/${locale}/admin/reservations/${previewReservationId}`
-      : previewTourId != null
-        ? `/${locale}/admin/tours/${previewTourId}`
-        : null
+  const reservationPreviewSrc =
+    previewReservationId != null ? `/${locale}/admin/reservations/${previewReservationId}` : null
+  const showTourDetailEmbed = previewTourId != null
+  const showReservationIframe = previewReservationId != null && !showTourDetailEmbed
+  const detailPreviewOpen = showTourDetailEmbed || showReservationIframe
   const previewTitle =
     previewReservationId != null
       ? isKo
@@ -533,7 +569,7 @@ export function ToursNeedCheckModal({
     <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50">
       <div
         className={`bg-white rounded-xl shadow-xl w-full max-h-[85vh] flex flex-col ${
-          tab === 'duplicate' || tab === 'unassigned' ? 'max-w-5xl' : 'max-w-3xl'
+          tab === 'duplicate' || tab === 'unassigned' ? 'max-w-7xl' : 'max-w-5xl'
         }`}
       >
         <div className="flex items-start justify-between gap-3 p-4 border-b border-gray-200">
@@ -571,6 +607,18 @@ export function ToursNeedCheckModal({
           </button>
           <button
             type="button"
+            onClick={() => setTab('receiptPending')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'receiptPending'
+                ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-200'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {tabReceiptPendingLabel}
+            <span className="ml-1.5 tabular-nums opacity-90">({receiptPendingReview.length})</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setTab('balance')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               tab === 'balance'
@@ -580,6 +628,18 @@ export function ToursNeedCheckModal({
           >
             {tabBalanceLabel}
             <span className="ml-1.5 tabular-nums opacity-90">({balanceRemaining.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('noChatRoom')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'noChatRoom'
+                ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-200'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {tabNoChatRoomLabel}
+            <span className="ml-1.5 tabular-nums opacity-90">({guideAssignedNoChatRoom.length})</span>
           </button>
           <button
             type="button"
@@ -639,7 +699,7 @@ export function ToursNeedCheckModal({
                         <div className="mt-1 flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => setPreviewReservationId(r.reservationId)}
+                            onClick={() => openReservationDetailPreview(r.reservationId)}
                             className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
                           >
                             {isKo ? '예약 상세' : 'Reservation detail'}
@@ -702,7 +762,7 @@ export function ToursNeedCheckModal({
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => setPreviewTourId(c.tourId)}
+                                      onClick={() => openTourDetailPreview(c.tourId)}
                                       className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
                                     >
                                       {t('needCheckDuplicateOpenTour')}
@@ -804,7 +864,7 @@ export function ToursNeedCheckModal({
                           <div className="mt-1">
                             <button
                               type="button"
-                              onClick={() => setPreviewReservationId(r.reservationId)}
+                              onClick={() => openReservationDetailPreview(r.reservationId)}
                               className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
                             >
                               {isKo ? '예약 상세' : 'Reservation detail'}
@@ -909,7 +969,7 @@ export function ToursNeedCheckModal({
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => setPreviewTourId(p.tourId)}
+                                          onClick={() => openTourDetailPreview(p.tourId)}
                                           className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
                                         >
                                           {t('needCheckDuplicateOpenTour')}
@@ -974,7 +1034,7 @@ export function ToursNeedCheckModal({
                           <td className="py-2 pr-2">
                             <button
                               type="button"
-                              onClick={() => setPreviewTourId(t.id)}
+                              onClick={() => openTourDetailPreview(t.id)}
                               className="text-xs font-medium text-blue-600 hover:text-blue-800"
                             >
                               {isKo ? '투어 상세' : 'Tour detail'}
@@ -1027,7 +1087,7 @@ export function ToursNeedCheckModal({
                                               </button>
                                               <button
                                                 type="button"
-                                                onClick={() => setPreviewReservationId(r.reservationId)}
+                                                onClick={() => openReservationDetailPreview(r.reservationId)}
                                                 className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
                                               >
                                                 {isKo ? '예약 상세' : 'Reservation detail'}
@@ -1049,7 +1109,7 @@ export function ToursNeedCheckModal({
                 </tbody>
               </table>
             )
-          ) : rows && rows.length === 0 ? (
+          ) : simpleTourRows && simpleTourRows.length === 0 ? (
             <p className="text-sm text-gray-500">
               {isKo ? '조건에 해당하는 투어가 없습니다.' : 'No tours match this filter.'}
             </p>
@@ -1065,7 +1125,7 @@ export function ToursNeedCheckModal({
                 </tr>
               </thead>
               <tbody>
-                {(rows || []).map((t) => (
+                {(simpleTourRows || []).map((t) => (
                   <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-2 pr-2 whitespace-nowrap">{t.tour_date || '—'}</td>
                     <td className="py-2 pr-2 truncate max-w-[200px]" title={t.product_name || t.product_id || ''}>
@@ -1076,7 +1136,7 @@ export function ToursNeedCheckModal({
                     <td className="py-2 pr-2">
                       <button
                         type="button"
-                        onClick={() => setPreviewTourId(t.id)}
+                        onClick={() => openTourDetailPreview(t.id)}
                         className="text-xs font-medium text-blue-600 hover:text-blue-800"
                       >
                         {isKo ? '상세' : 'Open'}
@@ -1090,44 +1150,64 @@ export function ToursNeedCheckModal({
         </div>
       </div>
     </div>
-    {previewSrc ? (
+    {detailPreviewOpen ? (
       <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/60">
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-[90vw] h-[88vh] flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200">
-            <div className="text-sm font-semibold text-gray-900">{previewTitle}</div>
-            <div className="flex items-center gap-2">
-              {previewTourId ? (
+          <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-200 shrink-0">
+            <div className="text-sm font-semibold text-gray-900 truncate min-w-0" title={previewTitle}>
+              {previewTitle}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {showTourDetailEmbed && previewTourId ? (
+                <>
+                  <a
+                    href={`/${locale}/admin/tours/${previewTourId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-300 bg-white text-blue-700 hover:bg-gray-50"
+                  >
+                    {isKo ? '새 탭' : 'New tab'}
+                    <ExternalLink size={12} aria-hidden />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => onTourClick(previewTourId)}
+                    className="px-2.5 py-1 rounded-md text-xs font-medium border border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                  >
+                    {isKo ? '페이지로 이동' : 'Open page'}
+                  </button>
+                </>
+              ) : null}
+              {showReservationIframe && reservationPreviewSrc ? (
                 <button
                   type="button"
-                  onClick={() => onTourClick(previewTourId)}
-                  className="px-2.5 py-1 rounded-md text-xs font-medium border border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                  onClick={() => window.open(reservationPreviewSrc, '_blank', 'noopener,noreferrer')}
+                  className="px-2.5 py-1 rounded-md text-xs font-medium border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 >
-                  {isKo ? '페이지로 이동' : 'Open page'}
+                  {isKo ? '새 탭' : 'New tab'}
                 </button>
               ) : null}
               <button
                 type="button"
-                onClick={() => {
-                  if (!previewSrc) return
-                  window.open(previewSrc, '_blank', 'noopener,noreferrer')
-                }}
-                className="px-2.5 py-1 rounded-md text-xs font-medium border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              >
-                {isKo ? '새 탭' : 'New tab'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewReservationId(null)
-                  setPreviewTourId(null)
-                }}
+                onClick={closeDetailPreview}
                 className="px-2.5 py-1 rounded-md text-xs font-medium border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
               >
                 {isKo ? '닫기' : 'Close'}
               </button>
             </div>
           </div>
-          <iframe src={previewSrc} title={previewTitle} className="w-full h-full border-0 bg-white" loading="lazy" />
+          {showTourDetailEmbed && previewTourId ? (
+            <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-gray-50">
+              <TourDetailModalContent tourId={previewTourId} refreshNonce={tourDetailPreviewNonce} />
+            </div>
+          ) : showReservationIframe && reservationPreviewSrc ? (
+            <iframe
+              src={reservationPreviewSrc}
+              title={previewTitle}
+              className="w-full min-h-0 flex-1 border-0 bg-white"
+              loading="lazy"
+            />
+          ) : null}
         </div>
       </div>
     ) : null}

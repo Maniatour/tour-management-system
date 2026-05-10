@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
@@ -14,6 +15,10 @@ import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseSt
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+
+/** Radix Dialog가 body에 pointer-events:none을 둘 때도 영수증 오버레이가 동작하도록 body 포털 + 명시적 hit-target */
+const RESERVATION_RECEIPT_VIEW_PORTAL_CLASS =
+  'fixed inset-0 z-[12000] pointer-events-auto overscroll-contain bg-black bg-opacity-75 flex items-center justify-center p-4'
 
 interface ReservationExpense {
   id: string
@@ -204,6 +209,10 @@ export default function ReservationExpenseManager({
   /** 관리자 목록: 명세 대조 미연결만 API에서 조회 */
   const [statementMatchFilter, setStatementMatchFilter] = useState<'all' | 'unmatched'>('all')
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; paidFor: string } | null>(null)
+  const [receiptViewPortalReady, setReceiptViewPortalReady] = useState(false)
+  useEffect(() => {
+    setReceiptViewPortalReady(true)
+  }, [])
   const tStmtRecon = useTranslations('expenses.statementRecon')
   const [reconciledReservationIds, setReconciledReservationIds] = useState<Set<string>>(() => new Set())
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
@@ -1866,51 +1875,54 @@ export default function ReservationExpenseManager({
         </div>
       )}
 
-      {viewingReceipt && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-blue-600" />
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {tTour('receiptLabel')}: {viewingReceipt.paidFor}
-                </h3>
+      {receiptViewPortalReady &&
+        viewingReceipt &&
+        createPortal(
+          <div className={RESERVATION_RECEIPT_VIEW_PORTAL_CLASS}>
+            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b">
+                <div className="flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {tTour('receiptLabel')}: {viewingReceipt.paidFor}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingReceipt(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setViewingReceipt(null)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(90vh-100px)]">
-              <div className="flex flex-col items-center">
-                <img
-                  src={viewingReceipt.imageUrl}
-                  alt=""
-                  className="max-w-full h-auto rounded-lg shadow-lg"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.style.display = 'none'
-                  }}
-                />
-                <div className="mt-4 flex gap-2">
-                  <a
-                    href={viewingReceipt.imageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                  >
-                    <ImageIcon className="w-4 h-4" />
-                    {tTour('openInNewWindow')}
-                  </a>
+              <div className="p-4 overflow-y-auto max-h-[calc(90vh-100px)] overscroll-contain">
+                <div className="flex flex-col items-center">
+                  <img
+                    src={viewingReceipt.imageUrl}
+                    alt=""
+                    className="max-w-full h-auto rounded-lg shadow-lg"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement
+                      target.style.display = 'none'
+                    }}
+                  />
+                  <div className="mt-4 flex gap-2">
+                    <a
+                      href={viewingReceipt.imageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                    >
+                      <ImageIcon className="w-4 h-4" />
+                      {tTour('openInNewWindow')}
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* 예약 지출 수정 모달 */}
       <Dialog open={showEditModal} onOpenChange={(open) => { if (!open) closeEditModal(); }}>

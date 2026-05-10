@@ -154,7 +154,7 @@ function RegCancelTotalBadges({
   )
 }
 
-export function DateGroupHeader({
+function DateGroupHeaderInner({
   date,
   reservations,
   isCollapsed,
@@ -610,3 +610,5 @@ export function DateGroupHeader({
     </div>
   )
 }
+
+export const DateGroupHeader = React.memo(DateGroupHeaderInner)

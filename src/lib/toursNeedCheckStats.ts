@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isAbortLikeError } from '@/lib/isAbortLikeError'
+import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
 import {
   isTourDeletedStatus,
   isReservationCancelledStatus,
@@ -248,6 +249,23 @@ function ymdAddYears(ymd: string, years: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
+function ymdAddDays(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split('-').map((x) => parseInt(x, 10))
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return ymd
+  const dt = new Date(y, m - 1, d)
+  dt.setDate(dt.getDate() + days)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+/** 채팅방 누락 점검: 최근 지난 투어·예정 투어 범위 */
+function isTourDateInChatCheckWindow(tourDate: string | null | undefined, today: string): boolean {
+  const td = ymdKey(tourDate)
+  if (!td) return false
+  const start = ymdAddDays(today, -14)
+  const end = ymdAddDays(today, 90)
+  return td >= start && td <= end
+}
+
 /** 취소·삭제·미확인 문자열이 아닌, 배정 대상이 될 수 있는 예약 상태 */
 function isUnassignedTabAssignableStatus(status: string | null | undefined): boolean {
   if (isReservationCancelledStatus(status) || isReservationDeletedStatus(status)) return false
@@ -468,6 +486,67 @@ async function fetchTourIdsHavingExpenses(
 
     if (error) {
       logToursNeedCheckError('toursNeedCheckStats: tour_expenses by tour_id', error)
+      if (isAbortLikeError(error)) return out
+      continue
+    }
+    for (const row of data || []) {
+      const tid = String((row as { tour_id?: string | null }).tour_id ?? '').trim()
+      if (tid) out.add(tid)
+    }
+  }
+  return out
+}
+
+/**
+ * 영수증만 첨부·OCR 미완료: `tour_expenses.paid_for`가 `Receipt Pending`인 행이 있는 투어
+ * (`TourExpenseManager`와 동일).
+ */
+async function fetchTourIdsWithPendingExpenseReview(
+  supabase: SupabaseClient,
+  tourIds: string[]
+): Promise<Set<string>> {
+  const out = new Set<string>()
+  const unique = [...new Set(tourIds.map((id) => String(id).trim()).filter(Boolean))]
+  const chunkSize = 200
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize)
+    const { data, error } = await supabase
+      .from('tour_expenses')
+      .select('tour_id')
+      .in('tour_id', chunk)
+      .eq('paid_for', TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR)
+
+    if (error) {
+      logToursNeedCheckError('toursNeedCheckStats: tour_expenses receipt pending paid_for', error)
+      if (isAbortLikeError(error)) return out
+      continue
+    }
+    for (const row of data || []) {
+      const tid = String((row as { tour_id?: string | null }).tour_id ?? '').trim()
+      if (tid) out.add(tid)
+    }
+  }
+  return out
+}
+
+/** 활성 투어 고객 채팅방이 있는 tour_id */
+async function fetchTourIdsWithActiveChatRoom(
+  supabase: SupabaseClient,
+  tourIds: string[]
+): Promise<Set<string>> {
+  const out = new Set<string>()
+  const unique = [...new Set(tourIds.map((id) => String(id).trim()).filter(Boolean))]
+  const chunkSize = 200
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize)
+    const { data, error } = await supabase
+      .from('chat_rooms')
+      .select('tour_id')
+      .in('tour_id', chunk)
+      .eq('is_active', true)
+
+    if (error) {
+      logToursNeedCheckError('toursNeedCheckStats: chat_rooms active by tour', error)
       if (isAbortLikeError(error)) return out
       continue
     }
@@ -700,12 +779,18 @@ function isPastOrTodayTour(tourDate: string | null | undefined, today: string): 
  */
 export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise<{
   noReceipt: TourNeedCheckRow[]
+  /** 영수증만 첨부·OCR 미매핑 등 `paid_for = Receipt Pending` 지출이 있는 투어 */
+  receiptPendingReview: TourNeedCheckRow[]
   balanceRemaining: TourNeedCheckRow[]
+  /** 가이드 배정됐으나 활성 투어 채팅방 없음 */
+  guideAssignedNoChatRoom: TourNeedCheckRow[]
   duplicateByReservation: DuplicateAssignmentReservationRow[]
   unassignedReservations: UnassignedReservationNeedCheckRow[]
   unionCount: number
   noReceiptCount: number
+  receiptPendingCount: number
   balanceCount: number
+  guideNoChatRoomCount: number
   duplicateCount: number
   unassignedCount: number
 }> {
@@ -720,6 +805,11 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
     supabase,
     enriched.map((r) => r.id)
   )
+  const tourIdsReceiptPendingExpense = await fetchTourIdsWithPendingExpenseReview(
+    supabase,
+    enriched.map((r) => r.id)
+  )
+  const tourIdsWithChat = await fetchTourIdsWithActiveChatRoom(supabase, enriched.map((r) => r.id))
 
   const allReservationIds = new Set<string>()
   for (const id of reservationIdsByTourId.keys()) {
@@ -754,7 +844,9 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
   )
 
   const noReceipt: TourNeedCheckRow[] = []
+  const receiptPendingReview: TourNeedCheckRow[] = []
   const balanceRemaining: TourNeedCheckRow[] = []
+  const guideAssignedNoChatRoom: TourNeedCheckRow[] = []
 
   for (const row of enriched) {
     if (!isPastOrTodayTour(row.tour_date, today)) continue
@@ -772,16 +864,33 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
         noReceipt.push(row)
       }
     }
+    if (tourIdsReceiptPendingExpense.has(tid)) {
+      receiptPendingReview.push(row)
+    }
     const resRaw = reservationIdsByTourId.get(row.id)
     if (tourHasPositiveBalance(resRaw, balanceByReservation)) {
       balanceRemaining.push(row)
     }
   }
 
+  for (const row of enriched) {
+    const st = (row.tour_status || '').toString()
+    if (isTourCancelled(st)) continue
+    const guideAssigned = String(row.tour_guide_id ?? '').trim().length > 0
+    if (!guideAssigned) continue
+    if (!isTourDateInChatCheckWindow(row.tour_date, today)) continue
+    const tid = String(row.id).trim()
+    if (!tourIdsWithChat.has(tid)) {
+      guideAssignedNoChatRoom.push(row)
+    }
+  }
+
   const sortDesc = (a: TourNeedCheckRow, b: TourNeedCheckRow) =>
     (b.tour_date || '').localeCompare(a.tour_date || '')
   noReceipt.sort(sortDesc)
+  receiptPendingReview.sort(sortDesc)
   balanceRemaining.sort(sortDesc)
+  guideAssignedNoChatRoom.sort(sortDesc)
 
   const duplicateTourIds = new Set<string>()
   for (const dr of duplicateByReservation) {
@@ -792,18 +901,24 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
 
   const unionIds = new Set<string>([
     ...noReceipt.map((r) => r.id),
+    ...receiptPendingReview.map((r) => r.id),
     ...balanceRemaining.map((r) => r.id),
+    ...guideAssignedNoChatRoom.map((r) => r.id),
     ...duplicateTourIds,
   ])
 
   return {
     noReceipt,
+    receiptPendingReview,
     balanceRemaining,
+    guideAssignedNoChatRoom,
     duplicateByReservation,
     unassignedReservations,
     unionCount: unionIds.size + unassignedReservations.length,
     noReceiptCount: noReceipt.length,
+    receiptPendingCount: receiptPendingReview.length,
     balanceCount: balanceRemaining.length,
+    guideNoChatRoomCount: guideAssignedNoChatRoom.length,
     duplicateCount: duplicateByReservation.length,
     unassignedCount: unassignedReservations.length,
   }

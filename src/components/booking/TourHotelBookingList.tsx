@@ -129,38 +129,57 @@ export default function TourHotelBookingList() {
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      
-      // 먼저 tour_hotel_bookings만 조회
+
+      // 1) 호텔 부킹 본문을 즉시 표시(투어 메타 병합 전에 화면 노출)
+      // select * 대신 화면에 사용되는 컬럼만 선택 → 페이로드/직렬화 비용 감소
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('tour_hotel_bookings')
-        .select('*')
+        .select(
+          [
+            'id',
+            'tour_id',
+            'submit_on',
+            'check_in_date',
+            'check_out_date',
+            'reservation_name',
+            'submitted_by',
+            'cc',
+            'rooms',
+            'city',
+            'hotel',
+            'room_type',
+            'unit_price',
+            'total_price',
+            'payment_method',
+            'website',
+            'rn_number',
+            'status',
+            'created_at',
+            'updated_at',
+            'deletion_requested_at',
+            'deletion_requested_by',
+          ].join(', ')
+        )
         .is('deletion_requested_at', null)
         .order('check_in_date', { ascending: false }) as { data: TourHotelBooking[] | null; error: Error | null };
 
       if (bookingsError) throw bookingsError;
-
-      console.log('투어 호텔 부킹 데이터:', bookingsData);
 
       if (!bookingsData || bookingsData.length === 0) {
         setBookings([]);
         return;
       }
 
-      // tour_id가 있는 부킹들만 필터링
-      const bookingsWithTourId = bookingsData.filter(booking => booking.tour_id);
-      
-      console.log('투어 ID가 있는 호텔 부킹들:', bookingsWithTourId);
-      
-      if (bookingsWithTourId.length === 0) {
-        setBookings(bookingsData);
-        return;
-      }
+      setBookings(bookingsData);
+      // 첫 표시 후 스피너를 내려 사용자 체감 로딩을 단축
+      setLoading(false);
 
-      // 모든 tour_id를 한 번에 조회
+      // 2) 투어/상품 메타는 백그라운드로 병합
+      const bookingsWithTourId = bookingsData.filter(booking => booking.tour_id);
+      if (bookingsWithTourId.length === 0) return;
+
       const tourIds = [...new Set(bookingsWithTourId.map(booking => booking.tour_id))];
-      
-      console.log('조회할 투어 ID들:', tourIds);
-      
+
       const { data: toursData, error: toursError } = await supabase
         .from('tours')
         .select(`
@@ -173,41 +192,36 @@ export default function TourHotelBookingList() {
         `)
         .in('id', tourIds) as { data: Array<{ id: string; tour_date: string; products: { name: string; name_en?: string } | null }> | null; error: Error | null };
 
-      console.log('투어 데이터:', toursData);
-      console.log('투어 조회 오류:', toursError);
-
       if (toursError) {
         console.warn('투어 정보 조회 오류:', toursError);
-        setBookings(bookingsData);
         return;
       }
 
-      // tours 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
-      const toursMap = new Map();
+      const toursMap = new Map<string, { id: string; tour_date: string; products: { name: string; name_en?: string } | null }>();
       (toursData || []).forEach(tour => {
         toursMap.set(tour.id, tour);
       });
 
-      console.log('투어 맵:', toursMap);
-
-      // 부킹 데이터에 투어 정보 추가
-      const bookingsWithTours = bookingsData.map(booking => {
+      const bookingsWithTours: TourHotelBooking[] = bookingsData.map(booking => {
         if (booking.tour_id && toursMap.has(booking.tour_id)) {
-          const tour = toursMap.get(booking.tour_id);
-          console.log(`호텔 부킹 ${booking.id}의 투어 정보:`, tour);
+          const tour = toursMap.get(booking.tour_id)!;
+          if (tour.products) {
+            return {
+              ...booking,
+              tours: {
+                tour_date: tour.tour_date,
+                products: tour.products,
+              },
+            } as TourHotelBooking;
+          }
           return {
             ...booking,
-            tours: {
-              tour_date: tour.tour_date,
-              products: tour.products
-            }
-          };
+            tours: { tour_date: tour.tour_date },
+          } as TourHotelBooking;
         }
-        console.log(`호텔 부킹 ${booking.id}에 투어 정보 없음 (tour_id: ${booking.tour_id})`);
         return booking;
       });
 
-      console.log('최종 호텔 부킹 데이터:', bookingsWithTours);
       setBookings(bookingsWithTours);
     } catch (error) {
       console.error('투어 호텔 부킹 조회 오류:', error);
@@ -277,19 +291,22 @@ export default function TourHotelBookingList() {
     setEditingBooking(null);
   };
 
-  const filteredBookings = bookings.filter(booking => {
-    const matchesSearch = 
-      booking.hotel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.reservation_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.rn_number.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredBookings = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return bookings.filter((booking) => {
+      const matchesSearch =
+        !q ||
+        booking.hotel.toLowerCase().includes(q) ||
+        booking.city.toLowerCase().includes(q) ||
+        booking.reservation_name.toLowerCase().includes(q) ||
+        booking.rn_number.toLowerCase().includes(q);
 
-    const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
-    
-    const matchesDate = !dateFilter || booking.check_in_date === dateFilter;
+      const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+      const matchesDate = !dateFilter || booking.check_in_date === dateFilter;
 
-    return matchesSearch && matchesStatus && matchesDate;
-  });
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  }, [bookings, searchTerm, statusFilter, dateFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {

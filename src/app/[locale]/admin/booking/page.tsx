@@ -1,14 +1,34 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
-import TicketBookingList from '@/components/booking/TicketBookingList';
-import TourHotelBookingList from '@/components/booking/TourHotelBookingList';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier';
 import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal';
+
+function BookingTabSkeleton() {
+  return (
+    <div className="flex items-center justify-center py-16 px-4" aria-busy="true" aria-live="polite">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-10 w-10 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+        <p className="text-sm text-gray-600">로딩 중…</p>
+      </div>
+    </div>
+  );
+}
+
+const TicketBookingList = dynamic(
+  () => import('@/components/booking/TicketBookingList'),
+  { loading: BookingTabSkeleton }
+);
+
+const TourHotelBookingList = dynamic(
+  () => import('@/components/booking/TourHotelBookingList'),
+  { loading: BookingTabSkeleton }
+);
 
 type TabType = 'tickets' | 'hotels';
 

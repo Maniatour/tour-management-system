@@ -5107,10 +5107,11 @@ export default function ReservationForm({
       }
 
       const actorName = auditDisplayName(currentTeamProfile, authUser.email)
+      const auditedAtIso = nextAudited ? new Date().toISOString() : null
       const patch = nextAudited
         ? {
             audited: true,
-            audited_at: new Date().toISOString(),
+            audited_at: auditedAtIso,
             audited_by_email: authUser.email,
             audited_by_name: currentTeamProfile?.name || actorName,
             audited_by_nick_name: currentTeamProfile?.nickName || actorName,
@@ -5132,6 +5133,22 @@ export default function ReservationForm({
         console.error('Audited 상태 변경 오류:', error)
         alert('Audited 상태 변경 중 오류가 발생했습니다.')
         return
+      }
+
+      // 예약 통계(채널 정산 등)의 금액 검증 체크는 reservations.amount_audited 를 사용함 — pricing Audited 와 동기화
+      const amountAuditPayload = nextAudited
+        ? { amount_audited: true, amount_audited_at: auditedAtIso, amount_audited_by: authUser.email }
+        : { amount_audited: false, amount_audited_at: null, amount_audited_by: null }
+      const { error: amountAuditSyncError } = await (supabase as any)
+        .from('reservations')
+        .update(amountAuditPayload)
+        .eq('id', effectiveReservationId)
+      if (amountAuditSyncError) {
+        console.error('예약 금액 검증(통계) 동기화 오류:', amountAuditSyncError)
+        alert(
+          '가격 Audited는 저장되었으나, 예약 통계의 금액 검증 표시와 동기화하지 못했습니다. 잠시 후 통계에서 다시 시도해 주세요.\n' +
+            (amountAuditSyncError.message || '')
+        )
       }
 
       setPricingAudit({

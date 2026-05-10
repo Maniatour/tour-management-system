@@ -21,6 +21,7 @@ import ReservationCalendar from '@/components/ReservationCalendar'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import { useReservationData, type AdminListHydratedSnapshot } from '@/hooks/useReservationData'
 import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
+import { useImagePrefetch } from '@/hooks/useImagePrefetch'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
@@ -525,6 +526,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     hydrateAdminListRawRows,
   } = useReservationData({ disableReservationsAutoLoad: true, customersByReservationIds: true })
 
+  // 채널 favicon 워밍업 — 카드/배지 첫 페인트 시 깜빡임 제거
+  const channelFaviconUrls = useMemo(
+    () =>
+      ((channels ?? []) as Array<{ favicon_url?: string | null }>).map((c) => c?.favicon_url ?? null),
+    [channels]
+  )
+  useImagePrefetch(channelFaviconUrls)
+
   /** 예약 처리 필요 / Follow up — 주간 뷰와 무관하게 전역 스냅샷(삭제 제외 전 예약) */
   const [operationalQueueSnapshot, setOperationalQueueSnapshot] = useState<AdminListHydratedSnapshot | null>(null)
   const [operationalQueueLoading, setOperationalQueueLoading] = useState(false)
@@ -621,82 +630,134 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const regCancelMonthOffset = regCancelMonthOffsetStored ?? 0
   const regCancelYearOffset = regCancelYearOffsetStored ?? 0
 
-  const setSearchTerm = (v: React.SetStateAction<string>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
-    }))
-  const setViewMode = (m: 'card' | 'calendar') => setReservationListUi((u) => ({ ...u, viewMode: m }))
-const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => ({ ...u, cardLayout: l }))
-  const setSelectedStatus = (s: string) => setReservationListUi((u) => ({ ...u, selectedStatus: s }))
-  const setCurrentPage = (v: React.SetStateAction<number>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      currentPage: typeof v === 'function' ? (v as (n: number) => number)(u.currentPage) : v,
-    }))
-  const setItemsPerPage = (v: React.SetStateAction<number>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      itemsPerPage: typeof v === 'function' ? (v as (n: number) => number)(u.itemsPerPage) : v,
-    }))
-  const setStatisticsWeekOffset = (v: React.SetStateAction<number>) =>
-    setReservationListUi((u) => {
-      const prev =
-        (u as { statisticsWeekOffset?: number; currentWeek?: number }).statisticsWeekOffset ??
-        (u as { currentWeek?: number }).currentWeek ??
-        0
-      const next = typeof v === 'function' ? (v as (n: number) => number)(prev) : v
-      return { ...u, statisticsWeekOffset: next }
-    })
-  const setCardsWeekPage = (v: React.SetStateAction<number>) =>
-    setReservationListUi((u) => {
-      const prev =
-        (u as { cardsWeekPage?: number; currentWeek?: number }).cardsWeekPage ??
-        (u as { currentWeek?: number }).currentWeek ??
-        0
-      const next = typeof v === 'function' ? (v as (n: number) => number)(prev) : v
-      return { ...u, cardsWeekPage: next }
-    })
-  const setSelectedChannel = (c: string) => setReservationListUi((u) => ({ ...u, selectedChannel: c }))
-  const setDateRange = (v: React.SetStateAction<{ start: string; end: string }>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      dateRange: typeof v === 'function' ? (v as (r: { start: string; end: string }) => { start: string; end: string })(u.dateRange) : v,
-    }))
-  const setSortBy = (v: React.SetStateAction<'created_at' | 'tour_date' | 'customer_name' | 'product_name'>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      sortBy: typeof v === 'function' ? (v as (s: typeof u.sortBy) => typeof u.sortBy)(u.sortBy) : v,
-    }))
-  const setSortOrder = (v: React.SetStateAction<'asc' | 'desc'>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      sortOrder: typeof v === 'function' ? (v as (s: 'asc' | 'desc') => 'asc' | 'desc')(u.sortOrder) : v,
-    }))
-  const setGroupByDate = (v: React.SetStateAction<boolean>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      groupByDate: typeof v === 'function' ? (v as (g: boolean) => boolean)(u.groupByDate) : v,
-    }))
-  const setIsWeeklyStatsCollapsed = (v: React.SetStateAction<boolean>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      isWeeklyStatsCollapsed: typeof v === 'function'
-        ? (v as (b: boolean) => boolean)(u.isWeeklyStatsCollapsed)
-        : v,
-    }))
-  const setRegCancelGranularity = (g: 'week' | 'month' | 'year') =>
-    setReservationListUi((u) => ({ ...u, regCancelGranularity: g }))
-  const setRegCancelMonthOffset = (v: React.SetStateAction<number>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      regCancelMonthOffset: typeof v === 'function' ? (v as (n: number) => number)(u.regCancelMonthOffset ?? 0) : v,
-    }))
-  const setRegCancelYearOffset = (v: React.SetStateAction<number>) =>
-    setReservationListUi((u) => ({
-      ...u,
-      regCancelYearOffset: typeof v === 'function' ? (v as (n: number) => number)(u.regCancelYearOffset ?? 0) : v,
-    }))
+  // setReservationListUi 는 useState setter라 안정 참조 — 모든 setter를 useCallback 으로 감싸
+  // memoized 자식 컴포넌트(ReservationsHeader/ReservationsFilters/...)의 props 안정성을 보장한다.
+  const setSearchTerm = useCallback(
+    (v: React.SetStateAction<string>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setViewMode = useCallback(
+    (m: 'card' | 'calendar') => setReservationListUi((u) => ({ ...u, viewMode: m })),
+    [setReservationListUi]
+  )
+  const setCardLayout = useCallback(
+    (l: 'standard' | 'simple') => setReservationListUi((u) => ({ ...u, cardLayout: l })),
+    [setReservationListUi]
+  )
+  const setSelectedStatus = useCallback(
+    (s: string) => setReservationListUi((u) => ({ ...u, selectedStatus: s })),
+    [setReservationListUi]
+  )
+  const setCurrentPage = useCallback(
+    (v: React.SetStateAction<number>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        currentPage: typeof v === 'function' ? (v as (n: number) => number)(u.currentPage) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setItemsPerPage = useCallback(
+    (v: React.SetStateAction<number>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        itemsPerPage: typeof v === 'function' ? (v as (n: number) => number)(u.itemsPerPage) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setStatisticsWeekOffset = useCallback(
+    (v: React.SetStateAction<number>) =>
+      setReservationListUi((u) => {
+        const prev =
+          (u as { statisticsWeekOffset?: number; currentWeek?: number }).statisticsWeekOffset ??
+          (u as { currentWeek?: number }).currentWeek ??
+          0
+        const next = typeof v === 'function' ? (v as (n: number) => number)(prev) : v
+        return { ...u, statisticsWeekOffset: next }
+      }),
+    [setReservationListUi]
+  )
+  const setCardsWeekPage = useCallback(
+    (v: React.SetStateAction<number>) =>
+      setReservationListUi((u) => {
+        const prev =
+          (u as { cardsWeekPage?: number; currentWeek?: number }).cardsWeekPage ??
+          (u as { currentWeek?: number }).currentWeek ??
+          0
+        const next = typeof v === 'function' ? (v as (n: number) => number)(prev) : v
+        return { ...u, cardsWeekPage: next }
+      }),
+    [setReservationListUi]
+  )
+  const setSelectedChannel = useCallback(
+    (c: string) => setReservationListUi((u) => ({ ...u, selectedChannel: c })),
+    [setReservationListUi]
+  )
+  const setDateRange = useCallback(
+    (v: React.SetStateAction<{ start: string; end: string }>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        dateRange: typeof v === 'function' ? (v as (r: { start: string; end: string }) => { start: string; end: string })(u.dateRange) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setSortBy = useCallback(
+    (v: React.SetStateAction<'created_at' | 'tour_date' | 'customer_name' | 'product_name'>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        sortBy: typeof v === 'function' ? (v as (s: typeof u.sortBy) => typeof u.sortBy)(u.sortBy) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setSortOrder = useCallback(
+    (v: React.SetStateAction<'asc' | 'desc'>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        sortOrder: typeof v === 'function' ? (v as (s: 'asc' | 'desc') => 'asc' | 'desc')(u.sortOrder) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setGroupByDate = useCallback(
+    (v: React.SetStateAction<boolean>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        groupByDate: typeof v === 'function' ? (v as (g: boolean) => boolean)(u.groupByDate) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setIsWeeklyStatsCollapsed = useCallback(
+    (v: React.SetStateAction<boolean>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        isWeeklyStatsCollapsed: typeof v === 'function'
+          ? (v as (b: boolean) => boolean)(u.isWeeklyStatsCollapsed)
+          : v,
+      })),
+    [setReservationListUi]
+  )
+  const setRegCancelGranularity = useCallback(
+    (g: 'week' | 'month' | 'year') => setReservationListUi((u) => ({ ...u, regCancelGranularity: g })),
+    [setReservationListUi]
+  )
+  const setRegCancelMonthOffset = useCallback(
+    (v: React.SetStateAction<number>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        regCancelMonthOffset: typeof v === 'function' ? (v as (n: number) => number)(u.regCancelMonthOffset ?? 0) : v,
+      })),
+    [setReservationListUi]
+  )
+  const setRegCancelYearOffset = useCallback(
+    (v: React.SetStateAction<number>) =>
+      setReservationListUi((u) => ({
+        ...u,
+        regCancelYearOffset: typeof v === 'function' ? (v as (n: number) => number)(u.regCancelYearOffset ?? 0) : v,
+      })),
+    [setReservationListUi]
+  )
 
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   
@@ -3728,6 +3789,77 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
       ? t('loadingReservationData')
       : t('loadingReservationList')
 
+  // Header/Filters 핸들러 — useCallback 으로 안정 참조를 만들어 React.memo 효과를 살린다.
+  const handleHeaderSearchChange = useCallback(
+    (term: string) => {
+      setSearchTerm(term)
+      setCurrentPage(1)
+    },
+    [setSearchTerm, setCurrentPage]
+  )
+  const handleHeaderAddReservation = useCallback(() => {
+    const newId = generateReservationId()
+    setNewReservationId(newId)
+    setShowAddForm(true)
+  }, [])
+  const handleOpenActionRequired = useCallback(() => setShowActionRequiredModal(true), [])
+  const handleOpenFilter = useCallback(() => setFilterModalOpen(true), [])
+  const handleOpenDeletedReservations = useCallback(() => setShowDeletedReservationsModal(true), [])
+  const handleOpenFollowUpQueue = useCallback(() => setFollowUpQueueModalOpen(true), [])
+  const handleFiltersStatusChange = useCallback(
+    (status: string) => {
+      setSelectedStatus(status)
+      setCurrentPage(1)
+    },
+    [setSelectedStatus, setCurrentPage]
+  )
+  const handleFiltersChannelChange = useCallback(
+    (channel: string) => {
+      setSelectedChannel(channel)
+      setCurrentPage(1)
+    },
+    [setSelectedChannel, setCurrentPage]
+  )
+  const handleFiltersDateRangeChange = useCallback(
+    (range: { start: string; end: string }) => {
+      setDateRange(range)
+      setCurrentPage(1)
+    },
+    [setDateRange, setCurrentPage]
+  )
+  const handleFiltersItemsPerPageChange = useCallback(
+    (items: number) => {
+      setItemsPerPage(items)
+      setCurrentPage(1)
+    },
+    [setItemsPerPage, setCurrentPage]
+  )
+  const handleFiltersReset = useCallback(() => {
+    setSearchTerm('')
+    setSelectedStatus('all')
+    setSelectedChannel('all')
+    setDateRange({ start: '', end: '' })
+    setSortBy('created_at')
+    setSortOrder('desc')
+    setGroupByDate(true)
+    setCurrentPage(1)
+    setReservationListUi((u) => ({
+      ...u,
+      statisticsWeekOffset: 0,
+      cardsWeekPage: 0,
+    }))
+  }, [
+    setSearchTerm,
+    setSelectedStatus,
+    setSelectedChannel,
+    setDateRange,
+    setSortBy,
+    setSortOrder,
+    setGroupByDate,
+    setCurrentPage,
+    setReservationListUi,
+  ])
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* ??? - ????????*/}
@@ -3737,21 +3869,13 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         searchTerm={searchTerm}
-        onSearchChange={(term) => {
-          setSearchTerm(term)
-          setCurrentPage(1) // ????????????????
-        }}
-        onAddReservation={() => {
-          // ????? ID ???
-          const newId = generateReservationId()
-          setNewReservationId(newId)
-          setShowAddForm(true)
-        }}
-        onActionRequired={() => setShowActionRequiredModal(true)}
+        onSearchChange={handleHeaderSearchChange}
+        onAddReservation={handleHeaderAddReservation}
+        onActionRequired={handleOpenActionRequired}
         actionRequiredCount={actionRequiredCount}
-        onOpenFilter={() => setFilterModalOpen(true)}
-        onOpenDeletedReservations={() => setShowDeletedReservationsModal(true)}
-        onOpenFollowUpQueue={() => setFollowUpQueueModalOpen(true)}
+        onOpenFilter={handleOpenFilter}
+        onOpenDeletedReservations={handleOpenDeletedReservations}
+        onOpenFollowUpQueue={handleOpenFollowUpQueue}
         followUpQueueCount={followUpQueueUnionCount}
         cardLayout={cardLayout}
         onCardLayoutChange={setCardLayout}
@@ -3787,21 +3911,12 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         filterModalOpen={filterModalOpen}
         onFilterModalOpenChange={setFilterModalOpen}
         selectedStatus={selectedStatus}
-        onStatusChange={(status) => {
-          setSelectedStatus(status)
-          setCurrentPage(1)
-        }}
+        onStatusChange={handleFiltersStatusChange}
         selectedChannel={selectedChannel}
-        onChannelChange={(channel) => {
-          setSelectedChannel(channel)
-          setCurrentPage(1)
-        }}
+        onChannelChange={handleFiltersChannelChange}
         channels={(channels as Array<{ id: string; name: string }>) || []}
         dateRange={dateRange}
-        onDateRangeChange={(range) => {
-          setDateRange(range)
-          setCurrentPage(1)
-        }}
+        onDateRangeChange={handleFiltersDateRangeChange}
         sortBy={sortBy}
         onSortByChange={setSortBy}
         sortOrder={sortOrder}
@@ -3809,25 +3924,8 @@ const setCardLayout = (l: 'standard' | 'simple') => setReservationListUi((u) => 
         groupByDate={groupByDate}
         onGroupByDateChange={setGroupByDate}
         itemsPerPage={itemsPerPage}
-        onItemsPerPageChange={(items) => {
-          setItemsPerPage(items)
-          setCurrentPage(1)
-        }}
-        onReset={() => {
-          setSearchTerm('')
-          setSelectedStatus('all')
-          setSelectedChannel('all')
-          setDateRange({start: '', end: ''})
-          setSortBy('created_at')
-          setSortOrder('desc')
-          setGroupByDate(true) // ?????????????
-          setCurrentPage(1)
-          setReservationListUi((u) => ({
-            ...u,
-            statisticsWeekOffset: 0,
-            cardsWeekPage: 0,
-          }))
-        }}
+        onItemsPerPageChange={handleFiltersItemsPerPageChange}
+        onReset={handleFiltersReset}
       />
 
       {/* 검색 시 groupByDate 가 꺼져도 주간 통계는 유지(검색 결과·필터 기준) */}

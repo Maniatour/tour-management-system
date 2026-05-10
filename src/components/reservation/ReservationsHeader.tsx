@@ -28,7 +28,7 @@ interface ReservationsHeaderProps {
   followUpQueueCount?: number
 }
 
-export default function ReservationsHeader({
+function ReservationsHeader({
   customerIdFromUrl,
   customers,
   viewMode,
@@ -232,3 +232,5 @@ export default function ReservationsHeader({
     </div>
   )
 }
+
+export default React.memo(ReservationsHeader)

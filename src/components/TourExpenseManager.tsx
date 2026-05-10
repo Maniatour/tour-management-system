@@ -1,9 +1,12 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Bed, Package, Camera } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import Link from 'next/link'
+import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Bed, Package, Camera, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
+import { useAuth } from '@/contexts/AuthContext'
 import OptionManagementModal from './expense/OptionManagementModal'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
@@ -20,9 +23,26 @@ import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseRe
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
+import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
+import { runReceiptOcrFromImageBuffer } from '@/lib/receiptOcrBrowser'
+import { buildReceiptOcrCandidates, type ReceiptOcrCandidates as ReceiptOcrParseCandidates } from '@/lib/receiptOcrParse'
+import {
+  DEFAULT_RECEIPT_OCR_PARSE_RUNTIME,
+  fetchReceiptOcrParseRuntime,
+  MAX_BODY_MATCH_PHRASE,
+  prependBodyMatchRuleToStoredSettings,
+  suggestBodyMatchPhraseFromOcrText,
+  type ReceiptOcrParseRuntime,
+} from '@/lib/receiptOcrParseRules'
+import { canSaveReceiptOcrParseRules } from '@/lib/receiptOcrParseRulesPermissions'
+import { toast } from 'sonner'
 
 const TOUR_RECEIPT_MAX_STORAGE_BYTES = 10 * 1024 * 1024
 const TOUR_RECEIPT_MAX_ORIGINAL_BYTES = 35 * 1024 * 1024
+/** Radix Dialog(투어 상세 모달 z-1100)·관리자 헤더(z-9999) 위에 그리기 — transform/overflow 조상 탈출 */
+const TOUR_EXPENSE_MODAL_PORTAL_Z = 'z-[12000]'
+/** Dialog가 body에 pointer-events:none을 둘 때 포털 루트가 클릭·스크롤을 받도록 함 */
+const TOUR_EXPENSE_MODAL_PORTAL_INTERACTION = 'pointer-events-auto overscroll-contain'
 
 interface TourExpense {
   id: string
@@ -59,18 +79,9 @@ interface ExpenseVendor {
   name: string
 }
 
-type ReceiptOcrCandidates = {
-  paid_to: string
-  amount: number | null
-  date: string | null
-  payment_method_text: string
-  card_last4: string
-  paid_for: string
-}
-
 type ReceiptOcrResult = {
   text: string
-  candidates: ReceiptOcrCandidates
+  candidates: ReceiptOcrParseCandidates
 }
 
 interface ReservationPricing {
@@ -133,6 +144,29 @@ export default function TourExpenseManager({
   tourStatus
 }: TourExpenseManagerProps) {
   const t = useTranslations('tours.tourExpense')
+  const locale = useLocale()
+  const { userRole: authUserRole, userPosition, authUser } = useAuth()
+  const canSeeReceiptOcrRulesLink =
+    authUserRole === 'admin' ||
+    authUserRole === 'manager' ||
+    userPosition === 'super' ||
+    userPosition === 'admin'
+  const canSaveReceiptOcrQuickRule = canSaveReceiptOcrParseRules({
+    userPosition,
+    email: authUser?.email,
+  })
+
+  const [ocrParseRuntime, setOcrParseRuntime] = useState<ReceiptOcrParseRuntime>(DEFAULT_RECEIPT_OCR_PARSE_RUNTIME)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchReceiptOcrParseRuntime(supabase).then((r) => {
+      if (!cancelled) setOcrParseRuntime(r)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
   const [expenses, setExpenses] = useState<TourExpense[]>([])
   /** 명세 대조(reconciliation_matches)에 연결된 투어 지출 id */
@@ -167,6 +201,7 @@ export default function TourExpenseManager({
   /** 카메라·갤러리 확인 직후 합성 click이 배경으로 전달되며 모달이 닫히는 것을 막음 (특히 iOS). */
   const expenseModalBackdropSuppressedUntilRef = useRef(0)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
+  const [receiptViewerZoom, setReceiptViewerZoom] = useState(1)
   const [ocrReview, setOcrReview] = useState<{
     /** 신규·수정 입력폼에서 업로드 직후 OCR이면 반영 시 편집 중 지출로 바꾸지 않음 */
     applyTarget?: 'edit_expense' | 'add_form'
@@ -182,6 +217,30 @@ export default function TourExpenseManager({
     }
   } | null>(null)
   const [ocrLoadingExpenseId, setOcrLoadingExpenseId] = useState<string | null>(null)
+  const [receiptQuickRulePhrase, setReceiptQuickRulePhrase] = useState('')
+  const [receiptQuickRuleCcLabel, setReceiptQuickRuleCcLabel] = useState(false)
+  const [receiptQuickRuleSaving, setReceiptQuickRuleSaving] = useState(false)
+  const expenseForViewingReceipt = useMemo(
+    () =>
+      viewingReceipt && viewingReceipt.expenseId !== '__ocr_draft__'
+        ? expenses.find((e) => e.id === viewingReceipt.expenseId)
+        : undefined,
+    [viewingReceipt, expenses]
+  )
+
+  useEffect(() => {
+    setReceiptViewerZoom(1)
+  }, [viewingReceipt?.expenseId, viewingReceipt?.imageUrl])
+
+  useEffect(() => {
+    if (!ocrReview?.result?.text) return
+    setReceiptQuickRulePhrase(suggestBodyMatchPhraseFromOcrText(ocrReview.result.text))
+    setReceiptQuickRuleCcLabel(false)
+  }, [ocrReview?.expense?.id])
+  const [expenseModalPortalReady, setExpenseModalPortalReady] = useState(false)
+  useEffect(() => {
+    setExpenseModalPortalReady(true)
+  }, [])
   const [showDriveImporter, setShowDriveImporter] = useState(false)
   const [showMoreCategories, setShowMoreCategories] = useState(false)
   
@@ -199,7 +258,7 @@ export default function TourExpenseManager({
   // 예약별 지출 데이터 상태
   const [reservationExpenses, setReservationExpenses] = useState<Record<string, number>>({})
   const [reservationChannels, setReservationChannels] = useState<Record<string, any>>({})
-  const receiptOnlyPaidFor = 'Receipt Pending'
+  const receiptOnlyPaidFor = TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR
 
   function translateReceiptImageError(error: unknown): string {
     if (!(error instanceof Error)) return t('unknownError')
@@ -275,22 +334,28 @@ export default function TourExpenseManager({
   const canRunReceiptOcr =
     userRole === 'admin' || userRole === 'manager' || userRole === 'team_member'
 
-  const findPaymentMethodCandidate = (candidates: ReceiptOcrCandidates) => {
+  const findPaymentMethodCandidate = (candidates: ReceiptOcrParseCandidates) => {
+    const forced = (candidates.payment_method_id ?? '').trim()
+    if (forced) {
+      const byId = paymentMethodOptions.find((option) => option.id === forced)
+      if (byId) return byId.id
+    }
     const last4 = candidates.card_last4.trim()
     const paymentText = candidates.payment_method_text.trim().toLowerCase()
 
     if (last4) {
-      const byLast4 = paymentMethodOptions.find((option) =>
-        option.name.includes(last4) || option.method.includes(last4)
-      )
+      const byLast4 = paymentMethodOptions.find((option) => {
+        const methodStr = String(option.method ?? '')
+        return option.name.includes(last4) || methodStr.includes(last4)
+      })
       if (byLast4) return byLast4.id
     }
 
     if (paymentText) {
-      const byText = paymentMethodOptions.find((option) =>
-        option.name.toLowerCase().includes(paymentText) ||
-        option.method.toLowerCase().includes(paymentText)
-      )
+      const byText = paymentMethodOptions.find((option) => {
+        const methodLc = String(option.method ?? '').toLowerCase()
+        return option.name.toLowerCase().includes(paymentText) || methodLc.includes(paymentText)
+      })
       if (byText) return byText.id
     }
 
@@ -355,23 +420,57 @@ export default function TourExpenseManager({
     [categories, findPaymentMethodCandidate, t]
   )
 
+  /** 브라우저에서 이미지 바이트 확보 → Tesseract는 브라우저에서 실행 (서버 worker 경로·500 방지) */
+  const loadReceiptImageBytesForOcr = useCallback(
+    async (expense: TourExpense, signal?: AbortSignal): Promise<{ buffer: ArrayBuffer; mime: string }> => {
+      const url = expense.image_url?.trim()
+      if (!url) throw new Error(t('receiptOcrNoImage'))
+
+      try {
+        const imgRes = await fetch(url, { mode: 'cors', cache: 'no-store', signal })
+        if (imgRes.ok) {
+          const mime = imgRes.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg'
+          const buffer = await imgRes.arrayBuffer()
+          if (buffer.byteLength > 0) return { buffer, mime }
+        }
+      } catch {
+        /* Storage 폴백 */
+      }
+
+      const fp = expense.file_path?.trim()
+      if (fp) {
+        const { data, error } = await supabase.storage.from('tour-expenses').download(fp)
+        if (!error && data && data.size > 0) {
+          const mime =
+            data.type && data.type !== 'application/octet-stream' ? data.type : 'image/jpeg'
+          return { buffer: await data.arrayBuffer(), mime }
+        }
+      }
+
+      throw new Error(t('receiptOcrCouldNotLoadImage'))
+    },
+    [supabase, t]
+  )
+
   const runOcrAfterReceiptUpload = useCallback(
     async (imageUrl: string, filePath: string) => {
       if (!showAddFormRef.current) return
       try {
         setOcrLoadingExpenseId('__draft__')
-        const response = await fetch('/api/expenses/receipt-ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageUrl }),
-        })
-        const result = await response.json()
-        if (!response.ok) {
-          console.warn('Receipt OCR after upload:', result?.error)
-          return
-        }
-        const ocrResult = result as ReceiptOcrResult
         const stub = buildOcrStubExpense(imageUrl, filePath)
+        const { buffer, mime } = await loadReceiptImageBytesForOcr(stub)
+        const { text } = await runReceiptOcrFromImageBuffer(buffer, mime)
+        const rt = await fetchReceiptOcrParseRuntime(supabase)
+        setOcrParseRuntime(rt)
+        const ocrResult: ReceiptOcrResult = {
+          text,
+          candidates: buildReceiptOcrCandidates(text, { runtime: rt }),
+        }
+        setViewingReceipt({
+          imageUrl,
+          expenseId: '__ocr_draft__',
+          paidFor: getExpensePaidForLabel(receiptOnlyPaidFor),
+        })
         setOcrReview(buildOcrReviewFromResult(stub, ocrResult, 'add_form'))
       } catch (e) {
         console.warn('Receipt OCR after upload failed:', e)
@@ -379,7 +478,7 @@ export default function TourExpenseManager({
         setOcrLoadingExpenseId(null)
       }
     },
-    [buildOcrReviewFromResult, buildOcrStubExpense]
+    [buildOcrReviewFromResult, buildOcrStubExpense, getExpensePaidForLabel, loadReceiptImageBytesForOcr, receiptOnlyPaidFor]
   )
 
   const handlePaymentMethodTabChange = (tab: 'own' | 'other') => {
@@ -985,7 +1084,27 @@ export default function TourExpenseManager({
             .single()
 
           if (error) throw error
-          if (data) inserted.push(data)
+          if (data) {
+            let expenseRow: TourExpense = data as TourExpense
+            try {
+              const ocrRes = await fetch('/api/expenses/receipt-ocr-apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ expenseId: data.id }),
+              })
+              const ocrJson = (await ocrRes.json().catch(() => ({}))) as {
+                ok?: boolean
+                expense?: TourExpense
+              }
+              if (ocrRes.ok && ocrJson?.ok === true && ocrJson.expense) {
+                expenseRow = ocrJson.expense
+              }
+            } catch (ocrApplyErr) {
+              console.warn('receipt-ocr-apply after receipt-only upload:', ocrApplyErr)
+            }
+            inserted.push(expenseRow)
+          }
         } catch (itemErr) {
           console.error('Receipt-only batch item error:', itemErr)
           failCount += 1
@@ -1289,25 +1408,43 @@ export default function TourExpenseManager({
       return
     }
 
+    const controller = new AbortController()
+    const ocrFetchMs = 150_000
+    const timeoutId = window.setTimeout(() => controller.abort(), ocrFetchMs)
+
     try {
       setOcrLoadingExpenseId(expense.id)
-      const response = await fetch('/api/expenses/receipt-ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl })
-      })
-
-      const result = await response.json()
-      if (!response.ok) {
-        throw new Error(result?.error || t('receiptOcrFailed'))
+      const { buffer, mime } = await loadReceiptImageBytesForOcr(expense, controller.signal)
+      const { text } = await runReceiptOcrFromImageBuffer(buffer, mime)
+      const rt = await fetchReceiptOcrParseRuntime(supabase)
+      setOcrParseRuntime(rt)
+      const ocrResult: ReceiptOcrResult = {
+        text,
+        candidates: buildReceiptOcrCandidates(text, { runtime: rt }),
       }
 
-      const ocrResult = result as ReceiptOcrResult
-      setOcrReview(buildOcrReviewFromResult(expense, ocrResult, 'edit_expense'))
+      let review: NonNullable<typeof ocrReview>
+      try {
+        review = buildOcrReviewFromResult(expense, ocrResult, 'edit_expense')
+      } catch (buildErr) {
+        console.error('Receipt OCR build review error:', buildErr)
+        throw new Error(buildErr instanceof Error ? buildErr.message : t('receiptOcrFailed'))
+      }
+      setViewingReceipt({
+        imageUrl,
+        expenseId: expense.id,
+        paidFor: getExpensePaidForLabel(expense.paid_for),
+      })
+      setOcrReview(review)
     } catch (error) {
       console.error('Receipt OCR error:', error)
-      alert(error instanceof Error ? error.message : t('receiptOcrFailed'))
+      if (error instanceof Error && error.name === 'AbortError') {
+        alert(t('receiptOcrTimedOut', { seconds: Math.round(ocrFetchMs / 1000) }))
+      } else {
+        alert(error instanceof Error ? error.message : t('receiptOcrFailed'))
+      }
     } finally {
+      window.clearTimeout(timeoutId)
       setOcrLoadingExpenseId(null)
     }
   }
@@ -1352,6 +1489,7 @@ export default function TourExpenseManager({
       setShowMoreCategories(false)
       setReimbursementSectionOpen(false)
       setOcrReview(null)
+      setViewingReceipt(null)
       return
     }
 
@@ -1391,7 +1529,41 @@ export default function TourExpenseManager({
     )
     setShowAddForm(true)
     setOcrReview(null)
+    setViewingReceipt(null)
   }
+
+  const handleSaveReceiptQuickBodyMatchRule = useCallback(async () => {
+    if (!ocrReview) return
+    setReceiptQuickRuleSaving(true)
+    try {
+      const res = await prependBodyMatchRuleToStoredSettings(supabase, {
+        contains_phrase: receiptQuickRulePhrase,
+        paid_to: ocrReview.draft.paid_to,
+        paid_for: ocrReview.draft.paid_for,
+        payment_method_id: ocrReview.draft.payment_method,
+        payment_use_cc_label: receiptQuickRuleCcLabel,
+      })
+      if (!res.ok) {
+        if (res.message === 'duplicate') {
+          toast.error(t('receiptOcrQuickRuleDuplicate'))
+        } else if (res.message === 'empty_phrase') {
+          toast.error(t('receiptOcrQuickRulePhraseRequired'))
+        } else if (res.message === 'empty_targets') {
+          toast.error(t('receiptOcrQuickRuleTargetsRequired'))
+        } else {
+          toast.error(res.message)
+        }
+        return
+      }
+      toast.success(t('receiptOcrQuickRuleSaved'))
+      const rt = await fetchReceiptOcrParseRuntime(supabase)
+      setOcrParseRuntime(rt)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('unknownError'))
+    } finally {
+      setReceiptQuickRuleSaving(false)
+    }
+  }, [ocrReview, receiptQuickRulePhrase, receiptQuickRuleCcLabel, supabase, t])
 
   // 지출 수정 취소
   const handleCancelEdit = () => {
@@ -2372,10 +2544,11 @@ export default function TourExpenseManager({
                             imageUrl: expense.image_url,
                             paidFor: getExpensePaidForLabel(expense.paid_for)
                           })
-                          setViewingReceipt({ 
-                            imageUrl: expense.image_url!, 
+                          setOcrReview((prev) => (prev && prev.expense.id !== expense.id ? null : prev))
+                          setViewingReceipt({
+                            imageUrl: expense.image_url!,
                             expenseId: expense.id,
-                            paidFor: getExpensePaidForLabel(expense.paid_for)
+                            paidFor: getExpensePaidForLabel(expense.paid_for),
                           })
                         }}
                         className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
@@ -2425,210 +2598,384 @@ export default function TourExpenseManager({
         </div>
       )}
 
-      {/* 영수증 보기 모달 */}
-      {viewingReceipt && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-blue-600" />
-                <h3 className="text-lg font-semibold text-gray-900">
-                  영수증: {viewingReceipt.paidFor}
-                </h3>
-              </div>
-              <button
-                onClick={() => setViewingReceipt(null)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(90vh-100px)]">
-              <div className="flex flex-col items-center">
-                <img
-                  src={viewingReceipt.imageUrl}
-                  alt={`${viewingReceipt.paidFor} 영수증`}
-                  className="max-w-full h-auto rounded-lg shadow-lg"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.src = '/placeholder-receipt.png'
-                    target.alt = '영수증 이미지를 불러올 수 없습니다'
+      {/* 영수증 보기 + OCR 추출(오른쪽) — 단일 모달 */}
+      {expenseModalPortalReady &&
+        viewingReceipt &&
+        createPortal(
+          <div
+            className={`fixed inset-0 bg-black/75 flex items-center justify-center p-2 sm:p-4 ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
+          >
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+              <div className="flex items-start justify-between gap-3 p-3 sm:p-4 border-b shrink-0">
+                <div className="flex items-start gap-2 min-w-0">
+                  <Receipt className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {t('receiptViewerTitle', { label: viewingReceipt.paidFor })}
+                    </h3>
+                    {ocrReview && ocrReview.expense.id === viewingReceipt.expenseId ? (
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        {ocrReview.applyTarget === 'add_form'
+                          ? t('receiptOcrReviewDescriptionAddForm')
+                          : t('receiptOcrReviewDescription')}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-gray-500 mt-0.5">{t('receiptViewerLayoutHint')}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewingReceipt(null)
+                    setOcrReview(null)
                   }}
-                />
-                <div className="mt-4 flex gap-2">
-                  <a
-                    href={viewingReceipt.imageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                  >
-                    <ImageIcon className="w-4 h-4" />
-                    새 창에서 열기
-                  </a>
+                  className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+                {/* 왼쪽: 영수증 이미지 + 확대/축소 */}
+                <div className="flex flex-col flex-1 min-w-0 min-h-[30vh] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-gray-200">
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-100 bg-slate-50 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReceiptViewerZoom((z) => Math.max(0.25, Math.round((z - 0.25) * 100) / 100))
+                      }
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                      title={t('receiptViewerZoomOut')}
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs text-gray-600 tabular-nums min-w-[3rem] text-center">
+                      {Math.round(receiptViewerZoom * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReceiptViewerZoom((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))
+                      }
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                      title={t('receiptViewerZoomIn')}
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReceiptViewerZoom(1)}
+                      className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
+                    >
+                      {t('receiptViewerZoomReset')}
+                    </button>
+                    <a
+                      href={viewingReceipt.imageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 ml-auto px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      {t('openInNewWindow')}
+                    </a>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-auto p-3 bg-slate-100/90">
+                    <img
+                      src={viewingReceipt.imageUrl}
+                      alt={`${viewingReceipt.paidFor} receipt`}
+                      style={{
+                        width: `${100 * receiptViewerZoom}%`,
+                        maxWidth: 'none',
+                        height: 'auto',
+                      }}
+                      className="rounded-lg shadow-md block"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement
+                        target.src = '/placeholder-receipt.png'
+                        target.alt = t('receiptImageLoadErrorAlt')
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* 오른쪽: OCR 미실행 안내 또는 추출 결과 편집 */}
+                <div className="flex flex-col flex-1 min-w-0 min-h-[36vh] lg:max-h-[calc(92vh-5.5rem)] relative bg-white">
+                  {(() => {
+                    const ocrMatches =
+                      ocrReview && ocrReview.expense.id === viewingReceipt.expenseId ? ocrReview : null
+                    const ocrLoadingThis =
+                      ocrLoadingExpenseId &&
+                      (ocrLoadingExpenseId === viewingReceipt.expenseId ||
+                        (viewingReceipt.expenseId === '__ocr_draft__' &&
+                          ocrLoadingExpenseId === '__draft__'))
+
+                    if (ocrLoadingThis && !ocrMatches) {
+                      return (
+                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-gray-600">
+                          <p className="text-sm">{t('receiptOcrAnalyzingAfterUpload')}</p>
+                        </div>
+                      )
+                    }
+
+                    if (ocrMatches) {
+                      return (
+                        <>
+                          <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  {t('paidTo')}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={ocrMatches.draft.paid_to}
+                                  onChange={(e) =>
+                                    setOcrReview((prev) =>
+                                      prev
+                                        ? { ...prev, draft: { ...prev.draft, paid_to: e.target.value } }
+                                        : prev
+                                    )
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  {t('amount')} (USD)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={ocrMatches.draft.amount}
+                                  onChange={(e) =>
+                                    setOcrReview((prev) =>
+                                      prev
+                                        ? { ...prev, draft: { ...prev.draft, amount: e.target.value } }
+                                        : prev
+                                    )
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  {t('paidFor')}
+                                </label>
+                                <select
+                                  value={ocrMatches.draft.paid_for}
+                                  onChange={(e) =>
+                                    setOcrReview((prev) =>
+                                      prev
+                                        ? { ...prev, draft: { ...prev.draft, paid_for: e.target.value } }
+                                        : prev
+                                    )
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <option value="">{t('selectOptions.pleaseSelect')}</option>
+                                  {categories.map((category) => (
+                                    <option key={category.id} value={category.name}>
+                                      {category.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  {t('paymentMethod')}
+                                </label>
+                                <select
+                                  value={ocrMatches.draft.payment_method}
+                                  onChange={(e) =>
+                                    setOcrReview((prev) =>
+                                      prev
+                                        ? {
+                                            ...prev,
+                                            draft: { ...prev.draft, payment_method: e.target.value },
+                                          }
+                                        : prev
+                                    )
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <option value="">{t('selectOptions.pleaseSelect')}</option>
+                                  {activePaymentMethodOptions.map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {option.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  {t('receiptOcrDateLabel')}
+                                </label>
+                                <input
+                                  type="date"
+                                  value={ocrMatches.draft.date}
+                                  onChange={(e) =>
+                                    setOcrReview((prev) =>
+                                      prev
+                                        ? { ...prev, draft: { ...prev.draft, date: e.target.value } }
+                                        : prev
+                                    )
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  {t('memo')}
+                                </label>
+                                <textarea
+                                  value={ocrMatches.draft.note}
+                                  onChange={(e) =>
+                                    setOcrReview((prev) =>
+                                      prev
+                                        ? { ...prev, draft: { ...prev.draft, note: e.target.value } }
+                                        : prev
+                                    )
+                                  }
+                                  rows={3}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                              <div className="mb-2 text-sm font-medium text-gray-700">
+                                {t('receiptOcrRawText')}
+                              </div>
+                              <textarea
+                                value={ocrMatches.result.text}
+                                readOnly
+                                rows={6}
+                                className="w-full rounded border border-gray-200 bg-white p-2 text-xs text-gray-600 font-mono"
+                              />
+                            </div>
+                            {canSaveReceiptOcrQuickRule ? (
+                              <details className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 [&[open]_summary_.qr-chev]:rotate-90">
+                                <summary className="cursor-pointer text-sm font-medium text-amber-950 list-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+                                  <ChevronRight className="qr-chev w-4 h-4 shrink-0 transition-transform" />
+                                  {t('receiptOcrQuickRuleSummary')}
+                                </summary>
+                                <p className="text-xs text-amber-900/80 mt-2 mb-3 leading-relaxed">
+                                  {t('receiptOcrQuickRuleHint')}
+                                </p>
+                                <div className="space-y-2">
+                                  <div>
+                                    <label
+                                      htmlFor="receipt-quick-rule-phrase"
+                                      className="block text-xs font-medium text-gray-700 mb-1"
+                                    >
+                                      {t('receiptOcrQuickRulePhraseLabel')}
+                                    </label>
+                                    <input
+                                      id="receipt-quick-rule-phrase"
+                                      type="text"
+                                      maxLength={MAX_BODY_MATCH_PHRASE}
+                                      value={receiptQuickRulePhrase}
+                                      onChange={(e) => setReceiptQuickRulePhrase(e.target.value)}
+                                      className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                    <p className="text-[11px] text-gray-500 mt-1">
+                                      {t('receiptOcrQuickRulePhraseNote', {
+                                        max: MAX_BODY_MATCH_PHRASE,
+                                      })}
+                                    </p>
+                                  </div>
+                                  <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={receiptQuickRuleCcLabel}
+                                      onChange={(e) => setReceiptQuickRuleCcLabel(e.target.checked)}
+                                      className="mt-0.5 rounded border-gray-300"
+                                    />
+                                    <span>{t('receiptOcrQuickRuleCcLabel')}</span>
+                                  </label>
+                                  <p className="text-xs text-gray-600">{t('receiptOcrQuickRuleUsesDraft')}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSaveReceiptQuickBodyMatchRule()}
+                                    disabled={receiptQuickRuleSaving}
+                                    className="w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg bg-amber-700 text-white hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {receiptQuickRuleSaving ? '…' : t('receiptOcrQuickRuleSave')}
+                                  </button>
+                                </div>
+                              </details>
+                            ) : null}
+                          </div>
+                          <div className="shrink-0 flex flex-col gap-3 p-4 border-t border-gray-200 bg-gray-50/80 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="text-sm min-h-[1.25rem]">
+                              {canSeeReceiptOcrRulesLink ? (
+                                <Link
+                                  href={`/${locale}/admin/receipt-ocr-parse-rules`}
+                                  className="text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  {t('receiptOcrManageParseRules')}
+                                </Link>
+                              ) : null}
+                            </div>
+                            <div className="flex gap-2 flex-1 sm:justify-end flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setOcrReview(null)}
+                                className="flex-1 sm:flex-none min-w-[7rem] px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                              >
+                                {t('cancel')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleApplyOcrToForm}
+                                className="flex-1 sm:flex-none min-w-[10rem] px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                              >
+                                {t('receiptOcrApplyToForm')}
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )
+                    }
+
+                    return (
+                      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-4">
+                        <p className="text-sm text-gray-600 max-w-sm">{t('receiptViewerOcrPrompt')}</p>
+                        {canRunReceiptOcr && expenseForViewingReceipt?.image_url?.trim() ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleRunReceiptOcr(expenseForViewingReceipt)}
+                            disabled={
+                              ocrLoadingExpenseId === viewingReceipt.expenseId ||
+                              (viewingReceipt.expenseId === '__ocr_draft__' &&
+                                ocrLoadingExpenseId === '__draft__')
+                            }
+                            className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                            title={t('receiptOcrAction')}
+                          >
+                            {ocrLoadingExpenseId === viewingReceipt.expenseId ||
+                            (viewingReceipt.expenseId === '__ocr_draft__' &&
+                              ocrLoadingExpenseId === '__draft__')
+                              ? '...'
+                              : t('receiptOcrAction')}
+                          </button>
+                        ) : null}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* OCR 추출 확인 모달 (지출 모달 z-50 위에 표시) */}
-      {ocrReview && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center z-[60] p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl my-8">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">{t('receiptOcrReviewTitle')}</h3>
-                <p className="text-sm text-gray-500">
-                  {ocrReview.applyTarget === 'add_form'
-                    ? t('receiptOcrReviewDescriptionAddForm')
-                    : t('receiptOcrReviewDescription')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOcrReview(null)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paidTo')}</label>
-                  <input
-                    type="text"
-                    value={ocrReview.draft.paid_to}
-                    onChange={(e) =>
-                      setOcrReview((prev) =>
-                        prev ? { ...prev, draft: { ...prev.draft, paid_to: e.target.value } } : prev
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('amount')} (USD)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={ocrReview.draft.amount}
-                    onChange={(e) =>
-                      setOcrReview((prev) =>
-                        prev ? { ...prev, draft: { ...prev.draft, amount: e.target.value } } : prev
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paidFor')}</label>
-                  <select
-                    value={ocrReview.draft.paid_for}
-                    onChange={(e) =>
-                      setOcrReview((prev) =>
-                        prev ? { ...prev, draft: { ...prev.draft, paid_for: e.target.value } } : prev
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">{t('selectOptions.pleaseSelect')}</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.name}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paymentMethod')}</label>
-                  <select
-                    value={ocrReview.draft.payment_method}
-                    onChange={(e) =>
-                      setOcrReview((prev) =>
-                        prev ? { ...prev, draft: { ...prev.draft, payment_method: e.target.value } } : prev
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">{t('selectOptions.pleaseSelect')}</option>
-                    {activePaymentMethodOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('receiptOcrDateLabel')}</label>
-                  <input
-                    type="date"
-                    value={ocrReview.draft.date}
-                    onChange={(e) =>
-                      setOcrReview((prev) =>
-                        prev ? { ...prev, draft: { ...prev.draft, date: e.target.value } } : prev
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('memo')}</label>
-                  <textarea
-                    value={ocrReview.draft.note}
-                    onChange={(e) =>
-                      setOcrReview((prev) =>
-                        prev ? { ...prev, draft: { ...prev.draft, note: e.target.value } } : prev
-                      )
-                    }
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                <div className="mb-2 text-sm font-medium text-gray-700">{t('receiptOcrRawText')}</div>
-                <textarea
-                  value={ocrReview.result.text}
-                  readOnly
-                  rows={8}
-                  className="w-full rounded border border-gray-200 bg-white p-2 text-xs text-gray-600"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 p-4 border-t">
-              <button
-                type="button"
-                onClick={() => setOcrReview(null)}
-                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                {t('cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={handleApplyOcrToForm}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                {t('receiptOcrApplyToForm')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* 지출 추가 폼 모달 */}
-      {showAddForm && (
+      {expenseModalPortalReady &&
+        showAddForm &&
+        createPortal(
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto"
+          className={`fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center p-4 overflow-y-auto ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
           onClick={(e) => {
             // 모달 배경 클릭 시에만 닫기 (모달 내부 클릭은 무시)
             if (Date.now() < expenseModalBackdropSuppressedUntilRef.current) return
@@ -3192,12 +3539,15 @@ export default function TourExpenseManager({
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
       
-      {webcamTarget && (
+      {expenseModalPortalReady &&
+        webcamTarget &&
+        createPortal(
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+          className={`fixed inset-0 flex items-center justify-center bg-black/70 p-4 ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
           onClick={() => setWebcamTarget(null)}
         >
           <div
@@ -3230,8 +3580,9 @@ export default function TourExpenseManager({
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
 
       {/* 선택지 관리 모달 */}
       <OptionManagementModal

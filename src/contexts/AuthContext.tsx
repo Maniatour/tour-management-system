@@ -6,6 +6,14 @@ import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { isSuperAdminEmail } from '@/lib/superAdmin'
+import {
+  clearSimulationBrowserStorage,
+  getPublicSupabaseUrl,
+  readSimulationBackendMeta,
+  stripSimulationBackendMeta,
+  syncSimulationStorageWithCurrentBackend,
+  withSimulationBackendMeta,
+} from '@/lib/simulationBackend'
 
 function authUserFromSupabaseSessionUser(sessionUser: User): AuthUser {
   return {
@@ -414,6 +422,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') {
       return
     }
+
+    syncSimulationStorageWithCurrentBackend()
     
     // 이미 시뮬레이션 상태가 설정되어 있으면 로딩 상태만 업데이트
     if (simulatedUser && isSimulating) {
@@ -533,29 +543,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     if (simulationData) {
+      const rawRecord = simulationData as Record<string, unknown>
+      const currentUrl = getPublicSupabaseUrl()
+      const storedBackend = readSimulationBackendMeta(rawRecord)
+      if (currentUrl && storedBackend && storedBackend !== currentUrl) {
+        console.warn('AuthContext: Simulation snapshot belongs to another Supabase project, discarding')
+        clearSimulationBrowserStorage()
+        simulationData = null
+      }
+    }
+
+    if (simulationData) {
+      const cleaned = stripSimulationBackendMeta(simulationData as Record<string, unknown>) as unknown as SimulatedUser
       // 시뮬레이션 데이터 유효성 검사
-      if (simulationData.email && simulationData.role) {
-        console.log('AuthContext: Valid simulation data found, restoring...', simulationData)
+      if (cleaned.email && cleaned.role) {
+        console.log('AuthContext: Valid simulation data found, restoring...', cleaned)
         
         // 상태 설정 (동기적으로 즉시 설정)
-        setSimulatedUser(simulationData)
+        setSimulatedUser(cleaned)
         setIsSimulating(true)
         setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
         setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
         
-        console.log('AuthContext: Simulation restored successfully:', simulationData)
+        console.log('AuthContext: Simulation restored successfully:', cleaned)
         
         // 언어 전환 시 시뮬레이션 상태가 보존되었음을 확인
         console.log('AuthContext: Simulation state preserved during language switch')
         
+        const persist = withSimulationBackendMeta(cleaned)
+        const persistStr = JSON.stringify(persist)
         // 추가 안전장치: 시뮬레이션 상태를 다시 한 번 저장하여 지속성 보장
-        localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
-        sessionStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+        localStorage.setItem('positionSimulation', persistStr)
+        sessionStorage.setItem('positionSimulation', persistStr)
         document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
-        document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulationData))}; path=/; max-age=3600; SameSite=Lax`
+        document.cookie = `simulation_user=${encodeURIComponent(persistStr)}; path=/; max-age=3600; SameSite=Lax`
         
         // 시뮬레이션 상태가 복원되었음을 전역적으로 알림
-        window.dispatchEvent(new CustomEvent('simulationRestored', { detail: simulationData }))
+        window.dispatchEvent(new CustomEvent('simulationRestored', { detail: cleaned }))
         
         return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
       } else {
@@ -587,10 +611,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // 시뮬레이션 데이터가 사라진 경우 조용히 복원 (로그 레벨을 낮춤)
         console.debug('AuthContext: Simulation data lost from localStorage, restoring...')
         // 시뮬레이션 데이터가 사라진 경우 다시 저장
-        localStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
-        sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
+        const lostPayload = JSON.stringify(withSimulationBackendMeta(simulatedUser))
+        localStorage.setItem('positionSimulation', lostPayload)
+        sessionStorage.setItem('positionSimulation', lostPayload)
         document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
-        document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulatedUser))}; path=/; max-age=3600; SameSite=Lax`
+        document.cookie = `simulation_user=${encodeURIComponent(lostPayload)}; path=/; max-age=3600; SameSite=Lax`
       } else {
         // 저장된 데이터가 현재 상태와 다른지 확인
         try {
@@ -598,9 +623,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (parsedSaved.email !== simulatedUser.email) {
             // 시뮬레이션 데이터 불일치 시 조용히 업데이트 (로그 레벨을 낮춤)
             console.debug('AuthContext: Simulation data mismatch, updating...')
-            localStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
-            sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
-            document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulatedUser))}; path=/; max-age=3600; SameSite=Lax`
+            const mismatchPayload = JSON.stringify(withSimulationBackendMeta(simulatedUser))
+            localStorage.setItem('positionSimulation', mismatchPayload)
+            sessionStorage.setItem('positionSimulation', mismatchPayload)
+            document.cookie = `simulation_user=${encodeURIComponent(mismatchPayload)}; path=/; max-age=3600; SameSite=Lax`
           }
         } catch (error) {
           console.error('AuthContext: Error parsing saved simulation data:', error)
@@ -1278,15 +1304,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setSimulatedUser(simulatedUserData)
       setIsSimulating(true)
-      
-      localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
-      
-      // sessionStorage에도 백업 저장
-      sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
+
+      const persisted = withSimulationBackendMeta(simulatedUserData)
+      const persistedStr = JSON.stringify(persisted)
+      localStorage.setItem('positionSimulation', persistedStr)
+      sessionStorage.setItem('positionSimulation', persistedStr)
       
       // 쿠키에도 시뮬레이션 정보 저장
       document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
-      document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulatedUserData))}; path=/; max-age=3600; SameSite=Lax`
+      document.cookie = `simulation_user=${encodeURIComponent(persistedStr)}; path=/; max-age=3600; SameSite=Lax`
       
       console.log('Simulation started:', simulatedUserData)
       setLoading(false)

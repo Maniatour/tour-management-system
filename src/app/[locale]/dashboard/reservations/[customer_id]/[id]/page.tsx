@@ -2462,12 +2462,13 @@ export default function CustomerReservations() {
                           <>
                             <div className="flex items-center print:mb-1">
                               {channel.favicon_url ? (
-                                <Image 
-                                  src={channel.favicon_url} 
-                                  alt={`${channel.name} favicon`} 
+                                <Image
+                                  src={channel.favicon_url}
+                                  alt={`${channel.name} favicon`}
                                   width={16}
                                   height={16}
-                                      className="rounded mr-2 flex-shrink-0 print:w-6 print:h-6 print:mr-2"
+                                  className="mr-2 h-4 w-4 shrink-0 rounded print:mr-2 print:h-6 print:w-6"
+                                  style={{ width: 'auto', height: 'auto' }}
                                   onError={(e) => {
                                     const target = e.target as HTMLImageElement
                                     target.style.display = 'none'

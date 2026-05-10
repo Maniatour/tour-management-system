@@ -3,6 +3,9 @@ import createNextIntlPlugin from 'next-intl/plugin'
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig = {
+	// tesseract.js는 worker 스크립트 경로를 번들에 넣으면 __dirname 이 깨져 MODULE_NOT_FOUND 발생
+	serverExternalPackages: ['tesseract.js', 'tesseract.js-core'],
+
 	// 빌드 최적화 설정
 	typescript: {
 		ignoreBuildErrors: true // 빌드 시 TypeScript 에러 무시 (개발 시에만 체크)

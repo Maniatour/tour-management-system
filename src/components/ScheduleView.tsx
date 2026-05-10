@@ -2713,6 +2713,10 @@ export default function ScheduleView() {
       // 각 날짜별로 데이터 계산 (우측 합계는 당월 컬럼만 포함)
       monthDays.forEach(({ dateString, isEdgePadding }) => {
         const dayTours = productTours.filter(tour => tour.tour_date === dateString)
+        /** 멀티데이 포함: 해당 날짜가 투어 진행일이면 1건 (인원·용량 계산은 아래 dayTours 기준 유지) */
+        const toursCoveringThisDate = productTours.filter(
+          (t) => tourCoversScheduleDate(t, dateString) && !isTourCancelled(t.tour_status)
+        )
         const dayReservations = reservations.filter(res => 
           res.product_id === productId && 
           res.tour_date === dateString &&
@@ -2857,7 +2861,7 @@ export default function ScheduleView() {
                 totalSpotsLeft: capTotalSpotsLeft
               }
 
-        // 멀티데이 투어 처리: 시작일에만 인원 표시
+        // 멀티데이: 예약·인원·용량(dayTours)은 시작일 기준, 투어 건수(tours)만 진행일마다 집계
         if (!dailyData[dateString]) {
           dailyData[dateString] = {
             totalPeople: 0,
@@ -2876,7 +2880,7 @@ export default function ScheduleView() {
             tourCapacityBreakdown: null
           }
         }
-        // 멀티데이든 1일 투어든, 해당 날짜(시작일)에만 합산
+        // 인원·대기 등은 예약 tour_date(시작일) 기준 합산
         dailyData[dateString].totalPeople += dayTotalPeople
         dailyData[dateString].privateTourPeople += dayPrivateTourPeople
         dailyData[dateString].companionTourPeople += dayCompanionTourPeople
@@ -2887,7 +2891,7 @@ export default function ScheduleView() {
         dailyData[dateString].assignmentPendingReservationCount += dayAssignmentPendingReservationCount
         dailyData[dateString].koPeople += dayKoPeople
         dailyData[dateString].enPeople += dayEnPeople
-        dailyData[dateString].tours += dayTours.length
+        dailyData[dateString].tours += toursCoveringThisDate.length
         Object.entries(choiceCountsByKey).forEach(([k, v]) => {
           dailyData[dateString].choiceCounts[k] = (dailyData[dateString].choiceCounts[k] || 0) + v
         })
@@ -2909,7 +2913,18 @@ export default function ScheduleView() {
     })
 
     return data
-  }, [tours, reservations, customers, products, selectedProducts, monthDays, reservationChoices, teamMembers, inactiveTeamMembers])
+  }, [
+    tours,
+    reservations,
+    customers,
+    products,
+    selectedProducts,
+    monthDays,
+    reservationChoices,
+    teamMembers,
+    inactiveTeamMembers,
+    tourCoversScheduleDate,
+  ])
 
   // 가이드별 스케줄 데이터 계산
   const guideScheduleData = useMemo(() => {
@@ -4642,13 +4657,13 @@ export default function ScheduleView() {
     return totals
   }, [vehicleScheduleData, monthDays])
 
-  // 날짜별 투어 갯수 (일별 합계에서 차량 합계와 비교용) - confirmed 만, 멀티데이는 매 진행일마다 1건씩
+  // 날짜별 투어 갯수 (일별 합계·차량 행과 동일): 차량 배정된 투어만, 멀티데이는 진행일마다 1건
   const tourCountPerDate = useMemo(() => {
     const counts: Record<string, number> = {}
     monthDays.forEach(({ dateString }) => {
       counts[dateString] = tours.filter(
         (t) =>
-          (t.tour_status || '').toString().toLowerCase() === 'confirmed' &&
+          Boolean(t.tour_car_id && String(t.tour_car_id).trim()) &&
           tourCoversScheduleDate(t, dateString)
       ).length
     })
@@ -5308,7 +5323,7 @@ export default function ScheduleView() {
             <tbody className="divide-y divide-gray-200">
               {/* 가이드별 총계 행 */}
               <tr className="bg-green-100 font-semibold">
-                <td className="px-1 py-0 text-xs text-gray-900" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
+                <td className="px-1 py-0 text-xs text-gray-900 sticky left-0 z-40 bg-green-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -5431,7 +5446,7 @@ export default function ScheduleView() {
                 return (
                   <tr 
                     key={teamMemberId} 
-                    className={`hover:bg-gray-50 transition-colors ${
+                    className={`group hover:bg-gray-50 transition-colors ${
                       draggedGuideRow === teamMemberId ? 'opacity-50 bg-blue-50' : ''
                     }`}
                     onDragOver={(e) => handleGuideRowDragOver(e, teamMemberId)}
@@ -5447,7 +5462,9 @@ export default function ScheduleView() {
                     }}
                   >
                     <td 
-                      className="px-1 py-0 text-xs leading-tight cursor-grab active:cursor-grabbing select-none" 
+                      className={`px-1 py-0 text-xs leading-tight cursor-grab active:cursor-grabbing select-none sticky left-0 z-40 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${
+                        draggedGuideRow === teamMemberId ? 'bg-blue-50' : 'bg-white group-hover:bg-gray-50'
+                      }`}
                       style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}
                       draggable
                       onDragStart={(e) => handleGuideRowDragStart(e, teamMemberId)}
@@ -6101,12 +6118,12 @@ export default function ScheduleView() {
               <table className="w-full border-collapse" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
                 <tbody>
                   <tr
-                    className="bg-purple-50 cursor-pointer hover:bg-purple-100/90 transition-colors"
+                    className="group bg-purple-50 cursor-pointer hover:bg-purple-100/90 transition-colors"
                     onClick={() => setBookingRowExpanded(v => !v)}
                     title={bookingRowExpanded ? '클릭하여 상세 접기' : '클릭하여 시간·업체별 상세 펼치기'}
                   >
                     <td
-                      className={`px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
+                      className={`px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-gray-800 sticky left-0 z-40 bg-purple-50 group-hover:bg-purple-100/90 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
                       style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}
                     >
                       <div className="flex items-center gap-0.5">
@@ -6215,7 +6232,7 @@ export default function ScheduleView() {
                   </tr>
                   {bookingRowExpanded && (
                     <tr className="bg-purple-50/80">
-                      <td className="px-2 py-0.5 text-[10px] text-gray-500 align-top border-b-2 border-gray-800" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
+                      <td className="px-2 py-0.5 text-[10px] text-gray-500 align-top border-b-2 border-gray-800 sticky left-0 z-40 bg-purple-50 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                         상세
                       </td>
                       {monthDays.map(({ dateString }) => {
@@ -6429,12 +6446,14 @@ export default function ScheduleView() {
                       return (
                         <tr
                           key={id}
-                          className={`hover:bg-gray-50/50 ${
+                          className={`group hover:bg-gray-50/50 ${
                             draggedVehicleRowId === id ? 'opacity-50 bg-blue-50/80' : ''
                           }`}
                         >
                           <td
-                            className="px-1 py-0.5 text-xs leading-tight text-gray-900 select-none"
+                            className={`px-1 py-0.5 text-xs leading-tight text-gray-900 select-none sticky left-0 z-40 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${
+                              draggedVehicleRowId === id ? 'bg-blue-50/80' : 'bg-white group-hover:bg-gray-50/50'
+                            }`}
                             style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
                             onDragOver={(e) => {
                               if (draggedVehicleRowId) {
@@ -6621,7 +6640,7 @@ export default function ScheduleView() {
                     })}
                     {/* 일별 합계 행 */}
                     <tr className="bg-gray-100 font-semibold">
-                      <td className="px-1 py-0.5 text-xs text-gray-900" style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}>
+                      <td className="px-1 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-gray-100 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}>
                         일별 합계
                       </td>
                       {monthDays.map(({ dateString }) => {

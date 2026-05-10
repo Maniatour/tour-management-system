@@ -185,7 +185,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   } = useOptimizedData({
     fetchFn: fetchAllCustomers,
     cacheKey: 'reservation-customers',
-    cacheTime: 5 * 60 * 1000, // 5분 캐시
+    cacheTime: 10 * 60 * 1000, // 10분 캐시 (SWR 로 stale 즉시 표시 + 백그라운드 갱신)
     enabled: !customersByReservationIds,
     dependencies: [customersByReservationIds],
   })
@@ -283,7 +283,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       return allProducts
     },
     cacheKey: 'reservation-products',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 상품은 거의 변하지 않음, SWR 로 자동 갱신
   })
 
   const { data: channels = [], loading: channelsLoading, refetch: refetchChannels } = useOptimizedData({
@@ -298,15 +298,11 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         return []
       }
 
-      console.log('Fetched channels with commission info:', data?.map(ch => ({ 
-        name: ch.name, 
-        commission_percent: (ch as any).commission_percent,
-        commission: (ch as any).commission
-      })))
       return data || []
     },
     cacheKey: 'reservation-channels',
-    cacheTime: 0 // 캐시 비활성화로 최신 데이터 가져오기
+    // 짧은 fresh TTL(60초) + SWR — 같은 페이지 내 짧은 시간엔 추가 호출 생략, 그 후엔 stale 즉시 표시 + 백그라운드 갱신
+    cacheTime: 60 * 1000
   })
 
   const { data: productOptions = [], loading: productOptionsLoading, refetch: refetchProductOptions } = useOptimizedData({
@@ -324,7 +320,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       return data || []
     },
     cacheKey: 'reservation-product-options',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 상품 옵션 정의는 거의 변하지 않음
   })
 
   const { data: optionChoices = [], loading: optionChoicesLoading, refetch: refetchOptionChoices } = useOptimizedData({
@@ -366,7 +362,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       return transformedChoices
     },
     cacheKey: 'reservation-option-choices',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 옵션 초이스 역시 거의 변하지 않음
   })
 
   const { data: options = [], loading: optionsLoading, refetch: refetchOptions } = useOptimizedData({
@@ -384,7 +380,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       return data || []
     },
     cacheKey: 'reservation-options',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 30 * 60 * 1000 // 30분 캐시
   })
 
   const { data: pickupHotels = [], loading: pickupHotelsLoading, refetch: refetchPickupHotels } = useOptimizedData({
@@ -404,7 +400,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       return data || []
     },
     cacheKey: 'reservation-pickup-hotels',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 60 * 60 * 1000 // 60분 캐시 — 픽업 호텔 마스터는 거의 정적
   })
 
   const { data: coupons = [], loading: couponsLoading, refetch: refetchCoupons } = useOptimizedData({
@@ -423,7 +419,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       return data || []
     },
     cacheKey: 'reservation-coupons',
-    cacheTime: 5 * 60 * 1000 // 5분 캐시
+    cacheTime: 15 * 60 * 1000 // 15분 캐시 — SWR 로 자동 갱신
   })
 
   const [reservations, setReservations] = useState<Reservation[]>([])

@@ -41,6 +41,8 @@ import {
   isStoredCustomerTotalMismatchWithFormula,
   summarizePaymentRecordsForBalance,
   mergePricingWithLiveOptionTotal,
+  normalizeReservationIdForPayments,
+  sumPaymentRecordLedgerRefundDisplayUsd,
 } from '@/utils/reservationPricingBalance'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
@@ -109,7 +111,9 @@ function buildReservationPricingPatch(
     )
   }
   const party = { adults: r.adults ?? 0, children: r.child ?? 0, infants: r.infant ?? 0 }
-  const pForGross = mergePricingWithLiveOptionTotal(p, r.id, reservationOptionSumByReservationId) ?? p
+  const pForGross =
+    mergePricingWithLiveOptionTotal(p, normalizeReservationIdForPayments(r.id), reservationOptionSumByReservationId) ??
+    p
   const gross = computeCustomerPaymentTotalLineFormula(pForGross, party)
   const st = String(r.status || '').toLowerCase().trim()
   const isCancelled = st === 'cancelled' || st === 'canceled'
@@ -170,8 +174,10 @@ function DbFormulaMoneyCell(props: {
   format?: 'usd' | 'coupon' | 'percent'
   className?: string
   inlineEdit?: DbFormulaInlineEdit
+  /** true면 산식(입금 집계) 금액을 위에 두고 DB는 아래 — 취소·환불이 입금에만 있을 때 한눈에 보이게 */
+  stackComputedFirst?: boolean
 }) {
-  const { dbVal, computedVal, format = 'usd', className = '', inlineEdit } = props
+  const { dbVal, computedVal, format = 'usd', className = '', inlineEdit, stackComputedFirst = false } = props
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -302,6 +308,19 @@ function DbFormulaMoneyCell(props: {
         {busy ? <span className="opacity-50">{top}</span> : top}
       </div>
     )
+
+  if (stackComputedFirst) {
+    return (
+      <div className={`flex flex-col items-stretch min-w-[3.25rem] py-0.5 ${className}`}>
+        <div className="tabular-nums leading-tight text-right font-semibold text-gray-900">{bot}</div>
+        <div
+          className={`mt-0.5 border-t border-gray-200/90 pt-0.5 ${mismatch ? 'rounded ring-1 ring-inset ring-amber-200/90' : ''}`}
+        >
+          {topEl}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex flex-col items-stretch min-w-[3.25rem] py-0.5 ${className}`}>
@@ -678,13 +697,14 @@ function BalanceRow(props: BalanceRowProps) {
   const paymentLocale = useLocale()
   const [partnerRefundBusy, setPartnerRefundBusy] = useState(false)
 
+  const rsvKey = normalizeReservationIdForPayments(reservation.id)
   const p = reservationPricingMap.get(reservation.id)
   const pLine = useMemo(
     () =>
-      mergePricingWithLiveOptionTotal(p, reservation.id, reservationOptionSumByReservationId) as
+      mergePricingWithLiveOptionTotal(p, rsvKey, reservationOptionSumByReservationId) as
         | ReservationPricingMapValue
         | undefined,
-    [p, reservation.id, reservationOptionSumByReservationId]
+    [p, rsvKey, reservationOptionSumByReservationId]
   )
   const party = partyFromReservation(reservation)
   const storedGross = customerPaymentStoredTotalDb(p)
@@ -700,8 +720,31 @@ function BalanceRow(props: BalanceRowProps) {
     ? fromPayments.depositBucketGross
     : depositDb
   const refundAmountDb = pricingFieldToNumber(p?.refund_amount)
+  const paymentAggSummary = useMemo(
+    () => summarizePaymentRecordsForBalance(paymentRecords),
+    [paymentRecords]
+  )
+  /** 입금 내역 `환불됨 (파트너)`·Returned 라인 합(표시는 양수 환불액) */
+  const partnerReturnedFromRecordsUsd = round2(Math.abs(paymentAggSummary.returnedTotal))
+  /** 입금 `환불됨 (우리)`·Refunded 라인 합 */
+  const ourRefundedFromRecordsUsd = round2(Math.abs(paymentAggSummary.refundedTotal))
+  const summarizedLedgerRefundUsd = round2(partnerReturnedFromRecordsUsd + ourRefundedFromRecordsUsd)
+  /** 환불(기록) 열 윗줄 — 집계가 0이면 변형 상태값도 잡는 느슨 합산 폴백 */
+  const paymentLedgerRefundTotalUsd =
+    summarizedLedgerRefundUsd > 0.01
+      ? summarizedLedgerRefundUsd
+      : sumPaymentRecordLedgerRefundDisplayUsd(paymentRecords)
+  /** 취소 행이거나 입금에 환불 라인만 있어도 윗줄에 입금 합 표시(DB가 cancelled가 아닐 때 누락 방지) */
+  const stackPaymentRefundLine = isCancelledRsv || paymentLedgerRefundTotalUsd > 0.01
+  const customerRefundComputedVal = stackPaymentRefundLine ? paymentLedgerRefundTotalUsd : refundAmountDb
+  /** 취소 툴팁 산식: 입금 환불 합이 있으면 그걸 쓰고, 없으면 가격 refund_amount */
+  const cancelHintRefundUsd = isCancelledRsv
+    ? paymentLedgerRefundTotalUsd > 0.01
+      ? paymentLedgerRefundTotalUsd
+      : refundAmountDb
+    : refundAmountDb
   const formulaExpression = isCancelledRsv
-    ? cancelledCustomerPaymentMoneyHint(depositBasisForCancelHint, refundAmountDb, t)
+    ? cancelledCustomerPaymentMoneyHint(depositBasisForCancelHint, cancelHintRefundUsd, t)
     : lineFormulaExpressionText(pLine, party)
   const balanceComputedOutstanding = balanceOutstandingTotalMinusDeposit(
     lineGrossForPaymentCompare,
@@ -740,12 +783,15 @@ function BalanceRow(props: BalanceRowProps) {
 
   /** 입금 내역「-$취소」와 동일: DB 보증금 우선, 없으면 입금 집계 보증금 순액 */
   const suggestedPartnerRefundUsd = useMemo(() => {
-    const sm = summarizePaymentRecordsForBalance(paymentRecords)
     const dbDep = pricingFieldToNumber(p?.deposit_amount)
     return round2(
-      dbDep > 0.01 ? dbDep : sm.depositTotalNet > 0.01 ? sm.depositTotalNet : 0
+      dbDep > 0.01
+        ? dbDep
+        : paymentAggSummary.depositTotalNet > 0.01
+          ? paymentAggSummary.depositTotalNet
+          : 0
     )
-  }, [p, paymentRecords])
+  }, [p, paymentAggSummary])
 
   const handlePartnerCancelRefundClick = async () => {
     if (!showPartnerCancelRefundAction || !onRefreshPaymentAggregates) return
@@ -948,7 +994,14 @@ function BalanceRow(props: BalanceRowProps) {
       >
         <div className="flex items-start gap-1 min-w-0">
           {channel?.favicon_url ? (
-            <Image src={channel.favicon_url} alt="" width={12} height={12} className="rounded shrink-0 mt-0.5" />
+            <Image
+              src={channel.favicon_url}
+              alt=""
+              width={12}
+              height={12}
+              className="mt-0.5 h-3 w-3 shrink-0 rounded"
+              style={{ width: 'auto', height: 'auto' }}
+            />
           ) : (
             <span className="text-[9px] text-gray-400 shrink-0 mt-0.5">🌐</span>
           )}
@@ -1073,11 +1126,11 @@ function BalanceRow(props: BalanceRowProps) {
         className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100"
         title={dbTitle(
           rpCol('option_total'),
-          reservationOptionSumByReservationId?.has(reservation.id) &&
+          reservationOptionSumByReservationId?.has(rsvKey) &&
             p != null &&
-            Math.abs(pricingFieldToNumber(p.option_total) - (reservationOptionSumByReservationId.get(reservation.id) ?? 0)) > 0.01
+            Math.abs(pricingFieldToNumber(p.option_total) - (reservationOptionSumByReservationId.get(rsvKey) ?? 0)) > 0.01
             ? t('actionRequired.balanceTable.cols.optionLiveFromRowsHint', {
-                amount: fmtUsd(reservationOptionSumByReservationId.get(reservation.id)),
+                amount: fmtUsd(reservationOptionSumByReservationId.get(rsvKey)),
               })
             : undefined
         )}
@@ -1175,20 +1228,23 @@ function BalanceRow(props: BalanceRowProps) {
       </td>
       <td
         className={`px-0.5 py-1 text-right align-top tabular-nums border-r border-gray-100 bg-rose-50/20 ${
-          isCancelledRsv && Math.abs(refundAmountDb) < 0.01 ? 'ring-1 ring-inset ring-rose-200/90' : ''
+          isCancelledRsv && paymentLedgerRefundTotalUsd < 0.01 && refundAmountDb < 0.01
+            ? 'ring-1 ring-inset ring-rose-200/90'
+            : ''
         }`}
         title={t('actionRequired.balanceTable.cols.customerRefundColHint')}
       >
         <div
           className={
-            isCancelledRsv && Math.abs(refundAmountDb) < 0.01
+            isCancelledRsv && paymentLedgerRefundTotalUsd < 0.01 && refundAmountDb < 0.01
               ? '[&_.tabular-nums]:text-red-600 [&_.text-gray-900]:text-red-600 [&_.text-gray-800]:text-red-600'
               : ''
           }
         >
           <DbFormulaMoneyCell
             dbVal={refundAmountDb}
-            computedVal={refundAmountDb}
+            computedVal={customerRefundComputedVal}
+            stackComputedFirst={stackPaymentRefundLine}
             inlineEdit={pricingInline('refund_amount', (n) => ({ refund_amount: n }))}
           />
         </div>
@@ -1554,7 +1610,10 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
       const key = `${reservationId}:${mode}`
       setApplyRowBusyKey(key)
       try {
-        const records = paymentRecordsByReservationId?.get(reservationId) ?? []
+        const records =
+          paymentRecordsByReservationId?.get(normalizeReservationIdForPayments(reservationId)) ??
+          paymentRecordsByReservationId?.get(reservationId) ??
+          []
         const patch = buildReservationPricingPatch(
           r,
           p,
@@ -1627,7 +1686,10 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           const r = reservationLookup.get(id)
           const p = reservationPricingMap.get(id)
           if (!r || !p) continue
-          const records = paymentRecordsByReservationId?.get(id) ?? []
+          const records =
+            paymentRecordsByReservationId?.get(normalizeReservationIdForPayments(id)) ??
+            paymentRecordsByReservationId?.get(id) ??
+            []
           const patchMode: PricingApplyMode =
             mode === 'all' ? 'all' : mode === 'mismatchFormulaBundle' ? 'mismatchFormulaBundle' : mode
           const patch = buildReservationPricingPatch(
@@ -1990,7 +2052,10 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
                 reservationPricingMap,
                 reservationOptionSumByReservationId,
                 reservation,
-                paymentRecords: paymentRecordsByReservationId?.get(reservation.id) ?? [],
+                paymentRecords:
+                  paymentRecordsByReservationId?.get(normalizeReservationIdForPayments(reservation.id)) ??
+                  paymentRecordsByReservationId?.get(String(reservation.id)) ??
+                  [],
                 selectionEnabled,
                 rowChecked: selectedIds.has(reservation.id),
                 onRowCheckChange,

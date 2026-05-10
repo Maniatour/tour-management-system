@@ -1738,12 +1738,13 @@ export default function AdminCustomers() {
                                 const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
                                 
                                 return channelWithFavicon?.favicon_url ? (
-                                  <Image 
-                                    src={channelWithFavicon.favicon_url} 
-                                    alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
+                                  <Image
+                                    src={channelWithFavicon.favicon_url}
+                                    alt={`${channelWithFavicon.name || 'Channel'} favicon`}
                                     width={12}
                                     height={12}
-                                    className="rounded mr-1 flex-shrink-0"
+                                    className="mr-1 h-3 w-3 shrink-0 rounded"
+                                    style={{ width: 'auto', height: 'auto' }}
                                     onError={(e) => {
                                       // 파비콘 로드 실패 시 기본 아이콘으로 대체
                                       const target = e.target as HTMLImageElement

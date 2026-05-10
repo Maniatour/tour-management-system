@@ -165,7 +165,8 @@ export default function ReservationCard({
                 alt={channel.name}
                 width={16}
                 height={16}
-                className="rounded"
+                className="h-4 w-4 shrink-0 rounded"
+                style={{ width: 'auto', height: 'auto' }}
               />
             )}
             <span className="text-sm text-gray-600">{channel.name}</span>

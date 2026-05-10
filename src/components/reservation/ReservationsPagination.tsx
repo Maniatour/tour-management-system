@@ -9,7 +9,7 @@ interface ReservationsPaginationProps {
   onPageChange: (page: number) => void
 }
 
-export default function ReservationsPagination({
+function ReservationsPagination({
   currentPage,
   totalPages,
   totalItems,
@@ -71,3 +71,5 @@ export default function ReservationsPagination({
     </div>
   )
 }
+
+export default React.memo(ReservationsPagination)

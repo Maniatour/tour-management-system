@@ -63,6 +63,55 @@ export type PricingBalanceFields = {
 /** 입금 내역 → 보증금(순)·잔금 수령·Returned (PricingSection·카드 공통) */
 export type PaymentRecordLike = { payment_status: string; amount: number }
 
+/** Supabase/CSV 등에서 amount가 문자열·콤마 포함일 때 집계 누락 방지 */
+export function paymentRecordAmountToNumber(v: unknown): number {
+  if (v == null || v === '') return 0
+  if (typeof v === 'number' && !Number.isNaN(v)) return v
+  const s = String(v).replace(/,/g, '').trim()
+  const n = parseFloat(s)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * payment_records ↔ 예약 행 Map 키 통일 (앞뒤 공백·zero-width로 조회 실패하는 경우 방지)
+ */
+export function normalizeReservationIdForPayments(id: unknown): string {
+  return String(id ?? '')
+    .trim()
+    .replace(/\u200B/g, '')
+}
+
+/**
+ * 환불(기록) UI 합계: 분류 함수가 놓친 변형 문자열도 `환불됨`·Returned/Refunded 완료 건만 합산 (수령·청구 라인 제외)
+ */
+export function sumPaymentRecordLedgerRefundDisplayUsd(records: PaymentRecordLike[]): number {
+  let sum = 0
+  for (const r of records) {
+    const raw = String(r.payment_status ?? '').trim()
+    if (!raw) continue
+    if (isBalanceReceivedPaymentStatus(raw)) continue
+    if (isDepositBucketPaymentStatus(raw)) continue
+
+    const amt = Math.abs(paymentRecordAmountToNumber(r.amount))
+    if (amt < 0.005) continue
+
+    const st = raw.normalize('NFKC').toLowerCase()
+    const pendingOnly =
+      (st.includes('request') || st.includes('요청')) &&
+      !raw.includes('환불됨') &&
+      st !== 'returned' &&
+      st !== 'refunded' &&
+      !/\breturned\b/.test(st) &&
+      !/\brefunded\b/.test(st)
+    if (pendingOnly) continue
+
+    if (isReturnedPaymentStatus(raw) || isRefundedPaymentStatus(raw) || raw.includes('환불됨')) {
+      sum += amt
+    }
+  }
+  return roundUsd2(sum)
+}
+
 /** 잔금 수령 — 보증금(deposit) 합계에 절대 넣지 않음 (분류 우선) */
 export function isBalanceReceivedPaymentStatus(paymentStatus: string): boolean {
   const t = (paymentStatus || '').trim().toLowerCase()
@@ -84,20 +133,39 @@ function isDepositBucketPaymentStatus(paymentStatus: string): boolean {
 
 /** 우리 쪽 입금 환불 (DB: `환불됨 (우리)`, 구버전 Refunded 등) */
 export function isRefundedPaymentStatus(paymentStatus: string): boolean {
-  const s = (paymentStatus || '').trim()
-  if (!s) return false
-  if (s === '환불됨 (우리)') return true
+  const raw = (paymentStatus || '').trim()
+  if (!raw) return false
+  const s = raw.replace(/\s+/g, ' ').trim()
+  if (s === '환불됨 (우리)' || s === '환불됨(우리)') return true
   const lower = s.toLowerCase()
   return s.includes('Refunded') || lower === 'refunded'
 }
 
 /** 파트너 입금 환불 (DB: `환불됨 (파트너)`, 구버전 Returned 등) */
 export function isReturnedPaymentStatus(paymentStatus: string): boolean {
-  const s = (paymentStatus || '').trim()
-  if (!s) return false
-  if (s === '환불됨 (파트너)') return true
+  const raw = (paymentStatus || '').trim()
+  if (!raw) return false
+  let s = raw.replace(/\s+/g, ' ').trim()
+  try {
+    s = s.normalize('NFKC')
+  } catch {
+    /* ignore */
+  }
+  if (s === '환불됨 (파트너)' || s === '환불됨(파트너)') return true
+  const noSpace = s.replace(/\s/g, '')
+  if (/^환불됨[\(（]?파트너[\)）]?$/.test(noSpace)) return true
+
   const lower = s.toLowerCase()
-  return s.includes('Returned') || lower === 'returned'
+  if (lower === 'returned' || s.includes('Returned')) return true
+  if (
+    !lower.includes('우리') &&
+    lower.includes('파트너') &&
+    (lower.includes('환불') || lower.includes('return'))
+  ) {
+    return true
+  }
+  if (lower.includes('partner') && lower.includes('return')) return true
+  return false
 }
 
 export function summarizePaymentRecordsForBalance(records: PaymentRecordLike[]): {
@@ -116,8 +184,8 @@ export function summarizePaymentRecordsForBalance(records: PaymentRecordLike[]):
   let refundedTotal = 0
 
   for (const record of records) {
-    const status = record.payment_status || ''
-    const amount = Number(record.amount) || 0
+    const status = (record.payment_status || '').trim()
+    const amount = paymentRecordAmountToNumber(record.amount)
 
     if (status === 'Partner Received') {
       partnerReceivedStrict += amount

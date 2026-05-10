@@ -35,7 +35,7 @@ interface ReservationsFiltersProps {
   onFilterModalOpenChange?: (open: boolean) => void
 }
 
-export default function ReservationsFilters({
+function ReservationsFilters({
   selectedStatus,
   onStatusChange,
   selectedChannel,
@@ -213,3 +213,5 @@ export default function ReservationsFilters({
     </>
   )
 }
+
+export default React.memo(ReservationsFilters)

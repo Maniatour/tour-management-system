@@ -1754,12 +1754,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             {channelInfo && (
               <div className="flex items-center space-x-1 text-xs text-gray-500">
                 {channelInfo.favicon && (
-                  <Image 
-                    src={channelInfo.favicon} 
+                  <Image
+                    src={channelInfo.favicon}
                     alt={channelInfo.name}
                     width={12}
                     height={12}
-                    className="rounded"
+                    className="h-3 w-3 shrink-0 rounded"
+                    style={{ width: 'auto', height: 'auto' }}
                     onError={(e) => {
                       e.currentTarget.style.display = 'none'
                     }}

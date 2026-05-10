@@ -13,6 +13,8 @@ import {
 } from '@/components/reservation/ReservationActionRequiredTable'
 import {
   computeRemainingBalanceAmount,
+  normalizeReservationIdForPayments,
+  paymentRecordAmountToNumber,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
   type PricingBalanceFields,
@@ -255,7 +257,7 @@ export default function ReservationActionRequiredModal({
   /** 부모가 매 렌더 `reservations` 새 배열을 넘겨도 id 집합이 같으면 입금/옵션 집계 effect가 다시 돌지 않음 */
   const reservationsPaymentLoadKey = useMemo(
     () =>
-      [...new Set(reservations.map((r) => r.id).filter(Boolean))]
+      [...new Set(reservations.map((r) => normalizeReservationIdForPayments(r.id)).filter(Boolean))]
         .sort()
         .join(','),
     [reservations]
@@ -266,7 +268,7 @@ export default function ReservationActionRequiredModal({
     if (ids.length === 0) return
     const chunkSize = 200
     for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize)
+      const chunk = [...new Set(ids.slice(i, i + chunkSize).map(normalizeReservationIdForPayments).filter(Boolean))]
       const [{ data }, { data: optRows }] = await Promise.all([
         supabase
           .from('payment_records')
@@ -287,13 +289,15 @@ export default function ReservationActionRequiredModal({
           payment_status: string
           amount: unknown
         }[]) {
+          const rid = normalizeReservationIdForPayments(row.reservation_id)
+          if (!rid) continue
           const rec: PaymentRecordLike = {
-            payment_status: row.payment_status || '',
-            amount: Number(row.amount) || 0,
+            payment_status: String(row.payment_status ?? '').trim(),
+            amount: paymentRecordAmountToNumber(row.amount),
           }
-          const arr = chunkByRes.get(row.reservation_id) ?? []
+          const arr = chunkByRes.get(rid) ?? []
           arr.push(rec)
-          chunkByRes.set(row.reservation_id, arr)
+          chunkByRes.set(rid, arr)
         }
       }
       setReservationIdsWithPayments((prev) => {
@@ -314,8 +318,14 @@ export default function ReservationActionRequiredModal({
       const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
       setReservationOptionSumByReservationId((prev) => {
         const n = new Map(prev)
+        const sumsByNorm = new Map<string, number>()
+        for (const [rid, v] of chunkSums) {
+          const k = normalizeReservationIdForPayments(rid)
+          if (!k) continue
+          sumsByNorm.set(k, Math.round(((sumsByNorm.get(k) ?? 0) + v) * 100) / 100)
+        }
         for (const id of chunk) {
-          n.set(id, chunkSums.get(id) ?? 0)
+          n.set(id, sumsByNorm.get(id) ?? 0)
         }
         return n
       })
@@ -325,7 +335,7 @@ export default function ReservationActionRequiredModal({
           n.set(id, false)
         }
         for (const row of optRows ?? []) {
-          const rid = (row as { reservation_id?: string }).reservation_id
+          const rid = normalizeReservationIdForPayments((row as { reservation_id?: string }).reservation_id)
           if (rid) n.set(rid, true)
         }
         return n
@@ -354,7 +364,7 @@ export default function ReservationActionRequiredModal({
       const chunkSize = 200
       try {
         for (let i = 0; i < ids.length; i += chunkSize) {
-          const chunk = ids.slice(i, i + chunkSize)
+          const chunk = [...new Set(ids.slice(i, i + chunkSize).map(normalizeReservationIdForPayments).filter(Boolean))]
           const [{ data }, { data: optRows }] = await Promise.all([
             supabase
               .from('payment_records')
@@ -368,22 +378,27 @@ export default function ReservationActionRequiredModal({
           if (cancelled) return
           if (data) {
             data.forEach((row: { reservation_id: string; payment_status: string; amount: unknown }) => {
-              set.add(row.reservation_id)
+              const rid = normalizeReservationIdForPayments(row.reservation_id)
+              if (!rid) return
+              set.add(rid)
               const rec: PaymentRecordLike = {
-                payment_status: row.payment_status || '',
-                amount: Number(row.amount) || 0,
+                payment_status: String(row.payment_status ?? '').trim(),
+                amount: paymentRecordAmountToNumber(row.amount),
               }
-              const arr = byRes.get(row.reservation_id) ?? []
+              const arr = byRes.get(rid) ?? []
               arr.push(rec)
-              byRes.set(row.reservation_id, arr)
+              byRes.set(rid, arr)
             })
           }
           const chunkSums = aggregateReservationOptionSumsByReservationId(optRows ?? [])
           for (const [rid, v] of chunkSums) {
-            mergedOptionSums.set(rid, v)
+            const k = normalizeReservationIdForPayments(rid)
+            if (!k) continue
+            const prev = mergedOptionSums.get(k) ?? 0
+            mergedOptionSums.set(k, Math.round((prev + v) * 100) / 100)
           }
           for (const row of optRows ?? []) {
-            const rid = (row as { reservation_id?: string }).reservation_id
+            const rid = normalizeReservationIdForPayments((row as { reservation_id?: string }).reservation_id)
             if (rid) mergedOptionsPresence.set(rid, true)
           }
         }

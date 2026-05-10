@@ -242,7 +242,9 @@ export default function AdminTours() {
     (p: {
       unionCount: number
       noReceiptCount: number
+      receiptPendingCount: number
       balanceCount: number
+      guideNoChatRoomCount: number
       duplicateCount: number
       unassignedCount: number
     }) => {
@@ -278,26 +280,41 @@ export default function AdminTours() {
   // 최적화된 데이터 로딩 (스케줄 뷰는 ScheduleView가 월 단위로 직접 조회 — 전체 투어 로드 생략)
   const { data: toursData, loading: toursLoading, refetch: refetchTours } = useOptimizedData({
     fetchFn: async () => {
-      /** PostgREST 기본 max-rows(1000) — 단일 select로는 그 이후 행이 잘림 → range 순회 */
+      /**
+       * PostgREST 기본 max-rows(1000) — OFFSET 대신 (tour_date DESC, id DESC) 키셋 페이지네이션.
+       * tours.tour_date 는 NOT NULL 이라 키셋 안전. 깊은 OFFSET 의 정렬 비용을 제거한다.
+       * 인덱스 idx_tours_tour_date_id_desc (마이그레이션 20260622120000) 와 정확히 일치.
+       */
       const PAGE_SIZE = 1000
       const rows: Database['public']['Tables']['tours']['Row'][] = []
-      for (let from = 0; ; from += PAGE_SIZE) {
-        const { data, error } = await supabase
+      let cursor: { tour_date: string; id: string } | null = null
+      for (;;) {
+        let q = supabase
           .from('tours')
           .select('*')
           .order('tour_date', { ascending: false })
           .order('id', { ascending: false })
-          .range(from, from + PAGE_SIZE - 1)
-
+          .limit(PAGE_SIZE)
+        if (cursor) {
+          // (tour_date, id) DESC 키셋: tour_date < cursor.tour_date OR (tour_date = cursor.tour_date AND id < cursor.id)
+          const td = cursor.tour_date.replace(/"/g, '""')
+          const cid = String(cursor.id).replace(/"/g, '""')
+          q = q.or(`tour_date.lt."${td}",and(tour_date.eq."${td}",id.lt."${cid}")`)
+        }
+        const { data, error } = await q
         if (error) throw error
         const batch = data ?? []
+        if (batch.length === 0) break
         rows.push(...batch)
         if (batch.length < PAGE_SIZE) break
+        const last = batch[batch.length - 1] as { tour_date?: string | null; id: string }
+        if (!last.tour_date) break
+        cursor = { tour_date: last.tour_date, id: last.id }
       }
       return rows
     },
     cacheKey: 'tours',
-    cacheTime: 2 * 60 * 1000, // 2분 캐시
+    cacheTime: 2 * 60 * 1000, // 2분 캐시 — SWR(stale-while-revalidate) 기본 활성
     enabled: toursQueryEnabled,
     dependencies: [toursQueryEnabled],
   })
@@ -320,7 +337,7 @@ export default function AdminTours() {
       return activeEmployees
     },
     cacheKey: 'employees',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 팀 마스터는 거의 변하지 않음, SWR 로 자동 갱신
   })
 
   const { data: productsData, loading: productsLoading } = useOptimizedData({
@@ -334,7 +351,7 @@ export default function AdminTours() {
       return data || []
     },
     cacheKey: 'products',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 상품 마스터, SWR 로 자동 갱신
   })
 
   // 통합 로딩 상태 (스케줄 뷰 기본 시 전체 투어 스피너에 막히지 않음)
@@ -843,19 +860,18 @@ export default function AdminTours() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">투어 데이터를 불러오는 중...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="px-2 sm:px-6 py-3 sm:py-6">
+      {loading && (
+        <div
+          className="fixed top-2 right-2 z-[1200] flex items-center gap-2 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm px-3 py-1.5 text-xs text-gray-600"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" aria-hidden />
+          <span>투어 데이터 불러오는 중…</span>
+        </div>
+      )}
       {/* 헤더 */}
       <div className="mb-4 sm:mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
@@ -1170,6 +1186,25 @@ export default function AdminTours() {
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          {loading && listViewTours.length === 0 && (
+            <>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={`tour-card-skeleton-${i}`}
+                  className="bg-white rounded-lg shadow-sm border p-3 animate-pulse"
+                  aria-hidden
+                >
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-3" />
+                  <div className="h-3 bg-gray-200 rounded w-1/2 mb-3" />
+                  <div className="flex gap-2">
+                    <div className="h-5 bg-gray-200 rounded w-16" />
+                    <div className="h-5 bg-gray-200 rounded w-16" />
+                    <div className="h-5 bg-gray-200 rounded w-16" />
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
           {listViewTours.map((tour) => (
             <div
               key={tour.id}
@@ -1226,7 +1261,7 @@ export default function AdminTours() {
               </div>
             </div>
           ))}
-          {listViewTours.length === 0 && (
+          {!loading && listViewTours.length === 0 && (
             <div className="col-span-full text-center text-sm text-gray-500 py-6">
               {listViewDateFilter === 'month' && '해당 월에 표시할 투어가 없습니다.'}
               {listViewDateFilter === 'all' && '표시할 투어가 없습니다.'}
@@ -1308,7 +1343,9 @@ export default function AdminTours() {
         title={t('needCheckModalTitle')}
         subtitle={t('needCheckModalSubtitle')}
         tabNoReceiptLabel={t('needCheckTabNoReceipt')}
+        tabReceiptPendingLabel={t('needCheckTabReceiptPending')}
         tabBalanceLabel={t('needCheckTabBalance')}
+        tabNoChatRoomLabel={t('needCheckTabNoChatRoom')}
         tabDuplicateLabel={t('needCheckTabDuplicate')}
         tabUnassignedLabel={t('needCheckTabUnassigned')}
         locale={locale}

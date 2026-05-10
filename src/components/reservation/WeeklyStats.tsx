@@ -127,7 +127,14 @@ export default function WeeklyStats({
                 <div key={ch.channelId} className="flex items-center justify-between text-sm">
                   <div className="flex items-center space-x-2">
                     {ch.favicon_url ? (
-                      <Image src={ch.favicon_url} alt="" width={16} height={16} className="rounded" />
+                      <Image
+                        src={ch.favicon_url}
+                        alt=""
+                        width={16}
+                        height={16}
+                        className="h-4 w-4 shrink-0 rounded"
+                        style={{ width: 'auto', height: 'auto' }}
+                      />
                     ) : null}
                     <span className="truncate text-gray-600">{ch.name}</span>
                   </div>

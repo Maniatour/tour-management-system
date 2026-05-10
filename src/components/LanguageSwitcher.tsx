@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
+import { withSimulationBackendMeta } from '@/lib/simulationBackend'
 
 const LanguageSwitcher = () => {
   const locale = useLocale()
@@ -20,15 +21,15 @@ const LanguageSwitcher = () => {
     const newPath = `/${newLocale}${pathWithoutLocale}`
     
     // 시뮬레이션 상태 보존 (더 안전한 방법)
-    let simulationData = null
+    let simulationData: Record<string, unknown> | null = null
     if (isSimulating && simulatedUser) {
-      simulationData = {
+      simulationData = withSimulationBackendMeta({
         email: simulatedUser.email,
         name_ko: simulatedUser.name_ko,
         name_en: simulatedUser.name_en,
         position: simulatedUser.position,
-        role: simulatedUser.role
-      }
+        role: simulatedUser.role,
+      })
       console.log('LanguageSwitcher: Preserving simulation data:', simulationData)
       
       // 시뮬레이션 상태를 먼저 저장 (페이지 이동 전에 확실히 저장)
