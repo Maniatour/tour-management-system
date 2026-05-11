@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, ArrowLeft, X, Info, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Car, Luggage, Settings, Lightbulb, Users2, AlertTriangle, Shield, Megaphone } from 'lucide-react'
 import Link from 'next/link'

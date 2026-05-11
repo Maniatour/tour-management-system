@@ -1,12 +1,14 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations } from 'next-intl'
 import { CheckCircle, Circle, AlertCircle, MessageSquare, Plus, X, Calendar, User, Clock } from 'lucide-react'
+import { OpTodoNotificationLayer } from '@/components/team-board/OpTodoNotificationLayer'
+import { audiencesForTeamMember } from '@/lib/opTodoSchedule'
 
 type Todo = Database['public']['Tables']['op_todos']['Row']
 type Announcement = Database['public']['Tables']['team_announcements']['Row']
@@ -54,7 +56,14 @@ export default function GuideTeamBoard() {
   })
 
   // 팀 멤버 상태
-  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string | null, position: string | null, is_active: boolean}>>([])
+  const [teamMembers, setTeamMembers] = useState<
+    Array<{
+      email: string
+      name_ko: string | null
+      position: string | null
+      is_active: boolean
+    }>
+  >([])
   const [taskRecipientMode, setTaskRecipientMode] = useState<'individual' | 'group'>('individual')
   const [selectedTaskPositions, setSelectedTaskPositions] = useState<string[]>([])
   const [selectedTaskIndividuals, setSelectedTaskIndividuals] = useState<string[]>([])
@@ -300,6 +309,22 @@ export default function GuideTeamBoard() {
     setWorkModalType(null)
   }
 
+  const checklistNotifyAudiences = useMemo(() => {
+    const row = teamMembers.find((m) => (m.email || '').toLowerCase() === (currentUserEmail || '').toLowerCase())
+    return audiencesForTeamMember(row?.position ?? null)
+  }, [teamMembers, currentUserEmail])
+
+  const reloadAssignedTodos = async () => {
+    if (!currentUserEmail) return
+    const { data, error } = await supabase
+      .from('op_todos')
+      .select('*')
+      .eq('assigned_to', currentUserEmail)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (!error && data) setTodos(data)
+  }
+
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'daily':
@@ -350,6 +375,14 @@ export default function GuideTeamBoard() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {currentUserEmail ? (
+        <OpTodoNotificationLayer
+          supabase={supabase}
+          userEmail={currentUserEmail}
+          audiences={checklistNotifyAudiences}
+          onRefresh={() => void reloadAssignedTodos()}
+        />
+      ) : null}
       {/* 헤더 */}
       <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-lg p-4 sm:p-6 text-white">
         <h1 className="text-xl sm:text-2xl font-bold mb-2">

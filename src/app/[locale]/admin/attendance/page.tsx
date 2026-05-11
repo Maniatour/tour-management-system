@@ -81,7 +81,7 @@ export default function AttendancePage() {
   const [canViewOfficeTips, setCanViewOfficeTips] = useState(false)
   /** 사무실 식사 버튼·작성 (super 또는 office manager만) */
   const [canManageOfficeMeal, setCanManageOfficeMeal] = useState(false)
-  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{ email: string; name_ko: string; position: string }>>([])
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
   const [isAddFormOpen, setIsAddFormOpen] = useState(false)
@@ -181,7 +181,13 @@ export default function AttendancePage() {
         return
       }
       
-      setTeamMembers(data || [])
+      setTeamMembers(
+        (data || []).map((m) => ({
+          email: String((m as { email?: string | null }).email ?? ''),
+          name_ko: String((m as { name_ko?: string | null }).name_ko ?? ''),
+          position: String((m as { position?: string | null }).position ?? ''),
+        }))
+      )
       
       // 기본값을 현재 사용자로 설정 (OP 또는 Office Manager인 경우)
       if (authUser?.email && data?.length) {
@@ -390,7 +396,8 @@ export default function AttendancePage() {
     const monthStart = monthYyyyMm + '-01'
     const [y, m] = monthYyyyMm.split('-').map(Number)
     const monthEnd = `${monthYyyyMm}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
-    const { data, error } = await supabase
+    // office_meal_log 는 아직 generated Database 타입에 없음
+    const { data, error } = await (supabase as any)
       .from('office_meal_log')
       .select('meal_date')
       .eq('employee_email', employeeEmail)
@@ -403,8 +410,8 @@ export default function AttendancePage() {
     }
     let first = 0
     let second = 0
-    for (const row of data || []) {
-      const md = (row as { meal_date: string }).meal_date
+    for (const row of (data || []) as Array<{ meal_date?: string | null }>) {
+      const md = row.meal_date
       const d = typeof md === 'string' ? md.slice(0, 10) : String(md)
       const day = parseInt(d.slice(8, 10), 10)
       if (Number.isNaN(day)) continue
@@ -962,7 +969,9 @@ export default function AttendancePage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4 min-w-0">
                   <div className="text-sm font-medium text-gray-600">
-                    {t('nthSession', { n: (isAdmin ? currentSessionForSelectedEmployee : currentSession)?.session_number })}
+                    {t('nthSession', {
+                      n: (isAdmin ? currentSessionForSelectedEmployee : currentSession)?.session_number ?? 0,
+                    })}
                   </div>
                   <div className="text-sm text-gray-900 break-words">
                     {t('checkIn')}: {formatTime((isAdmin ? currentSessionForSelectedEmployee?.check_in_time : currentSession?.check_in_time) || null)} ({t('lasVegas')})

@@ -102,7 +102,7 @@ export function getUserRole(
   // 팀 데이터가 있고 비활성(is_active === false)이 아닌 경우
   // DB RLS·is_staff()는 coalesce(is_active, true)와 동일하게 null 을 활성으로 본다.
   if (teamData && teamData.is_active !== false) {
-    const position = teamData.position?.toLowerCase() || ''
+    const position = teamData.position?.toLowerCase().trim() || ''
     
     console.log('Team data found, position:', position)
     
@@ -110,7 +110,7 @@ export function getUserRole(
     if (position === 'super') {
       return 'admin'  // Super는 최고 관리자
     }
-    if (position === 'office manager') {
+    if (position === 'office manager' || position === 'office_manager' || position === 'manager' || position === '매니저') {
       return 'manager'  // Office Manager는 매니저
     }
     // OP는 관리자 권한으로 분류 (admin 페이지로 리다이렉트)
@@ -159,7 +159,7 @@ export function canViewEmployeeHourlyRatesHistory(
   userPosition: string | null
 ): boolean {
   const pos = (userPosition || '').toLowerCase().trim()
-  if (pos === 'office manager') return true
+  if (pos === 'office manager' || pos === 'office_manager' || pos === '매니저') return true
   if (pos === 'super') return true
   if (userRole === 'manager') return true
   if (userRole === 'admin' && pos !== 'op') return true

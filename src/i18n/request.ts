@@ -73,7 +73,8 @@ export default getRequestConfig(async ({ locale }) => {
         return { locale, messages: fileMessages }
       }
 
-      const defaultMs = process.env.NODE_ENV === 'development' ? 2000 : 8000
+      // 개발에서도 2초는 Supabase/네트워크 지연에 쉽게 걸려 콘솔이 오염됨 → 프로덕션과 동일 상한 사용
+      const defaultMs = 8000
       const DB_TRANSLATIONS_TIMEOUT_MS =
         Number(process.env.I18N_DB_TRANSLATIONS_TIMEOUT_MS) > 0
           ? Number(process.env.I18N_DB_TRANSLATIONS_TIMEOUT_MS)
@@ -99,9 +100,12 @@ export default getRequestConfig(async ({ locale }) => {
       ])
 
       if (dbError?.message === 'translation_db_timeout') {
-        console.warn(
-          `[i18n] translation_values query exceeded ${DB_TRANSLATIONS_TIMEOUT_MS}ms, using file messages only`
-        )
+        // 정상 폴백(파일 메시지)이므로 warn 대신 debug — StripeErrorHandler 등 전역 warn 후킹과도 겹치지 않게
+        if (process.env.NODE_ENV === 'development') {
+          console.debug(
+            `[i18n] translation_values query exceeded ${DB_TRANSLATIONS_TIMEOUT_MS}ms, using file messages only`
+          )
+        }
       } else if (!dbError && dbTranslations && dbTranslations.length > 0) {
         // DB 번역을 messages에 병합 (DB 우선). 깊은 복사로 locale JSON 모듈 객체를 오염시키지 않음
         const dbMessages = structuredClone(fileMessages) as typeof fileMessages

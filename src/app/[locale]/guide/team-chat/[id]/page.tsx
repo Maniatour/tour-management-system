@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 
 export default function GuideTeamChatRoomPage() {

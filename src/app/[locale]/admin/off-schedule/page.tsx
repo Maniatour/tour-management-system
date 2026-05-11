@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'

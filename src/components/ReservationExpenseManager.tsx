@@ -396,33 +396,6 @@ export default function ReservationExpenseManager({
     }
   }
 
-  // 이미지 업로드
-  const handleImageUpload = async (file: File) => {
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('folder', 'reservation-expenses')
-
-      const response = await fetch('/api/upload/image', {
-        method: 'POST',
-        body: formData
-      })
-
-      const result = await response.json()
-      if (!result.success) {
-        throw new Error(result.error || 'Upload failed')
-      }
-
-      return {
-        filePath: result.path,
-        imageUrl: result.imageUrl
-      }
-    } catch (error) {
-      console.error('Image upload error:', error)
-      throw error
-    }
-  }
-
   // 지출 추가
   const handleAddExpense = async () => {
     

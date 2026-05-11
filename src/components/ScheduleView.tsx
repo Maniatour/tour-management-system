@@ -6123,7 +6123,7 @@ export default function ScheduleView() {
                     title={bookingRowExpanded ? '클릭하여 상세 접기' : '클릭하여 시간·업체별 상세 펼치기'}
                   >
                     <td
-                      className={`px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-gray-800 sticky left-0 z-40 bg-purple-50 group-hover:bg-purple-100/90 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
+                      className={`px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-t-gray-800 sticky left-0 z-40 bg-purple-50 group-hover:bg-purple-100/90 border-r border-r-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${bookingRowExpanded ? 'border-b border-b-gray-300' : 'border-b-2 border-b-gray-800'}`}
                       style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}
                     >
                       <div className="flex items-center gap-0.5">
@@ -6141,7 +6141,7 @@ export default function ScheduleView() {
                       return (
                         <td 
                           key={dateString} 
-                          className={`p-0 text-center text-xs relative border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
+                          className={`p-0 text-center text-xs relative border-t-2 border-t-gray-800 ${bookingRowExpanded ? 'border-b border-b-gray-300' : 'border-b-2 border-b-gray-800'}`}
                           style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           onMouseEnter={() => {
                             if (scheduleInteractionDragging) return
@@ -6219,7 +6219,7 @@ export default function ScheduleView() {
                       )
                     })}
                     <td
-                      className={`px-2 py-0.5 text-center text-xs font-medium border-t-2 border-gray-800 ${bookingRowExpanded ? 'border-b border-gray-300' : 'border-b-2 border-gray-800'}`}
+                      className={`px-2 py-0.5 text-center text-xs font-medium border-t-2 border-t-gray-800 ${bookingRowExpanded ? 'border-b border-b-gray-300' : 'border-b-2 border-b-gray-800'}`}
                       style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}
                     >
                       <div>
@@ -6232,7 +6232,7 @@ export default function ScheduleView() {
                   </tr>
                   {bookingRowExpanded && (
                     <tr className="bg-purple-50/80">
-                      <td className="px-2 py-0.5 text-[10px] text-gray-500 align-top border-b-2 border-gray-800 sticky left-0 z-40 bg-purple-50 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
+                      <td className="px-2 py-0.5 text-[10px] text-gray-500 align-top border-b-2 border-b-gray-800 sticky left-0 z-40 bg-purple-50 border-r border-r-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                         상세
                       </td>
                       {monthDays.map(({ dateString }) => {
@@ -6240,7 +6240,7 @@ export default function ScheduleView() {
                         return (
                           <td
                             key={`${dateString}-detail`}
-                            className={`p-0 align-top text-[9px] leading-tight border-b-2 border-gray-800 ${isToday(dateString) ? 'bg-red-50/40' : ''}`}
+                            className={`p-0 align-top text-[9px] leading-tight border-b-2 border-b-gray-800 ${isToday(dateString) ? 'bg-red-50/40' : ''}`}
                             style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           >
                             <div className="px-0.5 py-1 text-left text-gray-800 space-y-0.5 break-words">

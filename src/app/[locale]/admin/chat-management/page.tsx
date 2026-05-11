@@ -5,6 +5,9 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import type { Database } from '@/lib/supabase'
+
+type ChatRoomUpdate = Database['public']['Tables']['chat_rooms']['Update']
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
@@ -154,7 +157,7 @@ async function bulkUpdateChatRoomsActive(
   const ids = dedupeValidChatRoomIds(roomIds)
   if (ids.length === 0) return { error: null }
 
-  const payload: Record<string, unknown> = { is_active: isActive, ...extraFields }
+  const payload = { is_active: isActive, ...extraFields } as ChatRoomUpdate
   const CONCURRENCY = 20
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const chunk = ids.slice(i, i + CONCURRENCY)

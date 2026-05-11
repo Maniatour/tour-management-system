@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -19,6 +19,7 @@ import {
   normalizeCustomerNameFromImport,
 } from '@/utils/reservationUtils'
 import { resolveImportChannelVariantKey } from '@/lib/resolveImportChannelVariant'
+import { fetchCustomerHintsForImportExtracted } from '@/lib/fetchImportCustomerHints'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -68,8 +69,12 @@ export default function ReservationImportDetailPage() {
     pickupHotels: pickupHotelsList = [],
     coupons: couponsList = [],
     loading: dataLoading,
-    refreshCustomers,
-  } = useReservationData()
+    mergeCustomers,
+  } = useReservationData({ disableReservationsAutoLoad: true, customersByReservationIds: true })
+
+  /** loadImport는 [id]만 deps로 두기 위해 — ref로 최신 채널 목록만 읽고, 목록 도착마다 GET을 반복하지 않음 */
+  const channelsListRef = useRef<typeof channelsList>(channelsList)
+  channelsListRef.current = channelsList
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -162,7 +167,8 @@ export default function ReservationImportDetailPage() {
       (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
         ? 'myrealtrip'
         : null)
-    const channelsSafe = (typeof channelsList !== 'undefined' && Array.isArray(channelsList)) ? channelsList : []
+    const ch = channelsListRef.current
+    const channelsSafe = Array.isArray(ch) ? ch : []
     const mappedChannelId = effectiveKeyForChannel ? getChannelIdForPlatform(effectiveKeyForChannel) : null
     const channelForImport = mappedChannelId
       ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedChannelId || (c.name || '').toLowerCase().includes(mappedChannelId))
@@ -197,7 +203,9 @@ export default function ReservationImportDetailPage() {
       event_note: noteParts.join(' · ') || prev.event_note,
       product_id: extFinal.product_id ?? prev.product_id,
     }))
-  }, [id, channelsList])
+    // channel_id는 channels 목록이 늦게 오는 경우 아래 useEffect에서 보완. channelsList 를 deps에 넣으면
+    // 목록 도착 시마다 GET+재파싱이 한 번 더 돌아 모바일에서 체감 로딩이 들쭉날쭉해짐.
+  }, [id])
 
   const channelsSafe = channelsList ?? []
   const productsSafe = productsList ?? []
@@ -294,6 +302,44 @@ export default function ReservationImportDetailPage() {
       setShowProcessedNotice(true)
     }
   }, [row?.id, row?.status])
+
+  const importCustomerHintKey = row
+    ? [
+        row.id,
+        reparseKey,
+        String((row.extracted_data as ExtractedReservationData)?.customer_email || ''),
+        String((row.extracted_data as ExtractedReservationData)?.customer_phone || ''),
+        normalizeCustomerNameFromImport((row.extracted_data as ExtractedReservationData)?.customer_name) ||
+          String((row.extracted_data as ExtractedReservationData)?.customer_name || ''),
+      ].join('|')
+    : ''
+
+  const refreshImportCustomerHints = useCallback(async () => {
+    if (!mergeCustomers || !row) return
+    try {
+      const hints = await fetchCustomerHintsForImportExtracted(row.extracted_data)
+      if (hints.length > 0) mergeCustomers(hints)
+    } catch {
+      /* 고객 힌트는 부가 기능 */
+    }
+  }, [mergeCustomers, row])
+
+  useEffect(() => {
+    if (!importCustomerHintKey || !mergeCustomers || !row) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const hints = await fetchCustomerHintsForImportExtracted(row.extracted_data)
+        if (cancelled || hints.length === 0) return
+        mergeCustomers(hints)
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [importCustomerHintKey, mergeCustomers, row])
 
   /** 취소 요청 메일은 상세 대신 목록에서 모달로 처리 */
   useEffect(() => {
@@ -706,7 +752,7 @@ export default function ReservationImportDetailPage() {
         coupons={(couponsList ?? []) as { id: string; coupon_code: string; discount_type: 'percentage' | 'fixed'; [key: string]: unknown }[]}
         onSubmit={(payload: unknown) => handleImportSubmit(payload as Record<string, unknown>)}
         onCancel={() => router.push(`/${locale}/admin/reservation-imports`)}
-        onRefreshCustomers={refreshCustomers}
+        onRefreshCustomers={refreshImportCustomerHints}
         onDelete={() => {}}
         layout="page"
         isNewReservation

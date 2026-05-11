@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import { DollarSign, Download, Upload, BarChart3, Filter, Search } from 'lucide-react'

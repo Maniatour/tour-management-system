@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { 
   Search, 
@@ -9,12 +9,15 @@ import {
   Eye, 
   Calendar,
   User,
-  Database,
+  Database as DatabaseIcon,
   Activity,
   ArrowUpDown
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import type { Database } from '@/lib/supabase'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
+
+type AuditLogViewRow = Database['public']['Views']['audit_logs_view']['Row']
 
 interface AuditLog {
   id: string
@@ -30,6 +33,39 @@ interface AuditLog {
   user_agent: string
   created_at: string
   record_name: string
+}
+
+function jsonToRecordOrNull(value: AuditLogViewRow['old_values']): Record<string, unknown> | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
+  return null
+}
+
+function mapAuditViewRowToAuditLog(row: AuditLogViewRow): AuditLog | null {
+  if (row.id == null || String(row.id).trim() === '') return null
+  const rawAction = row.action
+  const action: AuditLog['action'] =
+    rawAction === 'INSERT' || rawAction === 'UPDATE' || rawAction === 'DELETE' ? rawAction : 'UPDATE'
+  const cf = row.changed_fields
+  const changed_fields = Array.isArray(cf) ? cf.filter((x): x is string => typeof x === 'string') : []
+  const ip = row.ip_address
+  const ipStr = typeof ip === 'string' ? ip : ip != null ? String(ip) : ''
+
+  return {
+    id: String(row.id),
+    table_name: row.table_name ?? '',
+    record_id: row.record_id ?? '',
+    action,
+    old_values: jsonToRecordOrNull(row.old_values),
+    new_values: jsonToRecordOrNull(row.new_values),
+    changed_fields,
+    user_id: row.user_id ?? '',
+    user_email: row.user_email ?? '',
+    ip_address: ipStr,
+    user_agent: row.user_agent ?? '',
+    created_at: row.created_at ?? '',
+    record_name: row.record_name ?? '',
+  }
 }
 
 const AUDIT_LOGS_UI_DEFAULT = {
@@ -100,7 +136,8 @@ export default function AdminAuditLogs() {
         return
       }
 
-      setAuditLogs(data || [])
+      const rows = (data || []) as AuditLogViewRow[]
+      setAuditLogs(rows.map(mapAuditViewRowToAuditLog).filter((x): x is AuditLog => x != null))
       setError(null) // 에러 상태 초기화
     } catch (error) {
       console.error('감사 로그 조회 중 예상치 못한 오류:', error)
@@ -319,7 +356,7 @@ export default function AdminAuditLogs() {
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">테이블</label>
             <select
               value={selectedTable}
-              onChange={(e) => setSelectedTable(e.target.value)}
+              onChange={(e) => setListUi((prev) => ({ ...prev, selectedTable: e.target.value }))}
               className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">모든 테이블</option>
@@ -358,7 +395,12 @@ export default function AdminAuditLogs() {
             <input
               type="date"
               value={dateRange.start}
-              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              onChange={(e) =>
+                setListUi((prev) => ({
+                  ...prev,
+                  dateRange: { ...prev.dateRange, start: e.target.value },
+                }))
+              }
               className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -423,7 +465,7 @@ export default function AdminAuditLogs() {
           </div>
         ) : auditLogs.length === 0 ? (
           <div className="p-6 sm:p-8 text-center text-gray-500">
-            <Database className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-gray-300" />
+            <DatabaseIcon className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-gray-300" />
             <p className="text-sm">감사 로그가 없습니다.</p>
           </div>
         ) : (
@@ -506,7 +548,7 @@ export default function AdminAuditLogs() {
                         </td>
                         <td className="px-4 lg:px-6 py-3 lg:py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="flex items-center min-w-0">
-                            <Database className="h-4 w-4 text-gray-400 mr-2 shrink-0" />
+                            <DatabaseIcon className="h-4 w-4 text-gray-400 mr-2 shrink-0" />
                             <span className="font-mono text-xs truncate">{log.record_id.substring(0, 8)}...</span>
                             {log.record_name && (
                               <span className="ml-2 text-gray-600 truncate">({log.record_name})</span>

@@ -1,6 +1,4 @@
 'use client'
-
-import React from 'react'
 import { useParams } from 'next/navigation'
 import TagTranslationManager from '@/components/admin/TagTranslationManager'
 

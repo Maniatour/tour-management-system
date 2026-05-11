@@ -49,6 +49,10 @@ export default function StripeErrorHandler() {
       if (message.includes('AbortError') || message.includes('signal is aborted')) {
         return
       }
+      // next-intl DB 번역 타임아웃 폴백 — 의도된 동작이라 일반 경고로 노출하지 않음
+      if (message.includes('[i18n]') && message.includes('translation_values')) {
+        return
+      }
       originalWarn(...(args as []))
     }
 

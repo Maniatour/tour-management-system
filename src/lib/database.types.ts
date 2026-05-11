@@ -3398,6 +3398,12 @@ export type Database = {
           description: string | null
           due_date: string | null
           id: string
+          next_notify_at: string | null
+          notify_day_of_month: number | null
+          notify_enabled: boolean
+          notify_month: number | null
+          notify_time: string | null
+          notify_weekday: number | null
           scope: string
           title: string
           updated_at: string
@@ -3413,6 +3419,12 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          next_notify_at?: string | null
+          notify_day_of_month?: number | null
+          notify_enabled?: boolean
+          notify_month?: number | null
+          notify_time?: string | null
+          notify_weekday?: number | null
           scope: string
           title: string
           updated_at?: string
@@ -3428,11 +3440,49 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          next_notify_at?: string | null
+          notify_day_of_month?: number | null
+          notify_enabled?: boolean
+          notify_month?: number | null
+          notify_time?: string | null
+          notify_weekday?: number | null
           scope?: string
           title?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      op_todo_notify_snooze: {
+        Row: {
+          id: string
+          suppress_until: string
+          todo_id: string
+          updated_at: string
+          user_email: string
+        }
+        Insert: {
+          id?: string
+          suppress_until: string
+          todo_id: string
+          updated_at?: string
+          user_email: string
+        }
+        Update: {
+          id?: string
+          suppress_until?: string
+          todo_id?: string
+          updated_at?: string
+          user_email?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "op_todo_notify_snooze_todo_id_fkey"
+            columns: ["todo_id"]
+            isOneToOne: false
+            referencedRelation: "op_todos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       options: {
         Row: {
@@ -6581,6 +6631,69 @@ export type Database = {
           target_positions?: string[] | null
           title?: string
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      team_board_comments: {
+        Row: {
+          id: string
+          target_type: string
+          target_id: string
+          comment: string
+          created_by: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          target_type: string
+          target_id: string
+          comment: string
+          created_by: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          target_type?: string
+          target_id?: string
+          comment?: string
+          created_by?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      team_board_status_logs: {
+        Row: {
+          id: string
+          target_type: string
+          target_id: string
+          action: string
+          from_state: string | null
+          to_state: string | null
+          note: string | null
+          changed_by: string
+          changed_at: string
+        }
+        Insert: {
+          id?: string
+          target_type: string
+          target_id: string
+          action: string
+          from_state?: string | null
+          to_state?: string | null
+          note?: string | null
+          changed_by: string
+          changed_at?: string
+        }
+        Update: {
+          id?: string
+          target_type?: string
+          target_id?: string
+          action?: string
+          from_state?: string | null
+          to_state?: string | null
+          note?: string | null
+          changed_by?: string
+          changed_at?: string
         }
         Relationships: []
       }
@@ -10752,6 +10865,10 @@ export type Database = {
       is_super_admin: { Args: { p_email?: string }; Returns: boolean }
       is_team_member: { Args: { p_email: string }; Returns: boolean }
       manual_reset_todos: { Args: { category_name: string }; Returns: string }
+      op_todo_notify_handle_complete: {
+        Args: { p_next_notify_at: string | null; p_todo_id: string }
+        Returns: undefined
+      }
       map_product_id: { Args: { old_product_id: string }; Returns: string }
       migrate_choices_pricing_keys: {
         Args: never
