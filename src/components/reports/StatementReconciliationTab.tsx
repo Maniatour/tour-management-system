@@ -88,6 +88,10 @@ import {
   type StatementCsvDirectionMode
 } from '@/lib/statement-csv'
 import { formatStatementLineDescription } from '@/lib/statement-display'
+import {
+  filterParentLinesRemovingNestedChildDuplicates,
+  resolveNestedStatementChildAccountId
+} from '@/lib/statement-nested-account-dedupe'
 import type { BulkCompanyDuplicateCheckInput } from '@/lib/statement-bulk-company-duplicate-check'
 import { type ExpenseCandidate } from '@/lib/reconciliation-engine'
 import { hotelAmountForSettlement, isHotelBookingIncludedInSettlement } from '@/lib/bookingSettlement'
@@ -1656,6 +1660,8 @@ export default function StatementReconciliationTab() {
 
   const importsRef = useRef(imports)
   importsRef.current = imports
+  const accountsRef = useRef(accounts)
+  accountsRef.current = accounts
   const linesMatchesCacheRef = useRef<
     Map<string, { loadedAt: number; lines: StatementLine[]; matches: ReconciliationMatchRow[] }>
   >(new Map())
@@ -1690,7 +1696,17 @@ export default function StatementReconciliationTab() {
       })
       return
     }
-    const cacheKey = `${accountId}|${importIds.join(',')}`
+    const parentAcc = accountsRef.current.find((a) => a.id === accountId)
+    const nestedChildId =
+      parentAcc != null ? resolveNestedStatementChildAccountId(parentAcc, accountsRef.current) : null
+    const nestedChildImportIds =
+      nestedChildId == null
+        ? []
+        : importsRef.current
+            .filter((im) => im.financial_account_id === nestedChildId)
+            .map((im) => im.id)
+            .sort()
+    const cacheKey = `${accountId}|${importIds.join(',')}|n:${nestedChildImportIds.join(',')}`
     if (!force) {
       const cached = linesMatchesCacheRef.current.get(cacheKey)
       if (cached && Date.now() - cached.loadedAt < RECONCILIATION_LOAD_CACHE_TTL_MS) {
@@ -1747,6 +1763,26 @@ export default function StatementReconciliationTab() {
         return String(a.id).localeCompare(String(b.id))
       })
       matchRows = dedupeReconciliationMatchRows(matchRows)
+
+      if (nestedChildImportIds.length > 0) {
+        const childTasks: Promise<StatementLine[]>[] = []
+        for (let i = 0; i < nestedChildImportIds.length; i += STATEMENT_IMPORT_LINE_CHUNK) {
+          const slice = nestedChildImportIds.slice(i, i + STATEMENT_IMPORT_LINE_CHUNK)
+          childTasks.push(fetchAllStatementLinesForImportChunk(slice))
+        }
+        const childSettled = await Promise.allSettled(childTasks)
+        const childLines: StatementLine[] = []
+        for (const s of childSettled) {
+          if (s.status === 'fulfilled') childLines.push(...s.value)
+          else if (!isAbortLikeError(s.reason)) console.error(s.reason)
+        }
+        if (childLines.length > 0) {
+          linesArr.splice(0, linesArr.length, ...filterParentLinesRemovingNestedChildDuplicates(linesArr, childLines))
+          const kept = new Set(linesArr.map((l) => l.id))
+          matchRows = matchRows.filter((m) => kept.has(m.statement_line_id))
+        }
+      }
+
       linesMatchesCacheRef.current.set(cacheKey, {
         loadedAt: Date.now(),
         lines: linesArr,

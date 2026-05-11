@@ -76,6 +76,7 @@ import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
+  resolveCommissionBasePriceForPersistence,
 } from '@/utils/channelSettlement'
 import {
   isReturnedPaymentStatus,
@@ -853,6 +854,8 @@ export default function ReservationForm({
   const [isExistingPricingLoaded, setIsExistingPricingLoaded] = useState<boolean>(false)
   // DB에서 불러온 가격 필드 여부 (검은색=DB값, 빨간색=계산값 표시용)
   const [pricingFieldsFromDb, setPricingFieldsFromDb] = useState<Record<string, boolean>>({})
+  const pricingFieldsFromDbRef = useRef(pricingFieldsFromDb)
+  pricingFieldsFromDbRef.current = pricingFieldsFromDb
   // 편집 모드에서 가격 로드(loadPricingInfo)가 끝난 뒤에만 저장 가능 (0으로 덮어쓰기 방지)
   const [pricingLoadComplete, setPricingLoadComplete] = useState<boolean>(false)
   // reservation_pricing 행 id (상세/폼 가격 섹션 표시용)
@@ -5302,6 +5305,14 @@ export default function ReservationForm({
       }
 
       const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
+      const pffd = pricingFieldsFromDbRef.current
+      const channelPricingFieldsUserEdited =
+        pffd.commission_base_price === false || pffd.onlinePaymentAmount === false
+      const commissionBaseToSave = resolveCommissionBasePriceForPersistence({
+        formCommissionBase: fd.commission_base_price,
+        channelPayNet,
+        channelPricingFieldsUserEdited,
+      })
       const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
       const channelSettlementToSave = (() => {
@@ -5413,7 +5424,7 @@ export default function ReservationForm({
         commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
         pricing_adults: Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0)),
         commission_base_price: keep(
-          Math.round(channelPayNet * 100) / 100,
+          commissionBaseToSave,
           (existing as any)?.commission_base_price
         ),
         channel_settlement_amount: channelSettlementToSave,

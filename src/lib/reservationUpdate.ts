@@ -9,6 +9,7 @@ import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
+  resolveCommissionBasePriceForPersistence,
 } from '@/utils/channelSettlement'
 import {
   isReturnedPaymentStatus,
@@ -400,6 +401,10 @@ export async function updateReservation(
       }
 
       const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
+      const commissionBaseToSave = resolveCommissionBasePriceForPersistence({
+        formCommissionBase: pricingInfo.commission_base_price ?? pricingInfo.commissionBasePrice,
+        channelPayNet,
+      })
       const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
       const channelSettlementToSave = (() => {
@@ -506,7 +511,7 @@ export async function updateReservation(
         commission_amount: keep(toNum(pricingInfo.commission_amount), existingRow?.commission_amount),
         pricing_adults: pricingAdultsVal,
         commission_base_price: keep(
-          Math.round(channelPayNet * 100) / 100,
+          commissionBaseToSave,
           (existingRow as { commission_base_price?: number } | null)?.commission_base_price
         ),
         channel_settlement_amount: channelSettlementToSave,

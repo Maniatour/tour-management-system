@@ -2017,9 +2017,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">등록일</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
+                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[7rem] w-[7rem] min-w-0">채널RN</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
+                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[12rem] w-[12rem] min-w-0">상품명</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16" title="reservation_pricing.pricing_adults">인원</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -2078,14 +2078,18 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                           {item.customerName}
                         </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
-                                         {item.channelRN || '-'}
+                                       <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[7rem] w-[7rem]">
+                                         <span className="block truncate" title={item.channelRN?.trim() ? item.channelRN : '-'}>
+                                           {item.channelRN || '-'}
+                                         </span>
                                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
                                          {item.channelName}
                                        </td>
-                                       <td className="px-2 py-2 text-xs text-gray-600 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={item.productName}>
-                                         {item.productName}
+                                       <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[12rem] w-[12rem]">
+                                         <span className="block truncate" title={item.productName}>
+                                           {item.productName}
+                                         </span>
                                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16" title="pricing_adults">
                                          {billingAdultsFromRow(item)}
@@ -2335,8 +2339,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">등록일</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[7rem] w-[7rem] min-w-0">채널RN</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[12rem] w-[12rem] min-w-0">상품명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16" title="reservation_pricing.pricing_adults">인원</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -2415,11 +2419,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                                                 {item.customerName}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
-                          {item.channelRN || '-'}
-                        </td>
-                                              <td className="px-2 py-2 text-xs text-gray-600 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={item.productName}>
-                                                {item.productName}
+                                              <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[7rem] w-[7rem]">
+                                                <span className="block truncate" title={item.channelRN?.trim() ? item.channelRN : '-'}>
+                                                  {item.channelRN || '-'}
+                                                </span>
+                                              </td>
+                                              <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[12rem] w-[12rem]">
+                                                <span className="block truncate" title={item.productName}>
+                                                  {item.productName}
+                                                </span>
                                               </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16" title="pricing_adults">
                                          {billingAdultsFromRow(item)}
@@ -2625,9 +2633,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">투어 날짜</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[7rem] w-[7rem] min-w-0">채널RN</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[12rem] w-[12rem] min-w-0">상품명</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16" title="reservation_pricing.pricing_adults">인원</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -2718,14 +2726,18 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                             {item.customerName}
                           </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
-                                        {item.channelRN || '-'}
+                                      <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[7rem] w-[7rem]">
+                                        <span className="block truncate" title={item.channelRN?.trim() ? item.channelRN : '-'}>
+                                          {item.channelRN || '-'}
+                                        </span>
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
                                         {item.channelName || '-'}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
-                                        {item.productName}
+                                      <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[12rem] w-[12rem]">
+                                        <span className="block truncate" title={item.productName}>
+                                          {item.productName}
+                                        </span>
                                       </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16" title="pricing_adults">
                                          {billingAdultsFromRow(item)}
@@ -3044,8 +3056,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">투어 날짜</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[7rem] w-[7rem] min-w-0">채널RN</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase max-w-[12rem] w-[12rem] min-w-0">상품명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16" title="reservation_pricing.pricing_adults">인원</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -3136,11 +3148,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                                                 {item.customerName}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
-                            {item.channelRN || '-'}
-                          </td>
-                                              <td className="px-2 py-2 text-xs text-gray-600 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={item.productName}>
-                                                {item.productName}
+                                              <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[7rem] w-[7rem]">
+                                                <span className="block truncate" title={item.channelRN?.trim() ? item.channelRN : '-'}>
+                                                  {item.channelRN || '-'}
+                                                </span>
+                                              </td>
+                                              <td className="px-2 py-2 text-xs text-gray-600 min-w-0 max-w-[12rem] w-[12rem]">
+                                                <span className="block truncate" title={item.productName}>
+                                                  {item.productName}
+                                                </span>
                                               </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16" title="pricing_adults">
                                          {billingAdultsFromRow(item)}

@@ -257,3 +257,28 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   return roundUsd2(totalRevenue)
 }
 
+/**
+ * `reservation_pricing.commission_base_price` 저장 시 UI「채널 결제 금액」(net)과 정산 산식 `channelPayNet` 중 무엇을 쓸지 결정.
+ * 기존에는 산식만 저장해 사용자가 폼에서 맞춘 금액이 DB에 반영되지 않던 문제를 막는다.
+ */
+export function resolveCommissionBasePriceForPersistence(input: {
+  formCommissionBase: unknown
+  channelPayNet: number
+  /** PricingSection이 채널 결제 관련 필드를 편짟해 `pricingFieldsFromDb` 플래그가 false인 경우 */
+  channelPricingFieldsUserEdited?: boolean
+}): number {
+  const net = roundUsd2(Math.max(0, toN(input.channelPayNet)))
+  const raw = input.formCommissionBase
+  const has =
+    raw !== undefined &&
+    raw !== null &&
+    String(raw).trim() !== '' &&
+    Number.isFinite(Number(raw))
+  if (!has) return net
+  const form = roundUsd2(Number(raw))
+  if (input.channelPricingFieldsUserEdited) return form
+  if (form <= 0.005 && net > 0.01) return net
+  if (Math.abs(form - net) > 0.02) return form
+  return net
+}
+

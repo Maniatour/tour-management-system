@@ -225,6 +225,47 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
 }
 
 /**
+ * `groupedReservations` + `splitReservationsByActivityForDate`와 동일한 status-change 감사 대상을
+ * 필터된 목록만으로 구성한다. (그룹 객체 참조가 바뀔 때마다 effect가 돌지 않도록 키 계산에 사용)
+ */
+function buildSimpleCardStatusChangeAuditRequestFromFiltered(
+  filteredReservations: Reservation[],
+  cardsWeekPage: number
+): {
+  rangeStart: string
+  rangeEnd: string
+  targets: { key: string; reservationId: string; dateKey: string }[]
+  uniqueIds: string[]
+} {
+  const { startYmd, endYmd, rangeStartIso, rangeEndIso } = browserLocalWeekRangeFromOffset(cardsWeekPage)
+  const targets: { key: string; reservationId: string; dateKey: string }[] = []
+  for (const r of filteredReservations) {
+    const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+    const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+    if (!updatedKey || updatedKey < startYmd || updatedKey > endYmd) continue
+    if (createdKey === updatedKey && !isReservationUpdatedStrictlyAfterAdded(r)) continue
+    const reservationId = String(r.id ?? '').trim()
+    if (!reservationId) continue
+    const dateKey = updatedKey
+    targets.push({ key: `${reservationId}|${dateKey}`, reservationId, dateKey })
+  }
+  const uniqueIds = [...new Set(targets.map((x) => x.reservationId))]
+  return { rangeStart: rangeStartIso, rangeEnd: rangeEndIso, targets, uniqueIds }
+}
+
+function computeSimpleCardStatusChangeAuditContentKey(
+  groupByDate: boolean,
+  cardLayout: string,
+  filteredReservations: Reservation[],
+  cardsWeekPage: number
+): string | null {
+  if (!groupByDate || cardLayout !== 'simple') return null
+  const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+  const keys = req.targets.map((t) => t.key).sort().join(',')
+  return `${req.rangeStart}\u0001${req.rangeEnd}\u0001${keys}`
+}
+
+/**
  * 로컬 `year`년 1/1 ~ (같은 해이면 `throughYmd`까지, 과거 해이면 12/31까지) 각 달력일의
  * 순 등록 인원(등록 − 취소, 차트와 동일한 취소 규칙)을 요일별로 합산한 뒤,
  * 그 기간에 실제 존재한 해당 요일 수로 나눈 일평균(7요소).
@@ -2273,45 +2314,55 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return formatBrowserLocalYmdRangeDisplay(startYmd, endYmd, localeTag)
   }, [locale, regCancelGranularity, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
 
-  // ??????????????????? ????????
+  /** 날짜 그룹 보기: 현재 목록의 각 날짜를 접힌 상태로 맞춤. `prev`에 과거 날짜 키만 남으면 매번 새 Set을 반환해 무한 렌더가 나지 않도록 정리한다. */
   useEffect(() => {
     if (groupByDate && groupedReservations && Object.keys(groupedReservations).length > 0) {
       const allDates = Object.keys(groupedReservations)
-      setCollapsedGroups(prev => {
-        // ???? ?? ???? ??? ??????? ???
-        const allCollapsed = allDates.every(date => prev.has(date))
-        if (allCollapsed && prev.size === allDates.length) {
-          return prev // ???? ?? ???? ??? ????????? ???
+      const allDatesSet = new Set(allDates)
+      setCollapsedGroups((prev) => {
+        let next: Set<string> = prev
+        for (const p of prev) {
+          if (!allDatesSet.has(p)) {
+            if (next === prev) next = new Set(prev)
+            next.delete(p)
+          }
         }
-        // ???????????????? ?? ???????? ????????
-        const newSet = new Set(prev)
-        allDates.forEach(date => newSet.add(date))
+        const allCollapsed = allDates.every((date) => next.has(date))
+        if (allCollapsed && next.size === allDates.length) {
+          return next === prev ? prev : next
+        }
+        const newSet = new Set(next)
+        for (const date of allDates) newSet.add(date)
+        if (newSet.size === prev.size) {
+          let sameAsPrev = true
+          for (const x of newSet) {
+            if (!prev.has(x)) {
+              sameAsPrev = false
+              break
+            }
+          }
+          if (sameAsPrev) return prev
+        }
         return newSet
       })
     }
   }, [groupedReservations, groupByDate])
 
-  const simpleCardStatusChangeAuditRequest = useMemo(() => {
-    if (!groupByDate || cardLayout !== 'simple') return null
-    const { rangeStartIso: rangeStart, rangeEndIso: rangeEnd } = browserLocalWeekRangeFromOffset(cardsWeekPage)
-    const targets: { key: string; reservationId: string; dateKey: string }[] = []
-    for (const [dateKey, dayList] of Object.entries(groupedReservations)) {
-      const { statusChange } = splitReservationsByActivityForDate(dateKey, dayList)
-      for (const r of statusChange) {
-        targets.push({ key: `${r.id}|${dateKey}`, reservationId: r.id, dateKey })
-      }
-    }
-    const uniqueIds = [...new Set(targets.map((x) => x.reservationId))]
-    return { rangeStart, rangeEnd, targets, uniqueIds }
-  }, [groupByDate, cardLayout, cardsWeekPage, groupedReservations])
+  /** 참조가 아닌 감사 대상 식별 — 목록이 같은 내용으로 자주 갱신돼도 로딩 문구가 깜빡이지 않게 함 */
+  const simpleCardAuditContentKey = computeSimpleCardStatusChangeAuditContentKey(
+    groupByDate,
+    cardLayout,
+    filteredReservations,
+    cardsWeekPage
+  )
 
   useEffect(() => {
-    const req = simpleCardStatusChangeAuditRequest
-    if (!req) {
+    if (simpleCardAuditContentKey === null) {
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
       return
     }
+    const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
     if (req.targets.length === 0) {
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
@@ -2384,7 +2435,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return () => {
       cancelled = true
     }
-  }, [simpleCardStatusChangeAuditRequest])
+  }, [simpleCardAuditContentKey]) // eslint-disable-line react-hooks/exhaustive-deps -- 감사 대상은 키에만 반영(동일 키면 재조회 안 함)
 
   const statisticsWeekBoundary = useMemo(
     () => browserLocalWeekRangeFromOffset(statisticsWeekOffset),
