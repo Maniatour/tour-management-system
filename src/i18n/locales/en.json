@@ -2408,6 +2408,7 @@
       "assignedTourMetaLoading": "Loading guide, vehicle, and other details.",
       "assigned": "Assigned",
       "createTourTitle": "Create tour",
+      "createTourAndAssignButton": "Create tour & assign reservation",
       "paymentHistoryTitle": "Payment history",
       "viewCustomer": "View customer",
       "viewCustomerTitle": "View customer",
@@ -3229,6 +3230,21 @@
     "needCheckDuplicateEmpty": "No reservations that appear more than once across tour assignment lists.",
     "deletedToursModalTitle": "Deleted tours (hidden from list and calendar)",
     "addTour": "Add Tour",
+    "newTourPage": {
+      "title": "Create new tour",
+      "description": "Pick a product and tour date to create an empty tour. You can assign reservations from the tour detail page.",
+      "product": "Product",
+      "productPlaceholder": "Select a product",
+      "tourDate": "Tour date",
+      "privateTour": "Mark as private tour",
+      "submit": "Create tour",
+      "submitting": "Creating…",
+      "backToList": "Back to tour list",
+      "closeModal": "Close",
+      "successAlert": "Tour created. Opening the detail page.",
+      "errorPrefix": "Could not create tour",
+      "errorGeneric": "Something went wrong while creating the tour."
+    },
     "guideTours": {
       "loading": "Loading tour data...",
       "backToDashboard": "Back to Guide Dashboard",
@@ -3446,6 +3462,8 @@
       "shareLinkCopied": "Share link copied to clipboard",
       "uploadProgressModalTitle": "Uploading tour photos",
       "uploadProgressModalHint": "Please wait until the upload finishes.",
+      "uploadProgressModalPreparingTitle": "Preparing upload",
+      "uploadProgressModalPreparingHint": "Checking {count} selected photo(s). Please wait.",
       "uploadProgressCount": "{current} / {total} processed",
       "uploadProgressBackgroundNote": "Uploads continue while you navigate elsewhere on this site. Closing the browser tab or fully quitting the app may stop the upload."
     },

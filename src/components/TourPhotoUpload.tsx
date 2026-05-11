@@ -10,6 +10,10 @@ import { useTourPhotoFolder } from '@/hooks/useTourPhotoFolder'
 import { useAuth } from '@/contexts/AuthContext'
 import { createThumbnail, getThumbnailFileName } from '@/lib/imageUtils'
 import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
+import {
+  endTourPhotoUploadSession,
+  startTourPhotoPrepare,
+} from '@/lib/tourPhotoUploadSession'
 
 interface TourPhoto {
   id: string
@@ -484,9 +488,6 @@ export default function TourPhotoUpload({
       return
     }
     
-    // Storage 버킷 확인 (디버깅용)
-    await ensureStorageBucket()
-
     if (fileArray.length > 500) {
       alert('한번에 최대 500개의 파일만 업로드할 수 있습니다.')
       return
@@ -494,10 +495,13 @@ export default function TourPhotoUpload({
 
     console.log(`총 ${fileArray.length}개 파일 업로드 시작`)
 
+    startTourPhotoPrepare(tourId, fileArray.length)
     setUploading(true)
 
     void (async () => {
       try {
+        await ensureStorageBucket()
+
         const result = await runTourPhotoUploadQueue({
           files: fileArray,
           tourId,
@@ -537,6 +541,7 @@ export default function TourPhotoUpload({
         console.error('Error uploading photos:', error)
         alert(`업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
       } finally {
+        endTourPhotoUploadSession()
         setUploading(false)
       }
     })()

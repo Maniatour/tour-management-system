@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -30,6 +30,7 @@ import dynamic from 'next/dynamic'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -122,6 +123,22 @@ const SCHEDULE_VEHICLE_EDIT_SELECT = `
 const SCHEDULE_GUIDE_MODAL_NO_GUIDE = '__schedule_guide_modal_no_guide__'
 const SCHEDULE_GUIDE_MODAL_NO_ASSISTANT = '__schedule_guide_modal_no_assistant__'
 const SCHEDULE_GUIDE_MODAL_NO_VEHICLE = '__schedule_guide_modal_no_vehicle__'
+
+/** 통합 스케줄 알림: 닫으면 같은 탭 세션에서 자동 모달 재표시 안 함 (월 변경 시 초기화) */
+const SCHEDULE_HEALTH_SUMMARY_SESSION_KEY = 'schedule_health_summary_modal_v1'
+const SCHEDULE_HEALTH_FAB_POS_KEY = 'schedule_health_fab_pos_v1'
+const SCHEDULE_HEALTH_UI_MODE_KEY = 'schedule_health_ui_mode_v1'
+
+function isActiveTicketBookingStatusForHealth(status: string | null | undefined): boolean {
+  const s = (status || '').toLowerCase()
+  return (
+    s === 'confirmed' ||
+    s === 'paid' ||
+    s === 'pending' ||
+    s === 'tentative' ||
+    s === 'completed'
+  )
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
@@ -453,6 +470,35 @@ export default function ScheduleView() {
   const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {}, buttonText: '확인', buttonColor: 'bg-red-500 hover:bg-red-600' })
+  /** 오늘~6일 후 구간: 투어 건수 vs 차량 배정 건수 불일치 안내 모달 */
+  /** 통합 알림: 원격 주간 스냅샷(차량·미배정·입장권) */
+  const [scheduleHealthFetched, setScheduleHealthFetched] = useState<{
+    tours: Tour[]
+    reservations: Array<{
+      id: string
+      tour_date: string
+      product_id: string
+      total_people: number | null
+      status: string | null
+    }>
+    ticketBookings: Array<{ id: string; tour_id: string | null; ea: number | null; status: string | null }>
+  } | null>(null)
+  const [scheduleHealthFetchedLoaded, setScheduleHealthFetchedLoaded] = useState(false)
+  const [scheduleHealthModalOpen, setScheduleHealthModalOpen] = useState(false)
+  const [scheduleHealthFabPos, setScheduleHealthFabPos] = useState<{ left: number; top: number } | null>(null)
+  const [scheduleHealthFabHydrated, setScheduleHealthFabHydrated] = useState(false)
+  const scheduleHealthFabDragRef = useRef<{
+    pointerId: number
+    startClientX: number
+    startClientY: number
+    startLeft: number
+    startTop: number
+  } | null>(null)
+  const scheduleHealthFabPosRef = useRef({ left: 0, top: 0 })
+  const [scheduleHealthUiMode, setScheduleHealthUiMode] = useState<'auto_modal' | 'fab_only'>(() => {
+    if (typeof window === 'undefined') return 'auto_modal'
+    return localStorage.getItem(SCHEDULE_HEALTH_UI_MODE_KEY) === 'fab_only' ? 'fab_only' : 'auto_modal'
+  })
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
@@ -635,9 +681,6 @@ export default function ScheduleView() {
     [batchOffPeriods, collectBatchOffDatesFromPeriods]
   )
 
-  /** 정원 초과(배정 > 수용) 안내 모달 — 월 변경 시 다시 표시 가능 */
-  const [capacityOverflowModalOpen, setCapacityOverflowModalOpen] = useState(false)
-  const [capacityOverflowModalDismissed, setCapacityOverflowModalDismissed] = useState(false)
   const [capacityOverflowCreatingKey, setCapacityOverflowCreatingKey] = useState<string | null>(null)
 
   /** 스케쥴뷰(상품별 인원) 셀 클릭 → 해당일·상품 예약 목록 */
@@ -1294,6 +1337,151 @@ export default function ScheduleView() {
     [getMultiDayTourDays]
   )
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = localStorage.getItem(SCHEDULE_HEALTH_FAB_POS_KEY)
+      if (raw) {
+        const p = JSON.parse(raw) as { left?: unknown; top?: unknown }
+        if (
+          typeof p.left === 'number' &&
+          typeof p.top === 'number' &&
+          Number.isFinite(p.left) &&
+          Number.isFinite(p.top)
+        ) {
+          scheduleHealthFabPosRef.current = { left: p.left, top: p.top }
+          setScheduleHealthFabPos({ left: p.left, top: p.top })
+          setScheduleHealthFabHydrated(true)
+          return
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    const def = {
+      left: Math.max(16, window.innerWidth - 72),
+      top: Math.max(16, window.innerHeight - 96),
+    }
+    scheduleHealthFabPosRef.current = def
+    setScheduleHealthFabPos(def)
+    setScheduleHealthFabHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const today = dayjs().startOf('day')
+        const weekLast = today.add(6, 'day')
+        const fetchStart = today.subtract(28, 'day').format('YYYY-MM-DD')
+        const fetchEnd = weekLast.format('YYYY-MM-DD')
+
+        const TOURS_PAGE = 1000
+        let weekTours: Tour[] = []
+        for (let from = 0; ; from += TOURS_PAGE) {
+          const { data: batch, error } = await supabase
+            .from('tours')
+            .select(
+              'id, tour_date, tour_status, tour_car_id, product_id, tour_guide_id, assistant_id, team_type, reservation_ids, products(name)',
+            )
+            .gte('tour_date', fetchStart)
+            .lte('tour_date', fetchEnd)
+            .order('tour_date', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, from + TOURS_PAGE - 1)
+          if (error) {
+            console.error('schedule health snapshot (tours)', error)
+            if (!cancelled) setScheduleHealthFetchedLoaded(true)
+            return
+          }
+          const b = (batch || []) as Tour[]
+          weekTours = weekTours.concat(b)
+          if (b.length < TOURS_PAGE) break
+        }
+        if (cancelled) return
+
+        const resIdSet = new Set<string>()
+        for (const t of weekTours) {
+          const ids = (t as { reservation_ids?: unknown }).reservation_ids
+          if (!Array.isArray(ids)) continue
+          for (const rid of ids) {
+            const s = String(rid || '').trim()
+            if (s) resIdSet.add(s)
+          }
+        }
+        const resIds = [...resIdSet]
+        const reservations: Array<{
+          id: string
+          tour_date: string
+          product_id: string
+          total_people: number | null
+          status: string | null
+        }> = []
+        const RES_BATCH = 200
+        if (resIds.length > 0) {
+          for (let i = 0; i < resIds.length; i += RES_BATCH) {
+            const chunk = resIds.slice(i, i + RES_BATCH)
+            const { data: resBatch, error: resErr } = await supabase
+              .from('reservations')
+              .select('id, tour_date, product_id, total_people, status')
+              .in('id', chunk)
+            if (resErr) {
+              console.error('schedule health snapshot (reservations)', resErr)
+              break
+            }
+            for (const r of resBatch || []) {
+              reservations.push(r as (typeof reservations)[number])
+            }
+          }
+        }
+
+        const ticketTourIdSet = new Set<string>()
+        for (const t of weekTours) {
+          if (isTourCancelled(t.tour_status)) continue
+          for (let d = 0; d < 4; d++) {
+            const ds = today.add(d, 'day').format('YYYY-MM-DD')
+            if (tourCoversScheduleDate(t, ds)) {
+              ticketTourIdSet.add(String(t.id))
+              break
+            }
+          }
+        }
+        const ticketTourIds = [...ticketTourIdSet]
+        const ticketBookings: Array<{ id: string; tour_id: string | null; ea: number | null; status: string | null }> =
+          []
+        const TB_BATCH = 200
+        if (ticketTourIds.length > 0) {
+          for (let i = 0; i < ticketTourIds.length; i += TB_BATCH) {
+            const chunk = ticketTourIds.slice(i, i + TB_BATCH)
+            const { data: tbBatch, error: tbErr } = await supabase
+              .from('ticket_bookings')
+              .select('id, tour_id, ea, status')
+              .in('tour_id', chunk)
+            if (tbErr) {
+              console.error('schedule health snapshot (ticket_bookings)', tbErr)
+              break
+            }
+            for (const row of tbBatch || []) {
+              ticketBookings.push(
+                row as { id: string; tour_id: string | null; ea: number | null; status: string | null },
+              )
+            }
+          }
+        }
+
+        if (cancelled) return
+        setScheduleHealthFetched({ tours: weekTours, reservations, ticketBookings })
+      } catch (e) {
+        console.error('schedule health snapshot', e)
+      } finally {
+        if (!cancelled) setScheduleHealthFetchedLoaded(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [tourCoversScheduleDate])
 
   // 월 컬럼: 전월 마지막 날 + 해당 월 전체 + 익월 첫날 (예: 5월 뷰 → 4/30 … 5/31 … 6/1)
   const monthDays = useMemo(() => {
@@ -4150,15 +4338,237 @@ export default function ScheduleView() {
     return items
   }, [productScheduleData, monthDays])
 
+  const scheduleHealthFromFetch = useMemo(() => {
+    if (!scheduleHealthFetched) {
+      return {
+        vehicleMismatch: [] as Array<{ dateString: string; tourCount: number; vehicleCount: number }>,
+        incompleteTours: [] as Array<{
+          tourId: string
+          tourDate: string
+          productName: string
+          missingLabels: string
+        }>,
+        ticketPeopleMismatch: [] as Array<{
+          tourId: string
+          tourDate: string
+          productName: string
+          people: number
+          ticketEa: number
+        }>,
+      }
+    }
+    const { tours: wt, reservations: resList, ticketBookings: tbList } = scheduleHealthFetched
+    const today = dayjs().startOf('day')
+
+    const vehicleMismatch: Array<{ dateString: string; tourCount: number; vehicleCount: number }> = []
+    for (let d = 0; d < 7; d++) {
+      const dateString = today.add(d, 'day').format('YYYY-MM-DD')
+      const tourCount = wt.filter(
+        (t) => !isTourCancelled(t.tour_status) && tourCoversScheduleDate(t, dateString),
+      ).length
+      const vehicleCount = wt.filter(
+        (t) =>
+          !isTourCancelled(t.tour_status) &&
+          Boolean(t.tour_car_id && String(t.tour_car_id).trim()) &&
+          tourCoversScheduleDate(t, dateString),
+      ).length
+      if (tourCount !== vehicleCount) {
+        vehicleMismatch.push({ dateString, tourCount, vehicleCount })
+      }
+    }
+
+    const guideL = locale === 'ko' ? '가이드' : 'Guide'
+    const assistantL = locale === 'ko' ? '어시스턴트' : 'Assistant'
+    const vehicleL = locale === 'ko' ? '차량(배차)' : 'Vehicle'
+    const incMap = new Map<string, { tour: Tour; miss: Set<string> }>()
+    for (let d = 0; d < 7; d++) {
+      const dateString = today.add(d, 'day').format('YYYY-MM-DD')
+      for (const t of wt) {
+        if (isTourCancelled(t.tour_status)) continue
+        if (!tourCoversScheduleDate(t, dateString)) continue
+        const missing = new Set<string>()
+        if (!t.tour_guide_id || !String(t.tour_guide_id).trim()) missing.add(guideL)
+        if (String(t.team_type || '') !== '1guide' && (!t.assistant_id || !String(t.assistant_id).trim())) {
+          missing.add(assistantL)
+        }
+        if (!t.tour_car_id || !String(t.tour_car_id).trim()) missing.add(vehicleL)
+        if (missing.size === 0) continue
+        const ex = incMap.get(t.id)
+        if (!ex) {
+          incMap.set(t.id, { tour: t, miss: new Set(missing) })
+        } else {
+          missing.forEach((m) => ex.miss.add(m))
+        }
+      }
+    }
+    const incompleteTours = [...incMap.values()]
+      .map(({ tour, miss }) => ({
+        tourId: tour.id,
+        tourDate: String(tour.tour_date || '').slice(0, 10),
+        productName: (
+          (tour as { products?: { name?: string } }).products?.name ||
+          tour.product_id ||
+          '—'
+        ).toString(),
+        missingLabels: [...miss].sort().join(locale === 'ko' ? ' · ' : ', '),
+      }))
+      .sort((a, b) => a.tourDate.localeCompare(b.tourDate) || a.productName.localeCompare(b.productName))
+
+    const tbByTour = new Map<string, typeof tbList>()
+    for (const tb of tbList) {
+      if (!tb.tour_id) continue
+      const k = String(tb.tour_id)
+      if (!tbByTour.has(k)) tbByTour.set(k, [])
+      tbByTour.get(k)!.push(tb)
+    }
+
+    const ticketPeopleMismatch: Array<{
+      tourId: string
+      tourDate: string
+      productName: string
+      people: number
+      ticketEa: number
+    }> = []
+    const stLower = (s: string | null | undefined) => String(s || '').toLowerCase()
+    for (const tour of wt) {
+      if (isTourCancelled(tour.tour_status)) continue
+      let touchesFour = false
+      for (let d = 0; d < 4; d++) {
+        const ds = today.add(d, 'day').format('YYYY-MM-DD')
+        if (tourCoversScheduleDate(tour, ds)) {
+          touchesFour = true
+          break
+        }
+      }
+      if (!touchesFour) continue
+      const tourDateStr = String(tour.tour_date || '').slice(0, 10)
+      const dayReservations = resList.filter((r) => {
+        const rd = String(r.tour_date || '').slice(0, 10)
+        return (
+          rd === tourDateStr &&
+          r.product_id === tour.product_id &&
+          (stLower(r.status) === 'confirmed' || stLower(r.status) === 'recruiting')
+        )
+      })
+      const assignedIds = new Set(
+        Array.isArray((tour as { reservation_ids?: unknown }).reservation_ids)
+          ? (tour as { reservation_ids: string[] }).reservation_ids.map((x) => String(x))
+          : [],
+      )
+      const assignedPeople = dayReservations
+        .filter((r) => assignedIds.has(String(r.id)))
+        .reduce((s, r) => s + (Number(r.total_people) || 0), 0)
+      const list = tbByTour.get(String(tour.id)) || []
+      let ticketEa = 0
+      for (const tb of list) {
+        if (!isActiveTicketBookingStatusForHealth(tb.status)) continue
+        ticketEa += Number(tb.ea) || 0
+      }
+      if (assignedPeople !== ticketEa) {
+        ticketPeopleMismatch.push({
+          tourId: tour.id,
+          tourDate: tourDateStr,
+          productName: (
+            (tour as { products?: { name?: string } }).products?.name ||
+            tour.product_id ||
+            '—'
+          ).toString(),
+          people: assignedPeople,
+          ticketEa,
+        })
+      }
+    }
+    ticketPeopleMismatch.sort(
+      (a, b) => a.tourDate.localeCompare(b.tourDate) || a.productName.localeCompare(b.productName),
+    )
+
+    return { vehicleMismatch, incompleteTours, ticketPeopleMismatch }
+  }, [scheduleHealthFetched, tourCoversScheduleDate, locale])
+
+  const scheduleHealthIssueCount = useMemo(
+    () =>
+      scheduleCapacityOverflowItems.length +
+      scheduleHealthFromFetch.vehicleMismatch.length +
+      scheduleHealthFromFetch.incompleteTours.length +
+      scheduleHealthFromFetch.ticketPeopleMismatch.length,
+    [scheduleCapacityOverflowItems, scheduleHealthFromFetch],
+  )
+
   useEffect(() => {
-    setCapacityOverflowModalDismissed(false)
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(SCHEDULE_HEALTH_SUMMARY_SESSION_KEY)
+    }
   }, [scheduleMonthKey])
 
   useEffect(() => {
-    if (capacityOverflowModalDismissed) return
-    if (scheduleCapacityOverflowItems.length > 0) setCapacityOverflowModalOpen(true)
-    else setCapacityOverflowModalOpen(false)
-  }, [scheduleCapacityOverflowItems, capacityOverflowModalDismissed])
+    if (!scheduleHealthFetchedLoaded) return
+    if (scheduleHealthIssueCount === 0) return
+    if (typeof window !== 'undefined' && sessionStorage.getItem(SCHEDULE_HEALTH_SUMMARY_SESSION_KEY) === '1') {
+      return
+    }
+    if (scheduleHealthUiMode === 'fab_only') return
+    setScheduleHealthModalOpen(true)
+  }, [scheduleHealthFetchedLoaded, scheduleHealthIssueCount, scheduleHealthUiMode])
+
+  const scheduleHealthFabOnPointerMove = useCallback((e: PointerEvent) => {
+    const drag = scheduleHealthFabDragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    const dx = e.clientX - drag.startClientX
+    const dy = e.clientY - drag.startClientY
+    const w = window.innerWidth
+    const h = window.innerHeight
+    const btn = 56
+    const nextLeft = Math.min(Math.max(8, drag.startLeft + dx), Math.max(8, w - btn - 8))
+    const nextTop = Math.min(Math.max(8, drag.startTop + dy), Math.max(8, h - btn - 8))
+    scheduleHealthFabPosRef.current = { left: nextLeft, top: nextTop }
+    setScheduleHealthFabPos({ left: nextLeft, top: nextTop })
+  }, [])
+
+  const scheduleHealthFabOnPointerUp = useCallback((e: PointerEvent) => {
+    const drag = scheduleHealthFabDragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    scheduleHealthFabDragRef.current = null
+    window.removeEventListener('pointermove', scheduleHealthFabOnPointerMove)
+    window.removeEventListener('pointerup', scheduleHealthFabOnPointerUp)
+    window.removeEventListener('pointercancel', scheduleHealthFabOnPointerUp)
+    try {
+      localStorage.setItem(SCHEDULE_HEALTH_FAB_POS_KEY, JSON.stringify(scheduleHealthFabPosRef.current))
+    } catch {
+      /* ignore */
+    }
+  }, [scheduleHealthFabOnPointerMove])
+
+  const scheduleHealthFabOnPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0 || !scheduleHealthFabPos) return
+      e.stopPropagation()
+      e.preventDefault()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      scheduleHealthFabDragRef.current = {
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startLeft: scheduleHealthFabPos.left,
+        startTop: scheduleHealthFabPos.top,
+      }
+      window.addEventListener('pointermove', scheduleHealthFabOnPointerMove)
+      window.addEventListener('pointerup', scheduleHealthFabOnPointerUp)
+      window.addEventListener('pointercancel', scheduleHealthFabOnPointerUp)
+    },
+    [scheduleHealthFabPos, scheduleHealthFabOnPointerMove, scheduleHealthFabOnPointerUp],
+  )
+
+  const persistScheduleHealthUiMode = useCallback((mode: 'auto_modal' | 'fab_only') => {
+    setScheduleHealthUiMode(mode)
+    try {
+      localStorage.setItem(SCHEDULE_HEALTH_UI_MODE_KEY, mode)
+    } catch {
+      /* ignore */
+    }
+    if (mode === 'auto_modal' && typeof window !== 'undefined') {
+      sessionStorage.removeItem(SCHEDULE_HEALTH_SUMMARY_SESSION_KEY)
+    }
+  }, [])
 
   // 공급업체 이름 변환 함수
   const getCompanyDisplayName = (company: string): string => {
@@ -4490,8 +4900,12 @@ export default function ScheduleView() {
     monthVehiclesWithColors.vehicleList.forEach(({ id }) => {
       result[id] = { daily: {}, totalDays: 0, hasAnyDayAssignment: false }
       monthDays.forEach(({ dateString, isEdgePadding }) => {
-        const dayTours = tours.filter(t =>
-          t.tour_car_id && String(t.tour_car_id).trim() === id && tourCoversScheduleDate(t, dateString)
+        const dayTours = tours.filter(
+          (t) =>
+            !isTourCancelled(t.tour_status) &&
+            t.tour_car_id &&
+            String(t.tour_car_id).trim() === id &&
+            tourCoversScheduleDate(t, dateString),
         )
         const guideNames = [...new Set(dayTours.map(t => {
           const guide = teamMembers.find(m => m.email === t.tour_guide_id)
@@ -4657,14 +5071,12 @@ export default function ScheduleView() {
     return totals
   }, [vehicleScheduleData, monthDays])
 
-  // 날짜별 투어 갯수 (일별 합계·차량 행과 동일): 차량 배정된 투어만, 멀티데이는 진행일마다 1건
+  // 날짜별 투어 갯수: 해당일이 진행일인 비취소·비삭제 투어 전체 (차량 미배정 포함). 멀티데이는 진행일마다 1건
   const tourCountPerDate = useMemo(() => {
     const counts: Record<string, number> = {}
     monthDays.forEach(({ dateString }) => {
       counts[dateString] = tours.filter(
-        (t) =>
-          Boolean(t.tour_car_id && String(t.tour_car_id).trim()) &&
-          tourCoversScheduleDate(t, dateString)
+        (t) => !isTourCancelled(t.tour_status) && tourCoversScheduleDate(t, dateString),
       ).length
     })
     return counts
@@ -6647,14 +7059,28 @@ export default function ScheduleView() {
                         const dayTotal = vehicleDailyTotals[dateString] ?? 0
                         const tourCount = tourCountPerDate[dateString] ?? 0
                         const isMismatch = tourCount !== dayTotal
+                        const mismatchTitle =
+                          locale === 'ko'
+                            ? `투어 ${tourCount}건 · 차량 배정 ${dayTotal}건 (불일치)`
+                            : `Tours ${tourCount} · vehicle assignments ${dayTotal} (mismatch)`
                         return (
                           <td
                             key={dateString}
-                            className={`px-1 py-0.5 text-center text-xs ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${isMismatch ? 'text-red-600 font-bold' : ''}`}
+                            className={`px-1 py-0.5 text-center text-xs ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}
                             style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                            title={isMismatch ? `투어 ${tourCount}건, 차량 ${dayTotal}건` : undefined}
                           >
-                            {dayTotal > 0 ? dayTotal : '-'}
+                            {isMismatch ? (
+                              <span
+                                className="inline-flex min-h-[1.25rem] min-w-[1.25rem] cursor-default items-center justify-center rounded-md bg-red-600 px-1 py-0.5 text-[10px] font-bold text-yellow-300 tabular-nums shadow-sm"
+                                title={mismatchTitle}
+                              >
+                                {tourCount}
+                              </span>
+                            ) : dayTotal > 0 ? (
+                              dayTotal
+                            ) : (
+                              '-'
+                            )}
                           </td>
                         )
                       })}
@@ -7558,71 +7984,225 @@ export default function ScheduleView() {
       )}
 
       {/* 날짜 노트 모달 */}
-      {/* 정원 초과: 배정 인원 > 수용 합 — 추가 투어 생성 안내 */}
+      {/* 스케줄 종합 알림: 정원 초과 · 차량-투어 건수 · 미배정 · 입장권-인원 */}
       <Dialog
-        open={capacityOverflowModalOpen}
+        open={scheduleHealthModalOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setCapacityOverflowModalOpen(false)
-            setCapacityOverflowModalDismissed(true)
+            setScheduleHealthModalOpen(false)
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem(SCHEDULE_HEALTH_SUMMARY_SESSION_KEY, '1')
+            }
           }
         }}
       >
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-base text-red-700">
-              {locale === 'ko' ? '투어 정원 초과' : 'Tour capacity exceeded'}
+            <DialogTitle className="text-lg">
+              {locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
             </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600">
+              {locale === 'ko'
+                ? '정원 초과, 차량·투어 건수, 인력·배차 미배정, 입장권 매수를 한 화면에서 확인합니다. (원격 데이터는 오늘 기준 7일·4일 구간)'
+                : 'Capacity overflow, vehicle vs tour counts, missing staff/vehicle, and ticket EA vs pax in one view. Remote snapshot uses rolling 7- and 4-day windows from today.'}
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-gray-600 -mt-1 mb-3">
-            {locale === 'ko'
-              ? '이번 달 일정 중 배정 인원이 투어 수용 인원 합보다 많은 날이 있습니다. 팀을 나누려면 투어를 추가로 만드세요.'
-              : 'Some days this month have more assigned guests than total tour capacity. Create an additional tour to split groups.'}
-          </p>
-          <ul className="space-y-2 max-h-[min(50vh,360px)] overflow-y-auto pr-1">
-            {scheduleCapacityOverflowItems.map((item) => {
-              const ck = `${item.productId}__${item.dateString}`
-              const busy = capacityOverflowCreatingKey === ck
-              return (
-                <li
-                  key={ck}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-100 bg-red-50/40 px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-gray-900 truncate">{item.productName}</div>
-                    <div className="text-xs text-gray-500">{item.dateString}</div>
-                    <div className="text-sm font-bold text-red-600 tabular-nums mt-0.5">
-                      {item.assigned} / {item.max}
-                      {locale === 'ko' ? '명' : ' pax'}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleCreateEmptyTourFromOverflow(item.productId, item.dateString)}
-                    disabled={busy}
-                    className="shrink-0 inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    <Plus className="h-4 w-4" aria-hidden />
-                    {busy
-                      ? locale === 'ko'
-                        ? '생성 중…'
-                        : 'Creating…'
-                      : locale === 'ko'
-                        ? '투어 추가'
-                        : 'Add tour'}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-          <div className="flex justify-end mt-4 pt-2 border-t border-gray-100">
+
+          <div className="mt-3 space-y-5">
+            <section className="rounded-lg border border-red-200 bg-red-50/50 p-3">
+              <h4 className="text-sm font-bold text-red-800">
+                1. {locale === 'ko' ? '투어 정원 초과 (이번 달·오늘 이후)' : 'Tour capacity exceeded (this month, from today)'}
+              </h4>
+              <p className="mt-1 text-xs text-gray-600">
+                {locale === 'ko'
+                  ? '배정 인원 합이 수용 합을 넘는 상품·날짜입니다.'
+                  : 'Product/date cells where assigned pax exceed total capacity.'}
+              </p>
+              {scheduleCapacityOverflowItems.length === 0 ? (
+                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
+              ) : (
+                <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto pr-1">
+                  {scheduleCapacityOverflowItems.map((item) => {
+                    const ck = `${item.productId}__${item.dateString}`
+                    const busy = capacityOverflowCreatingKey === ck
+                    return (
+                      <li
+                        key={ck}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-100 bg-white/80 px-2 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-gray-900">{item.productName}</div>
+                          <div className="text-xs text-gray-500">{item.dateString}</div>
+                          <div className="mt-0.5 text-sm font-bold tabular-nums text-red-600">
+                            {item.assigned} / {item.max}
+                            {locale === 'ko' ? '명' : ' pax'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleCreateEmptyTourFromOverflow(item.productId, item.dateString)}
+                          disabled={busy}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          <Plus className="h-3.5 w-3.5" aria-hidden />
+                          {busy
+                            ? locale === 'ko'
+                              ? '생성 중…'
+                              : 'Creating…'
+                            : locale === 'ko'
+                              ? '투어 추가'
+                              : 'Add tour'}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+              <h4 className="text-sm font-bold text-amber-900">
+                2. {locale === 'ko' ? '차량 배정 · 투어 건수 불일치 (7일)' : 'Vehicle vs tour counts (7 days)'}
+              </h4>
+              {scheduleHealthFromFetch.vehicleMismatch.length === 0 ? (
+                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
+              ) : (
+                <div className="mt-2 max-h-36 overflow-auto rounded border border-amber-100 bg-white/80">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-amber-100 bg-amber-100/80 text-left font-semibold text-gray-800">
+                        <th className="px-2 py-1">{locale === 'ko' ? '날짜' : 'Date'}</th>
+                        <th className="px-2 py-1 text-right">{locale === 'ko' ? '투어' : 'Tours'}</th>
+                        <th className="px-2 py-1 text-right">{locale === 'ko' ? '차량' : 'Veh.'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scheduleHealthFromFetch.vehicleMismatch.map((row) => (
+                        <tr key={row.dateString} className="border-b border-amber-50 last:border-0">
+                          <td className="px-2 py-1 font-medium text-gray-900">
+                            {locale === 'ko'
+                              ? dayjs(row.dateString).locale('ko').format('M/D (ddd)')
+                              : dayjs(row.dateString).locale('en').format('MMM D (ddd)')}
+                          </td>
+                          <td className="px-2 py-1 text-right tabular-nums">{row.tourCount}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{row.vehicleCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+              <h4 className="text-sm font-bold text-violet-900">
+                3.{' '}
+                {locale === 'ko'
+                  ? '7일 이내 · 가이드·어시·차량 미배정 투어'
+                  : 'Within 7 days — missing guide, assistant, or vehicle'}
+              </h4>
+              {scheduleHealthFromFetch.incompleteTours.length === 0 ? (
+                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
+              ) : (
+                <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 text-sm">
+                  {scheduleHealthFromFetch.incompleteTours.map((row) => (
+                    <li key={row.tourId}>
+                      <button
+                        type="button"
+                        className="w-full rounded-md border border-violet-100 bg-white/90 px-2 py-1.5 text-left hover:bg-violet-100/60"
+                        onClick={() => {
+                          setScheduleHealthModalOpen(false)
+                          openTourDetailModal(row.tourId)
+                        }}
+                      >
+                        <span className="font-medium text-gray-900">{row.productName}</span>
+                        <span className="text-gray-500"> · {row.tourDate}</span>
+                        <div className="text-xs text-violet-800">{row.missingLabels}</div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-sky-200 bg-sky-50/50 p-3">
+              <h4 className="text-sm font-bold text-sky-900">
+                4.{' '}
+                {locale === 'ko'
+                  ? '4일 이내 · 투어 인원 ≠ 입장권 합(EA)'
+                  : 'Within 4 days — tour pax ≠ ticket EA sum'}
+              </h4>
+              {scheduleHealthFromFetch.ticketPeopleMismatch.length === 0 ? (
+                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
+              ) : (
+                <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 text-sm">
+                  {scheduleHealthFromFetch.ticketPeopleMismatch.map((row) => (
+                    <li key={row.tourId}>
+                      <button
+                        type="button"
+                        className="w-full rounded-md border border-sky-100 bg-white/90 px-2 py-1.5 text-left hover:bg-sky-100/60"
+                        onClick={() => {
+                          setScheduleHealthModalOpen(false)
+                          openTourDetailModal(row.tourId)
+                        }}
+                      >
+                        <span className="font-medium text-gray-900">{row.productName}</span>
+                        <span className="text-gray-500"> · {row.tourDate}</span>
+                        <div className="text-xs tabular-nums text-sky-900">
+                          {locale === 'ko' ? '인원' : 'Pax'} {row.people} · {locale === 'ko' ? '입장권' : 'Tickets'}{' '}
+                          {row.ticketEa}
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-3">
+              <p className="text-xs font-semibold text-gray-800">
+                {locale === 'ko' ? '알림 방식 (로컬 저장)' : 'How to notify (saved locally)'}
+              </p>
+              <p className="mt-0.5 text-[11px] text-gray-500">
+                {locale === 'ko'
+                  ? '추후 설정 화면으로 옮길 수 있습니다.'
+                  : 'A dedicated settings screen can be added later.'}
+              </p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="radio"
+                    name="schedule-health-ui"
+                    className="h-4 w-4"
+                    checked={scheduleHealthUiMode === 'auto_modal'}
+                    onChange={() => persistScheduleHealthUiMode('auto_modal')}
+                  />
+                  {locale === 'ko' ? '접속 시 자동으로 모달 (월 변경 시 다시 알림)' : 'Auto-open modal (again after month change)'}
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="radio"
+                    name="schedule-health-ui"
+                    className="h-4 w-4"
+                    checked={scheduleHealthUiMode === 'fab_only'}
+                    onChange={() => persistScheduleHealthUiMode('fab_only')}
+                  />
+                  {locale === 'ko' ? '플로팅 버튼만 (자동 모달 끄기)' : 'Floating button only (no auto modal)'}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 flex justify-end border-t border-gray-100 pt-3">
             <button
               type="button"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
               onClick={() => {
-                setCapacityOverflowModalOpen(false)
-                setCapacityOverflowModalDismissed(true)
+                setScheduleHealthModalOpen(false)
+                if (typeof window !== 'undefined') {
+                  sessionStorage.setItem(SCHEDULE_HEALTH_SUMMARY_SESSION_KEY, '1')
+                }
               }}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               {locale === 'ko' ? '닫기' : 'Close'}
             </button>
@@ -8897,6 +9477,43 @@ export default function ScheduleView() {
           }}
         />
       )}
+
+      {!loading &&
+        scheduleHealthFetchedLoaded &&
+        scheduleHealthFabHydrated &&
+        scheduleHealthFabPos &&
+        !scheduleHealthModalOpen && (
+          <div
+            className="fixed z-[1095] touch-none select-none"
+            style={{ left: scheduleHealthFabPos.left, top: scheduleHealthFabPos.top }}
+          >
+            <div className="relative">
+              <div
+                role="presentation"
+                onPointerDown={scheduleHealthFabOnPointerDown}
+                className="absolute -left-1 -top-1 z-10 flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-amber-900/30 bg-amber-200 shadow-md active:cursor-grabbing"
+                title={locale === 'ko' ? '끌어서 위치 이동' : 'Drag to reposition'}
+              >
+                <GripVertical className="h-4 w-4 text-amber-950" aria-hidden />
+              </div>
+              <button
+                type="button"
+                onClick={() => setScheduleHealthModalOpen(true)}
+                className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg ring-2 ring-amber-200 hover:brightness-105 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-400"
+                title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
+                aria-label={locale === 'ko' ? '스케줄 점검 요약 열기' : 'Open schedule health summary'}
+              >
+                <Bell className="h-8 w-8" strokeWidth={2.25} aria-hidden />
+                {scheduleHealthIssueCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-6 min-w-[1.25rem] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white shadow">
+                    {scheduleHealthIssueCount > 99 ? '99+' : scheduleHealthIssueCount}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          </div>
+        )}
+
       <CancellationReasonModal
         isOpen={cancellationReasonModalOpen}
         locale={locale}

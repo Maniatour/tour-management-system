@@ -2417,6 +2417,7 @@
       "assignedTourMetaLoading": "가이드·차량 등 상세 정보를 불러오는 중입니다.",
       "assigned": "배정됨",
       "createTourTitle": "투어 생성",
+      "createTourAndAssignButton": "투어 생성·예약 배정",
       "paymentHistoryTitle": "입금 내역 관리",
       "viewCustomer": "고객 보기",
       "viewCustomerTitle": "고객 보기",
@@ -3227,6 +3228,21 @@
     "needCheckDuplicateEmpty": "같은 예약이 여러 투어에 있거나, 한 투어 배정 목록에 같은 예약이 두 번 이상 들어간 경우가 없습니다.",
     "deletedToursModalTitle": "삭제된 투어 (목록·달력에 표시되지 않음)",
     "addTour": "투어 추가",
+    "newTourPage": {
+      "title": "새 투어 만들기",
+      "description": "상품과 투어 날짜를 선택한 뒤 빈 투어를 만듭니다. 이후 투어 상세에서 예약을 배정할 수 있습니다.",
+      "product": "상품",
+      "productPlaceholder": "상품을 선택하세요",
+      "tourDate": "투어 날짜",
+      "privateTour": "단독 투어로 표시",
+      "submit": "투어 만들기",
+      "submitting": "만드는 중…",
+      "backToList": "투어 목록으로",
+      "closeModal": "닫기",
+      "successAlert": "투어가 생성되었습니다. 상세 페이지로 이동합니다.",
+      "errorPrefix": "투어를 만들지 못했습니다",
+      "errorGeneric": "투어 생성 중 오류가 발생했습니다."
+    },
     "guideTours": {
       "loading": "투어 데이터를 불러오는 중...",
       "backToDashboard": "가이드 대시보드로 돌아가기",
@@ -3471,6 +3487,8 @@
         "shareLinkCopied": "공유 링크가 클립보드에 복사되었습니다",
         "uploadProgressModalTitle": "투어 사진 업로드 중",
         "uploadProgressModalHint": "업로드가 끝날 때까지 잠시만 기다려 주세요.",
+        "uploadProgressModalPreparingTitle": "업로드 준비 중",
+        "uploadProgressModalPreparingHint": "선택한 {count}장을 확인하고 있습니다. 잠시만 기다려 주세요.",
         "uploadProgressCount": "{current} / {total}장 처리됨",
         "uploadProgressBackgroundNote": "이 사이트 안에서 다른 메뉴로 이동해도 업로드는 계속됩니다. 브라우저 탭을 닫거나 앱을 완전히 종료하면 중단될 수 있습니다."
     },

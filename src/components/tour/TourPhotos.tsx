@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Share2, Copy, Check, ExternalLink, Lock, Unlock } from 'lucide-react'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
+import TourPhotoUploadProgressOverlay from '@/components/TourPhotoUploadProgressOverlay'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -112,6 +113,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
   
   return (
     <div className="bg-white rounded-lg shadow-sm border">
+      <TourPhotoUploadProgressOverlay />
       <div className="p-4" id="tour-photos">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>

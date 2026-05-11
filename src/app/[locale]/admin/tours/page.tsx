@@ -19,6 +19,7 @@ import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChanges
 import { PendingOffSchedulesModal } from '@/components/shared/PendingOffSchedulesModal'
 import { ToursNeedCheckModal } from '@/components/shared/ToursMissingReceiptModal'
 import { fetchToursNeedCheckData } from '@/lib/toursNeedCheckStats'
+import { AdminNewTourModal } from '@/components/admin/AdminNewTourModal'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -202,6 +203,7 @@ export default function AdminTours() {
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [deletedToursBin, setDeletedToursBin] = useState<ExtendedTour[]>([])
   const [showDeletedToursModal, setShowDeletedToursModal] = useState(false)
+  const [showNewTourModal, setShowNewTourModal] = useState(false)
   const [showNeedCheckModal, setShowNeedCheckModal] = useState(false)
   const [needCheckStats, setNeedCheckStats] = useState({ union: 0 })
   const [needCheckStatsLoading, setNeedCheckStatsLoading] = useState(false)
@@ -340,7 +342,13 @@ export default function AdminTours() {
     cacheTime: 30 * 60 * 1000 // 30분 캐시 — 팀 마스터는 거의 변하지 않음, SWR 로 자동 갱신
   })
 
-  const { data: productsData, loading: productsLoading } = useOptimizedData({
+  const { data: productsData, loading: productsLoading } = useOptimizedData<{
+    id: string
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    status?: string | null
+  }[]>({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('products')
@@ -353,6 +361,12 @@ export default function AdminTours() {
     cacheKey: 'products',
     cacheTime: 30 * 60 * 1000 // 30분 캐시 — 상품 마스터, SWR 로 자동 갱신
   })
+
+  const activeProductsForNewTourModal = useMemo(
+    () =>
+      (productsData ?? []).filter((p) => String(p.status || '').toLowerCase() !== 'inactive'),
+    [productsData]
+  )
 
   // 통합 로딩 상태 (스케줄 뷰 기본 시 전체 투어 스피너에 막히지 않음)
   const loading = (toursQueryEnabled && toursLoading) || employeesLoading || productsLoading
@@ -924,7 +938,8 @@ export default function AdminTours() {
               </button>
             )}
             <button
-              onClick={() => router.push('/ko/admin/tours/new')}
+              type="button"
+              onClick={() => setShowNewTourModal(true)}
               className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
             >
               <Plus size={16} />
@@ -1333,6 +1348,13 @@ export default function AdminTours() {
           </div>
         </div>
       )}
+
+      <AdminNewTourModal
+        isOpen={showNewTourModal}
+        onClose={() => setShowNewTourModal(false)}
+        products={activeProductsForNewTourModal}
+        productsLoading={productsLoading}
+      />
 
       <ToursNeedCheckModal
         isOpen={showNeedCheckModal}

@@ -6,6 +6,7 @@ import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { X, Camera, Upload, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle } from 'lucide-react'
 import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
+import { endTourPhotoUploadSession, startTourPhotoPrepare } from '@/lib/tourPhotoUploadSession'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -188,6 +189,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
     const imageOnlyErrorLabel =
       locale === 'en' ? 'Only image files can be uploaded' : '이미지 파일만 업로드할 수 있습니다'
 
+    startTourPhotoPrepare(tourId, selectedFiles.length)
     setUploading(true)
     setUploadProgress(0)
     setUploadStatus('idle')
@@ -234,6 +236,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
         setUploadStatus('error')
         alert(error instanceof Error ? error.message : '업로드 중 오류가 발생했습니다.')
       } finally {
+        endTourPhotoUploadSession()
         setUploading(false)
         setUploadProgress(0)
       }

@@ -415,7 +415,7 @@ export default function TourConnectionSection({
   const outerClass = variant === 'assignedSummary' ? '' : 'bg-white rounded-lg shadow p-4'
   const displayTours =
     variant === 'assignedSummary'
-      ? tours.filter((t) => t.reservation_ids?.includes(reservation.id))
+      ? tours.filter((t) => normalizeTourReservationIds(t.reservation_ids).includes(reservation.id))
       : tours
 
   if (loading) {
@@ -461,6 +461,7 @@ export default function TourConnectionSection({
   }
 
   if (variant === 'assignedSummary' && displayTours.length === 0) {
+    const canCreateFromReservation = Boolean(reservation.productId && reservation.tourDate && reservation.id)
     return (
       <div className={outerClass}>
         <h3 className="text-xs font-semibold text-gray-900 mb-2 flex items-center">
@@ -478,6 +479,21 @@ export default function TourConnectionSection({
             <p className="text-[11px] mt-1 text-gray-400">
               같은 날짜·상품 투어에 예약을 넣으면 여기에 표시됩니다.
             </p>
+          )}
+          {canCreateFromReservation && (
+            <button
+              type="button"
+              onClick={handleCreateTour}
+              disabled={creatingTour}
+              className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {creatingTour ? (
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-b-transparent" aria-hidden />
+              ) : (
+                <Plus className="h-3.5 w-3.5" aria-hidden />
+              )}
+              {t('card.createTourAndAssignButton')}
+            </button>
           )}
         </div>
       </div>
@@ -530,7 +546,9 @@ export default function TourConnectionSection({
       ) : (
         <div className="space-y-3">
           {displayTours.map((tour) => {
-            const isAssignedToThisTour = tour.reservation_ids?.includes(reservation.id)
+            const isAssignedToThisTour = normalizeTourReservationIds(tour.reservation_ids).includes(
+              reservation.id
+            )
             
             return (
                 <div

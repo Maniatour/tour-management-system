@@ -54,61 +54,69 @@ export async function runTourPhotoUploadQueue(
   }
 
   if (!files.length) {
+    endTourPhotoUploadSession()
     return { ...empty, userMessages: ['파일이 선택되지 않았습니다.'] }
-  }
-
-  await ensureFreshAuthSessionForUpload()
-
-  const { data: existingRows } = await supabase
-    .from('tour_photos')
-    .select('file_name, file_size')
-    .eq('tour_id', tourId)
-
-  const existingMeta = new Set(
-    (existingRows || []).map((r: { file_name: string; file_size: number }) => `${r.file_name}\0${r.file_size}`)
-  )
-
-  const { unique: contentUnique, skippedDuplicateContent } = await dedupeFilesByContent(files)
-
-  const toUpload: File[] = []
-  let skippedAlreadyUploaded = 0
-  for (const f of contentUnique) {
-    if (existingMeta.has(tourPhotoMetadataKey(f))) {
-      skippedAlreadyUploaded += 1
-    } else {
-      toUpload.push(f)
-    }
-  }
-
-  if (toUpload.length === 0) {
-    const parts: string[] = []
-    if (skippedDuplicateContent > 0) {
-      parts.push(`선택한 사진 중 동일한 이미지 ${skippedDuplicateContent}장은 한 번만 올립니다.`)
-    }
-    if (skippedAlreadyUploaded > 0) {
-      parts.push(`이미 이 투어에 올라간 사진과 같은 파일(이름·크기) ${skippedAlreadyUploaded}장은 건너뛰었습니다.`)
-    }
-    return {
-      ...empty,
-      skippedDuplicateContent,
-      skippedAlreadyUploaded,
-      userMessages: parts.length > 0 ? [parts.join('\n')] : ['업로드할 새 사진이 없습니다.'],
-    }
   }
 
   let totalSuccessful = 0
   let totalFailed = 0
   const failedFiles: string[] = []
-  let completed = 0
-
-  startTourPhotoUploadSession(tourId, toUpload.length)
-
-  const onBeforeRetry = async () => {
-    await ensureFreshAuthSessionForUpload().catch(() => {})
-  }
+  let skippedDuplicateContent = 0
+  let skippedAlreadyUploaded = 0
 
   try {
-    await runWithConcurrency(toUpload, 4, async (file) => {
+    await ensureFreshAuthSessionForUpload()
+
+    const { data: existingRows } = await supabase
+      .from('tour_photos')
+      .select('file_name, file_size')
+      .eq('tour_id', tourId)
+
+    const existingMeta = new Set(
+      (existingRows || []).map((r: { file_name: string; file_size: number }) => `${r.file_name}\0${r.file_size}`)
+    )
+
+    const deduped = await dedupeFilesByContent(files)
+    skippedDuplicateContent = deduped.skippedDuplicateContent
+    const contentUnique = deduped.unique
+
+    const toUpload: File[] = []
+    skippedAlreadyUploaded = 0
+    for (const f of contentUnique) {
+      if (existingMeta.has(tourPhotoMetadataKey(f))) {
+        skippedAlreadyUploaded += 1
+      } else {
+        toUpload.push(f)
+      }
+    }
+
+    if (toUpload.length === 0) {
+      endTourPhotoUploadSession()
+      const parts: string[] = []
+      if (skippedDuplicateContent > 0) {
+        parts.push(`선택한 사진 중 동일한 이미지 ${skippedDuplicateContent}장은 한 번만 올립니다.`)
+      }
+      if (skippedAlreadyUploaded > 0) {
+        parts.push(`이미 이 투어에 올라간 사진과 같은 파일(이름·크기) ${skippedAlreadyUploaded}장은 건너뛰었습니다.`)
+      }
+      return {
+        ...empty,
+        skippedDuplicateContent,
+        skippedAlreadyUploaded,
+        userMessages: parts.length > 0 ? [parts.join('\n')] : ['업로드할 새 사진이 없습니다.'],
+      }
+    }
+
+    let completed = 0
+
+    startTourPhotoUploadSession(tourId, toUpload.length)
+
+    const onBeforeRetry = async () => {
+      await ensureFreshAuthSessionForUpload().catch(() => {})
+    }
+
+    try {
+      await runWithConcurrency(toUpload, 4, async (file) => {
       try {
         await withUploadRetries(
           async () => {
@@ -185,20 +193,24 @@ export async function runTourPhotoUploadQueue(
         completed += 1
         updateTourPhotoUploadProgress(completed, toUpload.length)
       }
-    })
-  } finally {
+      })
+    } finally {
+      endTourPhotoUploadSession()
+    }
+
+    if (totalSuccessful > 0) {
+      dispatchTourPhotoUploadFinished(tourId)
+    }
+
+    return {
+      totalSuccessful,
+      totalFailed,
+      failedFiles,
+      skippedDuplicateContent,
+      skippedAlreadyUploaded,
+    }
+  } catch (error) {
     endTourPhotoUploadSession()
-  }
-
-  if (totalSuccessful > 0) {
-    dispatchTourPhotoUploadFinished(tourId)
-  }
-
-  return {
-    totalSuccessful,
-    totalFailed,
-    failedFiles,
-    skippedDuplicateContent,
-    skippedAlreadyUploaded,
+    throw error
   }
 }
