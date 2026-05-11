@@ -3,8 +3,11 @@ import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 import { createThumbnail, getThumbnailFileName } from '@/lib/imageUtils'
 import {
   dedupeFilesByContent,
+  inferTourPhotoMimeType,
+  isLikelyTourPhotoFile,
   runWithConcurrency,
   tourPhotoMetadataKey,
+  tourPhotoStorageExtension,
   withUploadRetries,
 } from '@/lib/tourPhotoUploadUtils'
 import {
@@ -123,12 +126,13 @@ export async function runTourPhotoUploadQueue(
             if (file.size > 50 * 1024 * 1024) {
               throw new Error(`파일 크기가 너무 큽니다: ${file.name} (최대 50MB)`)
             }
-            if (!file.type.startsWith('image/')) {
+            if (!isLikelyTourPhotoFile(file)) {
               throw new Error(`${imageOnlyErrorLabel}: ${file.name}`)
             }
 
-            const fileExt = file.name.split('.').pop()
-            const fileName = `${Date.now()}-${crypto.randomUUID()}.${fileExt}`
+            const resolvedMime = inferTourPhotoMimeType(file)
+            const safeExt = tourPhotoStorageExtension(file)
+            const fileName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`
             const filePath = `${tourId}/${fileName}`
 
             const { data: uploadData, error: uploadError } = await supabase.storage
@@ -136,6 +140,7 @@ export async function runTourPhotoUploadQueue(
               .upload(filePath, file, {
                 cacheControl: '3600',
                 upsert: false,
+                contentType: resolvedMime,
               })
 
             if (uploadError) throw uploadError
@@ -152,6 +157,7 @@ export async function runTourPhotoUploadQueue(
                 .upload(thumbnailPath, thumbnailFile, {
                   cacheControl: '3600',
                   upsert: false,
+                  contentType: 'image/jpeg',
                 })
               if (thumbnailUploadError) thumbnailPath = null
             } catch {
@@ -167,7 +173,7 @@ export async function runTourPhotoUploadQueue(
                 file_path: uploadData.path,
                 file_name: file.name,
                 file_size: file.size,
-                mime_type: file.type,
+                mime_type: resolvedMime.slice(0, 100),
                 uploaded_by: uploadedBy,
                 share_token: shareToken,
                 thumbnail_path: thumbnailPath,

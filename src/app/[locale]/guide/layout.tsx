@@ -24,6 +24,7 @@ import GuideTourChatNotificationModal from '@/components/guide/GuideTourChatNoti
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceContext'
+import { guidePathWithAppLocale, guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
 
 interface GuideLayoutProps {
   children: React.ReactNode
@@ -70,6 +71,69 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   useEffect(() => {
     void recoverAuthSession()
   }, [pathname, recoverAuthSession])
+
+  // 홈 화면에 추가 시 복원용: 가이드 구간 URL을 저장 (루트 `/` + manifest start_url이 `/`일 때 대비)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const path = window.location.pathname
+    if (!/^\/(ko|en)\/guide(\/|$)/.test(path)) return
+    try {
+      localStorage.setItem('pwa_install_url', path)
+    } catch {
+      /* ignore quota / private mode */
+    }
+    const onPageShow = () => {
+      try {
+        localStorage.setItem('pwa_install_url', window.location.pathname)
+      } catch {
+        /* ignore */
+      }
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [pathname])
+
+  // 팀 멤버(가이드): 프로필 첫 언어와 URL 로케일이 다르면 `/(ko|en)/guide/...`로 맞춤
+  useEffect(() => {
+    if (isInitializing || !isInitialized || isLoading) return
+    if (userRole !== 'team_member') return
+
+    const currentUser = isSimulating && simulatedUser ? simulatedUser : user
+    if (!currentUser?.email) return
+
+    let cancelled = false
+    ;(async () => {
+      const supabaseClient = createClientSupabase()
+      const { data: row } = await supabaseClient
+        .from('team')
+        .select('languages')
+        .eq('email', currentUser.email)
+        .maybeSingle()
+      if (cancelled) return
+
+      const preferred = guidePreferredAppLocale(row, currentUser.email)
+      const pathLocale = pathname.split('/').filter(Boolean)[0]
+      if (pathLocale !== 'ko' && pathLocale !== 'en') return
+      if (pathLocale === preferred) return
+
+      const next = guidePathWithAppLocale(pathname, preferred)
+      if (next !== pathname) router.replace(next)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    pathname,
+    router,
+    user,
+    userRole,
+    isLoading,
+    isInitializing,
+    isInitialized,
+    isSimulating,
+    simulatedUser,
+  ])
 
   // 카메라·다른 앱에서 복귀 시 WebView 세션이 비었다가 복구되는 경우
   useEffect(() => {

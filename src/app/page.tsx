@@ -1,28 +1,64 @@
 'use client'
 
 import { useEffect } from 'react'
-// x
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
+import { createClientSupabase } from '@/lib/supabase'
+import { guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
+
+const PWA_SAVED_PATH_RE = /^\/(ko|en)\/guide(\/|$)/
 
 export default function RootPage() {
   const router = useRouter()
+  const { user, userRole, loading, isInitialized, isSimulating, simulatedUser } = useAuth()
 
   useEffect(() => {
-    // PWA standalone 모드에서 실행 중이고, 저장된 채팅방 URL이 있으면 리다이렉트
-    if (typeof window !== 'undefined') {
+    let cancelled = false
+
+    const run = async () => {
+      if (typeof window === 'undefined') return
+
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       const savedUrl = localStorage.getItem('pwa_install_url')
-      
-      if (isStandalone && savedUrl && savedUrl.startsWith('/chat/')) {
-        // 저장된 채팅방 URL로 리다이렉트
-        router.replace(savedUrl)
+
+      // PWA 단독 실행: 설치 시점에 저장한 URL(채팅·가이드)로 복원
+      if (isStandalone && savedUrl?.startsWith('/')) {
+        if (savedUrl.startsWith('/chat/') || PWA_SAVED_PATH_RE.test(savedUrl)) {
+          if (!cancelled) router.replace(savedUrl)
+          return
+        }
+      }
+
+      if (!isInitialized || loading) return
+
+      const effectiveUser = isSimulating && simulatedUser ? simulatedUser : user
+
+      if (effectiveUser?.email && userRole === 'team_member') {
+        const sb = createClientSupabase()
+        const { data: row } = await sb
+          .from('team')
+          .select('languages')
+          .eq('email', effectiveUser.email)
+          .maybeSingle()
+        if (cancelled) return
+        const appLoc = guidePreferredAppLocale(row, effectiveUser.email)
+        router.replace(`/${appLoc}/guide`)
         return
       }
+
+      const pl = localStorage.getItem('preferred-locale')
+      if (pl === 'en') {
+        router.replace('/en')
+        return
+      }
+      router.replace('/ko')
     }
-    
-    // 기본적으로 홈페이지로 리다이렉트
-    router.replace('/ko')
-  }, [router])
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [router, user, userRole, loading, isInitialized, isSimulating, simulatedUser])
 
   // 리다이렉트 중 로딩 표시
   return (

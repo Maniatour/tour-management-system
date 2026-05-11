@@ -2,6 +2,66 @@
  * 투어 사진 업로드: 중복 키·동시 실행 제한·재시도 유틸
  */
 
+/** 갤러리·카메라 파일명 기준(모바일에서 MIME이 비는 경우 대비) */
+export const TOUR_PHOTO_FILENAME_EXT_REGEX =
+  /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|avif)$/i
+
+/**
+ * iOS/안드로이드에서 `File.type`이 빈 문자열인 경우가 많아 `image/`만 보면 실패함.
+ */
+export function isLikelyTourPhotoFile(file: File): boolean {
+  const t = (file.type || '').trim().toLowerCase()
+  if (t.startsWith('image/')) return true
+  if (t === '' || t === 'application/octet-stream') {
+    return TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
+  }
+  return false
+}
+
+/** Storage·DB에 넣을 MIME (빈 type이면 확장자로 추정) */
+export function inferTourPhotoMimeType(file: File): string {
+  const t = file.type?.trim()
+  if (t && t.startsWith('image/')) return t
+  const m = file.name.toLowerCase().match(/\.([a-z0-9]+)$/)
+  const ext = m?.[1]?.toLowerCase()
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'png':
+      return 'image/png'
+    case 'gif':
+      return 'image/gif'
+    case 'webp':
+      return 'image/webp'
+    case 'heic':
+    case 'heif':
+      return 'image/heic'
+    case 'bmp':
+      return 'image/bmp'
+    case 'tif':
+    case 'tiff':
+      return 'image/tiff'
+    case 'avif':
+      return 'image/avif'
+    default:
+      return 'image/jpeg'
+  }
+}
+
+/** Storage 객체 파일명용 안전한 확장자 */
+export function tourPhotoStorageExtension(file: File): string {
+  const mime = inferTourPhotoMimeType(file)
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  if (mime === 'image/gif') return 'gif'
+  if (mime === 'image/heic' || mime === 'image/heif') return 'heic'
+  if (mime === 'image/bmp') return 'bmp'
+  if (mime === 'image/tiff') return 'tiff'
+  if (mime === 'image/avif') return 'avif'
+  return 'jpg'
+}
+
 function bufferToHex(buf: ArrayBuffer): string {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }

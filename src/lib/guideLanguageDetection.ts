@@ -127,6 +127,32 @@ export function doesGuideSupportLanguage(
  * @param teamData 팀 테이블 데이터
  * @returns 지원하는 언어 locale 배열
  */
+/** next-intl 앱 라우트(`/[ko|en]/...`)용: 첫 언어가 영어일 때만 `en`, 그 외는 `ko` */
+export function guidePreferredAppLocale(
+  teamData: TeamLanguageData | null | undefined,
+  email?: string
+): 'ko' | 'en' {
+  const p = detectGuidePreferredLanguage(teamData, email)
+  return p === 'en' ? 'en' : 'ko'
+}
+
+/** URL의 `/(ko|en)/guide/...` 앞 세그먼트만 선호 로케일로 바꿉니다. */
+export function guidePathWithAppLocale(pathname: string, appLocale: 'ko' | 'en'): string {
+  const clean = pathname.split('?')[0].split('#')[0]
+  const parts = decodeURIComponent(clean)
+    .split('/')
+    .filter(Boolean)
+  if (
+    parts.length >= 2 &&
+    (parts[0] === 'ko' || parts[0] === 'en') &&
+    parts[1] === 'guide'
+  ) {
+    parts[0] = appLocale
+    return `/${parts.join('/')}`
+  }
+  return `/${appLocale}/guide`
+}
+
 export function getGuideSupportedLocales(
   teamData: TeamLanguageData | null | undefined
 ): SupportedLocale[] {

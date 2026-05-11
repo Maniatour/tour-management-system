@@ -14,6 +14,7 @@ import {
   endTourPhotoUploadSession,
   startTourPhotoPrepare,
 } from '@/lib/tourPhotoUploadSession'
+import { TOUR_PHOTO_FILENAME_EXT_REGEX } from '@/lib/tourPhotoUploadUtils'
 
 interface TourPhoto {
   id: string
@@ -132,7 +133,7 @@ export default function TourPhotoUpload({
           !file.name.includes('.README') &&
           !file.name.startsWith('.') &&
           !file.name.includes('_thumb') &&
-          file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+          TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
         
         if (!isPhotoFile) return false
         
@@ -148,7 +149,7 @@ export default function TourPhotoUpload({
       // 썸네일 파일 찾기
       const thumbnailFiles = files?.filter((file: { name: string }) => 
         file.name.includes('_thumb') &&
-        file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+        TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
       ) || []
 
       // 썸네일 매핑 생성 (Storage 기반)
@@ -505,7 +506,7 @@ export default function TourPhotoUpload({
         const result = await runTourPhotoUploadQueue({
           files: fileArray,
           tourId,
-          uploadedBy: user?.email || uploadedBy || '',
+          uploadedBy: (uploadedBy && uploadedBy.trim()) || user?.email || '',
           imageOnlyErrorLabel: t('imageOnlyError'),
         })
 
@@ -572,7 +573,7 @@ export default function TourPhotoUpload({
         !file.name.includes('.README') &&
         !file.name.startsWith('.') &&
         !file.name.includes('_thumb') && // 썸네일 제외
-        file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+        TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
       ) || []
 
       // 썸네일이 있는지 확인
@@ -986,56 +987,53 @@ export default function TourPhotoUpload({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*,image/jpeg,image/jpg,image/png,image/webp"
+          accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif"
           onChange={(e) => {
             const target = e.target as HTMLInputElement
-            if (target.files && target.files.length > 0) {
-              console.log('File input files selected:', target.files.length)
-              handleFileUpload(target.files)
+            const list = target.files
+            if (list && list.length > 0) {
+              console.log('File input files selected:', list.length)
+              handleFileUpload(list)
             } else {
               console.log('No files selected from file input')
             }
-            // input 값 초기화 (같은 파일 다시 선택 가능하도록)
-            target.value = ''
+            // 모바일: change 직후 value 초기화가 FileList 무효화를 유발할 수 있어 다음 틱으로 미룸
+            requestAnimationFrame(() => {
+              target.value = ''
+            })
           }}
           className="hidden"
         />
         <input
           ref={cameraInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,image/heic,image/heif,.heic,.heif"
           capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
           onChange={(e) => {
             const target = e.target as HTMLInputElement
+            const list = target.files
             console.log('Camera input onChange triggered')
-            console.log('Files:', target.files)
-            console.log('Files length:', target.files?.length)
+            console.log('Files:', list)
+            console.log('Files length:', list?.length)
             
-            if (target.files && target.files.length > 0) {
-              console.log('Camera input files selected:', target.files.length)
+            if (list && list.length > 0) {
+              console.log('Camera input files selected:', list.length)
               console.log('File details:', {
-                name: target.files[0].name,
-                size: target.files[0].size,
-                type: target.files[0].type
+                name: list[0].name,
+                size: list[0].size,
+                type: list[0].type
               })
-              
-              // FileList를 그대로 전달
-              const fileList = target.files
-              handleFileUpload(fileList)
+              handleFileUpload(list)
             } else {
               console.log('No files selected from camera input - user may have cancelled')
             }
             
-            // input 값 초기화는 약간의 지연 후에 (업로드가 시작된 후)
-            setTimeout(() => {
-              if (target) {
-                target.value = ''
-              }
-            }, 100)
+            requestAnimationFrame(() => {
+              target.value = ''
+            })
           }}
-          onClick={(e) => {
+          onClick={() => {
             console.log('Camera input clicked')
-            // 클릭 이벤트도 로깅
           }}
           className="hidden"
         />

@@ -44,6 +44,11 @@ const TOUR_EXPENSE_MODAL_PORTAL_Z = 'z-[12000]'
 /** Dialog가 body에 pointer-events:none을 둘 때 포털 루트가 클릭·스크롤을 받도록 함 */
 const TOUR_EXPENSE_MODAL_PORTAL_INTERACTION = 'pointer-events-auto overscroll-contain'
 
+/** `type="number"`는 IME·로캘에서 입력이 막히거나 `,` 소수가 거부되는 경우가 있어 텍스트 필드와 함께 사용 */
+function normalizeDecimalTyping(raw: string): string {
+  return raw.replace(/,/g, '.')
+}
+
 interface TourExpense {
   id: string
   tour_id: string
@@ -2115,9 +2120,28 @@ export default function TourExpenseManager({
             <Settings size={20} />
           </button>
           <button
+            type="button"
             onClick={() => {
+              setEditingExpense(null)
               setPaymentMethodTab('own')
               setReimbursementSectionOpen(false)
+              setShowCustomPaidTo(false)
+              setShowCustomPaidFor(false)
+              setShowMoreCategories(false)
+              setFormData({
+                paid_to: '',
+                paid_for: '',
+                amount: '',
+                payment_method: '',
+                note: '',
+                image_url: '',
+                file_path: '',
+                custom_paid_to: '',
+                custom_paid_for: '',
+                reimbursed_amount: '',
+                reimbursed_on: '',
+                reimbursement_note: '',
+              })
               setShowAddForm(true)
             }}
             className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -2745,13 +2769,21 @@ export default function TourExpenseManager({
                                   {t('amount')} (USD)
                                 </label>
                                 <input
-                                  type="number"
-                                  step="0.01"
+                                  type="text"
+                                  inputMode="decimal"
+                                  autoComplete="off"
+                                  lang="en"
                                   value={ocrMatches.draft.amount}
                                   onChange={(e) =>
                                     setOcrReview((prev) =>
                                       prev
-                                        ? { ...prev, draft: { ...prev.draft, amount: e.target.value } }
+                                        ? {
+                                            ...prev,
+                                            draft: {
+                                              ...prev.draft,
+                                              amount: normalizeDecimalTyping(e.target.value),
+                                            },
+                                          }
                                         : prev
                                     )
                                   }
@@ -3242,10 +3274,17 @@ export default function TourExpenseManager({
                     {t('amount')} (USD) <span className="text-red-500">*</span>
                   </label>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    lang="en"
                     value={formData.amount}
-                    onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        amount: normalizeDecimalTyping(e.target.value),
+                      }))
+                    }
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
@@ -3344,11 +3383,17 @@ export default function TourExpenseManager({
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">{t('reimbursedAmount')}</label>
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
+                            lang="en"
                             value={formData.reimbursed_amount}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, reimbursed_amount: e.target.value }))}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                reimbursed_amount: normalizeDecimalTyping(e.target.value),
+                              }))
+                            }
                             placeholder="0"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
