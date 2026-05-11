@@ -249,6 +249,9 @@ export default function AdminTours() {
       guideNoChatRoomCount: number
       duplicateCount: number
       unassignedCount: number
+      pastMissingGuideCount: number
+      pastGuideMissingFeeCount: number
+      cancelledWithGuideOrFeeCount: number
     }) => {
       setNeedCheckStats({ union: p.unionCount })
     },
@@ -1370,6 +1373,9 @@ export default function AdminTours() {
         tabNoChatRoomLabel={t('needCheckTabNoChatRoom')}
         tabDuplicateLabel={t('needCheckTabDuplicate')}
         tabUnassignedLabel={t('needCheckTabUnassigned')}
+        tabPastMissingGuideLabel={t('needCheckTabPastMissingGuide')}
+        tabPastGuideMissingFeeLabel={t('needCheckTabPastGuideMissingFee')}
+        tabCancelledGuideOrFeeLabel={t('needCheckTabCancelledGuideOrFee')}
         locale={locale}
         onDataLoaded={handleNeedCheckDataLoaded}
         onTourClick={(tourId) => {

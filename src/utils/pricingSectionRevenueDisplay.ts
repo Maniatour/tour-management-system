@@ -16,7 +16,7 @@ export type PricingSectionRevenueDisplayInput = {
   refundedAmount: number
   /** 채널 정산·결제에 추가할인/추가비용이 이미 반영된 경우 true — 총 매출에서 이중 반영 방지 */
   omitAdditionalDiscountAndCostFromSum: boolean
-  /** 홈페이지 직예약: 추가비용은 회사 총 매출·운영 이익에 포함하지 않음 */
+  /** 자체(홈페이지) 직예약: 추가할인·선결제 지출은 ④에 반영하지 않음(상단·채널 결제에 이미 반영) · 추가비용은 회사 총 매출·운영 이익 합에서 제외 */
   excludeHomepageAdditionalCostFromCompanyTotals: boolean
 }
 
@@ -35,12 +35,16 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
     totalRevenue += inp.notIncludedTotalUsd
   }
   if (!inp.omitAdditionalDiscountAndCostFromSum) {
-    if (inp.additionalDiscount > 0) totalRevenue -= inp.additionalDiscount
+    if (inp.additionalDiscount > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
+      totalRevenue -= inp.additionalDiscount
+    }
     if (inp.additionalCost > 0) totalRevenue += inp.additionalCost
   }
   if (inp.tax > 0) totalRevenue += inp.tax
   // card_fee: 채널 결제 금액·정산 산식에 이미 포함 — 이중 가산하지 않음
-  if (inp.prepaymentCost > 0) totalRevenue += inp.prepaymentCost
+  if (inp.prepaymentCost > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
+    totalRevenue += inp.prepaymentCost
+  }
   totalRevenue -= inp.refundedAmount
   if (inp.excludeHomepageAdditionalCostFromCompanyTotals && inp.additionalCost > 0) {
     totalRevenue -= inp.additionalCost

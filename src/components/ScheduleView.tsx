@@ -8890,6 +8890,7 @@ export default function ScheduleView() {
 
       {/* 투어 상세 (스케줄 뷰에서 페이지 이동 없이 확인) */}
       <Dialog
+        modal={false}
         open={!!tourDetailModal}
         onOpenChange={(open) => {
           if (!open) {

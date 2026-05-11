@@ -1775,7 +1775,7 @@ export default function PricingSection({
 
     if (!omitAdditionalDiscountAndCostFromRevenueSum) {
       const disc = Number(formData.additionalDiscount) || 0
-      if (disc > 0.005) {
+      if (disc > 0.005 && !isHomepageBooking) {
         lines.push({ sign: '-', labelKo: '추가할인', labelEn: 'Additional discount', amount: disc })
         tr -= disc
       }
@@ -1793,7 +1793,7 @@ export default function PricingSection({
     }
 
     const ppc = Number(formData.prepaymentCost) || 0
-    if (ppc > 0.005) {
+    if (ppc > 0.005 && !isHomepageBooking) {
       lines.push({ sign: '+', labelKo: '선결제 지출', labelEn: 'Prepayment cost', amount: ppc })
       tr += ppc
     }

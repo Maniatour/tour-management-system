@@ -123,7 +123,7 @@ export function computeStoredCompanyRevenueFields(
 
   if (!omitAdditionalDiscountAndCostFromRevenueSum) {
     const disc = Number(inp.additionalDiscount) || 0
-    if (disc > 0.005) {
+    if (disc > 0.005 && !inp.isHomepageBooking) {
       tr -= disc
     }
     const ac = Number(inp.additionalCost) || 0
@@ -138,7 +138,7 @@ export function computeStoredCompanyRevenueFields(
   }
 
   const ppc = Number(inp.prepaymentCost) || 0
-  if (ppc > 0.005) {
+  if (ppc > 0.005 && !inp.isHomepageBooking) {
     tr += ppc
   }
 

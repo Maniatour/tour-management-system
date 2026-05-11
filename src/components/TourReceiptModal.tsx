@@ -61,6 +61,8 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
     custom_paid_for: ''
   })
   const [uploading, setUploading] = useState(false)
+  /** tour_expenses INSERT 진행 중 */
+  const [saving, setSaving] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
   const [showCustomPaidFor, setShowCustomPaidFor] = useState(false)
@@ -405,6 +407,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       return
     }
 
+    setSaving(true)
     try {
       const { error } = await supabase
         .from('tour_expenses')
@@ -431,22 +434,29 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
     } catch (error) {
       console.error('영수증 등록 오류:', error)
       alert(getText('영수증 등록 중 오류가 발생했습니다.', 'An error occurred while registering the receipt.'))
+    } finally {
+      setSaving(false)
     }
   }
 
   if (!isOpen) return null
 
+  const busy = uploading || saving
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+      <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b">
           <h3 className="text-xl font-semibold text-gray-900 flex items-center">
             <Receipt className="w-6 h-6 mr-2 text-green-500" />
             {getText('영수증 첨부', 'Receipt Upload')}
           </h3>
           <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            disabled={busy}
+            aria-disabled={busy}
+            className="text-gray-400 hover:text-gray-600 disabled:opacity-40 disabled:pointer-events-none"
           >
             <X className="w-6 h-6" />
           </button>
@@ -734,7 +744,8 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
                         <button
                           type="button"
                           onClick={() => setFormData(prev => ({ ...prev, image_url: '', file_path: '' }))}
-                          className="text-sm text-red-600 hover:text-red-800"
+                          disabled={busy}
+                          className="text-sm text-red-600 hover:text-red-800 disabled:opacity-40 disabled:pointer-events-none"
                         >
                           {getText('사진 제거', 'Remove Photo')}
                         </button>
@@ -755,7 +766,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
                           <button
                             type="button"
                             onClick={() => cameraInputRef.current?.click()}
-                            disabled={uploading}
+                            disabled={busy}
                             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                           >
                             <Camera className="w-4 h-4 mr-2" />
@@ -764,7 +775,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            disabled={uploading}
+                            disabled={busy}
                             className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                           >
                             <Folder className="w-4 h-4 mr-2" />
@@ -799,21 +810,45 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
                 <div className="flex space-x-3 pt-4">
                   <button
                     type="submit"
-                    disabled={uploading}
+                    disabled={busy}
                     className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                   >
-                    {uploading ? getText('등록 중...', 'Registering...') : getText('등록', 'Register')}
+                    {saving
+                      ? getText('등록 중…', 'Saving…')
+                      : getText('등록', 'Register')}
                   </button>
                   <button
                     type="button"
                     onClick={handleReceiptFormCancel}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                    disabled={busy}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:pointer-events-none"
                   >
                     {getText('취소', 'Cancel')}
                   </button>
                 </div>
               </form>
             </div>
+          </div>
+        )}
+
+        {busy && (
+          <div
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-white/85 px-6 text-center backdrop-blur-[2px]"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-600 border-t-transparent" />
+            <p className="text-sm font-medium text-gray-800">
+              {uploading
+                ? getText(
+                    '영수증 이미지를 업로드하는 중입니다…',
+                    'Uploading receipt image…'
+                  )
+                : getText('영수증을 등록하는 중입니다…', 'Saving receipt…')}
+            </p>
+            <p className="text-xs text-gray-500">
+              {getText('잠시만 기다려 주세요.', 'Please wait.')}
+            </p>
           </div>
         )}
       </div>

@@ -198,7 +198,7 @@ function TourStatisticsTourDetailModal({
   const href = tourId ? `/${locale}/admin/tours/${tourId}` : ''
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog modal={false} open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[100] sm:rounded-lg"
         onOpenAutoFocus={(e) => e.preventDefault()}

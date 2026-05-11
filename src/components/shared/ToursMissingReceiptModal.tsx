@@ -20,7 +20,16 @@ export type { TourNeedCheckRow, DuplicateAssignmentReservationRow, UnassignedRes
 /** @deprecated Use TourNeedCheckRow */
 export type TourRowMissingReceipt = TourNeedCheckRow
 
-type TabKey = 'noReceipt' | 'receiptPending' | 'balance' | 'noChatRoom' | 'duplicate' | 'unassigned'
+type TabKey =
+  | 'noReceipt'
+  | 'receiptPending'
+  | 'balance'
+  | 'noChatRoom'
+  | 'duplicate'
+  | 'unassigned'
+  | 'pastMissingGuide'
+  | 'pastGuideMissingFee'
+  | 'cancelledGuideOrFee'
 
 type DuplicateGroupFilter = 'all' | 'crossTour' | 'listInTour'
 type BalanceReservationItem = {
@@ -41,6 +50,9 @@ type Props = {
   tabNoChatRoomLabel: string
   tabDuplicateLabel: string
   tabUnassignedLabel: string
+  tabPastMissingGuideLabel: string
+  tabPastGuideMissingFeeLabel: string
+  tabCancelledGuideOrFeeLabel: string
   locale: string
   onTourClick: (tourId: string) => void
   /** 모달에서 데이터를 다시 불러온 뒤 상위(버튼 카운트) 갱신 */
@@ -52,6 +64,9 @@ type Props = {
     guideNoChatRoomCount: number
     duplicateCount: number
     unassignedCount: number
+    pastMissingGuideCount: number
+    pastGuideMissingFeeCount: number
+    cancelledWithGuideOrFeeCount: number
   }) => void
 }
 
@@ -66,6 +81,9 @@ export function ToursNeedCheckModal({
   tabNoChatRoomLabel,
   tabDuplicateLabel,
   tabUnassignedLabel,
+  tabPastMissingGuideLabel,
+  tabPastGuideMissingFeeLabel,
+  tabCancelledGuideOrFeeLabel,
   locale,
   onTourClick,
   onDataLoaded,
@@ -82,6 +100,9 @@ export function ToursNeedCheckModal({
   const [guideAssignedNoChatRoom, setGuideAssignedNoChatRoom] = useState<TourNeedCheckRow[]>([])
   const [duplicateByReservation, setDuplicateByReservation] = useState<DuplicateAssignmentReservationRow[]>([])
   const [unassignedReservations, setUnassignedReservations] = useState<UnassignedReservationNeedCheckRow[]>([])
+  const [pastMissingGuide, setPastMissingGuide] = useState<TourNeedCheckRow[]>([])
+  const [pastGuideMissingFee, setPastGuideMissingFee] = useState<TourNeedCheckRow[]>([])
+  const [cancelledWithGuideOrFee, setCancelledWithGuideOrFee] = useState<TourNeedCheckRow[]>([])
   const [duplicateGroupFilter, setDuplicateGroupFilter] = useState<DuplicateGroupFilter>('all')
   const [unassigningKey, setUnassigningKey] = useState<string | null>(null)
   const [deduping, setDeduping] = useState(false)
@@ -123,6 +144,9 @@ export function ToursNeedCheckModal({
       setGuideAssignedNoChatRoom(data.guideAssignedNoChatRoom)
       setDuplicateByReservation(data.duplicateByReservation)
       setUnassignedReservations(data.unassignedReservations)
+      setPastMissingGuide(data.pastMissingGuide)
+      setPastGuideMissingFee(data.pastGuideMissingFee)
+      setCancelledWithGuideOrFee(data.cancelledWithGuideOrFee)
       onDataLoadedRef.current?.({
         unionCount: data.unionCount,
         noReceiptCount: data.noReceiptCount,
@@ -131,6 +155,9 @@ export function ToursNeedCheckModal({
         guideNoChatRoomCount: data.guideNoChatRoomCount,
         duplicateCount: data.duplicateCount,
         unassignedCount: data.unassignedCount,
+        pastMissingGuideCount: data.pastMissingGuideCount,
+        pastGuideMissingFeeCount: data.pastGuideMissingFeeCount,
+        cancelledWithGuideOrFeeCount: data.cancelledWithGuideOrFeeCount,
       })
     } finally {
       setLoading(false)
@@ -546,7 +573,15 @@ export function ToursNeedCheckModal({
         ? receiptPendingReview
         : tab === 'noChatRoom'
           ? guideAssignedNoChatRoom
-          : null
+          : tab === 'pastMissingGuide'
+            ? pastMissingGuide
+            : tab === 'pastGuideMissingFee'
+              ? pastGuideMissingFee
+              : tab === 'cancelledGuideOrFee'
+                ? cancelledWithGuideOrFee
+                : null
+  const showGuideFeeColumn =
+    tab === 'pastMissingGuide' || tab === 'pastGuideMissingFee' || tab === 'cancelledGuideOrFee'
   const formatUsd = (v: number) => `$${v.toFixed(2)}`
   const reservationPreviewSrc =
     previewReservationId != null ? `/${locale}/admin/reservations/${previewReservationId}` : null
@@ -664,6 +699,42 @@ export function ToursNeedCheckModal({
           >
             {tabUnassignedLabel}
             <span className="ml-1.5 tabular-nums opacity-90">({unassignedReservations.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('pastMissingGuide')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'pastMissingGuide'
+                ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-200'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {tabPastMissingGuideLabel}
+            <span className="ml-1.5 tabular-nums opacity-90">({pastMissingGuide.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('pastGuideMissingFee')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'pastGuideMissingFee'
+                ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-200'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {tabPastGuideMissingFeeLabel}
+            <span className="ml-1.5 tabular-nums opacity-90">({pastGuideMissingFee.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('cancelledGuideOrFee')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'cancelledGuideOrFee'
+                ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-200'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {tabCancelledGuideOrFeeLabel}
+            <span className="ml-1.5 tabular-nums opacity-90">({cancelledWithGuideOrFee.length})</span>
           </button>
         </div>
 
@@ -1120,6 +1191,9 @@ export function ToursNeedCheckModal({
                   <th className="py-2 pr-2">{isKo ? '투어일' : 'Date'}</th>
                   <th className="py-2 pr-2">{isKo ? '상품' : 'Product'}</th>
                   <th className="py-2 pr-2">{isKo ? '가이드' : 'Guide'}</th>
+                  {showGuideFeeColumn ? (
+                    <th className="py-2 pr-2 whitespace-nowrap w-24">{t('needCheckColGuideFee')}</th>
+                  ) : null}
                   <th className="py-2 pr-2">{isKo ? '상태' : 'Status'}</th>
                   <th className="py-2 pr-2 w-28">{isKo ? '이동' : 'Open'}</th>
                 </tr>
@@ -1132,6 +1206,11 @@ export function ToursNeedCheckModal({
                       {t.product_name || t.product_id || '—'}
                     </td>
                     <td className="py-2 pr-2 truncate max-w-[140px]">{t.guide_name || '—'}</td>
+                    {showGuideFeeColumn ? (
+                      <td className="py-2 pr-2 tabular-nums text-gray-800 whitespace-nowrap">
+                        {formatUsd(Number(t.guide_fee) || 0)}
+                      </td>
+                    ) : null}
                     <td className="py-2 pr-2">{(t.tour_status || '—').toString()}</td>
                     <td className="py-2 pr-2">
                       <button

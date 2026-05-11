@@ -181,7 +181,8 @@ function roundUsd2(n: number): number {
  * - OTA만 예약 옵션(reservation_options 합) 가산, 불포함·부가·우리측 Refunded 반영
  * - card_fee(결제 수수료)는 채널 결제 금액 산식에 이미 포함되므로 여기서는 가산하지 않음
  * - 추가할인·추가비용: `omitAdditionalDiscountAndCostFromSum`이 true이면 채널 정산/결제에 이미 반영된 것으로 보아 가산·차감하지 않음
- * - 홈페이지: `excludeHomepageAdditionalCostFromCompanyTotals`이면 추가비용을 매출에서 제외
+ * - 자체(홈페이지) 채널: `excludeHomepageAdditionalCostFromCompanyTotals`이면 추가할인·선결제 지출을 ④에 반영하지 않음(상단·채널 결제·정산에 이미 반영).
+ *   동일 플래그로 추가비용은 가산 후 말미에서 매출에서 제외(기존과 동일).
  */
 export type CompanyTotalRevenueInput = {
   channelSettlementBase: number
@@ -201,7 +202,7 @@ export type CompanyTotalRevenueInput = {
    * `shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum` 결과를 넣을 것.
    */
   omitAdditionalDiscountAndCostFromSum: boolean
-  /** 홈페이지 예약: 추가비용은 회사 매출에 넣지 않음(정산·소계에 섞여 있으면 최종에서 차감) */
+  /** 자체(홈페이지) 예약: ④에서 추가할인·선결제 지출 가산 안 함 · 추가비용은 회사 매출 합에서 제외(정산에 섞인 뒤 말미 차감) */
   excludeHomepageAdditionalCostFromCompanyTotals: boolean
 }
 
@@ -235,7 +236,7 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     totalRevenue += notIncludedTotalUsd
   }
   if (!omitAdditionalDiscountAndCostFromSum) {
-    if (additionalDiscount > 0) {
+    if (additionalDiscount > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
       totalRevenue -= additionalDiscount
     }
     if (additionalCost > 0) {
@@ -245,7 +246,7 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   if (tax > 0) {
     totalRevenue += tax
   }
-  if (prepaymentCost > 0) {
+  if (prepaymentCost > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
     totalRevenue += prepaymentCost
   }
   totalRevenue -= refundedOurAmount

@@ -19,6 +19,8 @@ export type TourNeedCheckRow = {
   guide_name: string | null
   /** Need to check — 투어 지출 없음 탭에서 가이드 미배정 제외용 */
   tour_guide_id?: string | null
+  /** tours.guide_fee (USD 등 숫자; 미기록·0은 0) */
+  guide_fee?: number
 }
 
 /** 투어 지출 없음 탭에서 제외할 상품(이름·다국어 필드 부분 일치) */
@@ -140,6 +142,22 @@ function numBalance(v: unknown): number {
   return Number(v) || 0
 }
 
+function numGuideFee(v: unknown): number {
+  if (v == null) return 0
+  if (typeof v === 'string') return parseFloat(v) || 0
+  return Number(v) || 0
+}
+
+function guideFeeIsRecorded(v: unknown): boolean {
+  return numGuideFee(v) > 0.009
+}
+
+/** 투어일이 오늘보다 이전인 경우만(당일 제외) */
+function isPastTourStrict(tourDate: string | null | undefined, today: string): boolean {
+  const td = ymdKey(tourDate)
+  return td.length > 0 && td < today
+}
+
 function logToursNeedCheckError(label: string, err: unknown): void {
   if (isAbortLikeError(err)) return
   console.error(label, err)
@@ -154,7 +172,7 @@ async function fetchTourRowsWithMeta(supabase: SupabaseClient): Promise<{
 }> {
   const { data: tourRows, error: toursErr } = await supabase
     .from('tours')
-    .select('id, tour_date, tour_status, product_id, tour_guide_id, reservation_ids')
+    .select('id, tour_date, tour_status, product_id, tour_guide_id, guide_fee, reservation_ids')
     .order('tour_date', { ascending: false })
 
   if (toursErr) {
@@ -235,6 +253,7 @@ async function fetchTourRowsWithMeta(supabase: SupabaseClient): Promise<{
       product_name: pid ? productLabel.get(pid) ?? null : null,
       guide_name: guide ?? null,
       tour_guide_id: (t as { tour_guide_id?: string | null }).tour_guide_id ?? null,
+      guide_fee: numGuideFee((t as { guide_fee?: unknown }).guide_fee),
     })
   }
 
@@ -786,6 +805,12 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
   guideAssignedNoChatRoom: TourNeedCheckRow[]
   duplicateByReservation: DuplicateAssignmentReservationRow[]
   unassignedReservations: UnassignedReservationNeedCheckRow[]
+  /** 지난 투어(투어일이 오늘보다 이전), 비취소, 가이드 미배정 */
+  pastMissingGuide: TourNeedCheckRow[]
+  /** 지난 투어(투어일이 오늘보다 이전), 비취소, 가이드 배정됐으나 가이드비 미기록(0 이하) */
+  pastGuideMissingFee: TourNeedCheckRow[]
+  /** 취소 상태인데 가이드 배정 또는 가이드비가 남아 있는 투어 */
+  cancelledWithGuideOrFee: TourNeedCheckRow[]
   unionCount: number
   noReceiptCount: number
   receiptPendingCount: number
@@ -793,6 +818,9 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
   guideNoChatRoomCount: number
   duplicateCount: number
   unassignedCount: number
+  pastMissingGuideCount: number
+  pastGuideMissingFeeCount: number
+  cancelledWithGuideOrFeeCount: number
 }> {
   const today = todayYmd()
   const { rows: enriched, reservationIdsByTourId, productIdsExcludedNoReceipt, assignedReservationIdSet } =
@@ -847,6 +875,9 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
   const receiptPendingReview: TourNeedCheckRow[] = []
   const balanceRemaining: TourNeedCheckRow[] = []
   const guideAssignedNoChatRoom: TourNeedCheckRow[] = []
+  const pastMissingGuide: TourNeedCheckRow[] = []
+  const pastGuideMissingFee: TourNeedCheckRow[] = []
+  const cancelledWithGuideOrFee: TourNeedCheckRow[] = []
 
   for (const row of enriched) {
     if (!isPastOrTodayTour(row.tour_date, today)) continue
@@ -885,12 +916,32 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
     }
   }
 
+  for (const row of enriched) {
+    const st = (row.tour_status || '').toString()
+    const guideAssigned = String(row.tour_guide_id ?? '').trim().length > 0
+    const feeRecorded = guideFeeIsRecorded(row.guide_fee)
+
+    if (isPastTourStrict(row.tour_date, today) && !isTourCancelled(st)) {
+      if (!guideAssigned) {
+        pastMissingGuide.push(row)
+      } else if (!feeRecorded) {
+        pastGuideMissingFee.push(row)
+      }
+    }
+    if (isTourCancelled(st) && (guideAssigned || feeRecorded)) {
+      cancelledWithGuideOrFee.push(row)
+    }
+  }
+
   const sortDesc = (a: TourNeedCheckRow, b: TourNeedCheckRow) =>
     (b.tour_date || '').localeCompare(a.tour_date || '')
   noReceipt.sort(sortDesc)
   receiptPendingReview.sort(sortDesc)
   balanceRemaining.sort(sortDesc)
   guideAssignedNoChatRoom.sort(sortDesc)
+  pastMissingGuide.sort(sortDesc)
+  pastGuideMissingFee.sort(sortDesc)
+  cancelledWithGuideOrFee.sort(sortDesc)
 
   const duplicateTourIds = new Set<string>()
   for (const dr of duplicateByReservation) {
@@ -905,6 +956,9 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
     ...balanceRemaining.map((r) => r.id),
     ...guideAssignedNoChatRoom.map((r) => r.id),
     ...duplicateTourIds,
+    ...pastMissingGuide.map((r) => r.id),
+    ...pastGuideMissingFee.map((r) => r.id),
+    ...cancelledWithGuideOrFee.map((r) => r.id),
   ])
 
   return {
@@ -914,6 +968,9 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
     guideAssignedNoChatRoom,
     duplicateByReservation,
     unassignedReservations,
+    pastMissingGuide,
+    pastGuideMissingFee,
+    cancelledWithGuideOrFee,
     unionCount: unionIds.size + unassignedReservations.length,
     noReceiptCount: noReceipt.length,
     receiptPendingCount: receiptPendingReview.length,
@@ -921,5 +978,8 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
     guideNoChatRoomCount: guideAssignedNoChatRoom.length,
     duplicateCount: duplicateByReservation.length,
     unassignedCount: unassignedReservations.length,
+    pastMissingGuideCount: pastMissingGuide.length,
+    pastGuideMissingFeeCount: pastGuideMissingFee.length,
+    cancelledWithGuideOrFeeCount: cancelledWithGuideOrFee.length,
   }
 }
