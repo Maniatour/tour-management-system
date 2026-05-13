@@ -19,6 +19,11 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  // Serwist 오프라인 폴백 (next-intl 접두 없음)
+  if (req.nextUrl.pathname === '/~offline') {
+    return NextResponse.next()
+  }
+
   // /chat/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
   if (req.nextUrl.pathname.startsWith('/chat/')) {
     const response = NextResponse.next()

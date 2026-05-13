@@ -3325,6 +3325,10 @@
       "scheduleCellCapacityPerTour": "{assigned} / {max} — {spots}명 추가 가능",
       "scheduleCellCapacityTotal": "총 {assigned}명 / {max}명 — {spots}명 추가 가능",
       "offScheduleLegend": "비정기 투어 범례",
+      "hideOffSchedules": "오프 숨기기",
+      "showOffSchedules": "오프 보이기",
+      "hideOffSchedulesTitle": "달력에서 가이드 오프 스케줄 표시를 끕니다",
+      "showOffSchedulesTitle": "달력에 가이드 오프 스케줄을 다시 표시합니다",
       "offSchedule": {
         "addTitle": "오프 스케줄 추가",
         "editTitle": "오프 스케줄 수정",

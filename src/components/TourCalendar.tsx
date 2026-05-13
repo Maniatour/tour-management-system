@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X as XIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X as XIcon, Eye, EyeOff } from 'lucide-react'
 import type { Database } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -141,6 +141,8 @@ const TourCalendar = memo(function TourCalendar({
   })
   const [updatingTourStatus, setUpdatingTourStatus] = useState<string | null>(null)
   const [offDecisionLoading, setOffDecisionLoading] = useState(false)
+  /** 관리자 달력 등: 셀에 가이드 오프 스케줄 칩만 숨김(데이터·날짜 클릭 수정은 유지) */
+  const [offScheduleChipsVisible, setOffScheduleChipsVisible] = useState(true)
   
   // 투어 상태 옵션
   const tourStatusOptions = [
@@ -745,6 +747,8 @@ const TourCalendar = memo(function TourCalendar({
   }, [tours, allReservations])
 
   // 상품 색상 범례 (Mania Tour / Mania Service만)
+  const showOffScheduleVisibilityToggle = Boolean(onVisibleCalendarRangeChange)
+
   const productLegend = useMemo(() => {
     const allowed = new Set(['Mania Tour', 'Mania Service'])
     const added = new Set<string>()
@@ -765,27 +769,53 @@ const TourCalendar = memo(function TourCalendar({
   return (
     <div className="bg-white rounded-lg shadow-md border p-1 sm:p-4">
       {/* 달력 헤더 */}
-      <div className="flex items-center justify-between mb-3 sm:mb-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-4">
         <h2 className="text-xl font-semibold text-gray-900 flex items-center">
           <CalendarIcon className="w-5 h-5 mr-2" />
           {t('title')}
         </h2>
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={goToPreviousMonth}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <span className="text-sm sm:text-base font-medium text-gray-900">
-            {currentDate.getFullYear()}{locale === 'ko' ? '년' : ''} {monthNames[currentDate.getMonth()]}
-          </span>
-          <button
-            onClick={goToNextMonth}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          {showOffScheduleVisibilityToggle && (
+            <button
+              type="button"
+              onClick={() => setOffScheduleChipsVisible((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors ${
+                offScheduleChipsVisible
+                  ? 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+              }`}
+              title={offScheduleChipsVisible ? t('hideOffSchedulesTitle') : t('showOffSchedulesTitle')}
+            >
+              {offScheduleChipsVisible ? (
+                <>
+                  <EyeOff className="w-4 h-4 shrink-0" aria-hidden />
+                  {t('hideOffSchedules')}
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 shrink-0" aria-hidden />
+                  {t('showOffSchedules')}
+                </>
+              )}
+            </button>
+          )}
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            <button
+              onClick={goToPreviousMonth}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <span className="text-sm sm:text-base font-medium text-gray-900">
+              {currentDate.getFullYear()}{locale === 'ko' ? '년' : ''} {monthNames[currentDate.getMonth()]}
+            </span>
+            <button
+              onClick={goToNextMonth}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1015,7 +1045,7 @@ const TourCalendar = memo(function TourCalendar({
                 })}
                 
                 {/* 오프 스케줄 라벨들 */}
-                {dayOffSchedules.map((schedule, scheduleIndex) => {
+                {offScheduleChipsVisible && dayOffSchedules.map((schedule, scheduleIndex) => {
                   const statusColor = schedule.status === 'approved' ? 'bg-green-600' : 
                                     schedule.status === 'pending' ? 'bg-amber-500 ring-2 ring-amber-200 ring-inset' : 
                                     schedule.status === 'rejected' ? 'bg-red-500' : 'bg-gray-500'
@@ -1083,23 +1113,25 @@ const TourCalendar = memo(function TourCalendar({
         </div>
         
         {/* 오프 스케줄 범례 */}
-        <div className="mt-3">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">{t('offScheduleLegend')}</h3>
-          <div className="flex flex-wrap gap-3">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-green-500" />
-              <span className="text-sm text-gray-600">{t('offSchedule.status.approved')}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-yellow-500" />
-              <span className="text-sm text-gray-600">{t('offSchedule.status.pending')}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 rounded-full bg-red-500" />
-              <span className="text-sm text-gray-600">{t('offSchedule.status.rejected')}</span>
+        {(!showOffScheduleVisibilityToggle || offScheduleChipsVisible) && (
+          <div className="mt-3">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">{t('offScheduleLegend')}</h3>
+            <div className="flex flex-wrap gap-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 rounded-full bg-green-500" />
+                <span className="text-sm text-gray-600">{t('offSchedule.status.approved')}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                <span className="text-sm text-gray-600">{t('offSchedule.status.pending')}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+                <span className="text-sm text-gray-600">{t('offSchedule.status.rejected')}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
         
         {/* 투어 상태 아이콘 범례 */}
         <div className="mt-3">

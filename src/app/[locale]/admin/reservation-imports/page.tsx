@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter, Ban } from 'lucide-react'
+import { Mail, ChevronLeft, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter, Ban } from 'lucide-react'
 import {
   isManiatourHomepageBookingEmail,
   isCancellationRequestEmailSubject,
@@ -64,6 +64,66 @@ function CancellationImportListBadge({ row }: { row: ImportItem }) {
     >
       취소 필요
     </span>
+  )
+}
+
+function ReservationImportListPagination({
+  listTotal,
+  listRangeStart,
+  listRangeEnd,
+  listPageClamped,
+  listTotalPages,
+  onPrev,
+  onNext,
+  positionClass = '',
+}: {
+  listTotal: number
+  listRangeStart: number
+  listRangeEnd: number
+  listPageClamped: number
+  listTotalPages: number
+  onPrev: () => void
+  onNext: () => void
+  positionClass?: string
+}) {
+  return (
+    <div
+      className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 px-1 text-sm text-gray-600 border-gray-100 ${positionClass}`}
+    >
+      <span className="tabular-nums">
+        {listTotal === 0 ? (
+          '표시할 항목 없음'
+        ) : (
+          <>
+            <span className="font-medium text-gray-800">
+              {listRangeStart}–{listRangeEnd}
+            </span>
+            <span className="text-gray-500"> / 총 {listTotal}건</span>
+            <span className="text-gray-400 hidden sm:inline"> · 페이지 {listPageClamped}/{listTotalPages}</span>
+          </>
+        )}
+      </span>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={listPageClamped <= 1 || listTotal === 0}
+          className="inline-flex items-center gap-1 min-h-[40px] px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
+        >
+          <ChevronLeft className="w-4 h-4 shrink-0" aria-hidden />
+          이전
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={listPageClamped >= listTotalPages || listTotal === 0}
+          className="inline-flex items-center gap-1 min-h-[40px] px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
+        >
+          다음
+          <ChevronRight className="w-4 h-4 shrink-0" aria-hidden />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -128,14 +188,26 @@ function productInternalName(extracted: ExtractedReservationData, products: Prod
   return matched ? ((matched.name ?? matched.name_ko ?? '').trim() || name) : name
 }
 
+type ReservationImportListTab = 'all' | 'booking' | 'cancellation'
+
+const LIST_PAGE_SIZE = 25
+
+const DEFAULT_LIST_PAGE_BY_TAB: Record<ReservationImportListTab, number> = {
+  all: 1,
+  booking: 1,
+  cancellation: 1,
+}
+
 const RESERVATION_IMPORTS_UI_DEFAULT = {
   /** API: active = pending + confirmed (예약 저장 후에도 목록에 유지) */
   statusFilter: 'active',
-  activeTab: 'all' as 'all' | 'booking' | 'cancellation',
+  activeTab: 'all' as ReservationImportListTab,
   dateEnd: todayLocal(),
   noDateFilter: false,
   searchQuery: '',
-  platformFilter: ''
+  platformFilter: '',
+  /** 탭(전체 / 예약 접수 / 취소 관련)마다 이메일 목록 페이지 — 1부터 */
+  listPageByTab: { ...DEFAULT_LIST_PAGE_BY_TAB },
 }
 
 export default function AdminReservationImportsPage({}: AdminReservationImportsProps) {
@@ -147,7 +219,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
   const [listUi, setListUi] = useRoutePersistedState('reservation-imports-v2', RESERVATION_IMPORTS_UI_DEFAULT)
-  const { statusFilter, activeTab, dateEnd, noDateFilter, searchQuery, platformFilter } = listUi
+  const { statusFilter, activeTab, dateEnd, noDateFilter, searchQuery, platformFilter, listPageByTab: listPageByTabStored } = listUi
+  const listPageByTab = { ...DEFAULT_LIST_PAGE_BY_TAB, ...(listPageByTabStored ?? {}) }
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [patchingId, setPatchingId] = useState<string | null>(null)
   const [pasteOpen, setPasteOpen] = useState(false)
@@ -318,6 +391,44 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     }
     return true
   })
+
+  const listTotal = searchedAndFilteredItems.length
+  const listTotalPages = Math.max(1, Math.ceil(listTotal / LIST_PAGE_SIZE))
+  const storedListPage = Math.max(1, listPageByTab[activeTab])
+  const listPageClamped = Math.min(storedListPage, listTotalPages)
+
+  useEffect(() => {
+    if (storedListPage !== listPageClamped) {
+      setListUi((prev) => ({
+        ...prev,
+        listPageByTab: {
+          ...DEFAULT_LIST_PAGE_BY_TAB,
+          ...prev.listPageByTab,
+          [activeTab]: listPageClamped,
+        },
+      }))
+    }
+  }, [activeTab, storedListPage, listPageClamped])
+
+  const paginatedItems = useMemo(() => {
+    const start = (listPageClamped - 1) * LIST_PAGE_SIZE
+    return searchedAndFilteredItems.slice(start, start + LIST_PAGE_SIZE)
+  }, [searchedAndFilteredItems, listPageClamped])
+
+  const listRangeStart = listTotal === 0 ? 0 : (listPageClamped - 1) * LIST_PAGE_SIZE + 1
+  const listRangeEnd = Math.min(listPageClamped * LIST_PAGE_SIZE, listTotal)
+
+  const goListPage = (next: number) => {
+    const p = Math.max(1, Math.min(listTotalPages, next))
+    setListUi((prev) => ({
+      ...prev,
+      listPageByTab: {
+        ...DEFAULT_LIST_PAGE_BY_TAB,
+        ...prev.listPageByTab,
+        [activeTab]: p,
+      },
+    }))
+  }
 
   const bookingCount = items.filter((row) => isBookingConfirmed(row)).length
   const cancellationCount = items.filter((row) => isCancellationRequestEmailSubject(row.subject)).length
@@ -663,7 +774,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       <div className="flex flex-wrap gap-1 border-b border-gray-200">
         <button
           type="button"
-          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'all' }))}
+          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'all' as const }))}
           onDragOver={handleTabDragOver}
           onDrop={(e) => handleTabDrop(e, 'all')}
           className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors touch-manipulation ${
@@ -677,7 +788,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         </button>
         <button
           type="button"
-          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'booking' }))}
+          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'booking' as const }))}
           onDragOver={handleTabDragOver}
           onDrop={(e) => handleTabDrop(e, 'booking')}
           title="항목을 이 탭에 드래그하면 예약 접수로 분류됩니다"
@@ -693,7 +804,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         </button>
         <button
           type="button"
-          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'cancellation' }))}
+          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'cancellation' as const }))}
           title="제목에 cancelled/canceled가 포함된 취소·취소 요청 메일만 표시합니다. 행을 누르면 모달에서 처리합니다."
           className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors flex items-center justify-center gap-1.5 touch-manipulation ${
             activeTab === 'cancellation'
@@ -835,6 +946,17 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         </div>
       ) : (
         <>
+          <ReservationImportListPagination
+            listTotal={listTotal}
+            listRangeStart={listRangeStart}
+            listRangeEnd={listRangeEnd}
+            listPageClamped={listPageClamped}
+            listTotalPages={listTotalPages}
+            onPrev={() => goListPage(listPageClamped - 1)}
+            onNext={() => goListPage(listPageClamped + 1)}
+            positionClass="border-b"
+          />
+
           {/* 데스크톱: 테이블 (가로 스크롤 대응) */}
           <div className="hidden md:block rounded-lg border border-gray-200 bg-white overflow-x-auto">
             <table className="min-w-full table-fixed divide-y divide-gray-200">
@@ -849,7 +971,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {searchedAndFilteredItems.map((row) => {
+                {paginatedItems.map((row) => {
                   /** 신규(빨강) / 처리됨(노랑): import 행의 채널 RN이 reservations.channel_rn과 일치할 때만 처리됨 */
                   const isRegistered = !!(row.reservation_exists_by_channel_rn || row.reservation_exists_by_customer_match)
                   /** 예약 저장 완료된 이메일 행 — 목록에 남기고 노란색 표시 */
@@ -905,7 +1027,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
           {/* 모바일: 카드 리스트 (터치 친화) */}
           <div className="md:hidden space-y-2">
-            {searchedAndFilteredItems.map((row) => {
+            {paginatedItems.map((row) => {
               const isRegistered = !!(row.reservation_exists_by_channel_rn || row.reservation_exists_by_customer_match)
               const isSavedToReservation =
                 row.status === 'confirmed' || !!row.reservation_id
@@ -947,6 +1069,19 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
               )
             })}
           </div>
+
+          {listTotalPages > 1 ? (
+            <ReservationImportListPagination
+              listTotal={listTotal}
+              listRangeStart={listRangeStart}
+              listRangeEnd={listRangeEnd}
+              listPageClamped={listPageClamped}
+              listTotalPages={listTotalPages}
+              onPrev={() => goListPage(listPageClamped - 1)}
+              onNext={() => goListPage(listPageClamped + 1)}
+              positionClass="border-t pt-1 mt-1"
+            />
+          ) : null}
         </>
       )}
 

@@ -3327,6 +3327,10 @@
       "scheduleCellCapacityPerTour": "{assigned} / {max} — {spots} more available",
       "scheduleCellCapacityTotal": "Total {assigned} / {max} — {spots} more available",
       "offScheduleLegend": "Off-Schedule Legend",
+      "hideOffSchedules": "Hide off-schedule",
+      "showOffSchedules": "Show off-schedule",
+      "hideOffSchedulesTitle": "Hide guide off-schedule chips on the calendar",
+      "showOffSchedulesTitle": "Show guide off-schedule chips on the calendar",
       "offSchedule": {
         "addTitle": "Add Off Schedule",
         "editTitle": "Edit Off Schedule",

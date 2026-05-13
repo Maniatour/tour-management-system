@@ -91,6 +91,8 @@ export function GmailReservationImportSyncProvider({ children }: { children: Rea
   const onHeaderPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) return
+      // 닫기 등 헤더 안 버튼 — 드래그 캡처로 클릭이 삼켜지지 않도록 드래그 시작 안 함
+      if ((e.target as HTMLElement).closest('button')) return
       if (!pos) return
       e.preventDefault()
       dragRef.current = {
@@ -231,7 +233,11 @@ export function GmailReservationImportSyncProvider({ children }: { children: Rea
           {phase !== 'syncing' ? (
             <button
               type="button"
-              onClick={dismissModal}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                dismissModal()
+              }}
               className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 touch-manipulation"
               aria-label="닫기"
             >

@@ -842,6 +842,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     Record<string, { from: string; to: string }>
   >({})
   const [simpleCardStatusTransitionLoading, setSimpleCardStatusTransitionLoading] = useState(false)
+  /**
+   * 심플 카드 헤더용 status 감사(audit_logs) 조회: 동일 화면에서 키가 흔들려도 한 차례만 수행.
+   * 일별+심플 카드 레이아웃을 벗어나면(`simpleCardAuditContentKey === null`) ref 초기화 → 다시 들어올 때 한 번 더 조회.
+   */
+  const simpleCardStatusAuditSessionDoneRef = useRef(false)
 
   /** 일별 등록·취소 차트: 취소 = 그날 감사상 취소/삭제 전환일만 (DateGroupHeader 심플 카드와 동일 기준) */
   const [regCancelChartAuditRowsByRecordId, setRegCancelChartAuditRowsByRecordId] = useState<
@@ -2358,19 +2363,29 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   useEffect(() => {
     if (simpleCardAuditContentKey === null) {
+      simpleCardStatusAuditSessionDoneRef.current = false
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
+      return
+    }
+    if (simpleCardStatusAuditSessionDoneRef.current) {
       return
     }
     const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
     if (req.targets.length === 0) {
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
+      if (filteredReservations.length > 0) {
+        simpleCardStatusAuditSessionDoneRef.current = true
+      }
       return
     }
     if (req.uniqueIds.length === 0) {
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
+      if (filteredReservations.length > 0) {
+        simpleCardStatusAuditSessionDoneRef.current = true
+      }
       return
     }
 
@@ -2430,6 +2445,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
       setSimpleCardStatusTransitionMap(next)
       setSimpleCardStatusTransitionLoading(false)
+      simpleCardStatusAuditSessionDoneRef.current = true
     })()
 
     return () => {

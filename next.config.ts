@@ -1,6 +1,18 @@
+import { randomUUID } from 'node:crypto'
+import withSerwistInit from '@serwist/next'
 import createNextIntlPlugin from 'next-intl/plugin'
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
+
+const revision =
+  process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_REF ?? randomUUID()
+
+const withSerwist = withSerwistInit({
+	swSrc: 'src/app/sw.ts',
+	swDest: 'public/sw.js',
+	register: false,
+	additionalPrecacheEntries: [{ url: '/~offline', revision }],
+})
 
 const nextConfig = {
 	// tesseract.js는 worker 스크립트 경로를 번들에 넣으면 __dirname 이 깨져 MODULE_NOT_FOUND 발생
@@ -128,4 +140,4 @@ const nextConfig = {
 	}
 }
 
-export default withNextIntl(nextConfig)
+export default withSerwist(withNextIntl(nextConfig))
