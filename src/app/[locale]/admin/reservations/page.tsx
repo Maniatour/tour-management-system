@@ -81,6 +81,8 @@ import {
   fetchAdminReservationList,
   fetchAdminReservationListCardWeekProgressive,
   fetchAdminReservationListAllFlat,
+  fetchAdminReservationListActivityWindowRowCount,
+  ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS,
 } from '@/lib/adminReservationListFetch'
 import { prefetchAdminReservationCardSideData } from '@/lib/adminReservationCardPrefetch'
 import {
@@ -92,11 +94,12 @@ import {
   browserLocalCalendarMonthWindow,
   browserLocalCalendarYearWindow,
   browserLocalCalendarYearMonthKeys,
+  browserLocalCreatedAtGteIsoForRecentCalendarDays,
 } from '@/lib/browserLocalWeek'
 import {
   type ReservationStatusAuditRow,
   localYmdSetWhereBecameCancelledFromAuditRows,
-  pickReservationStatusTransitionForDay,
+  pickReservationStatusTransitionForSimpleCardDay,
   isIntoCancelledLikeTransition,
   statusTransitionSortIndex,
 } from '@/lib/reservationStatusAudit'
@@ -855,7 +858,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [regCancelChartAuditLoaded, setRegCancelChartAuditLoaded] = useState(false)
   /**
    * 심플 카드 아코디언: 맵에만 사용자 오버라이드 저장.
-   * 키 없음 → defaultOpen (등록·상태변경 상위=열림, 소그룹=대기→취소만 열림·수정됨·그 외=접힘).
+   * 키 없음 → defaultOpen (등록·상태변경 상위=열림, 소그룹=대기→취소만 열림·그 외=접힘).
    */
   const [simpleCardAccordionOverride, setSimpleCardAccordionOverride] = useState<Map<string, boolean>>(
     () => new Map()
@@ -1861,7 +1864,99 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           ? { activityRangeStartIso: rangeStartIso, activityRangeEndIso: rangeEndIso }
           : {}),
       }
-      if (cardArgs.mode === 'card-week') {
+      if (cardArgs.mode === 'card-week' && !debouncedSearchTerm.trim()) {
+        const recentGteIso = browserLocalCreatedAtGteIsoForRecentCalendarDays(
+          ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS
+        )
+        const { count: windowRowCount, error: countErr } =
+          await fetchAdminReservationListActivityWindowRowCount(supabase, cardArgs)
+        if (countErr) throw countErr
+        const totalForProgress = windowRowCount
+
+        let tierBaseLoaded = 0
+        let firstPaintDone = false
+
+        for (const tier of ['tier1_recent_modern', 'tier2_older_modern', 'tier3_legacy_tour'] as const) {
+          const tierArgs = {
+            ...cardArgs,
+            cardWeekLoadTier: tier,
+            ...(tier === 'tier3_legacy_tour' ? {} : { cardWeekRecentCreatedGteIso: recentGteIso }),
+          }
+          const { error: progError, loadedRowCount } = await fetchAdminReservationListCardWeekProgressive(
+            supabase,
+            tierArgs,
+            {
+              onProgress: (info) => {
+                if (fetchGen !== adminCardWeekFetchGenRef.current) return
+                setAdminListChunkProgress({
+                  loaded: tierBaseLoaded + info.loaded,
+                  total: totalForProgress ?? tierBaseLoaded + info.loaded,
+                })
+              },
+              onFirstChunk: async ({ rows, totalCount: tierTotal }) => {
+                if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+                if (rows.length === 0) {
+                  if (!firstPaintDone && (totalForProgress ?? 0) === 0) {
+                    await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+                    setResidentCustomerBatchMap(new Map())
+                    setServerListTotal(0)
+                    setServerListLoading(false)
+                    firstPaintDone = true
+                  }
+                  return true
+                }
+                if (!firstPaintDone) {
+                  await replaceReservationsFromQueryResultRef.current(rows, {
+                    skipLoadingFlags: true,
+                    listProgress: {
+                      current: tierBaseLoaded + rows.length,
+                      total: totalForProgress ?? tierTotal,
+                    },
+                  })
+                  await applyReservationListSideDataPrefetch(rows)
+                  setServerListTotal(totalForProgress ?? tierTotal ?? rows.length)
+                  setServerListLoading(false)
+                  firstPaintDone = true
+                } else {
+                  await mergeMoreReservationsFromQueryResultRef.current(rows, {
+                    skipLoadingFlags: true,
+                    listProgress: {
+                      current: tierBaseLoaded + rows.length,
+                      total: totalForProgress ?? tierTotal,
+                    },
+                  })
+                  await mergeReservationListSideDataPrefetch(rows)
+                  setServerListTotal(totalForProgress ?? tierTotal ?? tierBaseLoaded + rows.length)
+                }
+                return true
+              },
+              onAdditionalChunk: async ({ rows, mergedLoaded, totalCount: tierTotal }) => {
+                if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+                if (rows.length === 0) return true
+                await mergeMoreReservationsFromQueryResultRef.current(rows, {
+                  skipLoadingFlags: true,
+                  listProgress: {
+                    current: tierBaseLoaded + mergedLoaded,
+                    total: totalForProgress ?? tierTotal,
+                  },
+                })
+                await mergeReservationListSideDataPrefetch(rows)
+                setServerListTotal(totalForProgress ?? tierTotal ?? tierBaseLoaded + mergedLoaded)
+                return true
+              },
+            }
+          )
+          tierBaseLoaded += loadedRowCount ?? 0
+          if (progError) throw progError
+        }
+
+        if (!firstPaintDone) {
+          await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+          setResidentCustomerBatchMap(new Map())
+          setServerListTotal(totalForProgress ?? 0)
+          setServerListLoading(false)
+        }
+      } else if (cardArgs.mode === 'card-week') {
         const { error: progError } = await fetchAdminReservationListCardWeekProgressive(supabase, cardArgs, {
           onProgress: (info) => {
             if (fetchGen !== adminCardWeekFetchGenRef.current) return
@@ -2444,7 +2539,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       const next: Record<string, { from: string; to: string }> = {}
       for (const t of req.targets) {
-        const tr = pickReservationStatusTransitionForDay(byRecord.get(t.reservationId) ?? [], t.dateKey)
+        const tr = pickReservationStatusTransitionForSimpleCardDay(byRecord.get(t.reservationId) ?? [], t.dateKey)
         if (tr) next[t.key] = tr
       }
       setSimpleCardStatusTransitionMap(next)
@@ -4177,6 +4272,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     ? splitReservationsByActivityForDate(date, dayReservations)
                     : { registration: dayReservations, statusChange: [] as Reservation[] }
 
+                /** 감사 로그 기준, 당일 표시 대상 상태 전환(대기→확정 · 대기/확정→취소)이 있는 예약만 */
+                const statusListForSimple =
+                  cardLayout === 'simple' && !simpleCardStatusTransitionLoading
+                    ? statusList.filter((r) => !!simpleCardStatusTransitionMap[`${r.id}|${date}`])
+                    : statusList
+
                 const gridClass =
                   'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'
 
@@ -4241,10 +4342,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 )
 
                 const simpleCardStatusSubgroups =
-                  statusList.length > 0 && !simpleCardStatusTransitionLoading
+                  statusListForSimple.length > 0 && !simpleCardStatusTransitionLoading
                     ? (() => {
                         const buckets = new Map<string, Reservation[]>()
-                        for (const r of statusList) {
+                        for (const r of statusListForSimple) {
                           const tr = simpleCardStatusTransitionMap[`${r.id}|${date}`]
                           const bucketKey = tr ? `${tr.from}\u0000${tr.to}` : '__unknown__'
                           const arr = buckets.get(bucketKey) ?? []
@@ -4318,7 +4419,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           const accRegKey = `${date}|simple-acc-reg`
                           const accStatusKey = `${date}|simple-acc-status`
                           const defaultRegOpen = true
-                          /** 상태변경 상위도 기본 펼침 → 안에서 대기중→취소 소그룹만 기본 펼침, 수정됨·그 외 소그룹은 기본 접힘. */
+                          /** 상태변경 상위도 기본 펼침 → 안에서 대기중→취소 소그룹만 기본 펼침, 그 외 소그룹은 기본 접힘. */
                           const defaultStatusOpen = true
                           const regOpen = resolveSimpleCardAccordionOpen(accRegKey, defaultRegOpen)
                           const statusOpen = resolveSimpleCardAccordionOpen(accStatusKey, defaultStatusOpen)
@@ -4373,7 +4474,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                   <span className="text-sm font-semibold text-gray-900 flex items-baseline gap-2 min-w-0">
                                     <span>{t('groupingLabels.simpleCardGroupStatusChange')}</span>
                                     <span className="text-xs font-normal text-gray-500 tabular-nums">
-                                      {statusList.length}
+                                      {simpleCardStatusTransitionLoading
+                                        ? statusList.length
+                                        : statusListForSimple.length}
                                     </span>
                                   </span>
                                   <ChevronDown
@@ -4386,6 +4489,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                     {statusList.length > 0 ? (
                                       simpleCardStatusTransitionLoading ? (
                                         <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
+                                      ) : statusListForSimple.length === 0 ? (
+                                        <p className="text-xs text-gray-400 px-1 py-1">
+                                          {t('groupingLabels.simpleCardGroupEmpty')}
+                                        </p>
                                       ) : simpleCardStatusSubgroups ? (
                                         simpleCardStatusSubgroups.map((g, subIdx) => {
                                           const subKey = `${date}|simple-acc-status-sub|${subIdx}`
@@ -4430,9 +4537,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                             </div>
                                           )
                                         })
-                                      ) : (
-                                        <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
-                                      )
+                                      ) : null
                                     ) : (
                                       <p className="text-xs text-gray-400 px-1 py-1">
                                         {t('groupingLabels.simpleCardGroupEmpty')}

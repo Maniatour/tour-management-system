@@ -14,6 +14,26 @@ export function statusFromReservationAuditJson(json: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
+function isCancelledLikeReservationStatus(s: string): boolean {
+  const t = s.toLowerCase().trim()
+  return t === 'cancelled' || t === 'canceled' || t === 'deleted'
+}
+
+/**
+ * 예약 목록(심플 카드) 「상태 변경」에만 노출할 전환:
+ * 대기(pending) → 확정(confirmed), 대기·확정 → 취소/삭제류
+ */
+export function isSimpleCardListedReservationStatusTransition(tr: {
+  from: string
+  to: string
+}): boolean {
+  const from = tr.from.toLowerCase().trim()
+  const to = tr.to.toLowerCase().trim()
+  if (from === 'pending' && to === 'confirmed') return true
+  if ((from === 'pending' || from === 'confirmed') && isCancelledLikeReservationStatus(tr.to)) return true
+  return false
+}
+
 /** 그날 마지막 유효 status 변경 1건(심플 카드 등) */
 export function pickReservationStatusTransitionForDay(
   rows: ReservationStatusAuditRow[],
@@ -29,6 +49,28 @@ export function pickReservationStatusTransitionForDay(
     if (to && from && from !== to) return { from, to }
   }
   return null
+}
+
+/**
+ * 그날 감사 로그 중, 심플 카드 「상태 변경」에 표시할 전환만 모은 뒤
+ * 가장 최근 시각 1건을 반환한다. (당일 확정 후 완료 등은 제외)
+ */
+export function pickReservationStatusTransitionForSimpleCardDay(
+  rows: ReservationStatusAuditRow[],
+  dateKey: string
+): { from: string; to: string } | null {
+  let best: { from: string; to: string; t: number } | null = null
+  for (const row of rows) {
+    if (isoToLocalCalendarDateKey(row.created_at) !== dateKey) continue
+    if (!Array.isArray(row.changed_fields) || !row.changed_fields.includes('status')) continue
+    const to = statusFromReservationAuditJson(row.new_values)
+    const from = statusFromReservationAuditJson(row.old_values)
+    if (!to || !from || from === to) continue
+    if (!isSimpleCardListedReservationStatusTransition({ from, to })) continue
+    const t = new Date(row.created_at).getTime()
+    if (!best || t > best.t) best = { from, to, t }
+  }
+  return best ? { from: best.from, to: best.to } : null
 }
 
 /** 로컬 달력일 기준, status 필드가 바뀐 감사 행마다 from→to (from≠to), 시간순 */

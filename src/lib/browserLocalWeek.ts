@@ -68,6 +68,28 @@ export function browserLocalYesterdayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/**
+ * 브라우저 로컬 달력 기준, 오늘을 말일로 한 `days`일(오늘 포함) 구간의 시작 시각 ISO.
+ * 예: days=7 → 오늘 포함 7일의 첫날 00:00:00.000 (created_at >= 이 값이면 “최근 7일 등록”).
+ */
+export function browserLocalCreatedAtGteIsoForRecentCalendarDays(days: number): string {
+  const n = Number.isFinite(days) && days >= 1 ? Math.floor(days) : 7
+  const endDay = new Date()
+  endDay.setHours(0, 0, 0, 0)
+  const startDay = new Date(endDay)
+  startDay.setDate(endDay.getDate() - (n - 1))
+  startDay.setHours(0, 0, 0, 0)
+  return new Date(
+    startDay.getFullYear(),
+    startDay.getMonth(),
+    startDay.getDate(),
+    0,
+    0,
+    0,
+    0
+  ).toISOString()
+}
+
 export function browserLocalInclusiveDateKeys(startYmd: string, endYmd: string): string[] {
   const [ys, ms, ds] = startYmd.split('-').map(Number)
   const [ye, me, de] = endYmd.split('-').map(Number)

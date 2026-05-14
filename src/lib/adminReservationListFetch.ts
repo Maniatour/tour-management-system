@@ -20,6 +20,12 @@ function eqQuoted(val: string): string {
  */
 export const ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE = 500
 
+/** 투어일이 이 값 이하(포함)인 예약은 주간 카드 전량 로드 시 나중 단계에서 조회 */
+export const ADMIN_RESERVATION_LEGACY_TOUR_DATE_CUTOFF_YMD = '2024-12-31'
+
+/** 주간 카드 단계 로드: “최근 등록” 구간(브라우저 로컬 달력, 오늘 포함 N일) */
+export const ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS = 7
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -67,6 +73,15 @@ export type FetchAdminReservationListArgs = {
   calendarCreatedEndIso?: string
   /** `card-week` 다청크 로드 시 진행률(예: 로딩 문구). */
   onCardWeekFetchProgress?: (info: { loaded: number; total: number | null }) => void
+  /**
+   * `card-week` 전용: 활동 구간 내 목록을 단계별로 나눔(검색어 없을 때 예약 관리 페이지에서 사용).
+   * - tier1: 최근 등록일(로컬 달력 N일) + 투어일 null 또는 cutoff 초과
+   * - tier2: tier1 제외 + 투어일 null 또는 cutoff 초과(등록이 더 오래됨)
+   * - tier3: 투어일 ≤ cutoff
+   */
+  cardWeekLoadTier?: 'tier1_recent_modern' | 'tier2_older_modern' | 'tier3_legacy_tour'
+  /** tier1·tier2: `created_at` 분할 기준(포함 하한). ISO 문자열 */
+  cardWeekRecentCreatedGteIso?: string
 }
 
 function collectIds(rows: unknown): string[] {
@@ -196,32 +211,11 @@ async function buildSearchOrClause(
 type BuildQueryOpts = { includeExactCount?: boolean }
 
 /**
- * 필터·정렬까지 적용한 빌더(`.range` / 실행 전). **동기**여야 함 —
- * Postgrest 쿼리 빌더는 `PromiseLike`라 `async` 함수에서 `return q`하면
- * `Promise.resolve(q)`가 쿼리를 즉시 실행해 `{ data, error }`만 남는다.
+ * 행 필터만 적용( select 이후 ). 정렬·card-week 단계(tier)는 호출부에서 이어서 적용.
+ * eslint-disable: PostgREST 체인 타입이 버전마다 달라 any로 통일
  */
-function buildAdminReservationListQuery(
-  supabase: SupabaseClient,
-  args: FetchAdminReservationListArgs,
-  searchOr: string | null,
-  opts?: BuildQueryOpts
-) {
-  const includeExactCount = opts?.includeExactCount !== false
-  const searchActive = args.debouncedSearchTerm.trim().length > 0
-  /** 검색 시 OR·in(...)이 무거워 `exact` 카운트가 첫 응답을 크게 지연시킴 → 계획 행수로 대체 */
-  const reservationCountMode = searchActive ? ('planned' as const) : ('exact' as const)
-
-  let selectFields = '*, choices, channels(name)'
-  if (args.sortBy === 'customer_name') {
-    selectFields = '*, choices, channels(name), customers(name)'
-  } else if (args.sortBy === 'product_name') {
-    selectFields = '*, choices, channels(name), products(name, name_ko, name_en)'
-  }
-
-  let q = includeExactCount
-    ? supabase.from('reservations').select(selectFields, { count: reservationCountMode })
-    : supabase.from('reservations').select(selectFields)
-
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyAdminReservationListRowFilters(q: any, args: FetchAdminReservationListArgs, searchOr: string | null): any {
   if (args.customerIdFromUrl) {
     q = q.eq('customer_id', args.customerIdFromUrl)
   }
@@ -268,6 +262,52 @@ function buildAdminReservationListQuery(
     q = q.or(searchOr)
   }
 
+  return q
+}
+
+/**
+ * 필터·정렬까지 적용한 빌더(`.range` / 실행 전). **동기**여야 함 —
+ * Postgrest 쿼리 빌더는 `PromiseLike`라 `async` 함수에서 `return q`하면
+ * `Promise.resolve(q)`가 쿼리를 즉시 실행해 `{ data, error }`만 남는다.
+ */
+function buildAdminReservationListQuery(
+  supabase: SupabaseClient,
+  args: FetchAdminReservationListArgs,
+  searchOr: string | null,
+  opts?: BuildQueryOpts
+) {
+  const includeExactCount = opts?.includeExactCount !== false
+  const searchActive = args.debouncedSearchTerm.trim().length > 0
+  /** 검색 시 OR·in(...)이 무거워 `exact` 카운트가 첫 응답을 크게 지연시킴 → 계획 행수로 대체 */
+  const reservationCountMode = searchActive ? ('planned' as const) : ('exact' as const)
+
+  let selectFields = '*, choices, channels(name)'
+  if (args.sortBy === 'customer_name') {
+    selectFields = '*, choices, channels(name), customers(name)'
+  } else if (args.sortBy === 'product_name') {
+    selectFields = '*, choices, channels(name), products(name, name_ko, name_en)'
+  }
+
+  let q = includeExactCount
+    ? supabase.from('reservations').select(selectFields, { count: reservationCountMode })
+    : supabase.from('reservations').select(selectFields)
+
+  q = applyAdminReservationListRowFilters(q, args, searchOr)
+
+  if (args.mode === 'card-week' && args.cardWeekLoadTier && args.cardWeekRecentCreatedGteIso) {
+    const cutoff = qIdent(ADMIN_RESERVATION_LEGACY_TOUR_DATE_CUTOFF_YMD)
+    const tourModernOr = `tour_date.is.null,tour_date.gt."${cutoff}"`
+    if (args.cardWeekLoadTier === 'tier1_recent_modern') {
+      q = q.gte('created_at', args.cardWeekRecentCreatedGteIso)
+      q = q.or(tourModernOr)
+    } else if (args.cardWeekLoadTier === 'tier2_older_modern') {
+      q = q.lt('created_at', args.cardWeekRecentCreatedGteIso)
+      q = q.or(tourModernOr)
+    }
+  } else if (args.mode === 'card-week' && args.cardWeekLoadTier === 'tier3_legacy_tour') {
+    q = q.lte('tour_date', ADMIN_RESERVATION_LEGACY_TOUR_DATE_CUTOFF_YMD)
+  }
+
   const asc = args.sortOrder === 'asc'
   switch (args.sortBy) {
     case 'tour_date':
@@ -292,6 +332,33 @@ function buildAdminReservationListQuery(
   }
 
   return q
+}
+
+/**
+ * `card-week` 활동 구간(및 동일 필터)에 해당하는 예약 행 수. 단계 로드 진행률 total에 사용.
+ */
+export async function fetchAdminReservationListActivityWindowRowCount(
+  supabase: SupabaseClient,
+  args: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress' | 'cardWeekLoadTier' | 'cardWeekRecentCreatedGteIso'>
+): Promise<{ count: number | null; error: Error | null }> {
+  try {
+    if (args.mode !== 'card-week' || !args.activityRangeStartIso || !args.activityRangeEndIso) {
+      return { count: null, error: null }
+    }
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
+    const searchActive = args.debouncedSearchTerm.trim().length > 0
+    const countMode = searchActive ? ('planned' as const) : ('exact' as const)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = supabase.from('reservations').select('id', { count: countMode, head: true })
+    q = applyAdminReservationListRowFilters(q, args, searchOr)
+    const { count, error } = await q
+    if (error) {
+      return { count: null, error: error as Error }
+    }
+    return { count: count ?? null, error: null }
+  } catch (e) {
+    return { count: null, error: e instanceof Error ? e : new Error(String(e)) }
+  }
 }
 
 /**
@@ -383,6 +450,8 @@ export async function fetchAdminReservationListAllFlat(
     | 'activityRangeStartIso'
     | 'activityRangeEndIso'
     | 'onCardWeekFetchProgress'
+    | 'cardWeekLoadTier'
+    | 'cardWeekRecentCreatedGteIso'
   > & { pageSize?: number }
 ): Promise<{ data: Record<string, unknown>[] | null; error: Error | null }> {
   const pageSize = args.pageSize ?? ADMIN_RESERVATION_CARD_FLAT_PAGE_SIZE
@@ -449,7 +518,7 @@ export async function fetchAdminReservationListCardWeekProgressive(
   supabase: SupabaseClient,
   args: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress'>,
   handlers: CardWeekProgressiveHandlers
-): Promise<{ error: Error | null }> {
+): Promise<{ error: Error | null; loadedRowCount: number }> {
   try {
     const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm)
     const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
@@ -463,6 +532,7 @@ export async function fetchAdminReservationListCardWeekProgressive(
       if (chunkIndex >= maxChunks) {
         return {
           error: new Error(`[admin reservations] card-week chunk limit exceeded (${maxChunks * chunk} rows)`),
+          loadedRowCount: merged.length,
         }
       }
       chunkIndex += 1
@@ -472,7 +542,7 @@ export async function fetchAdminReservationListCardWeekProgressive(
       })
       const { data, error, count } = await q.range(offset, offset + chunk - 1)
       if (error) {
-        return { error: error as Error }
+        return { error: error as Error, loadedRowCount: merged.length }
       }
       const batch = (data || []) as Record<string, unknown>[]
 
@@ -483,10 +553,10 @@ export async function fetchAdminReservationListCardWeekProgressive(
         try {
           const keep = await handlers.onFirstChunk({ rows: batch, totalCount })
           if (keep === false) {
-            return { error: null }
+            return { error: null, loadedRowCount: merged.length }
           }
         } catch (e) {
-          return { error: e instanceof Error ? e : new Error(String(e)) }
+          return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: merged.length }
         }
       } else {
         merged.push(...batch)
@@ -517,8 +587,8 @@ export async function fetchAdminReservationListCardWeekProgressive(
       offset += chunk
     }
 
-    return { error: null }
+    return { error: null, loadedRowCount: merged.length }
   } catch (e) {
-    return { error: e instanceof Error ? e : new Error(String(e)) }
+    return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: 0 }
   }
 }
