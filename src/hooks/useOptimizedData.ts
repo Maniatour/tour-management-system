@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { isAbortLikeError } from '@/lib/supabase'
 import { serializeUnknownError, unknownToError } from '@/lib/unknownToError'
+import {
+  deleteGuideSnapshot,
+  loadGuideSnapshot,
+  saveGuideSnapshot,
+  isBrowserOffline,
+} from '@/lib/guideOfflineStore'
 
 interface UseOptimizedDataOptions<T> {
   fetchFn: () => Promise<T>
@@ -8,6 +14,8 @@ interface UseOptimizedDataOptions<T> {
   cacheKey?: string
   cacheTime?: number
   enabled?: boolean
+  /** `/(ko|en)/guide` 전용: 마지막 성공 응답을 IndexedDB에 저장하고, 오프라인일 때 복원 */
+  offlineGuideCache?: boolean
   /**
    * stale-while-revalidate.
    * 기본 true — 캐시가 있으면 신선/오래됨 모두 즉시 표시하고,
@@ -42,6 +50,7 @@ export function useOptimizedData<T>({
   cacheTime = 5 * 60 * 1000, // 5분
   enabled = true,
   staleWhileRevalidate = true,
+  offlineGuideCache = false,
 }: UseOptimizedDataOptions<T>) {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
@@ -56,6 +65,23 @@ export function useOptimizedData<T>({
 
   const fetchData = useCallback(async () => {
     if (!enabled) {
+      if (isMountedRef.current) {
+        setLoading(false)
+      }
+      return
+    }
+
+    if (enabled && cacheKey && offlineGuideCache && isBrowserOffline()) {
+      try {
+        const snap = await loadGuideSnapshot(cacheKey)
+        if (snap !== undefined && isMountedRef.current) {
+          setData(snap as T)
+          setLoading(false)
+          return
+        }
+      } catch (e) {
+        console.warn('[offline guide] snapshot read failed', e)
+      }
       if (isMountedRef.current) {
         setLoading(false)
       }
@@ -119,6 +145,9 @@ export function useOptimizedData<T>({
           expiresAt: Date.now() + cacheTime,
         })
       }
+      if (cacheKey && offlineGuideCache) {
+        void saveGuideSnapshot(cacheKey, result).catch(() => {})
+      }
     } catch (err) {
       if (!isMountedRef.current) return
 
@@ -134,7 +163,16 @@ export function useOptimizedData<T>({
         setLoading(false)
       }
     }
-  }, [enabled, cacheKey, cacheTime, staleWhileRevalidate])
+  }, [enabled, cacheKey, cacheTime, staleWhileRevalidate, offlineGuideCache])
+
+  useEffect(() => {
+    if (!offlineGuideCache || !cacheKey) return
+    const onOnline = () => {
+      void fetchData()
+    }
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [offlineGuideCache, cacheKey, fetchData])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -151,7 +189,10 @@ export function useOptimizedData<T>({
     if (cacheKey && cache.has(cacheKey)) {
       cache.delete(cacheKey)
     }
-  }, [cacheKey])
+    if (cacheKey && offlineGuideCache) {
+      void deleteGuideSnapshot(cacheKey).catch(() => {})
+    }
+  }, [cacheKey, offlineGuideCache])
 
   // 전체 캐시 클리어
   const clearCache = useCallback(() => {

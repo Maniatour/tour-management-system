@@ -223,8 +223,7 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   } = inp
 
   if (isReservationCancelled) {
-    if (isOTAChannel) return roundUsd2(channelSettlementBase)
-    return 0
+    return roundUsd2(channelSettlementBase)
   }
 
   let totalRevenue = channelSettlementBase

@@ -42,6 +42,7 @@ export type ActionRequiredTableVariant =
   | 'pricingMismatch'
   | 'deposit'
   | 'balance'
+  | 'incompleteDraft'
 
 export interface ReservationActionRequiredTableProps {
   reservations: Reservation[]
@@ -638,6 +639,31 @@ function VariantTableThead({
           </tr>
         </thead>
       )
+    case 'incompleteDraft':
+      return (
+        <thead>
+          <tr className={base}>
+            <th scope="col" className="px-2 py-2 whitespace-nowrap">
+              {tc('reservationId')}
+            </th>
+            <th scope="col" className="px-2 py-2 whitespace-nowrap">
+              {tc('createdAt')}
+            </th>
+            <th scope="col" className="px-2 py-2">
+              {tc('channelVariant')}
+            </th>
+            <th scope="col" className="px-2 py-2 whitespace-nowrap">
+              {tc('tourDate')}
+            </th>
+            <th scope="col" className="px-2 py-2 min-w-[12rem]">
+              {tc('incompleteDraftNote')}
+            </th>
+            <th scope="col" className="px-2 py-2 text-right whitespace-nowrap">
+              {tc('actions')}
+            </th>
+          </tr>
+        </thead>
+      )
     default:
       return null
   }
@@ -768,6 +794,23 @@ function VariantTableBody({
           )
         }
 
+        if (variant === 'incompleteDraft') {
+          const created =
+            reservation.addedTime && String(reservation.addedTime).trim() !== ''
+              ? String(reservation.addedTime).replace('T', ' ').slice(0, 19)
+              : '—'
+          return (
+            <tr key={reservation.id} className="border-b border-gray-100 hover:bg-gray-50/80 align-top">
+              <td className="px-2 py-2 font-mono text-[11px] text-gray-800 break-all max-w-[11rem]">{reservation.id}</td>
+              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 tabular-nums">{created}</td>
+              <ChannelCell reservation={reservation} channels={row.channels} />
+              <TourDateCell reservation={reservation} />
+              <td className="px-2 py-2 text-xs text-amber-900 leading-snug max-w-[18rem]">{tc('incompleteDraftHint')}</td>
+              <ActionsCell {...row} />
+            </tr>
+          )
+        }
+
         return null
       })}
     </tbody>
@@ -860,7 +903,9 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
   const minW =
     tableVariant === 'tour'
       ? 'min-w-[1000px]'
-      : 'min-w-[880px]'
+      : tableVariant === 'incompleteDraft'
+        ? 'min-w-[820px]'
+        : 'min-w-[880px]'
 
   return (
     <>

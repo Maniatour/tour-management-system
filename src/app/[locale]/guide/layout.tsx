@@ -21,6 +21,7 @@ import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
 import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
 import GuideTourChatNotificationModal from '@/components/guide/GuideTourChatNotificationModal'
+import GuideOfflineBanner from '@/components/guide/GuideOfflineBanner'
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceContext'
@@ -559,6 +560,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
          locale={locale === 'en' ? 'en' : 'ko'}
        >
        <div className="min-h-screen bg-gray-50 flex flex-col">
+         <GuideOfflineBanner />
          {/* 상단 Navigation은 [locale]/layout.tsx(가이드 분기)에서만 렌더 */}
 
          {/* 메인: main-safe-area로 고정 푸터(lg 미만) 높이 + safe-area 만큼 하단 여백 확보 */}

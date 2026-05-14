@@ -2371,6 +2371,7 @@
       "customerUpdated": "Customer information has been successfully updated!",
       "confirmDeleteCustomer": "Are you sure you want to delete this customer?",
       "noReservationId": "No reservation ID. Please reopen the modal.",
+      "selectCustomerBeforeSave": "Select a customer before saving a reservation.",
       "reservationAddError": "Error adding reservation: ",
       "choicesSaveError": "Error saving choices: ",
       "pricingSaveError": "Error saving pricing: ",
@@ -2588,7 +2589,8 @@
         "pricing": "Reservation Price",
         "deposit": "Deposit",
         "cancel": "Cancelled",
-        "balance": "Balance"
+        "balance": "Balance",
+        "incompleteDraft": "Incomplete drafts"
       },
       "pricingSubTabs": {
         "noPrice": "① No stored total price",
@@ -2600,7 +2602,8 @@
         "pricing": "Combines ① reservations with no stored total (excluding cancelled) and ② reservations where stored total, channel payment, or channel settlement differs from the line formulas (excluding cancelled). Use the sub-tabs below to view ① or ② only.",
         "deposit": "Combines ① reservations with a payment/deposit record but no tour assignment, and ② confirmed reservations with no payment record.",
         "cancel": "Cancelled reservations where customer payments (net deposit or balance received) are not fully offset by refunds, or stored total / total revenue & operating profit (formula) still show revenue.",
-        "balance": "Past-tour balance issues. Sub-tabs: cancelled with balance left, unpaid (matches formula), stored balance vs formula mismatch."
+        "balance": "Past-tour balance issues. Sub-tabs: cancelled with balance left, unpaid (matches formula), stored balance vs formula mismatch.",
+        "incompleteDraft": "Pending rows in the database with only a reservation id and defaults: no customer, product, or tour linked yet (same as ensure-draft stubs). Finish editing or delete from the reservation form if not needed."
       },
       "pricingSubTabTooltips": {
         "noPrice": "Reservations with no stored total price or total is zero. Cancelled reservations are excluded.",
@@ -2631,6 +2634,7 @@
       "manualDeposit": "① Reservations that **have payment/deposit** but are **not assigned to a tour**, ② **Confirmed** reservations with **no payment record**",
       "manualCancel": "**Cancelled** reservations where **refunds do not fully clear** net deposit or balance received, or **total_price** / **total revenue & operating profit (formula)** still show revenue (for pricing/settlement cleanup).",
       "manualBalance": "Sub-tabs: **Cancelled** (past tour, balance>0), **Balance unpaid** (not cancelled, past tour, balance>0, stored balance matches deposit/pricing formula), **Balance mismatch** (not cancelled, past tour, total (DB) − deposit (DB) − balance received ≠ 0)",
+      "manualIncompleteDraft": "Reservations with **pending** status where **customer, product, and tour** are all **empty**. Open **Edit** to complete the reservation form or delete the row.",
       "partnerCancelRefundLabel": "−$ Cancel",
       "partnerCancelRefundTitle": "Add partner deposit refund line — {amount}",
       "manualFollowUpCancel": "Handled under **Follow-up stages** (header) → **⑤ Cancel follow-up**. Lists cancelled bookings whose tour date is still ahead, grouped by approximate cancellation date (last updated). Phone icon: cancellation follow-up done. Globe icon: website rebooking outreach done.",
@@ -2667,7 +2671,11 @@
         "issuePaymentNoTour": "Has payment, no tour",
         "issueConfirmedNoDeposit": "Confirmed, no payment",
         "issueOther": "—",
-        "lastUpdated": "Last updated"
+        "lastUpdated": "Last updated",
+        "reservationId": "Reservation ID",
+        "createdAt": "Created",
+        "incompleteDraftNote": "Note",
+        "incompleteDraftHint": "Customer, product, and tour not linked (ensure-draft stub). Edit to continue or clean up."
       },
       "balanceTable": {
         "formulaExplainerTitle": "What “formula total” means",

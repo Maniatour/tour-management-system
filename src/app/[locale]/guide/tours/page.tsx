@@ -86,8 +86,13 @@ export default function GuideTours({ params }: GuideToursProps) {
       if (error) throw error
       return data || []
     },
-    cacheKey: `guide-tours-${currentUserEmail}-${userRole}`,
-    cacheTime: 2 * 60 * 1000 // 2분 캐시
+    cacheTime: 2 * 60 * 1000, // 2분 캐시
+    ...(currentUserEmail
+      ? {
+          cacheKey: `guide-tours-${currentUserEmail}-${userRole}`,
+          offlineGuideCache: true as const,
+        }
+      : {}),
   })
 
   const { data: employeesData, loading: employeesLoading } = useOptimizedData({
@@ -107,8 +112,9 @@ export default function GuideTours({ params }: GuideToursProps) {
       
       return activeEmployees
     },
-    cacheKey: 'employees',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheKey: 'guide-tours-employees',
+    cacheTime: 10 * 60 * 1000, // 10분 캐시
+    offlineGuideCache: true,
   })
 
   const { data: productsData, loading: productsLoading } = useOptimizedData({
@@ -121,8 +127,9 @@ export default function GuideTours({ params }: GuideToursProps) {
       if (error) throw error
       return data || []
     },
-    cacheKey: 'products',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheKey: 'guide-tours-products-slim',
+    cacheTime: 10 * 60 * 1000, // 10분 캐시
+    offlineGuideCache: true,
   })
 
   // 통합 로딩 상태

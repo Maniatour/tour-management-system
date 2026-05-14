@@ -2380,6 +2380,7 @@
       "customerUpdated": "고객 정보가 성공적으로 수정되었습니다!",
       "confirmDeleteCustomer": "정말로 이 고객을 삭제하시겠습니까?",
       "noReservationId": "예약 ID가 없습니다. 모달을 다시 열어주세요.",
+      "selectCustomerBeforeSave": "고객을 선택한 뒤에만 예약을 저장할 수 있습니다.",
       "reservationAddError": "예약 추가 중 오류가 발생했습니다: ",
       "choicesSaveError": "초이스 저장 중 오류가 발생했습니다: ",
       "pricingSaveError": "가격 정보 저장 중 오류가 발생했습니다: ",
@@ -2597,7 +2598,8 @@
         "pricing": "예약 가격",
         "deposit": "입금",
         "cancel": "취소",
-        "balance": "Balance"
+        "balance": "Balance",
+        "incompleteDraft": "미완성 초안"
       },
       "pricingSubTabs": {
         "noPrice": "① 총 가격이 저장되지 않은 예약",
@@ -2609,7 +2611,8 @@
         "pricing": "① 저장된 총 가격이 없는 예약(취소 제외)과 ② 저장 총액·채널 결제·채널 정산 중 DB와 산식이 다른 예약(취소 제외)을 합친 목록입니다. 아래 하위 탭에서 ① 또는 ②만 볼 수 있습니다.",
         "deposit": "① 입금·결제 기록은 있는데 투어에 배정되지 않은 예약, ② 확정인데 입금 기록이 없는 예약을 합친 목록입니다.",
         "cancel": "상태가 취소인 예약 중, 입금(보증금 순액·잔금 수령)이 환불 반영으로 정리되지 않았거나, 저장 총액·총매출·운영이익 산식에 수익이 남아 있는 건입니다.",
-        "balance": "투어일이 지난 예약 중 잔액 관련 이슈입니다. 하위 탭: 취소 후 잔액 잔존, 미입금(일치), 저장 잔액과 계산값 불일치."
+        "balance": "투어일이 지난 예약 중 잔액 관련 이슈입니다. 하위 탭: 취소 후 잔액 잔존, 미입금(일치), 저장 잔액과 계산값 불일치.",
+        "incompleteDraft": "DB에는 예약 id와 기본 필드만 있고 고객·상품·투어가 비어 있는 pending 행입니다. 새 예약 저장 전에 창을 닫거나 오류로 끊기면 남을 수 있습니다. 수정으로 이어서 입력하거나, 불필요하면 예약 폼에서 삭제하세요."
       },
       "pricingSubTabTooltips": {
         "noPrice": "저장된 총 가격이 없거나 0인 예약입니다. 취소된 예약은 제외합니다.",
@@ -2640,6 +2643,7 @@
       "manualDeposit": "① 입금/결제 기록은 있는데 **투어에 배정되지 않은** 예약, ② **확정**됐는데 **입금 기록이 없는** 예약",
       "manualCancel": "**취소**된 예약 중 **입금 환불이 덜 됐거나**(보증금 순액·잔금 수령 잔존), **저장 총액(total_price)** 또는 **총매출·운영이익 산식**에 수익이 남아 있는 건(정산·가격 정리용)",
       "manualBalance": "하위 탭: **취소된 예약**(지난 투어·잔액>0), **발란스 미입금**(미취소·지난 투어·잔액>0·저장 잔액=가격표·보증금 기준 계산값), **발란스 계산 틀림**(미취소·지난 투어·총액(DB)−보증금(DB)−잔금 수령≠0)",
+      "manualIncompleteDraft": "**고객·상품·투어가 모두 비어 있고** 상태가 **대기(pending)** 인 예약 행입니다. **수정**을 눌러 예약 정보 수정 화면에서 내용을 채우거나 삭제할 수 있습니다.",
       "partnerCancelRefundLabel": "-$취소",
       "partnerCancelRefundTitle": "취소 보증금 반환(파트너) 라인 추가 — 금액 {amount}",
       "manualFollowUpCancel": "예약 목록 상단 **Follow-up 단계** 모달의 **⑤ 취소 후 Follow-up** 탭에서 관리합니다. 투어일이 남은 취소 건을 **취소 반영일(마지막 수정일 근사)** 기준으로 묶어 보여 주며, 전화 아이콘은 취소 안내·팔로업 완료, 지구본 아이콘은 홈페이지 재예약 권유 연락 완료를 표시합니다.",
@@ -2676,7 +2680,11 @@
         "issuePaymentNoTour": "입금 있음·투어 없음",
         "issueConfirmedNoDeposit": "확정·입금 없음",
         "issueOther": "—",
-        "lastUpdated": "최근 변경"
+        "lastUpdated": "최근 변경",
+        "reservationId": "예약 ID",
+        "createdAt": "생성 시각",
+        "incompleteDraftNote": "안내",
+        "incompleteDraftHint": "고객·상품·투어 미연결 초안(ensure-draft). 수정으로 입력을 이어가거나 정리하세요."
       },
       "balanceTable": {
         "formulaExplainerTitle": "총액(산식)이란",

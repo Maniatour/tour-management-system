@@ -158,7 +158,13 @@ export default function GuideTeamChatPage() {
         throw error
       }
     },
-    dependencies: [user?.email]
+    ...(user?.email
+      ? {
+          cacheKey: `guide-team-chat-page-rooms-${user.email}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`,
+          offlineGuideCache: true as const,
+        }
+      : {}),
+    dependencies: [user?.email, isSimulating, simulatedUser?.email]
   })
 
   // 메시지 로딩

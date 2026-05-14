@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
+import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 
 type ReceiptData = {
   reservation: {
@@ -351,14 +352,26 @@ function productSellingAmount(pricing: ReceiptData['pricing'], reservation: Rece
   const adults = reservation.adults ?? 0
   const child = reservation.child ?? 0
   const infant = reservation.infant ?? 0
-  const tierSum =
-    toNum(pricing.adult_product_price) * adults +
-    toNum(pricing.child_product_price) * child +
-    toNum(pricing.infant_product_price) * infant
+  const ap = toNum(pricing.adult_product_price)
+  const cp = toNum(pricing.child_product_price)
+  const ip = toNum(pricing.infant_product_price)
+  const ppt = toNum(pricing.product_price_total)
+
+  const billingAdults = inferPricingAdultsWhenUnset({
+    pricingAdultsRaw: pricing.pricing_adults,
+    reservationAdults: adults,
+    child,
+    infant,
+    adultProductPrice: ap,
+    childProductPrice: cp,
+    infantProductPrice: ip,
+    productPriceTotal: ppt,
+  })
+
+  const tierSum = ap * billingAdults + cp * child + ip * infant
   if (tierSum > 0.009) return tierSum
 
   const notInc = notIncludedTotalFromPricing(pricing, reservation)
-  const ppt = toNum(pricing.product_price_total)
   if (ppt > 0 && notInc > 0.009) return Math.max(0, ppt - notInc)
   if (ppt > 0) return ppt
 
@@ -381,13 +394,25 @@ function productSellingAmount(pricing: ReceiptData['pricing'], reservation: Rece
 }
 
 function sellingDisplayQty(reservation: ReceiptData['reservation'], pricing: ReceiptData['pricing']): number {
-  const paRaw = pricing.pricing_adults
-  if (paRaw != null && paRaw !== '' && Number.isFinite(Number(paRaw))) {
-    const pa = Math.max(0, Math.floor(Number(paRaw)))
-    if (pa > 0) return pa
-  }
-  const ad = reservation.adults ?? 0
-  if (ad > 0) return ad
+  const adults = reservation.adults ?? 0
+  const child = reservation.child ?? 0
+  const infant = reservation.infant ?? 0
+  const ap = toNum(pricing.adult_product_price)
+  const cp = toNum(pricing.child_product_price)
+  const ip = toNum(pricing.infant_product_price)
+  const ppt = toNum(pricing.product_price_total)
+  const pa = inferPricingAdultsWhenUnset({
+    pricingAdultsRaw: pricing.pricing_adults,
+    reservationAdults: adults,
+    child,
+    infant,
+    adultProductPrice: ap,
+    childProductPrice: cp,
+    infantProductPrice: ip,
+    productPriceTotal: ppt,
+  })
+  if (pa > 0) return pa
+  if (adults > 0) return adults
   return Math.max(1, reservation.total_people ?? 1)
 }
 

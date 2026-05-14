@@ -267,8 +267,9 @@ export default function GuideTourCoursesPage() {
 
       return data || []
     },
-    cacheKey: 'guide-tour-courses',
-    cacheTime: 5 * 60 * 1000 // 5분 캐시
+    cacheKey: 'guide-tour-courses-list',
+    cacheTime: 5 * 60 * 1000, // 5분 캐시
+    offlineGuideCache: true,
   })
 
   // 최적화된 상품 데이터 로딩
@@ -287,8 +288,9 @@ export default function GuideTourCoursesPage() {
 
       return data || []
     },
-    cacheKey: 'products',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheKey: 'guide-tour-courses-products',
+    cacheTime: 10 * 60 * 1000, // 10분 캐시
+    offlineGuideCache: true,
   })
 
   // 상태 관리

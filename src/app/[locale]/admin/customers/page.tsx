@@ -1815,7 +1815,7 @@ export default function AdminCustomers() {
                                 
                                 {/* 예약 상세 정보 */}
                                 <div className="space-y-1">
-                                  {info.reservations.slice(0, 2).map((reservation) => {
+                                  {info.reservations.map((reservation) => {
                                     const product = (products as Array<{id: string, name_ko?: string, name_en?: string}>)?.find((p) => p.id === reservation.product_id)
                                     const productName = product?.name_ko || product?.name_en || '상품명 없음'
                                     const statusColor = reservation.status === 'confirmed' ? 'text-green-600' : 
@@ -1851,19 +1851,6 @@ export default function AdminCustomers() {
                                       </div>
                                     )
                                   })}
-                                  {info.reservations.length > 2 && (
-                                    <div 
-                                      className="text-xs text-purple-600 text-center cursor-pointer hover:bg-purple-50 p-2 rounded-md transition-colors border border-purple-200 bg-purple-50/20 font-semibold"
-                                      onClick={(e) => {
-                                        e.stopPropagation() // 카드 클릭 이벤트 방지
-                                        // 예약 목록 페이지로 이동 (고객 ID로 필터링)
-                                        router.push(`/${locale}/admin/reservations?customer=${customer.id}`)
-                                      }}
-                                      title={t('customerCard.viewReservations')}
-                                    >
-                                      +{info.reservations.length - 2}{t('customerCard.moreReservations')}
-                                    </div>
-                                  )}
                                 </div>
                               </button>
                             )

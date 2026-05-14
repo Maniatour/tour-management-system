@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban } from 'lucide-react'
+import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban, FileWarning } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -24,10 +24,18 @@ import {
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
 import { reservationNeedsCancelFinancialCleanup } from '@/lib/reservationActionRequiredCancelTab'
+import { isMinimalUnlinkedReservationRow } from '@/lib/reservationIncompleteDraft'
 import type { Reservation, Customer } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 
-export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'cancel' | 'balance'
+export type ActionRequiredTabId =
+  | 'status'
+  | 'tour'
+  | 'pricing'
+  | 'deposit'
+  | 'cancel'
+  | 'balance'
+  | 'incompleteDraft'
 export type PricingSubTabId = 'noPrice' | 'mismatch'
 export type BalanceSubTabId = 'cancelled' | 'unpaid' | 'calcWrong'
 export type BalanceTotalFilterId = 'all' | 'totalMismatch'
@@ -135,6 +143,7 @@ const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType
   { id: 'deposit', labelKey: 'actionRequired.tabs.deposit', icon: CreditCard },
   { id: 'cancel', labelKey: 'actionRequired.tabs.cancel', icon: Ban },
   { id: 'balance', labelKey: 'actionRequired.tabs.balance', icon: Scale },
+  { id: 'incompleteDraft', labelKey: 'actionRequired.tabs.incompleteDraft', icon: FileWarning },
 ]
 
 const CARDS_PER_PAGE = 12 // 가로 4개 x 3행
@@ -530,6 +539,8 @@ export default function ReservationActionRequiredModal({
       )
     )
 
+    const incompleteDraftList = list.filter((r) => isMinimalUnlinkedReservationRow(r))
+
     const pricingNum = (v: unknown): number => {
       if (v == null || v === '') return 0
       if (typeof v === 'number' && !Number.isNaN(v)) return v
@@ -587,6 +598,7 @@ export default function ReservationActionRequiredModal({
       balanceCancelled: balanceCancelledList,
       balanceUnpaid: balanceUnpaidList,
       balanceCalcWrong: balanceCalcWrongList,
+      incompleteDraft: incompleteDraftList,
     }
   }, [
     reservations,
@@ -609,6 +621,7 @@ export default function ReservationActionRequiredModal({
     deposit: filteredByTab.deposit.length,
     cancel: filteredByTab.cancel.length,
     balance: filteredByTab.balance.length,
+    incompleteDraft: filteredByTab.incompleteDraft.length,
   }), [filteredByTab])
 
   const totalActionCount = useMemo(() =>
@@ -619,6 +632,7 @@ export default function ReservationActionRequiredModal({
       ...filteredByTab.deposit.map(r => r.id),
       ...filteredByTab.cancel.map(r => r.id),
       ...filteredByTab.balance.map(r => r.id),
+      ...filteredByTab.incompleteDraft.map(r => r.id),
     ]).size
   , [filteredByTab])
 
@@ -647,6 +661,9 @@ export default function ReservationActionRequiredModal({
         )
       }
       return list
+    }
+    if (activeTab === 'incompleteDraft') {
+      return filteredByTab.incompleteDraft
     }
     return filteredByTab[activeTab as keyof typeof filteredByTab] as Reservation[]
   }, [
@@ -721,6 +738,7 @@ export default function ReservationActionRequiredModal({
     if (activeTab === 'cancel') return 'balance'
     if (activeTab === 'status') return 'status'
     if (activeTab === 'tour') return 'tour'
+    if (activeTab === 'incompleteDraft') return 'incompleteDraft'
     if (activeTab === 'pricing') return pricingSubTab === 'noPrice' ? 'pricingNoPrice' : 'pricingMismatch'
     return 'deposit'
   }, [activeTab, pricingSubTab])
@@ -1310,6 +1328,10 @@ export default function ReservationActionRequiredModal({
                 <li className="flex gap-2">
                   <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.balance')}:</span>
                   <span>{renderManualText(t('actionRequired.manualBalance'))}</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.incompleteDraft')}:</span>
+                  <span>{renderManualText(t('actionRequired.manualIncompleteDraft'))}</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="font-medium text-gray-900 shrink-0">{t('followUpPipeline.tabCancel')}:</span>

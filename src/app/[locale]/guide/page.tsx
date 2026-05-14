@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations, useLocale } from 'next-intl'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
+import { isBrowserOffline, loadGuideSnapshot, saveGuideSnapshot } from '@/lib/guideOfflineStore'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -208,6 +209,7 @@ export default function GuideDashboard() {
   const [pastTours, setPastTours] = useState<ExtendedTour[]>([])
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
+  const [onlineRefreshTick, setOnlineRefreshTick] = useState(0)
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming')
   const [offScheduleActiveTab, setOffScheduleActiveTab] = useState<'upcoming' | 'past' | 'pending' | 'approved' | 'rejected'>('upcoming')
   
@@ -220,6 +222,12 @@ export default function GuideDashboard() {
   const [chatSearchTerm, setChatSearchTerm] = useState('')
   const [chatFilterType] = useState('all')
   const [showChatSection, setShowChatSection] = useState(false)
+
+  useEffect(() => {
+    const onOnline = () => setOnlineRefreshTick((n) => n + 1)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
 
   // 시간 포맷팅 함수
   const formatChatTime = (dateString: string) => {
@@ -317,7 +325,13 @@ export default function GuideDashboard() {
         return []
       }
     },
-    dependencies: [currentUserEmail]
+    dependencies: [currentUserEmail, isSimulating, simulatedUser?.email],
+    ...(currentUserEmail
+      ? {
+          cacheKey: `guide-dashboard-team-rooms-${currentUserEmail}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`,
+          offlineGuideCache: true as const,
+        }
+      : {}),
   })
 
   // 투어 채팅방 데이터 로딩
@@ -448,7 +462,13 @@ export default function GuideDashboard() {
         return []
       }
     },
-    dependencies: [currentUserEmail, locale]
+    dependencies: [currentUserEmail, locale, isSimulating, simulatedUser?.email],
+    ...(currentUserEmail
+      ? {
+          cacheKey: `guide-dashboard-tour-chat-rooms-${currentUserEmail}-${locale}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`,
+          offlineGuideCache: true as const,
+        }
+      : {}),
   })
 
   // 메시지 로딩
@@ -583,7 +603,25 @@ export default function GuideDashboard() {
           console.log('No current user email, skipping tour load')
           return
         }
-        
+
+        const dashboardSnapshotKey = `guide-dashboard-main-${currentUserEmail}-${userRole}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`
+        if (isBrowserOffline()) {
+          const raw = await loadGuideSnapshot(dashboardSnapshotKey)
+          if (raw && typeof raw === 'object' && raw !== null && 'upcomingTours' in raw) {
+            const p = raw as {
+              upcomingTours: ExtendedTour[]
+              pastTours: ExtendedTour[]
+              offSchedules: OffSchedule[]
+            }
+            setUpcomingTours(p.upcomingTours)
+            setPastTours(p.pastTours)
+            setOffSchedules(p.offSchedules ?? [])
+            setLoading(false)
+            return
+          }
+          setLoading(false)
+          return
+        }
 
         // 투어 가이드가 배정된 투어 가져오기 (최근 30일 + 미래 30일)
         const thirtyDaysAgo = new Date()
@@ -898,17 +936,20 @@ export default function GuideDashboard() {
           pastToursList: pastToursList.map(t => ({ id: t.id, tour_date: t.tour_date }))
         })
 
-        setUpcomingTours(upcomingToursList.slice(0, 5)) // 최대 5개만 표시
-        setPastTours(pastToursList.slice(0, 10)) // 최대 10개만 표시
+        const upcomingSlice = upcomingToursList.slice(0, 5)
+        const pastSlice = pastToursList.slice(0, 10)
+        setUpcomingTours(upcomingSlice)
+        setPastTours(pastSlice)
         
         console.log('Final tour state set:', {
-          upcomingToursCount: upcomingToursList.slice(0, 5).length,
-          pastToursCount: pastToursList.slice(0, 10).length,
+          upcomingToursCount: upcomingSlice.length,
+          pastToursCount: pastSlice.length,
           todayToursInUpcoming: upcomingToursList.filter(t => t.tour_date === today).length,
           todayToursInPast: pastToursList.filter(t => t.tour_date === today).length
         })
 
         // 오프 스케줄 데이터 로드 (모든 오프 스케줄)
+        let offSchedulesSnapshot: OffSchedule[] = []
         const { data: offSchedulesData, error: offSchedulesError } = await supabase
           .from('off_schedules')
           .select('*')
@@ -919,9 +960,15 @@ export default function GuideDashboard() {
         if (offSchedulesError) {
           console.error('Error loading off schedules:', offSchedulesError)
         } else {
-          setOffSchedules(offSchedulesData || [])
+          offSchedulesSnapshot = offSchedulesData || []
+          setOffSchedules(offSchedulesSnapshot)
         }
 
+        void saveGuideSnapshot(dashboardSnapshotKey, {
+          upcomingTours: upcomingSlice,
+          pastTours: pastSlice,
+          offSchedules: offSchedulesSnapshot,
+        }).catch(() => {})
       } catch (err) {
         console.error('Error loading dashboard data:', err)
       } finally {
@@ -930,7 +977,7 @@ export default function GuideDashboard() {
     }
 
     loadTours()
-  }, [currentUserEmail, supabase, today, userRole, isSimulating])
+  }, [currentUserEmail, supabase, today, userRole, isSimulating, simulatedUser?.email, onlineRefreshTick])
 
   // 탭 변경 시 해당 데이터 로드 (team-board 탭은 제거됨)
   // useEffect(() => {

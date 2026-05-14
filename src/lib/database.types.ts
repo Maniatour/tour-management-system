@@ -5607,6 +5607,11 @@ export type Database = {
           additional_cost: number | null
           additional_discount: number | null
           adult_product_price: number | null
+          audited: boolean
+          audited_at: string | null
+          audited_by_email: string | null
+          audited_by_name: string | null
+          audited_by_nick_name: string | null
           balance_amount: number | null
           card_fee: number | null
           child_product_price: number | null
@@ -5646,6 +5651,11 @@ export type Database = {
           additional_cost?: number | null
           additional_discount?: number | null
           adult_product_price?: number | null
+          audited?: boolean
+          audited_at?: string | null
+          audited_by_email?: string | null
+          audited_by_name?: string | null
+          audited_by_nick_name?: string | null
           balance_amount?: number | null
           card_fee?: number | null
           child_product_price?: number | null
@@ -5685,6 +5695,11 @@ export type Database = {
           additional_cost?: number | null
           additional_discount?: number | null
           adult_product_price?: number | null
+          audited?: boolean
+          audited_at?: string | null
+          audited_by_email?: string | null
+          audited_by_name?: string | null
+          audited_by_nick_name?: string | null
           balance_amount?: number | null
           card_fee?: number | null
           child_product_price?: number | null

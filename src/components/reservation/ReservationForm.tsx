@@ -37,6 +37,25 @@ async function insertCustomerForReservationForm(
   }
   return { row: (data as Database['public']['Tables']['customers']['Row']) ?? null, errorMessage: null }
 }
+
+/** id-only 모달: ensure-draft 로 생긴 행을 취소·언마운트 시 제거 */
+async function abandonReservationDraftRequest(reservationId: string) {
+  if (!reservationId) return
+  try {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) headers.Authorization = `Bearer ${token}`
+    await fetch('/api/reservations/abandon-draft', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ id: reservationId }),
+    })
+  } catch {
+    // 무시 — 목록 정합성은 서버 조건으로 한 번 더 방어
+  }
+}
+
 import CustomerForm from '@/components/CustomerForm'
 import CustomerSection from '@/components/reservation/CustomerSection'
 import TourInfoSection from '@/components/reservation/TourInfoSection'
@@ -51,11 +70,13 @@ import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
+import ReservationLocalScratchList from '@/components/reservation/ReservationLocalScratchList'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
+import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import {
   emptyResidentStatusAmounts,
   findUsResidentClassificationChoice,
@@ -471,7 +492,13 @@ export default function ReservationForm({
           }),
         })
         const json = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string }
-        if (cancelled) return
+        if (cancelled) {
+          // 모달을 먼저 닫으면서 effect가 정리된 뒤 ensure-draft 가 끝나면, DB에 남는 빈 예약 방지
+          if (res.ok && json.success !== false) {
+            void abandonReservationDraftRequest(rid)
+          }
+          return
+        }
         if (res.ok && json.success !== false) {
           setReservationDraftReady(true)
           setReservationDraftError(null)
@@ -492,6 +519,13 @@ export default function ReservationForm({
       cancelled = true
     }
   }, [isStubReservationOnlyId, reservation?.id])
+
+  const handleCancelWithDraftAbandon = useCallback(async () => {
+    if (isStubReservationOnlyId && reservation?.id) {
+      await abandonReservationDraftRequest(reservation.id)
+    }
+    onCancel()
+  }, [isStubReservationOnlyId, reservation?.id, onCancel])
   
   const findSimilarCustomers = useCallback(
     (name: string, email?: string, phone?: string): Customer[] =>
@@ -875,6 +909,12 @@ export default function ReservationForm({
     auditedByName: null,
     auditedByNickName: null,
   })
+  /** 가격 로드 시점 `reservation_pricing` 저장값 — 가격 계산 UI에서 화면 계산과 병기 */
+  const [pricingDbSnapshot, setPricingDbSnapshot] = useState<{
+    total_price: number
+    company_total_revenue: number | null
+    operating_profit: number | null
+  } | null>(null)
   const [currentTeamProfile, setCurrentTeamProfile] = useState<TeamAuditProfile | null>(null)
   /** 비동기 loadPricingInfo 중에도 최신 여부를 반영 — state보다 앞서 자동 쿠폰이 도는 것 방지 */
   const reservationPricingIdRef = useRef<string | null>(null)
@@ -3593,7 +3633,7 @@ export default function ReservationForm({
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
           .select(
-            'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, choices, choices_total, pricing_adults, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name'
+            'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, choices, choices_total, pricing_adults, company_total_revenue, operating_profit, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name'
           )
           .eq('reservation_id', pricingReservationId)
           .maybeSingle()
@@ -3601,6 +3641,7 @@ export default function ReservationForm({
         if (existingError) {
           console.log('기존 가격 정보 조회 오류:', existingError.message)
           setReservationPricingId(null)
+          setPricingDbSnapshot(null)
           // 오류가 발생해도 계속 진행 (dynamic_pricing 조회)
         } else if (existingPricing) {
           setReservationPricingId((existingPricing as { id?: string }).id ?? null)
@@ -3610,6 +3651,19 @@ export default function ReservationForm({
             auditedByEmail: (existingPricing as any).audited_by_email ?? null,
             auditedByName: (existingPricing as any).audited_by_name ?? null,
             auditedByNickName: (existingPricing as any).audited_by_nick_name ?? null,
+          })
+          setPricingDbSnapshot({
+            total_price: toNum((existingPricing as any).total_price),
+            company_total_revenue:
+              (existingPricing as any).company_total_revenue != null &&
+              (existingPricing as any).company_total_revenue !== ''
+                ? toNum((existingPricing as any).company_total_revenue)
+                : null,
+            operating_profit:
+              (existingPricing as any).operating_profit != null &&
+              (existingPricing as any).operating_profit !== ''
+                ? toNum((existingPricing as any).operating_profit)
+                : null,
           })
           console.log('기존 가격 정보 사용:', existingPricing)
 
@@ -3733,16 +3787,24 @@ export default function ReservationForm({
           setFormData(prev => {
             const { channelSettlementAmount: _stripChSettle, ...prevWithoutChSettle } = prev
             void _stripChSettle
-            const paRaw = (existingPricing as any).pricing_adults
-            const paNum = paRaw != null && paRaw !== '' ? Number(paRaw) : NaN
-            const pricingAdultsLoaded = Number.isFinite(paNum)
-              ? Math.max(0, Math.floor(paNum))
-              : prev.pricingAdults ?? prev.adults
+            const pptForInfer = Number((existingPricing as any).product_price_total) || 0
+            const pricingAdultsLoaded = inferPricingAdultsWhenUnset({
+              pricingAdultsRaw: (existingPricing as any).pricing_adults,
+              reservationAdults: prev.adults,
+              child: prev.child,
+              infant: prev.infant,
+              adultProductPrice: adultPrice,
+              childProductPrice: childPrice,
+              infantProductPrice: infantPrice,
+              productPriceTotal: pptForInfer,
+            })
             const channelSettlementFromDb = (() => {
               const v = (existingPricing as any).channel_settlement_amount
               if (v == null || v === '') return null
               const n = Number(v)
-              return Number.isFinite(n) ? n : null
+              if (!Number.isFinite(n)) return null
+              if (Math.abs(n) < 0.005) return null
+              return n
             })()
             const updated = {
               ...prevWithoutChSettle,
@@ -3830,9 +3892,13 @@ export default function ReservationForm({
             const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
             const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
             
-            // 명시 잔액(DB/당일 지불)이 있으면 항상 우선. 없으면 총액−보증금 계산값 사용
-            const finalBalanceAmount =
-              updated.onSiteBalanceAmount !== 0 ? updated.onSiteBalanceAmount : newBalance
+            // 명시 잔액(DB balance_amount)이 있으면 0을 포함해 항상 우선. 없을 때만 총액−보증금 계산값
+            const rawBalRow = (existingPricing as any).balance_amount
+            const hasStoredBalance =
+              rawBalRow !== null && rawBalRow !== undefined && rawBalRow !== ''
+            const finalBalanceAmount = hasStoredBalance
+              ? Number(rawBalRow) || 0
+              : newBalance
             
             // commission_amount가 데이터베이스에서 불러온 값이면 절대 덮어쓰지 않음
             const finalCommissionAmount = loadedCommissionAmount.current !== null && loadedCommissionAmount.current > 0
@@ -3937,6 +4003,7 @@ export default function ReservationForm({
           notIncludedPriceFromReservationPricing = Number((existingPricing as any).not_included_price) || 0
         } else {
           setReservationPricingId(null)
+          setPricingDbSnapshot(null)
           setPricingAudit({
             audited: false,
             auditedAt: null,
@@ -6046,7 +6113,7 @@ export default function ReservationForm({
               </select>
               <button
                 type="button"
-                onClick={onCancel}
+                onClick={handleCancelWithDraftAbandon}
                 className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
                 aria-label="닫기"
               >
@@ -6099,7 +6166,7 @@ export default function ReservationForm({
             </button>
             <button
               type="button"
-              onClick={onCancel}
+              onClick={handleCancelWithDraftAbandon}
               className="px-3 py-2 text-sm bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
             >
               {tCommon('cancel')}
@@ -6360,7 +6427,7 @@ export default function ReservationForm({
                 </button>
                 <button
                   type="button"
-                  onClick={onCancel}
+                  onClick={handleCancelWithDraftAbandon}
                   className="flex-1 min-w-0 bg-gray-300 text-gray-700 py-2.5 px-3 rounded-lg hover:bg-gray-400 text-sm font-medium"
                 >
                   {tCommon('cancel')}
@@ -6561,6 +6628,7 @@ export default function ReservationForm({
                   <div id="assigned-tour-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
                     <TourConnectionSection reservation={reservation} variant="assignedSummary" />
                   </div>
+                  <ReservationLocalScratchList reservationId={effectiveReservationId} />
                   {/* 후기 관리 - 3열 */}
                   {layout === 'page' && (
                     <div id="review-section" className="max-lg:order-8 max-lg:mt-4">
@@ -6737,6 +6805,7 @@ export default function ReservationForm({
                 expenseUpdateTrigger={expenseUpdateTrigger}
                 channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
                 products={products}
+                pricingDbSnapshot={pricingDbSnapshot}
               />
             </div>
           </div>

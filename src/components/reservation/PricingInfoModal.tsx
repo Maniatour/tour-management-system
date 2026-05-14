@@ -22,6 +22,7 @@ import {
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
+import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 
@@ -33,6 +34,7 @@ interface PricingInfoModalProps {
 
 interface PricingData {
   id?: string
+  reservation_id?: string
   adult_product_price: number
   child_product_price: number
   infant_product_price: number
@@ -58,6 +60,8 @@ interface PricingData {
   choices?: Record<string, unknown>
   choices_total?: number
   not_included_price?: number
+  refund_amount?: number
+  refund_reason?: string | null
   commission_amount?: number
   commission_percent?: number
   commission_base_price?: number
@@ -112,6 +116,12 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const [channelSettlementFocused, setChannelSettlementFocused] = useState(false)
   const [channelSettlementDraft, setChannelSettlementDraft] = useState('')
   const [currentTeamProfile, setCurrentTeamProfile] = useState<TeamAuditProfile | null>(null)
+  /** 로드 시점 DB `total_price`·매출 스냅샷 — 화면 계산과 병기 (이 모달 저장 시 매출 컬럼은 갱신하지 않음) */
+  const [dbMetricsSnapshot, setDbMetricsSnapshot] = useState<{
+    total_price: number
+    company_total_revenue: number | null
+    operating_profit: number | null
+  } | null>(null)
 
   const reservationOptionsHookId = isOpen && reservation?.id ? String(reservation.id) : ''
   const { reservationOptions: reservationOptionsRows } = useReservationOptions(reservationOptionsHookId)
@@ -126,6 +136,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     if (!isOpen) {
       setChannelSettlementFocused(false)
       setChannelSettlementDraft('')
+      setDbMetricsSnapshot(null)
     }
   }, [isOpen])
 
@@ -291,7 +302,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       const reservationId = String(reservation.id)
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent, commission_base_price, channel_settlement_amount, pricing_adults, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name')
+        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, refund_amount, refund_reason, commission_amount, commission_percent, commission_base_price, channel_settlement_amount, pricing_adults, company_total_revenue, operating_profit, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name')
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -366,6 +377,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           choices: pricingInfo?.choices || {},
           choices_total: pricingInfo?.choicesTotal || 0,
           not_included_price: pricingInfo?.not_included_price || 0,
+          refund_amount: 0,
+          refund_reason: null,
           commission_amount: 0,
           commission_percent: pricingInfo?.commission_percent || 0,
           commission_base_price: 0,
@@ -374,6 +387,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           ),
           pricing_adults: reservation.adults ?? 0,
         }
+        setDbMetricsSnapshot(null)
         setPricingData(defaultData)
         setEditData(defaultData)
         return
@@ -409,16 +423,23 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
 
       const dep = toNum(raw.deposit_amount)
       const comm = toNum(raw.commission_amount)
-      const chSettleFromDb =
+      const chFromRow =
         raw.channel_settlement_amount != null && raw.channel_settlement_amount !== ''
           ? toNum(raw.channel_settlement_amount)
-          : roundUsd2(dep - comm)
+          : null
+      const chSettleFromDb =
+        chFromRow != null && Math.abs(chFromRow) >= 0.005 ? chFromRow : roundUsd2(dep - comm)
 
-      const paRaw = raw.pricing_adults
-      const pricingAdultsMerged =
-        paRaw != null && paRaw !== '' && Number.isFinite(Number(paRaw))
-          ? Math.max(0, Math.floor(Number(paRaw)))
-          : reservation.adults ?? 0
+      const pricingAdultsMerged = inferPricingAdultsWhenUnset({
+        pricingAdultsRaw: raw.pricing_adults,
+        reservationAdults: reservation?.adults ?? 0,
+        child: reservation?.child ?? 0,
+        infant: reservation?.infant ?? 0,
+        adultProductPrice: adultPrice,
+        childProductPrice: childPrice,
+        infantProductPrice: infantPrice,
+        productPriceTotal: productPriceTotal,
+      })
 
       const pricingDataWithDefaults: PricingData = {
         ...data,
@@ -429,12 +450,31 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         product_price_total: productPriceTotal,
         choices_total: toNum(data.choices_total),
         not_included_price: toNum(data.not_included_price),
+        refund_amount: Math.max(0, toNum((raw as { refund_amount?: unknown }).refund_amount)),
+        refund_reason:
+          (raw as { refund_reason?: string | null }).refund_reason != null
+            ? String((raw as { refund_reason?: string | null }).refund_reason)
+            : null,
         commission_amount: toNum(data.commission_amount),
         commission_percent: commissionPercentToUse,
         commission_base_price: toNum(raw.commission_base_price),
         channel_settlement_amount: chSettleFromDb,
         pricing_adults: pricingAdultsMerged,
       }
+      delete (pricingDataWithDefaults as { company_total_revenue?: unknown }).company_total_revenue
+      delete (pricingDataWithDefaults as { operating_profit?: unknown }).operating_profit
+
+      setDbMetricsSnapshot({
+        total_price: toNum(raw.total_price),
+        company_total_revenue:
+          raw.company_total_revenue != null && raw.company_total_revenue !== ''
+            ? toNum(raw.company_total_revenue)
+            : null,
+        operating_profit:
+          raw.operating_profit != null && raw.operating_profit !== ''
+            ? toNum(raw.operating_profit)
+            : null,
+      })
       
       setPricingData(pricingDataWithDefaults)
       setEditData(pricingDataWithDefaults)
@@ -628,20 +668,30 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         if (!ok) return
       }
 
-      // reservation_pricing에는 is_private_tour 컬럼이 없음(예약 테이블 전용)
-      const { is_private_tour: _omitPrivateTour, ...rowForDb } = editData
-      void _omitPrivateTour
+      // reservation_pricing에는 is_private_tour·예약 id·통계용 매출 컬럼은 이 모달에서 갱신하지 않음
+      const row = { ...(editData as Record<string, unknown>) } as Record<string, unknown>
+      delete row.is_private_tour
+      delete row.reservation_id
+      delete row.company_total_revenue
+      delete row.operating_profit
+      const rowForDb = row as PricingData
 
       const reservationId = String(reservation.id)
 
       if (pricingData?.id) {
-        const { error } = await supabase
-          .from('reservation_pricing')
-          .update(rowForDb)
-          .eq('id', pricingData.id)
+        const { error } = await supabase.from('reservation_pricing').update(rowForDb).eq('id', pricingData.id)
 
         if (error) throw error
         setPricingData(editData)
+        setDbMetricsSnapshot((prev) =>
+          prev
+            ? { ...prev, total_price: Number(editData.total_price) || 0 }
+            : {
+                total_price: Number(editData.total_price) || 0,
+                company_total_revenue: null,
+                operating_profit: null,
+              }
+        )
         if (editData.audited && isSuperPricingAdmin) {
           await insertPricingAuditNotifications(
             reservationId,
@@ -661,6 +711,22 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         const merged = { ...editData, id: newId }
         setPricingData(merged)
         setEditData(merged)
+        setDbMetricsSnapshot({
+          total_price: Number(merged.total_price) || 0,
+          company_total_revenue: null,
+          operating_profit: null,
+        })
+      }
+
+      const resPrivate = Boolean((reservation as { isPrivateTour?: boolean }).isPrivateTour)
+      if (resPrivate !== Boolean(editData.is_private_tour)) {
+        const { error: tourErr } = await supabase
+          .from('reservations')
+          .update({ is_private_tour: editData.is_private_tour })
+          .eq('id', reservationId)
+        if (tourErr) {
+          console.error('예약 프라이빗 투어 동기화 오류:', tourErr)
+        }
       }
     } catch (err) {
       console.error('가격 정보 저장 오류:', err)
@@ -721,8 +787,9 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     
     const totalAdditional = additionalCost + cardFee + tax + prepaymentCost + prepaymentTip + privateTourCost
     
-    // 총 가격 계산 (소계 - 할인 + 추가 비용) - additional_cost가 포함되어야 함
-    const totalPrice = Math.max(0, subtotal - totalDiscount + totalAdditional)
+    // 총 가격 계산 (소계 - 할인 + 추가 비용 − 투어 환불) — 예약 폼과 동일하게 환불은 양수 저장
+    const refundAmt = Math.max(0, Number(updatedData.refund_amount) || 0)
+    const totalPrice = Math.max(0, subtotal - totalDiscount + totalAdditional - refundAmt)
     updatedData.total_price = totalPrice
     
     // 디버깅: 필드 변경 시 로그 출력
@@ -773,7 +840,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                              (updatedData.prepayment_tip || 0) + 
                              (updatedData.private_tour_additional_cost || 0)
       
-      updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional)
+      const refundAmt = Math.max(0, Number(updatedData.refund_amount) || 0)
+      updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional - refundAmt)
       setEditData(updatedData)
       return
     }
@@ -806,7 +874,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                            (updatedData.prepayment_tip || 0) + 
                            (updatedData.private_tour_additional_cost || 0)
     
-    updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional)
+    const refundAmtSelectedCoupon = Math.max(0, Number(updatedData.refund_amount) || 0)
+    updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional - refundAmtSelectedCoupon)
     setEditData(updatedData)
   }
 
@@ -834,7 +903,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                            (updatedData.prepayment_tip || 0) + 
                            (updatedData.private_tour_additional_cost || 0)
     
-    updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional)
+    const refundAmtPrivate = Math.max(0, Number(updatedData.refund_amount) || 0)
+    updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional - refundAmtPrivate)
     setEditData(updatedData)
   }
 
@@ -1166,9 +1236,80 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                         </div>
                       </>
                     )}
+                    <div className="border-t border-gray-100 pt-2 mt-1 space-y-2">
+                      <div className="flex justify-between items-center gap-2 text-xs">
+                        <label className="text-gray-600 shrink-0">불포함 단가 ($/인)</label>
+                        <div className="relative flex-1 max-w-[7rem]">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
+                          <input
+                            type="number"
+                            value={editData?.not_included_price ?? ''}
+                            onChange={(e) =>
+                              handleInputChange('not_included_price', Number(e.target.value) || 0)
+                            }
+                            className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center gap-2 text-xs">
+                        <label className="text-gray-600 shrink-0">청구 성인 수</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editData?.pricing_adults ?? ''}
+                          onChange={(e) =>
+                            handleInputChange(
+                              'pricing_adults',
+                              Math.max(0, Math.floor(Number(e.target.value) || 0))
+                            )
+                          }
+                          className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                        />
+                      </div>
+                    </div>
                     <div className="border-t pt-1 flex justify-between items-center">
                       <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
                       <span className="text-sm font-bold text-blue-600">${(editData?.product_price_total || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-3 rounded border border-gray-200">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">환불</h4>
+                  <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1 mb-2 leading-snug">
+                    예약 옵션 취소·환불은 예약 옵션 화면에서 처리하세요. 여기는 투어·상품 환불(reservation_pricing.refund_*)만
+                    저장됩니다.
+                  </p>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-0.5">투어 환불 금액</label>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editData?.refund_amount ?? ''}
+                          onChange={(e) =>
+                            handleInputChange('refund_amount', Math.max(0, Number(e.target.value) || 0))
+                          }
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">환불 이유</label>
+                      <textarea
+                        value={editData?.refund_reason ?? ''}
+                        onChange={(e) => {
+                          if (!editData) return
+                          setEditData({ ...editData, refund_reason: e.target.value.trim() ? e.target.value : null })
+                        }}
+                        rows={2}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        placeholder="예: 일정 변경"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1647,6 +1788,54 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                         <span className="font-bold text-purple-800">운영 이익</span>
                         <span className="font-bold text-purple-600">${operatingProfitDisplay.toFixed(2)}</span>
                       </div>
+                      {dbMetricsSnapshot && (
+                        <div className="mt-2 rounded border border-emerald-200/80 bg-white/90 px-2 py-1.5 text-[10px] leading-snug text-gray-700">
+                          <div className="font-medium text-gray-800 mb-1">DB 스냅샷 (로드·저장 직후)</div>
+                          <div className="flex justify-between gap-2">
+                            <span className="text-gray-600 shrink-0">total_price</span>
+                            <span className="font-mono tabular-nums">
+                              ${(Number(dbMetricsSnapshot.total_price) || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-2 mt-0.5">
+                            <span className="text-gray-600 shrink-0">폼 total_price</span>
+                            <span className="font-mono tabular-nums">
+                              ${(Number(editData?.total_price) || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          {dbMetricsSnapshot.company_total_revenue != null && (
+                            <div className="flex justify-between gap-2 mt-0.5">
+                              <span className="text-gray-600 shrink-0">company_total_revenue</span>
+                              <span className="font-mono tabular-nums">
+                                ${(Number(dbMetricsSnapshot.company_total_revenue) || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {dbMetricsSnapshot.operating_profit != null && (
+                            <div className="flex justify-between gap-2 mt-0.5">
+                              <span className="text-gray-600 shrink-0">operating_profit</span>
+                              <span className="font-mono tabular-nums">
+                                ${(Number(dbMetricsSnapshot.operating_profit) || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          <p className="mt-1 text-[10px] text-slate-600">
+                            통계용 매출·이익 컬럼은 이 모달에서 덮어쓰지 않습니다. 예약 전체 저장 시 갱신됩니다.
+                          </p>
+                          {((dbMetricsSnapshot.company_total_revenue != null &&
+                            Math.abs(
+                              (Number(dbMetricsSnapshot.company_total_revenue) || 0) - totalRevenueDisplay
+                            ) > 0.02) ||
+                            (dbMetricsSnapshot.operating_profit != null &&
+                              Math.abs(
+                                (Number(dbMetricsSnapshot.operating_profit) || 0) - operatingProfitDisplay
+                              ) > 0.02)) && (
+                            <p className="mt-1 text-amber-800">
+                              저장된 매출·이익과 위 ④ 계산이 다릅니다. 예약 저장으로 DB를 맞추세요.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 

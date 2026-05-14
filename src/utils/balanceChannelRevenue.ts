@@ -166,6 +166,8 @@ export function computeBalanceChannelMetrics(
         }) || storedCb
 
   const optionTotalSum = pricingFieldToNumber(pLine.option_total)
+  const reservationOptionsSum =
+    reservationOptionSumByReservationId?.get(reservation.id) ?? optionTotalSum
 
   const settlementInput: ChannelSettlementComputeInput = {
     depositAmount,
@@ -193,6 +195,9 @@ export function computeBalanceChannelMetrics(
   channelPaymentFromFormula = round2(Math.max(0, channelPaymentFromFormula))
 
   const channelSettlementFromFormula = computeChannelSettlementAmount(settlementInput)
+
+  const st = String(reservation.status || '').toLowerCase().trim()
+  const isReservationCancelled = st === 'cancelled' || st === 'canceled'
 
   const channelPaymentDb =
     p.commission_base_price != null && Number.isFinite(Number(p.commission_base_price))
@@ -234,12 +239,12 @@ export function computeBalanceChannelMetrics(
   const storedSettle = p.channel_settlement_amount
   const hasStoredSettle = storedSettle != null && Number.isFinite(Number(storedSettle))
 
-  const channelSettlementBaseForRevenue = hasStoredSettle
-    ? Math.max(0, Number(storedSettle))
-    : channelSettlementFromFormula
-
-  const st = String(reservation.status || '').toLowerCase().trim()
-  const isReservationCancelled = st === 'cancelled' || st === 'canceled'
+  /** 취소 건: DB `channel_settlement_amount`가 환불·Returned 반영 전 값으로 남은 경우가 많아 ④·필터와 어긋남 → 입금 반영 산식 정산을 베이스로 사용 */
+  const channelSettlementBaseForRevenue = isReservationCancelled
+    ? round2(Math.max(0, channelSettlementFromFormula))
+    : hasStoredSettle
+      ? Math.max(0, Number(storedSettle))
+      : channelSettlementFromFormula
 
   const usesStored = hasStoredSettle
   let channelPaymentGrossDbLike = 0
@@ -263,26 +268,70 @@ export function computeBalanceChannelMetrics(
       channelPaymentGross: channelPaymentGrossDbLike,
     })
 
-  const reservationOptionsSum =
-    reservationOptionSumByReservationId?.get(reservation.id) ?? optionTotalSum
-
-  const companyTotalRevenue = computeCompanyTotalRevenueLikePricingSection({
-    channelSettlementBase: channelSettlementBaseForRevenue,
-    isOTAChannel: isOta,
-    isReservationCancelled,
-    reservationOptionsTotalPrice: isOta ? reservationOptionsSum : 0,
-    notIncludedTotalUsd,
-    additionalDiscount: pricingFieldToNumber(p.additional_discount),
-    additionalCost: pricingFieldToNumber(p.additional_cost),
-    tax: pricingFieldToNumber(p.tax),
-    prepaymentCost: pricingFieldToNumber(p.prepayment_cost),
-    refundedOurAmount: refundedOur,
-    omitAdditionalDiscountAndCostFromSum,
-    excludeHomepageAdditionalCostFromCompanyTotals: isHomepage,
-  })
-
   const prepTip = pricingFieldToNumber(p.prepayment_tip)
-  const operatingProfit = round2(Math.max(0, companyTotalRevenue - prepTip))
+
+  let companyTotalRevenue: number
+  let operatingProfit: number
+  if (isReservationCancelled) {
+    const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
+      refundedFromRecords: paySm.refundedTotal,
+      reservationOptionsActiveSum: reservationOptionsSum,
+      optionCancelRefundUsd: 0,
+      manualRefundAmount: pricingFieldToNumber(p.refund_amount),
+      isOTAChannel: isOta,
+      returnedAmount,
+    })
+    const pricingAdultsVal = Math.max(
+      0,
+      Math.floor(
+        Number(
+          (p as { pricing_adults?: number | null }).pricing_adults ?? reservation.adults ?? 0
+        ) || 0
+      )
+    )
+    const storedRev = computeStoredCompanyRevenueFields({
+      channelSettlementBase: channelSettlementBaseForRevenue,
+      reservationStatus: reservation.status,
+      isOTAChannel: isOta,
+      isHomepageBooking: isHomepage,
+      reservationOptionsActiveSum: reservationOptionsSum,
+      omitCtx: {
+        usesStoredChannelSettlement: usesStored,
+        depositAmount,
+        onlinePaymentAmount: onlineRaw,
+        channelPaymentGross: channelPaymentGrossDbLike,
+      },
+      omitAdditionalDiscountAndCostFromSumOverride: omitAdditionalDiscountAndCostFromSum,
+      notIncludedPerPerson: pricingFieldToNumber(p.not_included_price),
+      pricingAdults: pricingAdultsVal,
+      child: reservation.child ?? 0,
+      infant: reservation.infant ?? 0,
+      additionalDiscount: pricingFieldToNumber(p.additional_discount),
+      additionalCost: pricingFieldToNumber(p.additional_cost),
+      tax: pricingFieldToNumber(p.tax),
+      prepaymentCost: pricingFieldToNumber(p.prepayment_cost),
+      prepaymentTip: prepTip,
+      refundAmountForCompanyRevenueBlock: refundForRevenue,
+    })
+    companyTotalRevenue = storedRev.company_total_revenue
+    operatingProfit = round2(storedRev.operating_profit)
+  } else {
+    companyTotalRevenue = computeCompanyTotalRevenueLikePricingSection({
+      channelSettlementBase: channelSettlementBaseForRevenue,
+      isOTAChannel: isOta,
+      isReservationCancelled,
+      reservationOptionsTotalPrice: isOta ? reservationOptionsSum : 0,
+      notIncludedTotalUsd,
+      additionalDiscount: pricingFieldToNumber(p.additional_discount),
+      additionalCost: pricingFieldToNumber(p.additional_cost),
+      tax: pricingFieldToNumber(p.tax),
+      prepaymentCost: pricingFieldToNumber(p.prepayment_cost),
+      refundedOurAmount: refundedOur,
+      omitAdditionalDiscountAndCostFromSum,
+      excludeHomepageAdditionalCostFromCompanyTotals: isHomepage,
+    })
+    operatingProfit = round2(Math.max(0, companyTotalRevenue - prepTip))
+  }
 
   return {
     omitAdditionalDiscountAndCostFromCompanyRevenueSum: omitAdditionalDiscountAndCostFromSum,

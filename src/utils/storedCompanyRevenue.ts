@@ -83,7 +83,12 @@ export function computeStoredCompanyRevenueFields(
         })
 
   if (isReservationCancelled && !inp.isOTAChannel) {
-    return { company_total_revenue: 0, operating_profit: 0 }
+    const ch = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
+    /** 비-OTA 취소: 투어 환불은 ③ 정산 net에 반영 — 저장 총매출은 정산 베이스(OTA 취소와 동일: refb 재차감 없음) */
+    return {
+      company_total_revenue: ch,
+      operating_profit: roundUsd2(ch - prepTip),
+    }
   }
 
   const refb = inp.refundAmountForCompanyRevenueBlock

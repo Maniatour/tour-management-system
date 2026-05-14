@@ -24,6 +24,7 @@ import {
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { isBrowserOffline, loadGuideSnapshot, saveGuideSnapshot } from '@/lib/guideOfflineStore'
 import { useAuth } from '@/contexts/AuthContext'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -63,6 +64,45 @@ type TeamMember = {
 /** 픽업 호텔 미지정 예약을 한 그룹으로 묶기 위한 키 (DB id와 충돌하지 않도록 함) */
 const GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY = '__guide_pickup_hotel_unassigned__'
 const REPORT_REMINDER_START_DATE = '2026-04-01'
+
+type GuideTourDetailSnapshot = {
+  tour: TourRow
+  tourTipShare: { guide_amount: number; assistant_amount: number } | null
+  product: ProductRow | null
+  vehicle: Vehicle | null
+  reservations: ReservationRow[]
+  customers: CustomerRow[]
+  pickupHotels: PickupHotel[]
+  tourHotelBookings: TourHotelBooking[]
+  ticketBookings: TicketBooking[]
+  teamMembers: TeamMember[]
+  channels: Array<{ id: string; name: string; favicon_url?: string }>
+  reservationPricing: Array<{
+    reservation_id: string
+    balance_amount: number
+    prepayment_tip: number
+    currency: string
+  }>
+  reservationChoicesEntries: Array<
+    [
+      string,
+      Array<{
+        choice_id: string
+        option_id: string
+        quantity: number
+        option_name: string
+        option_name_ko: string
+        choice_group_ko: string
+      }>,
+    ]
+  >
+  residentStatusSummary: {
+    usResident: number
+    nonResident: number
+    nonResidentWithPass: number
+    passCoveredCount: number
+  }
+}
 
 /** 투어 업무 기준일(라스베이거스) 오늘 날짜 YYYY-MM-DD */
 function getTodayLasVegasYyyyMmDd(): string {
@@ -170,6 +210,7 @@ export default function GuideTourDetailPage() {
     choice_group_ko: string
   }>>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [onlineRefreshTick, setOnlineRefreshTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [residentStatusSummary, setResidentStatusSummary] = useState({
     usResident: 0,
@@ -190,6 +231,12 @@ export default function GuideTourDetailPage() {
     sunriseTime: string;
   } | null>(null)
   const reportReminderShownForTourRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const onOnline = () => setOnlineRefreshTick((n) => n + 1)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
   
   // balance 정보를 가져오는 함수
   const getReservationBalance = (reservationId: string) => {
@@ -263,6 +310,37 @@ export default function GuideTourDetailPage() {
         return
       }
 
+      const snapshotKey = `guide-tour-detail-${tourId}-${currentUserEmail ?? 'anon'}-${userRole}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`
+
+      if (isBrowserOffline()) {
+        const raw = await loadGuideSnapshot(snapshotKey)
+        if (raw && typeof raw === 'object' && raw !== null && 'tour' in raw) {
+          const s = raw as GuideTourDetailSnapshot
+          setTour(s.tour)
+          setTourTipShare(s.tourTipShare)
+          setProduct(s.product)
+          setVehicle(s.vehicle)
+          setReservations(s.reservations)
+          setCustomers(s.customers)
+          setPickupHotels(s.pickupHotels)
+          setTourHotelBookings(s.tourHotelBookings)
+          setTicketBookings(s.ticketBookings)
+          setTeamMembers(s.teamMembers)
+          setChannels(s.channels)
+          setReservationPricing(s.reservationPricing)
+          setReservationChoicesMap(new Map(s.reservationChoicesEntries))
+          setResidentStatusSummary(s.residentStatusSummary)
+          setError(null)
+          return
+        }
+        setError(
+          locale === 'ko'
+            ? '오프라인입니다. 이 투어를 한 번 온라인에서 연 뒤 다시 시도해 주세요.'
+            : 'You are offline. Open this tour once while online, then try again.'
+        )
+        return
+      }
+
       // 투어 정보 가져오기
       const { data: tourData, error: tourError } = await supabase
         .from('tours')
@@ -282,6 +360,28 @@ export default function GuideTourDetailPage() {
       }
 
       setTour(tourData)
+
+      const snapForPersist: GuideTourDetailSnapshot = {
+        tour: tourData as TourRow,
+        tourTipShare: null,
+        product: null,
+        vehicle: null,
+        reservations: [],
+        customers: [],
+        pickupHotels: [],
+        tourHotelBookings: [],
+        ticketBookings: [],
+        teamMembers: [],
+        channels: [],
+        reservationPricing: [],
+        reservationChoicesEntries: [],
+        residentStatusSummary: {
+          usResident: 0,
+          nonResident: 0,
+          nonResidentWithPass: 0,
+          passCoveredCount: 0,
+        },
+      }
 
       {
         const { data: tipShareRow, error: tipShareErr } = await supabase
@@ -306,8 +406,10 @@ export default function GuideTourDetailPage() {
                 ? parseFloat(tipShareRow.assistant_amount) || 0
                 : Number(tipShareRow.assistant_amount) || 0
           setTourTipShare({ guide_amount: ga, assistant_amount: aa })
+          snapForPersist.tourTipShare = { guide_amount: ga, assistant_amount: aa }
         } else {
           setTourTipShare(null)
+          snapForPersist.tourTipShare = null
         }
       }
 
@@ -321,6 +423,7 @@ export default function GuideTourDetailPage() {
           .single()
         tourProductRow = productData
         setProduct(productData)
+        snapForPersist.product = productData
       }
 
       // 차량 정보 가져오기
@@ -333,8 +436,10 @@ export default function GuideTourDetailPage() {
         
         if (!vehicleError && vehicleData) {
           setVehicle(vehicleData)
+          snapForPersist.vehicle = vehicleData
         } else {
           setVehicle(null)
+          snapForPersist.vehicle = null
         }
       }
 
@@ -413,8 +518,10 @@ export default function GuideTourDetailPage() {
             }
           })
           setReservationPricing(normalized)
+          snapForPersist.reservationPricing = normalized
         } else {
           setReservationPricing([])
+          snapForPersist.reservationPricing = []
         }
 
         const choicesMap = new Map<string, Array<{
@@ -468,6 +575,7 @@ export default function GuideTourDetailPage() {
         }
 
         setReservationChoicesMap(choicesMap)
+        snapForPersist.reservationChoicesEntries = Array.from(choicesMap.entries())
         
         // 픽업 시간으로 정렬
         const sortedReservations = reservationsList.sort((a, b) => {
@@ -477,6 +585,7 @@ export default function GuideTourDetailPage() {
         })
         
         setReservations(sortedReservations)
+        snapForPersist.reservations = sortedReservations
 
         // 고객 정보 가져오기
         const customerIds = [...new Set(reservationsList.map(r => (r as ReservationRow & { customer_id?: string }).customer_id).filter(Boolean))]
@@ -486,6 +595,7 @@ export default function GuideTourDetailPage() {
             .select('*')
             .in('id', customerIds)
           setCustomers(customersData || [])
+          snapForPersist.customers = customersData || []
         }
 
         // 픽업 호텔 정보 가져오기 (reservations의 pickup_hotel 정보 사용)
@@ -503,6 +613,7 @@ export default function GuideTourDetailPage() {
               .select('*')
               .in('id', pickupHotelIds)
             setPickupHotels(hotelsData || [])
+            snapForPersist.pickupHotels = hotelsData || []
           }
         }
       }
@@ -515,37 +626,45 @@ export default function GuideTourDetailPage() {
         .eq('tour_id', tourId)
         .not('status', 'ilike', 'cancelled');
       setTourHotelBookings(hotelBookingsData || [])
+      snapForPersist.tourHotelBookings = hotelBookingsData || []
 
       // 티켓 부킹 정보 가져오기 (모든 status 포함)
       const { data: ticketBookingsData } = await supabase
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId);
-      setTicketBookings(filterTicketBookingsExcludedFromMainUi(ticketBookingsData || []))
+      const ticketRows = filterTicketBookingsExcludedFromMainUi(ticketBookingsData || [])
+      setTicketBookings(ticketRows)
+      snapForPersist.ticketBookings = ticketRows
 
       // 팀 멤버 정보 가져오기 (가이드와 어시스턴트 이름 표시용)
       const { data: teamData } = await supabase
         .from('team')
         .select('email, name_ko, name_en, phone');
       setTeamMembers(teamData || [])
+      snapForPersist.teamMembers = (teamData || []) as TeamMember[]
 
       // 채널 정보 가져오기
       const { data: channelsData } = await supabase
         .from('channels')
         .select('id, name, favicon_url');
-      setChannels(channelsData || [])
+      const channelsNorm = (channelsData || []) as Array<{ id: string; name: string; favicon_url?: string }>
+      setChannels(channelsNorm)
+      snapForPersist.channels = channelsNorm
 
       // 거주 상태별 인원 수 합산 가져오기 (해당 상품 코드에서만)
       const showResidentSummary = productShowsResidentStatusSectionByCode(
         (tourProductRow as { product_code?: string | null } | null)?.product_code
       )
       if (!showResidentSummary) {
-        setResidentStatusSummary({
+        const emptyRes = {
           usResident: 0,
           nonResident: 0,
           nonResidentWithPass: 0,
           passCoveredCount: 0
-        })
+        }
+        setResidentStatusSummary(emptyRes)
+        snapForPersist.residentStatusSummary = emptyRes
       } else if (guideActiveReservationIds.length > 0) {
         const { data: reservationCustomers, error: rcError } = await supabase
           .from('reservation_customers')
@@ -571,28 +690,36 @@ export default function GuideTourDetailPage() {
             }
           })
           
-          setResidentStatusSummary({
+          const filledRes = {
             usResident: usResidentCount,
             nonResident: nonResidentCount,
             nonResidentWithPass: nonResidentWithPassCount,
             passCoveredCount: passCoveredCount
-          })
+          }
+          setResidentStatusSummary(filledRes)
+          snapForPersist.residentStatusSummary = filledRes
         } else {
-          setResidentStatusSummary({
+          const emptyRes = {
             usResident: 0,
             nonResident: 0,
             nonResidentWithPass: 0,
             passCoveredCount: 0
-          })
+          }
+          setResidentStatusSummary(emptyRes)
+          snapForPersist.residentStatusSummary = emptyRes
         }
       } else if (showResidentSummary) {
-        setResidentStatusSummary({
+        const emptyRes = {
           usResident: 0,
           nonResident: 0,
           nonResidentWithPass: 0,
           passCoveredCount: 0
-        })
+        }
+        setResidentStatusSummary(emptyRes)
+        snapForPersist.residentStatusSummary = emptyRes
       }
+
+      void saveGuideSnapshot(snapshotKey, snapForPersist).catch(() => {})
 
     } catch (err) {
       console.error('Error loading tour data:', err)
@@ -600,7 +727,7 @@ export default function GuideTourDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [params.id, currentUserEmail, userRole, t, locale])
+  }, [params.id, currentUserEmail, userRole, t, locale, isSimulating, simulatedUser?.email, onlineRefreshTick, supabase])
 
   useEffect(() => {
     loadTourData()
@@ -1986,7 +2113,7 @@ export default function GuideTourDetailPage() {
             <div className="flex min-h-0 flex-1 flex-col">
               <TourReportForm
                 tourId={tour.id}
-                productId={tour.product_id ?? undefined}
+                productId={tour.product_id ?? null}
                 variant="modal"
                 onSuccess={() => {
                   setIsReportModalOpen(false)

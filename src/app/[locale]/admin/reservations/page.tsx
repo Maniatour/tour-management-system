@@ -2747,7 +2747,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       isAddingReservationRef.current = false
       return
     }
-    
+
+    const customerIdTrimmed = String((reservation as { customerId?: string }).customerId ?? '').trim()
+    if (!customerIdTrimmed) {
+      alert(t('messages.selectCustomerBeforeSave'))
+      isAddingReservationRef.current = false
+      return
+    }
+
     try {
       // Supabase??????? ????????
       // tour_id????? null????????, ??? ??? ????????
@@ -3643,7 +3650,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [])
 
   const handleEditClick = useCallback((reservationId: string) => {
-    const originalReservation = reservations.find((r) => r.id === reservationId)
+    const fromMain = reservations.find((r) => r.id === reservationId)
+    const fromOperational = operationalQueueSnapshot?.reservations.find((r) => r.id === reservationId)
+    const fromDeletedModal = deletedModalReservations.find((r) => r.id === reservationId)
+    const originalReservation = fromMain ?? fromOperational ?? fromDeletedModal
     if (originalReservation) {
       setShowAddForm(false)
       setNewReservationId(null)
@@ -3651,7 +3661,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     } else {
       router.push(`/${locale}/admin/reservations/${reservationId}`)
     }
-  }, [router, locale, reservations])
+  }, [router, locale, reservations, operationalQueueSnapshot, deletedModalReservations])
 
   const handleCustomerClick = useCallback((customer: Customer) => {
     setEditingCustomer(customer)

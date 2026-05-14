@@ -41,6 +41,37 @@ function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/** `tours.reservation_ids` — 배열·JSON 문자열·콤마 구분 정규화 (투어 지출 배분 자격 판단용) */
+function normalizeTourRosterIds(raw: unknown): string[] {
+  if (raw == null) return []
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map((v) => String(v).trim()).filter((s) => s.length > 0))]
+  }
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    if (!t) return []
+    if (t.startsWith('[') && t.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(t) as unknown
+        return Array.isArray(parsed) ? normalizeTourRosterIds(parsed) : []
+      } catch {
+        return []
+      }
+    }
+    if (t.includes(',')) {
+      return [...new Set(t.split(',').map((s) => s.trim()).filter((s) => s.length > 0))]
+    }
+    return [t]
+  }
+  return []
+}
+
+function tourRosterIncludesReservation(rawIds: unknown, reservationId: string): boolean {
+  const rid = String(reservationId).trim()
+  if (!rid) return false
+  return normalizeTourRosterIds(rawIds).includes(rid)
+}
+
 function formulaUsdDiffers(current: number, formula: number): boolean {
   return Math.abs((Number(current) || 0) - (Number(formula) || 0)) > 0.009
 }
@@ -229,6 +260,12 @@ interface PricingSectionProps {
   }
   onTogglePricingAudited?: (audited: boolean) => void
   onRequestPricingAuditModification?: () => void
+  /** `loadPricingInfo` 직후 DB의 `total_price`·저장된 매출/이익 — 화면 계산과 병기 */
+  pricingDbSnapshot?: {
+    total_price: number | null
+    company_total_revenue: number | null
+    operating_profit: number | null
+  } | null
 }
 
 export default function PricingSection({
@@ -257,6 +294,7 @@ export default function PricingSection({
   expenseUpdateTrigger,
   channels = [],
   products = [],
+  pricingDbSnapshot = null,
   t
 }: PricingSectionProps) {
   const locale = useLocale()
@@ -282,6 +320,8 @@ export default function PricingSection({
   const [loadingExpenses, setLoadingExpenses] = useState(false)
   const [tourExpensesTotal, setTourExpensesTotal] = useState(0)
   const [loadingTourExpenses, setLoadingTourExpenses] = useState(false)
+  /** `tours.reservation_ids`에 이 예약이 있을 때만 투어 지출 배분·정산 카드 노출 */
+  const [tourExpenseAllocationEligible, setTourExpenseAllocationEligible] = useState(false)
   // 입금 내역 계산 결과 저장
   const [calculatedBalanceReceivedTotal, setCalculatedBalanceReceivedTotal] = useState(0)
   // 환불 금액 저장
@@ -318,6 +358,13 @@ export default function PricingSection({
   const [isOnSiteBalanceAmountFocused, setIsOnSiteBalanceAmountFocused] = useState(false)
   const [channelSettlementAmountInput, setChannelSettlementAmountInput] = useState('')
   const [isChannelSettlementAmountFocused, setIsChannelSettlementAmountFocused] = useState(false)
+  /** 채널 정산 금액을 사용자가 직접 넣은 뒤에는 omit·타 필드 연쇄로 폼 값을 지우거나 산식이 덮어쓰지 않음 */
+  const channelSettlementUserEditedRef = useRef(false)
+
+  const stripChannelSettlementUnlessLocked = (prev: typeof formData): typeof formData => {
+    if (channelSettlementUserEditedRef.current) return { ...prev }
+    return { ...omitChannelSettlementAmount(prev) } as typeof formData
+  }
 
   // fetchPaymentRecords 등에서 formData/channels 의존 루프 방지용 (항상 최신 참조)
   useEffect(() => {
@@ -327,6 +374,7 @@ export default function PricingSection({
     nonOtaChannelPaymentStopProductAutoSyncRef.current = false
     channelPaymentAmountFieldFocusedRef.current = false
     depositAmountUserEditedRef.current = false
+    channelSettlementUserEditedRef.current = false
   }, [reservationId])
 
   /** DB에 채널 결제(net/gross) 스냅샷이 있으면 비-OTA 상품가 자동 동기화를 영구히 잠금(플래그는 수정 시 꺼질 수 있음). */
@@ -342,18 +390,6 @@ export default function PricingSection({
     isExistingPricingLoaded,
     pricingFieldsFromDb.onlinePaymentAmount,
     pricingFieldsFromDb.commission_base_price,
-  ])
-
-  /** 상품가·할인·인원이 바뀌면 OTA 채널 결제 자동 동기화를 다시 허용 */
-  useEffect(() => {
-    otaChannelPaymentUserEditedRef.current = false
-  }, [
-    formData.productPriceTotal,
-    formData.couponDiscount,
-    formData.additionalDiscount,
-    formData.pricingAdults,
-    formData.child,
-    formData.infant,
   ])
 
   const formDataRef = useRef(formData)
@@ -455,6 +491,7 @@ export default function PricingSection({
   const fetchTourExpenses = useCallback(async () => {
     if (!reservationId || !formData.productId || !formData.tourDate) {
       setTourExpensesTotal(0)
+      setTourExpenseAllocationEligible(false)
       return
     }
 
@@ -465,9 +502,11 @@ export default function PricingSection({
     
     if (!isManiaTour) {
       setTourExpensesTotal(0)
+      setTourExpenseAllocationEligible(false)
       return
     }
 
+    setTourExpenseAllocationEligible(false)
     console.log('PricingSection: 투어 지출 조회 시작', { reservationId, productId: formData.productId, tourDate: formData.tourDate })
     setLoadingTourExpenses(true)
     try {
@@ -502,8 +541,14 @@ export default function PricingSection({
             console.error('tour_id로 투어 조회 오류:', tourByIdError)
           }
         } else if (tourById) {
-          tourData = tourById
-          console.log('PricingSection: reservations.tour_id로 투어 찾음:', tourData.id)
+          if (!tourRosterIncludesReservation((tourById as { reservation_ids?: unknown }).reservation_ids, reservationId)) {
+            console.log(
+              'PricingSection: reservations.tour_id는 있으나 tours.reservation_ids에 예약 없음 → 투어 지출 제외'
+            )
+          } else {
+            tourData = tourById
+            console.log('PricingSection: reservations.tour_id로 투어 찾음:', tourData.id)
+          }
         }
       }
 
@@ -538,26 +583,10 @@ export default function PricingSection({
         // reservation_ids 배열에 현재 예약 ID가 포함된 투어 찾기
         const toursList = (allTours || []) as any[]
         for (const tour of toursList) {
-          const reservationIds = tour.reservation_ids
-          if (reservationIds) {
-            // 배열인 경우
-            if (Array.isArray(reservationIds)) {
-              const ids = reservationIds.map(id => String(id).trim())
-              if (ids.includes(String(reservationId).trim())) {
-                tourData = tour
-                console.log('PricingSection: reservation_ids 배열에서 투어 찾음:', tourData.id)
-                break
-              }
-            }
-            // 문자열인 경우 (쉼표로 구분)
-            else if (typeof reservationIds === 'string') {
-              const ids = reservationIds.split(',').map(id => id.trim()).filter(id => id)
-              if (ids.includes(String(reservationId).trim())) {
-                tourData = tour
-                console.log('PricingSection: reservation_ids 문자열에서 투어 찾음:', tourData.id)
-                break
-              }
-            }
+          if (tourRosterIncludesReservation(tour.reservation_ids, reservationId)) {
+            tourData = tour
+            console.log('PricingSection: reservation_ids에서 투어 찾음:', tourData.id)
+            break
           }
         }
       }
@@ -646,8 +675,8 @@ export default function PricingSection({
 
       // 4. 투어의 총 인원수 계산 (reservation_ids의 예약들의 total_people 합산)
       let totalTourPeople = 0
-      const reservationIds = (tourData as any).reservation_ids
-      if (reservationIds && Array.isArray(reservationIds) && reservationIds.length > 0) {
+      const reservationIds = normalizeTourRosterIds((tourData as { reservation_ids?: unknown }).reservation_ids)
+      if (reservationIds.length > 0) {
         const { data: reservationsData, error: reservationsError } = await supabase
           .from('reservations')
           .select('total_people')
@@ -678,6 +707,7 @@ export default function PricingSection({
         tourExpensesForReservation
       })
 
+      setTourExpenseAllocationEligible(true)
       setTourExpensesTotal(tourExpensesForReservation)
     } catch (error) {
       if (isAbortLikeError(error)) {
@@ -685,6 +715,7 @@ export default function PricingSection({
       }
       console.error('투어 지출 조회 중 예외 발생:', error)
       setTourExpensesTotal(0)
+      setTourExpenseAllocationEligible(false)
     } finally {
       setLoadingTourExpenses(false)
     }
@@ -801,6 +832,9 @@ export default function PricingSection({
     const defaultBalance = roundUsd2(totalCustomerPayment - totalPaid)
     const stored = formData.onSiteBalanceAmount
     if (stored === undefined || stored === null) return defaultBalance
+    if (pricingFieldsFromDb.onSiteBalanceAmount) {
+      return roundUsd2(Number(stored))
+    }
     if (stored === 0 && defaultBalance > 0.01) return defaultBalance
     return roundUsd2(Number(stored))
   }, [
@@ -813,6 +847,7 @@ export default function PricingSection({
     calculatedBalanceReceivedTotal,
     depositAmountNetOfPartnerReturnedOverlap,
     (formData as { status?: string }).status,
+    pricingFieldsFromDb.onSiteBalanceAmount,
   ])
 
   // 입금 내역 조회 및 자동 계산 (formData는 formDataRef로만 참조해 의존성 루프 방지)
@@ -1035,7 +1070,9 @@ export default function PricingSection({
     const shouldWrite =
       stored === undefined ||
       stored === null ||
-      (stored === 0 && calculatedBalance > 0.01) ||
+      (stored === 0 &&
+        calculatedBalance > 0.01 &&
+        pricingFieldsFromDb.onSiteBalanceAmount !== true) ||
       balanceDifference > 0.01
 
     const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
@@ -1064,6 +1101,7 @@ export default function PricingSection({
     setFormData,
     productSalePriceCommitTick,
     depositAmountNetOfPartnerReturnedOverlap,
+    pricingFieldsFromDb.onSiteBalanceAmount,
   ])
 
   // depositAmount를 할인 후 상품가격으로 자동 업데이트 (상품 가격이나 쿠폰 변경 시)
@@ -1103,10 +1141,11 @@ export default function PricingSection({
           const reservationCancelled =
             formData.status != null &&
             ['cancelled', 'canceled'].includes(String(formData.status).toLowerCase().trim())
-          /** 입금·상품가 effect가 채널 결제 입력을 덮어쓰지 않음 (수동 입력·취소 후 부분 정산·DB 저장값) */
+          /** 입금·상품가 effect가 채널 결제 입력을 덮어쓰지 않음 (수동 입력·취소 후 부분 정산·DB 저장값·채널 정산 수동) */
           const skipOtaChannelPaymentAuto =
             reservationCancelled ||
             otaChannelPaymentUserEditedRef.current ||
+            channelSettlementUserEditedRef.current ||
             channelPaymentLoadedFromDb ||
             channelPaymentAmountFieldFocusedRef.current ||
             channelPaymentPricingTouched
@@ -1249,7 +1288,6 @@ export default function PricingSection({
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
-  const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false
   const isOTAChannel = selectedChannel && (
     selectedChannel.type?.toLowerCase() === 'ota' || 
     selectedChannel.category === 'OTA'
@@ -1408,9 +1446,20 @@ export default function PricingSection({
 
   /**
    * 정산 산식용 gross. 폼 `onlinePaymentAmount` 우선; 없으면 DB에 net만 있을 때 `deriveCommissionGrossForSettlement`로 복원.
+   * 취소·자체 채널: online이 고객 순잔액만 담기고 보증금이 실제 캡처액이면 gross는 보증금 우선(③에서 max(Returned, 투어환불) 이중 차감 방지).
    */
   const channelPaymentGrossDb = useMemo(() => {
     const online = Number(formData.onlinePaymentAmount)
+    const dep = Number(formData.depositAmount) || 0
+    const onlineMissingOrTiny = !Number.isFinite(online) || Math.abs(online) < 0.005
+    if (
+      isReservationCancelled &&
+      !isOTAChannel &&
+      dep > 0.005 &&
+      (onlineMissingOrTiny || dep > online + 0.02)
+    ) {
+      return dep
+    }
     if (Number.isFinite(online) && online !== 0) return online
     const raw = formData.commission_base_price
     const stored =
@@ -1429,6 +1478,7 @@ export default function PricingSection({
     formData.depositAmount,
     formData.productPriceTotal,
     isOTAChannel,
+    isReservationCancelled,
   ])
 
   /** 자체(비-OTA) 채널: `computeChannelPaymentAfterReturn` / 정산과 동일 입력(상품+불포함·옵션·추가비용·카드수수료 등). */
@@ -1446,9 +1496,19 @@ export default function PricingSection({
     const ret = Math.max(0, Number(returnedAmount) || 0)
     const manualR = Math.max(0, Number(formData.refundAmount) || 0)
     const returnedForSettlementCompute = Math.max(ret, manualR)
+    const onl = Number(formData.onlinePaymentAmount)
+    const depL = Number(formData.depositAmount) || 0
+    const onlineMissingOrTiny = !Number.isFinite(onl) || Math.abs(onl) < 0.005
+    const onlineForEngine =
+      isReservationCancelled &&
+      !isOTAChannel &&
+      depL > 0.005 &&
+      (onlineMissingOrTiny || depL > onl + 0.02)
+        ? depL
+        : onl || channelPaymentGrossDb
     return {
       depositAmount: Number(formData.depositAmount) || 0,
-      onlinePaymentAmount: Number(formData.onlinePaymentAmount) || channelPaymentGrossDb,
+      onlinePaymentAmount: onlineForEngine,
       productPriceTotal: productTotalForSettlement,
       couponDiscount: Number(formData.couponDiscount) || 0,
       additionalDiscount: Number(formData.additionalDiscount) || 0,
@@ -1536,7 +1596,17 @@ export default function PricingSection({
         const grossForDisplay =
           hasOnline && Math.abs(onl) > 1e-9 ? onl : hasCommissionBase && cb > 0.005 ? cb : null
         if (grossForDisplay != null && grossForDisplay > 0.005) {
-          return Math.max(0, roundUsd2(grossForDisplay - effectiveReturnOffGross))
+          let g = grossForDisplay
+          /** 취소·자체: 폼 online이 순잔액만 있고 보증금이 실제 캡처면 gross로 보증금 사용(이중 차감·$0 방지) */
+          if (
+            isReservationCancelled &&
+            !isOTAChannel &&
+            dep > g + 0.02 &&
+            effectiveReturnOffGross > 0.005
+          ) {
+            g = dep
+          }
+          return Math.max(0, roundUsd2(g - effectiveReturnOffGross))
         }
       }
       return roundUsd2(computeChannelPaymentAfterReturn(selfChannelPaymentEngineInput))
@@ -1585,6 +1655,7 @@ export default function PricingSection({
     formData.depositAmount,
     discountedProductPrice,
     isOTAChannel,
+    isReservationCancelled,
     formData.commission_base_price,
     formData.onlinePaymentAmount,
     pricingFieldsFromDb.onlinePaymentAmount,
@@ -1699,7 +1770,24 @@ export default function PricingSection({
     const lines: LedgerLine[] = []
 
     if (isReservationCancelled && !isOTAChannel) {
-      return { lines: [], totalRevenue: 0, operatingProfit: 0 }
+      const ch = channelSettlementBeforePartnerReturn
+      const rex = Number(reservationExpensesTotal) || 0
+      lines.push({ sign: '+', labelKo: '채널 정산 금액', labelEn: 'Channel settlement', amount: ch })
+      if (Math.abs(rex) > 0.005) {
+        lines.push({
+          sign: rex >= 0 ? '-' : '+',
+          labelKo: '예약 지출 금액',
+          labelEn: 'Reservation expenses',
+          amount: Math.abs(rex),
+        })
+      }
+      /** 비-OTA 취소: 투어 환불은 ③ 채널 결제·정산 net에 이미 반영 — ④에서 환불 줄로 재차감하지 않음 */
+      const tr = roundUsd2(ch - rex)
+      return {
+        lines,
+        totalRevenue: tr,
+        operatingProfit: roundUsd2(tr - prepTip),
+      }
     }
 
     if (isReservationCancelled && isOTAChannel) {
@@ -2216,70 +2304,14 @@ export default function PricingSection({
     setFormData,
   ])
 
-  // Net 가격 계산
-  const calculateNetPrice = () => {
-    if (isReservationCancelled) {
-      if (isOTAChannel) return channelSettlementBeforePartnerReturn
-      return 0
-    }
-    // OTA 채널일 때는 단순 계산: OTA 판매가 - 쿠폰 할인 + 추가비용 - 커미션
-    if (isOTAChannel) {
-      const otaSalePrice = formData.productPriceTotal // OTA 판매가 (초이스 포함)
-      const afterCoupon = otaSalePrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost - manualRefundAmount
-      
-      let commissionAmount = 0
-      if (effectiveCommissionAmount > 0) {
-        commissionAmount = effectiveCommissionAmount
-      } else {
-        commissionAmount = afterCoupon * (formData.commission_percent / 100)
-      }
-      
-      return afterCoupon - commissionAmount
-    }
-    
-    const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal + reservationOptionsTotalPrice - manualRefundAmount
-    
-    // commission_base_price_only가 true인 경우, 판매가격에만 커미션 적용
-    if (commissionBasePriceOnly) {
-      const baseProductPrice = calculateProductPriceTotal()
-      // 초이스별 불포함 금액 사용 (없으면 기본 불포함 금액)
-      const notIncludedTotal = notIncludedBreakdown.totalUsd
-      
-      // 판매가격만 계산 (초이스와 불포함 금액 제외)
-      const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost - manualRefundAmount
-      
-      let commissionAmount = 0
-      if (effectiveCommissionAmount > 0) {
-        commissionAmount = effectiveCommissionAmount
-      } else {
-        commissionAmount = basePriceForCommission * (formData.commission_percent / 100)
-      }
-      
-      // Net = 판매가격 - 커미션 + 불포함 금액 (초이스 판매총액은 불포함과 중복이므로 가산하지 않음)
-      return basePriceForCommission - commissionAmount + notIncludedTotal
-    } else {
-      // 기존 로직: 전체 가격에 커미션 적용
-      if (effectiveCommissionAmount > 0) {
-        return totalPrice - effectiveCommissionAmount
-      } else {
-        return totalPrice * (1 - formData.commission_percent / 100)
-      }
-    }
-  }
-
   // 정산 카드 하단 설명 표시 (모바일: 클릭 시 토글)
   const [expandedSettlementCard, setExpandedSettlementCard] = useState<string | null>(null)
 
-  // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합)
+  /** 정산 정보: ④ 운영이익 − 예약·투어(배정된 투어만) 지출 */
   const calculateProfit = () => {
-    if (isReservationCancelled) {
-      if (isOTAChannel) {
-        return channelSettlementBeforePartnerReturn - reservationExpensesTotal - tourExpensesTotal
-      }
-      return 0
-    }
-    const netPrice = calculateNetPrice()
-    return netPrice - reservationExpensesTotal - tourExpensesTotal
+    return roundUsd2(
+      companyViewRevenueLedger.operatingProfit - reservationExpensesTotal - tourExpensesTotal
+    )
   }
 
   // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
@@ -2304,6 +2336,7 @@ export default function PricingSection({
         const priceDifference = Math.abs(currentOnlinePaymentAmount - targetOnline)
 
         const userEditedChannelPayment =
+          channelSettlementUserEditedRef.current ||
           channelPaymentPricingTouched ||
           (isOTAChannel
             ? otaChannelPaymentUserEditedRef.current
@@ -2442,6 +2475,7 @@ export default function PricingSection({
     }
     if (formData.channelId !== prevChannelIdRef.current) {
       prevChannelIdRef.current = formData.channelId
+      channelSettlementUserEditedRef.current = false
       nonOtaChannelPaymentUserEditedRef.current = false
       nonOtaChannelPaymentStopProductAutoSyncRef.current = false
       loadedCommissionAmountRef.current = null
@@ -3528,6 +3562,33 @@ export default function PricingSection({
                   ${calculateTotalCustomerPayment().toFixed(2)}
                 </span>
               </div>
+              {isExistingPricingLoaded && reservationPricingId && pricingDbSnapshot != null && (
+                <div className="mt-1.5 rounded border border-slate-200 bg-slate-50/90 px-2 py-1.5 text-[10px] leading-snug text-slate-700">
+                  <div className="flex justify-between gap-2">
+                    <span className="shrink-0 text-slate-600">
+                      {isKorean ? 'DB total_price (로드 시)' : 'DB total_price (at load)'}
+                    </span>
+                    <span className="font-mono tabular-nums">
+                      ${(Number(pricingDbSnapshot.total_price) || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 border-t border-slate-200/80 pt-1 mt-1">
+                    <span className="shrink-0 text-slate-600">
+                      {isKorean ? '① 화면 계산' : '① Calculated'}
+                    </span>
+                    <span className="font-mono tabular-nums">${calculateTotalCustomerPayment().toFixed(2)}</span>
+                  </div>
+                  {Math.abs(
+                    (Number(pricingDbSnapshot.total_price) || 0) - calculateTotalCustomerPayment()
+                  ) > 0.02 && (
+                    <p className="mt-1 text-amber-800">
+                      {isKorean
+                        ? '위 두 값이 다르면, 저장 시 예약 폼 로직으로 DB 총액이 갱신됩니다.'
+                        : 'If these differ, saving updates DB totals via the reservation form rules.'}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 2️⃣ 고객 실제 지불 내역 (Payment Status) */}
@@ -3816,14 +3877,14 @@ export default function PricingSection({
                           )
                           isCardFeeManuallyEdited.current = false
                           setFormData((prev: typeof formData) => ({
-                            ...omitChannelSettlementAmount(prev),
+                            ...stripChannelSettlementUnlessLocked(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: numValue > 0 ? numValue : commissionBasePrice,
                             commission_amount: calculatedCommission,
                           }))
                         } else {
                           setFormData((prev: typeof formData) => ({
-                            ...omitChannelSettlementAmount(prev),
+                            ...stripChannelSettlementUnlessLocked(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount,
                           }))
@@ -3860,7 +3921,7 @@ export default function PricingSection({
                           )
                           isCardFeeManuallyEdited.current = false
                           setFormData((prev: typeof formData) => ({
-                            ...omitChannelSettlementAmount(prev),
+                            ...stripChannelSettlementUnlessLocked(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: finalValue > 0 ? finalValue : commissionBasePrice,
                             commission_amount: calculatedCommission,
@@ -3869,7 +3930,7 @@ export default function PricingSection({
                           nonOtaChannelPaymentUserEditedRef.current = true
                           nonOtaChannelPaymentStopProductAutoSyncRef.current = true
                           setFormData((prev: typeof formData) => ({
-                            ...omitChannelSettlementAmount(prev),
+                            ...stripChannelSettlementUnlessLocked(prev),
                             onlinePaymentAmount: actualAmount,
                             commission_base_price: actualAmount,
                           }))
@@ -3941,7 +4002,7 @@ export default function PricingSection({
                               percent
                             )
                             setFormData((prev: typeof formData) => ({
-                              ...omitChannelSettlementAmount(prev),
+                              ...stripChannelSettlementUnlessLocked(prev),
                               commission_percent: percent,
                               commission_amount: calculatedAmount,
                             }))
@@ -3985,7 +4046,7 @@ export default function PricingSection({
                           markPricingEdited('commission_amount', 'channel_settlement_amount')
                           console.log('PricingSection: commission_amount 수동 입력:', newAmount)
                           setFormData((prev: typeof formData) => ({
-                            ...omitChannelSettlementAmount(prev),
+                            ...stripChannelSettlementUnlessLocked(prev),
                             commission_amount: newAmount,
                           }))
                         }}
@@ -3999,7 +4060,7 @@ export default function PricingSection({
                           isCardFeeManuallyEdited.current = true
                           markPricingEdited('commission_amount', 'channel_settlement_amount')
                           setFormData((prev: typeof formData) => ({
-                            ...omitChannelSettlementAmount(prev),
+                            ...stripChannelSettlementUnlessLocked(prev),
                             commission_amount: finalAmount,
                           }))
                           setCommissionAmountInput('')
@@ -4029,7 +4090,7 @@ export default function PricingSection({
                               markPricingEdited('commission_percent', 'channel_settlement_amount')
                               const newPercent = Number(e.target.value) || 0
                               setFormData((prev: typeof formData) => ({
-                                ...omitChannelSettlementAmount(prev),
+                                ...stripChannelSettlementUnlessLocked(prev),
                                 commission_percent: newPercent,
                               }))
                             }}
@@ -4068,7 +4129,7 @@ export default function PricingSection({
                             isCardFeeManuallyEdited.current = true
                           markPricingEdited('commission_amount', 'channel_settlement_amount')
                             setFormData((prev: typeof formData) => ({
-                              ...omitChannelSettlementAmount(prev),
+                              ...stripChannelSettlementUnlessLocked(prev),
                               commission_amount: newAmount,
                             }))
                           }}
@@ -4082,7 +4143,7 @@ export default function PricingSection({
                             isCardFeeManuallyEdited.current = true
                           markPricingEdited('commission_amount', 'channel_settlement_amount')
                             setFormData((prev: typeof formData) => ({
-                              ...omitChannelSettlementAmount(prev),
+                              ...stripChannelSettlementUnlessLocked(prev),
                               commission_amount: finalAmount,
                             }))
                             setCommissionAmountInput('')
@@ -4120,6 +4181,7 @@ export default function PricingSection({
                       const n = Number(inputValue)
                       if (inputValue === '' || inputValue === '-') return
                       if (Number.isFinite(n)) {
+                        channelSettlementUserEditedRef.current = true
                         markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => ({
                           ...prev,
@@ -4136,10 +4198,12 @@ export default function PricingSection({
                       setIsChannelSettlementAmountFocused(false)
                       const raw = channelSettlementAmountInput.trim()
                       if (raw === '') {
+                        channelSettlementUserEditedRef.current = false
                         markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => omitChannelSettlementAmount({ ...prev }))
                       } else {
                         const finalValue = roundUsd2(Number(raw) || 0)
+                        channelSettlementUserEditedRef.current = true
                         markPricingEdited('channel_settlement_amount')
                         setFormData((prev: typeof formData) => ({
                           ...prev,
@@ -4290,6 +4354,41 @@ export default function PricingSection({
                           </span>
                         </div>
                       )}
+                      {manualRefundAmount > 0.005 &&
+                        isReservationCancelled &&
+                        !isOTAChannel &&
+                        (Number(formData.depositAmount) || 0) > 0.005 && (
+                          <div className="pt-2.5 text-[11px] leading-snug text-gray-600">
+                            {isKorean ? (
+                              <>
+                                <span className="font-medium text-gray-700">④ 총매출 참고:</span> 고객 결제(보증금) $
+                                {(Number(formData.depositAmount) || 0).toFixed(2)} − 투어 환불(수동) $
+                                {manualRefundAmount.toFixed(2)} ={' '}
+                                <span className="font-semibold text-gray-900 tabular-nums">
+                                  $
+                                  {roundUsd2(
+                                    Math.max(0, Number(formData.depositAmount) || 0) - manualRefundAmount
+                                  ).toFixed(2)}
+                                </span>
+                                . 취소·자체 채널은 이 금액이 ③ 채널 정산 net과 같으면 위 ④ 합계와 맞습니다.
+                              </>
+                            ) : (
+                              <>
+                                <span className="font-medium text-gray-700">For ④ revenue:</span> customer paid
+                                (deposit) ${(Number(formData.depositAmount) || 0).toFixed(2)} − tour refund (manual) $
+                                {manualRefundAmount.toFixed(2)} ={' '}
+                                <span className="font-semibold text-gray-900 tabular-nums">
+                                  $
+                                  {roundUsd2(
+                                    Math.max(0, Number(formData.depositAmount) || 0) - manualRefundAmount
+                                  ).toFixed(2)}
+                                </span>
+                                . Cancelled direct bookings: when this matches ③ channel settlement net, section ④
+                                totals align.
+                              </>
+                            )}
+                          </div>
+                        )}
                     </div>
                     )}
                     {unpaidRefundOutstanding > 0.005 && (
@@ -4335,6 +4434,45 @@ export default function PricingSection({
                     ${companyViewRevenueLedger.operatingProfit.toFixed(2)}
                   </span>
                 </div>
+                {isExistingPricingLoaded && reservationPricingId && pricingDbSnapshot != null && (
+                  <div className="mt-2 rounded border border-emerald-200/80 bg-white/80 px-2 py-1.5 text-[10px] leading-snug text-gray-700">
+                    <div className="font-medium text-gray-800 mb-1">
+                      {isKorean ? 'DB 저장 스냅샷 (로드 시)' : 'DB snapshot (at load)'}
+                    </div>
+                    {pricingDbSnapshot.company_total_revenue != null && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-gray-600 shrink-0">company_total_revenue</span>
+                        <span className="font-mono tabular-nums">
+                          ${(Number(pricingDbSnapshot.company_total_revenue) || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    {pricingDbSnapshot.operating_profit != null && (
+                      <div className="flex justify-between gap-2 mt-0.5">
+                        <span className="text-gray-600 shrink-0">operating_profit</span>
+                        <span className="font-mono tabular-nums">
+                          ${(Number(pricingDbSnapshot.operating_profit) || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    {((pricingDbSnapshot.company_total_revenue != null &&
+                      Math.abs(
+                        (Number(pricingDbSnapshot.company_total_revenue) || 0) -
+                          companyViewRevenueLedger.totalRevenue
+                      ) > 0.02) ||
+                      (pricingDbSnapshot.operating_profit != null &&
+                        Math.abs(
+                          (Number(pricingDbSnapshot.operating_profit) || 0) -
+                            companyViewRevenueLedger.operatingProfit
+                        ) > 0.02)) ? (
+                      <p className="mt-1 text-amber-800">
+                        {isKorean
+                          ? '저장된 매출·이익과 위 계산(④)이 다릅니다. 예약 저장 시 DB 값이 다시 계산되어 갱신됩니다.'
+                          : 'Stored revenue/profit differs from ④ above; saving the reservation recomputes DB columns.'}
+                      </p>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -4358,7 +4496,10 @@ export default function PricingSection({
                   </div>
                 )}
                 <button
-                  onClick={fetchReservationExpenses}
+                  onClick={() => {
+                    void fetchReservationExpenses()
+                    void fetchTourExpenses()
+                  }}
                   disabled={loadingExpenses}
                   className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-50"
                   title="지출 정보 새로고침"
@@ -4369,30 +4510,69 @@ export default function PricingSection({
             </div>
             
             {(() => {
-              // Mania Tour 또는 Mania Service인지 확인
               const product = products.find(p => p.id === formData.productId)
               const subCategory = product?.sub_category || ''
               const isManiaTour = subCategory === 'Mania Tour' || subCategory === 'Mania Service'
-              
+              const showTourCol = isManiaTour && tourExpenseAllocationEligible
+              const gridClass = showTourCol ? 'md:grid-cols-5' : 'md:grid-cols-4'
+              const ledgerTr = companyViewRevenueLedger.totalRevenue
+              const ledgerOp = companyViewRevenueLedger.operatingProfit
+
               return (
-                <div className={`grid grid-cols-1 gap-3 ${isManiaTour ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
-                  {/* Net 가격 */}
+                <div className={`grid grid-cols-1 gap-3 ${gridClass}`}>
+                  {/* 총 매출 — ④와 동일 */}
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => setExpandedSettlementCard(prev => prev === 'net-price' ? null : 'net-price')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'net-price' ? null : 'net-price') } }}
-                    className="group bg-white p-3 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
+                    onClick={() =>
+                      setExpandedSettlementCard((prev) => (prev === 'total-revenue' ? null : 'total-revenue'))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setExpandedSettlementCard((prev) => (prev === 'total-revenue' ? null : 'total-revenue'))
+                      }
+                    }}
+                    className="group bg-white p-3 rounded-lg border border-emerald-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
                   >
                     <div className="flex items-center space-x-1.5 mb-1">
-                      <DollarSign className="h-3 w-3 text-blue-500" />
-                      <div className="text-xs font-medium text-gray-700">Net 가격</div>
+                      <TrendingUp className="h-3 w-3 text-emerald-600" />
+                      <div className="text-xs font-medium text-gray-700">{isKorean ? '총 매출' : 'Total revenue'}</div>
                     </div>
-                    <div className="text-base font-bold text-blue-600 mb-0.5">
-                      ${calculateNetPrice().toFixed(2)}
+                    <div className="text-base font-bold text-emerald-700 mb-0.5">${ledgerTr.toFixed(2)}</div>
+                    <div
+                      className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'total-revenue' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}
+                    >
+                      {isKorean ? '④ 최종 매출과 동일' : 'Same as section ④ total revenue'}
                     </div>
-                    <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'net-price' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
-                      커미션 차감 후 수령액
+                  </div>
+
+                  {/* 운영 이익 — ④와 동일 */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() =>
+                      setExpandedSettlementCard((prev) => (prev === 'operating-profit' ? null : 'operating-profit'))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setExpandedSettlementCard((prev) =>
+                          prev === 'operating-profit' ? null : 'operating-profit'
+                        )
+                      }
+                    }}
+                    className="group bg-white p-3 rounded-lg border border-purple-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
+                  >
+                    <div className="flex items-center space-x-1.5 mb-1">
+                      <DollarSign className="h-3 w-3 text-purple-600" />
+                      <div className="text-xs font-medium text-gray-700">{isKorean ? '운영 이익' : 'Operating profit'}</div>
+                    </div>
+                    <div className="text-base font-bold text-purple-600 mb-0.5">${ledgerOp.toFixed(2)}</div>
+                    <div
+                      className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'operating-profit' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}
+                    >
+                      {isKorean ? '④ 운영 이익과 동일' : 'Same as section ④ operating profit'}
                     </div>
                   </div>
 
@@ -4400,8 +4580,19 @@ export default function PricingSection({
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => setExpandedSettlementCard(prev => prev === 'reservation-expenses' ? null : 'reservation-expenses')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'reservation-expenses' ? null : 'reservation-expenses') } }}
+                    onClick={() =>
+                      setExpandedSettlementCard((prev) =>
+                        prev === 'reservation-expenses' ? null : 'reservation-expenses'
+                      )
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setExpandedSettlementCard((prev) =>
+                          prev === 'reservation-expenses' ? null : 'reservation-expenses'
+                        )
+                      }
+                    }}
                     className="group bg-white p-3 rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
                   >
                     <div className="flex items-center space-x-1.5 mb-1">
@@ -4411,23 +4602,31 @@ export default function PricingSection({
                     <div className="text-base font-bold text-red-600 mb-0.5">
                       ${reservationExpensesTotal.toFixed(2)}
                     </div>
-                    <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'reservation-expenses' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
+                    <div
+                      className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'reservation-expenses' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}
+                    >
                       승인/대기/기타 지출 (거부 제외)
                     </div>
                   </div>
 
-                  {/* 투어 지출 총합 (Mania Tour 또는 Mania Service인 경우만) */}
-                  {isManiaTour && (
+                  {showTourCol && (
                     <div
                       role="button"
                       tabIndex={0}
-                      onClick={() => setExpandedSettlementCard(prev => prev === 'tour-expenses' ? null : 'tour-expenses')}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'tour-expenses' ? null : 'tour-expenses') } }}
+                      onClick={() =>
+                        setExpandedSettlementCard((prev) => (prev === 'tour-expenses' ? null : 'tour-expenses'))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setExpandedSettlementCard((prev) => (prev === 'tour-expenses' ? null : 'tour-expenses'))
+                        }
+                      }}
                       className="group bg-white p-3 rounded-lg border border-orange-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
                     >
                       <div className="flex items-center space-x-1.5 mb-1">
                         {loadingTourExpenses ? (
-                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-500"></div>
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-500" />
                         ) : (
                           <AlertCircle className="h-3 w-3 text-orange-500" />
                         )}
@@ -4436,18 +4635,27 @@ export default function PricingSection({
                       <div className="text-base font-bold text-orange-600 mb-0.5">
                         ${tourExpensesTotal.toFixed(2)}
                       </div>
-                      <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'tour-expenses' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
-                        투어 총 지출 ÷ 투어 인원수 × 예약 인원수
+                      <div
+                        className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'tour-expenses' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}
+                      >
+                        {isKorean
+                          ? 'tours.reservation_ids에 이 예약이 있을 때만 배분'
+                          : 'Allocated only when this reservation is on the tour roster'}
                       </div>
                     </div>
                   )}
 
-                  {/* 수익 */}
+                  {/* 수익: ④ 운영이익 − 예약·투어 지출 */}
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => setExpandedSettlementCard(prev => prev === 'profit' ? null : 'profit')}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'profit' ? null : 'profit') } }}
+                    onClick={() => setExpandedSettlementCard((prev) => (prev === 'profit' ? null : 'profit'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setExpandedSettlementCard((prev) => (prev === 'profit' ? null : 'profit'))
+                      }
+                    }}
                     className="group bg-white p-3 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
                   >
                     <div className="flex items-center space-x-1.5 mb-1">
@@ -4458,11 +4666,17 @@ export default function PricingSection({
                       )}
                       <div className="text-xs font-medium text-gray-700">수익</div>
                     </div>
-                    <div className={`text-base font-bold mb-0.5 ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <div
+                      className={`text-base font-bold mb-0.5 ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                    >
                       ${calculateProfit().toFixed(2)}
                     </div>
-                    <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'profit' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
-                      Net 가격 - 지출 총합{isManiaTour ? ' - 투어 지출' : ''}
+                    <div
+                      className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'profit' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}
+                    >
+                      {isKorean
+                        ? `운영 이익 − 예약 지출${showTourCol ? ' − 투어 지출' : ''}`
+                        : `Operating profit − reservation${showTourCol ? ' − tour' : ''} expenses`}
                     </div>
                   </div>
                 </div>
@@ -4492,7 +4706,10 @@ export default function PricingSection({
                   )}
                 </div>
                 <span className={`text-base font-bold ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {calculateNetPrice() > 0 ? ((calculateProfit() / calculateNetPrice()) * 100).toFixed(1) : '0.0'}%
+                  {companyViewRevenueLedger.totalRevenue > 0.005
+                    ? ((calculateProfit() / companyViewRevenueLedger.totalRevenue) * 100).toFixed(1)
+                    : '0.0'}
+                  %
                 </span>
               </div>
             </div>

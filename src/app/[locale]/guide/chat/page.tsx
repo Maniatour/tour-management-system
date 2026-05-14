@@ -207,7 +207,13 @@ export default function GuideChatPage() {
         throw error
       }
     },
-    dependencies: [user?.email]
+    dependencies: [user?.email, isSimulating, simulatedUser?.email],
+    ...(user?.email
+      ? {
+          cacheKey: `guide-chat-tab-team-rooms-${user.email}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`,
+          offlineGuideCache: true as const,
+        }
+      : {}),
   })
 
   // 투어 채팅방 데이터 로딩
@@ -343,7 +349,15 @@ export default function GuideChatPage() {
         throw error
       }
     },
-    dependencies: [user?.email, locale]
+    dependencies: [user?.email, locale, isSimulating, simulatedUser?.email],
+    ...(() => {
+      const email = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+      if (!email) return {}
+      return {
+        cacheKey: `guide-chat-tab-tour-rooms-${email}-${locale}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`,
+        offlineGuideCache: true as const,
+      }
+    })(),
   })
 
   // 메시지 로딩
