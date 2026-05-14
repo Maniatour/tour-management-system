@@ -15,6 +15,22 @@ export function reservationAuditRowHasStatusFieldChange(
   return Array.isArray(row.changed_fields) && row.changed_fields.includes('status')
 }
 
+/** `reservation_status_events` 한 행을 기존 감사 기반 헬퍼와 호환되는 형태로 변환 */
+export function reservationStatusEventRowToAuditRow(row: {
+  reservation_id: string
+  occurred_at: string
+  from_status: string | null
+  to_status: string | null
+}): ReservationStatusAuditRow {
+  return {
+    record_id: row.reservation_id,
+    created_at: row.occurred_at,
+    changed_fields: ['status'],
+    old_values: { status: row.from_status },
+    new_values: { status: row.to_status },
+  }
+}
+
 export function statusFromReservationAuditJson(json: unknown): string | null {
   if (!json || typeof json !== 'object') return null
   const v = (json as Record<string, unknown>).status

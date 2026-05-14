@@ -103,6 +103,7 @@ import {
   isIntoCancelledLikeTransition,
   statusTransitionSortIndex,
   reservationAuditRowHasStatusFieldChange,
+  reservationStatusEventRowToAuditRow,
 } from '@/lib/reservationStatusAudit'
 import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
 import { describeError, serializeError } from '@/lib/errorSerialization'
@@ -257,16 +258,19 @@ function buildSimpleCardStatusChangeAuditRequestFromFiltered(
   return { rangeStart: rangeStartIso, rangeEnd: rangeEndIso, targets, uniqueIds }
 }
 
-function computeSimpleCardStatusChangeAuditContentKey(
+/** 심플 카드 상태 감사: effect 의존 키 + 네트워크 조회 필요 여부(첫 프레임부터 로딩 UI로 맞춤) */
+function computeSimpleCardStatusAuditPlan(
   groupByDate: boolean,
   cardLayout: string,
   filteredReservations: Reservation[],
   cardsWeekPage: number
-): string | null {
+): null | { contentKey: string; needsNetworkFetch: boolean } {
   if (!groupByDate || cardLayout !== 'simple') return null
   const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
   const keys = req.targets.map((t) => t.key).sort().join(',')
-  return `${req.rangeStart}\u0001${req.rangeEnd}\u0001${keys}`
+  const contentKey = `${req.rangeStart}\u0001${req.rangeEnd}\u0001${keys}`
+  const needsNetworkFetch = req.targets.length > 0 && req.uniqueIds.length > 0
+  return { contentKey, needsNetworkFetch }
 }
 
 /**
@@ -847,12 +851,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   >({})
   const [simpleCardStatusTransitionLoading, setSimpleCardStatusTransitionLoading] = useState(false)
   /**
-   * 심플 카드 status 감사(audit_logs): `simpleCardAuditContentKey`(주간+대상 목록)마다 한 번만 조회.
+   * 심플 카드 status 전환(`reservation_status_events`): `simpleCardAuditContentKey`(주간+대상 목록)마다 한 번만 조회.
    * 주(`cardsWeekPage`)가 바뀌면 키가 달라지므로 다시 fetch한다. 세션 전역 `done` ref는 키 변경 시 재조회를 막아 0건으로 보이는 버그가 난다.
    */
   const lastSimpleCardStatusAuditFetchedKeyRef = useRef<string | null>(null)
 
-  /** 일별 등록·취소 차트: 취소 = 그날 감사상 취소/삭제 전환일만 (DateGroupHeader 심플 카드와 동일 기준) */
+  /** 일별 등록·취소 차트: 취소 = 그날 `reservation_status_events` 기준 취소/삭제 전환일만 (DateGroupHeader 심플 카드와 동일 기준) */
   const [regCancelChartAuditRowsByRecordId, setRegCancelChartAuditRowsByRecordId] = useState<
     Record<string, ReservationStatusAuditRow[]>
   >({})
@@ -2205,24 +2209,28 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           for (let i = 0; i < uniqueIds.length; i += chunkSize) {
             const chunk = uniqueIds.slice(i, i + chunkSize)
             const { data, error } = await supabase
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- audit_logs 미생성 타입
-              .from('audit_logs' as any)
-              .select('record_id, old_values, new_values, changed_fields, created_at')
-              .eq('table_name', 'reservations')
-              .eq('action', 'UPDATE')
-              .gte('created_at', range.rangeStartIso)
-              .lte('created_at', range.rangeEndIso)
-              .in('record_id', chunk)
+              .from('reservation_status_events')
+              .select('reservation_id, from_status, to_status, occurred_at')
+              .gte('occurred_at', range.rangeStartIso)
+              .lte('occurred_at', range.rangeEndIso)
+              .in('reservation_id', chunk)
             if (cancelled) return
             if (error) {
               if (!isAbortLikeError(error) && !cancelled) {
-                console.error('audit_logs (reg-cancel chart):', error)
+                console.error('reservation_status_events (reg-cancel chart):', error)
               }
               if (isAbortLikeError(error)) return
               break
             }
             for (const row of data || []) {
-              const r = row as unknown as ReservationStatusAuditRow
+              const r = reservationStatusEventRowToAuditRow(
+                row as {
+                  reservation_id: string
+                  occurred_at: string
+                  from_status: string | null
+                  to_status: string | null
+                }
+              )
               if (!reservationAuditRowHasStatusFieldChange(r)) continue
               const id = String(r.record_id ?? '').trim()
               if (!id) continue
@@ -2232,7 +2240,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             }
           }
         } catch (e) {
-          if (!cancelled && !isAbortLikeError(e)) console.error('audit_logs chart fetch failed:', e)
+          if (!cancelled && !isAbortLikeError(e)) console.error('reservation_status_events chart fetch failed:', e)
         }
         if (cancelled) return
         const next: Record<string, ReservationStatusAuditRow[]> = {}
@@ -2454,12 +2462,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [groupedReservations, groupByDate])
 
   /** 참조가 아닌 감사 대상 식별 — 목록이 같은 내용으로 자주 갱신돼도 로딩 문구가 깜빡이지 않게 함 */
-  const simpleCardAuditContentKey = computeSimpleCardStatusChangeAuditContentKey(
-    groupByDate,
-    cardLayout,
-    filteredReservations,
-    cardsWeekPage
+  const simpleCardStatusAuditPlan = useMemo(
+    () => computeSimpleCardStatusAuditPlan(groupByDate, cardLayout, filteredReservations, cardsWeekPage),
+    [groupByDate, cardLayout, filteredReservations, cardsWeekPage]
   )
+  const simpleCardAuditContentKey = simpleCardStatusAuditPlan?.contentKey ?? null
+  /** effect 가 돌기 전 첫 프레임에도 잘못된 0건 요약이 보이지 않도록 */
+  const simpleCardStatusTransitionLoadingEffective =
+    simpleCardStatusTransitionLoading ||
+    (simpleCardStatusAuditPlan != null &&
+      simpleCardStatusAuditPlan.needsNetworkFetch &&
+      simpleCardStatusAuditPlan.contentKey !== lastSimpleCardStatusAuditFetchedKeyRef.current)
 
   useEffect(() => {
     if (simpleCardAuditContentKey === null) {
@@ -2500,18 +2513,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         for (let i = 0; i < req.uniqueIds.length; i += chunkSize) {
           const chunk = req.uniqueIds.slice(i, i + chunkSize)
           const { data, error } = await supabase
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- audit_logs 미생성 타입
-            .from('audit_logs' as any)
-            .select('record_id, old_values, new_values, changed_fields, created_at')
-            .eq('table_name', 'reservations')
-            .eq('action', 'UPDATE')
-            .gte('created_at', req.rangeStart)
-            .lte('created_at', req.rangeEnd)
-            .in('record_id', chunk)
+            .from('reservation_status_events')
+            .select('reservation_id, from_status, to_status, occurred_at')
+            .gte('occurred_at', req.rangeStart)
+            .lte('occurred_at', req.rangeEnd)
+            .in('reservation_id', chunk)
           if (cancelled) return
           if (error) {
             if (!isAbortLikeError(error) && !cancelled) {
-              console.error('audit_logs (status transitions):', error)
+              console.error('reservation_status_events (status transitions):', error)
             }
             if (isAbortLikeError(error)) {
               if (!cancelled) setSimpleCardStatusTransitionLoading(false)
@@ -2520,13 +2530,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             break
           }
           for (const row of data || []) {
-            const r = row as unknown as ReservationStatusAuditRow
+            const r = reservationStatusEventRowToAuditRow(
+              row as {
+                reservation_id: string
+                occurred_at: string
+                from_status: string | null
+                to_status: string | null
+              }
+            )
             if (!reservationAuditRowHasStatusFieldChange(r)) continue
             collected.push(r)
           }
         }
       } catch (e) {
-        if (!cancelled && !isAbortLikeError(e)) console.error('audit_logs fetch failed:', e)
+        if (!cancelled && !isAbortLikeError(e)) console.error('reservation_status_events fetch failed:', e)
       }
 
       if (cancelled) return
@@ -4277,7 +4294,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
                 /** 감사 로그 기준, 당일 표시 대상 상태 전환(대기→확정 · 대기/확정→취소)이 있는 예약만 */
                 const statusListForSimple =
-                  cardLayout === 'simple' && !simpleCardStatusTransitionLoading
+                  cardLayout === 'simple' && !simpleCardStatusTransitionLoadingEffective
                     ? statusList.filter((r) => !!simpleCardStatusTransitionMap[`${r.id}|${date}`])
                     : statusList
 
@@ -4345,7 +4362,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 )
 
                 const simpleCardStatusSubgroups =
-                  statusListForSimple.length > 0 && !simpleCardStatusTransitionLoading
+                  statusListForSimple.length > 0 && !simpleCardStatusTransitionLoadingEffective
                     ? (() => {
                         const buckets = new Map<string, Reservation[]>()
                         for (const r of statusListForSimple) {
@@ -4386,7 +4403,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
                 const cancellationStatsForHeader =
                   cardLayout === 'simple'
-                    ? simpleCardStatusTransitionLoading
+                    ? simpleCardStatusTransitionLoadingEffective
                       ? ({ mode: 'audit-loading' as const } as const)
                       : ({
                           mode: 'audit' as const,
@@ -4477,7 +4494,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                   <span className="text-sm font-semibold text-gray-900 flex items-baseline gap-2 min-w-0 flex-wrap">
                                     <span>{t('groupingLabels.simpleCardGroupStatusChange')}</span>
                                     <span className="text-xs font-normal text-gray-500 tabular-nums">
-                                      {simpleCardStatusTransitionLoading
+                                      {simpleCardStatusTransitionLoadingEffective
                                         ? t('groupingLabels.simpleCardStatusChangeAuditLoadingBadge')
                                         : t('groupingLabels.simpleCardRegistrationSummary', {
                                             count: statusListForSimple.length,
@@ -4498,7 +4515,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                 {statusOpen && (
                                   <div className="border-t border-gray-100 px-2 pb-3 pt-2 space-y-3">
                                     {statusList.length > 0 ? (
-                                      simpleCardStatusTransitionLoading ? (
+                                      simpleCardStatusTransitionLoadingEffective ? (
                                         <p className="text-xs text-gray-500 px-1 py-2 leading-relaxed">
                                           {t('groupingLabels.simpleCardStatusChangeAuditLoadingBody')}
                                         </p>

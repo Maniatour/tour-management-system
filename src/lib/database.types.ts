@@ -5801,6 +5801,51 @@ export type Database = {
           },
         ]
       }
+      reservation_status_events: {
+        Row: {
+          created_at: string
+          from_status: string | null
+          id: string
+          occurred_at: string
+          reservation_id: string
+          to_status: string | null
+          user_email: string | null
+        }
+        Insert: {
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          occurred_at?: string
+          reservation_id: string
+          to_status?: string | null
+          user_email?: string | null
+        }
+        Update: {
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          occurred_at?: string
+          reservation_id?: string
+          to_status?: string | null
+          user_email?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_status_events_reservation_id_fkey"
+            columns: ["reservation_id"]
+            isOneToOne: false
+            referencedRelation: "reservations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_status_events_reservation_id_fkey"
+            columns: ["reservation_id"]
+            isOneToOne: false
+            referencedRelation: "reservations_with_invalid_products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reservation_follow_up_pipeline_manual: {
         Row: {
           cancel_follow_up_manual: boolean
