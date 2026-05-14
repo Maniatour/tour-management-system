@@ -2213,7 +2213,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               .lte('created_at', range.rangeEndIso)
               .in('record_id', chunk)
               // postgrest-js: .contains(col, ['status']) → cs.{status} (따옴표 없음) → PG text[] 파싱 오류·500 가능
-              .contains('changed_fields', '{"status"}')
+              .contains('changed_fields', ['status'])
             if (cancelled) return
             if (error) {
               if (!isAbortLikeError(error) && !cancelled) {
@@ -2506,7 +2506,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             .gte('created_at', req.rangeStart)
             .lte('created_at', req.rangeEnd)
             .in('record_id', chunk)
-            .contains('changed_fields', '{"status"}')
+            .contains('changed_fields', ['status'])
           if (cancelled) return
           if (error) {
             if (!isAbortLikeError(error) && !cancelled) {
