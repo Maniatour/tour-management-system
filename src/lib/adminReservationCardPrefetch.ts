@@ -16,6 +16,8 @@ export type PrefetchedChoiceRow = {
 }
 
 const CHUNK = 32
+/** 순차 32개×N번 왕복 대신 묶음 병렬 — 로딩 문구가 길게 걸리는 것 완화 */
+const CHUNK_WAVE = 5
 
 /**
  * 예약 관리 목록: 카드 N장이 각각 reservation_customers / reservation_choices 를 치면
@@ -32,8 +34,8 @@ export async function prefetchAdminReservationCardSideData(
     out.set(id, [])
   }
 
-  for (let i = 0; i < unique.length; i += CHUNK) {
-    const chunk = unique.slice(i, i + CHUNK)
+  const processChunk = async (chunk: string[]) => {
+    if (chunk.length === 0) return
 
     const { data: rcData, error: rcErr } = await supabase
       .from('reservation_customers')
@@ -112,6 +114,16 @@ export async function prefetchAdminReservationCardSideData(
     for (const rid of chunk) {
       choicesCacheRef.current.set(rid, byRid.get(rid) ?? [])
     }
+  }
+
+  for (let i = 0; i < unique.length; i += CHUNK * CHUNK_WAVE) {
+    const wave: Promise<void>[] = []
+    for (let w = 0; w < CHUNK_WAVE; w++) {
+      const start = i + w * CHUNK
+      if (start >= unique.length) break
+      wave.push(processChunk(unique.slice(start, start + CHUNK)))
+    }
+    await Promise.all(wave)
   }
 
   return out

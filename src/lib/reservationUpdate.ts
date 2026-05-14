@@ -14,6 +14,7 @@ import {
 import {
   isReturnedPaymentStatus,
   summarizePaymentRecordsForBalance,
+  computeCustomerPaymentNetForCompanyRevenueBase,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -453,8 +454,39 @@ export async function updateReservation(
         isOTAChannel,
         returnedAmount,
       })
+      const stPl = String(payload.status || '').toLowerCase().trim()
+      const isResCancelledPl = stPl === 'cancelled' || stPl === 'canceled'
+      const partyPl = {
+        adults: payload.adults,
+        children: payload.child,
+        infants: payload.infant,
+      }
+      const pricingLikePl: Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0] = {
+        product_price_total: newProductTotal,
+        coupon_discount: toNum(pricingInfo.couponDiscount),
+        additional_discount: toNum(pricingInfo.additionalDiscount),
+        additional_cost: toNum(pricingInfo.additionalCost),
+        tax: toNum(pricingInfo.tax),
+        card_fee: toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee),
+        prepayment_cost: toNum(pricingInfo.prepaymentCost),
+        prepayment_tip: toNum(pricingInfo.prepaymentTip),
+        refund_amount: toNum(pricingInfo.refundAmount),
+        option_total: optionActiveSum,
+        required_option_total: newRequiredOptionTotal,
+        private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
+        not_included_price: newNotIncluded,
+        adult_product_price: newAdult,
+        child_product_price: newChild,
+        infant_product_price: newInfant,
+      }
+      const customerNetForStored =
+        !isOTAChannel && !isResCancelledPl
+          ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikePl, partyPl, returnedAmount)
+          : null
       const storedMetrics = computeStoredCompanyRevenueFields({
         channelSettlementBase: channelSettlementToSave,
+        customerPaymentNetForRevenueBase: customerNetForStored,
+        cardFee: toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee),
         reservationStatus: payload.status,
         isOTAChannel,
         isHomepageBooking,

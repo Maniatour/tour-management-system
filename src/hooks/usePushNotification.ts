@@ -34,7 +34,11 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
     if (!isSupported) return
 
     try {
-      const registration = await navigator.serviceWorker.ready
+      const registration = await navigator.serviceWorker.getRegistration()
+      if (!registration) {
+        setIsSubscribed(false)
+        return
+      }
       const subscription = await registration.pushManager.getSubscription()
       setIsSubscribed(!!subscription)
     } catch (error) {
@@ -77,6 +81,12 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
     setIsLoading(true)
 
     try {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[push] Service worker / push는 production에서만 등록됩니다.')
+        setIsLoading(false)
+        return false
+      }
+
       // 권한 요청
       const hasPermission = await requestPermission()
       if (!hasPermission) {
@@ -186,7 +196,11 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
     setIsLoading(true)
 
     try {
-      const registration = await navigator.serviceWorker.ready
+      const registration = await navigator.serviceWorker.getRegistration()
+      if (!registration) {
+        setIsLoading(false)
+        return false
+      }
       const subscription = await registration.pushManager.getSubscription()
 
       if (subscription) {

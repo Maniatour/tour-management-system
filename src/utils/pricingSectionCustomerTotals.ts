@@ -33,8 +33,17 @@ export function computePricingSectionCustomerPaymentGrossLike(params: {
   )
 }
 
-/** PricingSection `calculateTotalCustomerPayment` (Returned 차감 후) */
-export function computePricingSectionCustomerPaymentNet(gross: number, returnedAmount: number): number {
+/**
+ * PricingSection `calculateTotalCustomerPayment` (Returned 차감 후).
+ * 투어 환불 입력(`manualTourRefund`)만큼은 gross에서 이미 빠졌으므로, Returned에서 그만큼은 고객 총액 추가 차감에서 제외.
+ */
+export function computePricingSectionCustomerPaymentNet(
+  gross: number,
+  returnedAmount: number,
+  manualTourRefundAmount: number = 0
+): number {
   const ret = Math.max(0, Number(returnedAmount) || 0)
-  return Math.max(0, roundUsd2(gross - ret))
+  const manualTourRefund = Math.max(0, Number(manualTourRefundAmount) || 0)
+  const returnedSurplus = Math.max(0, roundUsd2(ret - manualTourRefund))
+  return Math.max(0, roundUsd2(gross - returnedSurplus))
 }

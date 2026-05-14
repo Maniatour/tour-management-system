@@ -962,8 +962,13 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   }, [editData, reservation, reservationOptionsTotalUsd, notIncludedBreakdownModal.totalUsd])
 
   const displayCustomerNet = useMemo(
-    () => computePricingSectionCustomerPaymentNet(displayCustomerGross, returnedAmount),
-    [displayCustomerGross, returnedAmount]
+    () =>
+      computePricingSectionCustomerPaymentNet(
+        displayCustomerGross,
+        returnedAmount,
+        Math.max(0, Number(editData?.refund_amount) || 0)
+      ),
+    [displayCustomerGross, returnedAmount, editData?.refund_amount]
   )
 
   const channelSettlementForDisplay = useMemo(() => {
@@ -1061,6 +1066,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
 
   const revenueDisplayInput = useMemo(() => {
     if (!editData || !reservation) return null
+    const useSelfBase = !isOTAChannel && !isReservationCancelled
     return {
       isReservationCancelled,
       isOTAChannel,
@@ -1076,6 +1082,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       refundedAmount,
       omitAdditionalDiscountAndCostFromSum: omitAdditionalDiscountAndCostFromRevenueSumModal,
       excludeHomepageAdditionalCostFromCompanyTotals: isHomepageBookingReservation,
+      customerPaymentNetAsRevenueBase: useSelfBase ? displayCustomerNet : null,
+      cardFeeForCompanyRevenue: isOTAChannel ? editData.card_fee || 0 : 0,
     }
   }, [
     editData,
@@ -1089,6 +1097,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     refundedAmount,
     omitAdditionalDiscountAndCostFromRevenueSumModal,
     isHomepageBookingReservation,
+    displayCustomerNet,
   ])
 
   const totalRevenueDisplay = useMemo(() => {
@@ -1663,8 +1672,20 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     </div>
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-700">채널 결제 금액</span>
-                        <span className="font-medium">${(editData?.deposit_amount || 0).toFixed(2)}</span>
+                        <span
+                          className="text-gray-700 cursor-help"
+                          title={
+                            isOTAChannel
+                              ? undefined
+                              : '자체·파트너 채널: ③ 정산 기준은 ① 고객 총 결제 금액과 같습니다.'
+                          }
+                        >
+                          {isOTAChannel ? '채널 결제 금액' : '고객 총 결제 금액'}
+                        </span>
+                        <span className="font-medium">
+                          $
+                          {(isOTAChannel ? editData?.deposit_amount || 0 : displayCustomerNet).toFixed(2)}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-700">채널 수수료 %</span>

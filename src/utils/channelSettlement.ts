@@ -177,12 +177,9 @@ function roundUsd2(n: number): number {
 
 /**
  * PricingSection「4. 최종 매출 & 운영 이익」의 총 매출(Total Revenue)과 동일한 산식.
- * - 기준: `channelSettlementBeforePartnerReturn`(저장된 channel_settlement_amount 또는 동일 로직 계산값)
- * - OTA만 예약 옵션(reservation_options 합) 가산, 불포함·부가·우리측 Refunded 반영
- * - card_fee(결제 수수료)는 채널 결제 금액 산식에 이미 포함되므로 여기서는 가산하지 않음
- * - 추가할인·추가비용: `omitAdditionalDiscountAndCostFromSum`이 true이면 채널 정산/결제에 이미 반영된 것으로 보아 가산·차감하지 않음
- * - 자체(홈페이지) 채널: `excludeHomepageAdditionalCostFromCompanyTotals`이면 추가할인·선결제 지출을 ④에 반영하지 않음(상단·채널 결제·정산에 이미 반영).
- *   동일 플래그로 추가비용은 가산 후 말미에서 매출에서 제외(기존과 동일).
+ * - OTA: 기준 `channelSettlementBase`(③ 채널 정산) + 옵션·불포함·부가 + 진행 예약 시 폼 카드수수료·선결제 팁(총매출 항목) + 추가할인/추가비용(③에 없을 때 omit 무시)
+ * - Self(`revenueFromCustomerPaymentTotal`): 기준 `channelSettlementBase` = ① 고객 총 결제(넷) — 옵션·불포함·세 등은 이중 가산하지 않음
+ * - 자체(홈페이지): `excludeHomepageAdditionalCostFromCompanyTotals` 규칙 유지
  */
 export type CompanyTotalRevenueInput = {
   channelSettlementBase: number
@@ -204,6 +201,12 @@ export type CompanyTotalRevenueInput = {
   omitAdditionalDiscountAndCostFromSum: boolean
   /** 자체(홈페이지) 예약: ④에서 추가할인·선결제 지출 가산 안 함 · 추가비용은 회사 매출 합에서 제외(정산에 섞인 뒤 말미 차감) */
   excludeHomepageAdditionalCostFromCompanyTotals: boolean
+  /** 비-OTA·진행: `channelSettlementBase`가 고객 총 결제(넷)인 경우 true */
+  revenueFromCustomerPaymentTotal?: boolean
+  /** OTA·진행: ④ 총매출에 가산하는 폼 카드수수료(③ 플랫폼 수수료와 별개) */
+  cardFeeForCompanyRevenue?: number
+  /** OTA·진행: ④ 총매출에 포함하는 선결제 팁(운영이익은 총매출−팁으로 동일 순효과 유지) */
+  prepaymentTipForCompanyRevenue?: number
 }
 
 export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRevenueInput): number {
@@ -220,10 +223,22 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     refundedOurAmount,
     omitAdditionalDiscountAndCostFromSum,
     excludeHomepageAdditionalCostFromCompanyTotals,
+    revenueFromCustomerPaymentTotal = false,
+    cardFeeForCompanyRevenue = 0,
+    prepaymentTipForCompanyRevenue = 0,
   } = inp
 
   if (isReservationCancelled) {
     return roundUsd2(channelSettlementBase)
+  }
+
+  if (revenueFromCustomerPaymentTotal) {
+    let totalRevenue = channelSettlementBase
+    totalRevenue -= refundedOurAmount
+    if (excludeHomepageAdditionalCostFromCompanyTotals && additionalCost > 0) {
+      totalRevenue -= additionalCost
+    }
+    return roundUsd2(totalRevenue)
   }
 
   let totalRevenue = channelSettlementBase
@@ -234,7 +249,11 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   if (notIncludedTotalUsd > 0) {
     totalRevenue += notIncludedTotalUsd
   }
-  if (!omitAdditionalDiscountAndCostFromSum) {
+
+  const omitDiscCostEffective =
+    omitAdditionalDiscountAndCostFromSum && !(isOTAChannel && !isReservationCancelled)
+
+  if (!omitDiscCostEffective) {
     if (additionalDiscount > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
       totalRevenue -= additionalDiscount
     }
@@ -252,6 +271,17 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
 
   if (excludeHomepageAdditionalCostFromCompanyTotals && additionalCost > 0) {
     totalRevenue -= additionalCost
+  }
+
+  if (isOTAChannel && !isReservationCancelled) {
+    const cf = Number(cardFeeForCompanyRevenue) || 0
+    if (cf > 0.005) {
+      totalRevenue += cf
+    }
+    const ptip = Number(prepaymentTipForCompanyRevenue) || 0
+    if (ptip > 0.005) {
+      totalRevenue += ptip
+    }
   }
 
   return roundUsd2(totalRevenue)

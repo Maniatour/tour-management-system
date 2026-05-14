@@ -455,6 +455,13 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     return val || 0
   }
 
+  /** `tours.reservation_ids` 오버랩 조회는 `tour_id`가 비어 있는 예약이 있을 때만 필요 */
+  const reservationsNeedToursOverlapLookup = (mapped: Reservation[]) =>
+    mapped.some((r) => {
+      const t = r.tourId
+      return !t || !String(t).trim() || t === 'null' || t === 'undefined'
+    })
+
   const mapRawToReservation = (
     raw: Record<string, unknown>[],
     productMap: Map<string, string>,
@@ -694,6 +701,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const { data: firstBatchRaw, error: firstError } = await supabase
         .from('reservations')
         .select(RESERVATION_LIST_SELECT)
+        .neq('status', 'deleted')
         .order('created_at', { ascending: false })
         .range(0, FIRST_BATCH_SIZE - 1)
 
@@ -741,7 +749,9 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const [firstPricingMap, firstToursById, firstToursByOverlap, firstOptionsPresenceMap] = await Promise.all([
         fetchPricingMap(firstResIds),
         fetchToursMap(firstTourIds),
-        fetchToursOverlappingReservationIds(firstResIds),
+        reservationsNeedToursOverlapLookup(firstMapped)
+          ? fetchToursOverlappingReservationIds(firstResIds)
+          : Promise.resolve(new Map<string, ReservationListTourMapRow>()),
         fetchReservationOptionsPresenceMap(firstResIds),
       ])
 
@@ -764,6 +774,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
         const { data: page, error } = await supabase
           .from('reservations')
           .select(RESERVATION_LIST_SELECT)
+          .neq('status', 'deleted')
           .order('created_at', { ascending: false })
           .range(from, from + PAGE_SIZE - 1)
         if (error) break
@@ -807,7 +818,9 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const [restPricingMap, restToursById, restToursByOverlap, restOptionsPresenceMap] = await Promise.all([
         fetchPricingMap(restResIds),
         fetchToursMap(restTourIds),
-        fetchToursOverlappingReservationIds(restResIds),
+        reservationsNeedToursOverlapLookup(restMapped)
+          ? fetchToursOverlappingReservationIds(restResIds)
+          : Promise.resolve(new Map<string, ReservationListTourMapRow>()),
         fetchReservationOptionsPresenceMap(restResIds),
       ])
       const totalCount = firstMapped.length + restMapped.length
@@ -925,7 +938,9 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const [pricingMap, toursById, toursByOverlap, optionsPresenceMap] = await Promise.all([
         fetchPricingMap(resIds),
         fetchToursMap(tourIds),
-        fetchToursOverlappingReservationIds(resIds),
+        reservationsNeedToursOverlapLookup(mapped)
+          ? fetchToursOverlappingReservationIds(resIds)
+          : Promise.resolve(new Map<string, ReservationListTourMapRow>()),
         fetchReservationOptionsPresenceMap(resIds),
         customersByReservationIds ? loadCustomersByIds(customerIdsForList) : Promise.resolve(),
       ])
@@ -995,7 +1010,9 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const [restPricingMap, restToursById, restToursByOverlap, restOptionsPresenceMap] = await Promise.all([
         fetchPricingMap(restResIds),
         fetchToursMap(restTourIds),
-        fetchToursOverlappingReservationIds(restResIds),
+        reservationsNeedToursOverlapLookup(restMapped)
+          ? fetchToursOverlappingReservationIds(restResIds)
+          : Promise.resolve(new Map<string, ReservationListTourMapRow>()),
         fetchReservationOptionsPresenceMap(restResIds),
         customersByReservationIds ? loadCustomersByIds(customerIdsForList) : Promise.resolve(),
       ])
@@ -1076,7 +1093,9 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       const [pricingMap, toursById, toursByOverlap, optionsPresenceMap] = await Promise.all([
         fetchPricingMap(resIds),
         fetchToursMap(tourIds),
-        fetchToursOverlappingReservationIds(resIds),
+        reservationsNeedToursOverlapLookup(mapped)
+          ? fetchToursOverlappingReservationIds(resIds)
+          : Promise.resolve(new Map<string, ReservationListTourMapRow>()),
         fetchReservationOptionsPresenceMap(resIds),
         customersByReservationIds ? loadCustomersByIds(customerIdsForList) : Promise.resolve(),
       ])

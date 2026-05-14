@@ -1970,6 +1970,7 @@ export type Database = {
       customers: {
         Row: {
           address: string | null
+          archive: boolean
           booking_count: number | null
           channel_id: string | null
           created_at: string | null
@@ -1989,6 +1990,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          archive?: boolean
           booking_count?: number | null
           channel_id?: string | null
           created_at?: string | null
@@ -2008,6 +2010,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          archive?: boolean
           booking_count?: number | null
           channel_id?: string | null
           created_at?: string | null
@@ -5987,6 +5990,7 @@ export type Database = {
         Row: {
           added_by: string | null
           adults: number | null
+          archive: boolean
           channel_id: string
           channel_rn: string | null
           child: number | null
@@ -6016,6 +6020,7 @@ export type Database = {
         Insert: {
           added_by?: string | null
           adults?: number | null
+          archive?: boolean
           channel_id: string
           channel_rn?: string | null
           child?: number | null
@@ -6045,6 +6050,7 @@ export type Database = {
         Update: {
           added_by?: string | null
           adults?: number | null
+          archive?: boolean
           channel_id?: string
           channel_rn?: string | null
           child?: number | null

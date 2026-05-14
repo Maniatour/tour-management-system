@@ -126,7 +126,7 @@ export default function ReservationDetailsPage() {
     loading,
     refreshReservations,
     refreshCustomers
-  } = useReservationData()
+  } = useReservationData({ disableReservationsAutoLoad: true })
 
   const [loadingReservation, setLoadingReservation] = useState<boolean>(false)
   const [reservation, setReservation] = useState<Reservation | null>(null)

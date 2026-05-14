@@ -18,6 +18,7 @@ import {
   summarizePaymentRecordsForBalance,
   isStoredCustomerTotalMismatchWithFormula,
   computeCustomerPaymentTotalLineFormula,
+  computeCustomerPaymentNetForCompanyRevenueBase,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import {
@@ -291,6 +292,7 @@ export function computeBalanceChannelMetrics(
     )
     const storedRev = computeStoredCompanyRevenueFields({
       channelSettlementBase: channelSettlementBaseForRevenue,
+      cardFee: pricingFieldToNumber(pLine.card_fee),
       reservationStatus: reservation.status,
       isOTAChannel: isOta,
       isHomepageBooking: isHomepage,
@@ -316,19 +318,40 @@ export function computeBalanceChannelMetrics(
     companyTotalRevenue = storedRev.company_total_revenue
     operatingProfit = round2(storedRev.operating_profit)
   } else {
+    const party = {
+      adults: reservation.adults,
+      children: reservation.child,
+      infants: reservation.infant,
+    }
+    const customerNetForSelf =
+      !isOta && !isReservationCancelled
+        ? round2(
+            computeCustomerPaymentNetForCompanyRevenueBase(
+              pLine as Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0],
+              party,
+              returnedAmount
+            )
+          )
+        : 0
+
     companyTotalRevenue = computeCompanyTotalRevenueLikePricingSection({
-      channelSettlementBase: channelSettlementBaseForRevenue,
+      channelSettlementBase:
+        !isOta && !isReservationCancelled ? customerNetForSelf : channelSettlementBaseForRevenue,
       isOTAChannel: isOta,
       isReservationCancelled,
       reservationOptionsTotalPrice: isOta ? reservationOptionsSum : 0,
-      notIncludedTotalUsd,
+      notIncludedTotalUsd: !isOta && !isReservationCancelled ? 0 : notIncludedTotalUsd,
       additionalDiscount: pricingFieldToNumber(p.additional_discount),
       additionalCost: pricingFieldToNumber(p.additional_cost),
-      tax: pricingFieldToNumber(p.tax),
-      prepaymentCost: pricingFieldToNumber(p.prepayment_cost),
+      tax: !isOta && !isReservationCancelled ? 0 : pricingFieldToNumber(p.tax),
+      prepaymentCost:
+        !isOta && !isReservationCancelled ? 0 : pricingFieldToNumber(p.prepayment_cost),
       refundedOurAmount: refundedOur,
       omitAdditionalDiscountAndCostFromSum,
       excludeHomepageAdditionalCostFromCompanyTotals: isHomepage,
+      revenueFromCustomerPaymentTotal: !isOta && !isReservationCancelled,
+      cardFeeForCompanyRevenue: isOta ? pricingFieldToNumber(p.card_fee) : 0,
+      prepaymentTipForCompanyRevenue: isOta ? prepTip : 0,
     })
     operatingProfit = round2(Math.max(0, companyTotalRevenue - prepTip))
   }
@@ -398,8 +421,28 @@ export function computeReservationPricingStoredRevenueColumns(
     )
   )
 
+  const stRow = String(reservation.status || '').toLowerCase().trim()
+  const isReservationCancelledRow = stRow === 'cancelled' || stRow === 'canceled'
+  const party = {
+    adults: reservation.adults,
+    children: reservation.child,
+    infants: reservation.infant,
+  }
+  const customerNetForSelf =
+    !isOta && !isReservationCancelledRow
+      ? round2(
+          computeCustomerPaymentNetForCompanyRevenueBase(
+            pLine as Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0],
+            party,
+            returnedAmount
+          )
+        )
+      : null
+
   return computeStoredCompanyRevenueFields({
     channelSettlementBase: m.channelSettlementBaseForRevenue,
+    customerPaymentNetForRevenueBase: customerNetForSelf,
+    cardFee: pricingFieldToNumber(pLine.card_fee),
     reservationStatus: reservation.status,
     isOTAChannel: isOta,
     isHomepageBooking: isHomepageBookingChannel(reservation.channelId, channels),

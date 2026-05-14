@@ -102,6 +102,7 @@ import {
 import {
   isReturnedPaymentStatus,
   summarizePaymentRecordsForBalance,
+  computeCustomerPaymentNetForCompanyRevenueBase,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -5424,8 +5425,35 @@ export default function ReservationForm({
           returnedAmount,
         })
         const pricingAdultsVal = Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0))
+        const stFd = String(fd.status || '').toLowerCase().trim()
+        const isResCancelledFd = stFd === 'cancelled' || stFd === 'canceled'
+        const partyFd = { adults: fd.adults, children: fd.child, infants: fd.infant }
+        const pricingLikeFd: Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0] = {
+          product_price_total: toNum(fd.productPriceTotal),
+          coupon_discount: toNum(fd.couponDiscount),
+          additional_discount: toNum(fd.additionalDiscount),
+          additional_cost: toNum(fd.additionalCost),
+          tax: toNum(fd.tax),
+          card_fee: toNum(fd.cardFee),
+          prepayment_cost: toNum(fd.prepaymentCost),
+          prepayment_tip: toNum(fd.prepaymentTip),
+          refund_amount: toNum(fd.refundAmount),
+          option_total: optionActiveSum,
+          required_option_total: toNum(fd.requiredOptionTotal),
+          private_tour_additional_cost: toNum(fd.privateTourAdditionalCost),
+          not_included_price: toNum(fd.not_included_price),
+          adult_product_price: toNum(fd.adultProductPrice),
+          child_product_price: toNum(fd.childProductPrice),
+          infant_product_price: toNum(fd.infantProductPrice),
+        }
+        const customerNetForStored =
+          !isOTAChannel && !isResCancelledFd
+            ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikeFd, partyFd, returnedAmount)
+            : null
         storedMetrics = computeStoredCompanyRevenueFields({
           channelSettlementBase: channelSettlementToSave,
+          customerPaymentNetForRevenueBase: customerNetForStored,
+          cardFee: toNum(fd.cardFee),
           reservationStatus: fd.status,
           isOTAChannel,
           isHomepageBooking,

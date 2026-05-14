@@ -37,6 +37,10 @@ export async function saveStaffPushSubscription(
     return { ok: false, error: 'not_supported' }
   }
 
+  if (process.env.NODE_ENV !== 'production') {
+    return { ok: false, error: 'dev_no_service_worker' }
+  }
+
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
   if (!vapidPublicKey) {
     return { ok: false, error: 'no_vapid' }

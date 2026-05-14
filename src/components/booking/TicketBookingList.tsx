@@ -798,7 +798,11 @@ function TicketCalendarRnBookingChipTooltip({
   }, []);
 
   return (
-    <div className="relative min-w-0" onMouseEnter={show} onMouseLeave={hideSoon}>
+    <div
+      className={`relative min-w-0 ${open ? 'z-[40]' : 'z-0'}`}
+      onMouseEnter={show}
+      onMouseLeave={hideSoon}
+    >
       <button
         type="button"
         className={`font-inherit text-inherit ${chipClassName}`}
@@ -813,7 +817,7 @@ function TicketCalendarRnBookingChipTooltip({
       </button>
       {open ? (
         <div
-          className="absolute left-0 top-full z-[100] min-w-[15rem] max-w-[min(94vw,22rem)] pt-1"
+          className="absolute bottom-full left-0 z-[100] mb-1 min-w-[15rem] max-w-[min(94vw,22rem)]"
           onMouseEnter={show}
           onMouseLeave={hideSoon}
         >
@@ -5049,9 +5053,9 @@ export default function TicketBookingList() {
 
                                   {/* 부킹 정보 라벨 */}
                                   {dayBookings.length > 0 && (
-                                    <div className="relative z-[11] space-y-0.5">
+                                    <div className="relative z-[25] space-y-0.5">
                                       <div
-                                        className={`text-[10px] sm:text-xs font-semibold leading-tight ${
+                                        className={`text-[11px] sm:text-sm font-semibold leading-tight ${
                                           sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
                                             ? 'text-red-600'
                                             : 'text-blue-700'
@@ -5107,7 +5111,7 @@ export default function TicketBookingList() {
                                             tAct={tTbActUi}
                                             titleLine={titleLine}
                                             supplierStyle={supplierStyle}
-                                            chipClassName={`min-w-0 w-full px-0.5 py-0.5 rounded text-left text-[7px] sm:text-[10px] lg:text-[11px] cursor-pointer hover:opacity-90 overflow-hidden transition-opacity ${
+                                            chipClassName={`min-w-0 w-full px-0.5 py-0.5 rounded text-left text-[8px] sm:text-[11px] lg:text-[12px] cursor-pointer hover:opacity-90 overflow-hidden transition-opacity ${
                                               groupChangePending
                                                 ? 'ring-2 ring-red-600 ring-offset-0'
                                                 : 'ring-1 ring-black/15'
@@ -5117,7 +5121,7 @@ export default function TicketBookingList() {
                                             <div className="flex min-w-0 items-center gap-0.5 sm:gap-1 whitespace-nowrap">
                                               {groupChangePending ? (
                                                 <span
-                                                  className="shrink-0 rounded-sm bg-red-600 px-0.5 text-[6px] font-extrabold uppercase tracking-tight text-white sm:text-[8px]"
+                                                  className="shrink-0 rounded-sm bg-red-600 px-0.5 text-[7px] font-extrabold uppercase tracking-tight text-white sm:text-[9px]"
                                                   title={
                                                     locale.startsWith('en')
                                                       ? 'Change request in progress'
@@ -5174,12 +5178,14 @@ export default function TicketBookingList() {
                                               >
                                                 <TicketBookingBookingStatusIcon
                                                   status={firstBooking.booking_status}
-                                                  className="h-2 w-2 sm:h-2.5 sm:w-2.5"
+                                                  variant="tile"
+                                                  className="h-3 w-3 sm:h-3.5 sm:w-3.5"
                                                   title={formatTicketBookingAxisLabel(tTbAxis, 'booking', firstBooking.booking_status)}
                                                 />
                                                 <TicketBookingVendorStatusIcon
                                                   status={firstBooking.vendor_status}
-                                                  className="h-2 w-2 sm:h-2.5 sm:w-2.5"
+                                                  variant="tile"
+                                                  className="h-3 w-3 sm:h-3.5 sm:w-3.5"
                                                   title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', firstBooking.vendor_status)}
                                                 />
                                               </span>
@@ -5193,7 +5199,7 @@ export default function TicketBookingList() {
                                                 {totalEa}
                                                 {t('items')}
                                               </span>
-                                              <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-100 px-1 py-px text-[6px] sm:text-[9px] font-bold text-indigo-900 ring-1 ring-indigo-200/90">
+                                              <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-100 px-1 py-px text-[7px] sm:text-[10px] font-bold text-indigo-900 ring-1 ring-indigo-200/90">
                                                 {g.label === 'RN# 없음' ? '—' : g.label}
                                               </span>
                                             </div>
@@ -5273,7 +5279,7 @@ export default function TicketBookingList() {
                                     >
                                       {/* 배경은 안쪽에만: 바깥 px로 달력 칸(그리드 스팬) 가장자리와 간격 */}
                                       <div
-                                        className={`box-border flex min-w-0 w-full max-w-full items-center overflow-hidden rounded-sm text-[8px] font-medium shadow-sm ring-1 ring-black/10 sm:text-[10px] cursor-pointer hover:opacity-90 transition-opacity ${tourChipProps.className ?? ''}`}
+                                        className={`box-border flex min-w-0 w-full max-w-full items-center overflow-hidden rounded-sm text-[9px] font-medium shadow-sm ring-1 ring-black/10 sm:text-[11px] cursor-pointer hover:opacity-90 transition-opacity ${tourChipProps.className ?? ''}`}
                                         style={{
                                           minHeight: TICKET_CAL_TOUR_LANE_MIN_PX,
                                           ...tourChipProps.style,
@@ -5297,9 +5303,9 @@ export default function TicketBookingList() {
                                               className="inline-flex shrink-0 items-center gap-x-0.5"
                                             >
                                               {si > 0 ? (
-                                                <span className="text-[7px] font-normal opacity-70">,</span>
+                                                <span className="text-[8px] font-normal opacity-70">,</span>
                                               ) : null}
-                                              <span className="rounded-full bg-white/85 px-1 py-px text-[7px] font-semibold text-neutral-900 shadow-sm ring-1 ring-black/10 sm:text-[9px]">
+                                              <span className="rounded-full bg-white/85 px-1 py-px text-[8px] font-semibold text-neutral-900 shadow-sm ring-1 ring-black/10 sm:text-[10px]">
                                                 {name}
                                               </span>
                                             </span>

@@ -18,6 +18,10 @@ export type PricingSectionRevenueDisplayInput = {
   omitAdditionalDiscountAndCostFromSum: boolean
   /** 자체(홈페이지) 직예약: 추가할인·선결제 지출은 ④에 반영하지 않음(상단·채널 결제에 이미 반영) · 추가비용은 회사 총 매출·운영 이익 합에서 제외 */
   excludeHomepageAdditionalCostFromCompanyTotals: boolean
+  /** Self·진행: ① 고객 총 결제(넷) — `channelSettlementBeforePartnerReturn` 대신 베이스로 사용 */
+  customerPaymentNetAsRevenueBase?: number | null
+  /** OTA·진행: ④에 가산하는 폼 카드수수료 */
+  cardFeeForCompanyRevenue?: number
 }
 
 export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionRevenueDisplayInput): number {
@@ -27,24 +31,56 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
     }
     return 0
   }
-  let totalRevenue = inp.channelSettlementBeforePartnerReturn - inp.reservationExpensesTotal
+
+  const useCustomerBase =
+    !inp.isOTAChannel &&
+    inp.customerPaymentNetAsRevenueBase != null &&
+    Number.isFinite(Number(inp.customerPaymentNetAsRevenueBase))
+
+  let totalRevenue = useCustomerBase
+    ? Number(inp.customerPaymentNetAsRevenueBase) - inp.reservationExpensesTotal
+    : inp.channelSettlementBeforePartnerReturn - inp.reservationExpensesTotal
+
+  if (useCustomerBase) {
+    totalRevenue -= inp.refundedAmount
+    if (inp.excludeHomepageAdditionalCostFromCompanyTotals && inp.additionalCost > 0) {
+      totalRevenue -= inp.additionalCost
+    }
+    return roundUsd2(totalRevenue)
+  }
+
   if (inp.reservationOptionsTotalPrice > 0 && inp.isOTAChannel) {
     totalRevenue += inp.reservationOptionsTotalPrice
   }
   if (inp.notIncludedTotalUsd > 0) {
     totalRevenue += inp.notIncludedTotalUsd
   }
-  if (!inp.omitAdditionalDiscountAndCostFromSum) {
+
+  const omitDiscCostEffective =
+    inp.omitAdditionalDiscountAndCostFromSum &&
+    !(inp.isOTAChannel && !inp.isReservationCancelled)
+
+  if (!omitDiscCostEffective) {
     if (inp.additionalDiscount > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
       totalRevenue -= inp.additionalDiscount
     }
     if (inp.additionalCost > 0) totalRevenue += inp.additionalCost
   }
   if (inp.tax > 0) totalRevenue += inp.tax
-  // card_fee: 채널 결제 금액·정산 산식에 이미 포함 — 이중 가산하지 않음
   if (inp.prepaymentCost > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
     totalRevenue += inp.prepaymentCost
   }
+
+  const cf = Number(inp.cardFeeForCompanyRevenue) || 0
+  if (inp.isOTAChannel && !inp.isReservationCancelled && cf > 0.005) {
+    totalRevenue += cf
+  }
+
+  const ptip = Number(inp.prepaymentTip) || 0
+  if (inp.isOTAChannel && !inp.isReservationCancelled && ptip > 0.005) {
+    totalRevenue += ptip
+  }
+
   totalRevenue -= inp.refundedAmount
   if (inp.excludeHomepageAdditionalCostFromCompanyTotals && inp.additionalCost > 0) {
     totalRevenue -= inp.additionalCost

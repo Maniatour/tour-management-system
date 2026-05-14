@@ -25,7 +25,6 @@ import {
 import type { ChannelSettlementComputeInput } from '@/utils/channelSettlement'
 import {
   computeChannelPaymentAfterReturn,
-  computeChannelPaymentGrossBeforeReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
@@ -1550,11 +1549,6 @@ export default function PricingSection({
     formData.status,
   ])
 
-  const selfChannelPaymentGrossBeforeReturn = useMemo(() => {
-    if (!selfChannelPaymentEngineInput) return null
-    return computeChannelPaymentGrossBeforeReturn(selfChannelPaymentEngineInput)
-  }, [selfChannelPaymentEngineInput])
-
   /** 「채널 결제 금액」입력칸: OTA는 commission_base_price가 순액(할인후−max(Returned,투어환불))이므로 우선. online이 이미 순액만 담긴 경우 cg−환불 이중 차감 방지. */
   const channelPaymentAmountAfterReturn = useMemo(() => {
     const ret = Math.max(0, Number(returnedAmount) || 0)
@@ -1819,6 +1813,64 @@ export default function PricingSection({
       }
     }
 
+    const omitDiscCostEffective =
+      omitAdditionalDiscountAndCostFromRevenueSum &&
+      !(isOTAChannel && !isReservationCancelled)
+
+    /** Self·직판: ① 고객 총 결제(넷) 기준 — ③ 채널 정산 금액은 ④에 사용하지 않음 */
+    if (!isReservationCancelled && !isOTAChannel) {
+      const selfBase = calculateTotalCustomerPayment()
+      let trSelf = selfBase
+      const linesSelf: LedgerLine[] = [
+        {
+          sign: '+',
+          labelKo: '고객 총 결제 금액',
+          labelEn: 'Total customer payment',
+          amount: selfBase,
+        },
+      ]
+
+      const rexSelf = Number(reservationExpensesTotal) || 0
+      if (Math.abs(rexSelf) > 0.005) {
+        linesSelf.push({
+          sign: rexSelf >= 0 ? '-' : '+',
+          labelKo: '예약 지출 금액',
+          labelEn: 'Reservation expenses',
+          amount: Math.abs(rexSelf),
+        })
+        trSelf -= rexSelf
+      }
+
+      const refbSelf = refundAmountForCompanyRevenueBlock
+      if (refbSelf > 0.005) {
+        linesSelf.push({
+          sign: '-',
+          labelKo: '환불 (총매출 차감)',
+          labelEn: 'Refund (deducted from revenue)',
+          amount: refbSelf,
+        })
+        trSelf -= refbSelf
+      }
+
+      if (isHomepageBooking && (Number(formData.additionalCost) || 0) > 0.005) {
+        const ac = Number(formData.additionalCost) || 0
+        linesSelf.push({
+          sign: '-',
+          labelKo: '추가비용 (회사 매출 제외)',
+          labelEn: 'Additional cost (excluded from revenue)',
+          amount: ac,
+        })
+        trSelf -= ac
+      }
+
+      trSelf = roundUsd2(trSelf)
+      return {
+        lines: linesSelf,
+        totalRevenue: trSelf,
+        operatingProfit: roundUsd2(trSelf - prepTip),
+      }
+    }
+
     let tr = channelSettlementBeforePartnerReturn
     lines.push({
       sign: '+',
@@ -1861,7 +1913,7 @@ export default function PricingSection({
       }
     }
 
-    if (!omitAdditionalDiscountAndCostFromRevenueSum) {
+    if (!omitDiscCostEffective) {
       const disc = Number(formData.additionalDiscount) || 0
       if (disc > 0.005 && !isHomepageBooking) {
         lines.push({ sign: '-', labelKo: '추가할인', labelEn: 'Additional discount', amount: disc })
@@ -1884,6 +1936,27 @@ export default function PricingSection({
     if (ppc > 0.005 && !isHomepageBooking) {
       lines.push({ sign: '+', labelKo: '선결제 지출', labelEn: 'Prepayment cost', amount: ppc })
       tr += ppc
+    }
+
+    const cardFeeUsd = Number(formData.cardFee) || 0
+    if (isOTAChannel && !isReservationCancelled && cardFeeUsd > 0.005) {
+      lines.push({
+        sign: '+',
+        labelKo: '카드 수수료',
+        labelEn: 'Card fee',
+        amount: cardFeeUsd,
+      })
+      tr += cardFeeUsd
+    }
+
+    if (isOTAChannel && !isReservationCancelled && prepTip > 0.005) {
+      lines.push({
+        sign: '+',
+        labelKo: '선결제 팁',
+        labelEn: 'Prepayment tip',
+        amount: prepTip,
+      })
+      tr += prepTip
     }
 
     const refb = refundAmountForCompanyRevenueBlock
@@ -1929,6 +2002,8 @@ export default function PricingSection({
     formData.tax,
     formData.prepaymentCost,
     formData.prepaymentTip,
+    formData.cardFee,
+    calculateTotalCustomerPayment,
   ])
 
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
@@ -3783,8 +3858,23 @@ export default function PricingSection({
               
               {/* 채널 결제 금액 — 보조 산식 왼쪽, 입력란 오른쪽 끝 */}
               <div className="flex justify-between items-center mb-1.5 gap-2">
-                <span className="text-xs font-medium text-gray-700 shrink-0">
-                  {isKorean ? '채널 결제 금액' : 'Channel Payment Amount'}
+                <span
+                  className="text-xs font-medium text-gray-700 shrink-0 cursor-help"
+                  title={
+                    !isOTAChannel && isKorean
+                      ? '자체·파트너 채널: ③ 정산 기준 금액은 ① 고객 총 결제 금액과 같습니다.'
+                      : !isOTAChannel
+                        ? 'Self/partner channel: section ③ uses the same amount as ① total customer payment.'
+                        : undefined
+                  }
+                >
+                  {isOTAChannel
+                    ? isKorean
+                      ? '채널 결제 금액'
+                      : 'Channel Payment Amount'
+                    : isKorean
+                      ? '고객 총 결제 금액'
+                      : 'Total Customer Payment'}
                 </span>
                 <div className="flex items-center justify-end gap-x-2 gap-y-1 flex-wrap flex-1 min-w-0">
                   <span className="text-xs text-gray-500">:</span>
@@ -3801,18 +3891,10 @@ export default function PricingSection({
                         {channelPaymentAmountAfterReturn.toFixed(2)}
                       </span>
                     )}
-                  {!isOTAChannel && selfChannelPaymentGrossBeforeReturn != null && (
-                    <span className="text-xs text-gray-500">
-                      ($
-                      {selfChannelPaymentGrossBeforeReturn.toFixed(2)}
-                      {Math.max(Number(returnedAmount) || 0, manualRefundAmount) > 0.005 ? (
-                        <>
-                          {' '}
-                          − $
-                          {Math.max(Number(returnedAmount) || 0, manualRefundAmount).toFixed(2)}
-                        </>
-                      ) : null}
-                      ) = ${channelPaymentAmountAfterReturn.toFixed(2)}
+                  {!isOTAChannel && (
+                    <span className="text-xs text-gray-500 tabular-nums">
+                      {isKorean ? '①과 동일' : 'Same as ①'} · $
+                      {calculateTotalCustomerPayment().toFixed(2)}
                     </span>
                   )}
                   {formData.prepaymentTip > 0 && isOTAChannel && (

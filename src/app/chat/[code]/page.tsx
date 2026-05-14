@@ -78,8 +78,8 @@ export default function PublicChatPage() {
 
   // Service Worker 등록 및 PWA 설치 프롬프트 감지
   useEffect(() => {
-    // Service Worker 등록 (PWA 설치를 위해 필요)
-    if ('serviceWorker' in navigator) {
+    // next dev에서는 빌드와 다른 정적 해시로 프리캐시 404가 나므로 production에서만 등록
+    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
         .then((registration) => {
           console.log('Service Worker registered:', registration)
@@ -133,7 +133,7 @@ export default function PublicChatPage() {
   // 홈 화면에 추가 버튼 클릭 핸들러
   const handleAddToHomeScreen = async () => {
     // Service Worker가 등록되어 있는지 확인하고, 없으면 등록 시도
-    if ('serviceWorker' in navigator) {
+    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
       try {
         const registration = await navigator.serviceWorker.getRegistration()
         if (!registration) {

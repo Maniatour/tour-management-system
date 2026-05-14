@@ -4494,6 +4494,22 @@ export default function ScheduleView() {
     [scheduleCapacityOverflowItems, scheduleHealthFromFetch],
   )
 
+  /** 스케줄 점검 요약(1~4)에 포함된 날짜 — 스케쥴뷰 상단 날짜 헤더 강조용 */
+  const scheduleHealthHighlightDateSet = useMemo(() => {
+    const s = new Set<string>()
+    for (const x of scheduleCapacityOverflowItems) s.add(x.dateString)
+    for (const x of scheduleHealthFromFetch.vehicleMismatch) s.add(x.dateString)
+    for (const x of scheduleHealthFromFetch.incompleteTours) {
+      const d = String(x.tourDate || '').slice(0, 10)
+      if (d) s.add(d)
+    }
+    for (const x of scheduleHealthFromFetch.ticketPeopleMismatch) {
+      const d = String(x.tourDate || '').slice(0, 10)
+      if (d) s.add(d)
+    }
+    return s
+  }, [scheduleCapacityOverflowItems, scheduleHealthFromFetch])
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem(SCHEDULE_HEALTH_SUMMARY_SESSION_KEY)
@@ -5336,22 +5352,32 @@ export default function ScheduleView() {
                   </th>
                   {monthDays.map(({ date, dayOfWeek, dateString, isEdgePadding }) => {
                     const hasNote = dateNotes[dateString]?.note
+                    const healthHeaderAlert =
+                      !isEdgePadding && scheduleHealthHighlightDateSet.has(dateString)
                     return (
                       <th
                         key={dateString}
-                        className={`p-0 text-center text-xs font-medium text-gray-700 align-top bg-blue-50 border-b border-gray-200 ${isEdgePadding ? 'bg-slate-100/90' : ''}`}
+                        className={`p-0 text-center text-xs font-medium align-top border-b border-gray-200 ${
+                          isEdgePadding
+                            ? 'bg-slate-100/90 text-gray-700'
+                            : healthHeaderAlert
+                              ? 'bg-red-600 text-[#ffff00]'
+                              : 'bg-blue-50 text-gray-700'
+                        }`}
                         style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                       >
                       <div 
                         className={`
                           px-1 py-0.5 cursor-pointer transition-colors relative
-                          ${isToday(dateString) 
+                          ${healthHeaderAlert
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : isToday(dateString) 
                             ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                             : hasNote 
                               ? 'bg-yellow-50 border-2 border-yellow-400 rounded' 
                               : ''
                           }
-                          ${hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : 'hover:bg-blue-100'}
+                          ${!healthHeaderAlert && hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : !healthHeaderAlert ? 'hover:bg-blue-100' : ''}
                         `}
                         onClick={() => openDateNoteModal(dateString)}
                         onMouseEnter={() => {
@@ -5364,10 +5390,32 @@ export default function ScheduleView() {
                         }}
                         title={hasNote ? dateNotes[dateString].note : '클릭하여 날짜 노트 작성'}
                       >
-                        <div className={`flex items-center justify-center ${isToday(dateString) ? 'font-bold text-red-700' : hasNote ? 'font-semibold text-yellow-800' : isEdgePadding ? 'text-slate-700' : ''}`}>
+                        <div
+                          className={`flex items-center justify-center ${
+                            healthHeaderAlert
+                              ? 'font-bold text-[#ffff00]'
+                              : isToday(dateString)
+                                ? 'font-bold text-red-700'
+                                : hasNote
+                                  ? 'font-semibold text-yellow-800'
+                                  : isEdgePadding
+                                    ? 'text-slate-700'
+                                    : ''
+                          }`}
+                        >
                           <span>{isEdgePadding ? dayjs(dateString).format('M/D') : `${date}일`}</span>
                         </div>
-                        <div className={`text-xs flex items-center justify-center gap-1 ${isToday(dateString) ? 'text-red-600' : hasNote ? 'text-yellow-700 font-medium' : 'text-gray-500'}`}>
+                        <div
+                          className={`text-xs flex items-center justify-center gap-1 ${
+                            healthHeaderAlert
+                              ? 'font-semibold text-[#ffff00]'
+                              : isToday(dateString)
+                                ? 'text-red-600'
+                                : hasNote
+                                  ? 'text-yellow-700 font-medium'
+                                  : 'text-gray-500'
+                          }`}
+                        >
                           {dayOfWeek}
                           {hasNote && (
                             <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
@@ -6595,18 +6643,20 @@ export default function ScheduleView() {
                                       <span className="inline-flex items-center gap-0.5 text-yellow-100/95">
                                         <TicketBookingBookingStatusIcon
                                           status={detail.booking_status}
+                                          variant="tile"
                                           className="h-3.5 w-3.5"
                                           title={formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
                                         />
-                                        <span className="text-[10px] font-medium">
+                                        <span className="text-[11px] font-medium">
                                           {formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
                                         </span>
                                         <TicketBookingVendorStatusIcon
                                           status={detail.vendor_status}
+                                          variant="tile"
                                           className="h-3.5 w-3.5"
                                           title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
                                         />
-                                        <span className="text-[10px] font-medium">
+                                        <span className="text-[11px] font-medium">
                                           {formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
                                         </span>
                                       </span>
@@ -6652,7 +6702,7 @@ export default function ScheduleView() {
                         return (
                           <td
                             key={`${dateString}-detail`}
-                            className={`p-0 align-top text-[9px] leading-tight border-b-2 border-b-gray-800 ${isToday(dateString) ? 'bg-red-50/40' : ''}`}
+                            className={`p-0 align-top text-[10px] leading-tight border-b-2 border-b-gray-800 ${isToday(dateString) ? 'bg-red-50/40' : ''}`}
                             style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           >
                             <div className="px-0.5 py-1 text-left text-gray-800 space-y-0.5 break-words">
@@ -6682,15 +6732,15 @@ export default function ScheduleView() {
                                           }
                                         }}
                                       >
-                                        <span className="text-[9px] tabular-nums text-gray-700 shrink-0 font-medium">
+                                        <span className="text-[10px] tabular-nums text-gray-700 shrink-0 font-medium">
                                           {row.displayTime}
                                         </span>
                                         <span
-                                          className={`inline-flex min-w-[0.95rem] items-center justify-center rounded px-1 py-0.5 text-[8px] font-bold leading-none shadow-sm ${scheduleBookingSupplierTagBadgeClass(row.tag)}`}
+                                          className={`inline-flex min-w-[0.95rem] items-center justify-center rounded px-1 py-0.5 text-[9px] font-bold leading-none shadow-sm ${scheduleBookingSupplierTagBadgeClass(row.tag)}`}
                                         >
                                           {scheduleBookingSupplierTagDisplay(row.tag)}
                                         </span>
-                                        <span className="text-[9px] tabular-nums font-semibold text-gray-800 shrink-0">
+                                        <span className="text-[10px] tabular-nums font-semibold text-gray-800 shrink-0">
                                           {row.ea}
                                         </span>
                                       </div>
@@ -6722,7 +6772,7 @@ export default function ScheduleView() {
                                           if (merged.mixed) {
                                             return (
                                               <div
-                                                className="flex items-center gap-0.5 pl-0.5 text-[8px] font-medium text-violet-900"
+                                                className="flex items-center gap-0.5 pl-0.5 text-[9px] font-medium text-violet-900"
                                                 title={
                                                   locale === 'ko'
                                                     ? '같은 줄에 여러 건·상태가 다릅니다. 위 줄을 눌러 선택하세요.'
@@ -6735,10 +6785,11 @@ export default function ScheduleView() {
                                             )
                                           }
                                           return (
-                                            <div className="flex flex-wrap items-center gap-0.5 pl-0.5 text-[8px] text-gray-800">
+                                            <div className="flex flex-wrap items-center gap-0.5 pl-0.5 text-[9px] text-gray-800">
                                               <TicketBookingBookingStatusIcon
                                                 status={merged.bookingStatus}
-                                                className="h-3 w-3"
+                                                variant="tile"
+                                                className="h-3.5 w-3.5"
                                                 title={formatTicketBookingAxisLabel(
                                                   tTbAxis,
                                                   'booking',
@@ -6754,7 +6805,8 @@ export default function ScheduleView() {
                                               </span>
                                               <TicketBookingVendorStatusIcon
                                                 status={merged.vendorStatus}
-                                                className="h-3 w-3"
+                                                variant="tile"
+                                                className="h-3.5 w-3.5"
                                                 title={formatTicketBookingAxisLabel(
                                                   tTbAxis,
                                                   'vendor',

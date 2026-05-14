@@ -35,6 +35,13 @@ export function computeRefundAmountForCompanyRevenueBlock(inp: {
 export type StoredCompanyRevenueComputeInput = {
   /** ④의 시작점 — 저장된 `channel_settlement_amount`(또는 UI와 동일하게 산출한 값) */
   channelSettlementBase: number
+  /**
+   * 비-OTA·진행 예약: ④ 시작점을 고객 총 결제(넷)으로 할 때 설정.
+   * 설정 시 `channelSettlementBase`는 무시되고 옵션·불포함·세·선결제 등은 이중 가산하지 않음.
+   */
+  customerPaymentNetForRevenueBase?: number | null
+  /** OTA·진행: ④ 총매출에 가산하는 폼 카드수수료 */
+  cardFee?: number
   reservationStatus: string | null | undefined
   isOTAChannel: boolean
   isHomepageBooking: boolean
@@ -102,6 +109,28 @@ export function computeStoredCompanyRevenueFields(
     }
   }
 
+  const cpn = inp.customerPaymentNetForRevenueBase
+  if (
+    !isReservationCancelled &&
+    !inp.isOTAChannel &&
+    cpn != null &&
+    Number.isFinite(Number(cpn))
+  ) {
+    let tr = roundUsd2(Math.max(0, Number(cpn) || 0))
+    if (refb > 0.005) {
+      tr -= refb
+    }
+    if (inp.isHomepageBooking && (Number(inp.additionalCost) || 0) > 0.005) {
+      const ac = Number(inp.additionalCost) || 0
+      tr -= ac
+    }
+    tr = roundUsd2(tr)
+    return {
+      company_total_revenue: tr,
+      operating_profit: roundUsd2(tr - prepTip),
+    }
+  }
+
   let tr = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
 
   if (inp.reservationOptionsActiveSum > 0 && inp.isOTAChannel) {
@@ -126,7 +155,11 @@ export function computeStoredCompanyRevenueFields(
     }
   }
 
-  if (!omitAdditionalDiscountAndCostFromRevenueSum) {
+  const omitDiscCostEffective =
+    omitAdditionalDiscountAndCostFromRevenueSum &&
+    !(inp.isOTAChannel && !isReservationCancelled)
+
+  if (!omitDiscCostEffective) {
     const disc = Number(inp.additionalDiscount) || 0
     if (disc > 0.005 && !inp.isHomepageBooking) {
       tr -= disc
@@ -145,6 +178,16 @@ export function computeStoredCompanyRevenueFields(
   const ppc = Number(inp.prepaymentCost) || 0
   if (ppc > 0.005 && !inp.isHomepageBooking) {
     tr += ppc
+  }
+
+  if (inp.isOTAChannel && !isReservationCancelled) {
+    const cf = Number(inp.cardFee) || 0
+    if (cf > 0.005) {
+      tr += cf
+    }
+    if (prepTip > 0.005) {
+      tr += prepTip
+    }
   }
 
   if (refb > 0.005) {

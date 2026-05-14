@@ -216,7 +216,7 @@ export default function ScheduleTicketBookingAxisInline({
     )
 
   const pad = compact ? 'px-0.5 py-0' : 'px-1 py-0.5'
-  const textCls = compact ? 'max-w-[4.5rem] truncate text-[8px]' : 'text-[10px]'
+  const textCls = compact ? 'max-w-[4.5rem] truncate text-[9px]' : 'text-[10px]'
 
   return (
     <div
@@ -236,7 +236,12 @@ export default function ScheduleTicketBookingAxisInline({
           toggleMenu('booking')
         }}
       >
-        <TicketBookingBookingStatusIcon status={booking.booking_status} className="h-3 w-3 shrink-0" title={bookingLabel} />
+        <TicketBookingBookingStatusIcon
+          status={booking.booking_status}
+          variant={compact ? 'tile' : 'line'}
+          className={compact ? 'h-3.5 w-3.5 shrink-0' : 'h-3 w-3 shrink-0'}
+          title={bookingLabel}
+        />
         <span className={`font-semibold tabular-nums text-gray-800 ${textCls}`}>{bookingLabel}</span>
       </button>
       <button
@@ -251,7 +256,12 @@ export default function ScheduleTicketBookingAxisInline({
           toggleMenu('vendor')
         }}
       >
-        <TicketBookingVendorStatusIcon status={booking.vendor_status} className="h-3 w-3 shrink-0" title={vendorLabel} />
+        <TicketBookingVendorStatusIcon
+          status={booking.vendor_status}
+          variant={compact ? 'tile' : 'line'}
+          className={compact ? 'h-3.5 w-3.5 shrink-0' : 'h-3 w-3 shrink-0'}
+          title={vendorLabel}
+        />
         <span className={`font-semibold tabular-nums text-gray-800 ${textCls}`}>{vendorLabel}</span>
       </button>
       {portal}

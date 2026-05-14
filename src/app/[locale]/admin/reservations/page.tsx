@@ -2099,52 +2099,56 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
 
     let cancelled = false
-
-    void (async () => {
-      const chunkSize = 80
-      const byRecord = new Map<string, ReservationStatusAuditRow[]>()
-      try {
-        for (let i = 0; i < uniqueIds.length; i += chunkSize) {
-          const chunk = uniqueIds.slice(i, i + chunkSize)
-          const { data, error } = await supabase
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- audit_logs 미생성 타입
-            .from('audit_logs' as any)
-            .select('record_id, old_values, new_values, changed_fields, created_at')
-            .eq('table_name', 'reservations')
-            .eq('action', 'UPDATE')
-            .gte('created_at', range.rangeStartIso)
-            .lte('created_at', range.rangeEndIso)
-            .in('record_id', chunk)
-            // postgrest-js: .contains(col, ['status']) → cs.{status} (따옴표 없음) → PG text[] 파싱 오류·500 가능
-            .contains('changed_fields', '{"status"}')
-          if (cancelled) return
-          if (error) {
-            if (!isAbortLikeError(error) && !cancelled) {
-              console.error('audit_logs (reg-cancel chart):', error)
+    /** 목록·필터가 연속 갱신될 때 감사 청크 요청이 폭주하지 않도록 디바운스 (Query Performance 상위 원인 완화) */
+    const debounceMs = 450
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const chunkSize = 80
+        const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+        try {
+          for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+            const chunk = uniqueIds.slice(i, i + chunkSize)
+            const { data, error } = await supabase
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- audit_logs 미생성 타입
+              .from('audit_logs' as any)
+              .select('record_id, old_values, new_values, changed_fields, created_at')
+              .eq('table_name', 'reservations')
+              .eq('action', 'UPDATE')
+              .gte('created_at', range.rangeStartIso)
+              .lte('created_at', range.rangeEndIso)
+              .in('record_id', chunk)
+              // postgrest-js: .contains(col, ['status']) → cs.{status} (따옴표 없음) → PG text[] 파싱 오류·500 가능
+              .contains('changed_fields', '{"status"}')
+            if (cancelled) return
+            if (error) {
+              if (!isAbortLikeError(error) && !cancelled) {
+                console.error('audit_logs (reg-cancel chart):', error)
+              }
+              if (isAbortLikeError(error)) return
+              break
             }
-            if (isAbortLikeError(error)) return
-            break
+            for (const row of data || []) {
+              const id = String((row as unknown as ReservationStatusAuditRow).record_id ?? '').trim()
+              if (!id) continue
+              const arr = byRecord.get(id) ?? []
+              arr.push(row as unknown as ReservationStatusAuditRow)
+              byRecord.set(id, arr)
+            }
           }
-          for (const row of data || []) {
-            const id = String((row as unknown as ReservationStatusAuditRow).record_id ?? '').trim()
-            if (!id) continue
-            const arr = byRecord.get(id) ?? []
-            arr.push(row as unknown as ReservationStatusAuditRow)
-            byRecord.set(id, arr)
-          }
+        } catch (e) {
+          if (!cancelled && !isAbortLikeError(e)) console.error('audit_logs chart fetch failed:', e)
         }
-      } catch (e) {
-        if (!cancelled && !isAbortLikeError(e)) console.error('audit_logs chart fetch failed:', e)
-      }
-      if (cancelled) return
-      const next: Record<string, ReservationStatusAuditRow[]> = {}
-      for (const [id, arr] of byRecord) next[id] = arr
-      setRegCancelChartAuditRowsByRecordId(next)
-      setRegCancelChartAuditLoaded(true)
-    })()
+        if (cancelled) return
+        const next: Record<string, ReservationStatusAuditRow[]> = {}
+        for (const [id, arr] of byRecord) next[id] = arr
+        setRegCancelChartAuditRowsByRecordId(next)
+        setRegCancelChartAuditLoaded(true)
+      })()
+    }, debounceMs)
 
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
     }
   }, [groupByDate, regCancelChartAuditIsoRange, filteredReservations])
 

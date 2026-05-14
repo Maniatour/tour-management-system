@@ -86,6 +86,10 @@ export default function AdminReports({ }: AdminReportsProps) {
   }, [authUser?.email])
   
   // 데이터 관리
+  /** 종합·예약 통계 탭에서만 예약·고객 전량 로드 — 나머지 탭은 마스터만으로 충분 */
+  const needsFullReservationDataset =
+    activeTab === 'comprehensive' || activeTab === 'reservations'
+
   const {
     reservations,
     customers,
@@ -94,7 +98,10 @@ export default function AdminReports({ }: AdminReportsProps) {
     loading,
     refreshReservations,
     reservationsAggregateReady,
-  } = useReservationData()
+  } = useReservationData({
+    disableReservationsAutoLoad: !needsFullReservationDataset,
+    customersByReservationIds: !needsFullReservationDataset,
+  })
 
   // 상태 관리 (탭·기간 — 새로고침 유지)
   const [reportNav, setReportNav, reportNavHydrated] = useRoutePersistedState(

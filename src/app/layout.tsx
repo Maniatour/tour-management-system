@@ -6,6 +6,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import AbortErrorHandler from "@/components/AbortErrorHandler";
 import AppToaster from "@/components/AppToaster";
 import SopComplianceGate from "@/components/sop/SopComplianceGate";
+import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -69,6 +70,7 @@ export default function RootLayout({
           }}
         />
         <AbortErrorHandler />
+        <DevServiceWorkerCleanup />
         <AuthProvider>
           <AppToaster />
           <SopComplianceGate />

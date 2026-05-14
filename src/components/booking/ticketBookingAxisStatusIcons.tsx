@@ -2,67 +2,137 @@
 
 import type { LucideIcon } from 'lucide-react'
 import {
-  Ban,
-  CheckCircle2,
-  CircleDashed,
-  HelpCircle,
+  AlertTriangle,
+  ArrowRightLeft,
+  CalendarX2,
+  Check,
+  Ellipsis,
+  Flag,
   Hourglass,
-  Loader,
-  OctagonX,
-  PauseCircle,
-  RefreshCw,
+  LogOut,
+  Minus,
+  Pause,
   Send,
-  ShieldAlert,
-  TimerOff,
-  UserX,
-  XCircle,
+  Slash,
+  Sparkles,
+  X,
 } from 'lucide-react'
 
+export type TicketBookingAxisIconVariant = 'line' | 'tile'
+
 const iconWrap = 'inline-flex shrink-0 items-center justify-center'
+
+function bookingTileMeta(sNorm: string): { Icon: LucideIcon; bg: string } {
+  switch (sNorm) {
+    case 'requested':
+      return { Icon: Send, bg: 'bg-amber-500' }
+    case 'on_hold':
+      return { Icon: Pause, bg: 'bg-sky-500' }
+    case 'tentative':
+      return { Icon: Sparkles, bg: 'bg-amber-500' }
+    case 'confirmed':
+      return { Icon: Check, bg: 'bg-emerald-500' }
+    case 'cancel_requested':
+      return { Icon: Flag, bg: 'bg-orange-500' }
+    case 'cancelled':
+      return { Icon: X, bg: 'bg-red-600' }
+    case 'no_show':
+      return { Icon: LogOut, bg: 'bg-slate-700' }
+    case 'failed':
+      return { Icon: AlertTriangle, bg: 'bg-rose-600' }
+    case 'expired':
+      return { Icon: CalendarX2, bg: 'bg-slate-500' }
+    default:
+      return { Icon: Ellipsis, bg: 'bg-slate-500' }
+  }
+}
+
+function bookingLineIcon(sNorm: string): LucideIcon {
+  switch (sNorm) {
+    case 'requested':
+      return Send
+    case 'on_hold':
+      return Pause
+    case 'tentative':
+      return Sparkles
+    case 'confirmed':
+      return Check
+    case 'cancel_requested':
+      return Flag
+    case 'cancelled':
+      return X
+    case 'no_show':
+      return LogOut
+    case 'failed':
+      return AlertTriangle
+    case 'expired':
+      return CalendarX2
+    default:
+      return Ellipsis
+  }
+}
+
+function vendorTileMeta(sNorm: string): { Icon: LucideIcon; bg: string } {
+  switch (sNorm) {
+    case 'pending':
+      return { Icon: Hourglass, bg: 'bg-amber-500' }
+    case 'confirmed':
+      return { Icon: Check, bg: 'bg-emerald-500' }
+    case 'rejected':
+      return { Icon: X, bg: 'bg-red-600' }
+    case 'changed':
+      return { Icon: ArrowRightLeft, bg: 'bg-indigo-500' }
+    case 'cancelled':
+      return { Icon: Slash, bg: 'bg-slate-600' }
+    default:
+      return { Icon: Ellipsis, bg: 'bg-slate-500' }
+  }
+}
+
+function vendorLineIcon(sNorm: string): LucideIcon {
+  switch (sNorm) {
+    case 'pending':
+      return Hourglass
+    case 'confirmed':
+      return Check
+    case 'rejected':
+      return X
+    case 'changed':
+      return ArrowRightLeft
+    case 'cancelled':
+      return Minus
+    default:
+      return Ellipsis
+  }
+}
 
 export function TicketBookingBookingStatusIcon({
   status,
   className = 'h-3 w-3',
   title,
+  variant = 'line',
 }: {
   status: string | null | undefined
   className?: string
   title?: string
+  variant?: TicketBookingAxisIconVariant
 }) {
-  const s = (status ?? 'requested').trim().toLowerCase()
-  let Icon: LucideIcon = CircleDashed
-  switch (s) {
-    case 'requested':
-      Icon = Send
-      break
-    case 'on_hold':
-      Icon = PauseCircle
-      break
-    case 'tentative':
-      Icon = HelpCircle
-      break
-    case 'confirmed':
-      Icon = CheckCircle2
-      break
-    case 'cancel_requested':
-      Icon = ShieldAlert
-      break
-    case 'cancelled':
-      Icon = XCircle
-      break
-    case 'no_show':
-      Icon = UserX
-      break
-    case 'failed':
-      Icon = OctagonX
-      break
-    case 'expired':
-      Icon = TimerOff
-      break
-    default:
-      Icon = CircleDashed
-      break
+  const sNorm = (status ?? 'requested').trim().toLowerCase()
+
+  if (variant === 'tile') {
+    const { Icon, bg } = bookingTileMeta(sNorm)
+    return (
+      <span className={iconWrap} title={title}>
+        <span
+          className={`inline-flex items-center justify-center rounded-md shadow-sm ring-1 ring-black/15 ${bg} ${className}`}
+        >
+          <Icon className="h-[62%] w-[62%] text-white" strokeWidth={2.6} aria-hidden />
+        </span>
+      </span>
+    )
   }
+
+  const Icon = bookingLineIcon(sNorm)
   return (
     <span className={iconWrap} title={title}>
       <Icon className={className} strokeWidth={2.25} aria-hidden />
@@ -74,33 +144,29 @@ export function TicketBookingVendorStatusIcon({
   status,
   className = 'h-3 w-3',
   title,
+  variant = 'line',
 }: {
   status: string | null | undefined
   className?: string
   title?: string
+  variant?: TicketBookingAxisIconVariant
 }) {
-  const s = (status ?? 'pending').trim().toLowerCase()
-  let Icon: LucideIcon = Hourglass
-  switch (s) {
-    case 'pending':
-      Icon = Hourglass
-      break
-    case 'confirmed':
-      Icon = CheckCircle2
-      break
-    case 'rejected':
-      Icon = XCircle
-      break
-    case 'changed':
-      Icon = RefreshCw
-      break
-    case 'cancelled':
-      Icon = Ban
-      break
-    default:
-      Icon = Loader
-      break
+  const sNorm = (status ?? 'pending').trim().toLowerCase()
+
+  if (variant === 'tile') {
+    const { Icon, bg } = vendorTileMeta(sNorm)
+    return (
+      <span className={iconWrap} title={title}>
+        <span
+          className={`inline-flex items-center justify-center rounded-md shadow-sm ring-1 ring-black/15 ${bg} ${className}`}
+        >
+          <Icon className="h-[62%] w-[62%] text-white" strokeWidth={2.6} aria-hidden />
+        </span>
+      </span>
+    )
   }
+
+  const Icon = vendorLineIcon(sNorm)
   return (
     <span className={iconWrap} title={title}>
       <Icon className={className} strokeWidth={2.25} aria-hidden />

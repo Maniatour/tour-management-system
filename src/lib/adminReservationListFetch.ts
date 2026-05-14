@@ -110,6 +110,18 @@ async function buildSearchOrClause(
   const t = term.trim()
   if (!t) return null
 
+  // 전체 UUID: 예약·고객·상품·채널 PK 등 btree eq만 사용 — customers/products/channels
+  // 전부 ilike 조회(최대 3왕복)는 매우 느리므로 건너뜀.
+  if (isProbableUuid(t)) {
+    const id = t.trim()
+    return [
+      `id.eq.${eqQuoted(id)}`,
+      `customer_id.eq.${eqQuoted(id)}`,
+      `product_id.eq.${eqQuoted(id)}`,
+      `channel_id.eq.${eqQuoted(id)}`,
+    ].join(',')
+  }
+
   const q = ilikeQuoted(t)
   const parts: string[] = [
     `channel_rn.ilike.${q}`,
@@ -120,10 +132,6 @@ async function buildSearchOrClause(
     `variant_key.ilike.${q}`,
   ]
 
-  // DATE/TIME/UUID 컬럼은 PostgREST에서 ilike(~~*) 불가 — 정확 일치만 or에 추가
-  if (isProbableUuid(t)) {
-    parts.push(`id.eq.${eqQuoted(t.trim())}`)
-  }
   if (isIsoDateOnly(t)) {
     parts.push(`tour_date.eq.${eqQuoted(t.trim())}`)
   }
@@ -132,36 +140,55 @@ async function buildSearchOrClause(
     parts.push(`tour_time.eq.${eqQuoted(timeEq)}`)
   }
 
-  const lookupLimit = 500
-  const likePat = `%${t.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+  // ASCII 한 글자(a, 1 등): 보조 테이블 ilike + 대량 in(...)이 비용 대비 이득이 적음
+  const skipAuxLookups = t.length === 1 && /^[\x00-\x7F]$/.test(t)
 
-  const [cids, pids, chids] = await Promise.all([
-    safeSelectIds('customers', () =>
-      supabase
-        .from('customers')
-        .select('id')
-        .or(
-          `name.ilike.${q},special_requests.ilike.${q},email.ilike.${q},phone.ilike.${q},emergency_contact.ilike.${q}`
-        )
-        .limit(lookupLimit)
-    ),
-    safeSelectIds('products', () =>
-      supabase
-        .from('products')
-        .select('id')
-        .or(
-          `name.ilike.${q},name_ko.ilike.${q},name_en.ilike.${q},product_code.ilike.${q},customer_name_ko.ilike.${q},customer_name_en.ilike.${q}`
-        )
-        .limit(lookupLimit)
-    ),
-    safeSelectIds('channels', () =>
-      supabase.from('channels').select('id').ilike('name', likePat).limit(lookupLimit)
-    ),
-  ])
+  if (!skipAuxLookups) {
+    const lookupLimit = 500
+    const likePat = `%${t.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
 
-  if (cids.length) parts.push(`customer_id.in.(${cids.join(',')})`)
-  if (pids.length) parts.push(`product_id.in.(${pids.join(',')})`)
-  if (chids.length) parts.push(`channel_id.in.(${chids.join(',')})`)
+    const customerOr = `name.ilike.${q},special_requests.ilike.${q},email.ilike.${q},phone.ilike.${q},emergency_contact.ilike.${q}`
+
+    const [cidsActive, pids, chids] = await Promise.all([
+      safeSelectIds('customers(active)', () =>
+        supabase
+          .from('customers')
+          .select('id')
+          .or(customerOr)
+          .eq('archive', false)
+          .limit(lookupLimit)
+      ),
+      safeSelectIds('products', () =>
+        supabase
+          .from('products')
+          .select('id')
+          .or(
+            `name.ilike.${q},name_ko.ilike.${q},name_en.ilike.${q},product_code.ilike.${q},customer_name_ko.ilike.${q},customer_name_en.ilike.${q}`
+          )
+          .limit(lookupLimit)
+      ),
+      safeSelectIds('channels', () =>
+        supabase.from('channels').select('id').ilike('name', likePat).limit(lookupLimit)
+      ),
+    ])
+
+    /** 보관 고객: 활성 매칭이 없을 때만 id 조회(보관 행 스캔·IN 크기 절약). 동일 문자열에 활성+보관이 같이 맞으면 보관 쪽 예약은 이 경로로는 안 잡힐 수 있음. */
+    const cids =
+      cidsActive.length > 0
+        ? cidsActive
+        : await safeSelectIds('customers(archive)', () =>
+            supabase
+              .from('customers')
+              .select('id')
+              .or(customerOr)
+              .eq('archive', true)
+              .limit(lookupLimit)
+          )
+
+    if (cids.length) parts.push(`customer_id.in.(${cids.join(',')})`)
+    if (pids.length) parts.push(`product_id.in.(${pids.join(',')})`)
+    if (chids.length) parts.push(`channel_id.in.(${chids.join(',')})`)
+  }
 
   return parts.join(',')
 }
@@ -180,6 +207,9 @@ function buildAdminReservationListQuery(
   opts?: BuildQueryOpts
 ) {
   const includeExactCount = opts?.includeExactCount !== false
+  const searchActive = args.debouncedSearchTerm.trim().length > 0
+  /** 검색 시 OR·in(...)이 무거워 `exact` 카운트가 첫 응답을 크게 지연시킴 → 계획 행수로 대체 */
+  const reservationCountMode = searchActive ? ('planned' as const) : ('exact' as const)
 
   let selectFields = '*, choices, channels(name)'
   if (args.sortBy === 'customer_name') {
@@ -189,7 +219,7 @@ function buildAdminReservationListQuery(
   }
 
   let q = includeExactCount
-    ? supabase.from('reservations').select(selectFields, { count: 'exact' })
+    ? supabase.from('reservations').select(selectFields, { count: reservationCountMode })
     : supabase.from('reservations').select(selectFields)
 
   if (args.customerIdFromUrl) {

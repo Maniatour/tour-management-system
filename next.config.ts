@@ -11,6 +11,8 @@ const withSerwist = withSerwistInit({
 	swSrc: 'src/app/sw.ts',
 	swDest: 'public/sw.js',
 	register: false,
+	// next dev는 정적 해시가 빌드와 달라 프리캐시 404(bad-precaching-response)가 난다.
+	disable: process.env.NODE_ENV === 'development',
 	additionalPrecacheEntries: [{ url: '/~offline', revision }],
 })
 

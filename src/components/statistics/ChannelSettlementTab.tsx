@@ -29,6 +29,7 @@ import {
   isReturnedPaymentStatus,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
+  computeCustomerPaymentNetForCompanyRevenueBase,
 } from '@/utils/reservationPricingBalance'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
 import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
@@ -88,6 +89,8 @@ interface ReservationItem {
   commissionBasePrice?: number
   cardFee?: number
   prepaymentTip?: number
+  /** DB `refund_amount` — 고객 총액(넷) 산식용 */
+  refundAmount?: number
   /** 입금내역 (Partner Received) 합계 */
   partnerReceivedAmount?: number
   /** DB `reservation_pricing.channel_settlement_amount`만 표시 (통계 화면에서 재계산 없음) */
@@ -223,6 +226,30 @@ function channelSettlementBaseForStatsRow(
   })
 }
 
+function reservationItemToPricingBalanceLike(
+  item: ReservationItem,
+  extras: StatsPricingExtras
+): Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0] {
+  return {
+    product_price_total: item.productPriceTotal ?? 0,
+    coupon_discount: item.couponDiscount ?? 0,
+    additional_discount: item.additionalDiscount ?? 0,
+    additional_cost: item.additionalCost ?? 0,
+    tax: item.tax ?? 0,
+    card_fee: item.cardFee ?? 0,
+    prepayment_cost: extras.prepaymentCost ?? 0,
+    prepayment_tip: item.prepaymentTip ?? 0,
+    refund_amount: item.refundAmount ?? 0,
+    option_total: item.optionTotal ?? 0,
+    required_option_total: 0,
+    private_tour_additional_cost: 0,
+    not_included_price: extras.notIncludedPrice ?? 0,
+    adult_product_price: item.adultPrice ?? 0,
+    child_product_price: 0,
+    infant_product_price: 0,
+  }
+}
+
 /** 예약 정보 수정 → 가격정보 → 4번 총 매출과 동일 산식 */
 function buildCompanyTotalRevenueForChannelRow(
   item: ReservationItem,
@@ -267,19 +294,34 @@ function buildCompanyTotalRevenueForChannelRow(
     channelPaymentGross: channelPaymentGrossDbLike,
   })
 
+  const party = {
+    adults: item.adults,
+    children: item.child,
+    infants: item.infant,
+  }
+  const pricingLike = reservationItemToPricingBalanceLike(item, extras)
+  const customerNetSelf =
+    !ctx.isOta && !isReservationCancelled
+      ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLike, party, ctx.returnedAmount)
+      : 0
+
   return computeCompanyTotalRevenueLikePricingSection({
-    channelSettlementBase: base,
+    channelSettlementBase:
+      !ctx.isOta && !isReservationCancelled ? customerNetSelf : base,
     isOTAChannel: ctx.isOta,
     isReservationCancelled,
     reservationOptionsTotalPrice: ctx.isOta ? ctx.reservationOptionsSum : 0,
-    notIncludedTotalUsd,
+    notIncludedTotalUsd: !ctx.isOta && !isReservationCancelled ? 0 : notIncludedTotalUsd,
     additionalDiscount: item.additionalDiscount ?? 0,
     additionalCost: item.additionalCost ?? 0,
-    tax: item.tax ?? 0,
-    prepaymentCost: extras.prepaymentCost ?? 0,
+    tax: !ctx.isOta && !isReservationCancelled ? 0 : item.tax ?? 0,
+    prepaymentCost: !ctx.isOta && !isReservationCancelled ? 0 : extras.prepaymentCost ?? 0,
     refundedOurAmount: ctx.refundedOur,
     omitAdditionalDiscountAndCostFromSum,
     excludeHomepageAdditionalCostFromCompanyTotals: ctx.isHomepageChannel,
+    revenueFromCustomerPaymentTotal: !ctx.isOta && !isReservationCancelled,
+    cardFeeForCompanyRevenue: ctx.isOta ? item.cardFee ?? 0 : 0,
+    prepaymentTipForCompanyRevenue: ctx.isOta ? item.prepaymentTip ?? 0 : 0,
   })
 }
 
@@ -412,7 +454,7 @@ function commissionBasePriceFromRow(row: { commission_base_price?: unknown }): n
 /** 채널별 정산 탭 예약·투어 가격 조회/동기화 공통 */
 /** `online_payment_amount` 등은 스키마에 없을 수 있어 SELECT에 넣지 않음 — 매퍼에서 없으면 0 */
 const CHANNEL_SETTLEMENT_PRICING_SELECT =
-  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, prepayment_cost, channel_settlement_amount, commission_base_price, pricing_adults, not_included_price'
+  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, prepayment_cost, channel_settlement_amount, commission_base_price, pricing_adults, not_included_price, refund_amount'
 
 /** `.in()` URL 한도 대응 + 청크 간 병렬로 왕복 횟수 감소 */
 const RESERVATION_REL_CHUNK = 100
@@ -450,6 +492,7 @@ function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
     onlinePaymentAmount: Number(p.online_payment_amount) || 0,
     channelSettlementStored: channelSettlementAmountFromRow(p),
     commissionBasePrice: commissionBasePriceFromRow(p),
+    refundAmount: Number(p.refund_amount) || 0,
     pricingAdults:
       p.pricing_adults != null && p.pricing_adults !== ''
         ? Math.max(0, Math.floor(Number(p.pricing_adults)))
@@ -719,6 +762,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             balanceAmount: mapped.balanceAmount,
             cardFee: mapped.cardFee,
             prepaymentTip: mapped.prepaymentTip,
+            refundAmount: mapped.refundAmount,
             channelSettlementAmount: mapped.channelSettlementStored,
             pricingCommissionPercent: mapped.pricingCommissionPercent,
             pricingAdults:
@@ -999,8 +1043,39 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             returnedAmount,
           })
           const depAmt = toNum(pricingInfo.depositAmount)
+          const stRs = String(reservation.status || '').toLowerCase().trim()
+          const isResCancelledRs = stRs === 'cancelled' || stRs === 'canceled'
+          const partyRs = {
+            adults: reservation.adults,
+            children: reservation.child,
+            infants: reservation.infant,
+          }
+          const pricingLikeRs: Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0] = {
+            product_price_total: productTotalForChannelSettlement,
+            coupon_discount: toNum(pricingInfo.couponDiscount),
+            additional_discount: toNum(pricingInfo.additionalDiscount),
+            additional_cost: toNum(pricingInfo.additionalCost),
+            tax: toNum(pricingInfo.tax),
+            card_fee: toNum(pricingInfo.cardFee),
+            prepayment_cost: toNum(pricingInfo.prepaymentCost),
+            prepayment_tip: toNum(pricingInfo.prepaymentTip),
+            refund_amount: toNum(pricingInfo.refundAmount),
+            option_total: optionActiveSum,
+            required_option_total: toNum(pricingInfo.requiredOptionTotal),
+            private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
+            not_included_price: toNum(pricingInfo.not_included_price),
+            adult_product_price: toNum(pricingInfo.adultProductPrice),
+            child_product_price: toNum(pricingInfo.childProductPrice),
+            infant_product_price: toNum(pricingInfo.infantProductPrice),
+          }
+          const customerNetForStored =
+            !isOTA && !isResCancelledRs
+              ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikeRs, partyRs, returnedAmount)
+              : null
           const storedMetrics = computeStoredCompanyRevenueFields({
             channelSettlementBase: channelSettlementToSave,
+            customerPaymentNetForRevenueBase: customerNetForStored,
+            cardFee: toNum(pricingInfo.cardFee),
             reservationStatus: reservation.status,
             isOTAChannel: isOTA,
             isHomepageBooking,
@@ -1416,6 +1491,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         pricingCommissionPercent: null,
         commissionBasePrice: null,
         pricingAdults: null,
+        refundAmount: 0,
       }
       const pricingAdultsResolved =
         pricing.pricingAdults != null
@@ -1453,6 +1529,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         balanceAmount: pricing.balanceAmount,
         cardFee: pricing.cardFee,
         prepaymentTip: pricing.prepaymentTip,
+        refundAmount: pricing.refundAmount ?? 0,
         partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
         channelSettlementAmount,
         pricingCommissionPercent: pricing.pricingCommissionPercent ?? null,
@@ -1690,6 +1767,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             pricingCommissionPercent: null,
             commissionBasePrice: null,
             pricingAdults: null,
+            refundAmount: 0,
           }
           /** 채널 정산 금액: `channel_settlement_amount`만 (commission_base_price 미사용) */
           const channelSettlementAmount = pricing.channelSettlementStored
@@ -1728,6 +1806,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             balanceAmount: pricing.balanceAmount,
             cardFee: pricing.cardFee,
             prepaymentTip: pricing.prepaymentTip,
+            refundAmount: pricing.refundAmount ?? 0,
             partnerReceivedAmount: partnerReceivedMap[reservation.id] ?? 0,
             channelSettlementAmount,
             pricingCommissionPercent: pricing.pricingCommissionPercent ?? null,

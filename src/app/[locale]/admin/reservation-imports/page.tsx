@@ -215,7 +215,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const router = useRouter()
   const searchParams = useSearchParams()
   const locale = (params?.locale as string) || 'ko'
-  const { products: productsList = [] } = useReservationData()
+  const { products: productsList = [] } = useReservationData({
+    disableReservationsAutoLoad: true,
+    customersByReservationIds: true,
+  })
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
   const [listUi, setListUi] = useRoutePersistedState('reservation-imports-v2', RESERVATION_IMPORTS_UI_DEFAULT)

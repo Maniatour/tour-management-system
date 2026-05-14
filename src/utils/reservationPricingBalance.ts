@@ -484,6 +484,24 @@ export function computeCustomerPaymentTotalLineFormula(
   return roundUsd2(productSum - discount + extras + optionsSubtotal)
 }
 
+/**
+ * 가격 정보 ④(Self·진행 예약): 고객 총 결제(넷) — 라인 산식 gross 후 Returned 초과분만 추가 차감
+ * (`PricingSection` `calculateTotalCustomerPayment` 와 동일 원리)
+ */
+export function computeCustomerPaymentNetForCompanyRevenueBase(
+  pricing: Parameters<typeof computeCustomerPaymentTotalLineFormula>[0],
+  party: PartySizeSource,
+  returnedAmount: number
+): number {
+  const gross = roundUsd2(computeCustomerPaymentTotalLineFormula(pricing, party))
+  const manualRef = pricingFieldToNumber(
+    (pricing as { refund_amount?: unknown }).refund_amount
+  )
+  const ret = Math.max(0, Number(returnedAmount) || 0)
+  const returnedSurplus = Math.max(0, roundUsd2(ret - manualRef))
+  return Math.max(0, roundUsd2(gross - returnedSurplus))
+}
+
 /** 산식 총액 − 보증금 (선택 반영 시 balance_amount 갱신용) */
 export function computeRemainingBalanceFromLineFormula(
   pricing: Parameters<typeof computeCustomerPaymentTotalLineFormula>[0],
