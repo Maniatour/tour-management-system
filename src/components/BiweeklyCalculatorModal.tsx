@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import html2pdf from 'html2pdf.js'
@@ -72,6 +72,29 @@ interface CompanyExpenseRow {
   paid_to_employee_email: string | null
 }
 
+/** 2주급 계산기 직원 목록 (활성·비활성 구분) */
+interface BiweeklyTeamMember {
+  email: string
+  name_ko: string
+  position: string
+  display_name: string | null
+  languages?: string[] | null
+  phone?: string | null
+  /** DB null/undefined는 활성으로 간주 */
+  is_active: boolean
+}
+
+function teamMemberMatchesSearch(member: BiweeklyTeamMember, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const label = (member.display_name || member.name_ko || '').toLowerCase()
+  return (
+    label.includes(q) ||
+    member.email.toLowerCase().includes(q) ||
+    (member.position || '').toLowerCase().includes(q)
+  )
+}
+
 const HOURLY_RATES_STORAGE_KEY = 'biweekly_hourly_rates'
 
 function getSavedHourlyRates(): Record<string, string> {
@@ -111,7 +134,11 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
-  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string, display_name: string | null, languages?: string[] | null, phone?: string | null}>>([])
+  const [teamMembers, setTeamMembers] = useState<BiweeklyTeamMember[]>([])
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false)
+  const [employeeTab, setEmployeeTab] = useState<'active' | 'inactive'>('active')
+  const [employeeSearch, setEmployeeSearch] = useState('')
+  const employeePickerRef = useRef<HTMLDivElement>(null)
   const [employeeRatePeriods, setEmployeeRatePeriods] = useState<EmployeeRatePeriod[]>([])
   const [tourFees, setTourFees] = useState<TourFee[]>([])
   const [companyExpensesForEmployee, setCompanyExpensesForEmployee] = useState<CompanyExpenseRow[]>([])
@@ -187,8 +214,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, position, display_name, languages, phone')
-        .eq('is_active', true)
+        .select('email, name_ko, position, display_name, languages, phone, is_active')
         .order('name_ko')
 
       if (error) {
@@ -197,20 +223,28 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       }
 
       // op, office manager, 가이드, 드라이버 필터링
-      const filteredMembers = (data || []).filter(member => {
-        const position = member.position?.toLowerCase()
-        return position === 'op' || 
-               position === 'office manager' || 
-               position === '가이드' || 
-               position === 'guide' ||
-               position === 'tour guide' ||
-               position === '드라이버' || 
-               position === 'driver'
-      })
+      const filteredMembers: BiweeklyTeamMember[] = (data || [])
+        .filter(member => {
+          const position = member.position?.toLowerCase()
+          return (
+            position === 'op' ||
+            position === 'office manager' ||
+            position === '가이드' ||
+            position === 'guide' ||
+            position === 'tour guide' ||
+            position === '드라이버' ||
+            position === 'driver'
+          )
+        })
+        .map(member => ({
+          ...member,
+          is_active: member.is_active !== false,
+        }))
 
       setTeamMembers(filteredMembers)
       if (filteredMembers.length > 0) {
-        const firstMember = filteredMembers[0]
+        const activeMembers = filteredMembers.filter(m => m.is_active)
+        const firstMember = activeMembers[0] ?? filteredMembers[0]
         setSelectedEmployee(firstMember.email)
         const savedRates = getSavedHourlyRates()
         const savedRate = savedRates[firstMember.email]
@@ -408,6 +442,28 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     () => sortAttendanceRecordsForMealPolicy(attendanceRecords),
     [attendanceRecords]
   )
+
+  const employeesInTab = useMemo(
+    () => teamMembers.filter(m => (employeeTab === 'active' ? m.is_active : !m.is_active)),
+    [teamMembers, employeeTab]
+  )
+
+  const employeesListFiltered = useMemo(
+    () => employeesInTab.filter(m => teamMemberMatchesSearch(m, employeeSearch)),
+    [employeesInTab, employeeSearch]
+  )
+
+  useEffect(() => {
+    if (!employeePickerOpen) return
+    const onDocMouseDown = (e: MouseEvent) => {
+      const root = employeePickerRef.current
+      if (root && !root.contains(e.target as Node)) {
+        setEmployeePickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [employeePickerOpen])
 
   useEffect(() => {
     if (!isOpen || !startDate || !endDate) {
@@ -822,9 +878,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }
 
-  // 직원 선택 핸들러 (저장된 시급이 있으면 적용, 없으면 position 기본값)
-  const handleEmployeeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedEmail = e.target.value
+  // 직원 선택 (저장된 시급이 있으면 적용, 없으면 기간 기준 DB 시급)
+  const handleEmployeeSelect = (selectedEmail: string) => {
     setSelectedEmployee(selectedEmail)
     const savedRates = getSavedHourlyRates()
     const savedRate = savedRates[selectedEmail]
@@ -1042,6 +1097,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setPeriodMealCounts({})
     setSelectedEmployee('')
     setTourFees([])
+    setEmployeePickerOpen(false)
+    setEmployeeSearch('')
+    setEmployeeTab('active')
     onClose()
   }
 
@@ -2202,18 +2260,114 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   직원 선택
                 </label>
                 <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2 sm:gap-0">
-                  <select
-                    value={selectedEmployee}
-                    onChange={handleEmployeeChange}
-                    className="flex-1 min-w-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">직원을 선택하세요</option>
-                    {teamMembers.map((member) => (
-                      <option key={member.email} value={member.email}>
-                        {(member.display_name || member.name_ko)} ({member.position})
-                      </option>
-                    ))}
-                  </select>
+                  <div ref={employeePickerRef} className="relative flex-1 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmployeePickerOpen(prev => {
+                          const next = !prev
+                          if (next) {
+                            const m = teamMembers.find(x => x.email === selectedEmployee)
+                            setEmployeeTab(m && !m.is_active ? 'inactive' : 'active')
+                            setEmployeeSearch('')
+                          }
+                          return next
+                        })
+                      }}
+                      aria-expanded={employeePickerOpen}
+                      aria-haspopup="listbox"
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 sm:px-2 sm:py-1.5 text-sm text-left border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    >
+                      <span className="truncate min-w-0">
+                        {selectedEmployee
+                          ? (() => {
+                              const m = teamMembers.find(x => x.email === selectedEmployee)
+                              const name = m?.display_name || m?.name_ko || selectedEmployee
+                              return `${name}${m?.position ? ` (${m.position})` : ''}`
+                            })()
+                          : '직원을 선택하세요'}
+                      </span>
+                      <ChevronDown
+                        className={`w-4 h-4 shrink-0 text-gray-500 transition-transform ${employeePickerOpen ? 'rotate-180' : ''}`}
+                        aria-hidden
+                      />
+                    </button>
+                    {employeePickerOpen && (
+                      <div
+                        className="absolute left-0 right-0 top-full z-30 mt-1 flex max-h-72 min-h-0 flex-col overflow-hidden rounded-md border border-gray-200 bg-white py-2 shadow-lg"
+                        role="listbox"
+                        aria-label="직원 목록"
+                      >
+                        <div className="flex shrink-0 gap-0.5 px-2 pb-2">
+                          <button
+                            type="button"
+                            onClick={() => setEmployeeTab('active')}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                              employeeTab === 'active'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            활성
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEmployeeTab('inactive')}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                              employeeTab === 'inactive'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            비활성
+                          </button>
+                        </div>
+                        <div className="relative shrink-0 px-2 pb-2">
+                          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="search"
+                            value={employeeSearch}
+                            onChange={e => setEmployeeSearch(e.target.value)}
+                            placeholder="이름, 이메일, 포지션 검색"
+                            className="w-full rounded-md border border-gray-300 py-1.5 pl-9 pr-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <ul className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1">
+                          {employeesListFiltered.length === 0 ? (
+                            <li className="px-2 py-3 text-center text-sm text-gray-500">일치하는 직원이 없습니다</li>
+                          ) : (
+                            employeesListFiltered.map(member => {
+                              const label = member.display_name || member.name_ko
+                              const selected = member.email === selectedEmployee
+                              return (
+                                <li key={member.email}>
+                                  <button
+                                    type="button"
+                                    role="option"
+                                    aria-selected={selected}
+                                    onClick={() => {
+                                      handleEmployeeSelect(member.email)
+                                      setEmployeePickerOpen(false)
+                                    }}
+                                    className={`flex w-full flex-col items-start rounded-md px-2 py-2 text-left text-sm transition-colors ${
+                                      selected ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <span className="font-medium">
+                                      {label}
+                                      <span className="ml-1 font-normal text-gray-600">({member.position})</span>
+                                    </span>
+                                    <span className="mt-0.5 truncate text-xs text-gray-500">{member.email}</span>
+                                  </button>
+                                </li>
+                              )
+                            })
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <button
                       onClick={setCurrentPeriod}

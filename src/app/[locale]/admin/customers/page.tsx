@@ -29,6 +29,7 @@ import { supabase } from '@/lib/supabase'
 import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateReservationId, generateCustomerId } from '@/lib/entityIds'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
+import { filterRowsByArchiveSearchTier } from '@/lib/customerArchiveSearchFilter'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import InvoiceModal from '@/components/customer/InvoiceModal'
@@ -60,6 +61,8 @@ type Customer = {
   id_photo_url: string | null
   created_at: string | null
   updated_at: string | null
+  /** DB customers.archive — 보관 고객 */
+  archive?: boolean | null
 }
 
 type CustomerInsert = {
@@ -1252,16 +1255,17 @@ export default function AdminCustomers() {
     fetchDocumentCounts()
   }, [fetchReservationInfo, fetchDocumentCounts])
 
-  // 검색된 고객 목록
-  const filteredCustomers = (customers || []).filter(customer => {
-    // 상태 필터 적용
-    if (statusFilter === 'active' && customer.status !== 'active') return false
-    if (statusFilter === 'inactive' && customer.status === 'active') return false
-    
-    // 검색어 필터 적용 (ID 검색 추가)
-    if (searchTerm.trim()) {
+  // 검색된 고객 목록 — 비보관 매칭 우선, 없을 때만 보관 매칭(예약 관리와 동일)
+  const filteredCustomers = useMemo(() => {
+    const base = (customers || []).filter((customer) => {
+      if (statusFilter === 'active' && customer.status !== 'active') return false
+      if (statusFilter === 'inactive' && customer.status === 'active') return false
+      return true
+    })
+    const matchesFields = (customer: Customer): boolean => {
+      if (!searchTerm.trim()) return true
       const searchLower = searchTerm.toLowerCase()
-      return (
+      return !!(
         customer.id.toLowerCase().includes(searchLower) ||
         customer.name.toLowerCase().includes(searchLower) ||
         (customer.email && customer.email.toLowerCase().includes(searchLower)) ||
@@ -1270,9 +1274,8 @@ export default function AdminCustomers() {
         customer.special_requests?.toLowerCase().includes(searchLower)
       )
     }
-    
-    return true
-  })
+    return filterRowsByArchiveSearchTier(base, searchTerm, matchesFields)
+  }, [customers, searchTerm, statusFilter])
 
   // 검색어나 필터 변경 시 페이지 리셋
   useEffect(() => {
@@ -2619,17 +2622,19 @@ function CustomerForm({
     return 'ota' // 기본값
   }, [channels])
 
-  // 고객 검색 필터링 함수 (ID 검색 추가)
+  // 고객 검색 필터링 — 비보관 우선, 없으면 보관만(예약 관리와 동일)
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return []
-    
-    const searchLower = customerSearch.toLowerCase()
-    return customers.filter(customer => 
-      customer.id.toLowerCase().includes(searchLower) ||
-      customer.name?.toLowerCase().includes(searchLower) ||
-      customer.email?.toLowerCase().includes(searchLower) ||
-      customer.phone?.toLowerCase().includes(searchLower)
-    ).slice(0, 10) // 최대 10개만 표시
+    const matches = (customer: Customer): boolean => {
+      const searchLower = customerSearch.toLowerCase()
+      return !!(
+        customer.id.toLowerCase().includes(searchLower) ||
+        customer.name?.toLowerCase().includes(searchLower) ||
+        customer.email?.toLowerCase().includes(searchLower) ||
+        customer.phone?.toLowerCase().includes(searchLower)
+      )
+    }
+    return filterRowsByArchiveSearchTier(customers, customerSearch, matches).slice(0, 10)
   }, [customers, customerSearch])
 
   // 고객 선택 시 폼 데이터 업데이트

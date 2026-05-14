@@ -30,6 +30,7 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   name_ko?: string | null | undefined;
   name_en?: string | null | undefined;
   assignment_status?: string | null | undefined;
+  customer_name_ko?: string | null | undefined;
   customer_name_en?: string | null | undefined;
   total_people?: number | undefined;
   assigned_people?: number | undefined;
@@ -208,6 +209,10 @@ export default function AdminTours() {
   const [needCheckStats, setNeedCheckStats] = useState({ union: 0 })
   const [needCheckStatsLoading, setNeedCheckStatsLoading] = useState(false)
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
+  /** 투어 배정 예약의 고객 이름·archive — 고객명 검색 시 예약 관리와 동일하게 비보관 우선 */
+  const [tourCustomerLookup, setTourCustomerLookup] = useState<Map<string, { name: string; archive: boolean }>>(
+    () => new Map()
+  )
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
   const [tourUi, setTourUi, tourUiHydrated] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
   const { viewMode, listViewDateFilter, searchTerm, selectedStatuses } = tourUi
@@ -550,11 +555,35 @@ export default function AdminTours() {
 
       if (reservationsError) {
         console.error('Error fetching reservations:', reservationsError)
+        setTourCustomerLookup(new Map())
         return
       }
 
       // 5. allReservations 상태 설정
       setAllReservations(reservationsData || [])
+
+      const custIdSet = new Set<string>()
+      for (const r of reservationsData || []) {
+        const cid = r.customer_id ? String(r.customer_id).trim() : ''
+        if (cid) custIdSet.add(cid)
+      }
+      const custIdsAll = [...custIdSet]
+      const custLookup = new Map<string, { name: string; archive: boolean }>()
+      const CUST_CHUNK = 400
+      let custFetchOk = true
+      for (let i = 0; i < custIdsAll.length; i += CUST_CHUNK) {
+        const chunk = custIdsAll.slice(i, i + CUST_CHUNK)
+        const { data: cdata, error: cerr } = await supabase.from('customers').select('id, name, archive').in('id', chunk)
+        if (cerr) {
+          console.warn('tour admin: customers lookup for search skipped:', cerr)
+          custFetchOk = false
+          break
+        }
+        for (const c of cdata || []) {
+          custLookup.set(String(c.id), { name: String(c.name ?? ''), archive: c.archive === true })
+        }
+      }
+      setTourCustomerLookup(custFetchOk ? custLookup : new Map())
 
       // 5-1. reservation_pricing 데이터 가져오기 (밸런스 확인용)
       const reservationIds = (reservationsData || []).map(r => r.id).filter(Boolean)
@@ -689,6 +718,7 @@ export default function AdminTours() {
       setStatusOptions(Array.from(statusesSet))
     } catch (error) {
       console.error('Error processing tours:', error)
+      setTourCustomerLookup(new Map())
     }
   }, [supabase])
 
@@ -732,44 +762,114 @@ export default function AdminTours() {
     return list.sort((a, b) => (a.name_ko || '').localeCompare(b.name_ko || ''))
   }, [employees])
 
-  // 필터링된 투어 목록
+  // 필터링된 투어 목록 — 고객명(배정 예약) 검색 시 비보관 고객 매칭 우선(예약·고객 관리와 동일)
   const filteredTours = useMemo(() => {
-    return tours.filter(tour => {
-      const matchesSearch = !searchTerm || 
-        (tour.id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (tour.product_id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (tour.guide_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (tour.assistant_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase())
-
-      // 다중 상태 필터링: 'all'이 선택되어 있으면 모든 투어 표시
-      if (selectedStatuses.includes('all')) {
-        // 검색과 가이드 필터만 적용
-        const email = asGuideEmail.trim().toLowerCase()
-        const matchesAsGuide = !email ||
-          (tour.tour_guide_id && tour.tour_guide_id.toLowerCase() === email) ||
-          (tour.assistant_id && tour.assistant_id.toLowerCase() === email)
-        return matchesSearch && matchesAsGuide
+    const normalizeIds = (value: unknown): string[] => {
+      if (!value) return []
+      if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter((v) => v.length > 0)
+      if (typeof value === 'string') {
+        const trimmed = value.trim()
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(trimmed)
+            return Array.isArray(parsed)
+              ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0)
+              : []
+          } catch {
+            return []
+          }
+        }
+        if (trimmed.includes(',')) return trimmed.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        return trimmed.length > 0 ? [trimmed] : []
       }
+      return []
+    }
 
-      // 선택된 상태가 없으면 아무것도 표시하지 않음
-      if (selectedStatuses.length === 0) {
-        return false
-      }
+    const term = searchTerm.trim()
+    const termLower = term.toLowerCase()
 
-      // tour.tour_status를 우선적으로 확인하고, 없으면 tour.status 확인
-      const tourStatus = (tour.tour_status || tour.status || '').toString().trim()
-      const matchesStatus = selectedStatuses.some(selectedStatus => 
-        selectedStatus.toString().trim() === tourStatus
+    /** id·상품·가이드·상품 고객명(ko/en) — archive 구분 없이 항상 1순위 검색 */
+    const alwaysActiveSearchFields = (tour: ExtendedTour): boolean => {
+      if (!term) return false
+      return (
+        (tour.id || '').toString().toLowerCase().includes(termLower) ||
+        (tour.product_id || '').toString().toLowerCase().includes(termLower) ||
+        (tour.guide_name || '').toString().toLowerCase().includes(termLower) ||
+        (tour.assistant_name || '').toString().toLowerCase().includes(termLower) ||
+        (tour.customer_name_ko || '').toString().toLowerCase().includes(termLower) ||
+        (tour.customer_name_en || '').toString().toLowerCase().includes(termLower)
       )
+    }
 
+    const assignedCustomerNameFlags = (
+      tour: ExtendedTour
+    ): { nonArchivedNameMatch: boolean; archivedNameMatch: boolean } => {
+      let nonArchivedNameMatch = false
+      let archivedNameMatch = false
+      if (!term) return { nonArchivedNameMatch, archivedNameMatch }
+      for (const rawId of normalizeIds(tour.reservation_ids as unknown)) {
+        const rid = String(rawId).trim()
+        if (!rid) continue
+        const row = allReservations.find((r) => String(r.id) === rid)
+        if (!row) continue
+        if (isReservationCancelledStatus(row.status) || isReservationDeletedStatus(row.status)) continue
+        if ((row.product_id || '') !== (tour.product_id || '') || (row.tour_date || '') !== (tour.tour_date || '')) {
+          continue
+        }
+        const cid = row.customer_id ? String(row.customer_id).trim() : ''
+        if (!cid) continue
+        const meta = tourCustomerLookup.get(cid)
+        if (!meta || !meta.name.toLowerCase().includes(termLower)) continue
+        if (meta.archive) archivedNameMatch = true
+        else nonArchivedNameMatch = true
+      }
+      return { nonArchivedNameMatch, archivedNameMatch }
+    }
+
+    const tourMatchesSearchUnion = (tour: ExtendedTour): boolean => {
+      if (!term) return true
+      if (alwaysActiveSearchFields(tour)) return true
+      const { nonArchivedNameMatch, archivedNameMatch } = assignedCustomerNameFlags(tour)
+      return nonArchivedNameMatch || archivedNameMatch
+    }
+
+    const tourActiveSearchTier = (tour: ExtendedTour): boolean => {
+      if (!term) return true
+      if (alwaysActiveSearchFields(tour)) return true
+      return assignedCustomerNameFlags(tour).nonArchivedNameMatch
+    }
+
+    const tourArchiveOnlySearchTier = (tour: ExtendedTour): boolean => {
+      if (!term) return false
+      if (alwaysActiveSearchFields(tour)) return false
+      const { nonArchivedNameMatch, archivedNameMatch } = assignedCustomerNameFlags(tour)
+      return archivedNameMatch && !nonArchivedNameMatch
+    }
+
+    const passesGuide = (tour: ExtendedTour) => {
       const email = asGuideEmail.trim().toLowerCase()
-      const matchesAsGuide = !email ||
+      return (
+        !email ||
         (tour.tour_guide_id && tour.tour_guide_id.toLowerCase() === email) ||
         (tour.assistant_id && tour.assistant_id.toLowerCase() === email)
+      )
+    }
 
-      return matchesSearch && matchesStatus && matchesAsGuide
-    })
-  }, [tours, searchTerm, selectedStatuses, asGuideEmail])
+    const passesStatus = (tour: ExtendedTour): boolean => {
+      if (selectedStatuses.includes('all')) return true
+      if (selectedStatuses.length === 0) return false
+      const tourStatus = (tour.tour_status || tour.status || '').toString().trim()
+      return selectedStatuses.some((s) => s.toString().trim() === tourStatus)
+    }
+
+    const base = tours.filter((tour) => passesGuide(tour) && passesStatus(tour) && tourMatchesSearchUnion(tour))
+
+    if (!term) return base
+
+    const active = base.filter((tour) => tourActiveSearchTier(tour))
+    if (active.length > 0) return active
+    return base.filter((tour) => tourArchiveOnlySearchTier(tour))
+  }, [tours, searchTerm, selectedStatuses, asGuideEmail, allReservations, tourCustomerLookup])
 
   // 리스트(카드) 뷰 전용: 날짜 필터 + 날짜 오름차순 정렬
   const listMonthPrefix = `${gridMonth.getFullYear()}-${String(gridMonth.getMonth() + 1).padStart(2, '0')}-`
