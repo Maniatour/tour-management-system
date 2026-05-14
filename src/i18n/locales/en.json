@@ -2354,6 +2354,8 @@
       "simpleCardGroupRegistration": "Registrations",
       "simpleCardRegistrationSummary": "{count} bookings, {people} people",
       "simpleCardGroupStatusChange": "Status changes",
+      "simpleCardStatusChangeAuditLoadingBadge": "Tallying transitions…",
+      "simpleCardStatusChangeAuditLoadingBody": "Checking audit logs for pending→confirmed and cancellation transitions. Only matching bookings will be counted.",
       "simpleCardStatusTransitionUnknown": "Updated",
       "simpleCardGroupEmpty": "None"
     },

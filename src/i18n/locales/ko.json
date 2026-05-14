@@ -2363,6 +2363,8 @@
       "simpleCardGroupRegistration": "등록",
       "simpleCardRegistrationSummary": "{count}건, {people}명",
       "simpleCardGroupStatusChange": "상태변경",
+      "simpleCardStatusChangeAuditLoadingBadge": "전환 집계 중…",
+      "simpleCardStatusChangeAuditLoadingBody": "대기→확정·취소 전환을 감사 로그로 확인하는 중입니다. 잠시 후 실제 건수만 표시됩니다.",
       "simpleCardStatusTransitionUnknown": "수정됨",
       "simpleCardGroupEmpty": "해당 없음"
     },

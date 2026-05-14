@@ -102,6 +102,7 @@ import {
   pickReservationStatusTransitionForSimpleCardDay,
   isIntoCancelledLikeTransition,
   statusTransitionSortIndex,
+  reservationAuditRowHasStatusFieldChange,
 } from '@/lib/reservationStatusAudit'
 import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
 import { describeError, serializeError } from '@/lib/errorSerialization'
@@ -846,10 +847,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   >({})
   const [simpleCardStatusTransitionLoading, setSimpleCardStatusTransitionLoading] = useState(false)
   /**
-   * 심플 카드 헤더용 status 감사(audit_logs) 조회: 동일 화면에서 키가 흔들려도 한 차례만 수행.
-   * 일별+심플 카드 레이아웃을 벗어나면(`simpleCardAuditContentKey === null`) ref 초기화 → 다시 들어올 때 한 번 더 조회.
+   * 심플 카드 status 감사(audit_logs): `simpleCardAuditContentKey`(주간+대상 목록)마다 한 번만 조회.
+   * 주(`cardsWeekPage`)가 바뀌면 키가 달라지므로 다시 fetch한다. 세션 전역 `done` ref는 키 변경 시 재조회를 막아 0건으로 보이는 버그가 난다.
    */
-  const simpleCardStatusAuditSessionDoneRef = useRef(false)
+  const lastSimpleCardStatusAuditFetchedKeyRef = useRef<string | null>(null)
 
   /** 일별 등록·취소 차트: 취소 = 그날 감사상 취소/삭제 전환일만 (DateGroupHeader 심플 카드와 동일 기준) */
   const [regCancelChartAuditRowsByRecordId, setRegCancelChartAuditRowsByRecordId] = useState<
@@ -2212,8 +2213,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               .gte('created_at', range.rangeStartIso)
               .lte('created_at', range.rangeEndIso)
               .in('record_id', chunk)
-              // postgrest-js: .contains(col, ['status']) → cs.{status} (따옴표 없음) → PG text[] 파싱 오류·500 가능
-              .contains('changed_fields', ['status'])
             if (cancelled) return
             if (error) {
               if (!isAbortLikeError(error) && !cancelled) {
@@ -2223,10 +2222,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               break
             }
             for (const row of data || []) {
-              const id = String((row as unknown as ReservationStatusAuditRow).record_id ?? '').trim()
+              const r = row as unknown as ReservationStatusAuditRow
+              if (!reservationAuditRowHasStatusFieldChange(r)) continue
+              const id = String(r.record_id ?? '').trim()
               if (!id) continue
               const arr = byRecord.get(id) ?? []
-              arr.push(row as unknown as ReservationStatusAuditRow)
+              arr.push(r)
               byRecord.set(id, arr)
             }
           }
@@ -2462,12 +2463,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   useEffect(() => {
     if (simpleCardAuditContentKey === null) {
-      simpleCardStatusAuditSessionDoneRef.current = false
+      lastSimpleCardStatusAuditFetchedKeyRef.current = null
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
       return
     }
-    if (simpleCardStatusAuditSessionDoneRef.current) {
+    if (lastSimpleCardStatusAuditFetchedKeyRef.current === simpleCardAuditContentKey) {
       return
     }
     const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
@@ -2475,7 +2476,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
       if (filteredReservations.length > 0) {
-        simpleCardStatusAuditSessionDoneRef.current = true
+        lastSimpleCardStatusAuditFetchedKeyRef.current = simpleCardAuditContentKey
       }
       return
     }
@@ -2483,12 +2484,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       setSimpleCardStatusTransitionMap({})
       setSimpleCardStatusTransitionLoading(false)
       if (filteredReservations.length > 0) {
-        simpleCardStatusAuditSessionDoneRef.current = true
+        lastSimpleCardStatusAuditFetchedKeyRef.current = simpleCardAuditContentKey
       }
       return
     }
 
     let cancelled = false
+    setSimpleCardStatusTransitionMap({})
     setSimpleCardStatusTransitionLoading(true)
 
     void (async () => {
@@ -2506,7 +2508,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             .gte('created_at', req.rangeStart)
             .lte('created_at', req.rangeEnd)
             .in('record_id', chunk)
-            .contains('changed_fields', ['status'])
           if (cancelled) return
           if (error) {
             if (!isAbortLikeError(error) && !cancelled) {
@@ -2519,7 +2520,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             break
           }
           for (const row of data || []) {
-            collected.push(row as unknown as ReservationStatusAuditRow)
+            const r = row as unknown as ReservationStatusAuditRow
+            if (!reservationAuditRowHasStatusFieldChange(r)) continue
+            collected.push(r)
           }
         }
       } catch (e) {
@@ -2544,7 +2547,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
       setSimpleCardStatusTransitionMap(next)
       setSimpleCardStatusTransitionLoading(false)
-      simpleCardStatusAuditSessionDoneRef.current = true
+      lastSimpleCardStatusAuditFetchedKeyRef.current = simpleCardAuditContentKey
     })()
 
     return () => {
@@ -4471,12 +4474,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                   onClick={() => toggleSimpleCardAccordion(accStatusKey, defaultStatusOpen)}
                                   aria-expanded={statusOpen}
                                 >
-                                  <span className="text-sm font-semibold text-gray-900 flex items-baseline gap-2 min-w-0">
+                                  <span className="text-sm font-semibold text-gray-900 flex items-baseline gap-2 min-w-0 flex-wrap">
                                     <span>{t('groupingLabels.simpleCardGroupStatusChange')}</span>
                                     <span className="text-xs font-normal text-gray-500 tabular-nums">
                                       {simpleCardStatusTransitionLoading
-                                        ? statusList.length
-                                        : statusListForSimple.length}
+                                        ? t('groupingLabels.simpleCardStatusChangeAuditLoadingBadge')
+                                        : t('groupingLabels.simpleCardRegistrationSummary', {
+                                            count: statusListForSimple.length,
+                                            people: statusListForSimple.reduce(
+                                              (sum, r) =>
+                                                sum +
+                                                getReservationPartySize(r as unknown as Record<string, unknown>),
+                                              0
+                                            ),
+                                          })}
                                     </span>
                                   </span>
                                   <ChevronDown
@@ -4488,7 +4499,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                   <div className="border-t border-gray-100 px-2 pb-3 pt-2 space-y-3">
                                     {statusList.length > 0 ? (
                                       simpleCardStatusTransitionLoading ? (
-                                        <div className={gridClass}>{statusList.map(renderReservationCard)}</div>
+                                        <p className="text-xs text-gray-500 px-1 py-2 leading-relaxed">
+                                          {t('groupingLabels.simpleCardStatusChangeAuditLoadingBody')}
+                                        </p>
                                       ) : statusListForSimple.length === 0 ? (
                                         <p className="text-xs text-gray-400 px-1 py-1">
                                           {t('groupingLabels.simpleCardGroupEmpty')}

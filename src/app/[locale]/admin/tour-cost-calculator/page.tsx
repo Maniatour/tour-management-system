@@ -933,8 +933,9 @@ export default function TourCostCalculatorPage() {
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
+
       const configData = {
         customer_id: selectedCustomer?.id || null,
         name: configName.trim(),
@@ -1494,7 +1495,7 @@ export default function TourCostCalculatorPage() {
             name: saveConfigName.trim(),
             selected_courses: Array.from(selectedCourses),
             course_order: selectedCoursesOrder,
-            updated_by: (await supabase.auth.getUser()).data.user?.id
+            updated_by: (await supabase.auth.getSession()).data.session?.user?.id
           })
           .eq('id', editingTemplate.id)
 
@@ -1502,8 +1503,9 @@ export default function TourCostCalculatorPage() {
         alert(t('alertTemplateUpdated'))
       } else {
         // 새로 저장
-        const { data: { user } } = await supabase.auth.getUser()
-        
+        const { data: { session } } = await supabase.auth.getSession()
+        const user = session?.user
+
         const { error } = await (supabase as any)
           .from('tour_cost_calculator_templates')
           .insert({

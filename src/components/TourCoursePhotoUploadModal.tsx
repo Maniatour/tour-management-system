@@ -87,7 +87,7 @@ export default function PhotoUploadModal({
             file_type: fileExt || '',
             mime_type: file.type,
             sort_order: photos.length,
-            uploaded_by: (await supabase.auth.getUser()).data.user?.email || 'unknown'
+            uploaded_by: (await supabase.auth.getSession()).data.session?.user?.email || 'unknown'
           })
           .select()
           .single()

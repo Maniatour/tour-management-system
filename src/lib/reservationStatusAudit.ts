@@ -8,6 +8,13 @@ export type ReservationStatusAuditRow = {
   new_values: unknown
 }
 
+/** PostgREST `.contains(changed_fields, ['status'])` → `cs.{status}` 로 500이 나는 환경이 있어, 조회 후 클라이언트에서만 사용한다. */
+export function reservationAuditRowHasStatusFieldChange(
+  row: Pick<ReservationStatusAuditRow, 'changed_fields'>
+): boolean {
+  return Array.isArray(row.changed_fields) && row.changed_fields.includes('status')
+}
+
 export function statusFromReservationAuditJson(json: unknown): string | null {
   if (!json || typeof json !== 'object') return null
   const v = (json as Record<string, unknown>).status

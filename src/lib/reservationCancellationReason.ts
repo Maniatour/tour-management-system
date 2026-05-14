@@ -3,8 +3,8 @@ import { supabase } from '@/lib/supabase'
 async function resolveCreatedByEmail(providedEmail?: string | null): Promise<string | null> {
   if (providedEmail && providedEmail.trim()) return providedEmail.trim()
   try {
-    const { data } = await supabase.auth.getUser()
-    return data.user?.email ?? null
+    const { data } = await supabase.auth.getSession()
+    return data.session?.user?.email ?? null
   } catch {
     return null
   }

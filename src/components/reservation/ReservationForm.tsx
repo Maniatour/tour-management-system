@@ -1303,7 +1303,8 @@ export default function ReservationForm({
     let cancelled = false
     const getCurrentUser = async () => {
       try {
-        const { data: { user }, error } = await supabase.auth.getUser()
+        const { data: { session }, error } = await supabase.auth.getSession()
+        const user = session?.user
         if (cancelled || !user || error) return
         setCurrentUser(prev => (prev?.email === (user.email || '') ? prev : { email: user.email || '' }))
         if (!reservationId) {

@@ -502,7 +502,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             display_order: 0,
             is_primary: false,
             sort_order: 0,
-            uploaded_by: (await supabase.auth.getUser()).data.user?.email || 'unknown'
+            uploaded_by: (await supabase.auth.getSession()).data.session?.user?.email || 'unknown'
           })
           .select()
           .single()

@@ -1567,7 +1567,11 @@ export default function PricingSection({
      * OTA: 사용자가 채널 결제(net)를 직접 입력한 뒤에는 폼의 commission_base만 표시.
      * (레거시 gross 판별로 Returned를 한 번 더 빼면 블러 직후 계산값으로 튀는 현상)
      */
-    if (isOTAChannel && hasCommissionBase && cb > 0.005 && (otaChannelPaymentUserEditedRef.current || channelPaymentPricingTouched)) {
+    if (
+      isOTAChannel &&
+      hasCommissionBase &&
+      (otaChannelPaymentUserEditedRef.current || channelPaymentPricingTouched)
+    ) {
       return Math.max(0, roundUsd2(cb))
     }
 
@@ -3937,16 +3941,19 @@ export default function PricingSection({
                         setChannelPaymentAmountInput(inputValue)
                         markPricingEdited('onlinePaymentAmount', 'commission_base_price', 'commission_amount', 'channel_settlement_amount')
 
-                        const numValue = Number(inputValue) || 0
+                        const trimmed = inputValue.trim()
+                        if (trimmed === '' || trimmed === '-') {
+                          return
+                        }
+                        const parsed = Number(trimmed)
+                        if (!Number.isFinite(parsed)) {
+                          return
+                        }
+                        const numValue = Math.max(0, parsed)
                         // Returned를 고려한 실제 금액
                         const actualAmount = numValue + returnedAmount
                         
                         if (isOTAChannel) {
-                          const defaultBasePrice =
-                            otaChannelProductPaymentGross > 0 ? otaChannelProductPaymentGross : formData.subtotal
-                          const commissionBasePrice = formData.commission_base_price !== undefined
-                            ? formData.commission_base_price
-                            : (numValue > 0 ? numValue : defaultBasePrice)
                           const adjustedBasePrice = numValue
                           const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
                           const calculatedCommission =
@@ -3961,7 +3968,7 @@ export default function PricingSection({
                           setFormData((prev: typeof formData) => ({
                             ...stripChannelSettlementUnlessLocked(prev),
                             onlinePaymentAmount: actualAmount,
-                            commission_base_price: numValue > 0 ? numValue : commissionBasePrice,
+                            commission_base_price: numValue,
                             commission_amount: calculatedCommission,
                           }))
                         } else {
@@ -3981,16 +3988,20 @@ export default function PricingSection({
                         channelPaymentAmountFieldFocusedRef.current = false
                         setIsChannelPaymentAmountFocused(false)
                         markPricingEdited('onlinePaymentAmount', 'commission_base_price', 'commission_amount', 'channel_settlement_amount')
-                        const finalValue = Number(channelPaymentAmountInput) || 0
+                        const trimmed = channelPaymentAmountInput.trim()
+                        if (trimmed === '' || trimmed === '-') {
+                          setChannelPaymentAmountInput('')
+                          return
+                        }
+                        const parsedBlur = Number(trimmed)
+                        if (!Number.isFinite(parsedBlur)) {
+                          setChannelPaymentAmountInput('')
+                          return
+                        }
+                        const finalValue = Math.max(0, parsedBlur)
                         const actualAmount = finalValue + returnedAmount
                         
                         if (isOTAChannel) {
-                          const notIncludedPrice = notIncludedBreakdown.totalUsd
-                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
-                          const defaultBasePrice = discountedPrice > 0 ? discountedPrice : formData.subtotal
-                          const commissionBasePrice = formData.commission_base_price !== undefined
-                            ? formData.commission_base_price
-                            : (finalValue > 0 ? finalValue : defaultBasePrice)
                           const adjustedBasePrice = finalValue
                           const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
                           const calculatedCommission =
@@ -4005,7 +4016,7 @@ export default function PricingSection({
                           setFormData((prev: typeof formData) => ({
                             ...stripChannelSettlementUnlessLocked(prev),
                             onlinePaymentAmount: actualAmount,
-                            commission_base_price: finalValue > 0 ? finalValue : commissionBasePrice,
+                            commission_base_price: finalValue,
                             commission_amount: calculatedCommission,
                           }))
                         } else {

@@ -129,6 +129,9 @@ const CUSTOMERS_LIST_UI_DEFAULT = {
   currentPage: 1
 }
 
+/** `reservations` 전량 스캔 방지 — PostgREST `.in()` 부담을 줄이는 고객 ID 청크 크기 */
+const RESERVATION_INFO_CUSTOMER_ID_CHUNK = 120
+
 export default function AdminCustomers() {
   const params = useParams() as { locale?: string }
   const router = useRouter()
@@ -504,85 +507,66 @@ export default function AdminCustomers() {
     }
   }, [])
 
-  // 고객별 예약 정보 가져오기
+  // 고객별 예약 정보 — 화면에 로드된 고객 ID에 한해 조회(전 테이블 스캔·Supabase 부하 방지)
   const fetchReservationInfo = useCallback(async () => {
     try {
-      console.log('Fetching reservation info...')
-      
-      // 모든 예약 데이터를 가져오기 (페이지네이션 사용)
-      let allReservations: ReservationData[] = []
-      let hasMore = true
-      let page = 0
-      const pageSize = 1000
-
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from('reservations')
-          .select('id, customer_id, total_people, status, created_at, tour_date, product_id')
-          .range(page * pageSize, (page + 1) * pageSize - 1)
-
-        if (error) {
-          console.error('Error fetching reservations:', error)
-          break
-        }
-
-        if (data && data.length > 0) {
-          allReservations = [...allReservations, ...(data as ReservationData[])]
-          page++
-        } else {
-          hasMore = false
-        }
-      }
-
-      console.log('Total reservations found:', allReservations.length)
-
-      if (allReservations.length === 0) {
-        console.log('No reservations found in database')
+      const customerIds = customers.map((c) => c.id).filter(Boolean)
+      if (customerIds.length === 0) {
         setReservationInfo({})
         return
       }
 
-      // 실제 데이터가 있는 경우에만 처리
       const infoMap: Record<string, ReservationInfo> = {}
-      
-      console.log('Starting to process', allReservations.length, 'reservations')
-      
-      allReservations.forEach((reservation: ReservationData) => {
-        const customerId = reservation.customer_id
-        if (!customerId) {
-          return // customer_id가 없는 경우 스킵
-        }
-        
-        if (!infoMap[customerId]) {
-          infoMap[customerId] = {
-            bookingCount: 0,
-            totalParticipants: 0,
-            reservations: []
-          }
-        }
-        
-        infoMap[customerId].bookingCount += 1
-        infoMap[customerId].totalParticipants += reservation.total_people || 0
-        infoMap[customerId].reservations.push(reservation)
-      })
+      const pageSize = 1000
 
-      console.log('Final processed reservation info:', JSON.stringify(infoMap, null, 2))
-      console.log('Info map keys:', Object.keys(infoMap))
-      console.log('Info map values:', Object.values(infoMap))
-      
-      // infoMap이 비어있지 않은지 확인
-      if (Object.keys(infoMap).length === 0) {
-        console.warn('infoMap is empty after processing!')
-      } else {
-        console.log('Setting reservation info with', Object.keys(infoMap).length, 'customers')
+      for (let i = 0; i < customerIds.length; i += RESERVATION_INFO_CUSTOMER_ID_CHUNK) {
+        const idChunk = customerIds.slice(i, i + RESERVATION_INFO_CUSTOMER_ID_CHUNK)
+        let offset = 0
+
+        for (;;) {
+          const { data, error } = await supabase
+            .from('reservations')
+            .select('id, customer_id, total_people, status, created_at, tour_date, product_id')
+            .in('customer_id', idChunk)
+            .neq('status', 'deleted')
+            .order('tour_date', { ascending: false })
+            .range(offset, offset + pageSize - 1)
+
+          if (error) {
+            console.error('Error fetching reservations:', error)
+            setReservationInfo({})
+            return
+          }
+
+          const batch = (data || []) as ReservationData[]
+          for (const reservation of batch) {
+            const customerId = reservation.customer_id
+            if (!customerId) continue
+
+            if (!infoMap[customerId]) {
+              infoMap[customerId] = {
+                bookingCount: 0,
+                totalParticipants: 0,
+                reservations: [],
+              }
+            }
+            const entry = infoMap[customerId]
+            entry.bookingCount += 1
+            entry.totalParticipants += reservation.total_people || 0
+            entry.reservations.push(reservation)
+          }
+
+          if (batch.length < pageSize) break
+          offset += pageSize
+        }
       }
-      
+
       setReservationInfo(infoMap)
     } catch (error) {
       console.error('Error fetching reservation info:', error)
       setReservationInfo({})
     }
-  }, [])
+  }, [customers])
 
   // 예약 저장 함수 (예약 관리 페이지와 동일한 로직)
   const handleSaveReservation = useCallback(async (reservationData: Omit<Reservation, 'id'> & { id?: string }) => {
@@ -1249,11 +1233,12 @@ export default function AdminCustomers() {
     })
   }
 
-  // 컴포넌트 마운트 시 예약 정보 불러오기
+  // 고객 목록이 준비된 뒤에만 예약 요약 조회(빈 ID로의 선조회 방지)
   useEffect(() => {
-    fetchReservationInfo()
+    if (customersLoading) return
+    void fetchReservationInfo()
     fetchDocumentCounts()
-  }, [fetchReservationInfo, fetchDocumentCounts])
+  }, [customersLoading, fetchReservationInfo, fetchDocumentCounts])
 
   // 검색된 고객 목록 — 비보관 매칭 우선, 없을 때만 보관 매칭(예약 관리와 동일)
   const filteredCustomers = useMemo(() => {
