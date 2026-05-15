@@ -15,7 +15,10 @@ export default function SupabaseConnectionTest() {
   const testConnection = async () => {
     const tests = [
       { name: 'vehicles 테이블', query: () => supabase.from('vehicles').select('*').limit(1) },
-      { name: 'chat_rooms 테이블', query: () => supabase.from('chat_rooms').select('*').limit(1) },
+      {
+        name: 'get_public_chat_room_bundle_by_code RPC',
+        query: () => supabase.rpc('get_public_chat_room_bundle_by_code', { p_room_code: '__connection_test__' })
+      },
       { name: 'customers 테이블', query: () => supabase.from('customers').select('*').limit(1) },
       { name: 'tours 테이블', query: () => supabase.from('tours').select('*').limit(1) }
     ]

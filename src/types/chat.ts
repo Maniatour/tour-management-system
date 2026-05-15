@@ -26,6 +26,17 @@ export interface ChatRoom {
   created_at: string
 }
 
+/** get_public_chat_room_bundle_by_code RPC 응답 */
+export type PublicChatRoomBundle = {
+  room: ChatRoom & Record<string, unknown>
+  tour: {
+    id: string
+    product_id: string
+    tour_date: string
+    tour_status: string
+  }
+}
+
 export interface ChatAnnouncement {
   id: string
   title: string

@@ -126,10 +126,10 @@ export default function TourChatRoom({
     messagesRef
   } = useChatMessages({
     roomId: room?.id || null,
+    roomCode: roomCode || undefined,
     isPublicView,
     customerName: customerName || undefined,
-    guideEmail: guideEmail || undefined,
-    selectedLanguage: selectedLanguage === 'ko' ? 'ko' : 'en'
+    guideEmail: guideEmail || undefined
   })
 
   const [teamMembersDetail, setTeamMembersDetail] = useState<Map<string, {
@@ -1571,6 +1571,24 @@ export default function TourChatRoom({
       return
     }
 
+    if (isPublicView && roomCode) {
+      const fetchCount = async () => {
+        const { data, error } = await supabase.rpc('get_chat_message_count_by_room_code', {
+          p_room_code: roomCode
+        })
+        if (error) {
+          console.warn('[TourChatRoom] chat_messages count (rpc):', error)
+          return
+        }
+        setTotalChatMessageCount(typeof data === 'number' ? data : 0)
+      }
+      void fetchCount()
+      const intervalId = window.setInterval(() => {
+        void fetchCount()
+      }, 4000)
+      return () => window.clearInterval(intervalId)
+    }
+
     const fetchMessageCount = async () => {
       const { count, error } = await supabase
         .from('chat_messages')
@@ -1583,7 +1601,7 @@ export default function TourChatRoom({
       setTotalChatMessageCount(count ?? 0)
     }
 
-    fetchMessageCount()
+    void fetchMessageCount()
 
     const countChannel = supabase
       .channel(`chat_header_msg_count_${room.id}`)
@@ -1596,7 +1614,7 @@ export default function TourChatRoom({
           filter: `room_id=eq.${room.id}`
         },
         () => {
-          fetchMessageCount()
+          void fetchMessageCount()
         }
       )
       .subscribe()
@@ -1604,7 +1622,7 @@ export default function TourChatRoom({
     return () => {
       supabase.removeChannel(countChannel)
     }
-  }, [room?.id])
+  }, [room?.id, isPublicView, roomCode])
 
   // 메시지 삭제 함수
   const deleteMessage = async (messageId: string) => {

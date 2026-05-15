@@ -33,21 +33,24 @@ export default function ChatRoomShareModal({
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
   const [showInstallButton, setShowInstallButton] = useState(false)
 
-  // roomCode로 roomId 찾기
+  // roomCode로 roomId 찾기 (anon은 chat_rooms 직접 SELECT 불가)
   useEffect(() => {
     if (!roomId && roomCode && isPublicView) {
       const findRoomId = async () => {
-        const { data } = await supabase
-          .from('chat_rooms')
-          .select('id')
-          .eq('room_code', roomCode)
-          .single()
-        
-        if (data) {
-          setRoomIdFromCode(data.id)
+        const { data, error } = await supabase.rpc('get_public_chat_room_bundle_by_code', {
+          p_room_code: roomCode
+        })
+        if (error) {
+          console.warn('[ChatRoomShareModal] room bundle:', error)
+          return
+        }
+        const b = data as { room?: { id?: string } } | null
+        const id = b?.room?.id
+        if (id) {
+          setRoomIdFromCode(id)
         }
       }
-      findRoomId()
+      void findRoomId()
     }
   }, [roomCode, roomId, isPublicView])
 

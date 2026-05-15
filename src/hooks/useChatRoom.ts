@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { ChatRoom } from '@/types/chat'
+import type { ChatRoom, PublicChatRoomBundle } from '@/types/chat'
 
 interface UseChatRoomProps {
   tourId?: string | undefined
@@ -56,24 +56,21 @@ export function useChatRoom({ tourId, isPublicView, roomCode }: UseChatRoomProps
       setLoading(false)
       return
     }
-    
+
     try {
       setLoading(true)
-      const { data: rooms, error } = await supabase
-        .from('chat_rooms')
-        .select('*')
-        .eq('room_code', code)
-        .eq('is_active', true)
-        .limit(1)
+      const { data: bundle, error } = await supabase.rpc('get_public_chat_room_bundle_by_code', {
+        p_room_code: code
+      })
 
       if (error) {
         console.error('Supabase error:', error)
         throw error
       }
-      
-      const foundRoom = rooms?.[0] as ChatRoom | undefined
-      
-      // 같은 room이면 setRoom을 호출하지 않음 (무한 루프 방지)
+
+      const b = bundle as PublicChatRoomBundle | null
+      const foundRoom = b?.room as ChatRoom | undefined
+
       if (foundRoom && roomRef.current?.id !== foundRoom.id) {
         setRoom(foundRoom)
       } else if (!foundRoom && roomRef.current !== null) {
@@ -84,7 +81,7 @@ export function useChatRoom({ tourId, isPublicView, roomCode }: UseChatRoomProps
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [supabase])
 
   // loadRoom과 loadRoomByCode를 ref로 저장하여 의존성 배열에서 제거
   const loadRoomRef = useRef(loadRoom)

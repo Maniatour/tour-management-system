@@ -61,7 +61,8 @@ type ReservationRow = Database['public']['Tables']['reservations']['Row']
 type CustomerRow = Database['public']['Tables']['customers']['Row']
 type ProductRow = Database['public']['Tables']['products']['Row']
 type PickupHotel = Database['public']['Tables']['pickup_hotels']['Row']
-type Vehicle = Database['public']['Tables']['vehicles']['Row']
+/** DB `nick` 컬럼 — generated types가 뒤처질 수 있어 교차 타입으로 보강 */
+type Vehicle = Database['public']['Tables']['vehicles']['Row'] & { nick?: string | null }
 type TourHotelBooking = Database['public']['Tables']['tour_hotel_bookings']['Row']
 type TicketBooking = Database['public']['Tables']['ticket_bookings']['Row']
 type TeamMember = {
@@ -1573,7 +1574,7 @@ export default function GuideTourDetailPage() {
                 👥 {totalPeople}{locale === 'ko' ? t('people') : ' people'}
               </span>
               <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-purple-100 text-purple-800">
-                🚗 {vehicle?.vehicle_number || t('unassigned')}
+                🚗 {(vehicle?.nick?.trim() || vehicle?.vehicle_number) || t('unassigned')}
               </span>
             </div>
             

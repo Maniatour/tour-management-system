@@ -10846,6 +10846,18 @@ export type Database = {
           table_type: string
         }[]
       }
+      get_chat_message_count_by_room_code: {
+        Args: { p_room_code: string }
+        Returns: number
+      }
+      get_chat_messages_by_room_code: {
+        Args: { p_limit?: number; p_room_code: string }
+        Returns: Json[]
+      }
+      get_chat_participants_by_room_code: {
+        Args: { p_room_code: string }
+        Returns: Json[]
+      }
       get_current_guide_costs: {
         Args: { p_date?: string; p_product_id: string; p_team_type: string }
         Returns: {
@@ -10868,6 +10880,10 @@ export type Database = {
       get_product_option_id: {
         Args: { option_name: string; product_id: string }
         Returns: string
+      }
+      get_public_chat_room_bundle_by_code: {
+        Args: { p_room_code: string }
+        Returns: Json
       }
       get_reservation_choices_json: {
         Args: { reservation_id_param: string }

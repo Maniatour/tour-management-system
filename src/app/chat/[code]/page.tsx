@@ -12,17 +12,7 @@ import { useParams } from 'next/navigation'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { formatPublicChatRoomTitle } from '@/lib/formatPublicChatRoomTitle'
 import PublicChatTutorialOverlay from '@/components/chat/PublicChatTutorialOverlay'
-
-interface ChatRoom {
-  id: string
-  tour_id: string
-  room_name: string
-  room_code: string
-  description?: string
-  is_active: boolean
-  created_by: string
-  created_at: string
-}
+import type { ChatRoom, PublicChatRoomBundle } from '@/types/chat'
 
 interface TourInfo {
   id: string
@@ -322,55 +312,37 @@ export default function PublicChatPage() {
       }
       console.log('Supabase instance:', supabase)
 
-      // 채팅방 정보 조회
-      const { data: roomData, error: roomError } = await supabase
-        .from('chat_rooms')
-        .select(`
-          *,
-          tours!inner(
-            id,
-            product_id,
-            tour_date,
-            tour_status
-          )
-        `)
-        .eq('room_code', code)
-        .eq('is_active', true)
-        .single()
+      // 채팅방 정보 조회 (anon은 chat_rooms 직접 SELECT 불가 → RPC)
+      const { data: bundle, error: roomError } = await supabase.rpc('get_public_chat_room_bundle_by_code', {
+        p_room_code: code
+      })
 
       if (roomError) throw roomError
 
-      if (!roomData) {
+      const b = bundle as PublicChatRoomBundle | null
+      if (!b?.room) {
         setError('Chat room not found. The link may have expired or is invalid.')
         return
       }
 
-      // 안전한 타입 변환
-      const roomResult = roomData as ChatRoom & { tours: TourInfo }
-      setRoom(roomResult)
-      
-      if (roomResult?.tours) {
-        setTourInfo(roomResult.tours as TourInfo)
-      } else {
-        console.error('No tours data found in room:', roomData)
-        setError('Tour information not found.')
-        return
-      }
+      setRoom(b.room as ChatRoom)
+      setTourInfo(b.tour as TourInfo)
 
-      // 상품 명칭 로드 (영/한)
-      if (roomResult?.tours?.product_id) {
+      const roomResult = b
+
+      if (roomResult.tour?.product_id) {
         try {
           const { data: productData } = await supabase
             .from('products')
             .select('name, name_ko, name_en')
-            .eq('id', roomResult.tours.product_id)
+            .eq('id', roomResult.tour.product_id)
             .single()
-          
+
           if (productData) {
             setProductNames({
               name: (productData as { name?: string | null }).name ?? null,
               name_ko: (productData as { name_ko?: string | null }).name_ko ?? null,
-              name_en: (productData as { name_en?: string | null }).name_en ?? null,
+              name_en: (productData as { name_en?: string | null }).name_en ?? null
             })
           }
         } catch (productError) {
