@@ -70,6 +70,38 @@ interface PaymentRecord {
   amount_krw?: number
 }
 
+/** HTML/텍스트 오류 본문에서도 SyntaxError 없이 처리 */
+async function parseApiJsonResponse<T extends Record<string, unknown>>(
+  response: Response,
+  notOkMessage: string
+): Promise<T> {
+  const raw = await response.text()
+  let parsed: unknown = {}
+  if (raw.trim()) {
+    try {
+      parsed = JSON.parse(raw) as unknown
+    } catch {
+      if (!response.ok) {
+        throw new Error(
+          response.status >= 500
+            ? `${notOkMessage} (서버가 JSON이 아닌 오류 페이지를 반환했습니다. Windows 개발 환경에서는 .next 폴더 삭제 후 dev 재시작을 시도하세요.)`
+            : notOkMessage
+        )
+      }
+      throw new Error('서버 응답 형식이 올바르지 않습니다.')
+    }
+  }
+  const obj =
+    parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  if (!response.ok) {
+    const err = typeof obj.error === 'string' ? obj.error : null
+    throw new Error(err || `${notOkMessage} (HTTP ${response.status})`)
+  }
+  return obj as T
+}
+
 interface ReservationPricing {
   id: string
   reservation_id: string
@@ -489,11 +521,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         }
       })
 
-      if (!response.ok) {
-        throw new Error('입금 내역을 불러올 수 없습니다.')
-      }
-
-      const data = await response.json()
+      const data = await parseApiJsonResponse<{ paymentRecords?: PaymentRecord[] }>(
+        response,
+        '입금 내역을 불러올 수 없습니다.'
+      )
       const list = (data.paymentRecords || []) as PaymentRecord[]
       setPaymentRecords(list)
       const emails = [...new Set(list.map((r) => r.submit_by).filter(Boolean))] as string[]
@@ -849,12 +880,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         })
       })
 
-      if (!response.ok) {
-        throw new Error('픽업 정보 저장에 실패했습니다.')
-      }
+      await parseApiJsonResponse<Record<string, unknown>>(response, '픽업 정보 저장에 실패했습니다.')
 
-      await response.json()
-      
       console.log('픽업 정보가 저장되었습니다:', { reservationId, pickupTime, pickupHotel })
 
       // 성공 시 부모에 수정된 픽업 정보 전달 후 새로고침 (픽업 스케줄 섹션 즉시 반영)
@@ -1353,10 +1380,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         })
       })
 
-      if (!paymentResponse.ok) {
-        const errorData = await paymentResponse.json()
-        throw new Error(errorData.error || '입금 내역 생성에 실패했습니다.')
-      }
+      await parseApiJsonResponse<Record<string, unknown>>(paymentResponse, '입금 내역 생성에 실패했습니다.')
 
       // 2. reservation_pricing: 보증금(deposit_amount)은 건드리지 않음. 잔금 수령은 payment_records만이 근거.
       //    잔액(balance_amount)은 투어 당일 잔액 필드이므로 수령 완료 후 0으로 맞춤.
@@ -1446,10 +1470,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         })
       })
 
-      if (!paymentResponse.ok) {
-        const errorData = await paymentResponse.json()
-        throw new Error(errorData.error || '입출금 기록 생성에 실패했습니다.')
-      }
+      await parseApiJsonResponse<Record<string, unknown>>(paymentResponse, '입출금 기록 생성에 실패했습니다.')
 
       const { data: existingPricing, error: pricingFetchError } = await supabase
         .from('reservation_pricing')

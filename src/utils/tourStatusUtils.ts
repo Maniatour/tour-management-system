@@ -11,6 +11,21 @@ export function isTourCancelled(tourStatus: string | null | undefined): boolean 
   return false
 }
 
+/** 투어 관리 스케줄 뷰 차량표 하단 일별 합계 등: 예정(scheduled)·모집중·확정만 건수에 포함 */
+export function isTourStatusForVehicleScheduleDayCount(
+  tourStatus: string | null | undefined,
+): boolean {
+  if (tourStatus == null || typeof tourStatus !== 'string') return false
+  if (isTourCancelled(tourStatus)) return false
+  const s = tourStatus.toLowerCase().trim()
+  if (!s) return false
+  if (s === 'scheduled') return true
+  // includes('recruiting')은 "not recruiting" 등 오탐이 있어 접두·정확 일치만 허용
+  if (s === 'recruiting' || s.startsWith('recruiting ') || s.startsWith('recruiting/')) return true
+  if (s === 'confirm' || s === 'confirmed') return true
+  return false
+}
+
 /**
  * 투어 취소·삭제 시 가이드/어시/차량 배정과 관련 금액을 비울 때 사용하는 업데이트 필드.
  * DB에 추가 컬럼이 있어도 무시되도록 최소 필드만 보냄.

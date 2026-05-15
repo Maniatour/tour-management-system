@@ -2,8 +2,21 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { playIncomingRingBeep } from '@/lib/voiceCallRing'
 
 export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'error'
+
+/** 통화 시그널링의 참가자 ID 비교 (이메일 대소문자·앞뒤 공백 차이 허용) */
+function voiceParticipantIdsEqual(a: string | undefined, b: string | undefined): boolean {
+  if (a == null || b == null) return false
+  const na = a.trim().toLowerCase()
+  const nb = b.trim().toLowerCase()
+  return na.length > 0 && na === nb
+}
+
+function voiceIsSameParticipant(from: string | undefined, selfId: string): boolean {
+  return voiceParticipantIdsEqual(from, selfId)
+}
 
 interface UseVoiceCallProps {
   roomId: string
@@ -38,6 +51,70 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
     callStatusRef.current = callStatus
   }, [callStatus])
 
+  // 수신 중(ringing) 벨소리 반복 — ringing 종료 시 즉시 정지
+  useEffect(() => {
+    if (callStatus !== 'ringing') return
+
+    let audioContext: AudioContext | null = null
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    let cancelled = false
+
+    const cleanup = () => {
+      if (intervalId != null) {
+        clearInterval(intervalId)
+        intervalId = null
+      }
+      if (audioContext != null) {
+        const c = audioContext
+        audioContext = null
+        c.close().catch(() => {})
+      }
+    }
+
+    const tick = () => {
+      if (cancelled || !audioContext || audioContext.state === 'closed') return
+      try {
+        playIncomingRingBeep(audioContext)
+      } catch {
+        /* ignore */
+      }
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try {
+          navigator.vibrate([100, 60, 100])
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    const run = async () => {
+      try {
+        const AC =
+          typeof window !== 'undefined' &&
+          (window.AudioContext ||
+            (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
+        if (!AC || cancelled) return
+        audioContext = new AC()
+        await audioContext.resume()
+        if (cancelled) {
+          cleanup()
+          return
+        }
+        tick()
+        intervalId = setInterval(tick, 2600)
+      } catch (e) {
+        console.warn('Incoming call ringtone unavailable:', e)
+      }
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+      cleanup()
+    }
+  }, [callStatus])
+
   // Supabase Realtime 채널 구독
   useEffect(() => {
     if (!roomId) return
@@ -49,8 +126,8 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       try {
         const payloadData = payload.payload
         // 현재 사용자에게 보낸 통화 요청인지 확인 (to가 없거나 현재 userId와 일치)
-        const isForMe = !payloadData.to || payloadData.to === userId
-        if (payloadData.from !== userId && callStatusRef.current === 'idle' && isForMe) {
+        const isForMe = !payloadData.to || voiceParticipantIdsEqual(payloadData.to, userId)
+        if (!voiceIsSameParticipant(payloadData.from, userId) && callStatusRef.current === 'idle' && isForMe) {
           // offer가 올바른 형태인지 확인
           if (payloadData.offer && payloadData.offer.type && payloadData.offer.sdp) {
             setIncomingOffer(payloadData.offer as RTCSessionDescriptionInit)
@@ -68,7 +145,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
     // 통화 수락 수신
     channel.on('broadcast', { event: 'call-answer' }, async (payload) => {
       try {
-        if (payload.payload.from !== userId && callStatusRef.current === 'calling') {
+        if (!voiceIsSameParticipant(payload.payload.from, userId) && callStatusRef.current === 'calling') {
           const answer = payload.payload.answer
           if (peerConnectionRef.current && answer && answer.type && answer.sdp) {
             const answerDescription = new RTCSessionDescription({
@@ -91,14 +168,14 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
 
     // 통화 거절 수신
     channel.on('broadcast', { event: 'call-reject' }, (payload) => {
-      if (payload.payload.from !== userId) {
+      if (!voiceIsSameParticipant(payload.payload.from, userId)) {
         endCallRef.current?.()
       }
     })
 
     // 통화 종료 수신
     channel.on('broadcast', { event: 'call-end' }, (payload) => {
-      if (payload.payload.from !== userId) {
+      if (!voiceIsSameParticipant(payload.payload.from, userId)) {
         endCallRef.current?.()
       }
     })
@@ -106,7 +183,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
     // ICE candidate 수신
     channel.on('broadcast', { event: 'ice-candidate' }, async (payload) => {
       try {
-        if (payload.payload.from !== userId && peerConnectionRef.current) {
+        if (!voiceIsSameParticipant(payload.payload.from, userId) && peerConnectionRef.current) {
           const candidate = payload.payload.candidate
           if (candidate && candidate.candidate) {
             try {

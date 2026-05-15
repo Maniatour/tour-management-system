@@ -153,7 +153,7 @@ export function emptyResidentStatusAmounts(): Record<ResidentLineKey, number> {
 }
 
 /** 거주 상태별 금액 칸 중, 현장 불포함(비거주·패스 등)으로 합산할 USD (미정·미국 거주 제외) */
-const RESIDENT_FEE_SUM_KEYS: ResidentLineKey[] = [
+export const RESIDENT_FEE_SUM_KEYS: ResidentLineKey[] = [
   'non_resident',
   'non_resident_under_16',
   'non_resident_with_pass',

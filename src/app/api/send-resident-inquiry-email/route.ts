@@ -9,6 +9,7 @@ import {
 } from '@/lib/residentInquiryTourKind'
 import { mintResidentCheckTokenForReservation } from '@/lib/mintResidentCheckToken'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import { getOperationsCc } from '@/lib/emailConfig'
 
 /**
  * POST /api/send-resident-inquiry-email
@@ -132,6 +133,7 @@ export async function POST(request: NextRequest) {
       from: fromEmail,
       reply_to: replyTo,
       to: toEmail,
+      cc: getOperationsCc(toEmail),
       subject,
       html,
       open_tracking: true,

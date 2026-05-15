@@ -25,6 +25,7 @@ import {
   fetchReservationOptionLinesForEmail,
   type ReservationOptionLineForEmail,
 } from '@/lib/reservationOptionsForEmail'
+import { getOperationsCc } from '@/lib/emailConfig'
 
 /**
  * POST /api/send-email
@@ -321,6 +322,7 @@ export async function POST(request: NextRequest) {
         from: fromEmail,
         reply_to: replyTo,
         to: email,
+        cc: getOperationsCc(email),
         subject: emailContent.subject,
         html: emailContent.html,
         // 읽음 추적 활성화

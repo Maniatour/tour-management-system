@@ -1,6 +1,6 @@
 'use client'
 
-import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, ChevronDown, ChevronUp, Bell, BellOff } from 'lucide-react'
+import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, ChevronDown, ChevronUp, Bell, BellOff, Car } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import type { SupportedLanguage } from '@/lib/translation'
 import type { ChatRoom } from '@/types/chat'
@@ -23,6 +23,8 @@ interface ChatHeaderProps {
   onToggleMobileMenu: () => void
   onShowAnnouncements: () => void
   onShowPickupSchedule: () => void
+  /** 차량 정보 모달 (투어 채팅) */
+  onShowVehicleInfo?: () => void
   onShowPhotoGallery: () => void
   onShowTeamInfo: () => void
   onGoToTourDetail: () => void
@@ -54,6 +56,7 @@ export default function ChatHeader({
   onToggleMobileMenu,
   onShowAnnouncements,
   onShowPickupSchedule,
+  onShowVehicleInfo,
   onShowPhotoGallery,
   onShowTeamInfo,
   onGoToTourDetail,
@@ -116,6 +119,16 @@ export default function ChatHeader({
               >
                 <Calendar size={18} />
               </button>
+              {onShowVehicleInfo ? (
+                <button
+                  type="button"
+                  onClick={onShowVehicleInfo}
+                  className="p-2 bg-orange-100 text-orange-900 rounded border border-orange-200 hover:bg-orange-200"
+                  title={selectedLanguage === 'ko' ? '차량 정보' : 'Vehicle info'}
+                >
+                  <Car size={18} />
+                </button>
+              ) : null}
               <button
                 onClick={onShowPhotoGallery}
                 className="p-2 bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200"
@@ -164,6 +177,16 @@ export default function ChatHeader({
               >
                 <Calendar size={18} />
               </button>
+              {onShowVehicleInfo ? (
+                <button
+                  type="button"
+                  onClick={onShowVehicleInfo}
+                  className="p-2 bg-orange-100 text-orange-900 rounded border border-orange-200 hover:bg-orange-200"
+                  title={selectedLanguage === 'ko' ? '차량 정보' : 'Vehicle info'}
+                >
+                  <Car size={18} />
+                </button>
+              ) : null}
               <button
                 onClick={onGoToTourDetail}
                 className="p-2 bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200"
@@ -244,6 +267,16 @@ export default function ChatHeader({
           >
             <Calendar size={12} className="lg:w-3.5 lg:h-3.5" />
           </button>
+          {onShowVehicleInfo ? (
+            <button
+              type="button"
+              onClick={onShowVehicleInfo}
+              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-orange-100 text-orange-900 rounded border border-orange-200 hover:bg-orange-200 flex items-center justify-center"
+              title={selectedLanguage === 'ko' ? '차량 정보' : 'Vehicle info'}
+            >
+              <Car size={12} className="lg:w-3.5 lg:h-3.5" />
+            </button>
+          ) : null}
           {!isPublicView && (
             <button
               onClick={onGoToTourDetail}
@@ -325,7 +358,7 @@ export default function ChatHeader({
                   </button>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-2">
+              <div className={`grid gap-2 ${onShowVehicleInfo ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <button
                   onClick={onShowAnnouncements}
                   className="flex items-center gap-2 px-3 py-2 bg-amber-100 text-amber-800 rounded-lg border border-amber-200 hover:bg-amber-200 transition-colors"
@@ -344,6 +377,18 @@ export default function ChatHeader({
                   </div>
                   <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}</span>
                 </button>
+                {onShowVehicleInfo ? (
+                  <button
+                    type="button"
+                    onClick={onShowVehicleInfo}
+                    className="flex items-center gap-2 px-3 py-2 bg-orange-100 text-orange-900 rounded-lg border border-orange-200 hover:bg-orange-200 transition-colors"
+                  >
+                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                      <Car size={20} />
+                    </div>
+                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '차량' : 'Vehicle'}</span>
+                  </button>
+                ) : null}
               </div>
               {isPublicView && (
                 <div className="grid grid-cols-3 gap-2">

@@ -3,7 +3,8 @@
   "version": "0.1.3",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev",
+    "dev:webpack": "next dev --webpack",
     "build": "next build --webpack",
     "build:analyze": "ANALYZE=true next build --webpack",
     "build:production": "NODE_ENV=production next build --webpack",
@@ -13,6 +14,7 @@
     "type-check": "node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit",
     "type-check:pages": "node --max-old-space-size=8192 scripts/typecheck-pages.cjs",
     "clean": "rm -rf .next out dist",
+    "clean:win": "powershell -NoProfile -Command \"if (Test-Path .next) { Remove-Item -Recurse -Force .next }; if (Test-Path out) { Remove-Item -Recurse -Force out }; if (Test-Path dist) { Remove-Item -Recurse -Force dist }\"",
     "clean:all": "rm -rf .next out dist node_modules package-lock.json && npm install",
     "generate-thumbnails": "node scripts/generate-thumbnails.js",
     "generate-thumbnails:tour": "node scripts/generate-thumbnails.js",

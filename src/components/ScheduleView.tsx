@@ -19,6 +19,7 @@ import {
   getStatusColor as getTourStatusColor,
   getStatusText as getTourStatusLabel,
   isTourCancelled,
+  isTourStatusForVehicleScheduleDayCount,
   tourStaffVehicleAssignmentClearPatch,
   tourStatusOptions,
 } from '@/utils/tourStatusUtils'
@@ -140,6 +141,22 @@ function isActiveTicketBookingStatusForHealth(status: string | null | undefined)
   )
 }
 
+/**
+ * 스케줄 점검 요약(4일 이내 · 투어 인원 vs 입장권 EA): 사전 입장권 구매가 없는 상품은 비교 대상에서 제외.
+ * (야경투어, 불의 계곡 투어 등)
+ */
+function tourProductExcludedFromTicketPeopleHealthCheck(tour: { products?: { name?: string | null } | null; product_id?: string | null }): boolean {
+  const p = tour?.products
+  const raw = [p?.name, tour?.product_id].map((s) => String(s ?? '').trim()).filter(Boolean).join(' ')
+  const lower = raw.toLowerCase()
+  if (!lower) return false
+  if (lower.includes('야경투어')) return true
+  if (lower.includes('불의 계곡') || lower.includes('불의계곡')) return true
+  if (lower.includes('valley of fire')) return true
+  if (lower.includes('night tour')) return true
+  return false
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -165,6 +182,69 @@ type ScheduleTicketBookingRow = {
   refund_status?: string | null
   operation_status?: string | null
   deletion_requested_at?: string | null
+}
+
+/** 부킹 호버: 팀 이메일 → 표시명 (가이드 스케줄과 동일하게 비활성 팀원 폴백) */
+function resolveScheduleMemberDisplayForBookingTooltip(
+  email: string | null | undefined,
+  activeTeam: Team[],
+  inactiveTeam: Team[]
+): string {
+  if (!email || !String(email).trim()) return '—'
+  const m =
+    activeTeam.find((t) => t.email === email) ||
+    inactiveTeam.find((t) => t.email === email)
+  if (!m) return String(email).split('@')[0] || '—'
+  const nick = (m as { nick_name?: string | null }).nick_name
+  return (typeof nick === 'string' && nick.trim() ? nick.trim() : '') || m.name_ko || m.email || '—'
+}
+
+/** 가이드 스케줄 용량과 동일: 해당 투어에 배정된 예약(확정·모집) total_people 합 */
+function computeTourAssignedPeopleForScheduleTooltip(tour: Tour, reservations: Reservation[]): number {
+  const tourDate = (tour.tour_date || '').toString().trim().substring(0, 10)
+  const productId = tour.product_id
+  if (!tourDate || productId == null || productId === '') return 0
+  const assignedCanon = new Set<string>()
+  for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+    if (rawId) assignedCanon.add(canonicalReservationIdKey(rawId))
+  }
+  if (assignedCanon.size === 0) return 0
+  const st = (s: string | null | undefined) => (s || '').toLowerCase().trim()
+  return reservations.reduce((sum, r) => {
+    if (String(r.product_id) !== String(productId)) return sum
+    const rd = r.tour_date ? String(r.tour_date).trim().substring(0, 10) : ''
+    if (rd !== tourDate) return sum
+    const ss = st(r.status)
+    if (ss !== 'confirmed' && ss !== 'recruiting') return sum
+    if (!assignedCanon.has(canonicalReservationIdKey(String(r.id)))) return sum
+    return sum + (r.total_people || 0)
+  }, 0)
+}
+
+/** 입장권 부킹에 연결된 투어 안내 문구 (미연결 시 고정 문구) */
+function formatConnectedTourLabelForTicketBookingTooltip(
+  tour: Tour | undefined,
+  activeTeam: Team[],
+  inactiveTeam: Team[],
+  assignedPeople?: number
+): string {
+  if (!tour?.id) return '연결되지 않음'
+  const productName = (
+    (tour as { products?: { name?: string } | null }).products?.name || '투어'
+  )
+    .toString()
+    .trim() || '투어'
+  const guideName = resolveScheduleMemberDisplayForBookingTooltip(tour.tour_guide_id, activeTeam, inactiveTeam)
+  const teamTypeStr = (tour.team_type || '').toString()
+  const peopleSuffix =
+    typeof assignedPeople === 'number' && Number.isFinite(assignedPeople)
+      ? ` 배정 ${Math.max(0, Math.floor(assignedPeople))}명`
+      : ''
+  if (teamTypeStr === '1guide' || !tour.assistant_id || !String(tour.assistant_id).trim()) {
+    return `${productName} (${guideName})${peopleSuffix}`
+  }
+  const asstName = resolveScheduleMemberDisplayForBookingTooltip(tour.assistant_id, activeTeam, inactiveTeam)
+  return `${productName} (${guideName}, ${asstName})${peopleSuffix}`
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -268,7 +348,7 @@ function ticketCompanyShortTag(company: string): string {
 }
 
 function aggregateTicketDetailsForScheduleDisplay(
-  details: Array<{ id: string; company: string; time: string; ea: number }>
+  details: Array<{ id: string; company: string; time: string; ea: number; connectedTourLabel?: string }>
 ): Array<{ displayTime: string; tag: string; ea: number; bookingIds: string[] }> {
   const map = new Map<string, { sort: string; displayTime: string; tag: string; ea: number; bookingIds: string[] }>()
   for (const d of details) {
@@ -4364,11 +4444,13 @@ export default function ScheduleView() {
     for (let d = 0; d < 7; d++) {
       const dateString = today.add(d, 'day').format('YYYY-MM-DD')
       const tourCount = wt.filter(
-        (t) => !isTourCancelled(t.tour_status) && tourCoversScheduleDate(t, dateString),
+        (t) =>
+          isTourStatusForVehicleScheduleDayCount(t.tour_status) &&
+          tourCoversScheduleDate(t, dateString),
       ).length
       const vehicleCount = wt.filter(
         (t) =>
-          !isTourCancelled(t.tour_status) &&
+          isTourStatusForVehicleScheduleDayCount(t.tour_status) &&
           Boolean(t.tour_car_id && String(t.tour_car_id).trim()) &&
           tourCoversScheduleDate(t, dateString),
       ).length
@@ -4432,6 +4514,7 @@ export default function ScheduleView() {
     const stLower = (s: string | null | undefined) => String(s || '').toLowerCase()
     for (const tour of wt) {
       if (isTourCancelled(tour.tour_status)) continue
+      if (tourProductExcludedFromTicketPeopleHealthCheck(tour)) continue
       let touchesFour = false
       for (let d = 0; d < 4; d++) {
         const ds = today.add(d, 'day').format('YYYY-MM-DD')
@@ -4615,6 +4698,7 @@ export default function ScheduleView() {
         ea: number
         booking_status?: string | null
         vendor_status?: string | null
+        connectedTourLabel: string
       }>;
       hotelDetails: Array<{ hotel: string; rooms: number }>;
     } } = {}
@@ -4631,11 +4715,23 @@ export default function ScheduleView() {
 
     // tour_id → tour_date 매핑 (check_in_date가 없거나 매칭 안 될 때 fallback)
     const tourDateMap = new Map<string, string>()
+    const toursByIdForBookings = new Map<string, Tour>()
     tours.forEach(tour => {
       if (tour.id && tour.tour_date) {
         tourDateMap.set(tour.id, tour.tour_date.substring(0, 10))
       }
+      if (tour.id) toursByIdForBookings.set(String(tour.id), tour)
     })
+
+    /** 투어당 1회만 예약 스캔 (입장권 행마다 반복하면 부킹×예약으로 매우 느려짐) */
+    const assignedPeopleByTourId = new Map<string, number>()
+    for (const tour of tours) {
+      if (!tour?.id) continue
+      assignedPeopleByTourId.set(
+        String(tour.id),
+        computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
+      )
+    }
 
     const isActiveStatus = (status: string | null) => {
       if (!status) return false
@@ -4662,6 +4758,17 @@ export default function ScheduleView() {
       if (dateString && dailyTotals[dateString]) {
         dailyTotals[dateString].ticketCount += booking.ea || 0
         dailyTotals[dateString].totalCount += booking.ea || 0
+        const linkedTour = booking.tour_id ? toursByIdForBookings.get(String(booking.tour_id)) : undefined
+        const assignedForTour =
+          linkedTour && booking.tour_id
+            ? (assignedPeopleByTourId.get(String(booking.tour_id)) ?? 0)
+            : 0
+        const connectedTourLabel = formatConnectedTourLabelForTicketBookingTooltip(
+          linkedTour,
+          teamMembers,
+          inactiveTeamMembers,
+          linkedTour ? assignedForTour : undefined
+        )
         dailyTotals[dateString].ticketDetails.push({
           id: booking.id,
           company: booking.company || '',
@@ -4669,6 +4776,7 @@ export default function ScheduleView() {
           ea: booking.ea || 0,
           booking_status: booking.booking_status ?? null,
           vendor_status: booking.vendor_status ?? null,
+          connectedTourLabel,
         })
       }
     })
@@ -4695,7 +4803,7 @@ export default function ScheduleView() {
     })
 
     return dailyTotals
-  }, [ticketBookings, tourHotelBookings, tours, monthDays])
+  }, [ticketBookings, tourHotelBookings, tours, monthDays, teamMembers, inactiveTeamMembers, reservations])
 
   const bookingDetailRowsByDate = useMemo(() => {
     const out: Record<string, ScheduleBookingDetailRow[]> = {}
@@ -4918,7 +5026,7 @@ export default function ScheduleView() {
       monthDays.forEach(({ dateString, isEdgePadding }) => {
         const dayTours = tours.filter(
           (t) =>
-            !isTourCancelled(t.tour_status) &&
+            isTourStatusForVehicleScheduleDayCount(t.tour_status) &&
             t.tour_car_id &&
             String(t.tour_car_id).trim() === id &&
             tourCoversScheduleDate(t, dateString),
@@ -5087,12 +5195,12 @@ export default function ScheduleView() {
     return totals
   }, [vehicleScheduleData, monthDays])
 
-  // 날짜별 투어 갯수: 해당일이 진행일인 비취소·비삭제 투어 전체 (차량 미배정 포함). 멀티데이는 진행일마다 1건
+  // 날짜별 투어 갯수: 해당일이 진행일인 scheduled·모집중·확정 투어 전체 (차량 미배정 포함). 멀티데이는 진행일마다 1건
   const tourCountPerDate = useMemo(() => {
     const counts: Record<string, number> = {}
     monthDays.forEach(({ dateString }) => {
       counts[dateString] = tours.filter(
-        (t) => !isTourCancelled(t.tour_status) && tourCoversScheduleDate(t, dateString),
+        (t) => isTourStatusForVehicleScheduleDayCount(t.tour_status) && tourCoversScheduleDate(t, dateString),
       ).length
     })
     return counts
@@ -6629,35 +6737,43 @@ export default function ScheduleView() {
                           </div>
                           {/* 마우스 오버 시 부킹 상세 정보 표시 */}
                           {hoveredBookingDate === dateString && hasBooking && bookingData && (
-                            <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-1 w-80 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
+                            <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-1 w-[22rem] max-w-[min(22rem,calc(100vw-2rem))] p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
                               <div className="font-semibold mb-2">{dateString}</div>
                               {bookingData.ticketDetails.length > 0 && (
                                 <div className="mb-2">
                                   <div className="font-semibold text-yellow-400 mb-1">입장권 부킹</div>
                                   {bookingData.ticketDetails.map((detail, idx) => (
-                                    <div key={idx} className="ml-2 mb-1 flex flex-wrap items-center gap-1.5">
-                                      <span>
-                                        {detail.company ? `${getCompanyDisplayName(detail.company)} - ` : ''}
-                                        {detail.time || '—'} ({detail.ea}개)
+                                    <div
+                                      key={idx}
+                                      className="ml-2 mb-1.5 flex flex-wrap items-baseline gap-x-1 gap-y-0.5 break-words"
+                                    >
+                                      <span className="text-gray-100 font-medium">
+                                        {detail.connectedTourLabel} :
                                       </span>
-                                      <span className="inline-flex items-center gap-0.5 text-yellow-100/95">
-                                        <TicketBookingBookingStatusIcon
-                                          status={detail.booking_status}
-                                          variant="tile"
-                                          className="h-3.5 w-3.5"
-                                          title={formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
-                                        />
-                                        <span className="text-[11px] font-medium">
-                                          {formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
+                                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                                        <span>
+                                          {detail.company ? `${getCompanyDisplayName(detail.company)} - ` : ''}
+                                          {detail.time || '—'} ({detail.ea}개)
                                         </span>
-                                        <TicketBookingVendorStatusIcon
-                                          status={detail.vendor_status}
-                                          variant="tile"
-                                          className="h-3.5 w-3.5"
-                                          title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
-                                        />
-                                        <span className="text-[11px] font-medium">
-                                          {formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
+                                        <span className="inline-flex items-center gap-0.5 text-yellow-100/95">
+                                          <TicketBookingBookingStatusIcon
+                                            status={detail.booking_status}
+                                            variant="tile"
+                                            className="h-3.5 w-3.5"
+                                            title={formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
+                                          />
+                                          <span className="text-[11px] font-medium">
+                                            {formatTicketBookingAxisLabel(tTbAxis, 'booking', detail.booking_status)}
+                                          </span>
+                                          <TicketBookingVendorStatusIcon
+                                            status={detail.vendor_status}
+                                            variant="tile"
+                                            className="h-3.5 w-3.5"
+                                            title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
+                                          />
+                                          <span className="text-[11px] font-medium">
+                                            {formatTicketBookingAxisLabel(tTbAxis, 'vendor', detail.vendor_status)}
+                                          </span>
                                         </span>
                                       </span>
                                     </div>

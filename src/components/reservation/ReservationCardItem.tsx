@@ -26,6 +26,7 @@ import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import { ReservationFollowUpPipelineIcons } from '@/components/reservation/ReservationFollowUpPipelineIcons'
 import CancelledSimpleCardFollowUpStrip from '@/components/reservation/CancelledSimpleCardFollowUpStrip'
+import TourChatRoomEmailPreviewModal from '@/components/reservation/TourChatRoomEmailPreviewModal'
 import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
 import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
 import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
@@ -316,6 +317,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const [simpleActionsExpanded, setSimpleActionsExpanded] = useState(false)
   const [pickupSummaryModalOpen, setPickupSummaryModalOpen] = useState(false)
   const [pickupSummaryPortalReady, setPickupSummaryPortalReady] = useState(false)
+  const [tourChatRoomPreviewOpen, setTourChatRoomPreviewOpen] = useState(false)
   const [cancelReasonBadge, setCancelReasonBadge] = useState<string | null>(null)
   const [cancelReasonFetchIx, setCancelReasonFetchIx] = useState(0)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
@@ -563,6 +565,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   snapshot={followUpPipelineSnapshot}
                   disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
                   onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
+                  showTourChatRoomPreviewButton
+                  onTourChatRoomPreviewClick={() => setTourChatRoomPreviewOpen(true)}
                   {...(onFollowUpPipelineManualChange
                     ? {
                         allowManualCompletion: true as const,
@@ -1614,6 +1618,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </div>
         </div>
       )}
+
+      <TourChatRoomEmailPreviewModal
+        isOpen={tourChatRoomPreviewOpen}
+        onClose={() => setTourChatRoomPreviewOpen(false)}
+        reservationId={reservation.id}
+        tourDate={reservation.tourDate}
+        tourId={effectiveTourId || linkedTourId || null}
+      />
     </div>
   )
 }, (prevProps, nextProps) => {

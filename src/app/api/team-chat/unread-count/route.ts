@@ -20,7 +20,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    const userEmail = user.email!
+    const userEmail = (user.email ?? '').trim()
+    if (!userEmail) {
+      return NextResponse.json({ unreadCount: 0, roomCounts: {} })
+    }
 
     // 사용자가 참여한 채팅방 목록 조회
     const { data: userRooms, error: roomsError } = await supabaseUser
@@ -94,7 +97,8 @@ export async function GET(request: NextRequest) {
       roomCounts
     })
   } catch (error) {
+    // 예외 시에도 배지·폴링이 콘솔 500을 쏘지 않도록 200 + 0 (원인은 서버 로그로만)
     console.error('안읽은 메시지 수 조회 오류:', error)
-    return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    return NextResponse.json({ unreadCount: 0, roomCounts: {} })
   }
 }

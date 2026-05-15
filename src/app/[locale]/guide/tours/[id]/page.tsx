@@ -44,8 +44,18 @@ import {
   isReservationDeletedStatus,
   normalizeReservationIds,
 } from '@/utils/tourUtils'
+import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
+import {
+  getBalanceAmountForDisplay,
+  withNormalizedBalanceAmountForDisplay,
+} from '@/utils/reservationPricingBalance'
+import {
+  buildBalanceEnvelopeBreakdownLines,
+  countResidentLinesFromCustomers,
+  formatBalanceEnvelopeLine,
+} from '@/utils/balanceEnvelopeBreakdown'
 
-// 타입 정의 (DB 스키마 기반)
+// 타입 정의 (DB 스키마 기반) — 픽업 잔액 헬퍼보다 먼저 두어 타입 순서 유지
 type TourRow = Database['public']['Tables']['tours']['Row']
 type ReservationRow = Database['public']['Tables']['reservations']['Row']
 type CustomerRow = Database['public']['Tables']['customers']['Row']
@@ -64,6 +74,196 @@ type TeamMember = {
 /** 픽업 호텔 미지정 예약을 한 그룹으로 묶기 위한 키 (DB id와 충돌하지 않도록 함) */
 const GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY = '__guide_pickup_hotel_unassigned__'
 const REPORT_REMINDER_START_DATE = '2026-04-01'
+
+type GuidePickupBalanceBreakdown = {
+  displayBalance: number
+  currency: string
+  detailLines: string[]
+}
+
+/** 픽업 카드·Balance 봉투: 고객 언어가 한국어가 아니면 라벨·합계를 영어로 */
+function guidePickupUseEnvelopeEnglish(lang: string | null | undefined): boolean {
+  if (!lang) return true
+  const l = lang.toString().toLowerCase()
+  return !(l === 'ko' || l.startsWith('ko-') || l === 'korean' || l === 'kr')
+}
+
+function formatGuideEnvelopeMoney(amount: number, currency: string): string {
+  if (currency === 'KRW') return `₩${Math.round(amount).toLocaleString()}`
+  return `$${amount.toFixed(2)}`
+}
+
+async function computeGuidePickupBalanceBreakdowns(
+  supabaseClient: typeof supabase,
+  reservationIds: string[],
+  reservations: ReservationRow[],
+  customers: CustomerRow[]
+): Promise<Record<string, GuidePickupBalanceBreakdown>> {
+  const ids = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+  const out: Record<string, GuidePickupBalanceBreakdown> = {}
+  if (ids.length === 0) return out
+
+  const { data: sessionData } = await supabaseClient.auth.getSession()
+  const token = sessionData?.session?.access_token?.trim()
+
+  const pricingByResId = new Map<string, Record<string, unknown> | null>()
+  if (token && typeof window !== 'undefined') {
+    try {
+      const res = await fetch(
+        `${window.location.origin}/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (res.ok) {
+        const json = (await res.json()) as {
+          items?: Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
+        }
+        const items = json.items
+        if (Array.isArray(items)) {
+          for (const { reservation_id, pricing } of items) {
+            pricingByResId.set(
+              reservation_id,
+              pricing && typeof pricing === 'object' ? pricing : null
+            )
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('가이드 픽업 잔액: reservation-pricing API', e)
+    }
+  }
+
+  const missing = ids.filter((id) => !pricingByResId.has(id))
+  if (missing.length > 0) {
+    const { data: pricingList, error: pricingErr } = await supabaseClient
+      .from('reservation_pricing')
+      .select('*')
+      .in('reservation_id', missing)
+    if (pricingErr) {
+      console.warn('가이드 픽업 잔액: reservation_pricing 직접 조회', pricingErr)
+    }
+    for (const row of pricingList || []) {
+      const rid = (row as { reservation_id?: string }).reservation_id
+      if (rid) pricingByResId.set(rid, row as Record<string, unknown>)
+    }
+  }
+  for (const id of ids) {
+    if (!pricingByResId.has(id)) pricingByResId.set(id, null)
+  }
+
+  const optionLinesByResId = await fetchReservationOptionLinesBatch(supabaseClient, ids)
+
+  const { data: payRows } = await supabaseClient
+    .from('payment_records')
+    .select('reservation_id, amount, payment_status')
+    .in('reservation_id', ids)
+
+  const { data: rcRows } = await supabaseClient
+    .from('reservation_customers')
+    .select('reservation_id, resident_status')
+    .in('reservation_id', ids)
+
+  const residentsByResId = new Map<string, Array<{ resident_status?: string | null }>>()
+  for (const r of rcRows || []) {
+    const row = r as { reservation_id: string; resident_status?: string | null }
+    const list = residentsByResId.get(row.reservation_id) || []
+    list.push({ resident_status: row.resident_status ?? null })
+    residentsByResId.set(row.reservation_id, list)
+  }
+
+  const paymentsByResId = new Map<string, Array<{ payment_status: string; amount: number }>>()
+  for (const r of payRows || []) {
+    const row = r as { reservation_id: string; amount?: unknown; payment_status?: string | null }
+    const list = paymentsByResId.get(row.reservation_id) || []
+    list.push({
+      payment_status: row.payment_status || '',
+      amount: Number(row.amount) || 0,
+    })
+    paymentsByResId.set(row.reservation_id, list)
+  }
+
+  const customerLangById = new Map<string, string | null>()
+  for (const c of customers) {
+    customerLangById.set(c.id, c.language ?? null)
+  }
+
+  const rezById = new Map<string, ReservationRow>()
+  for (const r of reservations) rezById.set(r.id, r)
+
+  for (const id of ids) {
+    const rez = rezById.get(id)
+    if (!rez) {
+      out[id] = { displayBalance: 0, currency: 'USD', detailLines: [] }
+      continue
+    }
+
+    const pricingRaw = pricingByResId.get(id) ?? null
+    const pricing = pricingRaw ? withNormalizedBalanceAmountForDisplay(pricingRaw) : null
+
+    const lines = optionLinesByResId.get(id) || []
+    const optionsSum = lines.length
+      ? lines.reduce((s, o) => s + (Number(o.lineTotal) || 0), 0)
+      : null
+
+    const displayBalance = getBalanceAmountForDisplay(
+      pricing,
+      optionsSum,
+      { adults: rez.adults ?? null, child: rez.child ?? null, infant: rez.infant ?? null },
+      {
+        paymentRecords: paymentsByResId.get(id) ?? [],
+        reservationStatus: rez.status ?? null,
+      }
+    )
+
+    const currency =
+      pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
+        ? String((pricing as { currency: string }).currency || 'USD')
+        : 'USD'
+
+    const customerId = (rez as { customer_id?: string | null }).customer_id
+    const lang = customerId ? customerLangById.get(customerId) ?? null : null
+    const useEnglish = guidePickupUseEnvelopeEnglish(lang)
+
+    const p = pricing as { not_included_price?: unknown; pricing_adults?: unknown } | null
+    const pricingAdultsRaw = p?.pricing_adults
+    const pricingAdults =
+      pricingAdultsRaw !== undefined &&
+      pricingAdultsRaw !== null &&
+      pricingAdultsRaw !== '' &&
+      Number.isFinite(Number(pricingAdultsRaw))
+        ? Math.max(0, Math.floor(Number(pricingAdultsRaw)))
+        : rez.adults ?? 0
+    const notIncludedPerPerson = Number(p?.not_included_price) || 0
+    const residentCounts = countResidentLinesFromCustomers(residentsByResId.get(id))
+    const reservationOptions = lines.map((o) => ({
+      labelKo: o.labelKo,
+      labelEn: o.labelEn,
+      unitPrice: o.unitPrice,
+      qty: o.quantity,
+      subtotal: o.lineTotal,
+    }))
+
+    const balanceLines =
+      displayBalance > 0.005
+        ? buildBalanceEnvelopeBreakdownLines({
+            balanceAmount: displayBalance,
+            notIncludedPerPerson,
+            pricingAdults,
+            child: rez.child ?? 0,
+            infant: rez.infant ?? 0,
+            residentCounts,
+            reservationOptions,
+          })
+        : []
+
+    const detailLines = balanceLines.map((line) =>
+      formatBalanceEnvelopeLine(line, currency, useEnglish, formatGuideEnvelopeMoney)
+    )
+
+    out[id] = { displayBalance, currency, detailLines }
+  }
+
+  return out
+}
 
 type GuideTourDetailSnapshot = {
   tour: TourRow
@@ -102,6 +302,8 @@ type GuideTourDetailSnapshot = {
     nonResidentWithPass: number
     passCoveredCount: number
   }
+  /** 픽업 카드 Balance 내역 (Balance 봉투 모달과 동일 산식) */
+  pickupBalanceBreakdownByReservation: Record<string, GuidePickupBalanceBreakdown>
 }
 
 /** 투어 업무 기준일(라스베이거스) 오늘 날짜 YYYY-MM-DD */
@@ -218,7 +420,10 @@ export default function GuideTourDetailPage() {
     nonResidentWithPass: 0,
     passCoveredCount: 0
   })
-  
+  const [pickupBalanceBreakdownByReservationId, setPickupBalanceBreakdownByReservationId] = useState<
+    Record<string, GuidePickupBalanceBreakdown>
+  >({})
+
   // 모바일 최적화를 위한 상태
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'bookings' | 'photos' | 'chat' | 'expenses' | 'report'>('overview')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule', 'chat']))
@@ -238,8 +443,11 @@ export default function GuideTourDetailPage() {
     return () => window.removeEventListener('online', onOnline)
   }, [])
   
-  // balance 정보를 가져오는 함수
+  // balance 정보를 가져오는 함수 (픽업 내역 로드 후에는 봉투와 동일 표시 잔액)
   const getReservationBalance = (reservationId: string) => {
+    if (Object.prototype.hasOwnProperty.call(pickupBalanceBreakdownByReservationId, reservationId)) {
+      return pickupBalanceBreakdownByReservationId[reservationId].displayBalance
+    }
     const pricing = reservationPricing.find(p => p.reservation_id === reservationId)
     return pricing?.balance_amount || 0
   }
@@ -294,6 +502,10 @@ export default function GuideTourDetailPage() {
 
   // 총 balance 계산 함수
   const getTotalBalance = () => {
+    const entries = Object.values(pickupBalanceBreakdownByReservationId)
+    if (entries.length > 0) {
+      return entries.reduce((total, b) => total + (b.displayBalance || 0), 0)
+    }
     return reservationPricing.reduce((total, pricing) => total + (pricing.balance_amount || 0), 0)
   }
 
@@ -303,6 +515,7 @@ export default function GuideTourDetailPage() {
       setLoading(true)
       setError(null)
       setTourTipShare(null)
+      setPickupBalanceBreakdownByReservationId({})
 
       const tourId = params.id as string
       if (!tourId) {
@@ -330,6 +543,7 @@ export default function GuideTourDetailPage() {
           setReservationPricing(s.reservationPricing)
           setReservationChoicesMap(new Map(s.reservationChoicesEntries))
           setResidentStatusSummary(s.residentStatusSummary)
+          setPickupBalanceBreakdownByReservationId(s.pickupBalanceBreakdownByReservation ?? {})
           setError(null)
           return
         }
@@ -381,6 +595,7 @@ export default function GuideTourDetailPage() {
           nonResidentWithPass: 0,
           passCoveredCount: 0,
         },
+        pickupBalanceBreakdownByReservation: {},
       }
 
       {
@@ -522,6 +737,8 @@ export default function GuideTourDetailPage() {
         } else {
           setReservationPricing([])
           snapForPersist.reservationPricing = []
+          setPickupBalanceBreakdownByReservationId({})
+          snapForPersist.pickupBalanceBreakdownByReservation = {}
         }
 
         const choicesMap = new Map<string, Array<{
@@ -588,14 +805,19 @@ export default function GuideTourDetailPage() {
         snapForPersist.reservations = sortedReservations
 
         // 고객 정보 가져오기
+        let loadedCustomers: CustomerRow[] = []
         const customerIds = [...new Set(reservationsList.map(r => (r as ReservationRow & { customer_id?: string }).customer_id).filter(Boolean))]
         if (customerIds.length > 0) {
           const { data: customersData } = await supabase
             .from('customers')
             .select('*')
             .in('id', customerIds)
-          setCustomers(customersData || [])
-          snapForPersist.customers = customersData || []
+          loadedCustomers = customersData || []
+          setCustomers(loadedCustomers)
+          snapForPersist.customers = loadedCustomers
+        } else {
+          setCustomers([])
+          snapForPersist.customers = []
         }
 
         // 픽업 호텔 정보 가져오기 (reservations의 pickup_hotel 정보 사용)
@@ -615,6 +837,26 @@ export default function GuideTourDetailPage() {
             setPickupHotels(hotelsData || [])
             snapForPersist.pickupHotels = hotelsData || []
           }
+        }
+
+        if (guideActiveReservationIds.length > 0) {
+          try {
+            const breakdown = await computeGuidePickupBalanceBreakdowns(
+              supabase,
+              guideActiveReservationIds,
+              sortedReservations,
+              loadedCustomers
+            )
+            setPickupBalanceBreakdownByReservationId(breakdown)
+            snapForPersist.pickupBalanceBreakdownByReservation = breakdown
+          } catch (e) {
+            console.warn('가이드 픽업 잔액 내역:', e)
+            setPickupBalanceBreakdownByReservationId({})
+            snapForPersist.pickupBalanceBreakdownByReservation = {}
+          }
+        } else {
+          setPickupBalanceBreakdownByReservationId({})
+          snapForPersist.pickupBalanceBreakdownByReservation = {}
         }
       }
 
@@ -1781,8 +2023,8 @@ export default function GuideTourDetailPage() {
                                 </div>
 
                                 {/* 중단: 초이스와 연락처 아이콘 */}
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="text-sm text-gray-600">
+                                <div className="flex items-center justify-between mb-2 gap-2">
+                                  <div className="text-sm text-gray-600 min-w-0 pr-2">
                                     {(() => {
                                       // reservation_choices 테이블에서 가져온 초이스 데이터 사용 (예약 페이지와 동일)
                                       const choices = reservationChoicesMap.get(reservation.id)
@@ -1806,15 +2048,7 @@ export default function GuideTourDetailPage() {
                                       return optionNames.join(', ')
                                     })()}
                                   </div>
-                                  <div className="flex items-center space-x-3">
-                                    {/* Balance 표시 */}
-                                    <div className="text-right">
-                                      <div className="text-xs text-gray-500">Balance</div>
-                                      <div className="text-sm font-semibold text-green-600">
-                                        ${getReservationBalance(reservation.id).toLocaleString()}
-                                      </div>
-                                    </div>
-                                    
+                                  <div className="flex items-center space-x-3 shrink-0">
                                     {customer?.phone && (
                                       <a 
                                         href={`tel:${customer.phone}`}
@@ -1835,6 +2069,55 @@ export default function GuideTourDetailPage() {
                                     )}
                                   </div>
                                 </div>
+
+                                {/* Balance: 봉투 인쇄 모달과 동일 산식 — 라인별 + 합계 (옵션·미포함·거주 수수료 등) */}
+                                {(() => {
+                                  const bd = pickupBalanceBreakdownByReservationId[reservation.id]
+                                  const bal = getReservationBalance(reservation.id)
+                                  const currency = bd?.currency ?? 'USD'
+                                  const detailLines = bd?.detailLines ?? []
+                                  const useEn = guidePickupUseEnvelopeEnglish(customer?.language ?? null)
+                                  const showLines = detailLines.length > 0 && bal > 0.005
+
+                                  return (
+                                    <div className="mt-1 pt-2 border-t border-dashed border-gray-200 space-y-0.5">
+                                      {showLines ? (
+                                        <>
+                                          {detailLines.map((line, i) => (
+                                            <div
+                                              key={i}
+                                              className="text-[11px] sm:text-xs leading-snug text-gray-700 tabular-nums break-words"
+                                            >
+                                              {line}
+                                            </div>
+                                          ))}
+                                          <div
+                                            className={`text-xs sm:text-sm font-semibold pt-0.5 tabular-nums ${
+                                              bal > 0.005 ? 'text-red-600' : 'text-gray-700'
+                                            }`}
+                                          >
+                                            {useEn
+                                              ? `Total Balance : ${formatGuideEnvelopeMoney(bal, currency)}`
+                                              : `잔액 합계 : ${formatGuideEnvelopeMoney(bal, currency)}`}
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <div className="text-xs text-gray-600 tabular-nums">
+                                          <span className="text-gray-500">
+                                            {useEn ? 'Total Balance' : '잔액 합계'}
+                                          </span>{' '}
+                                          <span
+                                            className={`font-semibold ${
+                                              bal > 0.005 ? 'text-red-600' : 'text-gray-700'
+                                            }`}
+                                          >
+                                            {formatGuideEnvelopeMoney(bal, currency)}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
 
                                 {/* 하단: event_note */}
                                 {(reservation as ReservationRow & { event_note?: string }).event_note && (

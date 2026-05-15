@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   createSupabaseClientWithToken,
-  supabase,
   supabaseAdmin,
 } from '@/lib/supabase'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
@@ -19,16 +18,19 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+    // 요청별 JWT 클라이언트로 인증·조회 (전역 supabase 싱글톤 + getUser(token) 동시 요청 시 경합 방지)
+    const db = createSupabaseClientWithToken(token)
+    const {
+      data: { user },
+      error: authError,
+    } = await db.auth.getUser(token)
     if (authError || !user) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
     // 입금 내역 조회 — 브라우저 세션과 동일한 RLS가 적용되도록 사용자 JWT 클라이언트 사용
     try {
-      const db = createSupabaseClientWithToken(token)
       let query = db
         .from('payment_records')
         .select('*')
@@ -42,19 +44,18 @@ export async function GET(request: NextRequest) {
 
       if (error) {
         console.error('입금 내역 조회 오류:', error)
-        // 테이블이 존재하지 않는 경우 빈 배열 반환
         return NextResponse.json({ paymentRecords: [] })
       }
 
       return NextResponse.json({ paymentRecords: paymentRecords || [] })
     } catch (error) {
       console.error('입금 내역 조회 예외:', error)
-      // 테이블이 존재하지 않는 경우 빈 배열 반환
       return NextResponse.json({ paymentRecords: [] })
     }
   } catch (error) {
     console.error('입금 내역 조회 오류:', error)
-    return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    // HTML 500(비JSON)으로 클라이언트가 깨지지 않도록 항상 JSON. 개발 서버 .next 손상 시에도 UI는 동작.
+    return NextResponse.json({ paymentRecords: [], degraded: true })
   }
 }
 
@@ -94,15 +95,18 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split(' ')[1]
-    
-    // 토큰으로 사용자 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+    const userDb = createSupabaseClientWithToken(token)
+    const {
+      data: { user },
+      error: authError,
+    } = await userDb.auth.getUser(token)
     if (authError || !user) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
     // RLS: anon 은 payment_records 접근 불가 — PUT/[id] 와 동일하게 서비스 롤 또는 사용자 JWT
-    const db = supabaseAdmin ?? createSupabaseClientWithToken(token)
+    const db = supabaseAdmin ?? userDb
 
     const { data: newPaymentRecord, error } = await db
       .from('payment_records')

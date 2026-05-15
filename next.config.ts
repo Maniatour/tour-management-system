@@ -5,7 +5,7 @@ import createNextIntlPlugin from 'next-intl/plugin'
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const revision =
-  process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_REF ?? randomUUID()
+	process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_REF ?? randomUUID()
 
 const withSerwist = withSerwistInit({
 	swSrc: 'src/app/sw.ts',
@@ -53,19 +53,41 @@ const nextConfig = {
 	// 압축 최적화
 	compress: true,
 	
-	// 실험적 기능 활성화
+	// 실험적 기능 활성화 (optimizeCss는 dev에서 .next CSS 동시 I/O를 늘려 Windows -4094 유발 가능)
 	experimental: {
-		optimizeCss: true,
+		optimizeCss: process.env.NODE_ENV === 'production',
 		scrollRestoration: true,
 		esmExternals: true,
-		// CSS preload 최적화
 		optimizePackageImports: ['@supabase/supabase-js'],
-		// CSS preload 경고 해결
 		disableOptimizedLoading: false,
+	},
+
+	// webpack dev: 동시 컴파일 페이지 수 제한 → layout.js 등 청크 open 경합 완화
+	onDemandEntries: {
+		maxInactiveAge: 60 * 1000,
+		pagesBufferLength: 2,
 	},
 	
 	// 웹팩 최적화
 	webpack: (config: any, { isServer, dev }: { isServer: boolean; dev: boolean }) => {
+		// Windows: Defender·OneDrive 등과 Webpack 디스크 캐시(rename)·.next 산출물이 겹치면
+		// PackFileCache ENOENT / open UNKNOWN(-4094) 등이 난다. 개발만 디스크 캐시 끔(컴파일은 다소 느려질 수 있음).
+		if (dev && process.platform === 'win32') {
+			// 메모리 캐시만으로도 -4094가 나면 디스크 Pack 캐시 완전 비활성화(느리지만 안정).
+			// NEXT_DEV_WEBPACK_DISK_CACHE=1 이면 메모리 캐시만 사용.
+			config.cache =
+				process.env.NEXT_DEV_WEBPACK_DISK_CACHE === '1'
+					? { type: 'memory' }
+					: false
+			config.parallelism = 1
+			config.watchOptions = {
+				...config.watchOptions,
+				poll: 1000,
+				aggregateTimeout: 600,
+				ignored: ['**/node_modules/**', '**/.git/**'],
+			}
+		}
+
 		// CSS preload 최적화
 		if (!isServer) {
 			// CSS 파일의 불필요한 preload 방지

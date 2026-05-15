@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
-import { Mail, ClipboardCheck, Plane, MapPin, Minus } from 'lucide-react'
+import { Mail, ClipboardCheck, Plane, MapPin, Minus, MessageSquare } from 'lucide-react'
 import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
 import {
   prerequisitesMetForDeparture,
@@ -92,6 +92,8 @@ export function ReservationFollowUpPipelineIcons({
   snapshot,
   disabled,
   onEmailPreviewClick,
+  showTourChatRoomPreviewButton,
+  onTourChatRoomPreviewClick,
   allowManualCompletion,
   onManualStepChange,
 }: {
@@ -100,6 +102,9 @@ export function ReservationFollowUpPipelineIcons({
   disabled?: boolean
   /** 단계별 이메일 미리보기 (거주 미해당 상품은 거주 아이콘 비활성) */
   onEmailPreviewClick?: (emailType: FollowUpPipelineEmailType) => void
+  /** 간단 카드: 픽업 아이콘 옆 Tour Chat Room 섹션 미리보기 */
+  showTourChatRoomPreviewButton?: boolean
+  onTourChatRoomPreviewClick?: () => void
   /** 간단 카드 등: 우클릭으로 다른 채널 완료 표시 */
   allowManualCompletion?: boolean
   onManualStepChange?: (step: FollowUpPipelineStepKey, action: 'mark' | 'clear') => void | Promise<void>
@@ -256,31 +261,27 @@ export function ReservationFollowUpPipelineIcons({
             })
           }
 
-          if (interactive) {
-            return (
-              <button
-                key={key}
-                type="button"
-                title={`${label}${titleSuffix}`}
-                aria-label={`${label}${titleSuffix}`}
-                className={`${boxClass} cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onEmailPreviewClick(emailType)
-                }}
-                onContextMenu={(e) => {
-                  if (!menuApplicable) return
-                  e.preventDefault()
-                  e.stopPropagation()
-                  openMenu(e.clientX, e.clientY)
-                }}
-              >
-                <Icon className="h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
-              </button>
-            )
-          }
-
-          return (
+          const iconButton = interactive ? (
+            <button
+              key={key}
+              type="button"
+              title={`${label}${titleSuffix}`}
+              aria-label={`${label}${titleSuffix}`}
+              className={`${boxClass} cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onEmailPreviewClick(emailType)
+              }}
+              onContextMenu={(e) => {
+                if (!menuApplicable) return
+                e.preventDefault()
+                e.stopPropagation()
+                openMenu(e.clientX, e.clientY)
+              }}
+            >
+              <Icon className="h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
+            </button>
+          ) : (
             <span
               key={key}
               title={`${label}${titleSuffix}`}
@@ -295,6 +296,28 @@ export function ReservationFollowUpPipelineIcons({
               <Icon className="h-3 w-3 shrink-0" aria-hidden />
             </span>
           )
+
+          if (key === 'p' && showTourChatRoomPreviewButton && onTourChatRoomPreviewClick) {
+            return (
+              <React.Fragment key={key}>
+                {iconButton}
+                <button
+                  type="button"
+                  title={t('followUpPipeline.tourChatRoomPreviewButtonTitle')}
+                  aria-label={t('followUpPipeline.tourChatRoomPreviewButtonTitle')}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded border text-emerald-700 bg-emerald-50 border-emerald-200 cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onTourChatRoomPreviewClick()
+                  }}
+                >
+                  <MessageSquare className="h-3 w-3 shrink-0 pointer-events-none" aria-hidden />
+                </button>
+              </React.Fragment>
+            )
+          }
+
+          return iconButton
         })}
       </div>
       {renderMenu()}

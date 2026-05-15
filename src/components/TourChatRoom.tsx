@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Phone, User, X } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
-import { useVoiceCall } from '@/hooks/useVoiceCall'
+import { useVoiceCall, type CallStatus } from '@/hooks/useVoiceCall'
 import VoiceCallModal from './VoiceCallModal'
 import VoiceCallUserSelector from './VoiceCallUserSelector'
 import AvatarSelector from './AvatarSelector'
@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
 import PickupScheduleModal from './PickupScheduleModal'
+import VehicleInfoModal, { type TourChatVehicleInfo } from './VehicleInfoModal'
 import TourPhotoGallery from './TourPhotoGallery'
 // import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
@@ -34,6 +35,7 @@ import { usePickupGeofenceAutoComplete } from '@/hooks/usePickupGeofenceAutoComp
 import { useGuidePickupGeofenceOptional } from '@/contexts/GuidePickupGeofenceContext'
 import { fetchPickupScheduleForTour } from '@/lib/fetchPickupScheduleForTour'
 import { guideChatSendTextMessage } from '@/lib/guideChatSendTextMessage'
+import { getVoiceCallTabBroadcastChannel } from '@/lib/voiceCallTabBroadcast'
 
 // 타입은 @/types/chat에서 import
 
@@ -223,6 +225,9 @@ export default function TourChatRoom({
   // const [participantCount, setParticipantCount] = useState(0) // 사용되지 않음
   const [showShareModal, setShowShareModal] = useState(false)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
+  const [showVehicleInfoModal, setShowVehicleInfoModal] = useState(false)
+  const [vehicleInfo, setVehicleInfo] = useState<TourChatVehicleInfo | null>(null)
+  const [vehicleLoading, setVehicleLoading] = useState(false)
   const [showPhotoGallery, setShowPhotoGallery] = useState(false)
   const [showPickupHotelPhotoGallery, setShowPickupHotelPhotoGallery] = useState(false)
   const [selectedPickupHotel, setSelectedPickupHotel] = useState<{name: string, mediaUrls: string[]} | null>(null)
@@ -271,6 +276,11 @@ export default function TourChatRoom({
     assistant?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] }
     driver?: { name?: string; phone?: string; email?: string; position?: string; languages?: string[] }
   }>({})
+
+  const effectiveRoomCode = useMemo(
+    () => String(room?.room_code ?? roomCode ?? '').trim(),
+    [room?.room_code, roomCode]
+  )
   
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
   
@@ -540,6 +550,11 @@ export default function TourChatRoom({
   const [togglingActive, setTogglingActive] = useState(false)
   const [showCallUserSelector, setShowCallUserSelector] = useState(false)
   const [selectedCallTarget, setSelectedCallTarget] = useState<{id: string, name: string} | null>(null)
+  /** 같은 브라우저의 다른 탭에 통화 수신을 알릴 때, 수신 WebRTC 탭은 중복 벨 제외용 */
+  const voiceSignalingTabIdRef = useRef(
+    typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `voice-tab-${Date.now()}`
+  )
+  const prevVoiceCallStatusRef = useRef<CallStatus>('idle')
   
   // 메시지와 온라인 참여자에서 통화 가능한 사용자 목록 추출
   const availableCallUsers = React.useMemo(() => {
@@ -589,6 +604,55 @@ export default function TourChatRoom({
           })
         }
       })
+
+      // 공개 채팅(anon)은 team 테이블 RLS로 팀 상세가 비는 경우가 많음. 방 생성 가이드(created_by)는
+      // WebRTC userId와 동일한 문자열로 반드시 통화 대상에 포함해야 수신 측이 offer를 처리함.
+      if (guideEmail?.trim()) {
+        const gid = guideEmail.trim()
+        const alreadyListed = [...userMap.keys()].some((k) => k.toLowerCase() === gid.toLowerCase())
+        if (!alreadyListed) {
+          let memberInfo: {
+            name_ko?: string
+            name_en?: string
+            nick_name?: string | null
+            position?: string
+            email?: string
+            languages?: string[]
+          } | null = null
+          for (const [e, info] of teamMembersDetail) {
+            if (e.toLowerCase() === gid.toLowerCase()) {
+              memberInfo = info
+              break
+            }
+          }
+          const displayName = memberInfo
+            ? selectedLanguage === 'ko'
+              ? (memberInfo.name_ko || memberInfo.name_en || gid)
+              : (memberInfo.name_en || memberInfo.name_ko || gid)
+            : gid
+          const positionRaw = memberInfo?.position || ''
+          const positionLower = positionRaw.toLowerCase()
+          let roleLabel = ''
+          if (positionLower.includes('driver') || positionLower.includes('드라이버') || positionLower.includes('운전')) {
+            roleLabel = selectedLanguage === 'ko' ? '드라이버' : 'Driver'
+          } else if (positionLower.includes('assistant') || positionLower.includes('어시스턴트')) {
+            roleLabel = selectedLanguage === 'ko' ? '어시스턴트' : 'Assistant'
+          } else {
+            roleLabel = selectedLanguage === 'ko' ? '가이드' : 'Guide'
+          }
+          userMap.set(gid, {
+            id: gid,
+            name: displayName,
+            ...(memberInfo?.name_ko ? { name_ko: memberInfo.name_ko } : {}),
+            ...(memberInfo?.name_en ? { name_en: memberInfo.name_en } : {}),
+            type: 'guide',
+            email: gid,
+            position: roleLabel,
+            language: selectedLanguage,
+            ...(memberInfo?.languages ? { languages: memberInfo.languages } : {})
+          })
+        }
+      }
       
       // 메시지에서 가이드만 추출 (팀 멤버에 없는 경우 대비)
       messages.forEach(message => {
@@ -733,6 +797,44 @@ export default function TourChatRoom({
     ...(selectedCallTarget?.id ? { targetUserId: selectedCallTarget.id } : {}),
     ...(selectedCallTarget?.name ? { targetUserName: selectedCallTarget.name } : {})
   })
+
+  const notifyVoiceCallPush = useCallback(() => {
+    if (!isPublicView || !room?.id) return
+    const caller =
+      (typeof customerName === 'string' && customerName.trim() && customerName) ||
+      userName ||
+      (selectedLanguage === 'ko' ? '고객' : 'Guest')
+    void fetch('/api/voice-call-notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: room.id, callerName: caller })
+    }).catch(() => {})
+  }, [isPublicView, room?.id, customerName, userName, selectedLanguage])
+
+  // 가이드 탭: 다른 탭에 통화 수신 알림(Broadcast). 고객 탭: 통화 시작 시 푸시(구독 시).
+  useEffect(() => {
+    if (!room?.id || !tourId || isPublicView) {
+      prevVoiceCallStatusRef.current = callStatus
+      return
+    }
+    const ch = getVoiceCallTabBroadcastChannel()
+    const prev = prevVoiceCallStatusRef.current
+    prevVoiceCallStatusRef.current = callStatus
+    if (!ch) return
+
+    if (callStatus === 'ringing' && incomingOffer) {
+      ch.postMessage({
+        type: 'incoming',
+        roomId: room.id,
+        tourId,
+        callerName: callerName || (selectedLanguage === 'ko' ? '고객' : 'Guest'),
+        openPath: `/${locale}/guide/tours/${tourId}`,
+        fromTabId: voiceSignalingTabIdRef.current
+      })
+    } else if (prev === 'ringing') {
+      ch.postMessage({ type: 'dismiss', roomId: room.id })
+    }
+  }, [callStatus, incomingOffer, room?.id, tourId, isPublicView, locale, callerName, selectedLanguage])
   
   // 통화 시작 (사용자 선택 후)
   const handleStartCall = async () => {
@@ -747,7 +849,8 @@ export default function TourChatRoom({
       setSelectedCallTarget({ id: user.id, name: user.name })
       // targetUserId를 직접 파라미터로 전달
       try {
-        await startCallInternal(user.id, user.name)
+        const success = await startCallInternal(user.id, user.name)
+        if (success && isPublicView && room?.id) notifyVoiceCallPush()
       } catch (error: any) {
         alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
       }
@@ -766,6 +869,8 @@ export default function TourChatRoom({
         // startCall이 false를 반환하면 에러 메시지가 이미 설정되어 있음
         // callError가 설정되어 있으면 VoiceCallModal에서 표시됨
         console.error('Failed to start call')
+      } else if (isPublicView && room?.id) {
+        notifyVoiceCallPush()
       }
     } catch (error: any) {
       console.error('Error in handleSelectUserAndCall:', error)
@@ -773,13 +878,6 @@ export default function TourChatRoom({
     }
   }
   
-  // 들어오는 통화 처리
-  useEffect(() => {
-    if (callStatus === 'ringing' && incomingOffer) {
-      // 통화 수락 대기 상태
-    }
-  }, [callStatus, incomingOffer])
-  // const fileInputRef = useRef<HTMLInputElement>(null) // 사용되지 않음
 
   // 사용자별 채팅 색상 팔레트 (현재 사용되지 않음)
   // const chatColors = [
@@ -862,6 +960,50 @@ export default function TourChatRoom({
       loadPickupSchedule()
     }
   }, [showPickupScheduleModal, tourId, loadPickupSchedule])
+
+  useEffect(() => {
+    if (!showVehicleInfoModal) {
+      setVehicleInfo(null)
+      setVehicleLoading(false)
+      return
+    }
+    if (!tourId || !effectiveRoomCode) {
+      setVehicleInfo(null)
+      setVehicleLoading(false)
+      return
+    }
+    let cancelled = false
+    setVehicleLoading(true)
+    setVehicleInfo(null)
+    ;(async () => {
+      try {
+        const res = await fetch('/api/tour-chat-vehicle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tourId, roomCode: effectiveRoomCode }),
+        })
+        const data = (await res.json()) as { vehicle?: TourChatVehicleInfo | null; error?: string }
+        if (!res.ok) {
+          if (!cancelled) {
+            console.warn('[TourChatRoom] tour-chat-vehicle', data.error)
+            setVehicleInfo(null)
+          }
+          return
+        }
+        if (!cancelled) setVehicleInfo(data.vehicle ?? null)
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('[TourChatRoom] tour-chat-vehicle fetch', e)
+          setVehicleInfo(null)
+        }
+      } finally {
+        if (!cancelled) setVehicleLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [showVehicleInfoModal, tourId, effectiveRoomCode])
 
   // 초기 로드 시에도 픽업 스케줄 로드 (tourId가 준비되면)
   useEffect(() => {
@@ -2344,6 +2486,9 @@ export default function TourChatRoom({
           onToggleMobileMenu={handleMobileMenuToggle}
           onShowAnnouncements={() => setIsAnnouncementsOpen(true)}
           onShowPickupSchedule={() => setShowPickupScheduleModal(true)}
+          {...(tourId && effectiveRoomCode
+            ? { onShowVehicleInfo: () => setShowVehicleInfoModal(true) }
+            : {})}
           onShowPhotoGallery={() => setShowPhotoGallery(true)}
           onShowTeamInfo={() => setShowTeamInfo(true)}
           onGoToTourDetail={goToTourDetail}
@@ -2544,6 +2689,14 @@ export default function TourChatRoom({
           setSelectedPickupHotel({name: hotelName, mediaUrls})
           setShowPickupHotelPhotoGallery(true)
         }}
+      />
+
+      <VehicleInfoModal
+        isOpen={showVehicleInfoModal}
+        onClose={() => setShowVehicleInfoModal(false)}
+        loading={vehicleLoading}
+        vehicle={vehicleInfo}
+        language={selectedLanguage}
       />
 
       {/* 투어 사진 갤러리 */}

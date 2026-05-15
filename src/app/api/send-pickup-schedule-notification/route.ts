@@ -4,6 +4,8 @@ import { Resend } from 'resend'
 import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
 import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetailsForEmail'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import { getOperationsCc } from '@/lib/emailConfig'
+import { renderTourChatRoomEmailSectionHtml } from '@/lib/tourChatRoomEmailHtml'
 
 /**
  * POST /api/send-pickup-schedule-notification
@@ -647,6 +649,7 @@ export async function POST(request: NextRequest) {
         from: fromEmail,
         reply_to: replyTo,
         to: customer.email,
+        cc: getOperationsCc(customer.email),
         subject: emailContent.subject,
         html: emailContent.html,
         // 읽음 추적 활성화
@@ -1318,30 +1321,7 @@ export function generatePickupScheduleEmailContent(
               : '⚠️ 중요: 픽업 시간보다 5분 전에 픽업 장소에 도착해주세요.'}</p>
           </div>
 
-          ${chatRoomCode ? `
-          <div class="info-box" style="background: #f0fdf4; border-left: 4px solid #10b981; margin-top: 30px;">
-            <h2 style="font-size: 20px; font-weight: bold; color: #065f46; margin-bottom: 15px; border-bottom: 2px solid #10b981; padding-bottom: 10px;">
-              ${isEnglish ? '💬 Tour Chat Room' : '💬 투어 채팅방'}
-            </h2>
-            <div style="margin-bottom: 15px;">
-              <p style="color: #1e293b; line-height: 1.8; margin-bottom: 15px;">
-                ${isEnglish 
-                  ? 'Join the tour chat room to communicate with your guide during pickup and view tour photos after the tour ends.'
-                  : '투어 채팅방에 참여하시면 픽업 시 가이드와 연락할 수 있으며, 투어가 끝난 후 투어 사진을 이곳에서 볼 수 있습니다.'}
-              </p>
-              <a href="https://www.kovegas.com/chat/${chatRoomCode}" target="_blank" class="button" style="background: #10b981; display: inline-block; padding: 12px 24px; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">
-                ${isEnglish ? 'Open Tour Chat Room' : '투어 채팅방 열기'}
-              </a>
-            </div>
-            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #d1d5db;">
-              <p style="font-size: 13px; color: #6b7280; margin: 0;">
-                ${isEnglish 
-                  ? '📱 You can access the chat room anytime using the link above. The guide will be available to assist you during pickup, and tour photos will be shared here after the tour.'
-                  : '📱 위 링크를 통해 언제든지 채팅방에 접속할 수 있습니다. 픽업 시 가이드가 도움을 드리며, 투어가 끝난 후 투어 사진이 이곳에 공유됩니다.'}
-              </p>
-            </div>
-          </div>
-          ` : ''}
+          ${chatRoomCode ? renderTourChatRoomEmailSectionHtml(chatRoomCode, isEnglish) : ''}
 
           <p>${isEnglish 
             ? `If you have any questions or need to make changes, please contact us as soon as possible.`

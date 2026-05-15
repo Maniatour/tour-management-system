@@ -121,11 +121,19 @@ export async function GET() {
     }
 
     if (todayErr) {
-      console.error('[weather-status] window query:', todayErr)
-      return NextResponse.json(
-        { error: 'Failed to load weather status' },
-        { status: 500 }
-      )
+      // 로컬: SUPABASE_SERVICE_ROLE_KEY 없음·RLS·테이블 미적용 등으로 PostgREST error 가 나면
+      // 500 HTML이 나가 클라이언트가 깨지므로, UI는 살리고 알림만 "필요"로 둔다.
+      console.error('[weather-status] window query (degraded response):', todayErr)
+      return NextResponse.json({
+        today,
+        todayComplete: false,
+        missingTodayLocations: [...GOBLIN_LOCATIONS],
+        lastUpdatedAt: null,
+        collectionStale: true,
+        needsReminder: true,
+        degraded: true,
+        reason: 'weather_query_failed',
+      })
     }
 
     const { todayComplete, missingTodayLocations } = evaluateTodayCoverage(
@@ -178,9 +186,22 @@ export async function GET() {
     })
   } catch (e) {
     console.error('[weather-status]', e)
-    return NextResponse.json(
-      { error: 'Failed to load weather status' },
-      { status: 500 }
-    )
+    const today = (() => {
+      try {
+        return getTourLocalToday()
+      } catch {
+        return new Date().toISOString().slice(0, 10)
+      }
+    })()
+    return NextResponse.json({
+      today,
+      todayComplete: false,
+      missingTodayLocations: [...GOBLIN_LOCATIONS],
+      lastUpdatedAt: null,
+      collectionStale: true,
+      needsReminder: true,
+      degraded: true,
+      reason: 'exception',
+    })
   }
 }

@@ -187,13 +187,17 @@ export default function PickupScheduleModal({
     ko: {
       title: '픽업 스케줄',
       noSchedule: '픽업 스케줄이 없습니다.',
-      close: '닫기'
+      close: '닫기',
+      mapsNotice:
+        '버튼을 눌러 Google 지도에서 정확한 픽업 위치를 확인해 주세요. 라스베이거스 호텔은 출입구가 여러 곳인 경우가 많고, 픽업 지점은 메인 로비와 다를 수 있습니다. Google 지도에 표시된 위치로 와 주세요.',
     },
     en: {
       title: 'Pickup Schedule',
       noSchedule: 'No pickup schedule available.',
-      close: 'Close'
-    }
+      close: 'Close',
+      mapsNotice:
+        'Please click the button to check the exact pickup location on Google Maps. Many Las Vegas hotels have multiple entrances, and the pickup point may be different from the main lobby. Please come to the exact location shown on Google Maps.',
+    },
   }
   
   const t = texts[language]
@@ -216,6 +220,12 @@ export default function PickupScheduleModal({
         </div>
         
         <div className="flex-1 overflow-y-auto p-4">
+          <p
+            className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-relaxed text-amber-950"
+            role="note"
+          >
+            {t.mapsNotice}
+          </p>
           <div className="space-y-3">
             {pickupSchedule.length > 0 ? (
               pickupSchedule.map((schedule, index) => (

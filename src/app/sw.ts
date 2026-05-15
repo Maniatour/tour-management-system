@@ -1,6 +1,6 @@
 import { defaultCache } from '@serwist/next/worker'
 import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist'
-import { Serwist } from 'serwist'
+import { NetworkOnly, Serwist } from 'serwist'
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -53,7 +53,18 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: defaultCache,
+  // 공개 투어 채팅(/chat/[code])은 동적·세션 의존 페이지라 기본 런타임 캐시와 맞지 않으면
+  // Workbox/Serwist에서 no-response가 날 수 있음 → 문서 요청은 네트워크만 사용
+  runtimeCaching: [
+    {
+      matcher({ url, request }) {
+        if (!url.pathname.startsWith('/chat/')) return false
+        return request.mode === 'navigate' || request.destination === 'document'
+      },
+      handler: new NetworkOnly(),
+    },
+    ...defaultCache,
+  ],
   fallbacks: {
     entries: [
       {

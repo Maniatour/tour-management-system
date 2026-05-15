@@ -3,7 +3,14 @@
 import { useEffect, useState } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
 import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
+import {
+  buildBalanceEnvelopeBreakdownLines,
+  countResidentLinesFromCustomers,
+  formatBalanceEnvelopeLine,
+  type BalanceEnvelopeLine,
+} from '@/utils/balanceEnvelopeBreakdown'
 
 // ---------------------------------------------------------------------------
 // 상수
@@ -68,6 +75,7 @@ export type EnvelopeRow = {
   customerLanguage: string | null
   balanceAmount: number
   currency: string
+  balanceLines: BalanceEnvelopeLine[]
 }
 
 export type EnvelopeVariant = 'tip' | 'balance'
@@ -201,7 +209,13 @@ export default function TourEnvelopeModal({
           setLoading(false)
           return
         }
-        const customerIds = [...new Set((rezList as { customer_id?: string }[]).map((r) => r.customer_id).filter(Boolean))]
+        const customerIds = [
+          ...new Set(
+            (rezList as { customer_id?: string }[])
+              .map((r) => r.customer_id)
+              .filter((id): id is string => Boolean(id))
+          ),
+        ]
         const { data: customersData } = await supabase
           .from('customers')
           .select('id, name, language')
@@ -247,32 +261,15 @@ export default function TourEnvelopeModal({
           }
         }
 
-        // 배정 카드와 동일: reservation_options 합계가 있으면 option_total 대신 사용
-        const { data: optRows } = await supabase
-          .from('reservation_options')
-          .select('reservation_id, total_price')
-          .in('reservation_id', ids)
-        const optLists = new Map<string, Array<{ total_price?: unknown }>>()
-        for (const r of optRows || []) {
-          const row = r as { reservation_id: string; total_price?: unknown }
-          const list = optLists.get(row.reservation_id) || []
-          list.push(row)
-          optLists.set(row.reservation_id, list)
-        }
+        const optionLinesByResId = await fetchReservationOptionLinesBatch(supabase, ids)
+
         const optionsTotalByResId = new Map<string, number | null>()
         for (const id of ids) {
-          const list = optLists.get(id)
-          if (!list?.length) {
+          const lines = optionLinesByResId.get(id) || []
+          if (!lines.length) {
             optionsTotalByResId.set(id, null)
           } else {
-            const sum = list.reduce(
-              (s, o) =>
-                s +
-                (typeof o.total_price === 'number'
-                  ? o.total_price
-                  : parseFloat(String(o.total_price ?? 0)) || 0),
-              0
-            )
+            const sum = lines.reduce((s, o) => s + (Number(o.lineTotal) || 0), 0)
             optionsTotalByResId.set(id, sum)
           }
         }
@@ -281,6 +278,19 @@ export default function TourEnvelopeModal({
           .from('payment_records')
           .select('reservation_id, amount, payment_status')
           .in('reservation_id', ids)
+
+        const { data: rcRows } = await supabase
+          .from('reservation_customers')
+          .select('reservation_id, resident_status')
+          .in('reservation_id', ids)
+
+        const residentsByResId = new Map<string, Array<{ resident_status?: string | null }>>()
+        for (const r of rcRows || []) {
+          const row = r as { reservation_id: string; resident_status?: string | null }
+          const list = residentsByResId.get(row.reservation_id) || []
+          list.push({ resident_status: row.resident_status ?? null })
+          residentsByResId.set(row.reservation_id, list)
+        }
         const paymentsByResId = new Map<string, Array<{ payment_status: string; amount: number }>>()
         for (const r of payRows || []) {
           const row = r as { reservation_id: string; amount?: unknown; payment_status?: string | null }
@@ -294,7 +304,16 @@ export default function TourEnvelopeModal({
 
         const results: EnvelopeRow[] = ids.map((id) => {
           const rez = rezById.get(id)
-          if (!rez) return { reservationId: id, customerName: '', customerLanguage: null, balanceAmount: 0, currency: 'USD' }
+          if (!rez) {
+            return {
+              reservationId: id,
+              customerName: '',
+              customerLanguage: null,
+              balanceAmount: 0,
+              currency: 'USD',
+              balanceLines: [],
+            }
+          }
           const customer = rez.customer_id ? customerById.get(rez.customer_id) : null
           const pricing = pricingByResId.get(id) ?? null
           const optionsSum = optionsTotalByResId.get(id) ?? null
@@ -315,12 +334,46 @@ export default function TourEnvelopeModal({
             pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
               ? ((pricing as { currency: string }).currency || 'USD')
               : 'USD'
+          const p = pricing as {
+            not_included_price?: unknown
+            pricing_adults?: unknown
+          } | null
+          const pricingAdultsRaw = p?.pricing_adults
+          const pricingAdults =
+            pricingAdultsRaw !== undefined &&
+            pricingAdultsRaw !== null &&
+            pricingAdultsRaw !== '' &&
+            Number.isFinite(Number(pricingAdultsRaw))
+              ? Math.max(0, Math.floor(Number(pricingAdultsRaw)))
+              : rez.adults ?? 0
+          const notIncludedPerPerson = Number(p?.not_included_price) || 0
+          const residentCounts = countResidentLinesFromCustomers(residentsByResId.get(id))
+          const reservationOptions = (optionLinesByResId.get(id) || []).map((o) => ({
+            labelKo: o.labelKo,
+            labelEn: o.labelEn,
+            unitPrice: o.unitPrice,
+            qty: o.quantity,
+            subtotal: o.lineTotal,
+          }))
+          const balanceLines =
+            variant === 'balance' && balanceAmount > 0.005
+              ? buildBalanceEnvelopeBreakdownLines({
+                  balanceAmount,
+                  notIncludedPerPerson,
+                  pricingAdults,
+                  child: rez.child ?? 0,
+                  infant: rez.infant ?? 0,
+                  residentCounts,
+                  reservationOptions,
+                })
+              : []
           return {
             reservationId: id,
             customerName: customer?.name ?? '',
             customerLanguage: customer?.language ?? null,
             balanceAmount,
             currency: currency || 'USD',
+            balanceLines,
           }
         })
         setRows(results)
@@ -389,7 +442,7 @@ export default function TourEnvelopeModal({
     transformOrigin: 'left top',
     fontFamily: 'Arial, Helvetica, sans-serif',
     fontSize: '18px',
-    lineHeight: 2,
+    lineHeight: 1.45,
     color: '#111827',
     paddingLeft: '4mm',
     paddingRight: '4mm',
@@ -497,9 +550,39 @@ export default function TourEnvelopeModal({
                             <span style={{ flexShrink: 0, fontWeight: 600 }}>TOUR GUIDE :</span>
                             <span className="break-words">{(useEnvelopeEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</span>
                           </div>
-                          <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>
-                            <span style={{ flexShrink: 0, fontWeight: 600 }}>BALANCE :</span>
-                            <span className="break-words">{formatMoney(row.balanceAmount, row.currency)}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.06em', minHeight: 0 }}>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                              <span style={{ flexShrink: 0, fontWeight: 600 }}>BALANCE :</span>
+                              <span className="break-words" style={{ minWidth: 0, lineHeight: 1.25 }}>
+                                {formatMoney(row.balanceAmount, row.currency)}
+                              </span>
+                            </div>
+                            {row.balanceLines.length > 0 && (
+                              <div
+                                style={{
+                                  fontSize: '0.78em',
+                                  lineHeight: 1.2,
+                                  fontWeight: 400,
+                                  color: '#374151',
+                                }}
+                              >
+                                {row.balanceLines.map((line, lineIdx) => (
+                                  <div key={lineIdx} className="break-words">
+                                    {formatBalanceEnvelopeLine(
+                                      line,
+                                      row.currency,
+                                      useEnvelopeEnglish(row.customerLanguage),
+                                      formatMoney
+                                    )}
+                                  </div>
+                                ))}
+                                <div style={{ marginTop: '0.08em', fontWeight: 600 }}>
+                                  {useEnvelopeEnglish(row.customerLanguage)
+                                    ? `total balance : ${formatMoney(row.balanceAmount, row.currency)}`
+                                    : `잔액 합계 : ${formatMoney(row.balanceAmount, row.currency)}`}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ) : (

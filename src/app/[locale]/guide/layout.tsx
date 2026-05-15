@@ -21,6 +21,7 @@ import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
 import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
 import GuideTourChatNotificationModal from '@/components/guide/GuideTourChatNotificationModal'
+import VoiceCallCrossTabListener from '@/components/guide/VoiceCallCrossTabListener'
 import GuideOfflineBanner from '@/components/guide/GuideOfflineBanner'
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
@@ -712,6 +713,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
         locale={locale === 'en' ? 'en' : 'ko'}
       />
+
+      <VoiceCallCrossTabListener locale={locale === 'en' ? 'en' : 'ko'} />
 
       <TourPhotoUploadProgressOverlay />
       </div>
