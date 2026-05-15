@@ -3805,7 +3805,7 @@ export default function ReservationForm({
               if (v == null || v === '') return null
               const n = Number(v)
               if (!Number.isFinite(n)) return null
-              if (Math.abs(n) < 0.005) return null
+              /** DB에 0이 저장된 경우도 명시값으로 로드 (전액 환불·정산 0) */
               return n
             })()
             const updated = {
@@ -3892,7 +3892,16 @@ export default function ReservationForm({
               (updated.isPrivateTour ? updated.privateTourAdditionalCost : 0) +
               reservationOptionsTotalPrice
             const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
-            const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
+            const loadStatus = String(reservation?.status || '').toLowerCase().trim()
+            const loadIsCancelled = loadStatus === 'cancelled' || loadStatus === 'canceled'
+            const dbTotalRaw = (existingPricing as any).total_price
+            const hasDbTotal =
+              dbTotalRaw != null && dbTotalRaw !== '' && Number.isFinite(Number(dbTotalRaw))
+            const totalPriceForForm =
+              loadIsCancelled && hasDbTotal
+                ? Math.max(0, Math.round(Number(dbTotalRaw) * 100) / 100)
+                : newTotalPrice
+            const newBalance = Math.max(0, totalPriceForForm - updated.depositAmount)
             
             // 명시 잔액(DB balance_amount)이 있으면 0을 포함해 항상 우선. 없을 때만 총액−보증금 계산값
             const rawBalRow = (existingPricing as any).balance_amount
@@ -3939,7 +3948,7 @@ export default function ReservationForm({
               productPriceTotal: newProductPriceTotal,
               requiredOptionTotal: requiredOptionTotal,
               subtotal: newSubtotal,
-              totalPrice: newTotalPrice,
+              totalPrice: totalPriceForForm,
               balanceAmount: finalBalanceAmount,
               // commission_amount와 commission_percent 명시적으로 보존 (데이터베이스 값 우선)
               commission_amount: finalCommissionAmount,
@@ -4124,7 +4133,7 @@ export default function ReservationForm({
         })
       })
     }
-      }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey, formData.productChoices, reservation?.id, (reservation as any)?.channel_id, isImportMode, initialVariantKeyFromImport, initialChannelVariantLabelFromImport])
+      }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey, formData.productChoices, reservation?.id, reservation?.status, (reservation as any)?.channel_id, isImportMode, initialVariantKeyFromImport, initialChannelVariantLabelFromImport])
 
   /** 동적 가격 계산식 → 입력칸 반영(저장 시 DB 반영). reservation_pricing 행이 있을 때만 의미 있음 */
   const applyDynamicProductPriceFormula = useCallback(() => {
@@ -5384,6 +5393,8 @@ export default function ReservationForm({
       })
       const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
+      const stSave = String(fd.status || '').toLowerCase().trim()
+      const cancelledSave = stSave === 'cancelled' || stSave === 'canceled'
       const channelSettlementToSave = (() => {
         const m = fd.channelSettlementAmount
         if (m !== undefined && m !== null && String(m) !== '' && Number.isFinite(Number(m))) {
@@ -5512,7 +5523,9 @@ export default function ReservationForm({
         prepayment_tip: keep(Number(fd.prepaymentTip) || 0, (existing as any)?.prepayment_tip),
         selected_options: fd.selectedOptionalOptions,
         option_total: keep(newOptionTotal, (existing as any)?.option_total),
-        total_price: keep(newTotal, (existing as any)?.total_price),
+        total_price: cancelledSave
+          ? Math.round(newTotal * 100) / 100
+          : keep(newTotal, (existing as any)?.total_price),
         deposit_amount: overrides?.depositAmount ?? (Number(fd.depositAmount) || 0),
         balance_amount: overrides?.balanceAmount ?? (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,

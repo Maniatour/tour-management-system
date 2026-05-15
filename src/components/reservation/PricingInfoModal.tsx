@@ -427,8 +427,9 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         raw.channel_settlement_amount != null && raw.channel_settlement_amount !== ''
           ? toNum(raw.channel_settlement_amount)
           : null
+      /** DB에 0이 명시 저장된 경우도 그대로 사용 (전액 환불·정산 0). 없으면 보증금−수수료 추정 */
       const chSettleFromDb =
-        chFromRow != null && Math.abs(chFromRow) >= 0.005 ? chFromRow : roundUsd2(dep - comm)
+        chFromRow != null && Number.isFinite(chFromRow) ? roundUsd2(chFromRow) : roundUsd2(dep - comm)
 
       const pricingAdultsMerged = inferPricingAdultsWhenUnset({
         pricingAdultsRaw: raw.pricing_adults,
@@ -1541,7 +1542,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           ).toFixed(2)}
                         </span>
                       </div>
-                      {!isReservationCancelled && reservationOptionsTotalUsd > 0 && (
+                      {reservationOptionsTotalUsd > 0 && (
                         <div className="flex justify-between">
                           <span className="text-gray-600">+ 예약 옵션</span>
                           <span>+${reservationOptionsTotalUsd.toFixed(2)}</span>

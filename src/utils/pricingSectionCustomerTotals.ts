@@ -19,7 +19,8 @@ export function computePricingSectionCustomerPaymentGrossLike(params: {
     ['cancelled', 'canceled'].includes(String(params.status).toLowerCase().trim())
   const discountedProductPrice =
     params.productPriceTotal - params.couponDiscount - params.additionalDiscount
-  const optionsTotal = cancelled ? 0 : params.reservationOptionsTotalUsd || 0
+  /** 예약 옵션(예: PGG 등)은 취소 후에도 ①·③·④ 정합을 위해 합산(줄별 환불은 옵션 상태·④에서 반영) */
+  const optionsTotal = Math.max(0, Number(params.reservationOptionsTotalUsd) || 0)
   const notIncludedPrice = cancelled ? 0 : params.notIncludedTotalUsd || 0
   return roundUsd2(
     discountedProductPrice +

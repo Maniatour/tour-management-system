@@ -749,7 +749,8 @@ export default function PricingSection({
       (formData as { status?: string }).status != null &&
       ['cancelled', 'canceled'].includes(String((formData as { status?: string }).status).toLowerCase().trim())
     const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-    const optionsTotal = cancelled ? 0 : reservationOptionsTotalPrice || 0
+    /** 예약 옵션은 취소 후에도 ① 고객 결제 흐름·총액에 포함(③·④·예약 옵션 패널과 정합) */
+    const optionsTotal = Math.max(0, Number(reservationOptionsTotalPrice) || 0)
     const notIncludedPrice = cancelled ? 0 : notIncludedBreakdown.totalUsd
     const additionalCost = formData.additionalCost || 0
     const tax = formData.tax || 0
@@ -790,6 +791,15 @@ export default function PricingSection({
     return Math.max(0, roundUsd2(gross - returnedSurplus))
   }, [calculateTotalCustomerPaymentGross, returnedAmount, formData.refundAmount])
 
+  /** 취소 건: DB/폼 `totalPrice`(total_price)를 고객 총 결제 표시·잔액에 사용 — 전액 환불 후 0 반영 */
+  const effectiveTotalCustomerPayment = useCallback((): number => {
+    const s = (formData as { status?: string }).status
+    if (s != null && ['cancelled', 'canceled'].includes(String(s).toLowerCase().trim())) {
+      return roundUsd2(Math.max(0, Number(formData.totalPrice) || 0))
+    }
+    return calculateTotalCustomerPayment()
+  }, [(formData as { status?: string }).status, formData.totalPrice, calculateTotalCustomerPayment])
+
   calculateTotalCustomerPaymentGrossRef.current = calculateTotalCustomerPaymentGross
   calculateTotalCustomerPaymentRef.current = calculateTotalCustomerPayment
 
@@ -815,7 +825,7 @@ export default function PricingSection({
       (formData as { status?: string }).status != null &&
       ['cancelled', 'canceled'].includes(String((formData as { status?: string }).status).toLowerCase().trim())
     if (cancelled) return 0
-    const totalCustomerPayment = calculateTotalCustomerPayment()
+    const totalCustomerPayment = effectiveTotalCustomerPayment()
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
     const depositForDue = depositAmountNetOfPartnerReturnedOverlap(
       totalCustomerPayment,
@@ -837,7 +847,7 @@ export default function PricingSection({
     if (stored === 0 && defaultBalance > 0.01) return defaultBalance
     return roundUsd2(Number(stored))
   }, [
-    calculateTotalCustomerPayment,
+    effectiveTotalCustomerPayment,
     returnedAmount,
     refundedAmount,
     formData.refundAmount,
@@ -846,6 +856,7 @@ export default function PricingSection({
     calculatedBalanceReceivedTotal,
     depositAmountNetOfPartnerReturnedOverlap,
     (formData as { status?: string }).status,
+    formData.totalPrice,
     pricingFieldsFromDb.onSiteBalanceAmount,
   ])
 
@@ -1018,7 +1029,7 @@ export default function PricingSection({
     if (productSalePriceFocusDepthRef.current > 0) {
       return
     }
-    const totalCustomerPayment = calculateTotalCustomerPayment()
+    const totalCustomerPayment = effectiveTotalCustomerPayment()
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
     const depositForDue = depositAmountNetOfPartnerReturnedOverlap(
       totalCustomerPayment,
@@ -1086,7 +1097,7 @@ export default function PricingSection({
     }
     prevBalanceDepsRef.current = currentDeps
   }, [
-    calculateTotalCustomerPayment,
+    effectiveTotalCustomerPayment,
     returnedAmount,
     refundedAmount,
     formData.depositAmount,
@@ -1096,6 +1107,8 @@ export default function PricingSection({
     formData.child,
     formData.infant,
     formData.refundAmount,
+    formData.totalPrice,
+    (formData as { status?: string }).status,
     notIncludedBreakdown.totalUsd,
     setFormData,
     productSalePriceCommitTick,
@@ -1176,7 +1189,7 @@ export default function PricingSection({
             return calculatedComm
           }
 
-          const totalCustomerPayment = calculateTotalCustomerPayment()
+          const totalCustomerPayment = effectiveTotalCustomerPayment()
           /** 채널 결제 금액(③) = 할인 후 상품가 (추가 할인·쿠폰 모두 반영) */
           const salePriceTimesPax = Math.max(0, discountedPrice)
           /** 불포함(현장/추가 결제) 금액이 있으면 고객 총 결제 = 판매·옵션 등 + 불포함. 보증금(실제 지불액)은 불포함을 제외한 금액, 잔액(투어 당일) = 불포함 합. */
@@ -1259,7 +1272,7 @@ export default function PricingSection({
           // depositAmount가 0이거나, 현재 값이 할인 후 상품가와 차이가 0.01 이상이면 업데이트
           if (currentDeposit === 0 || priceDifference > 0.01) {
             // 잔액도 함께 계산하여 업데이트
-            const totalCustomerPayment = calculateTotalCustomerPayment()
+            const totalCustomerPayment = effectiveTotalCustomerPayment()
             const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
             const calculatedBalance = roundUsd2(totalCustomerPayment - totalPaid)
             const existingBalance = formData.onSiteBalanceAmount ?? 0
@@ -1283,7 +1296,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, formData.refundAmount, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, channelPaymentPricingTouched, setFormData, notIncludedBreakdown.totalUsd, productSalePriceCommitTick])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, formData.refundAmount, formData.totalPrice, channels, returnedAmount, effectiveTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, channelPaymentPricingTouched, setFormData, notIncludedBreakdown.totalUsd, productSalePriceCommitTick])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1823,7 +1836,7 @@ export default function PricingSection({
 
     /** Self·직판: ① 고객 총 결제(넷) 기준 — ③ 채널 정산 금액은 ④에 사용하지 않음 */
     if (!isReservationCancelled && !isOTAChannel) {
-      const selfBase = calculateTotalCustomerPayment()
+      const selfBase = effectiveTotalCustomerPayment()
       let trSelf = selfBase
       const linesSelf: LedgerLine[] = [
         {
@@ -2007,7 +2020,7 @@ export default function PricingSection({
     formData.prepaymentCost,
     formData.prepaymentTip,
     formData.cardFee,
-    calculateTotalCustomerPayment,
+    effectiveTotalCustomerPayment,
   ])
 
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
@@ -3495,10 +3508,10 @@ export default function PricingSection({
                 </span>
               </div>
               
-              {/* 옵션 추가 — 취소 예약은 징수 없음 */}
-              {!isReservationCancelled && reservationOptionsTotalPrice > 0 && (
+              {/* 예약 옵션 — 취소 후에도 부과·정산 이력과 ① 총액을 맞추기 위해 표시 */}
+              {reservationOptionsTotalPrice > 0 && (
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 옵션 추가' : '+ Options'}</span>
+                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 예약 옵션' : '+ Reservation options'}</span>
                   <span className="text-[10px] text-gray-700">+${reservationOptionsTotalPrice.toFixed(2)}</span>
                 </div>
               )}
@@ -3625,21 +3638,52 @@ export default function PricingSection({
               )}
               <div className="border-t border-gray-200 my-1.5"></div>
               
-              {/* 고객 총 결제 금액 = 상품… 합계 − 투어 환불 − (Returned − 투어 환불) 초과분 */}
+              {/* 고객 총 결제: 진행 예약은 산식, 취소 건은 DB total_price(폼 totalPrice) 직접 수정 가능 */}
               <div className="flex justify-between items-center mb-1.5">
                 <span
                   className="text-sm font-bold text-blue-800 cursor-help"
                   title={
-                    isKorean
-                      ? '투어 환불 입력을 뺀 뒤, 입금 Returned 중 그보다 큰 금액만 한 번 더 뺍니다. 같은 금액이면 중복 차감하지 않습니다.'
-                      : 'After tour refund field, only Returned in excess of that amount is subtracted again (no double count when equal).'
+                    isReservationCancelled
+                      ? isKorean
+                        ? '취소 건: 저장 총액(total_price)을 직접 입력합니다. 전액 환불 후 0으로 두면 저장 시 DB에도 0이 반영됩니다.'
+                        : 'Cancelled: edit stored total (total_price). Use 0 after full refund to persist zero.'
+                      : isKorean
+                        ? '투어 환불 입력을 뺀 뒤, 입금 Returned 중 그보다 큰 금액만 한 번 더 뺍니다. 같은 금액이면 중복 차감하지 않습니다.'
+                        : 'After tour refund field, only Returned in excess of that amount is subtracted again (no double count when equal).'
                   }
                 >
                   {isKorean ? '고객 총 결제 금액' : 'Total Customer Payment'}
                 </span>
-                <span className={`text-sm font-bold ${priceTextClass('totalPrice')}`}>
-                  ${calculateTotalCustomerPayment().toFixed(2)}
-                </span>
+                {isReservationCancelled ? (
+                  <div className="flex flex-col items-end gap-0.5 max-w-[11rem]">
+                    <div className="relative w-full">
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        className={`w-full pl-4 pr-1 py-0.5 text-sm font-bold border border-gray-300 rounded text-right ${priceTextClass('totalPrice')}`}
+                        step="0.01"
+                        min="0"
+                        value={formData.totalPrice ?? 0}
+                        onChange={(e) => {
+                          markPricingEdited('totalPrice', 'onSiteBalanceAmount', 'balanceAmount')
+                          setFormData((prev: typeof formData) => ({
+                            ...prev,
+                            totalPrice: Math.max(0, Number(e.target.value) || 0),
+                          }))
+                        }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-gray-500 text-right leading-tight">
+                      {isKorean
+                        ? `산식 참고 $${calculateTotalCustomerPayment().toFixed(2)}`
+                        : `Formula ref $${calculateTotalCustomerPayment().toFixed(2)}`}
+                    </span>
+                  </div>
+                ) : (
+                  <span className={`text-sm font-bold ${priceTextClass('totalPrice')}`}>
+                    ${effectiveTotalCustomerPayment().toFixed(2)}
+                  </span>
+                )}
               </div>
               {isExistingPricingLoaded && reservationPricingId && pricingDbSnapshot != null && (
                 <div className="mt-1.5 rounded border border-slate-200 bg-slate-50/90 px-2 py-1.5 text-[10px] leading-snug text-slate-700">
@@ -3655,10 +3699,10 @@ export default function PricingSection({
                     <span className="shrink-0 text-slate-600">
                       {isKorean ? '① 화면 계산' : '① Calculated'}
                     </span>
-                    <span className="font-mono tabular-nums">${calculateTotalCustomerPayment().toFixed(2)}</span>
+                    <span className="font-mono tabular-nums">${effectiveTotalCustomerPayment().toFixed(2)}</span>
                   </div>
                   {Math.abs(
-                    (Number(pricingDbSnapshot.total_price) || 0) - calculateTotalCustomerPayment()
+                    (Number(pricingDbSnapshot.total_price) || 0) - effectiveTotalCustomerPayment()
                   ) > 0.02 && (
                     <p className="mt-1 text-amber-800">
                       {isKorean
@@ -3696,7 +3740,7 @@ export default function PricingSection({
                   {isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}
                 </span>
                 <span className={`text-xs font-bold text-blue-700 ${priceTextClass('totalPrice')}`}>
-                  ${calculateTotalCustomerPayment().toFixed(2)}
+                  ${effectiveTotalCustomerPayment().toFixed(2)}
                 </span>
               </div>
               
@@ -3722,7 +3766,7 @@ export default function PricingSection({
                         depositAmountUserEditedRef.current = true
                         markPricingEdited('depositAmount', 'onSiteBalanceAmount', 'balanceAmount')
                         const newDepositAmount = Number(e.target.value) || 0
-                        const totalCustomerPayment = calculateTotalCustomerPayment()
+                        const totalCustomerPayment = effectiveTotalCustomerPayment()
                         const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
                         const depForDue = depositAmountNetOfPartnerReturnedOverlap(
                           totalCustomerPayment,
@@ -3898,7 +3942,7 @@ export default function PricingSection({
                   {!isOTAChannel && (
                     <span className="text-xs text-gray-500 tabular-nums">
                       {isKorean ? '①과 동일' : 'Same as ①'} · $
-                      {calculateTotalCustomerPayment().toFixed(2)}
+                      {effectiveTotalCustomerPayment().toFixed(2)}
                     </span>
                   )}
                   {formData.prepaymentTip > 0 && isOTAChannel && (
