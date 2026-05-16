@@ -479,13 +479,16 @@ export async function updateReservation(
         child_product_price: newChild,
         infant_product_price: newInfant,
       }
-      const customerNetForStored =
-        !isOTAChannel && !isResCancelledPl
-          ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikePl, partyPl, returnedAmount)
-          : null
+      const customerNetForRevenue = !isResCancelledPl
+        ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikePl, partyPl, returnedAmount)
+        : 0
+      const customerNetForStored = !isOTAChannel ? customerNetForRevenue : null
       const storedMetrics = computeStoredCompanyRevenueFields({
         channelSettlementBase: channelSettlementToSave,
         customerPaymentNetForRevenueBase: customerNetForStored,
+        customerPaymentNetForOtaOmitCheck: customerNetForRevenue,
+        commissionAmount: toNum(pricingInfo.commissionAmount),
+        channelPaymentNet: toNum(pricingInfo.commissionBasePrice),
         cardFee: toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee),
         reservationStatus: payload.status,
         isOTAChannel,

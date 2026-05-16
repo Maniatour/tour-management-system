@@ -28,7 +28,10 @@ function stepClasses(v: StepVisual): string {
   return 'text-gray-400 bg-gray-50 border-gray-100'
 }
 
-function resolveSteps(s: ReservationFollowUpPipelineSnapshot): {
+function resolveSteps(
+  s: ReservationFollowUpPipelineSnapshot,
+  options?: { alwaysShowResidentStep?: boolean }
+): {
   confirm: StepVisual
   resident: StepVisual
   departure: StepVisual
@@ -40,6 +43,10 @@ function resolveSteps(s: ReservationFollowUpPipelineSnapshot): {
   if (s.needsResidentFlow) {
     if (s.guestResidentFlowCompleted && s.residentInquirySent) resident = 'done'
     else if (!s.residentInquirySent || !s.guestResidentFlowCompleted) resident = 'action'
+  } else if (options?.alwaysShowResidentStep) {
+    if (s.residentInquirySent && s.guestResidentFlowCompleted) resident = 'done'
+    else if (s.residentInquirySent || s.manualResident) resident = 'done'
+    else resident = 'action'
   }
 
   let departure: StepVisual = 'upcoming'
@@ -57,10 +64,14 @@ function resolveSteps(s: ReservationFollowUpPipelineSnapshot): {
 
 function emailTypeForStepKey(
   key: string,
-  residentVisual: StepVisual
+  residentVisual: StepVisual,
+  alwaysShowResidentStep?: boolean
 ): FollowUpPipelineEmailType | null {
   if (key === 'c') return 'confirmation'
-  if (key === 'r') return residentVisual === 'na' ? null : 'resident_inquiry'
+  if (key === 'r') {
+    if (alwaysShowResidentStep) return 'resident_inquiry'
+    return residentVisual === 'na' ? null : 'resident_inquiry'
+  }
   if (key === 'd') return 'departure'
   if (key === 'p') return 'pickup'
   return null
@@ -74,11 +85,39 @@ function pipelineStepFromIconKey(key: string): FollowUpPipelineStepKey | null {
   return null
 }
 
-function stepManualFlag(snapshot: ReservationFollowUpPipelineSnapshot, step: FollowUpPipelineStepKey): boolean {
-  if (step === 'confirmation') return snapshot.manualConfirmation
-  if (step === 'resident') return snapshot.manualResident
-  if (step === 'departure') return snapshot.manualDeparture
-  return snapshot.manualPickup
+const EMPTY_PIPELINE_SNAPSHOT: ReservationFollowUpPipelineSnapshot = {
+  confirmationSent: false,
+  residentInquirySent: false,
+  guestResidentFlowCompleted: false,
+  departureSent: false,
+  pickupSent: false,
+  needsResidentFlow: false,
+  manualConfirmation: false,
+  manualResident: false,
+  manualDeparture: false,
+  manualPickup: false,
+  cancelFollowUpManual: false,
+  cancelRebookingOutreachManual: false,
+}
+
+function resolveEffectivePipelineSnapshot(
+  snapshot: ReservationFollowUpPipelineSnapshot | null | undefined
+): ReservationFollowUpPipelineSnapshot {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return EMPTY_PIPELINE_SNAPSHOT
+  }
+  return { ...EMPTY_PIPELINE_SNAPSHOT, ...snapshot }
+}
+
+function stepManualFlag(
+  snapshot: ReservationFollowUpPipelineSnapshot | null | undefined,
+  step: FollowUpPipelineStepKey
+): boolean {
+  const s = resolveEffectivePipelineSnapshot(snapshot)
+  if (step === 'confirmation') return s.manualConfirmation
+  if (step === 'resident') return s.manualResident
+  if (step === 'departure') return s.manualDeparture
+  return s.manualPickup
 }
 
 type PipelineMenuState = {
@@ -91,6 +130,7 @@ type PipelineMenuState = {
 export function ReservationFollowUpPipelineIcons({
   snapshot,
   disabled,
+  alwaysShowResidentStep = false,
   onEmailPreviewClick,
   showTourChatRoomPreviewButton,
   onTourChatRoomPreviewClick,
@@ -100,6 +140,8 @@ export function ReservationFollowUpPipelineIcons({
   snapshot: ReservationFollowUpPipelineSnapshot | null | undefined
   /** 취소·삭제 등 파이프라인 비적용 */
   disabled?: boolean
+  /** 간단 카드: NPS 거주 미해당 상품도 거주 안내 아이콘 표시·미리보기 */
+  alwaysShowResidentStep?: boolean
   /** 단계별 이메일 미리보기 (거주 미해당 상품은 거주 아이콘 비활성) */
   onEmailPreviewClick?: (emailType: FollowUpPipelineEmailType) => void
   /** 간단 카드: 픽업 아이콘 옆 Tour Chat Room 섹션 미리보기 */
@@ -129,7 +171,7 @@ export function ReservationFollowUpPipelineIcons({
     }
   }, [menu])
 
-  if (!snapshot || disabled) {
+  if (disabled) {
     return (
       <div className="flex items-center gap-1 text-[10px] text-gray-300" aria-hidden>
         <span className="inline-flex h-6 w-6 items-center justify-center rounded border border-gray-100 bg-gray-50">
@@ -139,15 +181,30 @@ export function ReservationFollowUpPipelineIcons({
     )
   }
 
-  const { confirm, resident, departure, pickup } = resolveSteps(snapshot)
+  const hasLoadedSnapshot = snapshot != null && typeof snapshot === 'object'
+  const effectiveSnapshot = hasLoadedSnapshot
+    ? resolveEffectivePipelineSnapshot(snapshot)
+    : EMPTY_PIPELINE_SNAPSHOT
+
+  const { confirm, resident, departure, pickup } = resolveSteps(effectiveSnapshot, {
+    alwaysShowResidentStep,
+  })
+
+  const residentHidden = resident === 'na' && !alwaysShowResidentStep
+
+  const tourChatVisual: StepVisual = !prerequisitesMetForPickup(effectiveSnapshot)
+    ? 'upcoming'
+    : effectiveSnapshot.pickupSent
+      ? 'done'
+      : 'action'
 
   const items: { key: string; Icon: typeof Mail; visual: StepVisual; label: string }[] = [
     { key: 'c', Icon: Mail, visual: confirm, label: t('followUpPipeline.step1IconTitle') },
     {
       key: 'r',
-      Icon: resident === 'na' ? Minus : ClipboardCheck,
+      Icon: residentHidden ? Minus : ClipboardCheck,
       visual: resident,
-      label: resident === 'na' ? t('followUpPipeline.step2SkipTitle') : t('followUpPipeline.step2IconTitle'),
+      label: residentHidden ? t('followUpPipeline.step2SkipTitle') : t('followUpPipeline.step2IconTitle'),
     },
     { key: 'd', Icon: Plane, visual: departure, label: t('followUpPipeline.step3IconTitle') },
     { key: 'p', Icon: MapPin, visual: pickup, label: t('followUpPipeline.step4IconTitle') },
@@ -161,8 +218,8 @@ export function ReservationFollowUpPipelineIcons({
     const w = 220
     const left = Math.min(menu.clientX, window.innerWidth - w - pad)
     const top = Math.min(menu.clientY, window.innerHeight - 160 - pad)
-    const canMark = followUpPipelineStepCanMarkManual(snapshot, menu.step)
-    const canClear = followUpPipelineStepCanClearManual(snapshot, menu.step)
+    const canMark = followUpPipelineStepCanMarkManual(effectiveSnapshot, menu.step)
+    const canClear = followUpPipelineStepCanClearManual(effectiveSnapshot, menu.step)
     const showPreview = !!onEmailPreviewClick && menu.emailType != null
 
     return createPortal(
@@ -242,12 +299,12 @@ export function ReservationFollowUpPipelineIcons({
         title={manualEnabled ? t('followUpPipeline.pipelineHintManual') : undefined}
       >
         {items.map(({ key, Icon, visual, label }) => {
-          const emailType = emailTypeForStepKey(key, resident)
+          const emailType = emailTypeForStepKey(key, resident, alwaysShowResidentStep)
           const pipelineStep = pipelineStepFromIconKey(key)
           const interactive = !!onEmailPreviewClick && emailType != null
           const menuApplicable =
-            manualEnabled && !!pipelineStep && !(key === 'r' && resident === 'na')
-          const manualPart = pipelineStep && stepManualFlag(snapshot, pipelineStep)
+            manualEnabled && !!pipelineStep && !(key === 'r' && residentHidden)
+          const manualPart = pipelineStep && stepManualFlag(effectiveSnapshot, pipelineStep)
           const boxClass = `inline-flex h-6 w-6 items-center justify-center rounded border ${stepClasses(visual)}`
           const titleSuffix = manualPart ? ` — ${t('followUpPipeline.manualBadgeTitle')}` : ''
 
@@ -298,17 +355,37 @@ export function ReservationFollowUpPipelineIcons({
           )
 
           if (key === 'p' && showTourChatRoomPreviewButton && onTourChatRoomPreviewClick) {
+            const tourChatManual = stepManualFlag(effectiveSnapshot, 'pickup')
+            const tourChatTitle = `${t('followUpPipeline.tourChatRoomPreviewButtonTitle')}${
+              tourChatManual ? ` — ${t('followUpPipeline.manualBadgeTitle')}` : ''
+            }`
+            const tourChatBoxClass = `inline-flex h-6 w-6 items-center justify-center rounded border ${stepClasses(tourChatVisual)}`
+            const tourChatMenuApplicable = manualEnabled && prerequisitesMetForPickup(effectiveSnapshot)
+            const openTourChatMenu = (clientX: number, clientY: number) => {
+              if (!tourChatMenuApplicable) return
+              setMenu({
+                clientX,
+                clientY,
+                step: 'pickup',
+                emailType: null,
+              })
+            }
             return (
               <React.Fragment key={key}>
                 {iconButton}
                 <button
                   type="button"
-                  title={t('followUpPipeline.tourChatRoomPreviewButtonTitle')}
-                  aria-label={t('followUpPipeline.tourChatRoomPreviewButtonTitle')}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded border text-emerald-700 bg-emerald-50 border-emerald-200 cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
+                  title={tourChatTitle}
+                  aria-label={tourChatTitle}
+                  className={`${tourChatBoxClass} cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
                   onClick={(e) => {
                     e.stopPropagation()
                     onTourChatRoomPreviewClick()
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    openTourChatMenu(e.clientX, e.clientY)
                   }}
                 >
                   <MessageSquare className="h-3 w-3 shrink-0 pointer-events-none" aria-hidden />

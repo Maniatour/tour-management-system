@@ -29,6 +29,7 @@ import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
+  shouldOmitOtaExtrasFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import {
@@ -70,10 +71,6 @@ function tourRosterIncludesReservation(rawIds: unknown, reservationId: string): 
   const rid = String(reservationId).trim()
   if (!rid) return false
   return normalizeTourRosterIds(rawIds).includes(rid)
-}
-
-function formulaUsdDiffers(current: number, formula: number): boolean {
-  return Math.abs((Number(current) || 0) - (Number(formula) || 0)) > 0.009
 }
 
 /** exactOptionalPropertyTypes: `channelSettlementAmount: undefined` 불가 — 키를 제거해 DB 정산 캐시 무효화 */
@@ -208,14 +205,6 @@ interface PricingSectionProps {
   reservationId?: string
   /** `reservation_pricing` 행이 있으면 할인/쿠폰은 DB 값 유지·드롭다운은 저장 쿠폰만 표시 */
   reservationPricingId?: string | null
-  /** 현재 채널 기준 dynamic_pricing 계산 스냅샷 — 입력값과 다르면 제목 옆 빨간색으로 표시 */
-  dynamicProductPriceFormula?: {
-    adultPrice: number
-    childPrice: number
-    infantPrice: number
-    notIncludedPrice: number
-  } | null
-  showDynamicPricingFormula?: boolean
   expenseUpdateTrigger?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -289,8 +278,6 @@ export default function PricingSection({
   onRequestPricingAuditModification,
   reservationId,
   reservationPricingId,
-  dynamicProductPriceFormula = null,
-  showDynamicPricingFormula = false,
   expenseUpdateTrigger,
   channels = [],
   products = [],
@@ -1820,9 +1807,19 @@ export default function PricingSection({
       }
     }
 
+    const omitOtaExtras = shouldOmitOtaExtrasFromCompanyRevenueSum({
+      isOTAChannel: !!isOTAChannel,
+      isReservationCancelled,
+      channelSettlementBase: channelSettlementBeforePartnerReturn,
+      customerPaymentNet: effectiveTotalCustomerPayment(),
+      commissionAmount: Number(formData.commission_amount) || 0,
+      channelPaymentNet: channelPaymentAmountAfterReturn,
+    })
+
     const omitDiscCostEffective =
-      omitAdditionalDiscountAndCostFromRevenueSum &&
-      !(isOTAChannel && !isReservationCancelled)
+      (omitAdditionalDiscountAndCostFromRevenueSum &&
+        !(isOTAChannel && !isReservationCancelled)) ||
+      omitOtaExtras
 
     /** Self·직판: ① 고객 총 결제(넷) 기준 — ③ 채널 정산 금액은 ④에 사용하지 않음 */
     if (!isReservationCancelled && !isOTAChannel) {
@@ -1897,13 +1894,13 @@ export default function PricingSection({
       tr -= rex
     }
 
-    if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
+    if (!omitOtaExtras && reservationOptionsTotalPrice > 0 && isOTAChannel) {
       const a = reservationOptionsTotalPrice
       lines.push({ sign: '+', labelKo: '예약 옵션', labelEn: 'Reservation options', amount: a })
       tr += a
     }
 
-    if (!isReservationCancelled) {
+    if (!omitOtaExtras && !isReservationCancelled) {
       const { baseUsd, residentFeesUsd } = notIncludedBreakdown
       if (baseUsd > 0.005) {
         lines.push({ sign: '+', labelKo: '불포함 (입장권)', labelEn: 'Not included (admission)', amount: baseUsd })
@@ -1933,20 +1930,22 @@ export default function PricingSection({
       }
     }
 
-    const tax = Number(formData.tax) || 0
-    if (tax > 0.005) {
-      lines.push({ sign: '+', labelKo: '세금', labelEn: 'Tax', amount: tax })
-      tr += tax
-    }
+    if (!omitOtaExtras) {
+      const tax = Number(formData.tax) || 0
+      if (tax > 0.005) {
+        lines.push({ sign: '+', labelKo: '세금', labelEn: 'Tax', amount: tax })
+        tr += tax
+      }
 
-    const ppc = Number(formData.prepaymentCost) || 0
-    if (ppc > 0.005 && !isHomepageBooking) {
-      lines.push({ sign: '+', labelKo: '선결제 지출', labelEn: 'Prepayment cost', amount: ppc })
-      tr += ppc
+      const ppc = Number(formData.prepaymentCost) || 0
+      if (ppc > 0.005 && !isHomepageBooking) {
+        lines.push({ sign: '+', labelKo: '선결제 지출', labelEn: 'Prepayment cost', amount: ppc })
+        tr += ppc
+      }
     }
 
     const cardFeeUsd = Number(formData.cardFee) || 0
-    if (isOTAChannel && !isReservationCancelled && cardFeeUsd > 0.005) {
+    if (isOTAChannel && !isReservationCancelled && !omitOtaExtras && cardFeeUsd > 0.005) {
       lines.push({
         sign: '+',
         labelKo: '카드 수수료',
@@ -1956,7 +1955,7 @@ export default function PricingSection({
       tr += cardFeeUsd
     }
 
-    if (isOTAChannel && !isReservationCancelled && prepTip > 0.005) {
+    if (isOTAChannel && !isReservationCancelled && !omitOtaExtras && prepTip > 0.005) {
       lines.push({
         sign: '+',
         labelKo: '선결제 팁',
@@ -2010,7 +2009,9 @@ export default function PricingSection({
     formData.prepaymentCost,
     formData.prepaymentTip,
     formData.cardFee,
+    formData.commission_amount,
     effectiveTotalCustomerPayment,
+    channelPaymentAmountAfterReturn,
   ])
 
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
@@ -2814,7 +2815,7 @@ export default function PricingSection({
                         markPricingEdited('pricingAdults', 'productPriceTotal', 'totalPrice', 'onSiteBalanceAmount')
                         setFormData({ ...formData, pricingAdults: v })
                       }}
-                      className={`w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-blue-500 ${priceTextClass('pricingAdults')}`}
+                      className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-right text-gray-900 focus:ring-1 focus:ring-blue-500"
                     />
                     <span className="text-gray-500">명</span>
                   </div>
@@ -2824,16 +2825,6 @@ export default function PricingSection({
                   {/* 판매가 */}
                   <div className="flex items-center space-x-1 flex-wrap gap-x-1">
                     <span className="text-xs text-gray-500 w-16 shrink-0">판매가</span>
-                    {showDynamicPricingFormula &&
-                      dynamicProductPriceFormula &&
-                      formulaUsdDiffers(
-                        formData.adultProductPrice,
-                        dynamicProductPriceFormula.adultPrice
-                      ) && (
-                        <span className="text-[11px] text-red-600 font-medium shrink-0">
-                          (계산 ${dynamicProductPriceFormula.adultPrice.toFixed(2)})
-                        </span>
-                      )}
                     <span className="font-medium text-xs">$</span>
                     <input
                       type="number"
@@ -2866,7 +2857,7 @@ export default function PricingSection({
                           productPriceTotal: newProductPriceTotal
                         })
                       }}
-                      className={`w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('adultProductPrice')}`}
+                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                       placeholder="0"
                     />
@@ -2874,16 +2865,6 @@ export default function PricingSection({
                   {/* 불포함 가격 */}
                   <div className="flex items-center space-x-1 flex-wrap gap-x-1">
                     <span className="text-xs text-gray-500 w-16 shrink-0">불포함</span>
-                    {showDynamicPricingFormula &&
-                      dynamicProductPriceFormula &&
-                      formulaUsdDiffers(
-                        formData.not_included_price || 0,
-                        dynamicProductPriceFormula.notIncludedPrice
-                      ) && (
-                        <span className="text-[11px] text-red-600 font-medium shrink-0">
-                          (계산 ${dynamicProductPriceFormula.notIncludedPrice.toFixed(2)})
-                        </span>
-                      )}
                     <span className="font-medium text-xs">$</span>
                     <input
                       type="number"
@@ -2907,7 +2888,7 @@ export default function PricingSection({
                           productPriceTotal: newProductPriceTotal
                         })
                       }}
-                      className={`w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('not_included_price')}`}
+                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                       placeholder="0"
                     />
@@ -2949,19 +2930,7 @@ export default function PricingSection({
               {!isSinglePrice && (
                 <>
                   <div className="flex items-center justify-between text-xs gap-2">
-                    <span className="text-gray-600 inline-flex items-center gap-1 flex-wrap shrink-0">
-                      아동
-                      {showDynamicPricingFormula &&
-                        dynamicProductPriceFormula &&
-                        formulaUsdDiffers(
-                          formData.childProductPrice,
-                          dynamicProductPriceFormula.childPrice
-                        ) && (
-                          <span className="text-[11px] text-red-600 font-medium">
-                            (계산 ${dynamicProductPriceFormula.childPrice.toFixed(2)})
-                          </span>
-                        )}
-                    </span>
+                    <span className="text-gray-600 shrink-0">아동</span>
                     <div className="flex items-center space-x-1">
                       <span className="font-medium">$</span>
                       <input
@@ -2990,7 +2959,7 @@ export default function PricingSection({
                             productPriceTotal: newProductPriceTotal
                           })
                         }}
-                        className={`w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('childProductPrice')}`}
+                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
                         step="0.01"
                         placeholder="0"
                       />
@@ -2999,19 +2968,7 @@ export default function PricingSection({
                     </div>
                   </div>
                   <div className="flex items-center justify-between text-xs gap-2">
-                    <span className="text-gray-600 inline-flex items-center gap-1 flex-wrap shrink-0">
-                      유아
-                      {showDynamicPricingFormula &&
-                        dynamicProductPriceFormula &&
-                        formulaUsdDiffers(
-                          formData.infantProductPrice,
-                          dynamicProductPriceFormula.infantPrice
-                        ) && (
-                          <span className="text-[11px] text-red-600 font-medium">
-                            (계산 ${dynamicProductPriceFormula.infantPrice.toFixed(2)})
-                          </span>
-                        )}
-                    </span>
+                    <span className="text-gray-600 shrink-0">유아</span>
                     <div className="flex items-center space-x-1">
                       <span className="font-medium">$</span>
                       <input
@@ -3040,7 +2997,7 @@ export default function PricingSection({
                             productPriceTotal: newProductPriceTotal
                           })
                         }}
-                        className={`w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${priceTextClass('infantProductPrice')}`}
+                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-gray-900 focus:ring-1 focus:ring-blue-500"
                         step="0.01"
                         placeholder="0"
                       />

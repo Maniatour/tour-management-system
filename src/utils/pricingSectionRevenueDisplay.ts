@@ -1,3 +1,4 @@
+import { shouldOmitOtaExtrasFromCompanyRevenueSum } from '@/utils/channelSettlement'
 import { roundUsd2 } from '@/utils/pricingSectionDisplay'
 
 /** PricingSection 우측 「4. 최종 매출 & 운영 이익」의 총 매출 표시값과 동일 */
@@ -22,6 +23,9 @@ export type PricingSectionRevenueDisplayInput = {
   customerPaymentNetAsRevenueBase?: number | null
   /** OTA·진행: ④에 가산하는 폼 카드수수료 */
   cardFeeForCompanyRevenue?: number
+  customerPaymentNetForOtaOmitCheck?: number
+  commissionAmount?: number
+  channelPaymentNet?: number
 }
 
 export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionRevenueDisplayInput): number {
@@ -41,6 +45,15 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
     ? Number(inp.customerPaymentNetAsRevenueBase) - inp.reservationExpensesTotal
     : inp.channelSettlementBeforePartnerReturn - inp.reservationExpensesTotal
 
+  const omitOtaExtras = shouldOmitOtaExtrasFromCompanyRevenueSum({
+    isOTAChannel: inp.isOTAChannel,
+    isReservationCancelled: inp.isReservationCancelled,
+    channelSettlementBase: inp.channelSettlementBeforePartnerReturn,
+    customerPaymentNet: Number(inp.customerPaymentNetForOtaOmitCheck) || 0,
+    commissionAmount: Number(inp.commissionAmount) || 0,
+    channelPaymentNet: Number(inp.channelPaymentNet) || 0,
+  })
+
   if (useCustomerBase) {
     totalRevenue -= inp.refundedAmount
     if (inp.excludeHomepageAdditionalCostFromCompanyTotals && inp.additionalCost > 0) {
@@ -49,16 +62,19 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
     return roundUsd2(totalRevenue)
   }
 
-  if (inp.reservationOptionsTotalPrice > 0 && inp.isOTAChannel) {
-    totalRevenue += inp.reservationOptionsTotalPrice
-  }
-  if (inp.notIncludedTotalUsd > 0) {
-    totalRevenue += inp.notIncludedTotalUsd
+  if (!omitOtaExtras) {
+    if (inp.reservationOptionsTotalPrice > 0 && inp.isOTAChannel) {
+      totalRevenue += inp.reservationOptionsTotalPrice
+    }
+    if (inp.notIncludedTotalUsd > 0) {
+      totalRevenue += inp.notIncludedTotalUsd
+    }
   }
 
   const omitDiscCostEffective =
-    inp.omitAdditionalDiscountAndCostFromSum &&
-    !(inp.isOTAChannel && !inp.isReservationCancelled)
+    (inp.omitAdditionalDiscountAndCostFromSum &&
+      !(inp.isOTAChannel && !inp.isReservationCancelled)) ||
+    omitOtaExtras
 
   if (!omitDiscCostEffective) {
     if (inp.additionalDiscount > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
@@ -66,18 +82,20 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
     }
     if (inp.additionalCost > 0) totalRevenue += inp.additionalCost
   }
-  if (inp.tax > 0) totalRevenue += inp.tax
-  if (inp.prepaymentCost > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
-    totalRevenue += inp.prepaymentCost
+  if (!omitOtaExtras) {
+    if (inp.tax > 0) totalRevenue += inp.tax
+    if (inp.prepaymentCost > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
+      totalRevenue += inp.prepaymentCost
+    }
   }
 
   const cf = Number(inp.cardFeeForCompanyRevenue) || 0
-  if (inp.isOTAChannel && !inp.isReservationCancelled && cf > 0.005) {
+  if (inp.isOTAChannel && !inp.isReservationCancelled && !omitOtaExtras && cf > 0.005) {
     totalRevenue += cf
   }
 
   const ptip = Number(inp.prepaymentTip) || 0
-  if (inp.isOTAChannel && !inp.isReservationCancelled && ptip > 0.005) {
+  if (inp.isOTAChannel && !inp.isReservationCancelled && !omitOtaExtras && ptip > 0.005) {
     totalRevenue += ptip
   }
 

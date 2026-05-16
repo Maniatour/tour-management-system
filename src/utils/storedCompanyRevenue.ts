@@ -4,7 +4,10 @@
  */
 
 import { roundUsd2, splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
-import { shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum } from '@/utils/channelSettlement'
+import {
+  shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
+  shouldOmitOtaExtrasFromCompanyRevenueSum,
+} from '@/utils/channelSettlement'
 
 export function computeRefundAmountForCompanyRevenueBlock(inp: {
   refundedFromRecords: number
@@ -69,6 +72,10 @@ export type StoredCompanyRevenueComputeInput = {
   prepaymentCost: number
   prepaymentTip: number
   refundAmountForCompanyRevenueBlock: number
+  /** OTA ④ 이중 가산 방지: ① 고객 총 결제(넷) */
+  customerPaymentNetForOtaOmitCheck?: number
+  commissionAmount?: number
+  channelPaymentNet?: number
 }
 
 export function computeStoredCompanyRevenueFields(
@@ -133,11 +140,20 @@ export function computeStoredCompanyRevenueFields(
 
   let tr = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
 
-  if (inp.reservationOptionsActiveSum > 0 && inp.isOTAChannel) {
+  const omitOtaExtras = shouldOmitOtaExtrasFromCompanyRevenueSum({
+    isOTAChannel: inp.isOTAChannel,
+    isReservationCancelled,
+    channelSettlementBase: tr,
+    customerPaymentNet: Number(inp.customerPaymentNetForOtaOmitCheck) || 0,
+    commissionAmount: Number(inp.commissionAmount) || 0,
+    channelPaymentNet: Number(inp.channelPaymentNet) || 0,
+  })
+
+  if (!omitOtaExtras && inp.reservationOptionsActiveSum > 0 && inp.isOTAChannel) {
     tr += inp.reservationOptionsActiveSum
   }
 
-  if (!isReservationCancelled) {
+  if (!omitOtaExtras && !isReservationCancelled) {
     const { baseUsd, residentFeesUsd } = splitNotIncludedForDisplay(
       inp.choiceNotIncludedTotal ?? 0,
       inp.choiceNotIncludedBaseTotal ?? 0,
@@ -156,8 +172,9 @@ export function computeStoredCompanyRevenueFields(
   }
 
   const omitDiscCostEffective =
-    omitAdditionalDiscountAndCostFromRevenueSum &&
-    !(inp.isOTAChannel && !isReservationCancelled)
+    (omitAdditionalDiscountAndCostFromRevenueSum &&
+      !(inp.isOTAChannel && !isReservationCancelled)) ||
+    omitOtaExtras
 
   if (!omitDiscCostEffective) {
     const disc = Number(inp.additionalDiscount) || 0
@@ -170,17 +187,19 @@ export function computeStoredCompanyRevenueFields(
     }
   }
 
-  const tax = Number(inp.tax) || 0
-  if (tax > 0.005) {
-    tr += tax
+  if (!omitOtaExtras) {
+    const tax = Number(inp.tax) || 0
+    if (tax > 0.005) {
+      tr += tax
+    }
+
+    const ppc = Number(inp.prepaymentCost) || 0
+    if (ppc > 0.005 && !inp.isHomepageBooking) {
+      tr += ppc
+    }
   }
 
-  const ppc = Number(inp.prepaymentCost) || 0
-  if (ppc > 0.005 && !inp.isHomepageBooking) {
-    tr += ppc
-  }
-
-  if (inp.isOTAChannel && !isReservationCancelled) {
+  if (inp.isOTAChannel && !isReservationCancelled && !omitOtaExtras) {
     const cf = Number(inp.cardFee) || 0
     if (cf > 0.005) {
       tr += cf

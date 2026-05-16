@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { ClipboardList, PhoneForwarded, Globe, X, Loader2, Send } from 'lucide-react'
+import { ClipboardList, PhoneForwarded, Globe, X, Loader2, Send, Mail } from 'lucide-react'
+import CancellationFollowUpMessagePreviewModal from '@/components/reservation/CancellationFollowUpMessagePreviewModal'
+import type { CancellationFollowUpMessageKind } from '@/lib/cancellationFollowUpMessage'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -12,6 +14,13 @@ import type { CancelFollowUpManualKind } from '@/components/reservation/Reservat
 export type CancelledSimpleCardFollowUpStripProps = {
   reservationId: string
   snapshot: ReservationFollowUpPipelineSnapshot | null | undefined
+  customerEmail?: string
+  customerPhone?: string | null
+  customerName?: string
+  customerLanguage?: string | null
+  tourDate?: string | null
+  productName?: string
+  channelRN?: string | null
   onCancelFollowUpManualChange?: (
     reservationId: string,
     kind: CancelFollowUpManualKind,
@@ -24,6 +33,13 @@ export type CancelledSimpleCardFollowUpStripProps = {
 export default function CancelledSimpleCardFollowUpStrip({
   reservationId,
   snapshot,
+  customerEmail = '',
+  customerPhone = null,
+  customerName = '',
+  customerLanguage = null,
+  tourDate = null,
+  productName = '',
+  channelRN = null,
   onCancelFollowUpManualChange,
   onReasonSaved,
 }: CancelledSimpleCardFollowUpStripProps) {
@@ -60,6 +76,9 @@ export default function CancelledSimpleCardFollowUpStrip({
   const [reasonLoading, setReasonLoading] = useState(false)
   const [reasonSaving, setReasonSaving] = useState(false)
   const [toggleSaving, setToggleSaving] = useState(false)
+  const [messagePreviewOpen, setMessagePreviewOpen] = useState(false)
+  const [messagePreviewKind, setMessagePreviewKind] =
+    useState<CancellationFollowUpMessageKind>('follow_up')
 
   const loadReason = useCallback(async () => {
     if (!reservationId) return
@@ -157,6 +176,19 @@ export default function CancelledSimpleCardFollowUpStrip({
         </span>
         <button
           type="button"
+          title={tc('cancelFollowUpMessagePreviewTitle')}
+          aria-label={tc('cancelFollowUpMessagePreviewTitle')}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMessagePreviewKind('follow_up')
+            setMessagePreviewOpen(true)
+          }}
+        >
+          <Mail className="h-3 w-3" aria-hidden />
+        </button>
+        <button
+          type="button"
           disabled={reasonLoading}
           title={tc('cancellationReasonButtonTitle')}
           aria-label={tc('cancellationReasonButtonTitle')}
@@ -197,6 +229,20 @@ export default function CancelledSimpleCardFollowUpStrip({
           <Globe className="h-3 w-3" aria-hidden />
         </button>
       </div>
+
+      <CancellationFollowUpMessagePreviewModal
+        isOpen={messagePreviewOpen}
+        onClose={() => setMessagePreviewOpen(false)}
+        reservationId={reservationId}
+        customerEmail={customerEmail}
+        customerPhone={customerPhone}
+        customerName={customerName}
+        customerLanguage={customerLanguage}
+        tourDate={tourDate}
+        productName={productName}
+        channelRN={channelRN}
+        initialMessageKind={messagePreviewKind}
+      />
 
       {reasonOpen &&
         createPortal(

@@ -21,6 +21,7 @@ import {
   type ReservationOptionSumRow,
 } from '@/lib/syncReservationPricingAggregates'
 import { parseEmbeddedChannelNameFromReservationRow } from '@/utils/reservationUtils'
+import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
 
 /** `useReservationData`의 tours 맵 행 — 운영 큐 전량 하이드레이트 결과에도 동일 구조 사용 */
 export type ReservationListTourMapRow = {
@@ -42,6 +43,28 @@ export type AdminListHydratedSnapshot = {
   toursMap: Map<string, ReservationListTourMapRow>
 }
 
+/** 운영 큐 점진 로드: 청크별 hydrate 결과 병합 */
+export function mergeAdminListHydratedSnapshots(
+  prev: AdminListHydratedSnapshot | null,
+  next: AdminListHydratedSnapshot
+): AdminListHydratedSnapshot {
+  if (!prev) return next
+  const pricingMap = new Map(prev.pricingMap)
+  next.pricingMap.forEach((v, k) => pricingMap.set(k, v))
+  const reservationOptionsPresenceByReservationId = new Map(prev.reservationOptionsPresenceByReservationId)
+  next.reservationOptionsPresenceByReservationId.forEach((v, k) =>
+    reservationOptionsPresenceByReservationId.set(k, v)
+  )
+  const toursMap = new Map(prev.toursMap)
+  next.toursMap.forEach((v, k) => toursMap.set(k, v))
+  return {
+    reservations: [...prev.reservations, ...next.reservations],
+    pricingMap,
+    reservationOptionsPresenceByReservationId,
+    toursMap,
+  }
+}
+
 /** PostgREST 400: `select`에 원격 DB에 없는 컬럼이 포함된 경우(마이그레이션 미적용 등) */
 function isReservationPricingSelectSchemaError(err: { code?: string; message?: string } | null): boolean {
   if (!err) return false
@@ -54,37 +77,6 @@ function isReservationPricingSelectSchemaError(err: { code?: string; message?: s
     (/could not find/.test(msg) && /column/.test(msg))
   )
 }
-
-/** 예약 목록용: mapRawToReservation 에 필요한 컬럼만 (전체 행 스캔·전송량 감소) + 채널명 embed */
-const RESERVATION_LIST_SELECT =
-  [
-    'id',
-    'customer_id',
-    'product_id',
-    'tour_date',
-    'tour_time',
-    'event_note',
-    'pickup_hotel',
-    'pickup_time',
-    'adults',
-    'child',
-    'infant',
-    'total_people',
-    'channel_id',
-    'variant_key',
-    'channel_rn',
-    'added_by',
-    'created_at',
-    'tour_id',
-    'status',
-    'updated_at',
-    'amount_audited',
-    'amount_audited_at',
-    'amount_audited_by',
-    'selected_options',
-    'selected_option_prices',
-    'choices',
-  ].join(',') + ',channels(name)'
 
 /** PostgREST or= 필터용: 큰 OFFSET 대신 (created_at DESC, id DESC) 키셋 페이지네이션 */
 function customersCreatedAtDescKeysetOr(created_at: string, id: string): string {
@@ -850,15 +842,18 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
    * reservation_pricing만 부분 갱신 — 전체 fetchReservations 없이 맵 병합.
    * (예: 예약 처리 필요 모달에서 총액/보증금/잔액 반영 시 모달·탭 상태 유지)
    */
-  const refreshReservationPricingForIds = async (reservationIds: string[]) => {
+  const refreshReservationPricingForIds = async (
+    reservationIds: string[]
+  ): Promise<Map<string, ReservationPricingMapValue>> => {
     const unique = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
-    if (unique.length === 0) return
+    if (unique.length === 0) return new Map()
     const map = await fetchPricingMap(unique)
     setReservationPricingMap((prev) => {
       const next = new Map(prev)
       map.forEach((v, k) => next.set(k, v))
       return next
     })
+    return map
   }
 
   const refreshReservationOptionsPresenceForIds = async (reservationIds: string[]) => {

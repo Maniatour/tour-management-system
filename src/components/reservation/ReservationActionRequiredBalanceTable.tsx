@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
-import Image from 'next/image'
 import {
   Calendar,
   DollarSign,
@@ -33,6 +32,9 @@ import {
   insertCancelDepositRefundPaymentRecord,
 } from '@/lib/cancelDepositRefundPaymentRecord'
 import type { PaymentRecordLike } from '@/utils/reservationPricingBalance'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import { ReservationChannelFavicon } from '@/components/reservation/ReservationChannelFavicon'
+import type { SortDir } from '@/lib/clientTableSort'
 import {
   pricingFieldToNumber,
   effectiveProductPriceTotalForBalance,
@@ -550,6 +552,10 @@ type BalanceProps = {
   /** 예약 처리 필요 취소 탭: 입금 내역과 동일 「-$취소」파트너 반환 라인 */
   showPartnerCancelRefundAction?: boolean
   onRefreshPaymentAggregates?: (reservationIds: string[]) => void | Promise<void>
+  /** 예약 정보 · 투어일 헤더 정렬 */
+  tourDateSortActive?: boolean
+  tourDateSortDir?: SortDir
+  onTourDateSortClick?: () => void
 }
 
 function StatusDropdown({
@@ -842,9 +848,6 @@ function BalanceRow(props: BalanceRowProps) {
   const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service'
   const showCreateTour = isManiaTour && !reservation.hasExistingTour
   const showResidentInquiryEmail = productShowsResidentStatusSectionByCode(product?.product_code ?? null)
-  const cid = String(reservation.channelId ?? '').trim()
-  const channel = cid ? findChannelRowForBalance(cid, channels ?? []) : undefined
-
   const channelMetrics = useMemo(
     () =>
       computeBalanceChannelMetrics(
@@ -1005,18 +1008,12 @@ function BalanceRow(props: BalanceRowProps) {
         )}
       >
         <div className="flex items-start gap-1 min-w-0">
-          {channel?.favicon_url ? (
-            <Image
-              src={channel.favicon_url}
-              alt=""
-              width={12}
-              height={12}
-              className="mt-0.5 h-3 w-3 shrink-0 rounded"
-              style={{ width: 'auto', height: 'auto' }}
-            />
-          ) : (
-            <span className="text-[9px] text-gray-400 shrink-0 mt-0.5">🌐</span>
-          )}
+          <ReservationChannelFavicon
+            channelId={reservation.channelId}
+            channels={channels}
+            sizeClass="h-3 w-3"
+            className="mt-0.5"
+          />
           <div className="min-w-0">
             <div className="text-[10px] text-gray-800 leading-tight break-words">
               {formatChannelDashVariant(reservation.channelId, channels || [], reservation)}
@@ -1568,6 +1565,9 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
     enableMismatchFormulaBundleApply = false,
     showPartnerCancelRefundAction = false,
     onRefreshPaymentAggregates,
+    tourDateSortActive,
+    tourDateSortDir,
+    onTourDateSortClick,
     ...rest
   } = props
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -1954,7 +1954,17 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
               className={`px-0.5 py-0.5 whitespace-nowrap ${reservationColSticky(2, selectionEnabled, 'theadSub')}`}
               title={rsvCol('tour_date')}
             >
-              {s('tourDate')}
+              {onTourDateSortClick ? (
+                <TableSortHeaderButton
+                  label={s('tourDate')}
+                  active={tourDateSortActive === true}
+                  dir={tourDateSortDir ?? 'asc'}
+                  onClick={onTourDateSortClick}
+                  className="text-[8px] font-medium uppercase tracking-wide text-gray-600"
+                />
+              ) : (
+                s('tourDate')
+              )}
             </th>
             <th
               className={`px-0.5 py-0.5 ${reservationColSticky(3, selectionEnabled, 'theadSub')}`}

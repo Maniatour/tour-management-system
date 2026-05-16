@@ -323,16 +323,16 @@ export function computeBalanceChannelMetrics(
       children: reservation.child,
       infants: reservation.infant,
     }
-    const customerNetForSelf =
-      !isOta && !isReservationCancelled
-        ? round2(
-            computeCustomerPaymentNetForCompanyRevenueBase(
-              pLine as Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0],
-              party,
-              returnedAmount
-            )
+    const customerNetForRevenue = !isReservationCancelled
+      ? round2(
+          computeCustomerPaymentNetForCompanyRevenueBase(
+            pLine as Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0],
+            party,
+            returnedAmount
           )
-        : 0
+        )
+      : 0
+    const customerNetForSelf = !isOta ? customerNetForRevenue : 0
 
     companyTotalRevenue = computeCompanyTotalRevenueLikePricingSection({
       channelSettlementBase:
@@ -352,6 +352,9 @@ export function computeBalanceChannelMetrics(
       revenueFromCustomerPaymentTotal: !isOta && !isReservationCancelled,
       cardFeeForCompanyRevenue: isOta ? pricingFieldToNumber(p.card_fee) : 0,
       prepaymentTipForCompanyRevenue: isOta ? prepTip : 0,
+      customerPaymentNetForOtaOmitCheck: customerNetForRevenue,
+      commissionAmount: commissionAmountDb ?? commissionAmountFromFormula ?? 0,
+      channelPaymentNet: channelPaymentDb ?? channelPaymentFromFormula,
     })
     operatingProfit = round2(Math.max(0, companyTotalRevenue - prepTip))
   }
@@ -428,20 +431,23 @@ export function computeReservationPricingStoredRevenueColumns(
     children: reservation.child,
     infants: reservation.infant,
   }
-  const customerNetForSelf =
-    !isOta && !isReservationCancelledRow
-      ? round2(
-          computeCustomerPaymentNetForCompanyRevenueBase(
-            pLine as Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0],
-            party,
-            returnedAmount
-          )
+  const customerNetForRevenue = !isReservationCancelledRow
+    ? round2(
+        computeCustomerPaymentNetForCompanyRevenueBase(
+          pLine as Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0],
+          party,
+          returnedAmount
         )
-      : null
+      )
+    : 0
+  const customerNetForSelf = !isOta ? customerNetForRevenue : null
 
   return computeStoredCompanyRevenueFields({
     channelSettlementBase: m.channelSettlementBaseForRevenue,
     customerPaymentNetForRevenueBase: customerNetForSelf,
+    customerPaymentNetForOtaOmitCheck: customerNetForRevenue,
+    commissionAmount: m.commissionAmountDb,
+    channelPaymentNet: m.channelPaymentDb,
     cardFee: pricingFieldToNumber(pLine.card_fee),
     reservationStatus: reservation.status,
     isOTAChannel: isOta,

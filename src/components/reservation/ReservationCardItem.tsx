@@ -28,7 +28,6 @@ import CancelledSimpleCardFollowUpStrip from '@/components/reservation/Cancelled
 import TourChatRoomEmailPreviewModal from '@/components/reservation/TourChatRoomEmailPreviewModal'
 import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
 import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
-import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
 import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
 
@@ -305,6 +304,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const reservationStatusLower = (reservation.status as string)?.toLowerCase?.() || ''
   const isReservationCancelled =
     reservationStatusLower === 'cancelled' || reservationStatusLower === 'canceled'
+  /** 삭제만 파이프라인 비활성. 취소 건은 발송 이력(컨펌·거주·출발·픽업) 아이콘을 계속 표시 */
+  const followUpPipelineIconsDisabled = reservationStatusLower === 'deleted'
   const hideAssignedTourUi =
     reservationStatusLower === 'cancelled' ||
     reservationStatusLower === 'canceled' ||
@@ -550,11 +551,24 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 </span>
               </div>
             </div>
-            <div className="flex shrink-0 items-center">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
               {cardLayout === 'simple' && isReservationCancelled ? (
                 <CancelledSimpleCardFollowUpStrip
                   reservationId={reservation.id}
                   snapshot={followUpPipelineSnapshot}
+                  customerEmail={
+                    customers.find((c) => c.id === reservation.customerId)?.email ?? ''
+                  }
+                  customerPhone={
+                    customers.find((c) => c.id === reservation.customerId)?.phone ?? null
+                  }
+                  customerName={getCustomerName(reservation.customerId, customers || [])}
+                  customerLanguage={
+                    customers.find((c) => c.id === reservation.customerId)?.language ?? null
+                  }
+                  tourDate={reservation.tourDate ?? null}
+                  productName={getProductName(reservation.productId, products as any || [])}
+                  channelRN={reservation.channelRN ?? null}
                   {...(onCancelFollowUpManualChange !== undefined
                     ? { onCancelFollowUpManualChange }
                     : {})}
@@ -563,7 +577,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               ) : (
                 <ReservationFollowUpPipelineIcons
                   snapshot={followUpPipelineSnapshot}
-                  disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
+                  disabled={followUpPipelineIconsDisabled}
+                  alwaysShowResidentStep={cardLayout === 'simple'}
                   onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
                   showTourChatRoomPreviewButton
                   onTourChatRoomPreviewClick={() => setTourChatRoomPreviewOpen(true)}
@@ -1156,7 +1171,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           <div className="shrink-0 pt-0.5">
             <ReservationFollowUpPipelineIcons
               snapshot={followUpPipelineSnapshot}
-              disabled={reservationExcludedFromFollowUpPipeline(reservation.status)}
+              disabled={followUpPipelineIconsDisabled}
               onEmailPreviewClick={(emailType) => onEmailPreview(reservation, emailType)}
               {...(onFollowUpPipelineManualChange
                 ? {

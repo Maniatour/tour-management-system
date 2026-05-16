@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import Image from 'next/image'
 import {
   Calendar,
   Clock,
@@ -33,6 +32,13 @@ import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusS
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import { ReservationActionRequiredBalanceTable } from '@/components/reservation/ReservationActionRequiredBalanceTable'
+import { ReservationChannelFavicon } from '@/components/reservation/ReservationChannelFavicon'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import type { SortDir } from '@/lib/clientTableSort'
+import {
+  isManiaTourOrServiceSubCategory,
+  productExemptFromDepositRequirement,
+} from '@/lib/reservationActionRequiredDepositTab'
 
 /** 예약 처리 필요 모달 — 탭(및 가격 하위 탭)별 테이블 컬럼 구성 */
 export type ActionRequiredTableVariant =
@@ -61,6 +67,10 @@ export interface ReservationActionRequiredTableProps {
   optionChoices: Array<{ id: string; name: string; option_id?: string; adult_price?: number; child_price?: number; infant_price?: number }>
   reservationPricingMap: Map<string, ReservationPricingMapValue>
   tableVariant: ActionRequiredTableVariant
+  /** 테이블 뷰: 투어일 헤더 정렬 */
+  tourDateSortActive?: boolean
+  tourDateSortDir?: SortDir
+  onTourDateSortClick?: () => void
   /** status 탭: 오늘 기준 투어일까지 일수 */
   todayStr?: string
   /** deposit / tour 탭: 투어 배정 여부 */
@@ -367,23 +377,16 @@ function PickupCell({
 }
 
 function ChannelCell({ reservation, channels }: Pick<TableRowProps, 'reservation' | 'channels'>) {
-  const channel = channels?.find((c) => c.id === reservation.channelId)
   const line = formatChannelDashVariant(reservation.channelId, channels || [], reservation)
   return (
     <td className="px-2 py-2 max-w-[14rem]">
       <div className="flex items-start gap-1.5 min-w-0">
-        {channel?.favicon_url ? (
-          <Image
-            src={channel.favicon_url}
-            alt=""
-            width={14}
-            height={14}
-            className="rounded shrink-0 mt-0.5"
-            style={{ width: 'auto', height: 'auto' }}
-          />
-        ) : (
-          <span className="text-[10px] text-gray-400 shrink-0 mt-0.5">🌐</span>
-        )}
+        <ReservationChannelFavicon
+          channelId={reservation.channelId}
+          channels={channels}
+          sizeClass="h-3.5 w-3.5"
+          className="mt-0.5"
+        />
         <div className="min-w-0">
           <div className="text-xs text-gray-800 leading-snug break-words" title={line}>
             {line}
@@ -541,10 +544,49 @@ function ActionsCell(row: TableRowProps) {
   )
 }
 
+function TourDateSortTh({
+  label,
+  tourDateSortActive,
+  tourDateSortDir,
+  onTourDateSortClick,
+  className = 'px-2 py-2 whitespace-nowrap',
+}: {
+  label: string
+  tourDateSortActive?: boolean
+  tourDateSortDir?: SortDir
+  onTourDateSortClick?: () => void
+  className?: string
+}) {
+  if (!onTourDateSortClick) {
+    return (
+      <th scope="col" className={className}>
+        {label}
+      </th>
+    )
+  }
+  return (
+    <th scope="col" className={className}>
+      <TableSortHeaderButton
+        label={label}
+        active={tourDateSortActive === true}
+        dir={tourDateSortDir ?? 'asc'}
+        onClick={onTourDateSortClick}
+        className="text-xs font-semibold uppercase tracking-wide"
+      />
+    </th>
+  )
+}
+
 function VariantTableThead({
   variant,
+  tourDateSortActive,
+  tourDateSortDir,
+  onTourDateSortClick,
 }: {
   variant: Exclude<ActionRequiredTableVariant, 'balance' | 'pricingNoPrice' | 'pricingMismatch'>
+  tourDateSortActive?: boolean
+  tourDateSortDir?: SortDir
+  onTourDateSortClick?: () => void
 }) {
   const t = useTranslations('reservations')
   const tc = (key: string) => t(`actionRequired.table.${key}` as Parameters<typeof t>[0])
@@ -562,9 +604,12 @@ function VariantTableThead({
             <th scope="col" className="px-2 py-2">
               {tc('product')}
             </th>
-            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-              {tc('tourDate')}
-            </th>
+            <TourDateSortTh
+              label={tc('tourDate')}
+              tourDateSortActive={tourDateSortActive}
+              tourDateSortDir={tourDateSortDir}
+              onTourDateSortClick={onTourDateSortClick}
+            />
             <th scope="col" className="px-2 py-2 whitespace-nowrap">
               {tc('daysLeft')}
             </th>
@@ -590,9 +635,12 @@ function VariantTableThead({
             <th scope="col" className="px-2 py-2">
               {tc('product')}
             </th>
-            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-              {tc('tourDate')}
-            </th>
+            <TourDateSortTh
+              label={tc('tourDate')}
+              tourDateSortActive={tourDateSortActive}
+              tourDateSortDir={tourDateSortDir}
+              onTourDateSortClick={onTourDateSortClick}
+            />
             <th scope="col" className="px-2 py-2">
               {tc('pickup')}
             </th>
@@ -621,9 +669,12 @@ function VariantTableThead({
             <th scope="col" className="px-2 py-2">
               {tc('product')}
             </th>
-            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-              {tc('tourDate')}
-            </th>
+            <TourDateSortTh
+              label={tc('tourDate')}
+              tourDateSortActive={tourDateSortActive}
+              tourDateSortDir={tourDateSortDir}
+              onTourDateSortClick={onTourDateSortClick}
+            />
             <th scope="col" className="px-2 py-2 whitespace-nowrap">
               {tc('status')}
             </th>
@@ -652,9 +703,12 @@ function VariantTableThead({
             <th scope="col" className="px-2 py-2">
               {tc('channelVariant')}
             </th>
-            <th scope="col" className="px-2 py-2 whitespace-nowrap">
-              {tc('tourDate')}
-            </th>
+            <TourDateSortTh
+              label={tc('tourDate')}
+              tourDateSortActive={tourDateSortActive}
+              tourDateSortDir={tourDateSortDir}
+              onTourDateSortClick={onTourDateSortClick}
+            />
             <th scope="col" className="px-2 py-2 min-w-[12rem]">
               {tc('incompleteDraftNote')}
             </th>
@@ -768,9 +822,14 @@ function VariantTableBody({
         if (variant === 'deposit') {
           const hasPay = reservationIdsWithPayments?.has(reservation.id) ?? false
           const tourOk = hasTourAssigned?.(reservation) ?? false
+          const product = row.products.find((p) => p.id === reservation.productId)
+          const isMania = isManiaTourOrServiceSubCategory(product?.sub_category)
+          const depositExempt = productExemptFromDepositRequirement(product)
           let issueLabel = tc('issueOther')
-          if (hasPay && !tourOk) issueLabel = tc('issuePaymentNoTour')
-          else if (isConfirmedReservation(reservation) && !hasPay) issueLabel = tc('issueConfirmedNoDeposit')
+          if (isMania && hasPay && !tourOk) issueLabel = tc('issuePaymentNoTour')
+          else if (isConfirmedReservation(reservation) && !hasPay && !depositExempt) {
+            issueLabel = tc('issueConfirmedNoDeposit')
+          }
 
           return (
             <tr key={reservation.id} className="border-b border-gray-100 hover:bg-gray-50/80 align-top">
@@ -851,7 +910,16 @@ function FollowUpModal({
 }
 
 export function ReservationActionRequiredTable(props: ReservationActionRequiredTableProps) {
-  const { reservations, tableVariant, showPartnerCancelRefundAction, onRefreshPaymentAggregates, ...rest } = props
+  const {
+    reservations,
+    tableVariant,
+    tourDateSortActive,
+    tourDateSortDir,
+    onTourDateSortClick,
+    showPartnerCancelRefundAction,
+    onRefreshPaymentAggregates,
+    ...rest
+  } = props
   const [followUpReservation, setFollowUpReservation] = useState<Reservation | null>(null)
 
   const useBalanceLayout =
@@ -894,6 +962,9 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
           enableMismatchFormulaBundleApply={tableVariant === 'pricingMismatch'}
           showPartnerCancelRefundAction={showPartnerCancelRefundAction}
           onRefreshPaymentAggregates={onRefreshPaymentAggregates}
+          tourDateSortActive={tourDateSortActive}
+          tourDateSortDir={tourDateSortDir}
+          onTourDateSortClick={onTourDateSortClick}
         />
         {followUpReservation && <FollowUpModal followUpReservation={followUpReservation} onClose={() => setFollowUpReservation(null)} />}
       </>
@@ -911,7 +982,12 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
     <>
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className={`w-full text-sm text-left ${minW}`}>
-          <VariantTableThead variant={tableVariant} />
+          <VariantTableThead
+            variant={tableVariant}
+            tourDateSortActive={tourDateSortActive}
+            tourDateSortDir={tourDateSortDir}
+            onTourDateSortClick={onTourDateSortClick}
+          />
           <VariantTableBody
             variant={tableVariant}
             reservations={reservations}

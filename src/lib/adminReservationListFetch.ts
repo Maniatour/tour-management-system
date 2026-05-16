@@ -82,6 +82,10 @@ export type FetchAdminReservationListArgs = {
   cardWeekLoadTier?: 'tier1_recent_modern' | 'tier2_older_modern' | 'tier3_legacy_tour'
   /** tier1·tier2: `created_at` 분할 기준(포함 하한). ISO 문자열 */
   cardWeekRecentCreatedGteIso?: string
+  /** 기본 `*, choices, channels(name)` 대신 지정 select (운영 큐 등 전송량 절감) */
+  selectFieldsOverride?: string
+  /** false면 count 생략(운영 큐 2페이지 이후 등) */
+  includeExactCount?: boolean
 }
 
 function collectIds(rows: unknown): string[] {
@@ -276,12 +280,13 @@ function buildAdminReservationListQuery(
   searchOr: string | null,
   opts?: BuildQueryOpts
 ) {
-  const includeExactCount = opts?.includeExactCount !== false
+  const includeExactCount =
+    args.includeExactCount !== false && opts?.includeExactCount !== false
   const searchActive = args.debouncedSearchTerm.trim().length > 0
   /** 검색 시 OR·in(...)이 무거워 `exact` 카운트가 첫 응답을 크게 지연시킴 → 계획 행수로 대체 */
   const reservationCountMode = searchActive ? ('planned' as const) : ('exact' as const)
 
-  let selectFields = '*, choices, channels(name)'
+  let selectFields = args.selectFieldsOverride ?? '*, choices, channels(name)'
   if (args.sortBy === 'customer_name') {
     selectFields = '*, choices, channels(name), customers(name)'
   } else if (args.sortBy === 'product_name') {
@@ -440,22 +445,23 @@ export const ADMIN_RESERVATION_CARD_FLAT_PAGE_SIZE = 500
  * 활동 구간 없이 `card-flat` 조건으로 예약 전량을 페이지 단위로 이어 받는다.
  * (예약 처리 필요 / Follow up 큐 — 주간 뷰와 별도)
  */
+export type FetchAdminReservationListAllFlatArgs = Omit<
+  FetchAdminReservationListArgs,
+  | 'mode'
+  | 'page'
+  | 'pageSize'
+  | 'activityRangeStartIso'
+  | 'activityRangeEndIso'
+  | 'onCardWeekFetchProgress'
+  | 'cardWeekLoadTier'
+  | 'cardWeekRecentCreatedGteIso'
+> & { pageSize?: number }
+
 export async function fetchAdminReservationListAllFlat(
   supabase: SupabaseClient,
-  args: Omit<
-    FetchAdminReservationListArgs,
-    | 'mode'
-    | 'page'
-    | 'pageSize'
-    | 'activityRangeStartIso'
-    | 'activityRangeEndIso'
-    | 'onCardWeekFetchProgress'
-    | 'cardWeekLoadTier'
-    | 'cardWeekRecentCreatedGteIso'
-  > & { pageSize?: number }
+  args: FetchAdminReservationListAllFlatArgs
 ): Promise<{ data: Record<string, unknown>[] | null; error: Error | null }> {
   const pageSize = args.pageSize ?? ADMIN_RESERVATION_CARD_FLAT_PAGE_SIZE
-  const { pageSize: _omit, ...rest } = args
   const merged: Record<string, unknown>[] = []
   let page = 1
   const maxPages = 500
@@ -471,10 +477,11 @@ export async function fetchAdminReservationListAllFlat(
         }
       }
       const { data, count, error } = await fetchAdminReservationList(supabase, {
-        ...rest,
+        ...args,
         mode: 'card-flat',
         page,
         pageSize,
+        includeExactCount: page === 1 ? args.includeExactCount : false,
       })
       if (error) {
         return { data: null, error }
@@ -492,6 +499,84 @@ export async function fetchAdminReservationListAllFlat(
     return { data: merged, error: null }
   } catch (e) {
     return { data: null, error: e instanceof Error ? e : new Error(String(e)) }
+  }
+}
+
+export type AdminReservationListAllFlatChunkHandlers = {
+  /** 각 페이지 raw 행. `false` 반환 시 이어 받기 중단 */
+  onChunk: (p: {
+    rows: Record<string, unknown>[]
+    page: number
+    mergedLoaded: number
+    totalCount: number | null
+  }) => boolean | void | Promise<boolean | void>
+}
+
+/**
+ * `card-flat` 전량을 페이지 단위로 받으며 청크마다 콜백(운영 큐 점진 hydrate용).
+ */
+export async function fetchAdminReservationListAllFlatProgressive(
+  supabase: SupabaseClient,
+  args: FetchAdminReservationListAllFlatArgs,
+  handlers: AdminReservationListAllFlatChunkHandlers
+): Promise<{ error: Error | null; loadedRowCount: number }> {
+  const pageSize = args.pageSize ?? ADMIN_RESERVATION_CARD_FLAT_PAGE_SIZE
+  let page = 1
+  let mergedLoaded = 0
+  let totalCount: number | null = null
+  const maxPages = 500
+
+  try {
+    for (;;) {
+      if (page > maxPages) {
+        return {
+          error: new Error(
+            `[admin reservations] card-flat all-pages limit exceeded (${maxPages} pages × ${pageSize} rows)`
+          ),
+          loadedRowCount: mergedLoaded,
+        }
+      }
+      const { data, count, error } = await fetchAdminReservationList(supabase, {
+        ...args,
+        mode: 'card-flat',
+        page,
+        pageSize,
+        includeExactCount: page === 1 ? args.includeExactCount : false,
+      })
+      if (error) {
+        return { error, loadedRowCount: mergedLoaded }
+      }
+      const batch = (data || []) as Record<string, unknown>[]
+      if (page === 1) {
+        totalCount = count ?? null
+      }
+      if (batch.length === 0) {
+        break
+      }
+      mergedLoaded += batch.length
+      const keepGoing = await handlers.onChunk({
+        rows: batch,
+        page,
+        mergedLoaded,
+        totalCount,
+      })
+      if (keepGoing === false) {
+        break
+      }
+      if (batch.length < pageSize) {
+        break
+      }
+      if (totalCount != null && mergedLoaded >= totalCount) {
+        break
+      }
+      page += 1
+    }
+    return { error: null, loadedRowCount: mergedLoaded }
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e : new Error(String(e)),
+      loadedRowCount: mergedLoaded,
+    }
   }
 }
 

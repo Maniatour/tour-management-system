@@ -5463,13 +5463,16 @@ export default function ReservationForm({
           child_product_price: toNum(fd.childProductPrice),
           infant_product_price: toNum(fd.infantProductPrice),
         }
-        const customerNetForStored =
-          !isOTAChannel && !isResCancelledFd
-            ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikeFd, partyFd, returnedAmount)
-            : null
+        const customerNetForRevenue = !isResCancelledFd
+          ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikeFd, partyFd, returnedAmount)
+          : 0
+        const customerNetForStored = !isOTAChannel ? customerNetForRevenue : null
         storedMetrics = computeStoredCompanyRevenueFields({
           channelSettlementBase: channelSettlementToSave,
           customerPaymentNetForRevenueBase: customerNetForStored,
+          customerPaymentNetForOtaOmitCheck: customerNetForRevenue,
+          commissionAmount: toNum(fd.commission_amount),
+          channelPaymentNet: toNum(fd.commission_base_price),
           cardFee: toNum(fd.cardFee),
           reservationStatus: fd.status,
           isOTAChannel,
@@ -6847,8 +6850,6 @@ export default function ReservationForm({
                 }
                 {...(effectiveReservationId ? { reservationId: effectiveReservationId } : {})}
                 reservationPricingId={reservationPricingId}
-                dynamicProductPriceFormula={dynamicPriceFormula}
-                showDynamicPricingFormula={Boolean(reservationPricingId)}
                 expenseUpdateTrigger={expenseUpdateTrigger}
                 channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
                 products={products}

@@ -43,8 +43,8 @@ function isCancelledLikeReservationStatus(s: string): boolean {
 }
 
 /**
- * 예약 목록(심플 카드) 「상태 변경」에만 노출할 전환:
- * 대기(pending) → 확정(confirmed), 대기·확정 → 취소/삭제류
+ * 예약 목록(심플 카드) 「상태 변경」에 노출할 전환.
+ * `reservation_status_events.occurred_at`의 로컬 달력일로 묶는다(브라우저 TZ = 등록·수정일 그룹과 동일).
  */
 export function isSimpleCardListedReservationStatusTransition(tr: {
   from: string
@@ -52,8 +52,16 @@ export function isSimpleCardListedReservationStatusTransition(tr: {
 }): boolean {
   const from = tr.from.toLowerCase().trim()
   const to = tr.to.toLowerCase().trim()
+  if (from === to) return false
   if (from === 'pending' && to === 'confirmed') return true
-  if ((from === 'pending' || from === 'confirmed') && isCancelledLikeReservationStatus(tr.to)) return true
+  if (from === 'inquiry' && (to === 'pending' || to === 'confirmed')) return true
+  if (from === 'recruiting' && (to === 'pending' || to === 'confirmed')) return true
+  if (
+    (from === 'pending' || from === 'confirmed' || from === 'inquiry' || from === 'recruiting') &&
+    isCancelledLikeReservationStatus(to)
+  ) {
+    return true
+  }
   return false
 }
 
@@ -105,26 +113,34 @@ export type SimpleCardStatusChangeAuditRequest = {
 
 /**
  * 등록·취소 차트 등에서 이미 불러온 감사 행으로 심플 카드 「상태 변경」전환 맵을 만든다.
- * `req`의 주간 ISO 구간으로만 잘라 쓴다.
+ * 키는 `${reservationId}|${occurred_at 로컬 YMD}` — `updated_at` 그룹일과 어긋나도 이벤트 일자에 표시.
  */
 export function buildSimpleCardStatusTransitionMapFromCachedAuditRows(
   req: SimpleCardStatusChangeAuditRequest,
   rowsByReservationId: Record<string, ReservationStatusAuditRow[]>
 ): Record<string, { from: string; to: string }> {
-  const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+  const next: Record<string, { from: string; to: string }> = {}
   for (const id of req.uniqueIds) {
     const rows = rowsByReservationId[id]
     if (!rows?.length) continue
-    const filtered = rows.filter((r) => {
-      const t = r.created_at
-      return t >= req.rangeStart && t <= req.rangeEnd
-    })
-    if (filtered.length) byRecord.set(id, filtered)
-  }
-  const next: Record<string, { from: string; to: string }> = {}
-  for (const t of req.targets) {
-    const tr = pickReservationStatusTransitionForSimpleCardDay(byRecord.get(t.reservationId) ?? [], t.dateKey)
-    if (tr) next[t.key] = tr
+    const bestByDay = new Map<string, { from: string; to: string; t: number }>()
+    for (const row of rows) {
+      const at = row.created_at
+      if (at < req.rangeStart || at > req.rangeEnd) continue
+      if (!reservationAuditRowHasStatusFieldChange(row)) continue
+      const to = statusFromReservationAuditJson(row.new_values)
+      const from = statusFromReservationAuditJson(row.old_values)
+      if (!to || !from || from === to) continue
+      if (!isSimpleCardListedReservationStatusTransition({ from, to })) continue
+      const dateKey = isoToLocalCalendarDateKey(row.created_at)
+      if (!dateKey) continue
+      const ts = new Date(row.created_at).getTime()
+      const prev = bestByDay.get(dateKey)
+      if (!prev || ts > prev.t) bestByDay.set(dateKey, { from, to, t: ts })
+    }
+    for (const [dateKey, v] of bestByDay) {
+      next[`${id}|${dateKey}`] = { from: v.from, to: v.to }
+    }
   }
   return next
 }
@@ -179,11 +195,14 @@ export function localYmdSetWhereBecameCancelledFromAuditRows(
 }
 
 const STATUS_TRANSITION_SORT_ORDER = new Map<string, number>([
+  ['recruiting:pending', 8],
   ['recruiting:confirmed', 10],
   ['recruiting:cancelled', 20],
   ['recruiting:canceled', 21],
   ['inquiry:pending', 25],
   ['inquiry:confirmed', 26],
+  ['inquiry:cancelled', 28],
+  ['inquiry:canceled', 29],
   ['pending:confirmed', 30],
   ['pending:cancelled', 40],
   ['pending:canceled', 41],

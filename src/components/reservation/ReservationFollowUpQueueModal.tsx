@@ -16,7 +16,12 @@ import {
   reservationEligibleForCancelFollowUpQueue,
   reservationCancellationGroupingDateKey,
 } from '@/lib/reservationFollowUpPipeline'
-import { getCustomerName, isReservationTourDatePastLocal, isReservationAddedStrictlyBeforeTodayLocal } from '@/utils/reservationUtils'
+import {
+  getCustomerName,
+  isReservationTourDatePastLocal,
+  isReservationAddedStrictlyBeforeTodayLocal,
+  lasVegasCalendarDateKeyToday,
+} from '@/utils/reservationUtils'
 
 export type FollowUpQueueTabId = 'confirm' | 'resident' | 'departure' | 'pickup' | 'cancel'
 
@@ -25,8 +30,10 @@ export type CancelFollowUpManualKind = 'cancel_follow_up' | 'cancel_rebooking'
 export interface ReservationFollowUpQueueModalProps {
   isOpen: boolean
   onClose: () => void
-  /** 운영 큐용 전역 목록을 처음 채우는 동안 */
+  /** 운영 큐용 전역 목록을 처음 채우는 동안(스냅샷 없음) */
   bulkReservationsLoading?: boolean
+  /** 첫 청크 이후 나머지 예약을 이어 받는 동안 */
+  bulkReservationsSyncing?: boolean
   reservations: Reservation[]
   /** 탭 목록 정렬용 */
   customers: Customer[]
@@ -141,6 +148,7 @@ export default function ReservationFollowUpQueueModal({
   isOpen,
   onClose,
   bulkReservationsLoading = false,
+  bulkReservationsSyncing = false,
   reservations,
   customers,
   snapshotsByReservationId,
@@ -200,7 +208,7 @@ export default function ReservationFollowUpQueueModal({
         arr.push(r)
         byDate.set(key, arr)
       }
-      const todayYmd = new Date().toISOString().slice(0, 10)
+      const todayYmd = lasVegasCalendarDateKeyToday()
       const dayDistance = (ymd: string): number => {
         if (ymd === 'unknown') return 999999
         const d = new Date(ymd + 'T12:00:00').getTime()
@@ -305,6 +313,19 @@ export default function ReservationFollowUpQueueModal({
         className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {bulkReservationsSyncing && (
+          <div
+            role="status"
+            className="flex shrink-0 items-center gap-2 border-b border-teal-100 bg-teal-50 px-4 py-2 text-xs text-teal-900"
+          >
+            <div className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-teal-600 border-t-transparent" />
+            <span>
+              {uiLocale === 'en'
+                ? 'Loading more reservations in the background…'
+                : '나머지 예약을 불러오는 중… (목록은 계속 사용할 수 있습니다)'}
+            </span>
+          </div>
+        )}
         <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-slate-700 to-teal-800 px-4 py-3 text-white">
           <div>
             <h2 className="text-lg font-semibold">{tp('modalTitle')}</h2>

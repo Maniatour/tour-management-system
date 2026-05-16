@@ -10,6 +10,7 @@ import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpS
 import { ReservationFollowUpPipelineIcons } from '@/components/reservation/ReservationFollowUpPipelineIcons'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
 import ResidentInquiryEmailPreviewModal from '@/components/reservation/ResidentInquiryEmailPreviewModal'
+import CancellationFollowUpMessagePreviewModal from '@/components/reservation/CancellationFollowUpMessagePreviewModal'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 import { getCustomerName, getProductName } from '@/utils/reservationUtils'
 import type { FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
@@ -460,6 +461,7 @@ export default function ReservationFollowUpSection({
   const [pickupHotelsById, setPickupHotelsById] = useState<Record<string, { hotel?: string | null; pick_up_location?: string | null }>>({})
   const [choiceNameById, setChoiceNameById] = useState<Record<string, string>>({})
   const [optionNameById, setOptionNameById] = useState<Record<string, string>>({})
+  const [cancelMessagePreviewOpen, setCancelMessagePreviewOpen] = useState(false)
 
   const isCancelled =
     (status && (status as string).toLowerCase()) === 'cancelled' ||
@@ -791,6 +793,13 @@ export default function ReservationFollowUpSection({
         <>
           {isCancelled && (
             <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setCancelMessagePreviewOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-900 hover:bg-violet-100"
+              >
+                {tRes('card.cancelFollowUpMessagePreviewTitle')}
+              </button>
               <label className="block text-xs font-medium text-gray-700">
                 {isEn ? 'Cancellation reason' : '취소 사유'}
               </label>
@@ -1000,6 +1009,36 @@ export default function ReservationFollowUpSection({
           </div>
         </>
       )}
+
+      {cancelMessagePreviewOpen && followUpPipelineReservation ? (
+        <CancellationFollowUpMessagePreviewModal
+          isOpen
+          onClose={() => setCancelMessagePreviewOpen(false)}
+          reservationId={reservationId}
+          customerEmail={
+            followUpPipelineCustomers?.find((c) => c.id === followUpPipelineReservation.customerId)
+              ?.email ?? ''
+          }
+          customerPhone={
+            followUpPipelineCustomers?.find((c) => c.id === followUpPipelineReservation.customerId)
+              ?.phone ?? null
+          }
+          customerName={getCustomerName(
+            followUpPipelineReservation.customerId,
+            followUpPipelineCustomers ?? []
+          )}
+          customerLanguage={
+            followUpPipelineCustomers?.find((c) => c.id === followUpPipelineReservation.customerId)
+              ?.language ?? null
+          }
+          tourDate={followUpPipelineReservation.tourDate ?? null}
+          productName={getProductName(
+            followUpPipelineReservation.productId,
+            followUpPipelineProducts ?? []
+          )}
+          channelRN={followUpPipelineReservation.channelRN ?? null}
+        />
+      ) : null}
 
       {pipelineEmailPreview && pipelineEmailPreview.emailType === 'resident_inquiry' ? (
         <ResidentInquiryEmailPreviewModal

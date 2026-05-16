@@ -223,8 +223,8 @@ export function useReservationFollowUpSnapshots(
           const departureEffective = departureSent.has(rid) || md
           next.set(rid, {
             confirmationSent: confirmationSent.has(rid) || mc || departureEffective,
-            residentInquirySent: residentInquirySent.has(rid) || (needs && mr),
-            guestResidentFlowCompleted: guestDone.has(rid) || (needs && mr),
+            residentInquirySent: residentInquirySent.has(rid) || mr,
+            guestResidentFlowCompleted: guestDone.has(rid) || mr,
             departureSent: departureEffective,
             pickupSent: pickupSent.has(rid) || mp,
             needsResidentFlow: needs,

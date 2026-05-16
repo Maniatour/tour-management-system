@@ -19,6 +19,7 @@ import {
 } from '@/lib/residentInquiryTourKind'
 import { supabase } from '@/lib/supabase'
 import ResidentInquiryEmailBodyRichEditor from '@/components/reservation/ResidentInquiryEmailBodyRichEditor'
+import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
 
 export interface ResidentInquiryEmailPreviewModalProps {
   isOpen: boolean
@@ -435,21 +436,19 @@ export default function ResidentInquiryEmailPreviewModal({
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600">
-              {templateLoading ? t('residentInquiryTemplateLoading') : t('residentInquiryPreviewBody')}
+          {previewBlocked ? (
+            <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-gray-200 py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
             </div>
-            {previewBlocked ? (
-              <div className="flex min-h-[200px] items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
-              </div>
-            ) : (
-              <div
-                className="email-preview-body-host max-h-[min(55vh,520px)] overflow-auto p-3"
-                dangerouslySetInnerHTML={{ __html: emailContent.html }}
-              />
-            )}
-          </div>
+          ) : (
+            <EmailPreviewBodyPanel
+              html={emailContent.html}
+              title={t('residentInquiryPreviewBody')}
+              htmlTabLabel="HTML 미리보기"
+              textTabLabel="텍스트 보기"
+              bodyClassName="email-preview-body-host p-3"
+            />
+          )}
         </div>
       </div>
     </div>

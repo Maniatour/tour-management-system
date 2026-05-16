@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban, FileWarning } from 'lucide-react'
+import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban, FileWarning, RefreshCw } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -24,7 +24,12 @@ import {
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
 import { reservationNeedsCancelFinancialCleanup } from '@/lib/reservationActionRequiredCancelTab'
+import {
+  isManiaTourOrServiceReservation,
+  reservationExemptFromDepositRequirement,
+} from '@/lib/reservationActionRequiredDepositTab'
 import { isMinimalUnlinkedReservationRow } from '@/lib/reservationIncompleteDraft'
+import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import type { Reservation, Customer } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 
@@ -43,8 +48,10 @@ export type BalanceTotalFilterId = 'all' | 'totalMismatch'
 export interface ReservationActionRequiredModalProps {
   isOpen: boolean
   onClose: () => void
-  /** 운영 큐용 전역 목록을 처음 채우는 동안 */
+  /** 운영 큐용 전역 목록을 처음 채우는 동안(스냅샷 없음) */
   bulkReservationsLoading?: boolean
+  /** 첫 청크 이후 나머지 예약을 이어 받는 동안 */
+  bulkReservationsSyncing?: boolean
   reservations: Reservation[]
   customers: Customer[]
   products: Array<{ id: string; name: string; sub_category?: string; base_price?: number }>
@@ -111,6 +118,8 @@ export interface ReservationActionRequiredModalProps {
   onExitOneByOneEdit?: () => void
   onCustomerClick: (customer: Customer) => void
   onRefreshReservations: () => void
+  /** 헤더 새로고침 — 운영 큐(탭·테이블 목록) 재조회 */
+  onRefreshTableList?: () => void | Promise<void>
   /** pricing 행만 갱신 — 전체 목록 재조회 없이 reservation_pricing 맵 병합(모달 리셋 방지) */
   onRefreshReservationPricing?: (reservationIds: string[]) => void | Promise<void>
   onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
@@ -154,6 +163,7 @@ export default function ReservationActionRequiredModal({
   isOpen,
   onClose,
   bulkReservationsLoading = false,
+  bulkReservationsSyncing = false,
   reservations,
   customers,
   products,
@@ -178,6 +188,7 @@ export default function ReservationActionRequiredModal({
   onExitOneByOneEdit,
   onCustomerClick,
   onRefreshReservations,
+  onRefreshTableList,
   onRefreshReservationPricing,
   onStatusChange,
   generatePriceCalculation,
@@ -209,10 +220,33 @@ export default function ReservationActionRequiredModal({
   const [reservationOptionsPresenceByReservationId, setReservationOptionsPresenceByReservationId] =
     useState<Map<string, boolean>>(() => new Map())
   const [loadingPayments, setLoadingPayments] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [tableListRefreshToken, setTableListRefreshToken] = useState(0)
+  const [tourDateTableSort, setTourDateTableSort] = useState<SortDir | null>(null)
+
+  const handleRefreshClick = useCallback(async () => {
+    if (refreshing || bulkReservationsLoading) return
+    setRefreshing(true)
+    try {
+      if (onRefreshTableList) {
+        await onRefreshTableList()
+      } else {
+        await Promise.resolve(onRefreshReservations())
+      }
+      setTableListRefreshToken((n) => n + 1)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [refreshing, bulkReservationsLoading, onRefreshTableList, onRefreshReservations])
+
+  const handleTourDateSortClick = useCallback(() => {
+    setTourDateTableSort((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+  }, [])
 
   // 탭 전환 시 1페이지로
   useEffect(() => {
     setPage(1)
+    setTourDateTableSort(null)
   }, [activeTab, pricingSubTab, balanceSubTab, balanceTotalFilter])
 
   useEffect(() => {
@@ -423,7 +457,7 @@ export default function ReservationActionRequiredModal({
     return () => {
       cancelled = true
     }
-  }, [isOpen, reservationsPaymentLoadKey])
+  }, [isOpen, reservationsPaymentLoadKey, tableListRefreshToken])
 
   const handleReservationOptionsMutated = useCallback(
     (reservationId: string) => {
@@ -491,11 +525,7 @@ export default function ReservationActionRequiredModal({
       if (!d) return false
       return d >= todayStr && d <= sevenDaysLaterStr
     }
-    const isManiaTourOrService = (r: Reservation) => {
-      const product = products.find(p => p.id === r.productId)
-      const sub = product?.sub_category?.trim() || ''
-      return sub === 'Mania Tour' || sub === 'Mania Service'
-    }
+    const isManiaTourOrService = (r: Reservation) => isManiaTourOrServiceReservation(r, products)
     const isNotCancelled = (r: Reservation) => {
       const s = (r.status as string)?.trim?.() ?? ''
       return !s.toLowerCase().startsWith('cancelled')
@@ -525,8 +555,21 @@ export default function ReservationActionRequiredModal({
         )
     )
     const pricingList = [...new Map([...noPricing.map(r => [r.id, r]), ...pricingMismatch.map(r => [r.id, r])]).values()]
-    const depositNoTour = list.filter(r => hasPayment(r) && !hasTourAssigned(r))
-    const confirmedNoDeposit = list.filter(r => statusConfirmed(r) && !hasPayment(r))
+    /** 입금 탭: 취소 제외. 입금·투어 없음은 Mania Tour/Service만(예약 대행 상품은 투어 불필요) */
+    const depositNoTour = list.filter(
+      (r) =>
+        !isCancelled(r) &&
+        isManiaTourOrService(r) &&
+        hasPayment(r) &&
+        !hasTourAssigned(r)
+    )
+    const confirmedNoDeposit = list.filter(
+      (r) =>
+        !isCancelled(r) &&
+        statusConfirmed(r) &&
+        !hasPayment(r) &&
+        !reservationExemptFromDepositRequirement(r, products)
+    )
     const depositList = [...new Map([...depositNoTour.map(r => [r.id, r]), ...confirmedNoDeposit.map(r => [r.id, r])]).values()]
 
     const cancelFinancialList = list.filter((r) =>
@@ -711,13 +754,25 @@ export default function ReservationActionRequiredModal({
     if (activeTab !== 'balance') setBalanceTotalFilter('all')
   }, [activeTab])
 
+  const tableSortedList = useMemo(() => {
+    if (!tourDateTableSort || listViewMode !== 'table') return currentList
+    return [...currentList].sort((a, b) =>
+      compareSortValues(a.tourDate, b.tourDate, tourDateTableSort, locale)
+    )
+  }, [currentList, tourDateTableSort, listViewMode, locale])
+
+  useEffect(() => {
+    setPage(1)
+  }, [tourDateTableSort])
+
   const pageSize =
     listViewMode === 'detail' ? 1 : listViewMode === 'table' ? tableRowsPerPage : CARDS_PER_PAGE
-  const totalPages = Math.max(1, Math.ceil(currentList.length / pageSize))
+  const listForPaging = listViewMode === 'table' ? tableSortedList : currentList
+  const totalPages = Math.max(1, Math.ceil(listForPaging.length / pageSize))
   const safePage = Math.min(page, totalPages)
   const paginatedList = useMemo(
-    () => currentList.slice((safePage - 1) * pageSize, safePage * pageSize),
-    [currentList, safePage, pageSize]
+    () => listForPaging.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [listForPaging, safePage, pageSize]
   )
 
   /** 한 건씩: 현재 예약에 대해 상위의 예약 수정 모달(ReservationForm) 열기 */
@@ -819,6 +874,19 @@ export default function ReservationActionRequiredModal({
         className="flex h-full min-h-0 w-full max-w-none flex-col bg-white pt-[env(safe-area-inset-top)] shadow-xl rounded-none sm:h-auto sm:max-h-[90vh] sm:max-w-[min(98vw,2000px)] sm:rounded-xl sm:pt-0"
         onClick={(e) => e.stopPropagation()}
       >
+        {bulkReservationsSyncing && (
+          <div
+            role="status"
+            className="flex shrink-0 items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:px-4"
+          >
+            <div className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+            <span>
+              {locale === 'en'
+                ? 'Loading more reservations in the background…'
+                : '나머지 예약을 불러오는 중… (목록은 계속 사용할 수 있습니다)'}
+            </span>
+          </div>
+        )}
         <div className="flex flex-shrink-0 flex-col gap-3 border-b border-gray-200 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <h2 className="min-w-0 text-base font-semibold text-gray-900 sm:text-lg">
@@ -910,6 +978,19 @@ export default function ReservationActionRequiredModal({
                 </select>
               </label>
             )}
+            <button
+              type="button"
+              onClick={() => void handleRefreshClick()}
+              disabled={refreshing || bulkReservationsLoading}
+              className="inline-flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0"
+              title={t('actionRequired.refreshButton')}
+              aria-label={t('actionRequired.refreshButton')}
+            >
+              <RefreshCw
+                className={`h-4 w-4 shrink-0 ${refreshing || bulkReservationsSyncing ? 'animate-spin' : ''}`}
+              />
+              <span className="hidden sm:inline">{t('actionRequired.refreshButton')}</span>
+            </button>
             <button
               type="button"
               onClick={handleCloseModal}
@@ -1200,6 +1281,9 @@ export default function ReservationActionRequiredModal({
                 <ReservationActionRequiredTable
                   reservations={paginatedList}
                   tableVariant={actionRequiredTableVariant}
+                  tourDateSortActive={tourDateTableSort !== null}
+                  tourDateSortDir={tourDateTableSort ?? 'asc'}
+                  onTourDateSortClick={handleTourDateSortClick}
                   todayStr={todayStr}
                   hasTourAssigned={hasTourAssigned}
                   reservationIdsWithPayments={reservationIdsWithPayments}

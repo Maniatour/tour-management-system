@@ -1087,6 +1087,9 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       excludeHomepageAdditionalCostFromCompanyTotals: isHomepageBookingReservation,
       customerPaymentNetAsRevenueBase: useSelfBase ? displayCustomerNet : null,
       cardFeeForCompanyRevenue: isOTAChannel ? editData.card_fee || 0 : 0,
+      customerPaymentNetForOtaOmitCheck: displayCustomerNet,
+      commissionAmount: editData.commission_amount || 0,
+      channelPaymentNet: editData.commission_base_price || 0,
     }
   }, [
     editData,

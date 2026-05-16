@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Eye, Loader2, Copy, Check, Share2, Link2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
 
 export interface TourChatRoomEmailPreviewModalProps {
   isOpen: boolean
@@ -208,10 +209,13 @@ export default function TourChatRoomEmailPreviewModal({
               {error}
             </div>
           ) : emailContent ? (
-            <div
-              ref={previewBodyRef}
-              className="email-preview-body-host rounded-lg border border-gray-200 bg-white p-4"
-              dangerouslySetInnerHTML={{ __html: emailContent.html }}
+            <EmailPreviewBodyPanel
+              html={emailContent.html}
+              bodyRef={previewBodyRef}
+              bodyClassName="email-preview-body-host p-4"
+              htmlTabLabel="HTML 미리보기"
+              textTabLabel="텍스트 보기"
+              maxHeightClass="max-h-[min(60vh,560px)]"
             />
           ) : null}
         </div>

@@ -300,10 +300,10 @@ function buildCompanyTotalRevenueForChannelRow(
     infants: item.infant,
   }
   const pricingLike = reservationItemToPricingBalanceLike(item, extras)
-  const customerNetSelf =
-    !ctx.isOta && !isReservationCancelled
-      ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLike, party, ctx.returnedAmount)
-      : 0
+  const customerNetForRevenue = !isReservationCancelled
+    ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLike, party, ctx.returnedAmount)
+    : 0
+  const customerNetSelf = !ctx.isOta ? customerNetForRevenue : 0
 
   return computeCompanyTotalRevenueLikePricingSection({
     channelSettlementBase:
@@ -322,6 +322,9 @@ function buildCompanyTotalRevenueForChannelRow(
     revenueFromCustomerPaymentTotal: !ctx.isOta && !isReservationCancelled,
     cardFeeForCompanyRevenue: ctx.isOta ? item.cardFee ?? 0 : 0,
     prepaymentTipForCompanyRevenue: ctx.isOta ? item.prepaymentTip ?? 0 : 0,
+    customerPaymentNetForOtaOmitCheck: customerNetForRevenue,
+    commissionAmount: item.commissionAmount ?? extras.commissionAmount ?? 0,
+    channelPaymentNet: storedCb,
   })
 }
 
@@ -1068,13 +1071,16 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             child_product_price: toNum(pricingInfo.childProductPrice),
             infant_product_price: toNum(pricingInfo.infantProductPrice),
           }
-          const customerNetForStored =
-            !isOTA && !isResCancelledRs
-              ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikeRs, partyRs, returnedAmount)
-              : null
+          const customerNetForRevenue = !isResCancelledRs
+            ? computeCustomerPaymentNetForCompanyRevenueBase(pricingLikeRs, partyRs, returnedAmount)
+            : 0
+          const customerNetForStored = !isOTA ? customerNetForRevenue : null
           const storedMetrics = computeStoredCompanyRevenueFields({
             channelSettlementBase: channelSettlementToSave,
             customerPaymentNetForRevenueBase: customerNetForStored,
+            customerPaymentNetForOtaOmitCheck: customerNetForRevenue,
+            commissionAmount: toNum(pricingInfo.commissionAmount),
+            channelPaymentNet: toNum(pricingInfo.commissionBasePrice),
             cardFee: toNum(pricingInfo.cardFee),
             reservationStatus: reservation.status,
             isOTAChannel: isOTA,

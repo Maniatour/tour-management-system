@@ -75,6 +75,37 @@ export function shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum(inp: {
   return false
 }
 
+const OTA_REVENUE_MATCH_EPS = 0.02
+
+/**
+ * OTA 진행 예약: ③ 채널 정산이 이미 ① 고객 총 결제(넷) 또는 채널 결제(넷)와 같으면
+ * ④에서 예약 옵션·불포함·카드수수료·선결제팁·세·선결제 지출 등을 다시 가산하지 않는다.
+ */
+export function shouldOmitOtaExtrasFromCompanyRevenueSum(inp: {
+  isOTAChannel: boolean
+  isReservationCancelled: boolean
+  channelSettlementBase: number
+  customerPaymentNet: number
+  commissionAmount?: number
+  channelPaymentNet?: number
+}): boolean {
+  if (!inp.isOTAChannel || inp.isReservationCancelled) return false
+
+  const settle = roundUsd2(Math.max(0, inp.channelSettlementBase))
+  const cust = roundUsd2(Math.max(0, inp.customerPaymentNet))
+  const comm = roundUsd2(Math.max(0, inp.commissionAmount ?? 0))
+  const chPay = roundUsd2(Math.max(0, inp.channelPaymentNet ?? 0))
+
+  if (cust > PAY_LINE_EPS && Math.abs(settle - cust) <= OTA_REVENUE_MATCH_EPS) return true
+  if (cust > PAY_LINE_EPS && Math.abs(settle + comm - cust) <= OTA_REVENUE_MATCH_EPS) return true
+  if (chPay > PAY_LINE_EPS && comm < PAY_LINE_EPS && Math.abs(settle - chPay) <= OTA_REVENUE_MATCH_EPS) {
+    return true
+  }
+  if (chPay > PAY_LINE_EPS && Math.abs(settle + comm - chPay) <= OTA_REVENUE_MATCH_EPS) return true
+
+  return false
+}
+
 /**
  * DB·폼에 남아 있는 `commission_base_price`가 net(신규)인지 gross(기존 행)인지에 따라
  * `computeChannelSettlementAmount`에 넣을 gross를 복원한다.
@@ -207,6 +238,10 @@ export type CompanyTotalRevenueInput = {
   cardFeeForCompanyRevenue?: number
   /** OTA·진행: ④ 총매출에 포함하는 선결제 팁(운영이익은 총매출−팁으로 동일 순효과 유지) */
   prepaymentTipForCompanyRevenue?: number
+  /** OTA ④ 이중 가산 방지: ① 고객 총 결제(넷) */
+  customerPaymentNetForOtaOmitCheck?: number
+  commissionAmount?: number
+  channelPaymentNet?: number
 }
 
 export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRevenueInput): number {
@@ -226,11 +261,23 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     revenueFromCustomerPaymentTotal = false,
     cardFeeForCompanyRevenue = 0,
     prepaymentTipForCompanyRevenue = 0,
+    customerPaymentNetForOtaOmitCheck = 0,
+    commissionAmount = 0,
+    channelPaymentNet = 0,
   } = inp
 
   if (isReservationCancelled) {
     return roundUsd2(channelSettlementBase)
   }
+
+  const omitOtaExtras = shouldOmitOtaExtrasFromCompanyRevenueSum({
+    isOTAChannel,
+    isReservationCancelled,
+    channelSettlementBase,
+    customerPaymentNet: customerPaymentNetForOtaOmitCheck,
+    commissionAmount,
+    channelPaymentNet,
+  })
 
   if (revenueFromCustomerPaymentTotal) {
     let totalRevenue = channelSettlementBase
@@ -243,15 +290,18 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
 
   let totalRevenue = channelSettlementBase
 
-  if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
-    totalRevenue += reservationOptionsTotalPrice
-  }
-  if (notIncludedTotalUsd > 0) {
-    totalRevenue += notIncludedTotalUsd
+  if (!omitOtaExtras) {
+    if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
+      totalRevenue += reservationOptionsTotalPrice
+    }
+    if (notIncludedTotalUsd > 0) {
+      totalRevenue += notIncludedTotalUsd
+    }
   }
 
   const omitDiscCostEffective =
-    omitAdditionalDiscountAndCostFromSum && !(isOTAChannel && !isReservationCancelled)
+    (omitAdditionalDiscountAndCostFromSum && !(isOTAChannel && !isReservationCancelled)) ||
+    omitOtaExtras
 
   if (!omitDiscCostEffective) {
     if (additionalDiscount > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
@@ -261,11 +311,13 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
       totalRevenue += additionalCost
     }
   }
-  if (tax > 0) {
-    totalRevenue += tax
-  }
-  if (prepaymentCost > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
-    totalRevenue += prepaymentCost
+  if (!omitOtaExtras) {
+    if (tax > 0) {
+      totalRevenue += tax
+    }
+    if (prepaymentCost > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
+      totalRevenue += prepaymentCost
+    }
   }
   totalRevenue -= refundedOurAmount
 
@@ -273,7 +325,7 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     totalRevenue -= additionalCost
   }
 
-  if (isOTAChannel && !isReservationCancelled) {
+  if (isOTAChannel && !isReservationCancelled && !omitOtaExtras) {
     const cf = Number(cardFeeForCompanyRevenue) || 0
     if (cf > 0.005) {
       totalRevenue += cf

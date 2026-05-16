@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { X, Mail, Eye, Loader2, Send, Copy, Check, Printer } from 'lucide-react'
 import ProductDetailFieldEditModal from '@/components/reservation/ProductDetailFieldEditModal'
+import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
+import { emailHtmlToPlainText } from '@/lib/emailHtmlToPlainText'
 import {
   isProductDetailEmailEditableField,
   type ProductDetailEmailEditableField,
@@ -99,48 +101,10 @@ export default function EmailPreviewModal({
     }
   }
 
-  // HTML → 텍스트 (PickupScheduleEmailPreviewModal과 동일한 핵심 로직, 범용 정리)
-  const htmlToText = (html: string): string => {
-    const NL = '{{NL}}'
-    let processed = html
-    const blockTags = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'td', 'th', 'section', 'article', 'header', 'footer']
-    for (const tag of blockTags) {
-      processed = processed.replace(new RegExp(`</${tag}>`, 'gi'), `</${tag}>${NL}`)
-    }
-    processed = processed.replace(/<br\s*\/?>/gi, NL)
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = processed
-    tempDiv.querySelectorAll('script, style').forEach(el => el.remove())
-    tempDiv.querySelectorAll('a').forEach(link => {
-      const linkText = link.textContent?.trim() || ''
-      const linkUrl = link.getAttribute('href') || ''
-      const replacement = linkUrl
-        ? (linkText ? `${linkText} (${linkUrl})` : linkUrl)
-        : linkText
-      link.parentNode?.replaceChild(document.createTextNode(replacement), link)
-    })
-    tempDiv.querySelectorAll('img').forEach(img => {
-      const src = img.getAttribute('src') || ''
-      const alt = img.getAttribute('alt')?.trim()
-      const line = src && !src.startsWith('data:') ? (alt ? `${alt} (${src})` : src) : alt
-      if (line) {
-        img.replaceWith(document.createTextNode(`\n${line}\n`))
-      } else {
-        img.remove()
-      }
-    })
-    let text = tempDiv.textContent || ''
-    text = text.replace(/\{\{NL\}\}/g, '\n')
-    text = text.replace(/[ \t]+/g, ' ')
-    text = text.replace(/\n{4,}/g, '\n\n')
-    text = text.replace(/\n{3,}/g, '\n\n')
-    return text.trim()
-  }
-
   const handleCopyText = async () => {
     if (!emailContent) return
     try {
-      let textContent = htmlToText(
+      let textContent = emailHtmlToPlainText(
         stripAdminPreviewMarkupFromEmailHtml(emailContent.html)
       )
       textContent = textContent.replace(/\n/g, '\r\n')
@@ -150,7 +114,7 @@ export default function EmailPreviewModal({
     } catch (error) {
       console.error('텍스트 복사 실패:', error)
       const textArea = document.createElement('textarea')
-      textArea.value = htmlToText(
+      textArea.value = emailHtmlToPlainText(
         stripAdminPreviewMarkupFromEmailHtml(emailContent.html)
       ).replace(/\n/g, '\r\n')
       textArea.style.position = 'fixed'
@@ -405,86 +369,23 @@ ${printHtml}
                   </div>
                 )}
 
-              {/* 이메일 내용 미리보기 */}
-              <div className="border rounded-lg overflow-hidden bg-white">
-                <div className="bg-gray-100 px-4 py-2 border-b">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Mail className="w-4 h-4" />
-                      <span>이메일 미리보기</span>
-                    </div>
-                    {showCopyPrintToolbar && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handlePrint}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-600 text-white rounded hover:bg-slate-700 transition-colors"
-                          title="인쇄"
-                        >
-                          <Printer className="w-4 h-4" />
-                          <span>인쇄</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCopyHtml}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                          title="HTML 복사"
-                        >
-                          {copied ? (
-                            <>
-                              <Check className="w-4 h-4" />
-                              <span>복사됨</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              <span>HTML 복사</span>
-                            </>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCopyText}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                          title="텍스트 복사"
-                        >
-                          {copied ? (
-                            <>
-                              <Check className="w-4 h-4" />
-                              <span>복사됨</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              <span>텍스트 복사</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <style>{`
-                  @media print {
-                    .email-preview-body-host [data-email-preview-admin-only] {
-                      display: none !important;
-                    }
-                    .email-preview-body-host button[data-pd-field] {
-                      display: none !important;
-                    }
-                  }
-                `}</style>
-                <div
-                  ref={previewBodyRef}
-                  className="email-preview-body-host p-4"
-                  dangerouslySetInnerHTML={{ __html: emailContent.html }}
-                  style={{
-                    maxWidth: '600px',
-                    margin: '0 auto',
-                    backgroundColor: '#ffffff',
-                  }}
-                />
-              </div>
+              <style>{`@media print { .email-preview-body-host [data-email-preview-admin-only] { display: none !important; } .email-preview-body-host button[data-pd-field] { display: none !important; } }`}</style>
+              <EmailPreviewBodyPanel
+                html={emailContent.html}
+                prepareHtml={stripAdminPreviewMarkupFromEmailHtml}
+                bodyRef={previewBodyRef}
+                htmlTabLabel="HTML 미리보기"
+                textTabLabel="텍스트 보기"
+                toolbar={
+                  showCopyPrintToolbar ? (
+                    <>
+                      <button type="button" onClick={handlePrint} className="flex items-center gap-1.5 rounded bg-slate-600 px-3 py-1.5 text-sm text-white hover:bg-slate-700" title="인쇄"><Printer className="h-4 w-4" /><span>인쇄</span></button>
+                      <button type="button" onClick={handleCopyHtml} className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700" title="HTML 복사">{copied ? <><Check className="h-4 w-4" /><span>복사됨</span></> : <><Copy className="h-4 w-4" /><span>HTML 복사</span></>}</button>
+                      <button type="button" onClick={handleCopyText} className="flex items-center gap-1.5 rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700" title="텍스트 복사">{copied ? <><Check className="h-4 w-4" /><span>복사됨</span></> : <><Copy className="h-4 w-4" /><span>텍스트 복사</span></>}</button>
+                    </>
+                  ) : undefined
+                }
+              />
             </div>
           ) : (
             <div className="flex items-center justify-center h-full">

@@ -1,5 +1,6 @@
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
+  isoToLasVegasCalendarDateKey,
   isReservationStatusConfirmed,
   isReservationTourDatePastLocal,
   isWithin48HoursBeforeTourStartLocal,
@@ -71,12 +72,16 @@ export function reservationNeedsCancelFollowUpQueueAttention(
   return !s.cancelFollowUpManual || !s.cancelRebookingOutreachManual
 }
 
-/** 그룹 헤더용: 취소 처리 시점 근사(updated_at 우선, 없으면 addedTime)의 YYYY-MM-DD */
+/** 그룹 헤더용: 취소 처리 시점 근사(updated_at 우선, 없으면 addedTime)의 LV 달력 YYYY-MM-DD */
 export function reservationCancellationGroupingDateKey(r: {
   updated_at?: string | null
   addedTime?: string
 }): string {
   const raw = (r.updated_at && String(r.updated_at).trim()) || String(r.addedTime ?? '').trim()
+  if (!raw) return 'unknown'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const lvKey = isoToLasVegasCalendarDateKey(raw)
+  if (lvKey) return lvKey
   const m = raw.match(/^(\d{4}-\d{2}-\d{2})/)
   if (m) return m[1]
   if (raw.length >= 10) return raw.slice(0, 10)
@@ -187,7 +192,9 @@ export function followUpPipelineStepCanMarkManual(
     return !s.confirmationSent
   }
   if (step === 'resident') {
-    if (!s.needsResidentFlow) return false
+    if (!s.needsResidentFlow) {
+      return !s.residentInquirySent
+    }
     const done = s.residentInquirySent && s.guestResidentFlowCompleted
     return !done
   }
