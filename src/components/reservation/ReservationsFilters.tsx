@@ -30,6 +30,8 @@ interface ReservationsFiltersProps {
   itemsPerPage: number
   onItemsPerPageChange: (items: number) => void
   onReset: () => void
+  /** 리스트 뷰: 정렬·날짜 그룹은 고정(등록일 최신순)이므로 필터에서 숨김 */
+  listViewActive?: boolean
   /** 모달 열림 상태 (제어 모드, 모바일 행 버튼과 동기화용) */
   filterModalOpen?: boolean
   onFilterModalOpenChange?: (open: boolean) => void
@@ -52,6 +54,7 @@ function ReservationsFilters({
   itemsPerPage,
   onItemsPerPageChange,
   onReset,
+  listViewActive = false,
   filterModalOpen: controlledOpen,
   onFilterModalOpenChange
 }: ReservationsFiltersProps) {
@@ -117,61 +120,94 @@ function ReservationsFilters({
         </div>
       </div>
       {/* 정렬, 그룹화, 페이지당 */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">{t('sorting.label')}</label>
-          <div className="flex gap-1">
+      {listViewActive ? (
+        <div className="space-y-3">
+          <p className="text-xs text-gray-600 leading-relaxed">{t('listView.sortHint')}</p>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{t('pagination.itemsPerPage')}</label>
             <select
-              value={sortBy}
-              onChange={(e) => onSortByChange(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
-              className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+              value={itemsPerPage}
+              onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="created_at">{t('sorting.registrationDate')}</option>
-              <option value="tour_date">{t('sorting.tourDate')}</option>
-              <option value="customer_name">{t('sorting.customerName')}</option>
-              <option value="product_name">{t('sorting.productName')}</option>
+              <option value={10}>10{t('pagination.itemsPerPage')}</option>
+              <option value={20}>20{t('pagination.itemsPerPage')}</option>
+              <option value={50}>50{t('pagination.itemsPerPage')}</option>
+              <option value={100}>100{t('pagination.itemsPerPage')}</option>
             </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
-              className="px-2 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 text-sm"
+              onClick={() => {
+                onReset()
+                closeModal()
+              }}
+              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
             >
-              {sortOrder === 'asc' ? '↑' : '↓'}
+              {t('pagination.reset')}
             </button>
           </div>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">{t('pagination.itemsPerPage')}</label>
-          <select
-            value={itemsPerPage}
-            onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
-          >
-            <option value={10}>10{t('pagination.itemsPerPage')}</option>
-            <option value={20}>20{t('pagination.itemsPerPage')}</option>
-            <option value={50}>50{t('pagination.itemsPerPage')}</option>
-            <option value={100}>100{t('pagination.itemsPerPage')}</option>
-          </select>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onGroupByDateChange(!groupByDate)}
-          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-            groupByDate ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
-        >
-          {groupByDate ? t('grouping.on') : t('grouping.off')}
-        </button>
-        <button
-          type="button"
-          onClick={() => { onReset(); closeModal(); }}
-          className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-        >
-          {t('pagination.reset')}
-        </button>
-      </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t('sorting.label')}</label>
+              <div className="flex gap-1">
+                <select
+                  value={sortBy}
+                  onChange={(e) => onSortByChange(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
+                  className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                >
+                  <option value="created_at">{t('sorting.registrationDate')}</option>
+                  <option value="tour_date">{t('sorting.tourDate')}</option>
+                  <option value="customer_name">{t('sorting.customerName')}</option>
+                  <option value="product_name">{t('sorting.productName')}</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
+                  className="px-2 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 text-sm"
+                >
+                  {sortOrder === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t('pagination.itemsPerPage')}</label>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+              >
+                <option value={10}>10{t('pagination.itemsPerPage')}</option>
+                <option value={20}>20{t('pagination.itemsPerPage')}</option>
+                <option value={50}>50{t('pagination.itemsPerPage')}</option>
+                <option value={100}>100{t('pagination.itemsPerPage')}</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onGroupByDateChange(!groupByDate)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                groupByDate ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {groupByDate ? t('grouping.on') : t('grouping.off')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { onReset(); closeModal(); }}
+              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              {t('pagination.reset')}
+            </button>
+          </div>
+        </>
+      )}
     </>
   )
 

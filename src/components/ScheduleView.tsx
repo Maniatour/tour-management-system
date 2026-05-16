@@ -43,7 +43,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
-import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
+import { autoCreateOrUpdateTour, createAdditionalActiveTourForReservations } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { generateTourId } from '@/lib/entityIds'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
@@ -2349,32 +2349,47 @@ export default function ScheduleView() {
     setProductCellCreateTourLoading(true)
     try {
       const exists = await checkScheduleTourExistsForProductDate(productId, dateString)
-      if (exists) {
-        showMessage(
-          locale === 'ko' ? '안내' : 'Notice',
-          locale === 'ko'
-            ? '해당 날짜에 이미 투어가 있습니다.'
-            : 'A tour already exists for this product and date.',
-          'error'
-        )
-        await fetchData()
-        return
-      }
 
-      for (const r of eligible) {
-        const isPriv = r.is_private_tour === true || String(r.is_private_tour ?? '').toUpperCase() === 'TRUE'
-        const result = await autoCreateOrUpdateTour(productId, dateString, String(r.id), isPriv)
-        if (!result.success) {
-          showMessage(
-            locale === 'ko' ? '오류' : 'Error',
-            result.message || (locale === 'ko' ? '투어 생성에 실패했습니다.' : 'Failed to create tour.'),
-            'error'
-          )
-          await fetchData()
-          return
+      if (!exists) {
+        for (const r of eligible) {
+          const isPriv = r.is_private_tour === true || String(r.is_private_tour ?? '').toUpperCase() === 'TRUE'
+          const result = await autoCreateOrUpdateTour(productId, dateString, String(r.id), isPriv)
+          if (!result.success) {
+            showMessage(
+              locale === 'ko' ? '오류' : 'Error',
+              result.message || (locale === 'ko' ? '투어 생성에 실패했습니다.' : 'Failed to create tour.'),
+              'error'
+            )
+            await fetchData()
+            return
+          }
+          if (result.message?.includes('자동 투어 생성 대상이 아닙니다')) {
+            showMessage(locale === 'ko' ? '안내' : 'Notice', result.message, 'error')
+            return
+          }
         }
+      } else {
+        const entries = eligible.map((r) => ({
+          id: String(r.id),
+          isPrivateTour: r.is_private_tour === true || String(r.is_private_tour ?? '').toUpperCase() === 'TRUE',
+        }))
+        const result = await createAdditionalActiveTourForReservations(productId, dateString, entries)
         if (result.message?.includes('자동 투어 생성 대상이 아닙니다')) {
           showMessage(locale === 'ko' ? '안내' : 'Notice', result.message, 'error')
+          return
+        }
+        if (!result.success) {
+          let msg = result.message || (locale === 'ko' ? '투어 생성에 실패했습니다.' : 'Failed to create tour.')
+          if (
+            locale !== 'ko' &&
+            typeof result.message === 'string' &&
+            result.message.includes('모두 배정')
+          ) {
+            msg =
+              'All confirmed or recruiting reservations are already assigned to a tour on this date. Unlink a reservation from its tour if you need to place it on a new tour.'
+          }
+          showMessage(locale === 'ko' ? '안내' : 'Notice', msg, 'error')
+          await fetchData()
           return
         }
       }

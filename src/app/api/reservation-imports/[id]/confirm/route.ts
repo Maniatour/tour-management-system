@@ -309,6 +309,27 @@ export async function POST(
         ? Math.round(Number(manualChSettle) * 100) / 100
         : Math.round(channelSettlementComputed * 100) / 100
 
+    /** 가격 정보 모달·폼과 동일: 소계 후 할인·추가비·환불 반영 (클라이언트 totalPrice 미갱신 대비) */
+    const round2 = (n: number) => Math.round(n * 100) / 100
+    const reqOpt = Number(pricingInfo.requiredOptionTotal) || 0
+    const optTot = Number(pricingInfo.optionTotal) || 0
+    const subtotalStored = round2(productPriceTotalRow + reqOpt + optTot)
+    const couponDisc = Number(pricingInfo.couponDiscount) || 0
+    const addDisc = Number(pricingInfo.additionalDiscount) || 0
+    const totalDiscount = Math.abs(couponDisc) + addDisc
+    const totalAdditional =
+      (Number(pricingInfo.additionalCost) || 0) +
+      (Number(pricingInfo.cardFee) || 0) +
+      (Number(pricingInfo.tax) || 0) +
+      (Number(pricingInfo.prepaymentCost) || 0) +
+      (Number(pricingInfo.prepaymentTip) || 0) +
+      (Number(pricingInfo.privateTourAdditionalCost) || 0)
+    const refundAmt = Math.max(0, Number(pricingInfo.refundAmount) || 0)
+    const totalPriceStored = Math.max(
+      0,
+      round2(subtotalStored - totalDiscount + totalAdditional - refundAmt)
+    )
+
     const pricingId = crypto.randomUUID()
     const pricingData = {
       id: pricingId,
@@ -319,13 +340,13 @@ export async function POST(
       product_price_total: productPriceTotalRow,
       not_included_price: Number(pricingInfo.not_included_price) || 0,
       required_options: pricingInfo.requiredOptions ?? {},
-      required_option_total: Number(pricingInfo.requiredOptionTotal) || 0,
+      required_option_total: reqOpt,
       choices: pricingInfo.choices ?? {},
       choices_total: Number(pricingInfo.choicesTotal) || 0,
-      subtotal: (Number(pricingInfo.subtotal) || 0) + notIncludedTotal,
+      subtotal: subtotalStored,
       coupon_code: pricingInfo.couponCode ?? null,
-      coupon_discount: Number(pricingInfo.couponDiscount) || 0,
-      additional_discount: Number(pricingInfo.additionalDiscount) || 0,
+      coupon_discount: couponDisc,
+      additional_discount: addDisc,
       additional_cost: Number(pricingInfo.additionalCost) || 0,
       refund_reason: String(pricingInfo.refundReason ?? '').trim() || null,
       refund_amount: Number(pricingInfo.refundAmount) || 0,
@@ -334,8 +355,8 @@ export async function POST(
       prepayment_cost: Number(pricingInfo.prepaymentCost) || 0,
       prepayment_tip: Number(pricingInfo.prepaymentTip) || 0,
       selected_options: pricingInfo.selectedOptionalOptions ?? {},
-      option_total: Number(pricingInfo.optionTotal) || 0,
-      total_price: (Number(pricingInfo.totalPrice) || 0) + notIncludedTotal,
+      option_total: optTot,
+      total_price: totalPriceStored,
       deposit_amount: depAmt,
       balance_amount: Number(pricingInfo.balanceAmount) || 0,
       private_tour_additional_cost: Number(pricingInfo.privateTourAdditionalCost) || 0,

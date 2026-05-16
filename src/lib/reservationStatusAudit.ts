@@ -96,6 +96,39 @@ export function pickReservationStatusTransitionForSimpleCardDay(
   return best ? { from: best.from, to: best.to } : null
 }
 
+export type SimpleCardStatusChangeAuditRequest = {
+  rangeStart: string
+  rangeEnd: string
+  targets: { key: string; reservationId: string; dateKey: string }[]
+  uniqueIds: string[]
+}
+
+/**
+ * 등록·취소 차트 등에서 이미 불러온 감사 행으로 심플 카드 「상태 변경」전환 맵을 만든다.
+ * `req`의 주간 ISO 구간으로만 잘라 쓴다.
+ */
+export function buildSimpleCardStatusTransitionMapFromCachedAuditRows(
+  req: SimpleCardStatusChangeAuditRequest,
+  rowsByReservationId: Record<string, ReservationStatusAuditRow[]>
+): Record<string, { from: string; to: string }> {
+  const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+  for (const id of req.uniqueIds) {
+    const rows = rowsByReservationId[id]
+    if (!rows?.length) continue
+    const filtered = rows.filter((r) => {
+      const t = r.created_at
+      return t >= req.rangeStart && t <= req.rangeEnd
+    })
+    if (filtered.length) byRecord.set(id, filtered)
+  }
+  const next: Record<string, { from: string; to: string }> = {}
+  for (const t of req.targets) {
+    const tr = pickReservationStatusTransitionForSimpleCardDay(byRecord.get(t.reservationId) ?? [], t.dateKey)
+    if (tr) next[t.key] = tr
+  }
+  return next
+}
+
 /** 로컬 달력일 기준, status 필드가 바뀐 감사 행마다 from→to (from≠to), 시간순 */
 export function listAllReservationStatusTransitionsOnLocalDay(
   rows: ReservationStatusAuditRow[],

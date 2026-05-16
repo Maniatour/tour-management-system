@@ -24,7 +24,7 @@ function isPlainMessageObject(v: unknown): v is Record<string, unknown> {
 
 /**
  * DB 번역 병합 후에도 locale JSON에만 있는 키를 유지합니다.
- * DB에 오래된 namespace 스냅샷만 있거나 중간 노드가 문자열로 덮여 MISSING_MESSAGE가 나는 경우를 막습니다.
+ * DB에 오래된 namespace 스냅샷만 있거나, 중간 노드가 문자열로 덮여(예: listView 단일 문구) nested 키가 MISSING_MESSAGE가 되는 경우를 막습니다.
  */
 function restoreMissingMessageKeysFromFile(fileBranch: unknown, dbBranch: unknown): unknown {
   if (!isPlainMessageObject(fileBranch)) return dbBranch
@@ -37,6 +37,9 @@ function restoreMissingMessageKeysFromFile(fileBranch: unknown, dbBranch: unknow
       out[key] = isPlainMessageObject(f) ? structuredClone(f) : f
     } else if (isPlainMessageObject(f) && isPlainMessageObject(d)) {
       out[key] = restoreMissingMessageKeysFromFile(f, d)
+    } else if (isPlainMessageObject(f) && !isPlainMessageObject(d)) {
+      // DB가 같은 경로에 문자열 등으로 덮어 nested 키가 사라지는 경우(예: reservations.listView)
+      out[key] = structuredClone(f)
     }
   }
   return out

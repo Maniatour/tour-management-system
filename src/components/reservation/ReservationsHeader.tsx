@@ -2,17 +2,19 @@
 
 import React from "react"
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Trash2, ListChecks } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, List, LayoutTemplate, Trash2, ListChecks, LayoutList } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
 
 interface ReservationsHeaderProps {
   customerIdFromUrl: string | null
   customers: Customer[]
-  viewMode: 'card' | 'calendar'
-  onViewModeChange: (mode: 'card' | 'calendar') => void
+  viewMode: 'card' | 'calendar' | 'list'
+  onViewModeChange: (mode: 'card' | 'calendar' | 'list') => void
   searchTerm: string
   onSearchChange: (term: string) => void
+  /** 검색어 적용 + 목록 뷰 전환(예약 관리) */
+  onSearchSubmit?: () => void
   onAddReservation: () => void
   onActionRequired?: () => void
   actionRequiredCount?: number
@@ -35,6 +37,7 @@ function ReservationsHeader({
   onViewModeChange,
   searchTerm,
   onSearchChange,
+  onSearchSubmit,
   onAddReservation,
   onActionRequired,
   actionRequiredCount = 0,
@@ -159,6 +162,16 @@ function ReservationsHeader({
               <CalendarDays className="h-3 w-3" />
               <span className="hidden sm:inline">{t('viewCalendar')}</span>
             </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange('list')}
+              className={`flex items-center space-x-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <LayoutList className="h-3 w-3" />
+              <span className="hidden sm:inline">{t('viewList')}</span>
+            </button>
             {viewMode === 'card' && typeof onCardLayoutChange === 'function' && (
               <div className="ml-1 flex items-center space-x-1 border-l border-gray-200 pl-2">
                 <button
@@ -193,18 +206,37 @@ function ReservationsHeader({
         </div>
 
         {/* 데스크톱: 검색 · 예약 처리 필요 · Follow-up · 필터 · 삭제 · 새 예약 */}
-        <div className="hidden max-w-2xl flex-1 items-center justify-end gap-2 md:flex">
-          <div className="relative min-w-[12rem] max-w-md flex-1">
-            <Search className="pointer-events-none absolute left-2 top-1/2 size-[14px] -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder={t('searchPlaceholder')}
-              value={searchTerm}
-              onChange={(e) => {
-                onSearchChange(e.target.value)
-              }}
-              className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:border-transparent focus:ring-1 focus:ring-blue-500 sm:text-sm"
-            />
+        <div className="hidden max-w-6xl flex-1 items-center justify-end gap-2 md:flex">
+          <div className="relative flex min-w-[24rem] max-w-4xl flex-1 items-center gap-1.5">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2 top-1/2 size-[14px] -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder={t('searchPlaceholder')}
+                value={searchTerm}
+                onChange={(e) => {
+                  onSearchChange(e.target.value)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && typeof onSearchSubmit === 'function') {
+                    e.preventDefault()
+                    onSearchSubmit()
+                  }
+                }}
+                className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:border-transparent focus:ring-1 focus:ring-blue-500 sm:text-sm"
+              />
+            </div>
+            {typeof onSearchSubmit === 'function' && (
+              <button
+                type="button"
+                onClick={onSearchSubmit}
+                title={t('search')}
+                aria-label={t('search')}
+                className="flex size-9 shrink-0 items-center justify-center rounded-md bg-slate-700 text-white hover:bg-slate-800"
+              >
+                <Search className="size-[18px]" aria-hidden />
+              </button>
+            )}
           </div>
           {renderActionRequired()}
           {renderFollowUp()}

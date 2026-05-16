@@ -4329,10 +4329,6 @@ export default function ReservationForm({
     return grossTotal
   }, [calculateSubtotal, formData.couponDiscount, formData.additionalDiscount, formData.refundAmount, formData.additionalCost, formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip, formData.isPrivateTour, formData.privateTourAdditionalCost, reservationOptionsTotalPrice])
 
-  const calculateBalance = useCallback(() => {
-    return Math.max(0, formData.totalPrice - formData.depositAmount)
-  }, [formData.totalPrice, formData.depositAmount])
-
   /** Follow-up 파이프라인·이메일 미리보기용: 폼에 수정 중인 값 반영 */
   const followUpPipelineReservationMerged = useMemo((): Reservation | null => {
     if (!reservation || !effectiveReservationId) return null
@@ -4925,22 +4921,31 @@ export default function ReservationForm({
     }
   }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
 
-  // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
+  // 예약 옵션·쿠폰·할인 등으로 총액이 바뀔 때 Grand Total 동기화 (DB 예약 편집만 제외)
   useEffect(() => {
-    // 편집 모드에서는 자동으로 가격을 업데이트하지 않음
-    if (reservation?.id) {
+    const rid = reservation?.id
+    // 예약 가져오기는 id가 import-… 이므로 쿠폰 자동 적용 후에도 총액·잔액을 맞춰야 함
+    if (rid && !String(rid).startsWith('import-')) {
       return
     }
-    
-    const newTotalPrice = calculateTotalPrice()
-    const newBalance = calculateBalance()
 
-    setFormData(prev => ({
-      ...prev,
-      totalPrice: newTotalPrice,
-      balanceAmount: prev.onSiteBalanceAmount !== 0 ? prev.onSiteBalanceAmount : newBalance
-    }))
-  }, [reservationOptionsTotalPrice, reservation?.id])
+    const newTotalPrice = calculateTotalPrice()
+    setFormData((prev) => {
+      const newBalance = Math.max(0, newTotalPrice - (Number(prev.depositAmount) || 0))
+      if (
+        Math.abs((prev.totalPrice || 0) - newTotalPrice) < 0.005 &&
+        (prev.onSiteBalanceAmount !== 0 ||
+          Math.abs((prev.balanceAmount || 0) - newBalance) < 0.005)
+      ) {
+        return prev
+      }
+      return {
+        ...prev,
+        totalPrice: newTotalPrice,
+        balanceAmount: prev.onSiteBalanceAmount !== 0 ? prev.onSiteBalanceAmount : newBalance,
+      }
+    })
+  }, [reservation?.id, calculateTotalPrice, reservationOptionsTotalPrice])
 
   /** 예약 가져오기: 동적가격·초이스·productPriceTotal 동기화·PricingSection 정산 반영 후 마지막에 이메일 금액 기준 쿠폰 매칭 */
   useEffect(() => {

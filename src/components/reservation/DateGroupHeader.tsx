@@ -3,7 +3,6 @@
 import React from 'react'
 import { Calendar, UserMinus, UserPlus, Users } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
-import Image from 'next/image'
 import {
   getProductName,
   getChannelName,
@@ -484,13 +483,10 @@ function DateGroupHeaderInner({
                       >
                         <div className="flex items-center space-x-2 min-w-0 sm:max-w-[48%]">
                           {channel?.favicon_url ? (
-                            <Image
+                            <img
                               src={channel.favicon_url}
                               alt={`${channelName} favicon`}
-                              width={16}
-                              height={16}
-                              className="rounded flex-shrink-0"
-                              style={{ width: 'auto', height: 'auto' }}
+                              className="h-4 w-4 shrink-0 rounded object-cover"
                               onError={(e) => {
                                 const target = e.target as HTMLImageElement
                                 target.style.display = 'none'
@@ -536,13 +532,10 @@ function DateGroupHeaderInner({
                         >
                           <div className="flex items-center space-x-2 flex-1 mr-2 min-w-0">
                             {channel?.favicon_url ? (
-                              <Image
+                              <img
                                 src={channel.favicon_url}
                                 alt={`${channelName} favicon`}
-                                width={16}
-                                height={16}
-                                className="rounded flex-shrink-0"
-                                style={{ width: 'auto', height: 'auto' }}
+                                className="h-4 w-4 shrink-0 rounded object-cover"
                                 onError={(e) => {
                                   const target = e.target as HTMLImageElement
                                   target.style.display = 'none'

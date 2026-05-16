@@ -7,6 +7,7 @@ import {
   extractChannelRnForCancellationLookup,
   isKlookBookingConfirmedReservationEmail,
   isKlookOrderEmailSubjectForReservation,
+  isZoomZoomTourNewBookingEmailSubject,
 } from '@/lib/emailReservationParser'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
@@ -468,6 +469,13 @@ export async function GET(request: NextRequest) {
           }
         }
       }
+      const looksZoomZoom = isZoomZoomTourNewBookingEmailSubject(r.subject)
+      if (looksZoomZoom) {
+        const ext = extracted_data ?? ({} as ExtractedReservationData)
+        if (ext.is_booking_confirmed !== true) {
+          extracted_data = { ...ext, is_booking_confirmed: true }
+        }
+      }
       const { raw_body_text: _rawOmit, raw_body_html: _htmlOmit, ...rest } = r
       void _rawOmit
       void _htmlOmit
@@ -484,7 +492,8 @@ export async function GET(request: NextRequest) {
         ...rest,
         platform_key:
           rest.platform_key ??
-          (isKlookOrderEmailSubjectForReservation(r.subject) ? 'klook' : rest.platform_key),
+          (isKlookOrderEmailSubjectForReservation(r.subject) ? 'klook' : null) ??
+          (looksZoomZoom ? 'zoomzoom' : null),
         extracted_data: extracted_data ?? r.extracted_data,
         reservation_exists_by_channel_rn: existsByChannelRn,
         reservation_exists_by_customer_match: existsByCustomerMatch,

@@ -27,6 +27,7 @@ import {
   getStatusColor,
 } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import {
   CANCEL_DEPOSIT_REFUND_NOTE_MANUAL,
   insertCancelDepositRefundPaymentRecord,
@@ -80,6 +81,8 @@ type PricingApplyMode =
   | 'channelSettlement'
   | 'all'
   | 'mismatchFormulaBundle'
+  /** 취소 탭: 채널 결제·수수료·정산을 DB에 0으로 고정 */
+  | 'channelFinancialZeros'
 
 /** 일괄 반영·행 단위 반영 공통 — reservation_pricing 업데이트 필드만 생성 */
 function buildReservationPricingPatch(
@@ -101,6 +104,14 @@ function buildReservationPricingPatch(
       }>
     | undefined
 ): Record<string, number> | null {
+  if (mode === 'channelFinancialZeros') {
+    return {
+      commission_base_price: 0,
+      commission_percent: 0,
+      commission_amount: 0,
+      channel_settlement_amount: 0,
+    }
+  }
   if (mode === 'mismatchFormulaBundle') {
     return buildReservationPricingMismatchFormulaPatch(
       r,
@@ -645,6 +656,7 @@ export type BalanceRowProps = Omit<BalanceProps, 'reservations'> & {
       | 'channelPayment'
       | 'channelSettlement'
       | 'mismatchFormulaBundle'
+      | 'channelFinancialZeros'
   ) => Promise<void>
   applyRowBusyKey?: string | null
   /** 윗줄 DB값 더블클릭 인라인 저장 → reservation_pricing.update */
@@ -1385,6 +1397,17 @@ function BalanceRow(props: BalanceRowProps) {
             }))}
           />
         </div>
+        {showPartnerCancelRefundAction && isCancelledRsv && onApplyRowPatch && p ? (
+          <button
+            type="button"
+            disabled={selectionDisabled || applyRowBusyKey === `${reservation.id}:channelFinancialZeros`}
+            title={t('actionRequired.balanceTable.rowApplyChannelFinancialZerosTitle')}
+            onClick={() => void onApplyRowPatch(reservation.id, 'channelFinancialZeros')}
+            className="mt-1 inline-flex w-full items-center justify-center px-1 py-0.5 rounded border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100 text-[9px] font-semibold leading-tight disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {t('actionRequired.balanceTable.rowApplyChannelFinancialZerosLabel')}
+          </button>
+        ) : null}
       </td>
       <td
         className="px-0.5 py-1 text-right tabular-nums border-r border-gray-100 bg-emerald-50/20"
@@ -1590,7 +1613,13 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
     })
   }, [])
 
-  type ApplyMode = 'total' | 'deposit' | 'balance' | 'all' | 'mismatchFormulaBundle'
+  type ApplyMode =
+    | 'total'
+    | 'deposit'
+    | 'balance'
+    | 'all'
+    | 'mismatchFormulaBundle'
+    | 'channelFinancialZeros'
 
   const applySingleRow = useCallback(
     async (
@@ -1602,6 +1631,7 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
         | 'channelPayment'
         | 'channelSettlement'
         | 'mismatchFormulaBundle'
+        | 'channelFinancialZeros'
     ) => {
       if (!onRefreshReservations && !onRefreshReservationPricing) return
       const r = reservationLookup.get(reservationId)
@@ -1627,6 +1657,12 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
         if (error) {
           console.error('apply row patch', mode, reservationId, error)
           return
+        }
+        if (mode === 'channelFinancialZeros') {
+          const sync = await syncReservationPricingAggregates(supabase, reservationId)
+          if (!sync.ok && sync.error) {
+            console.warn('[action-required] sync after channel zeros', reservationId, sync.error)
+          }
         }
         if (onRefreshReservationPricing) {
           await onRefreshReservationPricing([reservationId])
@@ -1691,7 +1727,13 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
             paymentRecordsByReservationId?.get(id) ??
             []
           const patchMode: PricingApplyMode =
-            mode === 'all' ? 'all' : mode === 'mismatchFormulaBundle' ? 'mismatchFormulaBundle' : mode
+            mode === 'all'
+              ? 'all'
+              : mode === 'mismatchFormulaBundle'
+                ? 'mismatchFormulaBundle'
+                : mode === 'channelFinancialZeros'
+                  ? 'channelFinancialZeros'
+                  : mode
           const patch = buildReservationPricingPatch(
             r,
             p,
@@ -1706,6 +1748,12 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
           if (error) {
             console.error('apply pricing patch', mode, r.id, error)
             continue
+          }
+          if (mode === 'channelFinancialZeros') {
+            const sync = await syncReservationPricingAggregates(supabase, r.id)
+            if (!sync.ok && sync.error) {
+              console.warn('[action-required] sync after channel zeros', r.id, sync.error)
+            }
           }
           appliedOk.push(r.id)
         }
@@ -1805,6 +1853,20 @@ export function ReservationActionRequiredBalanceTable(props: BalanceProps) {
                         {applySyncing
                           ? t('actionRequired.balanceTable.applySelectedRunning')
                           : t('actionRequired.balanceTable.applyMismatchFormulaBundle')}
+                        {!applySyncing && selectedIds.size > 0 ? ` (${selectedIds.size})` : null}
+                      </button>
+                    ) : null}
+                    {showPartnerCancelRefundAction ? (
+                      <button
+                        type="button"
+                        title={t('actionRequired.balanceTable.applyChannelFinancialZerosTitle')}
+                        disabled={applySyncing || selectedIds.size === 0}
+                        onClick={() => runApplySelected('channelFinancialZeros')}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-rose-400 bg-rose-50 text-rose-950 hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {applySyncing
+                          ? t('actionRequired.balanceTable.applySelectedRunning')
+                          : t('actionRequired.balanceTable.applyChannelFinancialZeros')}
                         {!applySyncing && selectedIds.size > 0 ? ` (${selectedIds.size})` : null}
                       </button>
                     ) : null}

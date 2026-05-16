@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
@@ -118,6 +118,34 @@ function useEnvelopeEnglish(lang: string | null | undefined): boolean {
   return !isCustomerKorean(lang)
 }
 
+/** Balance 상세(내역 + 합계 줄)이 많을 때 봉투 고정 높이 안에 들어가도록 글자·축소 조절 */
+function getBalanceBlockCompaction(balanceLineCount: number): {
+  fontSize: string
+  lineHeight: number
+  scale: number
+  breakdownFontEm: number
+} {
+  const n = Math.max(0, Math.floor(balanceLineCount))
+  // 내역 N줄 + 합계 1줄 (N>=1일 때 최소 2줄)
+  const detailLines = n > 0 ? n + 1 : 0
+  if (detailLines <= 0) {
+    return { fontSize: '18px', lineHeight: 1.45, scale: 1, breakdownFontEm: 0.78 }
+  }
+  if (detailLines <= 4) {
+    return { fontSize: '17px', lineHeight: 1.4, scale: 0.94, breakdownFontEm: 0.75 }
+  }
+  if (detailLines <= 7) {
+    return { fontSize: '16px', lineHeight: 1.36, scale: 0.9, breakdownFontEm: 0.72 }
+  }
+  if (detailLines <= 10) {
+    return { fontSize: '15px', lineHeight: 1.32, scale: 0.86, breakdownFontEm: 0.7 }
+  }
+  if (detailLines <= 15) {
+    return { fontSize: '14px', lineHeight: 1.28, scale: 0.82, breakdownFontEm: 0.68 }
+  }
+  return { fontSize: '12px', lineHeight: 1.22, scale: 0.76, breakdownFontEm: 0.64 }
+}
+
 // ---------------------------------------------------------------------------
 // 인쇄용 스타일 (Balance 블록 = 봉투 왼쪽 상단 빨간 박스 영역에 고정)
 // ---------------------------------------------------------------------------
@@ -146,13 +174,13 @@ function getPrintStyles(): string {
     .bg-white { background-color: #fff !important; }
     .overflow-visible { overflow: visible !important; }
     .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; }
-    .envelope-sheet { width: ${ENVELOPE_WIDTH_MM}mm !important; height: ${ENVELOPE_HEIGHT_MM}mm !important; margin: 0 !important; padding: 0 !important; page-break-after: always !important; page-break-inside: avoid !important; }
+    .envelope-sheet { width: ${ENVELOPE_WIDTH_MM}mm !important; height: ${ENVELOPE_HEIGHT_MM}mm !important; margin: 0 !important; padding: 0 !important; page-break-after: always !important; page-break-inside: avoid !important; overflow: visible !important; }
     .envelope-sheet:last-child { page-break-after: auto !important; }
     @page { size: ${ENVELOPE_WIDTH_MM}mm ${ENVELOPE_HEIGHT_MM}mm; margin: 0 !important; }
     @media print {
-      html, body { width: ${ENVELOPE_WIDTH_MM}mm !important; margin: 0 !important; padding: 0 !important; }
+      html, body { width: ${ENVELOPE_WIDTH_MM}mm !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
       body, body *, .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
-      .envelope-balance-block { left: ${BALANCE_BLOCK_LEFT_MM}mm !important; top: ${BALANCE_BLOCK_TOP_MM}mm !important; width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; min-width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; transform: rotate(90deg) !important; transform-origin: left top !important; }
+      .envelope-balance-block { left: ${BALANCE_BLOCK_LEFT_MM}mm !important; top: ${BALANCE_BLOCK_TOP_MM}mm !important; width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; min-width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; transform: rotate(90deg) scale(var(--env-balance-scale, 1)) !important; transform-origin: left top !important; }
     }
   `
 }
@@ -432,20 +460,31 @@ export default function TourEnvelopeModal({
 
   if (!isOpen) return null
 
-  const balanceBlockStyle = {
+  const balanceBlockBase = {
     pointerEvents: 'none' as const,
     left: `${BALANCE_BLOCK_LEFT_MM}mm`,
     top: `${BALANCE_BLOCK_TOP_MM}mm`,
     width: `${BALANCE_BLOCK_WIDTH_MM}mm`,
     minWidth: `${BALANCE_BLOCK_WIDTH_MM}mm`,
-    transform: 'rotate(90deg)',
-    transformOrigin: 'left top',
+    transformOrigin: 'left top' as const,
     fontFamily: 'Arial, Helvetica, sans-serif',
-    fontSize: '18px',
-    lineHeight: 1.45,
     color: '#111827',
     paddingLeft: '4mm',
     paddingRight: '4mm',
+  }
+
+  const buildBalanceBlockLayout = (balanceLineCount: number): { blockStyle: CSSProperties; breakdownFontEm: number } => {
+    const c = getBalanceBlockCompaction(balanceLineCount)
+    return {
+      blockStyle: {
+        ...balanceBlockBase,
+        ['--env-balance-scale' as string]: String(c.scale),
+        fontSize: c.fontSize,
+        lineHeight: c.lineHeight,
+        transform: `rotate(90deg) scale(${c.scale})`,
+      },
+      breakdownFontEm: c.breakdownFontEm,
+    }
   }
 
   return (
@@ -517,7 +556,10 @@ export default function TourEnvelopeModal({
                 <span className="text-sm font-medium text-gray-600">{L.preview}</span>
                 <div className={variant === 'balance' ? 'flex justify-center overflow-x-auto overflow-visible' : ''}>
                   <div id="envelope-batch-print" className="space-y-0">
-                  {rows.filter((row) => selectedReservationIds.has(row.reservationId)).map((row, idx) => (
+                  {rows.filter((row) => selectedReservationIds.has(row.reservationId)).map((row, idx) => {
+                    const balanceLayout =
+                      variant === 'balance' ? buildBalanceBlockLayout(row.balanceLines.length) : null
+                    return (
                     <div
                       key={`${row.reservationId}-${idx}`}
                       className="envelope-sheet bg-white overflow-visible relative"
@@ -536,8 +578,11 @@ export default function TourEnvelopeModal({
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                         />
                       )}
-                      {variant === 'balance' ? (
-                        <div className="envelope-balance-block absolute z-10 flex flex-col flex-shrink-0" style={balanceBlockStyle}>
+                      {variant === 'balance' && balanceLayout ? (
+                        <div
+                          className="envelope-balance-block absolute z-10 flex flex-col flex-shrink-0"
+                          style={balanceLayout.blockStyle}
+                        >
                           <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>
                             <span style={{ flexShrink: 0, fontWeight: 600 }}>NAME :</span>
                             <span className="break-words">{row.customerName || '—'}</span>
@@ -560,7 +605,7 @@ export default function TourEnvelopeModal({
                             {row.balanceLines.length > 0 && (
                               <div
                                 style={{
-                                  fontSize: '0.78em',
+                                  fontSize: `${balanceLayout.breakdownFontEm}em`,
                                   lineHeight: 1.2,
                                   fontWeight: 400,
                                   color: '#374151',
@@ -585,7 +630,7 @@ export default function TourEnvelopeModal({
                             )}
                           </div>
                         </div>
-                      ) : (
+                      ) : variant === 'tip' ? (
                         <>
                           <div
                             className="absolute z-10 flex items-center justify-center flex-shrink-0"
@@ -631,9 +676,10 @@ export default function TourEnvelopeModal({
                             </div>
                           </div>
                         </>
-                      )}
+                      ) : null}
                     </div>
-                  ))}
+                    )
+                  })}
                   </div>
                 </div>
               </div>

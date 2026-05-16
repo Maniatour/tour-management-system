@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
-import Image from 'next/image'
 import {
   Bar,
   CartesianGrid,
@@ -209,6 +208,8 @@ export default function WeeklyStatsPanel({
       }
     })
   }, [weeklyRegCancelByDay, locale, regCancelGranularity])
+
+  const regCancelChartHeightPx = regCancelGranularity === 'month' ? 300 : 240
 
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg">
@@ -538,10 +539,8 @@ export default function WeeklyStatsPanel({
                   </button>
                 </div>
               ) : null}
-              <div
-                className={`w-full min-h-[210px] ${regCancelGranularity === 'month' ? 'h-[300px]' : 'h-[240px]'}`}
-              >
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="w-full min-w-0" style={{ height: regCancelChartHeightPx }}>
+                <ResponsiveContainer width="100%" height={regCancelChartHeightPx} minWidth={0}>
                   <ComposedChart
                     data={regCancelChartData}
                     margin={{
@@ -886,13 +885,10 @@ export default function WeeklyStatsPanel({
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-1">
                       {channelInfo.favicon_url ? (
-                        <Image
+                        <img
                           src={channelInfo.favicon_url}
                           alt=""
-                          width={12}
-                          height={12}
-                          className="h-3 w-3 shrink-0 rounded"
-                          style={{ width: 'auto', height: 'auto' }}
+                          className="h-3 w-3 shrink-0 rounded object-cover"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement
                             target.style.display = 'none'

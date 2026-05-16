@@ -98,6 +98,8 @@ import {
 } from '@/lib/browserLocalWeek'
 import {
   type ReservationStatusAuditRow,
+  type SimpleCardStatusChangeAuditRequest,
+  buildSimpleCardStatusTransitionMapFromCachedAuditRows,
   localYmdSetWhereBecameCancelledFromAuditRows,
   pickReservationStatusTransitionForSimpleCardDay,
   isIntoCancelledLikeTransition,
@@ -105,6 +107,7 @@ import {
   reservationAuditRowHasStatusFieldChange,
   reservationStatusEventRowToAuditRow,
 } from '@/lib/reservationStatusAudit'
+import { fetchReservationStatusEventsChunked } from '@/lib/reservationStatusEventsFetch'
 import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import {
@@ -121,7 +124,7 @@ import {
 
 const RESERVATIONS_LIST_UI_DEFAULT = {
   searchTerm: '',
-  viewMode: 'card' as 'card' | 'calendar',
+  viewMode: 'card' as 'card' | 'calendar' | 'list',
   cardLayout: 'simple' as 'standard' | 'simple',
   selectedStatus: 'all',
   currentPage: 1,
@@ -236,12 +239,7 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
 function buildSimpleCardStatusChangeAuditRequestFromFiltered(
   filteredReservations: Reservation[],
   cardsWeekPage: number
-): {
-  rangeStart: string
-  rangeEnd: string
-  targets: { key: string; reservationId: string; dateKey: string }[]
-  uniqueIds: string[]
-} {
+): SimpleCardStatusChangeAuditRequest {
   const { startYmd, endYmd, rangeStartIso, rangeEndIso } = browserLocalWeekRangeFromOffset(cardsWeekPage)
   const targets: { key: string; reservationId: string; dateKey: string }[] = []
   for (const r of filteredReservations) {
@@ -267,8 +265,10 @@ function computeSimpleCardStatusAuditPlan(
 ): null | { contentKey: string; needsNetworkFetch: boolean } {
   if (!groupByDate || cardLayout !== 'simple') return null
   const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+  const { startYmd, endYmd } = browserLocalWeekRangeFromOffset(cardsWeekPage)
   const keys = req.targets.map((t) => t.key).sort().join(',')
-  const contentKey = `${req.rangeStart}\u0001${req.rangeEnd}\u0001${keys}`
+  /** ISO 대신 달력 주간 키 — 목록 폴링 시각이 바뀌어도 동일 주·동일 대상이면 키가 안정적 */
+  const contentKey = `${startYmd}\u0001${endYmd}\u0001${keys}`
   const needsNetworkFetch = req.targets.length > 0 && req.uniqueIds.length > 0
   return { contentKey, needsNetworkFetch }
 }
@@ -690,7 +690,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     [setReservationListUi]
   )
   const setViewMode = useCallback(
-    (m: 'card' | 'calendar') => setReservationListUi((u) => ({ ...u, viewMode: m })),
+    (m: 'card' | 'calendar' | 'list') => setReservationListUi((u) => ({ ...u, viewMode: m })),
     [setReservationListUi]
   )
   const setCardLayout = useCallback(
@@ -809,15 +809,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   )
 
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
-  
-  // 검색 debounce — 짧으면 Supabase·Auth 요청이 겹쳐 Failed to fetch가 나기 쉬움
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm)
-    }, 550)
-
-    return () => clearTimeout(timer)
-  }, [searchTerm])
+  /** 라우트·스토리지 복원 직후 한 번만: 저장된 검색어 → 실제 목록 쿼리에 반영 (이후에는 검색 버튼으로만 적용) */
+  const reservationSearchHydratedRef = useRef(false)
+  useLayoutEffect(() => {
+    if (!reservationListUiHydrated) {
+      reservationSearchHydratedRef.current = false
+      return
+    }
+    if (reservationSearchHydratedRef.current) return
+    reservationSearchHydratedRef.current = true
+    setDebouncedSearchTerm(searchTerm)
+  }, [reservationListUiHydrated, searchTerm])
   const [showAddForm, setShowAddForm] = useState(false)
   
   // URL ????? add=true?????? ??? ???
@@ -849,12 +851,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [simpleCardStatusTransitionMap, setSimpleCardStatusTransitionMap] = useState<
     Record<string, { from: string; to: string }>
   >({})
-  const [simpleCardStatusTransitionLoading, setSimpleCardStatusTransitionLoading] = useState(false)
+  /** 집계 결과가 화면에 반영된 주간 스코프 — 점진 로드로 contentKey만 바뀔 때 «집계 중» 깜빡임 방지 */
+  const [simpleCardStatusTransitionDisplayScopeKey, setSimpleCardStatusTransitionDisplayScopeKey] = useState<
+    string | null
+  >(null)
   /**
    * 심플 카드 status 전환(`reservation_status_events`): `simpleCardAuditContentKey`(주간+대상 목록)마다 한 번만 조회.
    * 주(`cardsWeekPage`)가 바뀌면 키가 달라지므로 다시 fetch한다. 세션 전역 `done` ref는 키 변경 시 재조회를 막아 0건으로 보이는 버그가 난다.
    */
   const lastSimpleCardStatusAuditFetchedKeyRef = useRef<string | null>(null)
+  /** 동일 contentKey로 이미 디바운스·fetch가 진행 중이면 재스케줄하지 않음(맵·집계 문구 깜빡임 방지) */
+  const simpleCardStatusTransitionInFlightKeyRef = useRef<string | null>(null)
+  /** 마지막으로 맵을 비운 대상 contentKey — 키가 같으면 맵을 다시 비우지 않음 */
+  /** 맵 초기화는 «주간 스코프»당 1회 — 점진 로드로 contentKey만 바뀔 때 맵을 비우지 않음 */
+  const simpleCardStatusTransitionMapClearedForScopeRef = useRef<string | null>(null)
 
   /** 일별 등록·취소 차트: 취소 = 그날 `reservation_status_events` 기준 취소/삭제 전환일만 (DateGroupHeader 심플 카드와 동일 기준) */
   const [regCancelChartAuditRowsByRecordId, setRegCancelChartAuditRowsByRecordId] = useState<
@@ -1177,14 +1187,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // ????????? ??????? ??
   useEffect(() => {
-    if (searchTerm.trim()) {
-      // ????? ??? ??? ???????
+    if (debouncedSearchTerm.trim()) {
       setGroupByDate(false)
     } else {
-      // ????? ??? ??? ?????????
       setGroupByDate(true)
     }
-  }, [searchTerm])
+  }, [debouncedSearchTerm, setGroupByDate])
 
   // ??? ??? ??????(hookToursMap ???) ????? ??? ?? ??? ?????? ??
   useEffect(() => {
@@ -1854,6 +1862,26 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return
       }
 
+      if (viewMode === 'list') {
+        const { data, count, error } = await fetchAdminReservationList(supabase, {
+          mode: 'card-flat',
+          page: currentPage,
+          pageSize: itemsPerPage,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy: 'created_at',
+          sortOrder: 'desc',
+        })
+        if (error) throw error
+        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+        await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
+        setServerListTotal(count ?? 0)
+        return
+      }
+
       const cardArgs = {
         mode: (groupByDate ? 'card-week' : 'card-flat') as 'card-week' | 'card-flat',
         page: currentPage,
@@ -2183,6 +2211,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return { rangeStartIso, rangeEndIso }
   }, [groupByDate, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
 
+  /** 심플 카드 주(카드 주간)가 등록·취소 차트 감사 ISO 구간에 포함되면 차트 조회 결과를 재사용할 수 있다 */
+  const chartAuditRangeCoversSimpleCardWeek = useMemo(() => {
+    if (!groupByDate || cardLayout !== 'simple') return false
+    const range = regCancelChartAuditIsoRange
+    if (!range) return false
+    const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+    return req.rangeStart >= range.rangeStartIso && req.rangeEnd <= range.rangeEndIso
+  }, [groupByDate, cardLayout, filteredReservations, cardsWeekPage, regCancelChartAuditIsoRange])
+
   useEffect(() => {
     if (!groupByDate) {
       setRegCancelChartAuditRowsByRecordId({})
@@ -2203,49 +2240,37 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const debounceMs = 450
     const timer = window.setTimeout(() => {
       void (async () => {
-        const chunkSize = 80
-        const byRecord = new Map<string, ReservationStatusAuditRow[]>()
         try {
-          for (let i = 0; i < uniqueIds.length; i += chunkSize) {
-            const chunk = uniqueIds.slice(i, i + chunkSize)
-            const { data, error } = await supabase
-              .from('reservation_status_events')
-              .select('reservation_id, from_status, to_status, occurred_at')
-              .gte('occurred_at', range.rangeStartIso)
-              .lte('occurred_at', range.rangeEndIso)
-              .in('reservation_id', chunk)
-            if (cancelled) return
-            if (error) {
-              if (!isAbortLikeError(error) && !cancelled) {
-                console.error('reservation_status_events (reg-cancel chart):', error)
-              }
-              if (isAbortLikeError(error)) return
-              break
-            }
-            for (const row of data || []) {
-              const r = reservationStatusEventRowToAuditRow(
-                row as {
-                  reservation_id: string
-                  occurred_at: string
-                  from_status: string | null
-                  to_status: string | null
-                }
-              )
-              if (!reservationAuditRowHasStatusFieldChange(r)) continue
-              const id = String(r.record_id ?? '').trim()
-              if (!id) continue
-              const arr = byRecord.get(id) ?? []
-              arr.push(r)
-              byRecord.set(id, arr)
-            }
+          const { rows, error } = await fetchReservationStatusEventsChunked(supabase, {
+            reservationIds: uniqueIds,
+            rangeStartIso: range.rangeStartIso,
+            rangeEndIso: range.rangeEndIso,
+            shouldAbort: () => cancelled,
+          })
+          if (cancelled) return
+          const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+          for (const row of rows) {
+            const r = reservationStatusEventRowToAuditRow(row)
+            if (!reservationAuditRowHasStatusFieldChange(r)) continue
+            const id = String(r.record_id ?? '').trim()
+            if (!id) continue
+            const arr = byRecord.get(id) ?? []
+            arr.push(r)
+            byRecord.set(id, arr)
           }
+          if (error) {
+            if (!isAbortLikeError(error) && !cancelled) {
+              console.error('reservation_status_events (reg-cancel chart):', error)
+            }
+            if (isAbortLikeError(error)) return
+          }
+          const next: Record<string, ReservationStatusAuditRow[]> = {}
+          for (const [id, arr] of byRecord) next[id] = arr
+          setRegCancelChartAuditRowsByRecordId(next)
         } catch (e) {
           if (!cancelled && !isAbortLikeError(e)) console.error('reservation_status_events chart fetch failed:', e)
         }
         if (cancelled) return
-        const next: Record<string, ReservationStatusAuditRow[]> = {}
-        for (const [id, arr] of byRecord) next[id] = arr
-        setRegCancelChartAuditRowsByRecordId(next)
         setRegCancelChartAuditLoaded(true)
       })()
     }, debounceMs)
@@ -2466,111 +2491,195 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     () => computeSimpleCardStatusAuditPlan(groupByDate, cardLayout, filteredReservations, cardsWeekPage),
     [groupByDate, cardLayout, filteredReservations, cardsWeekPage]
   )
+  /** 심플 카드 상태 전환 집계 UI 안정용 — contentKey(대상 목록)와 무관하게 «같은 7일 카드 주» */
+  const simpleCardStatusScopeKey = useMemo(() => {
+    if (!groupByDate || cardLayout !== 'simple') return null
+    const { startYmd, endYmd } = browserLocalWeekRangeFromOffset(cardsWeekPage)
+    return `${cardsWeekPage}\u0001${startYmd}\u0001${endYmd}`
+  }, [groupByDate, cardLayout, cardsWeekPage])
   const simpleCardAuditContentKey = simpleCardStatusAuditPlan?.contentKey ?? null
-  /** effect 가 돌기 전 첫 프레임에도 잘못된 0건 요약이 보이지 않도록 */
-  const simpleCardStatusTransitionLoadingEffective =
-    simpleCardStatusTransitionLoading ||
-    (simpleCardStatusAuditPlan != null &&
-      simpleCardStatusAuditPlan.needsNetworkFetch &&
-      simpleCardStatusAuditPlan.contentKey !== lastSimpleCardStatusAuditFetchedKeyRef.current)
+  /** 필터·주간 페이지 등 «목록 창»이 바뀌면 집계 표시를 리셋 */
+  const reservationListWindowSignature = useMemo(
+    () =>
+      [
+        String(groupByDate),
+        cardLayout,
+        debouncedSearchTerm,
+        selectedStatus,
+        selectedChannel,
+        `${dateRange.start}\u0001${dateRange.end}`,
+        sortBy,
+        sortOrder,
+        String(currentPage),
+        String(cardsWeekPage),
+      ].join('\u001f'),
+    [
+      groupByDate,
+      cardLayout,
+      debouncedSearchTerm,
+      selectedStatus,
+      selectedChannel,
+      dateRange.start,
+      dateRange.end,
+      sortBy,
+      sortOrder,
+      currentPage,
+      cardsWeekPage,
+    ]
+  )
 
   useEffect(() => {
-    if (simpleCardAuditContentKey === null) {
+    lastSimpleCardStatusAuditFetchedKeyRef.current = null
+    simpleCardStatusTransitionInFlightKeyRef.current = null
+    simpleCardStatusTransitionMapClearedForScopeRef.current = null
+    setSimpleCardStatusTransitionDisplayScopeKey(null)
+  }, [reservationListWindowSignature])
+
+  /** 집계 스피너: 주간 스코프가 확정되면 contentKey(청크마다 바뀜)와 무관하게 유지 */
+  const simpleCardStatusTransitionLoadingEffective =
+    Boolean(simpleCardStatusAuditPlan?.needsNetworkFetch) &&
+    simpleCardStatusScopeKey != null &&
+    simpleCardStatusTransitionDisplayScopeKey !== simpleCardStatusScopeKey
+
+  useEffect(() => {
+    const runKey = simpleCardAuditContentKey
+    const scheduleScopeKey = simpleCardStatusScopeKey
+    if (runKey === null) {
       lastSimpleCardStatusAuditFetchedKeyRef.current = null
+      simpleCardStatusTransitionInFlightKeyRef.current = null
+      simpleCardStatusTransitionMapClearedForScopeRef.current = null
       setSimpleCardStatusTransitionMap({})
-      setSimpleCardStatusTransitionLoading(false)
+      setSimpleCardStatusTransitionDisplayScopeKey(null)
       return
     }
-    if (lastSimpleCardStatusAuditFetchedKeyRef.current === simpleCardAuditContentKey) {
+    /** 이미 이 키로 조회·커밋 완료 — 차트 rows 객체 참조만 바뀌는 재실행에서 맵·요약을 지우지 않음 */
+    if (lastSimpleCardStatusAuditFetchedKeyRef.current === runKey) {
+      simpleCardStatusTransitionInFlightKeyRef.current = null
       return
     }
-    const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
-    if (req.targets.length === 0) {
+    /** 동일 키로 이미 디바운스·fetch 진행 중(첫 라운드 미완료) — 재진입 시 맵·로딩을 다시 건드리지 않음 */
+    if (simpleCardStatusTransitionInFlightKeyRef.current === runKey) {
+      return
+    }
+    const reqSync = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+    if (reqSync.targets.length === 0) {
       setSimpleCardStatusTransitionMap({})
-      setSimpleCardStatusTransitionLoading(false)
+      if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
+      simpleCardStatusTransitionMapClearedForScopeRef.current = scheduleScopeKey
       if (filteredReservations.length > 0) {
-        lastSimpleCardStatusAuditFetchedKeyRef.current = simpleCardAuditContentKey
+        lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
       }
       return
     }
-    if (req.uniqueIds.length === 0) {
+    if (reqSync.uniqueIds.length === 0) {
       setSimpleCardStatusTransitionMap({})
-      setSimpleCardStatusTransitionLoading(false)
+      if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
+      simpleCardStatusTransitionMapClearedForScopeRef.current = scheduleScopeKey
       if (filteredReservations.length > 0) {
-        lastSimpleCardStatusAuditFetchedKeyRef.current = simpleCardAuditContentKey
+        lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
       }
       return
     }
 
     let cancelled = false
-    setSimpleCardStatusTransitionMap({})
-    setSimpleCardStatusTransitionLoading(true)
+    simpleCardStatusTransitionInFlightKeyRef.current = runKey
+    if (scheduleScopeKey != null && simpleCardStatusTransitionMapClearedForScopeRef.current !== scheduleScopeKey) {
+      setSimpleCardStatusTransitionMap({})
+      simpleCardStatusTransitionMapClearedForScopeRef.current = scheduleScopeKey
+    }
 
-    void (async () => {
-      const chunkSize = 80
-      const collected: ReservationStatusAuditRow[] = []
-      try {
-        for (let i = 0; i < req.uniqueIds.length; i += chunkSize) {
-          const chunk = req.uniqueIds.slice(i, i + chunkSize)
-          const { data, error } = await supabase
-            .from('reservation_status_events')
-            .select('reservation_id, from_status, to_status, occurred_at')
-            .gte('occurred_at', req.rangeStart)
-            .lte('occurred_at', req.rangeEnd)
-            .in('reservation_id', chunk)
+    const debounceMs = 450
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
           if (cancelled) return
+          const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+          if (req.targets.length === 0 || req.uniqueIds.length === 0) {
+            setSimpleCardStatusTransitionMap({})
+            if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
+            if (filteredReservations.length > 0) {
+              lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
+            }
+            return
+          }
+
+          if (regCancelChartAuditLoaded && chartAuditRangeCoversSimpleCardWeek) {
+            const next = buildSimpleCardStatusTransitionMapFromCachedAuditRows(
+              req,
+              regCancelChartAuditRowsByRecordId
+            )
+            if (cancelled) return
+            setSimpleCardStatusTransitionMap(next)
+            if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
+            lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
+            return
+          }
+
+          const { rows, error } = await fetchReservationStatusEventsChunked(supabase, {
+            reservationIds: req.uniqueIds,
+            rangeStartIso: req.rangeStart,
+            rangeEndIso: req.rangeEnd,
+            shouldAbort: () => cancelled,
+          })
+          if (cancelled) return
+
+          const collected: ReservationStatusAuditRow[] = []
+          for (const row of rows) {
+            const r = reservationStatusEventRowToAuditRow(row)
+            if (!reservationAuditRowHasStatusFieldChange(r)) continue
+            collected.push(r)
+          }
+
           if (error) {
             if (!isAbortLikeError(error) && !cancelled) {
               console.error('reservation_status_events (status transitions):', error)
             }
             if (isAbortLikeError(error)) {
-              if (!cancelled) setSimpleCardStatusTransitionLoading(false)
+              if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
               return
             }
-            break
           }
-          for (const row of data || []) {
-            const r = reservationStatusEventRowToAuditRow(
-              row as {
-                reservation_id: string
-                occurred_at: string
-                from_status: string | null
-                to_status: string | null
-              }
-            )
-            if (!reservationAuditRowHasStatusFieldChange(r)) continue
-            collected.push(r)
+
+          const byRecord = new Map<string, ReservationStatusAuditRow[]>()
+          for (const row of collected) {
+            const id = String(row.record_id ?? '').trim()
+            if (!id) continue
+            const arr = byRecord.get(id) ?? []
+            arr.push(row)
+            byRecord.set(id, arr)
+          }
+
+          const next: Record<string, { from: string; to: string }> = {}
+          for (const t of req.targets) {
+            const tr = pickReservationStatusTransitionForSimpleCardDay(byRecord.get(t.reservationId) ?? [], t.dateKey)
+            if (tr) next[t.key] = tr
+          }
+          if (cancelled) return
+          setSimpleCardStatusTransitionMap(next)
+          if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
+          lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
+        } catch (e) {
+          if (!cancelled && !isAbortLikeError(e)) console.error('reservation_status_events fetch failed:', e)
+          if (!cancelled) {
+            if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
+          }
+        } finally {
+          if (simpleCardStatusTransitionInFlightKeyRef.current === runKey) {
+            simpleCardStatusTransitionInFlightKeyRef.current = null
           }
         }
-      } catch (e) {
-        if (!cancelled && !isAbortLikeError(e)) console.error('reservation_status_events fetch failed:', e)
-      }
+      })()
+    }, debounceMs)
 
-      if (cancelled) return
-
-      const byRecord = new Map<string, ReservationStatusAuditRow[]>()
-      for (const row of collected) {
-        const id = String(row.record_id ?? '').trim()
-        if (!id) continue
-        const arr = byRecord.get(id) ?? []
-        arr.push(row)
-        byRecord.set(id, arr)
-      }
-
-      const next: Record<string, { from: string; to: string }> = {}
-      for (const t of req.targets) {
-        const tr = pickReservationStatusTransitionForSimpleCardDay(byRecord.get(t.reservationId) ?? [], t.dateKey)
-        if (tr) next[t.key] = tr
-      }
-      setSimpleCardStatusTransitionMap(next)
-      setSimpleCardStatusTransitionLoading(false)
-      lastSimpleCardStatusAuditFetchedKeyRef.current = simpleCardAuditContentKey
-    })()
-
+    // filteredReservations·cardsWeekPage는 contentKey에 녹아 있음. 차트 rows 참조 변경만으로 재실행하지 않음(맵 깜빡임 방지).
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
+      if (simpleCardStatusTransitionInFlightKeyRef.current === runKey) {
+        simpleCardStatusTransitionInFlightKeyRef.current = null
+      }
     }
-  }, [simpleCardAuditContentKey]) // eslint-disable-line react-hooks/exhaustive-deps -- 감사 대상은 키에만 반영(동일 키면 재조회 안 함)
+  }, [simpleCardAuditContentKey, regCancelChartAuditLoaded, chartAuditRangeCoversSimpleCardWeek])
 
   const statisticsWeekBoundary = useMemo(
     () => browserLocalWeekRangeFromOffset(statisticsWeekOffset),
@@ -2817,8 +2926,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   ])
   
   // ??????????? (?????? ???? ?????)
-  const totalPages = groupByDate ? 1 : Math.max(1, Math.ceil(serverListTotal / itemsPerPage))
-  const startIndex = groupByDate ? 0 : (currentPage - 1) * itemsPerPage
+  const totalPages =
+    groupByDate && viewMode !== 'list' ? 1 : Math.max(1, Math.ceil(serverListTotal / itemsPerPage))
+  const startIndex = groupByDate && viewMode !== 'list' ? 0 : (currentPage - 1) * itemsPerPage
   const paginatedReservations = groupByDate ? filteredReservations : filteredReservations
 
   // reservation_pricing ?????? useReservationData ????????? ????
@@ -3989,10 +4099,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const handleHeaderSearchChange = useCallback(
     (term: string) => {
       setSearchTerm(term)
-      setCurrentPage(1)
     },
-    [setSearchTerm, setCurrentPage]
+    [setSearchTerm]
   )
+  const handleSearchSubmit = useCallback(() => {
+    setDebouncedSearchTerm(searchTerm)
+    setViewMode('list')
+  }, [searchTerm, setViewMode])
   const handleHeaderAddReservation = useCallback(() => {
     const newId = generateReservationId()
     setNewReservationId(newId)
@@ -4032,6 +4145,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   )
   const handleFiltersReset = useCallback(() => {
     setSearchTerm('')
+    setDebouncedSearchTerm('')
     setSelectedStatus('all')
     setSelectedChannel('all')
     setDateRange({ start: '', end: '' })
@@ -4066,6 +4180,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         onViewModeChange={setViewMode}
         searchTerm={searchTerm}
         onSearchChange={handleHeaderSearchChange}
+        onSearchSubmit={handleSearchSubmit}
         onAddReservation={handleHeaderAddReservation}
         onActionRequired={handleOpenActionRequired}
         actionRequiredCount={actionRequiredCount}
@@ -4087,11 +4202,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value)
-              setCurrentPage(1)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleSearchSubmit()
+              }
             }}
             className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
           />
         </div>
+        <button
+          type="button"
+          onClick={handleSearchSubmit}
+          className="shrink-0 rounded-md bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+        >
+          {t('search')}
+        </button>
         <button
           type="button"
           onClick={() => setFilterModalOpen(true)}
@@ -4122,10 +4249,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         itemsPerPage={itemsPerPage}
         onItemsPerPageChange={handleFiltersItemsPerPageChange}
         onReset={handleFiltersReset}
+        listViewActive={viewMode === 'list'}
       />
 
       {/* 검색 시 groupByDate 가 꺼져도 주간 통계는 유지(검색 결과·필터 기준) */}
-      {(groupByDate || debouncedSearchTerm.trim().length > 0) && (
+      {viewMode !== 'list' && (groupByDate || debouncedSearchTerm.trim().length > 0) && (
         <WeeklyStatsPanel
           currentWeek={statisticsWeekOffset}
           onWeekChange={setStatisticsWeekOffset}
@@ -4147,7 +4275,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         />
       )}
 
-      {groupByDate && !showMainBodyLoading && (
+      {groupByDate && viewMode !== 'list' && !showMainBodyLoading && (
         <div className="mb-4 flex flex-col gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <h3 className="min-w-0 flex-1 text-sm font-semibold text-gray-900 sm:flex-none">
@@ -4187,7 +4315,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       {!showMainBodyLoading && (
         <div className="text-sm text-gray-600">
-          {groupByDate ? (
+          {groupByDate && viewMode !== 'list' ? (
             <>
               {Object.values(groupedReservations).flat().length}
               {t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}
@@ -4199,6 +4327,38 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 </span>
               )}
             </>
+          ) : viewMode === 'list' ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                {t('paginationDisplay', {
+                  total: serverListTotal,
+                  start: serverListTotal === 0 ? 0 : startIndex + 1,
+                  end:
+                    serverListTotal === 0
+                      ? 0
+                      : Math.min(startIndex + filteredReservations.length, serverListTotal),
+                })}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <label htmlFor="reservations-list-page-size" className="text-xs font-medium text-gray-700 whitespace-nowrap">
+                  {t('listView.perPageLabel')}
+                </label>
+                <select
+                  id="reservations-list-page-size"
+                  value={[10, 20, 50, 100].includes(itemsPerPage) ? itemsPerPage : 20}
+                  onChange={(e) => handleFiltersItemsPerPageChange(Number(e.target.value))}
+                  disabled={serverListLoading}
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-transparent focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {[10, 20, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                      {t('pagination.itemsPerPage')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           ) : (
             <>
               {t('paginationDisplay', {
@@ -4270,7 +4430,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 onClearSearch={handleClearSearch}
                 variant="grid"
               />
-            ) : groupByDate ? (
+            ) : groupByDate && viewMode !== 'list' ? (
           /* ?????????? ????*/
           <div className="space-y-8">
             {Object.keys(groupedReservations).length === 0 ? (
@@ -4608,7 +4768,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {paginatedReservations.map((reservation) => (
+                {paginatedReservations.map((reservation) => {
+                  const gridCardLayout = viewMode === 'list' ? 'simple' : cardLayout
+                  return (
                   <ReservationCardItem
                     key={reservation.id}
                     reservation={reservation}
@@ -4644,21 +4806,22 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         choicesCacheRef={choicesCacheRef}
                         residentCustomerBatchMap={residentCustomerBatchMap}
                         linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
-                        cardLayout={cardLayout}
+                        cardLayout={gridCardLayout}
                         onOpenTourDetailModal={handleOpenTourDetailModal}
                         reservationOptionsPresenceByReservationId={hookReservationOptionsPresenceByReservationId}
                         onReservationOptionsMutated={handleReservationOptionsMutated}
                         reshowPickupSummaryRequest={pickupSummaryReshowRequest}
                         onReshowPickupSummaryConsumed={consumePickupSummaryReshowRequest}
                     followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
-                    {...(cardLayout === 'simple'
+                    {...(gridCardLayout === 'simple'
                       ? {
                           onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
                           onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
                         }
                       : {})}
                   />
-                ))}
+                  )
+                })}
               </div>
             </div>
           )
@@ -4669,7 +4832,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
       
       {/* ?????????- ??????? ??? (?????? ???? ?????) */}
-      {!groupByDate && totalPages > 1 && (
+      {(!groupByDate || viewMode === 'list') && totalPages > 1 && (
         <ReservationsPagination
           currentPage={currentPage}
           totalPages={totalPages}

@@ -11,6 +11,7 @@ import {
   isTidesquareChannelEmailSubject,
   isMyrealtripNewBookingEmailSubject,
   isMyrealtripChannelFromEmail,
+  isZoomZoomTourNewBookingEmailSubject,
 } from '@/lib/emailReservationParser'
 import {
   extractPriceFromEmailBodyForImport,
@@ -18,7 +19,10 @@ import {
   matchPickupHotelId,
   normalizeCustomerNameFromImport,
 } from '@/utils/reservationUtils'
-import { resolveImportChannelVariantKey } from '@/lib/resolveImportChannelVariant'
+import {
+  formatKlookReservationImportPlatformLabel,
+  resolveImportChannelVariantKey,
+} from '@/lib/resolveImportChannelVariant'
 import { fetchCustomerHintsForImportExtracted } from '@/lib/fetchImportCustomerHints'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
@@ -119,7 +123,8 @@ export default function ReservationImportDetailPage() {
       (isTidesquareChannelEmailSubject(data.subject) ? 'tidesquare' : null) ||
       (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
         ? 'myrealtrip'
-        : null)
+        : null) ||
+      (isZoomZoomTourNewBookingEmailSubject(data.subject) ? 'zoomzoom' : null)
     const rawCombinedForGyG = `${data.subject || ''}\n${data.raw_body_text || ''}\n${data.raw_body_html || ''}`
     // GetYourGuide: DB에 옛날 extracted_data만 있으면 고객 정보는 있는데 product_id/초이스가 비어 재파싱이 스킵되던 경우 보완
     const gygLikelyHasVariantLine =
@@ -145,7 +150,9 @@ export default function ReservationImportDetailPage() {
         (effectiveKey === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)) ||
         (effectiveKey === 'kkday' && (!ext.customer_name || ext.adults == null || !ext.tour_date || !ext.product_name)) ||
         (effectiveKey === 'viator' && (!ext.customer_name || !ext.pickup_hotel)) ||
-        (effectiveKey === 'tripcom' && (!ext.customer_name || ext.adults == null))) ||
+        (effectiveKey === 'tripcom' && (!ext.customer_name || ext.adults == null)) ||
+        (effectiveKey === 'zoomzoom' &&
+          (!ext.tour_date || ext.adults == null || !ext.product_name))) ||
         (bodyHasWhatsApp && !ext.emergency_contact))
     if (looksIncomplete) {
       const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
@@ -166,15 +173,22 @@ export default function ReservationImportDetailPage() {
       (isTidesquareChannelEmailSubject(data.subject) ? 'tidesquare' : null) ||
       (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
         ? 'myrealtrip'
-        : null)
+        : null) ||
+      (isZoomZoomTourNewBookingEmailSubject(data.subject) ? 'zoomzoom' : null)
     const ch = channelsListRef.current
     const channelsSafe = Array.isArray(ch) ? ch : []
     const mappedChannelId = effectiveKeyForChannel ? getChannelIdForPlatform(effectiveKeyForChannel) : null
-    const channelForImport = mappedChannelId
-      ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedChannelId || (c.name || '').toLowerCase().includes(mappedChannelId))
-      : effectiveKeyForChannel
-        ? channelsSafe.find((c: { id: string; name?: string }) => (c.name || '').toLowerCase().includes((effectiveKeyForChannel as string).toLowerCase()))
+    const zoomZoomForInitial =
+      effectiveKeyForChannel === 'zoomzoom'
+        ? channelsSafe.find((c: { name?: string }) => /줌줌/.test((c.name || '').trim()))
         : null
+    const channelForImport = zoomZoomForInitial
+      ? zoomZoomForInitial
+      : mappedChannelId
+        ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedChannelId || (c.name || '').toLowerCase().includes(mappedChannelId))
+        : effectiveKeyForChannel
+          ? channelsSafe.find((c: { id: string; name?: string }) => (c.name || '').toLowerCase().includes((effectiveKeyForChannel as string).toLowerCase()))
+          : null
     const channelIdFromPlatform = channelForImport ? (channelForImport as { id: string }).id : ''
 
     const noteParts = [
@@ -219,7 +233,8 @@ export default function ReservationImportDetailPage() {
     (row && isTidesquareChannelEmailSubject(row.subject) ? 'tidesquare' : null) ||
     (row && (isMyrealtripChannelFromEmail(row.source_email) || isMyrealtripNewBookingEmailSubject(row.subject))
       ? 'myrealtrip'
-      : null)
+      : null) ||
+    (row && isZoomZoomTourNewBookingEmailSubject(row.subject) ? 'zoomzoom' : null)
 
   /** Viator만 Net Rate ↔ 채널 정산 비교 쿠폰 경로 사용 */
   const isViatorEmailImport =
@@ -228,9 +243,15 @@ export default function ReservationImportDetailPage() {
   useEffect(() => {
     if (!effectivePlatformKey || !channelsSafe.length || form.channel_id) return
     const mappedId = getChannelIdForPlatform(effectivePlatformKey)
-    const channel = mappedId
-      ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedId || c.name?.toLowerCase().includes(mappedId))
-      : channelsSafe.find((c: { id: string; name?: string }) => c.name?.toLowerCase().includes(effectivePlatformKey.toLowerCase()))
+    const zoomZoomChannel =
+      effectivePlatformKey === 'zoomzoom'
+        ? channelsSafe.find((c: { name?: string }) => /줌줌/.test((c.name || '').trim()))
+        : undefined
+    const channel = zoomZoomChannel
+      ? zoomZoomChannel
+      : mappedId
+        ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedId || c.name?.toLowerCase().includes(mappedId))
+        : channelsSafe.find((c: { id: string; name?: string }) => c.name?.toLowerCase().includes(effectivePlatformKey.toLowerCase()))
     if (channel) setForm((f) => ({ ...f, channel_id: channel.id }))
   }, [effectivePlatformKey, channelsSafe, form.channel_id])
 
@@ -403,9 +424,15 @@ export default function ReservationImportDetailPage() {
     [id, locale, row, user?.email, router]
   )
 
-  /** 저장된 원문으로 파서를 다시 돌려 extracted_data 갱신 (상품 매핑·파서 수정 반영용). pending만 가능. */
+  /** 저장된 원문으로 파서를 다시 돌려 extracted_data 갱신 (상품 매핑·파서 수정 반영용). 상태와 무관, 본문만 있으면 가능. */
   const handleReparse = async () => {
-    if (!row || row.status !== 'pending' || !id) return
+    if (!row || !id) return
+    const hasBody =
+      !!(row.raw_body_text?.trim()) || !!(row.raw_body_html && String(row.raw_body_html).trim())
+    if (!hasBody) {
+      alert('저장된 이메일 본문이 없어 다시 파싱할 수 없습니다.')
+      return
+    }
     setReparsing(true)
     try {
       const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
@@ -453,6 +480,8 @@ export default function ReservationImportDetailPage() {
   }
 
   const isImportProcessed = row.status !== 'pending'
+  const hasReparseableBody =
+    !!(row.raw_body_text?.trim()) || !!(row.raw_body_html && String(row.raw_body_html).trim())
 
   return (
     <div className="space-y-6">
@@ -475,10 +504,13 @@ export default function ReservationImportDetailPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-amber-800 tracking-wide">
                 {effectivePlatformKey === 'klook'
-                  ? (ext?.channel_variant_label?.trim()
-                      ? `Klook - ${ext.channel_variant_label.trim()}`
-                      : 'Klook')
-                  : (effectivePlatformKey || '이메일')}
+                  ? formatKlookReservationImportPlatformLabel(
+                      ext?.channel_variant_label,
+                      ext?.channel_variant_key
+                    )
+                  : effectivePlatformKey === 'zoomzoom'
+                    ? '줌줌투어'
+                    : (effectivePlatformKey || '이메일')}
               </span>
               {row.subject && (
                 <span className="text-xs text-gray-500 truncate max-w-[280px]" title={row.subject}>
@@ -698,8 +730,8 @@ export default function ReservationImportDetailPage() {
           <button
             type="button"
             onClick={handleReparse}
-            disabled={reparsing || isImportProcessed}
-            title="저장된 이메일 본문으로 추출 로직을 다시 실행합니다. 파서·상품 매핑을 바꾼 뒤에 사용하세요."
+            disabled={reparsing || !hasReparseableBody}
+            title="저장된 이메일 본문으로 추출 로직을 다시 실행합니다. 예약을 이미 만든 경우에도 가져오기 레코드의 추출 데이터만 갱신됩니다."
             className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 text-blue-800 bg-blue-50/80 rounded-md text-sm hover:bg-blue-100 disabled:opacity-50"
           >
             {reparsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}

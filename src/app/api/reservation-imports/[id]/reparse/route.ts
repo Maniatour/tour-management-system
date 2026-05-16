@@ -4,7 +4,8 @@ import { extractReservationFromEmail } from '@/lib/emailReservationParser'
 
 /**
  * POST /api/reservation-imports/[id]/reparse
- * 저장된 raw_body_text/html + subject로 다시 파싱해 extracted_data 갱신 (기존 데이터가 비었을 때 사용)
+ * 저장된 raw_body_text/html + subject로 다시 파싱해 extracted_data·platform_key 갱신.
+ * 상태(pending/confirmed 등)와 무관 — 본문만 있으면 실행(이미 예약이 연결돼 있어도 가져오기 행만 갱신).
  */
 export async function POST(
   _request: NextRequest,
@@ -22,13 +23,14 @@ export async function POST(
   if (fetchError || !row) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
-  if (row.status !== 'pending') {
-    return NextResponse.json({ error: 'Only pending imports can be reparsed' }, { status: 400 })
-  }
 
   const subject = row.subject ?? ''
   const text = row.raw_body_text ?? null
   const html = row.raw_body_html ?? null
+  const hasBody = Boolean((text && text.trim()) || (html && html.trim()))
+  if (!hasBody) {
+    return NextResponse.json({ error: 'No raw email body stored for this import' }, { status: 400 })
+  }
   const from = row.source_email ?? null
 
   const { platform_key, extracted_data } = extractReservationFromEmail({

@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, UserRound, CheckCircle2, CircleCheck, XCircle, HelpCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import Image from 'next/image'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
 import ReactCountryFlag from 'react-country-flag'
@@ -351,7 +350,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     }
     let cancelled = false
     ;(async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('reservation_follow_ups')
         .select('content')
         .eq('reservation_id', reservation.id)
@@ -501,20 +500,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   customerId={reservation.customerId}
                   totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
                   onUpdate={onRefreshReservations}
-                  prefetchedResidentCustomerRows={prefetchedResidentCustomerRows}
+                  {...(prefetchedResidentCustomerRows !== undefined
+                    ? { prefetchedResidentCustomerRows }
+                    : {})}
                 />
               )}
               {(() => {
                 const channel = channels?.find((c) => c.id === reservation.channelId)
                 const chName = getChannelName(reservation.channelId, channels || [])
                 return channel?.favicon_url ? (
-                  <Image
+                  <img
                     src={channel.favicon_url}
                     alt={chName || 'Channel'}
-                    width={16}
-                    height={16}
-                    className="rounded flex-shrink-0"
-                    style={{ width: 'auto', height: 'auto' }}
+                    className="h-4 w-4 shrink-0 rounded object-cover"
                     title={chName}
                     onError={(e) => {
                       const target = e.target as HTMLImageElement
@@ -557,7 +555,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 <CancelledSimpleCardFollowUpStrip
                   reservationId={reservation.id}
                   snapshot={followUpPipelineSnapshot}
-                  onCancelFollowUpManualChange={onCancelFollowUpManualChange}
+                  {...(onCancelFollowUpManualChange !== undefined
+                    ? { onCancelFollowUpManualChange }
+                    : {})}
                   onReasonSaved={() => setCancelReasonFetchIx((x) => x + 1)}
                 />
               ) : (
@@ -1036,13 +1036,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               return (
                 <>
                   {channel?.favicon_url ? (
-                    <Image 
-                      src={channel.favicon_url} 
-                      alt={`${channel.name || 'Channel'} favicon`} 
-                      width={16}
-                      height={16}
-                      className="rounded flex-shrink-0"
-                      style={{ width: 'auto', height: 'auto' }}
+                    <img
+                      src={channel.favicon_url}
+                      alt={`${channel.name || 'Channel'} favicon`}
+                      className="h-4 w-4 shrink-0 rounded object-cover"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement
                         target.style.display = 'none'
@@ -1129,7 +1126,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 customerId={reservation.customerId}
                 totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
                 onUpdate={onRefreshReservations}
-                prefetchedResidentCustomerRows={prefetchedResidentCustomerRows}
+                {...(prefetchedResidentCustomerRows !== undefined
+                  ? { prefetchedResidentCustomerRows }
+                  : {})}
               />
             )}
             

@@ -147,8 +147,21 @@ export function isViatorBookingRequestEmailSubject(subject: string | null | unde
   return false
 }
 
+/** Viator 본문에 그랜드캐년·앤텔롭·호스슈 벤드 일정 상품명/문구가 있는지 (URGENT 기본 야경 덮어쓰기 제외용) */
+function viatorPlainTextIndicatesGrandCanyonAntelopeHorseshoeTour(
+  plainText: string | null | undefined
+): boolean {
+  const normalized = (plainText ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  return /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(normalized)
+}
+
+/** Tour Option 등 본문에서 Antelope X(엑스) 슬롯인지 */
+function viatorTextIndicatesAntelopeXSlot(text: string): boolean {
+  return /\bAntelope\s+X\b|with\s+Antelope\s+X\b|Antelope\s+X\s*Canyon|X\s*Antelope\s*Canyon/i.test(text)
+}
+
 /**
- * Viator 본문이 그랜드캐년·앤텔롭·호스슈 일정 + 로어 앤텔롭 + 자정 픽업(00:00)인지.
+ * Viator 본문이 그랜드캐년·앤텔롭·호스슈 일정 + (로어 앤텔롭 또는 Antelope X) + 자정/새벽 픽업(00:00 등)인지.
  * URGENT 제목이 라스베가스 야경으로 덮어쓰기 전에 사용 (extractViator와 동일 판정 기준).
  */
 export function viatorPlainTextIndicatesGrandCanyonSunriseLowerAntelope(
@@ -157,17 +170,24 @@ export function viatorPlainTextIndicatesGrandCanyonSunriseLowerAntelope(
   const text = (plainText ?? '').trim()
   if (text.length < 20) return false
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  const gcTour =
-    /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(normalized)
+  const gcTour = viatorPlainTextIndicatesGrandCanyonAntelopeHorseshoeTour(normalized)
   if (!gcTour) return false
   const hasLowerAntelope = /Lower\s*Antelope|로어\s*앤텔롭/i.test(normalized)
-  if (!hasLowerAntelope) return false
+  const hasAntelopeX = viatorTextIndicatesAntelopeXSlot(normalized)
+  if (!hasLowerAntelope && !hasAntelopeX) return false
   const head = normalized.slice(0, 12000)
-  const hasSunriseTime =
-    /\b00\s*:\s*00\b|00:00|\b0\s*:\s*00\b|12\s*:\s*00\s*(?:a\.?m\.?|am)\b/i.test(head) ||
+  const sharedVanLower00 =
     /Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,40}00\s*:\s*00|Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,35}00:00/i.test(
       normalized
     )
+  const sharedVanAntelopeX00 =
+    /Shared\s*Van\s*with\s*Antelope\s*X[^\d]{0,40}00\s*:\s*00|Shared\s*Van\s*with\s*Antelope\s*X[^\d]{0,35}00:00/i.test(
+      normalized
+    )
+  const hasSunriseTime =
+    /\b00\s*:\s*00\b|00:00|\b0\s*:\s*00\b|12\s*:\s*00\s*(?:a\.?m\.?|am)\b/i.test(head) ||
+    sharedVanLower00 ||
+    sharedVanAntelopeX00
   return hasSunriseTime
 }
 
@@ -195,6 +215,15 @@ export function isMyrealtripNewBookingEmailSubject(subject: string | null | unde
 /** 발신에 myrealtrip 이 포함되면 마이리얼트립 채널 메일로 간주 */
 export function isMyrealtripChannelFromEmail(sourceEmail: string | null | undefined): boolean {
   return /myrealtrip/i.test(sourceEmail ?? '')
+}
+
+/**
+ * 줌줌투어 예약 등록 메일 제목
+ * 예: [줌줌투어] 예약이 접수됐습니다! - 예약번호 598838
+ */
+export function isZoomZoomTourNewBookingEmailSubject(subject: string | null | undefined): boolean {
+  const s = (subject ?? '').trim()
+  return /^\[줌줌투어\]\s*예약이\s*접수(?:됐|되었)습니다/i.test(s)
 }
 
 /**
@@ -252,6 +281,7 @@ function detectPlatform(sourceEmail: string | null, subject: string): string | n
   if (isManiatourHomepageBookingEmail(sourceEmail, subject)) return 'maniatour'
   if (isTidesquareChannelEmailSubject(subject)) return 'tidesquare'
   if (isMyrealtripNewBookingEmailSubject(subject)) return 'myrealtrip'
+  if (isZoomZoomTourNewBookingEmailSubject(subject)) return 'zoomzoom'
   const from = (sourceEmail || '').toLowerCase()
   const subj = (subject || '').toLowerCase()
   for (const { pattern, key } of PLATFORM_FROM_PATTERNS) {
@@ -687,6 +717,14 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
   // 인원 (adults, children, infants 등)
   const adultsMatch = text.match(/(?:adults?|성인)\s*:?\s*(\d+)/i)
   if (adultsMatch) out.adults = parseInt(adultsMatch[1], 10)
+  // 한국어 레이블 "인원" (OTA 한글 본문·줌줌투어 등)
+  if (out.adults === undefined) {
+    const inwon = text.match(/(?:^|[\r\n])\s*인\s*원\s*[:：\s]*\s*(\d{1,3})\b/im)
+    if (inwon?.[1]) {
+      const n = parseInt(inwon[1], 10)
+      if (!Number.isNaN(n) && n > 0) out.adults = n
+    }
+  }
   const childrenMatch = text.match(/(?:children|child|아동|어린이)\s*:?\s*(\d+)/i)
   if (childrenMatch) out.children = parseInt(childrenMatch[1], 10)
   const infantsMatch = text.match(/(?:infants?|유아|영유아)\s*:?\s*(\d+)/i)
@@ -1821,16 +1859,21 @@ function extractViator(
     /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(rawName) ||
     /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(normalized)
 
-  /** 일출 투어: Lower Antelope + 자정/00:00 픽업(또는 Shared Van … 00:00). 본문 전체에서도 탐지(옵션 줄만 실패 시) */
+  /** 일출 투어: Lower Antelope 또는 Antelope X + 자정/00:00 픽업(또는 Shared Van … 00:00). 본문 전체에서도 탐지 */
   const optOrBody = `${optionRaw}\n${normalized.slice(0, 12000)}`
   const hasLowerAntelope =
     /Lower\s*Antelope|로어\s*앤텔롭/i.test(optionRaw) || /Lower\s*Antelope|로어\s*앤텔롭/i.test(normalized)
+  const hasAntelopeXSlot = viatorTextIndicatesAntelopeXSlot(optionRaw) || viatorTextIndicatesAntelopeXSlot(normalized)
   const hasSunriseTime =
     /\b00\s*:\s*00\b|00:00|\b0\s*:\s*00\b|12\s*:\s*00\s*(?:a\.?m\.?|am)\b/i.test(optOrBody) ||
     /Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,30}00\s*:\s*00|Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,20}00:00/i.test(
       normalized
+    ) ||
+    /Shared\s*Van\s*with\s*Antelope\s*X[^\d]{0,30}00\s*:\s*00|Shared\s*Van\s*with\s*Antelope\s*X[^\d]{0,20}00:00/i.test(
+      normalized
     )
   const viatorSunriseLowerAntelopeOption = hasLowerAntelope && hasSunriseTime
+  const viatorSunriseAntelopeXOption = hasAntelopeXSlot && hasSunriseTime
 
   const tourNameMatch = rawName.length > 0
   /** Tour Name 줄 추출 실패해도 본문에 상품명이 있으면 매핑 (HTML/레이블 변형 대비) */
@@ -1840,7 +1883,7 @@ function extractViator(
   if (tourNameMatch || viatorGcAntelopeHorseshoeTourName) {
     if (/2\s*[Dd]ay.*Zion.*Bryce|Zion.*Bryce.*2\s*[Dd]ay/i.test(nameForMapping)) {
       out.product_name = '그랜드서클 1박 2일 투어'
-    } else if (viatorGcAntelopeHorseshoeTourName && viatorSunriseLowerAntelopeOption) {
+    } else if (viatorGcAntelopeHorseshoeTourName && (viatorSunriseLowerAntelopeOption || viatorSunriseAntelopeXOption)) {
       out.product_id = 'MDGCSUNRISE'
       out.product_name = '밤도깨비 그랜드캐년 일출 투어'
       out.tour_time = '00:00'
@@ -1853,9 +1896,11 @@ function extractViator(
     if (!out.product_name && rawName) out.product_name = rawName
   }
 
-  // Tour Option → 초이스 (상품이 일출로 이미 매칭된 경우에도 로어 앤텔롭 유지)
+  // Tour Option → 초이스 (Antelope X 는 "Antelope X" / "with Antelope X" 등 — Lower 보다 먼저 보면 안 됨: 문구 겹침 없음)
   if (optionRaw) {
-    if (/Lower\s*Antelope|로어\s*앤텔롭/i.test(optionRaw)) {
+    if (viatorTextIndicatesAntelopeXSlot(optionRaw)) {
+      out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
+    } else if (/Lower\s*Antelope|로어\s*앤텔롭/i.test(optionRaw)) {
       out.import_choice_option_names = ['Lower Antelope Canyon']
     } else if (/Upper\s*Antelope|어퍼\s*앤텔롭/i.test(optionRaw)) {
       out.import_choice_option_names = ['Upper Antelope Canyon']
@@ -2101,6 +2146,77 @@ function extractTripCom(
   return out
 }
 
+/** YYYY-MM-DD / YYYY.MM.DD / 한글 년월일 등 → YYYY-MM-DD */
+function normalizeKoreanLooseYmd(raw: string): string | null {
+  const t = raw.trim()
+  const mK =
+    t.match(/(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/) ||
+    t.match(/(20\d{2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})/)
+  if (mK?.[1] && mK[2] && mK[3]) {
+    return `${mK[1]}-${String(mK[2]).padStart(2, '0')}-${String(mK[3]).padStart(2, '0')}`
+  }
+  return null
+}
+
+/** [줌줌투어] 예약 접수 메일 본문 — 여행일·인원·웨스트림 상품명 (공통 패턴의 첫 날짜=신청일 오탐 방지) */
+function extractZoomZoomTour(
+  text: string,
+  subject: string,
+  _sourceEmail: string | null,
+  _rawHtml?: string | null
+): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  if (!text || text.length < 10) return out
+
+  const subj = (subject || '').trim()
+  const rnFromSubject = subj.match(/예약\s*번호\s*(\d{4,20})/i)
+  if (rnFromSubject?.[1]) out.channel_rn = rnFromSubject[1].trim()
+
+  const t = text.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ')
+  const oneLine = t.replace(/\s+/g, ' ')
+
+  // 여행일 = 투어 날짜 (본문 앞쪽 "예약 신청일"이 extractCommonPatterns 의 첫 날짜로 잡히는 오류 방지)
+  const travelM =
+    t.match(/여행\s*일\s*[:：]?\s*\n+\s*(20\d{2}[.\-/]\s*\d{1,2}[.\-/]\s*\d{1,2})/im) ||
+    t.match(/여행\s*일\s*[:：\s]+\s*(20\d{2}[.\-/]\s*\d{1,2}[.\-/]\s*\d{1,2})/i) ||
+    oneLine.match(/여행\s*일\s*[:：\s]+\s*(20\d{2}[.\-/]\s*\d{1,2}[.\-/]\s*\d{1,2})/i)
+  if (travelM?.[1]) {
+    const ymd = normalizeKoreanLooseYmd(travelM[1].replace(/\s+/g, ''))
+    if (ymd) out.tour_date = ymd
+  }
+
+  // 인원 n → 성인 n
+  const inwonM =
+    t.match(/(?:^|\n)\s*인\s*원\s*[:：\s]*\n\s*(\d{1,3})\b/im) ||
+    t.match(/인\s*원\s*[:：\s]+\s*(\d{1,3})\b/i) ||
+    oneLine.match(/인\s*원\s*[:：\s]+\s*(\d{1,3})\b/i)
+  if (inwonM?.[1]) {
+    const n = parseInt(inwonM[1], 10)
+    if (!Number.isNaN(n) && n > 0) {
+      out.adults = n
+      out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
+    }
+  }
+
+  // 예약 여행 블록 첫 줄 → 그랜드캐년 웨스트림 투어
+  const tourBlock =
+    t.match(/예약\s*여행\s*[:：]?\s*\n+\s*([\s\S]*?)(?=\n\s*(?:예약\s*신청일|여행\s*일|인원|이름|연락처|이메일|전화)\b|$)/i) ||
+    t.match(/예약\s*여행\s*[:：\s]+\s*([^\n]+)/i)
+  const rawTourTitle = (tourBlock?.[1] || '')
+    .split(/\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 2 && !/^(예약|여행|인원)/i.test(l))
+  const tourLine = (rawTourTitle || oneLine).replace(/\s+/g, ' ').trim()
+  if (
+    (/웨스트림|west\s*rim/i.test(tourLine) || /웨스트림|west\s*rim/i.test(oneLine)) &&
+    (/그랜드|grand/i.test(tourLine) || /그랜드|grand|캐년|canyon/i.test(oneLine))
+  ) {
+    out.product_name = '그랜드캐년 웨스트림 투어'
+  }
+
+  return out
+}
+
 /** 채널별 파서 등록: 플랫폼 키 → 전처리 + 추출. 새 채널 추가 시 여기에 한 줄씩 등록. */
 const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
   getyourguide: {
@@ -2154,6 +2270,11 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
   tripcom: {
     preprocess: toPlainText,
     extract: (text, subject, sourceEmail) => extractTripCom(text, subject, sourceEmail),
+  },
+  zoomzoom: {
+    preprocess: toPlainText,
+    extract: (text, subject, sourceEmail, rawHtml) =>
+      extractZoomZoomTour(text, subject, sourceEmail, rawHtml ?? null),
   },
 }
 
@@ -2259,7 +2380,11 @@ export function extractReservationFromEmail(options: {
       ? (Object.fromEntries(
           Object.entries(common).filter(([k]) => k !== 'customer_name')
         ) as Partial<ExtractedReservationData>)
-      : common
+      : platform_key === 'zoomzoom'
+        ? (Object.fromEntries(
+            Object.entries(common).filter(([k]) => k !== 'tour_date')
+          ) as Partial<ExtractedReservationData>)
+        : common
 
   let merged: Partial<ExtractedReservationData> = {
     ...commonForMerge,
@@ -2295,8 +2420,9 @@ export function extractReservationFromEmail(options: {
   }
   /**
    * Viator URGENT 제목은 기본적으로 라스베가스 야경투어 신규 접수로 두었으나,
-   * 본문이 Grand Canyon + Antelope + Horseshoe + 로어 앤텔롭 + 00:00(또는 Shared Van … 00:00)이면
+   * 본문이 Grand Canyon + Antelope + Horseshoe + (로어 앤텔롭 또는 Antelope X) + 00:00(또는 Shared Van … 00:00)이면
    * 밤도깨비 그랜드캐년 일출 투어로 두고 야경으로 덮어쓰지 않는다.
+   * 그랜드서클(앤텔롭·호스슈) 상품명만 있어도 야경으로 덮어쓰지 않는다.
    */
   if (platform_key === 'viator' && isViatorUrgentBookingRequestEmailSubject(subject)) {
     const gcSunriseLower = viatorPlainTextIndicatesGrandCanyonSunriseLowerAntelope(plainText)
@@ -2311,11 +2437,15 @@ export function extractReservationFromEmail(options: {
           product_name: '밤도깨비 그랜드캐년 일출 투어',
           tour_time: '00:00',
         }
-        if (!merged.import_choice_option_names?.length && /Lower\s*Antelope|로어\s*앤텔롭/i.test(plainText)) {
-          merged.import_choice_option_names = ['Lower Antelope Canyon']
+        if (!merged.import_choice_option_names?.length) {
+          if (/Lower\s*Antelope|로어\s*앤텔롭/i.test(plainText)) {
+            merged.import_choice_option_names = ['Lower Antelope Canyon']
+          } else if (viatorTextIndicatesAntelopeXSlot(plainText)) {
+            merged.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
+          }
         }
       }
-    } else {
+    } else if (!viatorPlainTextIndicatesGrandCanyonAntelopeHorseshoeTour(plainText)) {
       merged = {
         ...merged,
         product_id: 'MDLVN',
@@ -2334,6 +2464,9 @@ export function extractReservationFromEmail(options: {
     merged.is_booking_confirmed = true
   }
   if (platform_key === 'tripcom' && isTripComNewOrderEmailSubject(subject)) {
+    merged.is_booking_confirmed = true
+  }
+  if (platform_key === 'zoomzoom' && isZoomZoomTourNewBookingEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
 
@@ -2365,6 +2498,7 @@ export const SUPPORTED_EMAIL_CHANNELS = [
   'tidesquare',
   'myrealtrip',
   'tripcom',
+  'zoomzoom',
   'tripadvisor',
   'booking',
   'expedia',

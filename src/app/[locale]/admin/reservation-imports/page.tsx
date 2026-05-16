@@ -13,7 +13,9 @@ import {
   isMyrealtripNewBookingEmailSubject,
   isMyrealtripChannelFromEmail,
   isTripComNewOrderEmailSubject,
+  isZoomZoomTourNewBookingEmailSubject,
 } from '@/lib/emailReservationParser'
+import { formatKlookReservationImportPlatformLabel } from '@/lib/resolveImportChannelVariant'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -323,6 +325,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const isTripComRow = (row: ImportItem) =>
     row.platform_key === 'tripcom' || /@trip\.com\b/i.test(row.source_email ?? '')
 
+  /** 줌줌투어: platform_key 또는 제목 [줌줌투어] 예약 접수 */
+  const isZoomZoomRow = (row: ImportItem) =>
+    row.platform_key === 'zoomzoom' || isZoomZoomTourNewBookingEmailSubject(row.subject)
+
   /** 목록에 표시할 플랫폼 (KKday / maniatour 보정 포함). Klook은 variant까지 표시 */
   const displayPlatform = (row: ImportItem) => {
     if (isKKdayRow(row)) return 'kkday'
@@ -330,11 +336,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     if (isTidesquareRow(row)) return '타이드스퀘어'
     if (isMyrealtripRow(row)) return '마이리얼트립'
     if (isTripComRow(row)) return 'Trip.com'
+    if (isZoomZoomRow(row)) return '줌줌투어'
     const base = row.platform_key ?? '-'
     if (base === 'klook') {
-      const label = (row.extracted_data?.channel_variant_label ?? '').trim()
-      if (label) return `Klook - ${label}`
-      return 'Klook'
+      return formatKlookReservationImportPlatformLabel(
+        row.extracted_data?.channel_variant_label,
+        row.extracted_data?.channel_variant_key
+      )
     }
     return base
   }
@@ -358,7 +366,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     (isMyrealtripRow(row) && isMyrealtripNewBookingEmailSubject(row.subject)) ||
     isManiatourHomepageBookingEmail(row.source_email, row.subject) ||
     isGyGBookingRow(row) ||
-    isTripComBookingRow(row)
+    isTripComBookingRow(row) ||
+    isZoomZoomRow(row)
 
   const filteredItems =
     activeTab === 'booking'

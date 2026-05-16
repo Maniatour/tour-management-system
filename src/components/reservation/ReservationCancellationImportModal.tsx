@@ -91,6 +91,24 @@ async function ensurePartnerRefundPaymentOnImportCancel(reservationId: string): 
   if (!sync.ok && sync.error) {
     console.warn('[import cancel] reservation_pricing 동기화 실패:', reservationId, sync.error)
   }
+
+  /** 취소 후에도 DB에 남은 채널 결제·수수료·정산은 통계·가격 화면과 어긋남 → 전부 0으로 저장 */
+  const { error: zeroChannelErr } = await supabase
+    .from('reservation_pricing')
+    .update({
+      commission_base_price: 0,
+      commission_percent: 0,
+      commission_amount: 0,
+      channel_settlement_amount: 0,
+    })
+    .eq('reservation_id', reservationId)
+
+  if (zeroChannelErr) throw zeroChannelErr
+
+  const syncAfterZero = await syncReservationPricingAggregates(supabase, reservationId)
+  if (!syncAfterZero.ok && syncAfterZero.error) {
+    console.warn('[import cancel] 채널 필드 0 반영 후 동기화 실패:', reservationId, syncAfterZero.error)
+  }
 }
 
 type ReservationBaseRow = {

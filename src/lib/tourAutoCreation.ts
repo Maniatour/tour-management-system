@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { createTourPhotosBucket } from './tourPhotoBucket'
 import { generateTourId } from './entityIds'
-import { normalizeReservationIds } from '@/utils/tourUtils'
+import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 
 export interface TourAutoCreationResult {
@@ -223,6 +223,173 @@ export async function autoCreateOrUpdateTour(
     return {
       success: false,
       message: '투어 자동 생성 중 예상치 못한 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류')
+    }
+  }
+}
+
+export type ScheduleAdditionalTourReservationInput = {
+  id: string
+  isPrivateTour?: boolean
+}
+
+/**
+ * 같은 상품·투어일에 활성 투어가 이미 있을 때, 아직 어떤 활성 투어에도 배정되지 않은 예약만 모아
+ * 새 투어 한 건을 생성한다. (스케줄 셀 모달에서 2팀째 등 추가 투어용)
+ */
+export async function createAdditionalActiveTourForReservations(
+  productId: string,
+  tourDate: string,
+  reservationEntries: ScheduleAdditionalTourReservationInput[]
+): Promise<TourAutoCreationResult> {
+  try {
+    if (!reservationEntries.length) {
+      return { success: false, message: '배정할 예약이 없습니다.' }
+    }
+
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('sub_category')
+      .eq('id', productId)
+      .single()
+
+    if (productError) {
+      return {
+        success: false,
+        message: '상품 정보를 가져오는 중 오류가 발생했습니다: ' + productError.message,
+      }
+    }
+
+    if (!product.sub_category || !['Mania Tour', 'Mania Service'].includes(product.sub_category)) {
+      return {
+        success: true,
+        message: '해당 상품은 자동 투어 생성 대상이 아닙니다.',
+      }
+    }
+
+    const { data: existingTours, error: tourError } = await supabase
+      .from('tours')
+      .select('id, reservation_ids, tour_status')
+      .eq('product_id', productId)
+      .eq('tour_date', tourDate)
+
+    if (tourError) {
+      return {
+        success: false,
+        message: '기존 투어 정보를 가져오는 중 오류가 발생했습니다: ' + tourError.message,
+      }
+    }
+
+    const allRows = existingTours || []
+    const inactiveTours = allRows.filter((t) => isTourCancelled(t.tour_status))
+    const inputKeySet = new Set(
+      reservationEntries.map((e) => canonicalReservationIdKey(String(e.id).trim())).filter(Boolean)
+    )
+
+    for (const t of inactiveTours) {
+      const ids = normalizeReservationIds(t.reservation_ids)
+      const hasOverlap = ids.some((id) => inputKeySet.has(canonicalReservationIdKey(id)))
+      if (!hasOverlap) continue
+      const nextIds = ids.filter((id) => !inputKeySet.has(canonicalReservationIdKey(id)))
+      const { error: stripErr } = await supabase.from('tours').update({ reservation_ids: nextIds }).eq('id', t.id)
+      if (stripErr) {
+        return {
+          success: false,
+          message: '비활성 투어에서 예약 연결을 정리하는 중 오류가 발생했습니다: ' + stripErr.message,
+        }
+      }
+    }
+
+    const { data: freshRows, error: freshErr } = await supabase
+      .from('tours')
+      .select('id, reservation_ids, tour_status')
+      .eq('product_id', productId)
+      .eq('tour_date', tourDate)
+
+    if (freshErr) {
+      return {
+        success: false,
+        message: '투어 정보를 다시 불러오는 중 오류가 발생했습니다: ' + freshErr.message,
+      }
+    }
+
+    const activeTours = (freshRows || []).filter((t) => !isTourCancelled(t.tour_status))
+    const assignedCanon = new Set<string>()
+    for (const t of activeTours) {
+      for (const rawId of normalizeReservationIds(t.reservation_ids)) {
+        if (rawId) assignedCanon.add(canonicalReservationIdKey(rawId))
+      }
+    }
+
+    const pendingEntries = reservationEntries.filter((e) => {
+      const k = canonicalReservationIdKey(String(e.id).trim())
+      return k && !assignedCanon.has(k)
+    })
+
+    if (pendingEntries.length === 0) {
+      return {
+        success: false,
+        message:
+          '확정·모집중 예약이 이미 해당 날짜의 투어에 모두 배정되어 있습니다. 다른 투어에 넣으려면 예약에서 투어 연결을 먼저 해제하세요.',
+      }
+    }
+
+    const reservationIdsForTour = pendingEntries.map((e) => String(e.id).trim()).filter(Boolean)
+    const isPrivate = pendingEntries.some(
+      (e) => e.isPrivateTour === true || String(e.isPrivateTour ?? '').toUpperCase() === 'TRUE'
+    )
+
+    const tourId = generateTourId()
+    const { data: newTour, error: createError } = await supabase
+      .from('tours')
+      .insert({
+        id: tourId,
+        product_id: productId,
+        tour_date: tourDate,
+        reservation_ids: reservationIdsForTour,
+        tour_status: 'scheduled',
+        is_private_tour: isPrivate,
+      })
+      .select()
+      .single()
+
+    if (createError || !newTour) {
+      return {
+        success: false,
+        message: '새 투어 생성 중 오류가 발생했습니다: ' + (createError?.message ?? '알 수 없음'),
+      }
+    }
+
+    for (const rid of reservationIdsForTour) {
+      const { error: reservationUpdateError } = await supabase
+        .from('reservations')
+        .update({ tour_id: newTour.id })
+        .eq('id', rid)
+
+      if (reservationUpdateError) {
+        return {
+          success: false,
+          message: '예약의 투어 ID 업데이트 중 오류가 발생했습니다: ' + reservationUpdateError.message,
+        }
+      }
+    }
+
+    const bucketCreated = await createTourPhotosBucket()
+    if (!bucketCreated) {
+      console.warn('Failed to create tour-photos bucket, but tour creation succeeded')
+    }
+
+    return {
+      success: true,
+      tourId: newTour.id,
+      message: '추가 투어가 생성되고 예약이 배정되었습니다.',
+    }
+  } catch (error) {
+    console.error('Error in createAdditionalActiveTourForReservations:', error)
+    return {
+      success: false,
+      message:
+        '추가 투어 생성 중 오류가 발생했습니다: ' +
+        (error instanceof Error ? error.message : '알 수 없는 오류'),
     }
   }
 }

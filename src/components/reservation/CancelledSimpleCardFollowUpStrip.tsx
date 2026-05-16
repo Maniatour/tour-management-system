@@ -37,6 +37,7 @@ export default function CancelledSimpleCardFollowUpStrip({
         ? [
             'No Show',
             'Canceled by customer',
+            'Rebooking',
             'Not recruited',
             'Weather',
             'Schedule conflict',
@@ -44,7 +45,7 @@ export default function CancelledSimpleCardFollowUpStrip({
             'Price / Policy',
             'Other',
           ]
-        : ['No Show', '고객 취소', '미모집', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타'],
+        : ['No Show', '고객 취소', '재예약', '미모집', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타'],
     [isEn]
   )
   const { user } = useAuth()

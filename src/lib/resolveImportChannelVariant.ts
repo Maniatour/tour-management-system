@@ -41,6 +41,46 @@ export function resolveImportChannelVariantKey(
   return kCanon || String(key ?? '').trim() || undefined
 }
 
+/**
+ * 예약 가져오기 목록·상세: Klook variant 표기
+ * All Inclusive → `Klook ✅`, With Exclusions → `Klook ➕`, 그 외·라벨만 있으면 `Klook - {라벨}`
+ */
+export function formatKlookReservationImportPlatformLabel(
+  channelVariantLabel: string | null | undefined,
+  channelVariantKey?: string | null | undefined
+): string {
+  const label = String(channelVariantLabel ?? '').trim()
+  if (label) {
+    const lower = label.toLowerCase()
+    if (
+      lower.includes('all inclusive') ||
+      lower.includes('all-inclusive') ||
+      /올\s*인클루|전부\s*포함|올인클루시브/i.test(label)
+    ) {
+      return 'Klook ✅'
+    }
+    if (
+      lower.includes('with exclusions') ||
+      lower.includes('with-exclusions') ||
+      lower.includes('with exclusion')
+    ) {
+      return 'Klook ➕'
+    }
+    return `Klook - ${label}`
+  }
+  const canon =
+    canonicalVariantKey(channelVariantKey) ??
+    (channelVariantKey != null && String(channelVariantKey).trim() !== ''
+      ? String(channelVariantKey)
+          .trim()
+          .toLowerCase()
+          .replace(/-/g, '_')
+      : '')
+  if (canon === 'all_inclusive') return 'Klook ✅'
+  if (canon === 'with_exclusions') return 'Klook ➕'
+  return 'Klook'
+}
+
 /** channel_products 목록에서 폼 키와 동일한 variant 행이 있는지 (표기만 다른 경우 포함) */
 export function channelProductsIncludeVariantKey(
   keys: string[],

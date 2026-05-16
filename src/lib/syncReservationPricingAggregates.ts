@@ -1,11 +1,13 @@
 /**
  * reservation_options 합계 → reservation_pricing.option_total
+ * 옵션 변경 시 subtotal·total_price(가격 정보 모달·라인 산식과 동일)
  * payment_records 집계 → reservation_pricing.deposit_amount(입금 보증 버킷 합), balance_amount
  * (Balance 테이블·reservationPricingBalance.ts 와 동일한 라인 총액·입금 집계 규칙)
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   computeCustomerPaymentTotalLineFormula,
+  pricingFieldToNumber,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
   type PartySizeSource,
@@ -182,10 +184,20 @@ export async function syncReservationPricingAggregates(
       new Map([[reservationId, optionSum]])
     )
 
+    const linePricing = pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
+    const subtotal = roundUsd2(
+      pricingFieldToNumber(pricingMerged.product_price_total) +
+        pricingFieldToNumber(pricingMerged.required_option_total) +
+        optionSum
+    )
+    const total_price = Math.max(0, computeCustomerPaymentTotalLineFormula(linePricing, party))
+
     const { error: upErr } = await supabase
       .from('reservation_pricing')
       .update({
         option_total: optionSum,
+        subtotal,
+        total_price,
         deposit_amount,
         balance_amount,
         ...(storedCols
