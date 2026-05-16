@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+
+const AUTH_GUARD_FAILSAFE_MS = 20_000
 
 interface AdminAuthGuardProps {
   children: React.ReactNode
@@ -13,13 +15,24 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
   const { user, userRole, userPosition, loading, isInitialized, isSimulating, simulatedUser } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  // 새로고침 후 복귀할 경로 (로그인 시 이 경로로 돌아감)
   const redirectToPath = pathname && pathname !== `/${locale}/auth` ? pathname : `/${locale}`
 
-  // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
   const currentUserPosition = isSimulating && simulatedUser ? simulatedUser.position : userPosition
+
+  const [authTimedOut, setAuthTimedOut] = useState(false)
+
+  useEffect(() => {
+    if (!loading && isInitialized) {
+      setAuthTimedOut(false)
+      return
+    }
+    const timer = setTimeout(() => {
+      if (!isInitialized || loading) setAuthTimedOut(true)
+    }, AUTH_GUARD_FAILSAFE_MS)
+    return () => clearTimeout(timer)
+  }, [loading, isInitialized])
 
   const lastLogRef = useRef<string>('')
   useEffect(() => {
@@ -31,9 +44,7 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
   }, [user?.email, userRole, loading, isInitialized, isSimulating])
 
   useEffect(() => {
-    if (loading || !isInitialized) {
-      return
-    }
+    if (loading || !isInitialized) return
 
     if (!currentUser) {
       router.replace(`/${locale}`)
@@ -55,16 +66,40 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     }
   }, [currentUser, currentUserRole, currentUserPosition, isInitialized, loading, router, locale, redirectToPath])
 
-  // 초기화 전·역할 조회 전: 전체 스피너만 (refreshSession을 기다리지 않도록 AuthContext에서 이미 최적화됨)
   const showBlockingAuth =
-    !isInitialized || (loading && !user) || (loading && userRole === null && !isSimulating)
+    !authTimedOut &&
+    (!isInitialized || (loading && !user) || (loading && userRole === null && !isSimulating))
 
   if (showBlockingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">인증 확인 중...</p>
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto" />
+          <p className="mt-4 text-gray-600">{'\uC778\uC99D \uD655\uC778 \uC911...'}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (authTimedOut && (!currentUser || currentUserRole === null)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-sm px-4">
+          <h1 className="text-xl font-bold text-gray-900 mb-2">
+            {'\uC778\uC99D \uC751\uB2F5\uC774 \uC9C0\uC5F0\uB418\uACE0 \uC788\uC2B5\uB2C8\uB2E4'}
+          </h1>
+          <p className="text-gray-600 mb-6 text-sm">
+            {
+              '\uB124\uD2B8\uC6CC\uD06C\uAC00 \uB290\uB9AC\uAC70\uB098 \uC138\uC158\uC774 \uB9CC\uB8CC\uB418\uC5C8\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uB85C\uADF8\uC778\uD574 \uC8FC\uC138\uC694.'
+            }
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/auth?redirectTo=${encodeURIComponent(redirectToPath)}`)}
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+          >
+            {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
+          </button>
         </div>
       </div>
     )
@@ -74,13 +109,15 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">로그인이 필요합니다</h1>
-          <p className="text-gray-600 mb-6">이 페이지에 접근하려면 로그인해야 합니다.</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">{'\uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4'}</h1>
+          <p className="text-gray-600 mb-6">
+            {'\uC774 \uD398\uC774\uC9C0\uC5D0 \uC811\uADFC\uD558\uB824\uBA74 \uB85C\uADF8\uC778\uD574\uC57C \uD569\uB2C8\uB2E4.'}
+          </p>
           <button
             onClick={() => router.push(`/${locale}/auth`)}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
           >
-            로그인 페이지로 이동
+            {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
           </button>
         </div>
       </div>
@@ -91,30 +128,39 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
-          <p className="text-gray-600 mb-6">이 페이지에 접근하려면 팀 멤버여야 합니다.</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">{'\uC811\uADFC \uAD8C\uD55C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4'}</h1>
+          <p className="text-gray-600 mb-6">
+            {'\uC774 \uD398\uC774\uC9C0\uC5D0 \uC811\uADFC\uD558\uB824\uBA74 \uD300 \uBA64\uBC84\uC5EC\uC57C \uD569\uB2C8\uB2E4.'}
+          </p>
           <button
             onClick={() => router.push(`/${locale}/auth?redirectTo=${encodeURIComponent(redirectToPath)}`)}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
           >
-            로그인 페이지로 이동
+            {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
           </button>
         </div>
       </div>
     )
   }
 
-  if (currentUserPosition && (currentUserPosition.toLowerCase() === 'tour guide' || currentUserPosition.toLowerCase() === 'driver')) {
+  if (
+    currentUserPosition &&
+    (currentUserPosition.toLowerCase() === 'tour guide' || currentUserPosition.toLowerCase() === 'driver')
+  ) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
-          <p className="text-gray-600 mb-6">투어 가이드와 드라이버는 관리자 페이지에 접근할 수 없습니다.</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">{'\uC811\uADFC \uAD8C\uD55C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4'}</h1>
+          <p className="text-gray-600 mb-6">
+            {
+              '\uD22C\uC5B4 \uAC00\uC774\uB4DC\uC640 \uB4DC\uB77C\uC774\uBC84\uB294 \uAD00\uB9AC\uC790 \uD398\uC774\uC9C0\uC5D0 \uC811\uADFC\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.'
+            }
+          </p>
           <button
             onClick={() => router.push(`/${locale}/guide`)}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
           >
-            가이드 페이지로 이동
+            {'\uAC00\uC774\uB4DC \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
           </button>
         </div>
       </div>

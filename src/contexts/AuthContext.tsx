@@ -37,6 +37,41 @@ function persistSupabaseSessionToStorage(session: Session) {
   localStorage.setItem('sb-expires-at', tokenExpiry.toString())
 }
 
+/** 모바일에서 GoTrue getSession이 무한 대기하는 경우 방지 */
+const AUTH_SESSION_BUDGET_MS = 10_000
+const AUTH_SESSION_RETRY_MS = 8_000
+const AUTH_BOOTSTRAP_FAILSAFE_MS = 18_000
+const ROLE_CHECK_DEDUPE_WAIT_MS = 12_000
+
+async function getSupabaseSessionBounded(budgetMs: number): Promise<Session | null> {
+  if (!supabase) return null
+  try {
+    return await Promise.race([
+      supabase.auth.getSession().then(({ data, error }) => (error ? null : data.session)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), budgetMs)),
+    ])
+  } catch {
+    return null
+  }
+}
+
+async function refreshSupabaseSessionBounded(
+  refreshToken: string,
+  budgetMs: number
+): Promise<Session | null> {
+  if (!supabase) return null
+  try {
+    return await Promise.race([
+      supabase.auth
+        .refreshSession({ refresh_token: refreshToken })
+        .then(({ data, error }) => (error || !data.session ? null : data.session)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), budgetMs)),
+    ])
+  } catch {
+    return null
+  }
+}
+
 interface AuthContextType {
   user: AuthUser | null
   authUser: AuthUser | null
@@ -159,7 +194,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const dedupeKey = email.trim().toLowerCase()
     const existing = roleCheckInflightRef.current.get(dedupeKey)
     if (existing) {
-      await existing
+      await Promise.race([
+        existing,
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('role_check_dedupe_timeout')), ROLE_CHECK_DEDUPE_WAIT_MS)
+        ),
+      ]).catch(() => {
+        console.warn('AuthContext: role check dedupe wait timed out, continuing')
+      })
       return
     }
 
@@ -376,17 +418,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      let session = (await supabase.auth.getSession()).data.session
+      let session = await getSupabaseSessionBounded(AUTH_SESSION_BUDGET_MS)
 
       if (!session?.user?.email) {
         const rt = localStorage.getItem('sb-refresh-token')
         if (rt) {
-          const { data, error } = await supabase.auth.refreshSession({
-            refresh_token: rt,
-          })
-          if (!error && data.session?.user?.email) {
-            session = data.session
-          }
+          session = await refreshSupabaseSessionBounded(rt, AUTH_SESSION_RETRY_MS)
         }
       }
 
@@ -659,7 +696,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('AuthContext: Initializing authentication...')
 
     let delayedAuthTimer: ReturnType<typeof setTimeout> | undefined
-    
+    const bootstrapFailsafe = setTimeout(() => {
+      if (isInitializedRef.current) return
+      console.warn('AuthContext: bootstrap failsafe — forcing guest init (mobile/slow network)')
+      setUserRole((role) => role ?? 'customer')
+      setUserPosition((pos) => pos ?? null)
+      setPermissions((perms) => perms ?? null)
+      setLoading(false)
+      setIsInitialized(true)
+    }, AUTH_BOOTSTRAP_FAILSAFE_MS)
+
     // localStorage에서 토큰 확인
     const checkStoredTokens = async () => {
       try {
@@ -775,59 +821,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Supabase에서 현재 세션 확인
       if (supabase) {
         try {
-          const GET_SESSION_BUDGET_MS = 14000
-          const { data: { session }, error } = await Promise.race([
-            supabase.auth.getSession(),
-            new Promise<{ data: { session: null }; error: { message: string } }>((resolve) =>
-              setTimeout(
-                () => resolve({ data: { session: null }, error: { message: 'getSession_timeout' } }),
-                GET_SESSION_BUDGET_MS
-              )
-            ),
-          ])
-          if (error?.message === 'getSession_timeout') {
-            console.warn(
-              `AuthContext: getSession exceeded ${GET_SESSION_BUDGET_MS}ms, retrying once (mobile storage)`
-            )
-            const second = await supabase.auth.getSession()
-            if (second.data.session?.user?.email) {
-              const session = second.data.session
-              console.log('AuthContext: getSession recovered on retry:', session.user.email)
-              console.log('AuthContext: Found Supabase session:', session.user.email)
-              const authUserData: AuthUser = {
-                id: session.user.id,
-                email: session.user.email || '',
-                name:
-                  session.user.user_metadata?.name ||
-                  session.user.user_metadata?.full_name ||
-                  (session.user.email ? session.user.email.split('@')[0] : 'User'),
-                avatar_url: session.user.user_metadata?.avatar_url,
-                created_at: session.user.created_at,
-                user_metadata: session.user.user_metadata,
-              }
-              setUser(authUserData)
-              setAuthUser(authUserData)
-              localStorage.setItem('sb-access-token', session.access_token)
-              localStorage.setItem('sb-refresh-token', session.refresh_token)
-              const tokenExpiry =
-                session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
-              localStorage.setItem('sb-expires-at', tokenExpiry.toString())
-              updateSupabaseToken(session.access_token)
-              if (session.user.email) {
-                checkUserRole(session.user.email).catch((error) => {
-                  console.error('AuthContext: Team membership check failed:', error)
-                  setUserRole('customer')
-                  setUserPosition(null)
-                  setPermissions(null)
-                  setLoading(false)
-                  setIsInitialized(true)
-                })
-              }
-              return
+          let session = await getSupabaseSessionBounded(AUTH_SESSION_BUDGET_MS)
+          if (!session?.user?.email && typeof window !== 'undefined') {
+            const rt = localStorage.getItem('sb-refresh-token')
+            if (rt) {
+              console.warn('AuthContext: getSession slow/empty, trying refresh token (mobile)')
+              session = await refreshSupabaseSessionBounded(rt, AUTH_SESSION_RETRY_MS)
+            } else {
+              session = await getSupabaseSessionBounded(AUTH_SESSION_RETRY_MS)
             }
           }
-          
-          if (session && !error) {
+
+          if (session?.user?.email) {
             console.log('AuthContext: Found Supabase session:', session.user.email)
             
             // 세션에서 사용자 정보 설정
@@ -869,10 +874,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUserRole('customer')
               setUserPosition(null)
               setPermissions(null)
+              setLoading(false)
+              setIsInitialized(true)
             }
             return
           } else {
-            console.log('AuthContext: No Supabase session found:', error?.message)
+            console.log('AuthContext: No Supabase session found after bounded checks')
           }
         } catch (sessionError) {
           console.error('AuthContext: Error getting Supabase session:', sessionError)
@@ -964,6 +971,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!supabase) {
       console.error('AuthContext: Supabase client not available')
       return () => {
+        clearTimeout(bootstrapFailsafe)
         if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
       }
     }
@@ -1014,7 +1022,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (attempt > 0) {
                   await new Promise((r) => setTimeout(r, 450))
                 }
-                const { data: { session: verifySession } } = await supabase.auth.getSession()
+                const verifySession = await getSupabaseSessionBounded(AUTH_SESSION_RETRY_MS)
                 if (verifySession?.user?.email) {
                   console.log('AuthContext: Session still valid after SIGNED_OUT, keeping user')
                   const authUserData = authUserFromSupabaseSessionUser(verifySession.user)
@@ -1143,6 +1151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     )
 
     return () => {
+      clearTimeout(bootstrapFailsafe)
       if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
       subscription.unsubscribe()
     }
@@ -1178,21 +1187,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        let { data: { session }, error } = await supabase.auth.getSession()
+        let session = await getSupabaseSessionBounded(AUTH_SESSION_BUDGET_MS)
         // 카메라 앱 복귀 직후 in-memory 세션이 비어 있어도 localStorage 리프레시로 복구되는 경우가 많음
-        if ((error || !session?.user?.email) && typeof window !== 'undefined') {
+        if (!session?.user?.email && typeof window !== 'undefined') {
           const rt = localStorage.getItem('sb-refresh-token')
           if (rt) {
-            const { data: refData, error: refErr } = await supabase.auth.refreshSession({
-              refresh_token: rt,
-            })
-            if (!refErr && refData.session?.user?.email) {
-              session = refData.session
-              error = null
-            }
+            session = await refreshSupabaseSessionBounded(rt, AUTH_SESSION_RETRY_MS)
           }
         }
-        if (error || !session?.user?.email) return
+        if (!session?.user?.email) return
 
         const nowSec = Math.floor(Date.now() / 1000)
         const exp = session.expires_at ?? 0

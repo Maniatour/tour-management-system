@@ -8,6 +8,7 @@ import { guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
 
 const PWA_SAVED_PATH_RE = /^\/(ko|en)\/guide(\/|$)/
 const PWA_ADMIN_PATH_RE = /^\/(ko|en)\/admin(\/|$)/
+const ROOT_REDIRECT_FAILSAFE_MS = 12_000
 
 export default function RootPage() {
   const router = useRouter()
@@ -15,6 +16,12 @@ export default function RootPage() {
 
   useEffect(() => {
     let cancelled = false
+
+    const redirectFailsafe = setTimeout(() => {
+      if (cancelled) return
+      const pl = localStorage.getItem('preferred-locale')
+      router.replace(pl === 'en' ? '/en' : '/ko')
+    }, ROOT_REDIRECT_FAILSAFE_MS)
 
     const run = async () => {
       if (typeof window === 'undefined') return
@@ -62,6 +69,7 @@ export default function RootPage() {
     void run()
     return () => {
       cancelled = true
+      clearTimeout(redirectFailsafe)
     }
   }, [router, user, userRole, loading, isInitialized, isSimulating, simulatedUser])
 
