@@ -7,6 +7,7 @@ import { createClientSupabase } from '@/lib/supabase'
 import { guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
 
 const PWA_SAVED_PATH_RE = /^\/(ko|en)\/guide(\/|$)/
+const PWA_ADMIN_PATH_RE = /^\/(ko|en)\/admin(\/|$)/
 
 export default function RootPage() {
   const router = useRouter()
@@ -23,7 +24,11 @@ export default function RootPage() {
 
       // PWA 단독 실행: 설치 시점에 저장한 URL(채팅·가이드)로 복원
       if (isStandalone && savedUrl?.startsWith('/')) {
-        if (savedUrl.startsWith('/chat/') || PWA_SAVED_PATH_RE.test(savedUrl)) {
+        if (
+          savedUrl.startsWith('/chat/') ||
+          PWA_SAVED_PATH_RE.test(savedUrl) ||
+          PWA_ADMIN_PATH_RE.test(savedUrl)
+        ) {
           if (!cancelled) router.replace(savedUrl)
           return
         }

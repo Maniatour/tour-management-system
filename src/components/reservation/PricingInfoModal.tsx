@@ -16,6 +16,7 @@ import {
   computePricingSectionDisplayOperatingProfit,
 } from '@/utils/pricingSectionRevenueDisplay'
 import {
+  channelIsOtaForPricingSection,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
@@ -137,6 +138,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       setChannelSettlementFocused(false)
       setChannelSettlementDraft('')
       setDbMetricsSnapshot(null)
+      setIsOTAChannel(false)
     }
   }, [isOpen])
 
@@ -261,6 +263,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     setLoading(true)
     setError(null)
     setChannelDisplayName(null)
+    setIsOTAChannel(false)
 
     // 숫자 정규화 (Supabase/Postgres가 numeric을 문자열로 반환할 수 있음)
     const toNum = (v: unknown): number => {
@@ -283,10 +286,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           setChannelPricingType(channelData.pricing_type as 'separate' | 'single')
         }
         if (channelData) {
-          const ota =
-            String((channelData as { type?: string }).type || '').toLowerCase() === 'ota' ||
-            (channelData as { category?: string }).category === 'OTA'
-          setIsOTAChannel(ota)
+          setIsOTAChannel(channelIsOtaForPricingSection(channelData as { type?: string | null; category?: string | null; name?: string | null }))
           setChannelDisplayName(
             channelData.name != null && String(channelData.name).trim() !== ''
               ? String(channelData.name)
@@ -294,9 +294,11 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           )
         } else {
           setChannelDisplayName(null)
+          setIsOTAChannel(false)
         }
       } else {
         setChannelDisplayName(null)
+        setIsOTAChannel(false)
       }
       // reservation_id는 DB에서 문자열/UUID이므로 문자열로 통일해 조회. 상품 단가 컬럼 명시적으로 요청.
       const reservationId = String(reservation.id)

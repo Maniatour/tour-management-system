@@ -312,3 +312,25 @@ export function resolveCommissionBasePriceForPersistence(input: {
   return net
 }
 
+/**
+ * PricingSection·가격 정보 모달에서 OTA 전용 산식(③④)을 쓸지 판별.
+ * DB `channels.type`/`category`가 비어 있어도 이름 휴리스틱으로 OTA를 잡는다(예: Viator·Booking만 등록된 경우).
+ */
+export function channelIsOtaForPricingSection(
+  ch: { type?: string | null; category?: string | null; name?: string | null } | undefined
+): boolean {
+  if (!ch) return false
+  if (String(ch.type ?? '').toLowerCase() === 'ota' || String(ch.category ?? '') === 'OTA') {
+    return true
+  }
+  const n = String(ch.name ?? '').toLowerCase()
+  if (!n) return false
+  return (
+    n.includes('ota') ||
+    n.includes('expedia') ||
+    n.includes('booking') ||
+    n.includes('viator') ||
+    n.includes('getyourguide') ||
+    n.includes('get your guide')
+  )
+}

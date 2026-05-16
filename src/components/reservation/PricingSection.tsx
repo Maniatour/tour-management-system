@@ -24,6 +24,7 @@ import {
 } from '@/utils/usResidentChoiceSync'
 import type { ChannelSettlementComputeInput } from '@/utils/channelSettlement'
 import {
+  channelIsOtaForPricingSection,
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
@@ -1124,15 +1125,7 @@ export default function PricingSection({
     }
     // OTA 채널 여부 확인
     const selectedChannel = channels.find((c: { id: string }) => c.id === formData.channelId)
-    const isOTAChannel = selectedChannel && (
-      (selectedChannel as any).type?.toLowerCase() === 'ota' || 
-      (selectedChannel as any).category === 'OTA' ||
-      (selectedChannel as any).name?.toLowerCase().includes('ota') ||
-      (selectedChannel as any).name?.toLowerCase().includes('expedia') ||
-      (selectedChannel as any).name?.toLowerCase().includes('booking') ||
-      (selectedChannel as any).name?.toLowerCase().includes('viator') ||
-      (selectedChannel as any).name?.toLowerCase().includes('getyourguide')
-    )
+    const isOTAChannel = channelIsOtaForPricingSection(selectedChannel)
     
     // 채널의 commission_percent 가져오기 (숫자로 변환)
     const channelCommissionPercent = selectedChannel
@@ -1300,10 +1293,7 @@ export default function PricingSection({
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
-  const isOTAChannel = selectedChannel && (
-    selectedChannel.type?.toLowerCase() === 'ota' || 
-    selectedChannel.category === 'OTA'
-  )
+  const isOTAChannel = channelIsOtaForPricingSection(selectedChannel)
   // Homepage 채널 (채널 type이 ota가 아닐 때 쿠폰 선택에 함께 사용). id M00001 또는 이름에 Homepage/홈페이지 포함
   const homepageChannel = Array.isArray(channels) ? channels.find(ch =>
     ch.id === 'M00001' ||

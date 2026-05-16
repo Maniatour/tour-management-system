@@ -2,6 +2,7 @@
 
 import React from 'react'
 import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
+import AdminPwaInstallFab from '@/components/admin/AdminPwaInstallFab'
 import MobileFooter from '@/components/MobileFooter'
 import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import AdminPageTitle from '@/components/admin/AdminPageTitle'
@@ -17,8 +18,9 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
     <SiteAccessMatrixPatchProvider>
       <AdminPageTitle locale={locale} />
       <div className="min-h-screen bg-gray-50">
-        <AdminSidebarAndHeader locale={locale}>{children}</AdminSidebarAndHeader>
-        <MobileFooter locale={locale} />
+            <AdminSidebarAndHeader locale={locale}>{children}</AdminSidebarAndHeader>
+            <AdminPwaInstallFab locale={locale} />
+            <MobileFooter locale={locale} />
         <GlobalAudioPlayer />
       </div>
     </SiteAccessMatrixPatchProvider>
