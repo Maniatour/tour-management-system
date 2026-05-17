@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Customer, Reservation } from '@/types/reservation'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
-import { customerLanguageIndicatesKorean } from '@/lib/reservationEmailLocale'
+import { resolveReservationEmailLocale } from '@/lib/reservationEmailLocale'
 
 export type ReservationFormEmailSendKind = 'confirmation' | 'departure' | 'pickup'
 
@@ -65,7 +65,7 @@ export function ReservationFormEmailSendButtons({
         throw new Error(uiLocale === 'en' ? 'The customer has no email address.' : '고객 이메일이 없습니다.')
       }
 
-      const locale = customerLanguageIndicatesKorean(customer.language) ? 'ko' : 'en'
+      const locale = resolveReservationEmailLocale(customer.language ?? null, null)
 
       let response: Response
       if (kind === 'confirmation') {

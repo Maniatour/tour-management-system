@@ -11,7 +11,10 @@ import { ReservationFollowUpPipelineIcons } from '@/components/reservation/Reser
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
 import ResidentInquiryEmailPreviewModal from '@/components/reservation/ResidentInquiryEmailPreviewModal'
 import CancellationFollowUpMessagePreviewModal from '@/components/reservation/CancellationFollowUpMessagePreviewModal'
-import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import {
+  resolveReservationEmailIsEnglish,
+  resolveReservationEmailLocale,
+} from '@/lib/reservationEmailLocale'
 import { getCustomerName, getProductName } from '@/utils/reservationUtils'
 import type { FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
 import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
@@ -294,9 +297,7 @@ export default function ReservationFollowUpSection({
     }
     const customers = followUpPipelineCustomers ?? []
     const customer = customers.find((c) => c.id === followUpPipelineReservation?.customerId)
-    const customerLanguage = customer?.language?.toLowerCase() || 'ko'
-    const sendLocale =
-      customerLanguage === 'en' || customerLanguage === 'english' ? 'en' : 'ko'
+    const sendLocale = resolveReservationEmailLocale(customer?.language ?? null, null)
 
     let response: Response
     if (pipelineEmailPreview.emailType === 'resident_inquiry') {

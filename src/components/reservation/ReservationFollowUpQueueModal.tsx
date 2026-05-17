@@ -19,7 +19,6 @@ import {
 import {
   getCustomerName,
   isReservationTourDatePastLocal,
-  isReservationAddedStrictlyBeforeTodayLocal,
   lasVegasCalendarDateKeyToday,
 } from '@/utils/reservationUtils'
 
@@ -187,7 +186,6 @@ export default function ReservationFollowUpQueueModal({
         counts.cancel += 1
       }
       if (isReservationTourDatePastLocal(r.tourDate)) continue
-      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       if (reservationExcludedFromFollowUpPipeline(st)) continue
       const snap = snapshotsByReservationId.get(r.id)
       if (!snap) continue
@@ -238,9 +236,10 @@ export default function ReservationFollowUpQueueModal({
 
     const filtered = reservations.filter((r) => {
       if (isReservationTourDatePastLocal(r.tourDate)) return false
-      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) return false
       const st = r.status as string | undefined
+      if (reservationExcludedFromFollowUpPipeline(st)) return false
       const snap = snapshotsByReservationId.get(r.id)
+      if (!snap) return false
       return tabFilter(tab, r, st, snap)
     })
     filtered.sort((a, b) => {
@@ -263,7 +262,6 @@ export default function ReservationFollowUpQueueModal({
         n += 1
         continue
       }
-      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n

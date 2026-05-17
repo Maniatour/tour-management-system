@@ -5849,6 +5849,12 @@ export default function TicketBookingList() {
             ? changeModalBooking.unit_price
             : null
         }
+        company={changeModalBooking?.company ?? ''}
+        checkInDate={changeModalBooking?.check_in_date ?? ''}
+        category={changeModalBooking?.category}
+        rnNumber={changeModalBooking?.rn_number}
+        note={changeModalBooking?.note}
+        submittedBy={changeModalBooking?.submitted_by}
         saving={changeModalBooking ? workflowActionSavingId === changeModalBooking.id : false}
         onClose={() => setChangeModalBooking(null)}
         onSubmit={async (pendingEa, pendingTimeRaw) => {

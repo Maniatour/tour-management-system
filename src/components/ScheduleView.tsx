@@ -65,6 +65,7 @@ import {
   filterTicketBookingsExcludedFromMainUi,
   canRequestTicketBookingSoftDelete,
 } from '@/lib/ticketBookingSoftDelete'
+import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 
@@ -162,22 +163,6 @@ function isActiveTicketBookingStatusForHealth(status: string | null | undefined)
     s === 'tentative' ||
     s === 'completed'
   )
-}
-
-/**
- * 스케줄 점검 요약(4일 이내 · 투어 인원 vs 입장권 EA): 사전 입장권 구매가 없는 상품은 비교 대상에서 제외.
- * (야경투어, 불의 계곡 투어 등)
- */
-function tourProductExcludedFromTicketPeopleHealthCheck(tour: { products?: { name?: string | null } | null; product_id?: string | null }): boolean {
-  const p = tour?.products
-  const raw = [p?.name, tour?.product_id].map((s) => String(s ?? '').trim()).filter(Boolean).join(' ')
-  const lower = raw.toLowerCase()
-  if (!lower) return false
-  if (lower.includes('야경투어')) return true
-  if (lower.includes('불의 계곡') || lower.includes('불의계곡')) return true
-  if (lower.includes('valley of fire')) return true
-  if (lower.includes('night tour')) return true
-  return false
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -368,6 +353,17 @@ function ticketCompanyShortTag(company: string): string {
   if (!match) return '?'
   const ch = match[0]
   return /[a-zA-Z]/.test(ch) ? ch.toUpperCase() : ch
+}
+
+/** 스케줄 부킹 행: 체크인일 우선, 없으면 연결 투어 시작일 */
+function resolveScheduleTicketBookingDisplayYmd(
+  booking: Pick<ScheduleTicketBookingRow, 'check_in_date' | 'tour_id'>,
+  tourStartYmdByTourId: Map<string, string>
+): string | null {
+  const checkIn = booking.check_in_date ? String(booking.check_in_date).trim().slice(0, 10) : null
+  if (checkIn) return checkIn
+  if (booking.tour_id) return tourStartYmdByTourId.get(String(booking.tour_id)) ?? null
+  return null
 }
 
 function aggregateTicketDetailsForScheduleDisplay(
@@ -4583,7 +4579,7 @@ export default function ScheduleView() {
     const stLower = (s: string | null | undefined) => String(s || '').toLowerCase()
     for (const tour of wt) {
       if (isTourCancelled(tour.tour_status)) continue
-      if (tourProductExcludedFromTicketPeopleHealthCheck(tour)) continue
+      if (!tourProductRequiresTicketBookingCount(tour)) continue
       let touchesFour = false
       for (let d = 0; d < 4; d++) {
         const ds = today.add(d, 'day').format('YYYY-MM-DD')
@@ -4859,12 +4855,11 @@ export default function ScheduleView() {
       }
     })
 
-    // tour_id → tour_date 매핑 (check_in_date가 없거나 매칭 안 될 때 fallback)
-    const tourDateMap = new Map<string, string>()
+    const tourStartYmdByTourId = new Map<string, string>()
     const toursByIdForBookings = new Map<string, Tour>()
     tours.forEach(tour => {
       if (tour.id && tour.tour_date) {
-        tourDateMap.set(tour.id, tour.tour_date.substring(0, 10))
+        tourStartYmdByTourId.set(String(tour.id), tour.tour_date.substring(0, 10))
       }
       if (tour.id) toursByIdForBookings.set(String(tour.id), tour)
     })
@@ -4891,29 +4886,24 @@ export default function ScheduleView() {
       )
     }
 
-    // 입장권 부킹 합산
+    // 입장권 부킹 합산 (체크인일 기준; 멀티데이·밤도깨비·당일·앤텔롭+홀슈 연결 투어만)
     ticketBookings.forEach(booking => {
       if (!isActiveStatus(booking.status)) return
-      
-      // check_in_date를 YYYY-MM-DD로 정규화, 없으면 tour_date에서 가져오기
-      let dateString = booking.check_in_date ? booking.check_in_date.substring(0, 10) : null
-      if (!dateString && booking.tour_id) {
-        dateString = tourDateMap.get(booking.tour_id) || null
-      }
-      
+
+      const linkedTour = booking.tour_id ? toursByIdForBookings.get(String(booking.tour_id)) : undefined
+      if (!linkedTour || !tourProductRequiresTicketBookingCount(linkedTour)) return
+
+      const dateString = resolveScheduleTicketBookingDisplayYmd(booking, tourStartYmdByTourId)
+
       if (dateString && dailyTotals[dateString]) {
         dailyTotals[dateString].ticketCount += booking.ea || 0
         dailyTotals[dateString].totalCount += booking.ea || 0
-        const linkedTour = booking.tour_id ? toursByIdForBookings.get(String(booking.tour_id)) : undefined
-        const assignedForTour =
-          linkedTour && booking.tour_id
-            ? (assignedPeopleByTourId.get(String(booking.tour_id)) ?? 0)
-            : 0
+        const assignedForTour = assignedPeopleByTourId.get(String(booking.tour_id)) ?? 0
         const connectedTourLabel = formatConnectedTourLabelForTicketBookingTooltip(
           linkedTour,
           teamMembers,
           inactiveTeamMembers,
-          linkedTour ? assignedForTour : undefined
+          assignedForTour
         )
         dailyTotals[dateString].ticketDetails.push({
           id: booking.id,
@@ -4930,11 +4920,10 @@ export default function ScheduleView() {
     // 투어 호텔 부킹 합산
     tourHotelBookings.forEach(booking => {
       if (!isActiveStatus(booking.status)) return
-      
-      let dateString = booking.check_in_date ? booking.check_in_date.substring(0, 10) : null
-      if (!dateString && booking.tour_id) {
-        dateString = tourDateMap.get(booking.tour_id) || null
-      }
+
+      const checkIn = booking.check_in_date ? String(booking.check_in_date).trim().slice(0, 10) : null
+      const dateString =
+        checkIn || (booking.tour_id ? tourStartYmdByTourId.get(String(booking.tour_id)) ?? null : null)
       
       if (dateString && dailyTotals[dateString]) {
         dailyTotals[dateString].hotelCount += booking.rooms || 0
@@ -4997,15 +4986,51 @@ export default function ScheduleView() {
       )
     }
 
+    const tourStartYmdByTourId = new Map<string, string>()
+    const toursById = new Map<string, Tour>()
+    for (const tour of tours) {
+      if (!tour?.id) continue
+      toursById.set(String(tour.id), tour)
+      if (tour.tour_date) tourStartYmdByTourId.set(String(tour.id), String(tour.tour_date).slice(0, 10))
+    }
+
+    const activeTicketsByTourId = new Map<string, ScheduleTicketBookingRow[]>()
+    for (const booking of ticketBookings) {
+      if (!booking.tour_id || !isActiveBookingStatus(booking.status)) continue
+      const tid = String(booking.tour_id)
+      const list = activeTicketsByTourId.get(tid) ?? []
+      list.push(booking)
+      activeTicketsByTourId.set(tid, list)
+    }
+
     monthDays.forEach(({ dateString }) => {
       let tourPeople = 0
-      for (const tour of tours) {
-        if (isTourCancelled(tour.tour_status)) continue
-        if (tourProductExcludedFromTicketPeopleHealthCheck(tour)) continue
-        const tourDate = String(tour.tour_date || '').slice(0, 10)
-        if (tourDate !== dateString) continue
+      const toursCountedForDay = new Set<string>()
+
+      for (const booking of ticketBookings) {
+        if (!isActiveBookingStatus(booking.status) || !booking.tour_id) continue
+        const displayYmd = resolveScheduleTicketBookingDisplayYmd(booking, tourStartYmdByTourId)
+        if (displayYmd !== dateString) continue
+        const tid = String(booking.tour_id)
+        if (toursCountedForDay.has(tid)) continue
+        const tour = toursById.get(tid)
+        if (!tour || isTourCancelled(tour.tour_status)) continue
+        if (!tourProductRequiresTicketBookingCount(tour)) continue
+        toursCountedForDay.add(tid)
         tourPeople += computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
       }
+
+      for (const tour of tours) {
+        if (isTourCancelled(tour.tour_status)) continue
+        if (!tourProductRequiresTicketBookingCount(tour)) continue
+        const tourStart = String(tour.tour_date || '').slice(0, 10)
+        if (tourStart !== dateString) continue
+        const tid = String(tour.id)
+        if ((activeTicketsByTourId.get(tid)?.length ?? 0) > 0) continue
+        const assigned = computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
+        if (assigned > 0) tourPeople += assigned
+      }
+
       const ticketEa = bookingTotals[dateString]?.ticketCount ?? 0
       if (tourPeople !== ticketEa && (tourPeople > 0 || ticketEa > 0)) {
         byDate[dateString].ticketMismatch = true
@@ -5030,7 +5055,15 @@ export default function ScheduleView() {
     }
 
     return { byDate }
-  }, [monthDays, tours, reservations, bookingTotals, tourHotelBookings, getMultiDayTourDays])
+  }, [
+    monthDays,
+    tours,
+    reservations,
+    bookingTotals,
+    tourHotelBookings,
+    ticketBookings,
+    getMultiDayTourDays,
+  ])
 
   // 가이드별 총계 계산
   const guideTotals = useMemo(() => {
@@ -7140,17 +7173,10 @@ export default function ScheduleView() {
                       </td>
                       {monthDays.map(({ dateString }) => {
                         const rows = bookingDetailRowsByDate[dateString] || []
-                        const cellAlert = bookingCellAlerts.byDate[dateString]
-                        const isBookingAlert =
-                          cellAlert?.ticketMismatch || cellAlert?.multiDayHotelMissing
                         const todayBorderClass = isToday(dateString)
                           ? 'border-l-2 border-r-2 border-red-500'
                           : ''
-                        const detailWrapClass = isBookingAlert
-                          ? `bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold ${todayBorderClass}`
-                          : isToday(dateString)
-                            ? 'bg-red-50/40'
-                            : ''
+                        const detailWrapClass = isToday(dateString) ? `bg-red-50/40 ${todayBorderClass}` : ''
                         return (
                           <td
                             key={`${dateString}-detail`}
@@ -7158,7 +7184,7 @@ export default function ScheduleView() {
                             style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           >
                             <div
-                              className={`px-0.5 py-1 text-left space-y-0.5 break-words ${detailWrapClass} ${isBookingAlert ? '' : 'text-gray-800'}`}
+                              className={`px-0.5 py-1 text-left space-y-0.5 break-words text-gray-800 ${detailWrapClass}`}
                             >
                               {rows.length === 0 ? (
                                 <span className="text-gray-300">-</span>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay';
 import { fetchUploadApi } from '@/lib/uploadClient';
@@ -22,6 +22,9 @@ import {
   normalizeDbTimeToTicketSelectSlot,
 } from '@/lib/ticketBookingTimeSelect';
 import { fetchTicketToursForCheckIn } from '@/lib/ticketBookingToursForCheckIn';
+import { buildTicketBookingRequestEmail } from '@/lib/ticketBookingVendorEmail';
+import { useTeamMemberDisplayName } from '@/lib/useTeamMemberDisplayName';
+import TicketBookingVendorEmailCopyBlock from '@/components/booking/TicketBookingVendorEmailCopyBlock';
 
 /** 원격 DB에 ticket_bookings.zelle_confirmation_number 가 아직 없을 때 PostgREST PGRST204 */
 function isMissingZelleConfirmationColumnError(err: unknown): boolean {
@@ -772,8 +775,7 @@ export default function TicketBookingForm({
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const performSave = async () => {
     if (!formData.category?.trim()) {
       alert('카테고리를 선택하거나 새로 추가해주세요.');
       return;
@@ -1026,6 +1028,11 @@ export default function TicketBookingForm({
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await performSave();
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -1035,6 +1042,32 @@ export default function TicketBookingForm({
 
   };
 
+
+  const submitterDisplayName = useTeamMemberDisplayName(formData.submitted_by);
+
+  const requestEmailDraft = useMemo(() => {
+    if (booking?.id) return null;
+    return buildTicketBookingRequestEmail({
+      company: formData.company,
+      checkInDate: formData.check_in_date,
+      time: formData.time,
+      quantity: formData.ea,
+      category: formData.category,
+      rnNumber: formData.rn_number,
+      note: formData.note,
+      submitterDisplayName,
+    });
+  }, [
+    booking?.id,
+    formData.company,
+    formData.check_in_date,
+    formData.time,
+    formData.ea,
+    formData.category,
+    formData.rn_number,
+    formData.note,
+    submitterDisplayName,
+  ]);
 
   const handleDateChange = (field: string, direction: 'up' | 'down') => {
     const currentDate = new Date(formData[field as keyof TicketBooking] as string);
@@ -1381,6 +1414,27 @@ export default function TicketBookingForm({
               />
             </div>
             </div>
+
+            {!booking?.id && requestEmailDraft ?
+              <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+                <p className="mb-2 text-xs font-medium text-blue-900">
+                  예매 요청 — 제휴업체 이메일
+                </p>
+                <p className="mb-2 text-[11px] text-blue-800">
+                  저장 전에 아래 문구를 복사해 제휴업체에 보낼 수 있습니다. 저장 시 예매 요청·벤더 응답 대기 상태로 등록됩니다.
+                </p>
+                <TicketBookingVendorEmailCopyBlock
+                  subject={requestEmailDraft.subject}
+                  bodyPlain={requestEmailDraft.bodyPlain}
+                  bodyHtml={requestEmailDraft.bodyHtml}
+                  bodyTextHtml={requestEmailDraft.bodyTextHtml}
+                  company={formData.company}
+                  sendAndSaveEnabled
+                  saving={loading}
+                  onSendAndSave={performSave}
+                />
+              </div>
+            : null}
 
             {/* ③ 비용 | 수입 | 결제 방법 */}
             <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">

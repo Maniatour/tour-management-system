@@ -186,17 +186,25 @@ export function ReservationFollowUpPipelineIcons({
     ? resolveEffectivePipelineSnapshot(snapshot)
     : EMPTY_PIPELINE_SNAPSHOT
 
-  const { confirm, resident, departure, pickup } = resolveSteps(effectiveSnapshot, {
-    alwaysShowResidentStep,
-  })
+  /** 스냅샷 미로드 시 빈 스냅샷으로 '미완료(노란)' 표시하지 않음 */
+  const { confirm, resident, departure, pickup } = hasLoadedSnapshot
+    ? resolveSteps(effectiveSnapshot, { alwaysShowResidentStep })
+    : {
+        confirm: 'upcoming' as StepVisual,
+        resident: (alwaysShowResidentStep ? 'upcoming' : 'na') as StepVisual,
+        departure: 'upcoming' as StepVisual,
+        pickup: 'upcoming' as StepVisual,
+      }
 
   const residentHidden = resident === 'na' && !alwaysShowResidentStep
 
-  const tourChatVisual: StepVisual = !prerequisitesMetForPickup(effectiveSnapshot)
+  const tourChatVisual: StepVisual = !hasLoadedSnapshot
     ? 'upcoming'
-    : effectiveSnapshot.pickupSent
-      ? 'done'
-      : 'action'
+    : !prerequisitesMetForPickup(effectiveSnapshot)
+      ? 'upcoming'
+      : effectiveSnapshot.pickupSent
+        ? 'done'
+        : 'action'
 
   const items: { key: string; Icon: typeof Mail; visual: StepVisual; label: string }[] = [
     { key: 'c', Icon: Mail, visual: confirm, label: t('followUpPipeline.step1IconTitle') },

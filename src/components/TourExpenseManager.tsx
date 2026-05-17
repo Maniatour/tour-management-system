@@ -19,7 +19,11 @@ import {
 } from '@/lib/bookingSettlement'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
-import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
+import {
+  expenseHasReimbursementTracking,
+  parseReimbursedAmount,
+  reimbursementOutstanding,
+} from '@/lib/expenseReimbursement'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
@@ -214,7 +218,9 @@ export default function TourExpenseManager({
     result: ReceiptOcrResult
     draft: {
       paid_to: string
+      custom_paid_to: string
       paid_for: string
+      custom_paid_for: string
       amount: string
       payment_method: string
       date: string
@@ -222,6 +228,10 @@ export default function TourExpenseManager({
     }
   } | null>(null)
   const [ocrLoadingExpenseId, setOcrLoadingExpenseId] = useState<string | null>(null)
+  const [ocrShowCustomPaidTo, setOcrShowCustomPaidTo] = useState(false)
+  const [ocrShowCustomPaidFor, setOcrShowCustomPaidFor] = useState(false)
+  const [ocrShowMoreCategories, setOcrShowMoreCategories] = useState(false)
+  const [ocrPaymentMethodTab, setOcrPaymentMethodTab] = useState<'own' | 'other'>('own')
   const [receiptQuickRulePhrase, setReceiptQuickRulePhrase] = useState('')
   const [receiptQuickRuleCcLabel, setReceiptQuickRuleCcLabel] = useState(false)
   const [receiptQuickRuleSaving, setReceiptQuickRuleSaving] = useState(false)
@@ -242,6 +252,7 @@ export default function TourExpenseManager({
     setReceiptQuickRulePhrase(suggestBodyMatchPhraseFromOcrText(ocrReview.result.text))
     setReceiptQuickRuleCcLabel(false)
   }, [ocrReview?.expense?.id])
+
   const [expenseModalPortalReady, setExpenseModalPortalReady] = useState(false)
   useEffect(() => {
     setExpenseModalPortalReady(true)
@@ -332,6 +343,34 @@ export default function TourExpenseManager({
   )
   const visiblePaymentMethodOptions =
     paymentMethodTab === 'own' ? guideCardPaymentMethodOptions : otherPaymentMethodOptions
+  const visibleOcrPaymentMethodOptions =
+    ocrPaymentMethodTab === 'own' ? guideCardPaymentMethodOptions : otherPaymentMethodOptions
+
+  useEffect(() => {
+    if (!ocrReview) return
+    const { draft } = ocrReview
+    const resolvedPaidTo = resolveOcrDraftPaidTo(draft)
+    setOcrShowCustomPaidTo(
+      Boolean(draft.custom_paid_to) ||
+        Boolean(resolvedPaidTo && !paidToOptions.includes(resolvedPaidTo))
+    )
+    const resolvedPaidFor = resolveOcrDraftPaidFor(draft)
+    setOcrShowCustomPaidFor(
+      Boolean(draft.custom_paid_for) ||
+        Boolean(
+          resolvedPaidFor && !categories.some((category) => category.name === resolvedPaidFor)
+        )
+    )
+    setOcrShowMoreCategories(false)
+    setOcrPaymentMethodTab(
+      draft.payment_method && guideCardPaymentMethodIds.has(draft.payment_method) ? 'own' : 'other'
+    )
+  }, [ocrReview, paidToOptions, categories, guideCardPaymentMethodIds])
+
+  const resolveOcrDraftPaidTo = (draft: NonNullable<typeof ocrReview>['draft']) =>
+    (draft.custom_paid_to || draft.paid_to || '').trim()
+  const resolveOcrDraftPaidFor = (draft: NonNullable<typeof ocrReview>['draft']) =>
+    (draft.custom_paid_for || draft.paid_for || '').trim()
 
   const getExpensePaidForLabel = (paidFor: string) =>
     paidFor === receiptOnlyPaidFor ? t('receiptOnlyPendingPaidFor') : paidFor
@@ -394,9 +433,10 @@ export default function TourExpenseManager({
 
   const buildOcrReviewFromResult = useCallback(
     (expense: TourExpense, ocrResult: ReceiptOcrResult, applyTarget: 'edit_expense' | 'add_form') => {
-      const candidatePaidFor = categories.some((category) => category.name === ocrResult.candidates.paid_for)
-        ? ocrResult.candidates.paid_for
-        : ''
+      const rawPaidFor = ocrResult.candidates.paid_for || expense.paid_for || ''
+      const isPaidForInOptions = categories.some((category) => category.name === rawPaidFor)
+      const rawPaidTo = ocrResult.candidates.paid_to || expense.paid_to || ''
+      const isPaidToInOptions = paidToOptions.includes(rawPaidTo)
       const paymentMethodId = findPaymentMethodCandidate(ocrResult.candidates)
       const noteParts = [
         expense.note || '',
@@ -408,8 +448,10 @@ export default function TourExpenseManager({
         expense,
         result: ocrResult,
         draft: {
-          paid_to: ocrResult.candidates.paid_to || expense.paid_to || '',
-          paid_for: candidatePaidFor,
+          paid_to: isPaidToInOptions ? rawPaidTo : '',
+          custom_paid_to: isPaidToInOptions ? '' : rawPaidTo,
+          paid_for: isPaidForInOptions ? rawPaidFor : '',
+          custom_paid_for: isPaidForInOptions ? '' : rawPaidFor,
           amount:
             ocrResult.candidates.amount != null
               ? ocrResult.candidates.amount.toFixed(2)
@@ -422,7 +464,7 @@ export default function TourExpenseManager({
         },
       }
     },
-    [categories, findPaymentMethodCandidate, t]
+    [categories, findPaymentMethodCandidate, paidToOptions, t]
   )
 
   /** 브라우저에서 이미지 바이트 확보 → Tesseract는 브라우저에서 실행 (서버 worker 경로·500 방지) */
@@ -492,6 +534,19 @@ export default function TourExpenseManager({
     if (formData.payment_method && !nextOptions.some((option) => option.id === formData.payment_method)) {
       setFormData((prev) => ({ ...prev, payment_method: '' }))
     }
+  }
+
+  const handleOcrPaymentMethodTabChange = (tab: 'own' | 'other') => {
+    const nextOptions = tab === 'own' ? guideCardPaymentMethodOptions : otherPaymentMethodOptions
+    setOcrPaymentMethodTab(tab)
+    setOcrReview((prev) => {
+      if (!prev) return prev
+      const current = prev.draft.payment_method
+      if (current && !nextOptions.some((option) => option.id === current)) {
+        return { ...prev, draft: { ...prev.draft, payment_method: '' } }
+      }
+      return prev
+    })
   }
 
   // 예약 데이터 로드 - reservationIds가 있으면 해당 예약들만, 없으면 빈 배열
@@ -1377,15 +1432,16 @@ export default function TourExpenseManager({
     })
     
     setFormData({
-      paid_to: isPaidToInOptions ? expense.paid_to : '',
-      paid_for: isPaidForInOptions ? expense.paid_for : '',
+      paid_to: isPaidToInOptions ? (expense.paid_to ?? '') : '',
+      paid_for: isPaidForInOptions ? (expense.paid_for ?? '') : '',
       amount: expense.amount.toString(),
       payment_method: expense.payment_method || '',
       note: expense.note || '',
       image_url: expense.image_url || '',
       file_path: expense.file_path || '',
-      custom_paid_to: isPaidToInOptions ? '' : expense.paid_to,
-      custom_paid_for: !isPaidForInOptions && !isReceiptOnlyPending ? expense.paid_for : '',
+      custom_paid_to: isPaidToInOptions ? '' : (expense.paid_to ?? ''),
+      custom_paid_for:
+        !isPaidForInOptions && !isReceiptOnlyPending ? (expense.paid_for ?? '') : '',
       reimbursed_amount:
         expense.amount > 0 ? String(parseReimbursedAmount(expense.reimbursed_amount)) : '',
       reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
@@ -1459,7 +1515,10 @@ export default function TourExpenseManager({
 
     if (ocrReview.applyTarget === 'add_form') {
       const { draft } = ocrReview
-      const isPaidToInOptions = paidToOptions.includes(draft.paid_to || '')
+      const finalPaidTo = resolveOcrDraftPaidTo(draft)
+      const finalPaidFor = resolveOcrDraftPaidFor(draft)
+      const isPaidToInOptions = paidToOptions.includes(finalPaidTo)
+      const isPaidForInOptions = categories.some((category) => category.name === finalPaidFor)
       const dateNote = draft.date ? `${t('receiptOcrDateLabel')}: ${draft.date}` : ''
 
       setFormData((prev) => {
@@ -1474,13 +1533,13 @@ export default function TourExpenseManager({
         }
         return {
           ...prev,
-          paid_to: isPaidToInOptions ? draft.paid_to : '',
-          paid_for: draft.paid_for,
+          paid_to: isPaidToInOptions ? finalPaidTo : '',
+          paid_for: isPaidForInOptions ? finalPaidFor : '',
           amount: draft.amount,
           payment_method: draft.payment_method,
           note: noteOut,
-          custom_paid_to: isPaidToInOptions ? '' : draft.paid_to,
-          custom_paid_for: '',
+          custom_paid_to: isPaidToInOptions ? '' : finalPaidTo,
+          custom_paid_for: isPaidForInOptions ? '' : finalPaidFor,
           reimbursed_amount: '',
           reimbursed_on: '',
           reimbursement_note: '',
@@ -1489,8 +1548,8 @@ export default function TourExpenseManager({
       setPaymentMethodTab(
         draft.payment_method && guideCardPaymentMethodIds.has(draft.payment_method) ? 'own' : 'other'
       )
-      setShowCustomPaidTo(Boolean(draft.paid_to && !isPaidToInOptions))
-      setShowCustomPaidFor(false)
+      setShowCustomPaidTo(Boolean(finalPaidTo && !isPaidToInOptions))
+      setShowCustomPaidFor(Boolean(finalPaidFor && !isPaidForInOptions))
       setShowMoreCategories(false)
       setReimbursementSectionOpen(false)
       setOcrReview(null)
@@ -1499,7 +1558,10 @@ export default function TourExpenseManager({
     }
 
     const { expense, draft } = ocrReview
-    const isPaidToInOptions = paidToOptions.includes(draft.paid_to || '')
+    const finalPaidTo = resolveOcrDraftPaidTo(draft)
+    const finalPaidFor = resolveOcrDraftPaidFor(draft)
+    const isPaidToInOptions = paidToOptions.includes(finalPaidTo)
+    const isPaidForInOptions = categories.some((category) => category.name === finalPaidFor)
     const dateNote = draft.date ? `${t('receiptOcrDateLabel')}: ${draft.date}` : ''
     const finalNote = dateNote && !draft.note.includes(dateNote)
       ? [draft.note, dateNote].filter(Boolean).join('\n')
@@ -1507,15 +1569,15 @@ export default function TourExpenseManager({
 
     setEditingExpense(expense)
     setFormData({
-      paid_to: isPaidToInOptions ? draft.paid_to : '',
-      paid_for: draft.paid_for,
+      paid_to: isPaidToInOptions ? finalPaidTo : '',
+      paid_for: isPaidForInOptions ? finalPaidFor : '',
       amount: draft.amount,
       payment_method: draft.payment_method,
       note: finalNote,
       image_url: expense.image_url || '',
       file_path: expense.file_path || '',
-      custom_paid_to: isPaidToInOptions ? '' : draft.paid_to,
-      custom_paid_for: '',
+      custom_paid_to: isPaidToInOptions ? '' : finalPaidTo,
+      custom_paid_for: isPaidForInOptions ? '' : finalPaidFor,
       reimbursed_amount:
         expense.amount > 0 ? String(parseReimbursedAmount(expense.reimbursed_amount)) : '',
       reimbursed_on: expense.reimbursed_on ? expense.reimbursed_on.slice(0, 10) : '',
@@ -1524,8 +1586,8 @@ export default function TourExpenseManager({
     setPaymentMethodTab(
       draft.payment_method && guideCardPaymentMethodIds.has(draft.payment_method) ? 'own' : 'other'
     )
-    setShowCustomPaidTo(Boolean(draft.paid_to && !isPaidToInOptions))
-    setShowCustomPaidFor(false)
+    setShowCustomPaidTo(Boolean(finalPaidTo && !isPaidToInOptions))
+    setShowCustomPaidFor(Boolean(finalPaidFor && !isPaidForInOptions))
     setShowMoreCategories(false)
     setReimbursementSectionOpen(
       parseReimbursedAmount(expense.reimbursed_amount) > 0.009 ||
@@ -1543,8 +1605,8 @@ export default function TourExpenseManager({
     try {
       const res = await prependBodyMatchRuleToStoredSettings(supabase, {
         contains_phrase: receiptQuickRulePhrase,
-        paid_to: ocrReview.draft.paid_to,
-        paid_for: ocrReview.draft.paid_for,
+        paid_to: resolveOcrDraftPaidTo(ocrReview.draft),
+        paid_for: resolveOcrDraftPaidFor(ocrReview.draft),
         payment_method_id: ocrReview.draft.payment_method,
         payment_use_cc_label: receiptQuickRuleCcLabel,
       })
@@ -2591,9 +2653,7 @@ export default function TourExpenseManager({
                   </div>
                 </div>
               </div>
-              {expense.amount > 0 &&
-                (parseReimbursedAmount(expense.reimbursed_amount) > 0 ||
-                  reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009) && (
+              {expense.amount > 0 && expenseHasReimbursementTracking(expense) && (
                   <div className="mt-1.5 text-[10px] text-gray-600 border-t border-gray-100 pt-1.5">
                     <span className="text-gray-500">{t('reimbursedShort')}:</span>{' '}
                     <span className="font-medium">{formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}</span>
@@ -2746,24 +2806,349 @@ export default function TourExpenseManager({
                       return (
                         <>
                           <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                   {t('paidTo')}
                                 </label>
-                                <input
-                                  type="text"
-                                  value={ocrMatches.draft.paid_to}
-                                  onChange={(e) =>
-                                    setOcrReview((prev) =>
-                                      prev
-                                        ? { ...prev, draft: { ...prev.draft, paid_to: e.target.value } }
-                                        : prev
-                                    )
-                                  }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
+                                <div className="space-y-2">
+                                  <select
+                                    value={ocrMatches.draft.custom_paid_to || ocrMatches.draft.paid_to}
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value
+                                      if (selectedValue === '__custom__') {
+                                        setOcrReview((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                draft: {
+                                                  ...prev.draft,
+                                                  paid_to: '',
+                                                  custom_paid_to: '',
+                                                },
+                                              }
+                                            : prev
+                                        )
+                                        setOcrShowCustomPaidTo(true)
+                                      } else if (paidToOptions.includes(selectedValue)) {
+                                        setOcrReview((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                draft: {
+                                                  ...prev.draft,
+                                                  paid_to: selectedValue,
+                                                  custom_paid_to: '',
+                                                },
+                                              }
+                                            : prev
+                                        )
+                                        setOcrShowCustomPaidTo(false)
+                                      } else {
+                                        setOcrReview((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                draft: {
+                                                  ...prev.draft,
+                                                  paid_to: '',
+                                                  custom_paid_to: selectedValue,
+                                                },
+                                              }
+                                            : prev
+                                        )
+                                        setOcrShowCustomPaidTo(true)
+                                      }
+                                    }}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  >
+                                    <option value="">{t('selectPaidTo')}</option>
+                                    {paidToOptions.map((paidTo) => (
+                                      <option key={paidTo} value={paidTo}>
+                                        {paidTo}
+                                      </option>
+                                    ))}
+                                    <option value="__custom__">{t('directInput')}</option>
+                                  </select>
+                                  {ocrShowCustomPaidTo && (
+                                    <input
+                                      type="text"
+                                      value={ocrMatches.draft.custom_paid_to ?? ''}
+                                      onChange={(e) =>
+                                        setOcrReview((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                draft: {
+                                                  ...prev.draft,
+                                                  custom_paid_to: e.target.value,
+                                                },
+                                              }
+                                            : prev
+                                        )
+                                      }
+                                      placeholder={t('enterNewPaidTo')}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                  )}
+                                </div>
                               </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  {t('paidFor')}
+                                </label>
+                                <div className="mb-3">
+                                  <div className="grid grid-cols-4 gap-2">
+                                    {categories.find((c) => c.name === 'Entrance Fee') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next =
+                                            ocrMatches.draft.paid_for === 'Entrance Fee' ? '' : 'Entrance Fee'
+                                          setOcrReview((prev) =>
+                                            prev
+                                              ? {
+                                                  ...prev,
+                                                  draft: {
+                                                    ...prev.draft,
+                                                    paid_for: next,
+                                                    custom_paid_for: '',
+                                                  },
+                                                }
+                                              : prev
+                                          )
+                                          setOcrShowCustomPaidFor(false)
+                                        }}
+                                        className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                                          ocrMatches.draft.paid_for === 'Entrance Fee'
+                                            ? 'border-blue-500 bg-blue-50'
+                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        <Ticket
+                                          className={`w-6 h-6 mb-1 ${
+                                            ocrMatches.draft.paid_for === 'Entrance Fee'
+                                              ? 'text-blue-600'
+                                              : 'text-gray-600'
+                                          }`}
+                                        />
+                                        <span className="text-xs text-center text-gray-700">Entrance Fee</span>
+                                      </button>
+                                    )}
+                                    {categories.find((c) => c.name === 'Gas') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next = ocrMatches.draft.paid_for === 'Gas' ? '' : 'Gas'
+                                          setOcrReview((prev) =>
+                                            prev
+                                              ? {
+                                                  ...prev,
+                                                  draft: {
+                                                    ...prev.draft,
+                                                    paid_for: next,
+                                                    custom_paid_for: '',
+                                                  },
+                                                }
+                                              : prev
+                                          )
+                                          setOcrShowCustomPaidFor(false)
+                                        }}
+                                        className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                                          ocrMatches.draft.paid_for === 'Gas'
+                                            ? 'border-blue-500 bg-blue-50'
+                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        <Fuel
+                                          className={`w-6 h-6 mb-1 ${
+                                            ocrMatches.draft.paid_for === 'Gas'
+                                              ? 'text-blue-600'
+                                              : 'text-gray-600'
+                                          }`}
+                                        />
+                                        <span className="text-xs text-center text-gray-700">Gas</span>
+                                      </button>
+                                    )}
+                                    {categories.find((c) => c.name === 'Meals') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next = ocrMatches.draft.paid_for === 'Meals' ? '' : 'Meals'
+                                          setOcrReview((prev) =>
+                                            prev
+                                              ? {
+                                                  ...prev,
+                                                  draft: {
+                                                    ...prev.draft,
+                                                    paid_for: next,
+                                                    custom_paid_for: '',
+                                                  },
+                                                }
+                                              : prev
+                                          )
+                                          setOcrShowCustomPaidFor(false)
+                                        }}
+                                        className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                                          ocrMatches.draft.paid_for === 'Meals'
+                                            ? 'border-blue-500 bg-blue-50'
+                                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        <UtensilsCrossed
+                                          className={`w-6 h-6 mb-1 ${
+                                            ocrMatches.draft.paid_for === 'Meals'
+                                              ? 'text-blue-600'
+                                              : 'text-gray-600'
+                                          }`}
+                                        />
+                                        <span className="text-xs text-center text-gray-700">Meals</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setOcrShowMoreCategories(!ocrShowMoreCategories)}
+                                      className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                                        ocrShowMoreCategories
+                                          ? 'border-blue-500 bg-blue-50'
+                                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <MoreHorizontal
+                                        className={`w-6 h-6 mb-1 ${
+                                          ocrShowMoreCategories ? 'text-blue-600' : 'text-gray-600'
+                                        }`}
+                                      />
+                                      <span className="text-xs text-center text-gray-700">More</span>
+                                    </button>
+                                  </div>
+                                  {ocrShowMoreCategories && (
+                                    <div className="mt-2 grid grid-cols-4 gap-2">
+                                      {categories
+                                        .filter((c) => !['Entrance Fee', 'Gas', 'Meals'].includes(c.name))
+                                        .map((category) => {
+                                          const getCategoryIcon = (name: string) => {
+                                            const iconMap: Record<
+                                              string,
+                                              React.ComponentType<{ className?: string }>
+                                            > = {
+                                              Meals: UtensilsCrossed,
+                                              Bento: Package,
+                                              'Guide Bento': Package,
+                                              Hotel: Building2,
+                                              Maintenance: Wrench,
+                                              Rent: Car,
+                                              'Rent (Personal Vehicle)': Car,
+                                              Parking: MapPin,
+                                              Antelope: MapPin,
+                                              Lotto: Coins,
+                                            }
+                                            return iconMap[name] || MoreHorizontal
+                                          }
+                                          const IconComponent = getCategoryIcon(category.name)
+                                          const isSelected = ocrMatches.draft.paid_for === category.name
+                                          return (
+                                            <button
+                                              key={category.id}
+                                              type="button"
+                                              onClick={() => {
+                                                const next = isSelected ? '' : category.name
+                                                setOcrReview((prev) =>
+                                                  prev
+                                                    ? {
+                                                        ...prev,
+                                                        draft: {
+                                                          ...prev.draft,
+                                                          paid_for: next,
+                                                          custom_paid_for: '',
+                                                        },
+                                                      }
+                                                    : prev
+                                                )
+                                                setOcrShowCustomPaidFor(false)
+                                              }}
+                                              className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                                                isSelected
+                                                  ? 'border-blue-500 bg-blue-50'
+                                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                              }`}
+                                            >
+                                              <IconComponent
+                                                className={`w-6 h-6 mb-1 ${
+                                                  isSelected ? 'text-blue-600' : 'text-gray-600'
+                                                }`}
+                                              />
+                                              <span className="text-xs text-center text-gray-700 break-words">
+                                                {category.name}
+                                              </span>
+                                            </button>
+                                          )
+                                        })}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="space-y-2">
+                                  <select
+                                    value={ocrMatches.draft.paid_for}
+                                    onChange={(e) => {
+                                      setOcrReview((prev) =>
+                                        prev
+                                          ? {
+                                              ...prev,
+                                              draft: {
+                                                ...prev.draft,
+                                                paid_for: e.target.value,
+                                                custom_paid_for: '',
+                                              },
+                                            }
+                                          : prev
+                                      )
+                                      setOcrShowCustomPaidFor(false)
+                                    }}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  >
+                                    <option value="">{t('selectOptions.pleaseSelect')}</option>
+                                    {categories.map((category) => (
+                                      <option key={category.id} value={category.name}>
+                                        {category.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => setOcrShowCustomPaidFor(!ocrShowCustomPaidFor)}
+                                    className="text-sm text-blue-600 hover:text-blue-800"
+                                  >
+                                    {ocrShowCustomPaidFor
+                                      ? t('selectFromExisting')
+                                      : t('enterDirectly')}
+                                  </button>
+                                  {ocrShowCustomPaidFor && (
+                                    <input
+                                      type="text"
+                                      value={ocrMatches.draft.custom_paid_for ?? ''}
+                                      onChange={(e) =>
+                                        setOcrReview((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                draft: {
+                                                  ...prev.draft,
+                                                  custom_paid_for: e.target.value,
+                                                },
+                                              }
+                                            : prev
+                                        )
+                                      }
+                                      placeholder={t('newPaidForPlaceholder')}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                   {t('amount')} (USD)
@@ -2792,53 +3177,69 @@ export default function TourExpenseManager({
                               </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  {t('paidFor')}
-                                </label>
-                                <select
-                                  value={ocrMatches.draft.paid_for}
-                                  onChange={(e) =>
-                                    setOcrReview((prev) =>
-                                      prev
-                                        ? { ...prev, draft: { ...prev.draft, paid_for: e.target.value } }
-                                        : prev
-                                    )
-                                  }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                >
-                                  <option value="">{t('selectOptions.pleaseSelect')}</option>
-                                  {categories.map((category) => (
-                                    <option key={category.id} value={category.name}>
-                                      {category.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
                                   {t('paymentMethod')}
                                 </label>
-                                <select
-                                  value={ocrMatches.draft.payment_method}
-                                  onChange={(e) =>
-                                    setOcrReview((prev) =>
-                                      prev
-                                        ? {
-                                            ...prev,
-                                            draft: { ...prev.draft, payment_method: e.target.value },
-                                          }
-                                        : prev
-                                    )
-                                  }
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                >
-                                  <option value="">{t('selectOptions.pleaseSelect')}</option>
-                                  {activePaymentMethodOptions.map((option) => (
-                                    <option key={option.id} value={option.id}>
-                                      {option.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOcrPaymentMethodTabChange('own')}
+                                      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                                        ocrPaymentMethodTab === 'own'
+                                          ? 'bg-white text-blue-700 shadow-sm'
+                                          : 'text-gray-600 hover:text-gray-900'
+                                      }`}
+                                    >
+                                      {t('ownCard')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOcrPaymentMethodTabChange('other')}
+                                      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                                        ocrPaymentMethodTab === 'other'
+                                          ? 'bg-white text-blue-700 shadow-sm'
+                                          : 'text-gray-600 hover:text-gray-900'
+                                      }`}
+                                    >
+                                      {t('otherPaymentMethods')}
+                                    </button>
+                                  </div>
+                                  {ocrPaymentMethodTab === 'own' && tourGuideEmails.size === 0 && (
+                                    <p className="text-xs text-amber-600">
+                                      {t('noGuideAssignedForPaymentMethods')}
+                                    </p>
+                                  )}
+                                  {ocrPaymentMethodTab === 'own' &&
+                                    tourGuideEmails.size > 0 &&
+                                    guideCardPaymentMethodOptions.length === 0 && (
+                                      <p className="text-xs text-amber-600">
+                                        {t('noGuideCardPaymentMethods')}
+                                      </p>
+                                    )}
+                                  {ocrPaymentMethodTab === 'other' &&
+                                    otherPaymentMethodOptions.length === 0 && (
+                                      <p className="text-xs text-amber-600">
+                                        {t('noOtherActivePaymentMethods')}
+                                      </p>
+                                    )}
+                                  <PaymentMethodAutocomplete
+                                    options={visibleOcrPaymentMethodOptions}
+                                    valueId={ocrMatches.draft.payment_method || ''}
+                                    onChange={(id) =>
+                                      setOcrReview((prev) =>
+                                        prev
+                                          ? {
+                                              ...prev,
+                                              draft: { ...prev.draft, payment_method: id },
+                                            }
+                                          : prev
+                                      )
+                                    }
+                                    pleaseSelectLabel={t('selectOptions.pleaseSelect')}
+                                  />
+                                </div>
                               </div>
+                            </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                   {t('receiptOcrDateLabel')}
@@ -2856,7 +3257,7 @@ export default function TourExpenseManager({
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               </div>
-                              <div className="sm:col-span-2">
+                              <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                   {t('memo')}
                                 </label>
@@ -3073,7 +3474,7 @@ export default function TourExpenseManager({
                     {showCustomPaidTo && (
                       <input
                         type="text"
-                        value={formData.custom_paid_to}
+                        value={formData.custom_paid_to ?? ''}
                         onChange={(e) => {
                           const inputValue = e.target.value
                           setFormData(prev => ({ ...prev, custom_paid_to: inputValue }))
@@ -3257,7 +3658,7 @@ export default function TourExpenseManager({
                     {showCustomPaidFor && (
                       <input
                         type="text"
-                        value={formData.custom_paid_for}
+                        value={formData.custom_paid_for ?? ''}
                         onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
                         placeholder={t('newPaidForPlaceholder')}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"

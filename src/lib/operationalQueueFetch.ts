@@ -65,6 +65,22 @@ export type FetchReservationsByIdsChunkHandlers = {
   onChunk: (rows: Record<string, unknown>[]) => boolean | void | Promise<boolean | void>
 }
 
+/** 운영 큐 스냅샷에 실제 예약이 있을 때만 true (빈 `reservations: []`는 미로드로 간주) */
+export function operationalQueueHasReservations(
+  snapshot: { reservations?: unknown[] } | null | undefined
+): boolean {
+  return (snapshot?.reservations?.length ?? 0) > 0
+}
+
+/** Follow-up·처리필요 모달: 운영 큐가 비어 있으면 목록 필터 결과로 폴백 */
+export function pickReservationsForOperationalQueue<T>(
+  snapshot: { reservations?: T[] } | null | undefined,
+  fallback: T[]
+): T[] {
+  const op = snapshot?.reservations
+  return op && op.length > 0 ? op : fallback
+}
+
 /** 후보 id만 `RESERVATION_LIST_SELECT`로 배치 조회 */
 export async function fetchReservationsByIdsProgressive(
   supabase: SupabaseClient,

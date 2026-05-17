@@ -1,12 +1,15 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   getTicketBookingTimeSelectOptions,
   getTicketBookingTimeSlotColors,
   normalizeDbTimeToTicketSelectSlot,
 } from '@/lib/ticketBookingTimeSelect'
+import { buildTicketBookingChangeRequestEmail } from '@/lib/ticketBookingVendorEmail'
+import { useTeamMemberDisplayName } from '@/lib/useTeamMemberDisplayName'
+import TicketBookingVendorEmailCopyBlock from '@/components/booking/TicketBookingVendorEmailCopyBlock'
 
 function formatMoneyUsd(n: number): string {
   if (!Number.isFinite(n)) return '—'
@@ -41,6 +44,12 @@ export type TicketBookingQtyTimeChangeModalProps = {
   initialExpense?: number
   /** 있으면 단가로 우선 사용 */
   initialUnitPrice?: number | null
+  company?: string
+  checkInDate?: string
+  category?: string
+  rnNumber?: string | null
+  note?: string | null
+  submittedBy?: string | null
   onClose: () => void
   onSubmit: (pendingEa: number, pendingTime: string) => void | Promise<void>
   saving?: boolean
@@ -53,11 +62,19 @@ export default function TicketBookingQtyTimeChangeModal({
   initialTime,
   initialExpense = 0,
   initialUnitPrice,
+  company = '',
+  checkInDate = '',
+  category,
+  rnNumber,
+  note,
+  submittedBy,
   onClose,
   onSubmit,
   saving,
 }: TicketBookingQtyTimeChangeModalProps) {
   const t = useTranslations('booking.ticketBooking')
+  const locale = useLocale()
+  const submitterDisplayName = useTeamMemberDisplayName(submittedBy)
   const slotOptions = useMemo(() => getTicketBookingTimeSelectOptions(), [])
   const slotValues = useMemo(() => new Set(slotOptions.map((o) => o.value)), [slotOptions])
 
@@ -71,9 +88,10 @@ export default function TicketBookingQtyTimeChangeModal({
     }
   }, [open, initialEa, initialTime])
 
-  if (!open) return null
-
-  const normalizedInitial = normalizeDbTimeToTicketSelectSlot(initialTime)
+  const normalizedInitial = useMemo(
+    () => normalizeDbTimeToTicketSelectSlot(initialTime),
+    [initialTime]
+  )
   const showExtraSlot = Boolean(normalizedInitial && !slotValues.has(normalizedInitial))
   const extraHour = showExtraSlot
     ? parseInt(normalizedInitial.split(':')[0] || '6', 10)
@@ -87,12 +105,47 @@ export default function TicketBookingQtyTimeChangeModal({
       ? Math.round(unitUsd * parsedEa * 100) / 100
       : null
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const vendorEmailDraft = useMemo(() => {
+    const reqEa = Number.isFinite(parsedEa) && parsedEa >= 0 ? parsedEa : initialEa
+    const reqTime = time.trim() || normalizedInitial
+    return buildTicketBookingChangeRequestEmail({
+      company,
+      checkInDate,
+      category,
+      rnNumber,
+      note,
+      submitterDisplayName,
+      currentQuantity: initialEa,
+      currentTime: initialTime,
+      requestedQuantity: reqEa,
+      requestedTime: reqTime,
+    })
+  }, [
+    company,
+    checkInDate,
+    category,
+    rnNumber,
+    note,
+    submitterDisplayName,
+    initialEa,
+    initialTime,
+    parsedEa,
+    time,
+    normalizedInitial,
+  ])
+
+  if (!open) return null
+
+  const submitChangeRequest = async () => {
     const n = parseInt(ea, 10)
     if (Number.isNaN(n) || n < 0) return
     if (!time.trim()) return
     await onSubmit(n, time.trim())
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitChangeRequest()
   }
 
   return (
@@ -103,7 +156,7 @@ export default function TicketBookingQtyTimeChangeModal({
       onClick={() => !saving && onClose()}
     >
       <div
-        className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
         onClick={(ev) => ev.stopPropagation()}
       >
         <h3 className="text-base font-semibold text-gray-900">{title}</h3>
@@ -191,6 +244,18 @@ export default function TicketBookingQtyTimeChangeModal({
               ))}
             </select>
           </div>
+
+          <TicketBookingVendorEmailCopyBlock
+            subject={vendorEmailDraft.subject}
+            bodyPlain={vendorEmailDraft.bodyPlain}
+            bodyHtml={vendorEmailDraft.bodyHtml}
+            bodyTextHtml={vendorEmailDraft.bodyTextHtml}
+            company={company}
+            sendAndSaveEnabled
+            saving={!!saving}
+            onSendAndSave={submitChangeRequest}
+          />
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"

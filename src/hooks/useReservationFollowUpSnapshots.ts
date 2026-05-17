@@ -25,25 +25,36 @@ function isLikelyAbortError(e: unknown): boolean {
   return blob.includes('AbortError') || blob.includes('signal is aborted')
 }
 
-/** productFingerprint 문자열 → 예약별 product_code (안정 키용, effect 의존성에서 배열 참조 제거) */
-function productCodeMapFromFingerprint(fp: string): Map<string, string | null> {
-  const m = new Map<string, string | null>()
-  if (!fp) return m
-  for (const segment of fp.split('|')) {
-    if (!segment) continue
-    const colon = segment.indexOf(':')
-    if (colon < 0) continue
-    const id = segment.slice(0, colon)
-    const raw = segment.slice(colon + 1)
-    m.set(id, raw === '' ? null : raw)
-  }
-  return m
+type ReservationLite = { id: string; productId: string }
+
+function buildReservationLiteKey(reservations: ReservationLite[]): string {
+  return reservations
+    .map((r) => {
+      const id = String(r.id ?? '').trim()
+      if (!id) return ''
+      return `${id}\u0001${String(r.productId ?? '').trim()}`
+    })
+    .filter(Boolean)
+    .sort()
+    .join('\u001f')
 }
 
-type ReservationLite = { id: string; productId: string }
+function parseReservationLiteKey(key: string): ReservationLite[] {
+  if (!key) return []
+  const out: ReservationLite[] = []
+  for (const part of key.split('\u001f')) {
+    if (!part) continue
+    const sep = part.indexOf('\u0001')
+    const id = sep >= 0 ? part.slice(0, sep) : part
+    const productId = sep >= 0 ? part.slice(sep + 1) : ''
+    if (id) out.push({ id, productId })
+  }
+  return out
+}
 
 /**
  * 예약 카드 Follow-up 파이프라인 표시용: email_logs + (해당 시) 거주 확인 토큰/제출 + 수동 완료(다른 채널).
+ * 스냅샷은 요청 id 범위만 갱신하고 기존 맵과 병합(카드·모달 전환 시 초기화 방지).
  */
 export function useReservationFollowUpSnapshots(
   reservations: ReservationLite[],
@@ -60,22 +71,16 @@ export function useReservationFollowUpSnapshots(
     cancelRebookingOutreachManual: boolean
   ) => void
 } {
-  const idsKey = useMemo(() => {
-    const ids = [...new Set(reservations.map((r) => String(r.id ?? '').trim()).filter(Boolean))]
-    ids.sort()
-    return ids.join('\u001f')
-  }, [reservations])
+  const reservationLiteKey = useMemo(() => buildReservationLiteKey(reservations), [reservations])
 
-  const productFingerprint = useMemo(() => {
-    return reservations
-      .map((r) => {
-        const pid = String(r.productId ?? '').trim()
-        const p = products.find((x) => x.id === pid)
-        return `${r.id}:${p?.product_code ?? ''}`
-      })
-      .sort()
-      .join('|')
-  }, [reservations, products])
+  const productsKey = useMemo(
+    () =>
+      products
+        .map((p) => `${p.id}:${p.product_code ?? ''}`)
+        .sort()
+        .join('|'),
+    [products]
+  )
 
   const [snapshotsByReservationId, setSnapshotsByReservationId] = useState<
     Map<string, ReservationFollowUpPipelineSnapshot>
@@ -104,13 +109,19 @@ export function useReservationFollowUpSnapshots(
   )
 
   useEffect(() => {
-    const ids = idsKey.split('\u001f').filter(Boolean)
+    const entries = parseReservationLiteKey(reservationLiteKey)
+    const ids = entries.map((e) => e.id)
     if (ids.length === 0) {
-      setSnapshotsByReservationId((prev) => (prev.size === 0 ? prev : new Map()))
+      setLoading(false)
       return
     }
 
-    const productCodeByReservationId = productCodeMapFromFingerprint(productFingerprint)
+    const productCodeById = new Map(products.map((p) => [p.id, p.product_code ?? null]))
+    const productCodeByReservationId = new Map<string, string | null>()
+    for (const e of entries) {
+      const pid = String(e.productId ?? '').trim()
+      productCodeByReservationId.set(e.id, pid ? (productCodeById.get(pid) ?? null) : null)
+    }
 
     let cancelled = false
     ;(async () => {
@@ -158,6 +169,7 @@ export function useReservationFollowUpSnapshots(
               'reservation_id, confirmation_manual, resident_manual, departure_manual, pickup_manual, cancel_follow_up_manual, cancel_rebooking_outreach_manual'
             )
             .in('reservation_id', part)
+
           if (manErr) throw manErr
           for (const row of manualRows || []) {
             const rid = String((row as { reservation_id?: string }).reservation_id ?? '')
@@ -208,39 +220,41 @@ export function useReservationFollowUpSnapshots(
           }
         }
 
-        const next = new Map<string, ReservationFollowUpPipelineSnapshot>()
-        for (const rid of ids) {
-          const code = productCodeByReservationId.get(rid) ?? null
-          const needs = computeNeedsResidentFlow(code)
-          const m = manualByReservationId.get(rid)
-          const mc = m?.confirmation_manual ?? false
-          const mr = m?.resident_manual ?? false
-          const md = m?.departure_manual ?? false
-          const mp = m?.pickup_manual ?? false
-          const cFu = m?.cancel_follow_up_manual ?? false
-          const cRe = m?.cancel_rebooking_outreach_manual ?? false
-          /** 출발 확정(이메일·수동)만 있어도 예약 확인 단계는 완료로 표시. 거주 단계는 별도. */
-          const departureEffective = departureSent.has(rid) || md
-          next.set(rid, {
-            confirmationSent: confirmationSent.has(rid) || mc || departureEffective,
-            residentInquirySent: residentInquirySent.has(rid) || mr,
-            guestResidentFlowCompleted: guestDone.has(rid) || mr,
-            departureSent: departureEffective,
-            pickupSent: pickupSent.has(rid) || mp,
-            needsResidentFlow: needs,
-            manualConfirmation: mc,
-            manualResident: mr,
-            manualDeparture: md,
-            manualPickup: mp,
-            cancelFollowUpManual: cFu,
-            cancelRebookingOutreachManual: cRe,
-          })
-        }
-        if (!cancelled) setSnapshotsByReservationId(next)
+        if (cancelled) return
+
+        setSnapshotsByReservationId((prev) => {
+          const next = new Map(prev)
+          for (const rid of ids) {
+            const code = productCodeByReservationId.get(rid) ?? null
+            const needs = computeNeedsResidentFlow(code)
+            const m = manualByReservationId.get(rid)
+            const mc = m?.confirmation_manual ?? false
+            const mr = m?.resident_manual ?? false
+            const md = m?.departure_manual ?? false
+            const mp = m?.pickup_manual ?? false
+            const cFu = m?.cancel_follow_up_manual ?? false
+            const cRe = m?.cancel_rebooking_outreach_manual ?? false
+            const departureEffective = departureSent.has(rid) || md
+            next.set(rid, {
+              confirmationSent: confirmationSent.has(rid) || mc || departureEffective,
+              residentInquirySent: residentInquirySent.has(rid) || mr,
+              guestResidentFlowCompleted: guestDone.has(rid) || mr,
+              departureSent: departureEffective,
+              pickupSent: pickupSent.has(rid) || mp,
+              needsResidentFlow: needs,
+              manualConfirmation: mc,
+              manualResident: mr,
+              manualDeparture: md,
+              manualPickup: mp,
+              cancelFollowUpManual: cFu,
+              cancelRebookingOutreachManual: cRe,
+            })
+          }
+          return next
+        })
       } catch (e) {
         if (cancelled || isLikelyAbortError(e)) return
         console.error('useReservationFollowUpSnapshots:', e)
-        if (!cancelled) setSnapshotsByReservationId(new Map())
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -249,7 +263,7 @@ export function useReservationFollowUpSnapshots(
     return () => {
       cancelled = true
     }
-  }, [idsKey, productFingerprint, refreshToken])
+  }, [reservationLiteKey, productsKey, refreshToken])
 
   return { snapshotsByReservationId, loading, patchCancelManualFlags }
 }

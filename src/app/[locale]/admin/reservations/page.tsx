@@ -49,7 +49,10 @@ import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { useAuth } from '@/contexts/AuthContext'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
-import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
+import {
+  resolveReservationEmailIsEnglish,
+  resolveReservationEmailLocale,
+} from '@/lib/reservationEmailLocale'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -61,7 +64,6 @@ import {
   isoToLocalCalendarDateKey,
   getStatusLabel,
   isReservationTourDatePastLocal,
-  isReservationAddedStrictlyBeforeTodayLocal,
 } from '@/utils/reservationUtils'
 import {
   isTourDeletedStatus,
@@ -93,6 +95,8 @@ import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
 import {
   fetchOperationalQueueCandidateIds,
   fetchReservationsByIdsProgressive,
+  operationalQueueHasReservations,
+  pickReservationsForOperationalQueue,
 } from '@/lib/operationalQueueFetch'
 import {
   browserLocalInclusiveDateKeys,
@@ -1486,7 +1490,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     load()
   }, [reservations, operationalQueueSnapshot])
 
-  const reservationsForOperationalMetrics = operationalQueueSnapshot?.reservations ?? reservations
+  const reservationsForOperationalMetrics = pickReservationsForOperationalQueue(
+    operationalQueueSnapshot,
+    reservations
+  )
 
   /** 운영 큐 스냅샷 기본 + 훅 맵이 최신 부분 갱신(저장·인라인 반영)을 덮어씀 */
   const pricingForOperationalMetrics = useMemo(() => {
@@ -1609,17 +1616,40 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   
   const filteredReservations = filteredAndSortedReservations
 
-  /** Follow-up 큐 모달·배지: 운영 큐가 있으면 그 범위, 없으면 필터된 전체 */
+  /** Follow-up 큐 모달·배지: 운영 큐(실제 데이터)가 있으면 그 범위, 없으면 필터된 목록 */
   const reservationsForFollowUpPipeline = useMemo(
-    () => operationalQueueSnapshot?.reservations ?? filteredReservations,
+    () => pickReservationsForOperationalQueue(operationalQueueSnapshot, filteredReservations),
     [operationalQueueSnapshot, filteredReservations]
   )
 
-  /** 카드 아이콘(발송·수동 완료 색): 화면에 보이는 필터 예약 전부 스냅샷 로드 */
-  const reservationsLiteForFollowUp = useMemo(
-    () => filteredReservations.map((r) => ({ id: r.id, productId: r.productId })),
-    [filteredReservations]
-  )
+  /**
+   * Follow-up 스냅샷 로드 대상.
+   * - 항상 현재 화면(필터·페이지) 예약 포함 → 카드 아이콘 안정
+   * - 모달·운영 큐 로드 완료 후 운영 큐 id 추가 병합(로딩 중 id 폭주·취소 방지)
+   */
+  const reservationsLiteForFollowUp = useMemo(() => {
+    const byId = new Map<string, { id: string; productId: string }>()
+    for (const r of filteredReservations) {
+      byId.set(r.id, { id: r.id, productId: r.productId })
+    }
+    const modalOpen = showActionRequiredModal || followUpQueueModalOpen
+    if (
+      modalOpen &&
+      !operationalQueueLoading &&
+      operationalQueueHasReservations(operationalQueueSnapshot)
+    ) {
+      for (const r of operationalQueueSnapshot!.reservations) {
+        byId.set(r.id, { id: r.id, productId: r.productId })
+      }
+    }
+    return [...byId.values()]
+  }, [
+    filteredReservations,
+    showActionRequiredModal,
+    followUpQueueModalOpen,
+    operationalQueueLoading,
+    operationalQueueSnapshot,
+  ])
 
   const {
     snapshotsByReservationId: followUpSnapshotsByReservationId,
@@ -1781,7 +1811,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         n += 1
         continue
       }
-      if (isReservationAddedStrictlyBeforeTodayLocal(r.addedTime)) continue
       if (reservationNeedsAnyFollowUpAttention(r.status as string | undefined, snap)) n += 1
     }
     return n
@@ -2142,24 +2171,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
     const finalizeSnapshot = () => {
       if (gen !== operationalQueueFetchGenRef.current) return
-      setOperationalQueueSnapshot(
-        (prev) => {
-          const base =
-            prev ?? {
-              reservations: [],
-              pricingMap: new Map(),
-              reservationOptionsPresenceByReservationId: new Map(),
-              toursMap: new Map(),
-            }
-          const reservations = [...base.reservations].sort((a, b) => {
-            const ca = String(a.addedTime ?? '')
-            const cb = String(b.addedTime ?? '')
-            if (ca !== cb) return cb.localeCompare(ca)
-            return String(b.id).localeCompare(String(a.id))
-          })
-          return { ...base, reservations }
-        }
-      )
+      setOperationalQueueSnapshot((prev) => {
+        if (!prev?.reservations?.length) return null
+        const reservations = [...prev.reservations].sort((a, b) => {
+          const ca = String(a.addedTime ?? '')
+          const cb = String(b.addedTime ?? '')
+          if (ca !== cb) return cb.localeCompare(ca)
+          return String(b.id).localeCompare(String(a.id))
+        })
+        return { ...prev, reservations }
+      })
     }
 
     try {
@@ -2212,19 +2233,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const refreshActionRequiredTableList = useCallback(async () => {
     operationalQueueFetchGenRef.current += 1
     operationalQueueInFlightRef.current = false
-    setOperationalQueueSnapshot({
-      reservations: [],
-      pricingMap: new Map(),
-      reservationOptionsPresenceByReservationId: new Map(),
-      toursMap: new Map(),
-    })
+    setOperationalQueueSnapshot(null)
     await loadOperationalQueueSnapshot()
   }, [loadOperationalQueueSnapshot])
 
   /** 목록 첫 페인트 후 백그라운드 프리페치 — 모달 오픈 시 대기 단축 */
   useEffect(() => {
     if (!reservationListUiHydrated || serverListLoading || adminListChunkProgress) return
-    if (operationalQueueSnapshot || operationalQueueInFlightRef.current) return
+    if (operationalQueueHasReservations(operationalQueueSnapshot) || operationalQueueInFlightRef.current)
+      return
     const timer = window.setTimeout(() => ensureOperationalQueueSnapshot(), 300)
     return () => window.clearTimeout(timer)
   }, [
@@ -2238,7 +2255,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   useEffect(() => {
     if (!showActionRequiredModal && !followUpQueueModalOpen) return
-    if (operationalQueueSnapshot && !operationalQueueLoading) return
+    if (operationalQueueHasReservations(operationalQueueSnapshot) && !operationalQueueLoading) return
     ensureOperationalQueueSnapshot()
   }, [
     showActionRequiredModal,
@@ -3777,8 +3794,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return reservation && c.id === reservation.customerId
       })
       
-      const customerLanguage = customer?.language?.toLowerCase() || 'ko'
-      const locale = customerLanguage === 'en' || customerLanguage === 'english' ? 'en' : 'ko'
+      const locale = resolveReservationEmailLocale(customer?.language ?? null, null)
 
       if (emailPreviewData.emailType === 'resident_inquiry') {
         response = await fetch('/api/send-resident-inquiry-email', {
@@ -5169,7 +5185,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         onClose={() => setShowActionRequiredModal(false)}
         bulkReservationsLoading={operationalQueueLoading && !operationalQueueSnapshot}
         bulkReservationsSyncing={operationalQueueLoading && !!operationalQueueSnapshot}
-        reservations={operationalQueueSnapshot?.reservations ?? reservations}
+        reservations={pickReservationsForOperationalQueue(operationalQueueSnapshot, reservations)}
         customers={(customers as Customer[]) || []}
         products={(products as Array<{ id: string; name: string; sub_category?: string; base_price?: number }>) || []}
         channels={

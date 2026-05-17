@@ -1,13 +1,14 @@
 /**
  * Reservation / pickup email language: Korean vs English body.
- * Empty customer.language is treated as Korean (legacy domestic default).
+ * Unset customer.language → English (same as receipt display).
+ * Only explicit Korean codes → Korean email.
  */
 
 export function customerLanguageIndicatesKorean(
   language: string | null | undefined
 ): boolean {
   const s = String(language ?? '').trim().toLowerCase()
-  if (!s) return true
+  if (!s) return false
   return (
     s === 'ko' ||
     s === 'kr' ||
@@ -32,4 +33,12 @@ export function resolveReservationEmailIsEnglish(
     if (o === 'ko') return false
   }
   return !customerLanguageIndicatesKorean(customerLanguage)
+}
+
+/** Email API / preview request body `locale` */
+export function resolveReservationEmailLocale(
+  customerLanguage: string | null | undefined,
+  localeOverride: string | null | undefined
+): 'ko' | 'en' {
+  return resolveReservationEmailIsEnglish(customerLanguage, localeOverride) ? 'en' : 'ko'
 }
