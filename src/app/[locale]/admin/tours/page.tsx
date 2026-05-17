@@ -20,6 +20,7 @@ import { PendingOffSchedulesModal } from '@/components/shared/PendingOffSchedule
 import { ToursNeedCheckModal } from '@/components/shared/ToursMissingReceiptModal'
 import { fetchToursNeedCheckData } from '@/lib/toursNeedCheckStats'
 import { AdminNewTourModal } from '@/components/admin/AdminNewTourModal'
+import { chunkStrings } from '@/lib/supabaseInChunks'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -543,12 +544,18 @@ export default function AdminTours() {
         const existingIds = new Set((reservationsData || []).map(r => String(r.id)))
         const missingIds = [...assignedIdsSet].filter(id => !existingIds.has(id))
         if (missingIds.length > 0) {
-          const { data: extraReservations, error: extraErr } = await supabase
-            .from('reservations')
-            .select('*, pickup_notification_sent')
-            .in('id', missingIds)
-          if (!extraErr && extraReservations && extraReservations.length > 0) {
-            reservationsData = [...(reservationsData || []), ...extraReservations]
+          for (const chunk of chunkStrings(missingIds)) {
+            const { data: extraReservations, error: extraErr } = await supabase
+              .from('reservations')
+              .select('*, pickup_notification_sent')
+              .in('id', chunk)
+            if (extraErr) {
+              console.error('Error fetching missing assigned reservations (chunk):', extraErr)
+              continue
+            }
+            if (extraReservations?.length) {
+              reservationsData = [...(reservationsData || []), ...extraReservations]
+            }
           }
         }
       }

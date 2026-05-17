@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  findOpenAttendanceSession,
+  formatOpenSessionBlockMessage,
+} from '@/lib/attendanceOpenSession'
 
 interface AttendanceRecord {
   id: string
@@ -175,6 +179,12 @@ export function useAttendanceSync() {
 
       if (!employeeData) {
         alert('직원 정보를 찾을 수 없습니다.')
+        return
+      }
+
+      const openSession = await findOpenAttendanceSession(supabase, employeeData.email)
+      if (openSession) {
+        alert(formatOpenSessionBlockMessage(openSession))
         return
       }
 

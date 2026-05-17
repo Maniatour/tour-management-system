@@ -22,6 +22,7 @@ import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 interface CashTransaction {
@@ -73,13 +74,6 @@ const categories = [
   '예약 지출',
   '기타 지출'
 ]
-
-/**
- * 현금 관리·현금 리포트에서 공통으로 쓰는 값.
- * 회사/예약 지출은 결제수단 선택 시 payment_method 옵션 ID(예: PAYM032)로 저장되는 경우가 많아,
- * 리터럴 `Cash`/`cash`만 조회하면 누락된다.
- */
-const CASH_PAYMENT_METHOD_DB_VALUES = ['PAYM032', 'PAYM001', 'cash', 'Cash'] as const
 
 function reconSourceFromCashTransaction(
   tx: CashTransaction
@@ -201,7 +195,8 @@ export default function CashManagement() {
   const loadTransactions = useCallback(async () => {
     try {
       setLoading(true)
-      
+      const cashPaymentMethods = await getCashPaymentMethodFilterValues()
+
       // 1. cash_transactions 테이블에서 데이터 가져오기
       let cashTransactionsQuery = supabase
         .from('cash_transactions')
@@ -241,7 +236,7 @@ export default function CashManagement() {
       let paymentRecordsQuery = supabase
         .from('payment_records')
         .select('id, amount, submit_on, submit_by, note, reservation_id, payment_status')
-        .in('payment_method', [...CASH_PAYMENT_METHOD_DB_VALUES])
+        .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
       if (searchTerm) {
@@ -269,11 +264,11 @@ export default function CashManagement() {
         (pr) => String(pr.payment_status ?? '').trim() !== 'Deposit Requested'
       )
 
-      // 3. company_expenses 테이블에서 Cash/cash 데이터 가져오기
+      // 3. company_expenses 테이블에서 현금 결제 데이터 가져오기
       let companyExpensesQuery = supabase
         .from('company_expenses')
         .select('id, amount, submit_on, submit_by, description, notes, paid_for, paid_to')
-        .in('payment_method', ['Cash', 'cash'])
+        .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
       if (searchTerm) {
@@ -305,7 +300,7 @@ export default function CashManagement() {
       let reservationExpensesQuery = supabase
         .from('reservation_expenses')
         .select('id, amount, submit_on, submitted_by, note, paid_for, paid_to, reservation_id')
-        .in('payment_method', [...CASH_PAYMENT_METHOD_DB_VALUES])
+        .in('payment_method', cashPaymentMethods)
         .order('submit_on', { ascending: false })
 
       if (searchTerm) {

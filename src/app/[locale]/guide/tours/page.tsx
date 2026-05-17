@@ -12,6 +12,7 @@ import SunriseTime from '@/components/SunriseTime'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
+import { chunkStrings } from '@/lib/supabaseInChunks'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -303,12 +304,18 @@ export default function GuideTours({ params }: GuideToursProps) {
         const existingIds = new Set((reservationsData || []).map(r => String(r.id)))
         const missingIds = [...assignedIdsSet].filter(id => !existingIds.has(id))
         if (missingIds.length > 0) {
-          const { data: extraReservations, error: extraErr } = await supabase
-            .from('reservations')
-            .select('*')
-            .in('id', missingIds)
-          if (!extraErr && extraReservations && extraReservations.length > 0) {
-            reservationsData = [...(reservationsData || []), ...extraReservations]
+          for (const chunk of chunkStrings(missingIds)) {
+            const { data: extraReservations, error: extraErr } = await supabase
+              .from('reservations')
+              .select('*')
+              .in('id', chunk)
+            if (extraErr) {
+              console.error('Error fetching missing assigned reservations (chunk):', extraErr)
+              continue
+            }
+            if (extraReservations?.length) {
+              reservationsData = [...(reservationsData || []), ...extraReservations]
+            }
           }
         }
       }

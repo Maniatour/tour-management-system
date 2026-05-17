@@ -15,9 +15,13 @@ import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseSt
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 
 const ALL_TOURS_RECEIPT_VIEW_PORTAL_CLASS =
   'fixed inset-0 z-[12000] pointer-events-auto overscroll-contain bg-black bg-opacity-75 flex items-center justify-center p-4'
+
+const ALL_TOURS_TOUR_DETAIL_MODAL_PORTAL_CLASS =
+  'fixed inset-0 z-[11500] flex items-center justify-center bg-black/60 p-2 sm:p-3 pointer-events-auto overscroll-contain'
 
 interface TourExpense {
   id: string
@@ -58,6 +62,7 @@ interface TourExpense {
 
 export default function AllTourExpensesManager() {
   const t = useTranslations('tours.tourExpense')
+  const tRes = useTranslations('reservations')
   const tStmt = useTranslations('expenses.statementRecon')
   const locale = useLocale()
   const { user, simulatedUser, isSimulating } = useAuth()
@@ -77,9 +82,34 @@ export default function AllTourExpensesManager() {
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
   const [receiptViewPortalReady, setReceiptViewPortalReady] = useState(false)
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
   useEffect(() => {
     setReceiptViewPortalReady(true)
   }, [])
+
+  useEffect(() => {
+    if (!tourDetailModal) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTourDetailModal(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [tourDetailModal])
+
+  const getTourDetailModalTitle = useCallback((expense: TourExpense) => {
+    const productName =
+      expense.products?.name_ko || expense.products?.name_en || expense.products?.name
+    if (productName && expense.tour_date) return `${productName} · ${expense.tour_date}`
+    if (productName) return productName
+    return t('tourDetail')
+  }, [t])
+
+  const openTourDetailModal = useCallback(
+    (expense: TourExpense) => {
+      setTourDetailModal({ tourId: expense.tour_id, title: getTourDetailModalTitle(expense) })
+    },
+    [getTourDetailModalTitle]
+  )
   const [showDriveImporter, setShowDriveImporter] = useState(false)
   
   // 필터링 상태
@@ -677,10 +707,14 @@ export default function AllTourExpensesManager() {
                       영수증
                     </button>
                   )}
-                  <a href={`/${locale}/admin/tours/${expense.tour_id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-gray-600 text-xs font-medium py-2 px-3 rounded-lg hover:bg-gray-100 min-h-[44px]">
+                  <button
+                    type="button"
+                    onClick={() => openTourDetailModal(expense)}
+                    className="inline-flex items-center gap-1 text-gray-600 text-xs font-medium py-2 px-3 rounded-lg hover:bg-gray-100 min-h-[44px]"
+                  >
                     <Eye className="w-4 h-4" />
-                    투어
-                  </a>
+                    {t('tourDetail')}
+                  </button>
                 </div>
               </div>
             ))}
@@ -867,15 +901,14 @@ export default function AllTourExpensesManager() {
                           <Wallet className="w-4 h-4" />
                         </button>
                       )}
-                      <a
-                        href={`/${locale}/admin/tours/${expense.tour_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1 text-gray-600 hover:text-blue-600"
+                      <button
+                        type="button"
+                        onClick={() => openTourDetailModal(expense)}
+                        className="p-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded"
                         title={t('tourDetail')}
                       >
                         <Eye className="w-4 h-4" />
-                      </a>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1009,6 +1042,55 @@ export default function AllTourExpensesManager() {
                     </a>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {receiptViewPortalReady &&
+        tourDetailModal &&
+        createPortal(
+          <div
+            className={ALL_TOURS_TOUR_DETAIL_MODAL_PORTAL_CLASS}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="all-tour-expenses-tour-detail-modal-title"
+            onClick={() => setTourDetailModal(null)}
+          >
+            <div
+              className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                <h3
+                  id="all-tour-expenses-tour-detail-modal-title"
+                  className="text-lg font-semibold text-gray-900 truncate pr-2"
+                  title={tourDetailModal.title}
+                >
+                  {tourDetailModal.title}
+                </h3>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a
+                    href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                  >
+                    {tRes('card.openTourInNewTab')}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setTourDetailModal(null)}
+                    className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                    aria-label={tRes('card.close')}
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 bg-gray-50">
+                <TourDetailModalContent tourId={tourDetailModal.tourId} />
               </div>
             </div>
           </div>,

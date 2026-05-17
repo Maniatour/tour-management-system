@@ -3,6 +3,7 @@ import { useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { chunkStrings } from '@/lib/supabaseInChunks'
 import {
   calculateAssignedPeople,
   getDefaultTeamTypeForProduct,
@@ -526,12 +527,19 @@ export function useTourDetailData(opts?: { tourId?: string | null }) {
           }
 
           if (missingAssigned.length > 0) {
-            const { data: missData, error: missErr } = await supabase
-              .from('reservations')
-              .select('*')
-              .in('id', missingAssigned)
-            if (!missErr && missData?.length) {
-              const missRes = missData as ReservationRow[]
+            const missRes: ReservationRow[] = []
+            for (const chunk of chunkStrings(missingAssigned)) {
+              const { data: missData, error: missErr } = await supabase
+                .from('reservations')
+                .select('*')
+                .in('id', chunk)
+              if (missErr) {
+                console.error('누락 배정 예약 조회 오류 (chunk):', missErr)
+                continue
+              }
+              if (missData?.length) missRes.push(...(missData as ReservationRow[]))
+            }
+            if (missRes.length > 0) {
               const mcIds = [...new Set(missRes.map((r) => r.customer_id).filter(Boolean) as string[])]
               let mcRows: CustomerRow[] = []
               if (mcIds.length > 0) {

@@ -1,9 +1,16 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import TipsShareModal from '@/components/TipsShareModal'
 import html2pdf from 'html2pdf.js'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
@@ -144,6 +151,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [tourFees, setTourFees] = useState<TourFee[]>([])
   const [companyExpensesForEmployee, setCompanyExpensesForEmployee] = useState<CompanyExpenseRow[]>([])
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; tourName: string } | null>(null)
+  const [tipsShareTourId, setTipsShareTourId] = useState<string | null>(null)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const [paymentData, setPaymentData] = useState<{
     paid_to: string
@@ -595,6 +604,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     } catch (error) {
       console.error('투어 fee 조회 오류:', error)
       setTourFees([])
+    }
+  }
+
+  const handleCloseTipsShareModal = () => {
+    setTipsShareTourId(null)
+    if (selectedEmployee && startDate && endDate) {
+      void fetchTourFees()
     }
   }
 
@@ -2697,12 +2713,16 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       <span className="text-xs text-gray-500">{formatDate(tour.date)}</span>
                       <span className="text-xs font-medium text-green-600">${formatCurrency(tour.total_fee)}</span>
                     </div>
-                    <Link
-                      href={`/${locale}/admin/tours/${tour.tour_id}`}
-                      className="text-sm font-medium text-blue-600 hover:underline block mb-3 truncate"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTourDetailModal({ tourId: tour.tour_id, tourName: tour.tour_name })
+                      }
+                      className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline block mb-3 truncate text-left max-w-full"
+                      title="투어 상세 보기"
                     >
                       {tour.tour_name}
-                    </Link>
+                    </button>
                     <div className="text-xs text-gray-600 mb-2">
                       <span className="text-gray-500">참여: </span>{staffNames}
                     </div>
@@ -2745,7 +2765,18 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] text-gray-500 block mb-0.5">Prepaid Tips</label>
+                          <div className="flex items-center justify-between gap-1 mb-0.5">
+                            <label className="text-[10px] text-gray-500">Prepaid Tips</label>
+                            <button
+                              type="button"
+                              onClick={() => setTipsShareTourId(tour.tour_id)}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-white bg-purple-600 rounded hover:bg-purple-700 shrink-0"
+                              title="Tips 쉐어 관리"
+                            >
+                              <DollarSign className="w-3 h-3" aria-hidden />
+                              Tips 쉐어
+                            </button>
+                          </div>
                           <input
                             type="number"
                             step="0.01"
@@ -2823,12 +2854,16 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           {formatDate(tour.date)}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
-                          <Link 
-                            href={`/${locale}/admin/tours/${tour.tour_id}`}
-                            className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-xs"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTourDetailModal({ tourId: tour.tour_id, tourName: tour.tour_name })
+                            }
+                            className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-xs text-left"
+                            title="투어 상세 보기"
                           >
                             {tour.tour_name}
-                          </Link>
+                          </button>
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-900 align-middle">
                           {(() => {
@@ -2875,13 +2910,24 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           />
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={(Number(tour.prepaid_tips) || 0).toFixed(2)}
-                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
+                          <div className="flex items-center gap-1 min-w-[6.5rem]">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={(Number(tour.prepaid_tips) || 0).toFixed(2)}
+                              onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
+                              className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setTipsShareTourId(tour.tour_id)}
+                              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-1 text-[10px] font-medium text-white bg-purple-600 rounded hover:bg-purple-700"
+                              title="Tips 쉐어 관리"
+                            >
+                              <DollarSign className="w-3 h-3" aria-hidden />
+                              <span className="hidden lg:inline">쉐어</span>
+                            </button>
+                          </div>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-pink-600 align-middle">
                           ${formatCurrency(tour.prepayment_tip_total ?? 0)}
@@ -3160,6 +3206,52 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
         </div>
       </div>
     )}
+
+      <Dialog
+        modal={false}
+        open={tourDetailModal !== null}
+        onOpenChange={(open) => {
+          if (!open) setTourDetailModal(null)
+        }}
+      >
+        <DialogContent
+          className="z-[120] w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
+            <DialogTitle
+              className="text-base font-semibold leading-snug truncate flex-1 min-w-0"
+              title={tourDetailModal?.tourName}
+            >
+              {tourDetailModal?.tourName ?? '투어 상세'}
+            </DialogTitle>
+            {tourDetailModal?.tourId ? (
+              <a
+                href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+              >
+                새 탭에서 열기
+                <ExternalLink size={14} aria-hidden />
+              </a>
+            ) : null}
+          </DialogHeader>
+          {tourDetailModal?.tourId ? (
+            <div className="flex min-h-0 flex-1 flex-col bg-white">
+              <TourDetailModalContent tourId={tourDetailModal.tourId} />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <TipsShareModal
+        isOpen={tipsShareTourId !== null}
+        onClose={handleCloseTipsShareModal}
+        tourId={tipsShareTourId ?? undefined}
+        locale={locale}
+        overlayClassName="z-[130]"
+      />
 
     </>
   )

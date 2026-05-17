@@ -2,6 +2,7 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
+import { chunkStrings } from '@/lib/supabaseInChunks'
 
 // 부킹 데이터 페칭
 export const fetchBookings = async (tourId: string) => {
@@ -65,18 +66,22 @@ export const fetchOtherToursAssignedReservations = async (targetTour: { id: stri
 
     if (otherTourReservationIds.length === 0) return []
 
-    // 3) 해당 예약들의 상세 정보 조회
-    const { data: reservations, error: reservationsError } = await (supabase as any)
-      .from('reservations')
-      .select('*')
-      .in('id', otherTourReservationIds)
+    // 3) 해당 예약들의 상세 정보 조회 (URL 길이 한도 — id 배치)
+    const reservations: Database['public']['Tables']['reservations']['Row'][] = []
+    for (const chunk of chunkStrings(otherTourReservationIds)) {
+      const { data, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('*')
+        .in('id', chunk)
 
-    if (reservationsError) {
-      console.error('Error fetching other tours reservations:', reservationsError)
-      return []
+      if (reservationsError) {
+        console.error('Error fetching other tours reservations (chunk):', reservationsError)
+        continue
+      }
+      if (data?.length) reservations.push(...data)
     }
 
-    return reservations || []
+    return reservations
   } catch (error) {
     console.error('다른 투어 예약 조회 오류:', error)
     return []

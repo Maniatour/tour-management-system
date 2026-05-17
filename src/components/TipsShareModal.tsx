@@ -63,6 +63,8 @@ interface TipsShareModalProps {
   tourId?: string // 단일 투어 모드: 특정 투어 ID가 있으면 해당 투어만 표시
   /** 결제 기록에서 예약 ID 클릭 시 호출 (예약 수정 모달 열기용) */
   onReservationClick?: (reservationId: string) => void
+  /** 오버레이 z-index 등 (다른 모달 위에 띄울 때, 예: z-[130]) */
+  overlayClassName?: string
 }
 
 /** 투어별 결제 수단 내역 (payment_records 기반, Tips 쉐어 시 카드 수수료 공제 여부 표시용) */
@@ -123,7 +125,7 @@ interface TipShare {
   deduct_fee?: boolean // 수수료 차감 (5%) 적용 여부
 }
 
-export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId, onReservationClick }: TipsShareModalProps) {
+export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId, onReservationClick, overlayClassName = 'z-50' }: TipsShareModalProps) {
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [toursWithTips, setToursWithTips] = useState<TourWithTip[]>([])
@@ -1084,7 +1086,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId,
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+    <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 ${overlayClassName}`}>
       <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-3 sm:p-6 border-b border-gray-200">

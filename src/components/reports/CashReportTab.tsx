@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fiscal-settings'
 import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
@@ -31,9 +32,6 @@ type CashDetailRow = {
 }
 
 const HISTORY_ID_CHUNK = 150
-
-/** payment_records: 등록된 현금 수단 ID + 리터럴 cash(잔액 현금 수령 등) */
-const PAYMENT_RECORDS_CASH_METHODS = ['PAYM032', 'PAYM001', 'cash', 'Cash'] as const
 
 const CASH_PAYMENT_STATUSES = [
   'Deposit Received',
@@ -170,6 +168,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
 
       const startISO = startDate.toISOString()
       const endISO = endDate.toISOString()
+      const cashPaymentMethods = await getCashPaymentMethodFilterValues()
 
       // 모든 쿼리를 병렬로 실행
       const [
@@ -199,7 +198,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('payment_records')
           .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
-          .in('payment_method', [...PAYMENT_RECORDS_CASH_METHODS])
+          .in('payment_method', cashPaymentMethods)
           .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
@@ -207,15 +206,15 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('payment_records')
           .select('id, amount, submit_on')
-          .in('payment_method', [...PAYMENT_RECORDS_CASH_METHODS])
+          .in('payment_method', cashPaymentMethods)
           .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', baseDate + 'T00:00:00')
           .order('submit_on', { ascending: true }),
-        // 기간 내 company_expenses 현금 지출 (Cash, cash 모두 포함)
+        // 기간 내 company_expenses 현금 지출
         supabase
           .from('company_expenses')
           .select('id, amount, submit_on, description, notes, paid_for, paid_to, submit_by')
-          .in('payment_method', ['Cash', 'cash'])
+          .in('payment_method', cashPaymentMethods)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)
           .order('submit_on', { ascending: false }),
@@ -223,14 +222,14 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('company_expenses')
           .select('id, amount, submit_on')
-          .in('payment_method', ['Cash', 'cash'])
+          .in('payment_method', cashPaymentMethods)
           .gte('submit_on', baseDate + 'T00:00:00')
           .order('submit_on', { ascending: true }),
         // 기간 내 reservation_expenses 현금 지출
         supabase
           .from('reservation_expenses')
           .select('id, amount, submit_on, note, paid_for, paid_to, reservation_id, submitted_by')
-          .ilike('payment_method', 'Cash')
+          .in('payment_method', cashPaymentMethods)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)
           .order('submit_on', { ascending: false }),
@@ -238,7 +237,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         supabase
           .from('reservation_expenses')
           .select('id, amount, submit_on')
-          .ilike('payment_method', 'Cash')
+          .in('payment_method', cashPaymentMethods)
           .gte('submit_on', baseDate + 'T00:00:00')
           .order('submit_on', { ascending: true })
       ])

@@ -1,9 +1,15 @@
 'use client'
 
-import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ExternalLink } from 'lucide-react'
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import { UnifiedExpenseInlineEditForm } from '@/components/reconciliation/UnifiedExpenseInlineEditForm'
+import {
+  saveUnifiedExpenseEdit,
+  unifiedLedgerRowToEditDraft,
+  type UnifiedExpenseEditDraft
+} from '@/lib/unified-expense-edit'
 import {
   BULK_COMPANY_DUP_AMOUNT_EPS,
   BULK_COMPANY_DUP_DAY_WINDOW,
@@ -68,12 +74,29 @@ function originCell(origin: string | null): string {
   return origin === 'statement_adjustment' ? '명세 보정·일괄' : '운영'
 }
 
+function LedgerReferenceCell({ text }: { text: string | null | undefined }) {
+  const trimmed = text?.trim()
+  if (!trimmed) return <span className="text-slate-400">—</span>
+  const parts = trimmed.split(' · ')
+  return (
+    <div className="space-y-0.5 leading-snug">
+      {parts.map((part, i) => (
+        <div key={`${i}-${part}`} className={i === 0 ? 'font-medium text-slate-800' : 'text-slate-600'}>
+          {part}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function LedgerDetailLinksCell({
   row,
-  locale
+  onOpenTour,
+  onOpenReservation
 }: {
   row: UnifiedLedgerDuplicateExpenseRow
-  locale: string
+  onOpenTour: (tourId: string) => void
+  onOpenReservation: (reservationId: string) => void
 }) {
   const tourId = row.detail_tour_id?.trim()
   const resId = row.detail_reservation_id?.trim()
@@ -83,27 +106,25 @@ function LedgerDetailLinksCell({
   return (
     <div className="flex flex-col gap-1 items-start">
       {tourId ? (
-        <Button asChild size="sm" variant="outline" className="h-7 text-[10px] px-2 py-0 gap-1">
-          <Link
-            href={`/${locale}/admin/tours/${encodeURIComponent(tourId)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            투어 상세
-            <ExternalLink className="h-3 w-3 opacity-70 shrink-0" aria-hidden />
-          </Link>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 text-[10px] px-2 py-0"
+          onClick={() => onOpenTour(tourId)}
+        >
+          투어 상세
         </Button>
       ) : null}
       {resId ? (
-        <Button asChild size="sm" variant="outline" className="h-7 text-[10px] px-2 py-0 gap-1">
-          <Link
-            href={`/${locale}/admin/reservations/${encodeURIComponent(resId)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            예약 상세
-            <ExternalLink className="h-3 w-3 opacity-70 shrink-0" aria-hidden />
-          </Link>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 text-[10px] px-2 py-0"
+          onClick={() => onOpenReservation(resId)}
+        >
+          예약 상세
         </Button>
       ) : null}
     </div>
@@ -136,6 +157,13 @@ export default function CompanyExpenseDuplicateCheckModal({
   const [deleteKeysByGroup, setDeleteKeysByGroup] = useState<Record<number, string[]>>({})
   const [actionBusy, setActionBusy] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ deleteKeys: string[] } | null>(null)
+  const [tourDetailModalId, setTourDetailModalId] = useState<string | null>(null)
+  const [reservationDetailModalId, setReservationDetailModalId] = useState<string | null>(null)
+  const [editingSourceKey, setEditingSourceKey] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<UnifiedExpenseEditDraft | null>(null)
+  const [editSaving, setEditSaving] = useState(false)
+
+  const LEDGER_TABLE_COL_COUNT = 13
 
   const stmtKey = useMemo(
     () =>
@@ -158,6 +186,10 @@ export default function CompanyExpenseDuplicateCheckModal({
       setLedgerGroups(null)
       setDeleteKeysByGroup({})
       setDeleteConfirm(null)
+      setTourDetailModalId(null)
+      setReservationDetailModalId(null)
+      setEditingSourceKey(null)
+      setEditDraft(null)
       return
     }
     let cancelled = false
@@ -238,6 +270,38 @@ export default function CompanyExpenseDuplicateCheckModal({
       setActionBusy(false)
     }
   }
+
+  const cancelExpenseEdit = useCallback(() => {
+    setEditingSourceKey(null)
+    setEditDraft(null)
+  }, [])
+
+  const startExpenseEdit = useCallback((row: UnifiedLedgerDuplicateExpenseRow) => {
+    setEditingSourceKey(row.source_key)
+    setEditDraft(unifiedLedgerRowToEditDraft(row))
+  }, [])
+
+  const saveExpenseEdit = useCallback(
+    async (row: UnifiedLedgerDuplicateExpenseRow) => {
+      if (!editDraft) return
+      setEditSaving(true)
+      setErr(null)
+      try {
+        await saveUnifiedExpenseEdit(row.source_table, row.id, editDraft)
+        toast.success('지출을 수정했습니다.')
+        cancelExpenseEdit()
+        await reloadLedger()
+        onAfterLedgerMutation?.()
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '저장 실패'
+        setErr(msg)
+        toast.error(msg)
+      } finally {
+        setEditSaving(false)
+      }
+    },
+    [editDraft, cancelExpenseEdit, reloadLedger, onAfterLedgerMutation]
+  )
 
   async function runDeleteSelected(deleteKeys: string[]) {
     setDeleteConfirm(null)
@@ -477,15 +541,16 @@ export default function CompanyExpenseDuplicateCheckModal({
                               <th className="py-1.5 px-2 font-medium min-w-[8rem]">대조 금융 계정</th>
                               <th className="py-1.5 px-2 font-medium min-w-[8rem] whitespace-nowrap">투어·예약 상세</th>
                               <th className="py-1.5 px-2 font-medium min-w-[8rem]">참고</th>
+                              <th className="py-1.5 px-2 font-medium w-16 whitespace-nowrap">수정</th>
                             </tr>
                           </thead>
                           <tbody>
                             {group.map((row, ri) => (
+                              <Fragment key={row.source_key}>
                               <tr
-                                key={row.source_key}
                                 className={`border-b border-amber-100/90 align-top ${
                                   selectedDeleteKeySet.has(row.source_key) ? 'bg-red-50/80' : ri === 0 ? 'bg-amber-50/95' : 'bg-white'
-                                }`}
+                                } ${editingSourceKey === row.source_key ? 'ring-1 ring-inset ring-blue-300' : ''}`}
                               >
                                 <td className="py-2 px-2 text-center align-middle">
                                   <input
@@ -530,12 +595,56 @@ export default function CompanyExpenseDuplicateCheckModal({
                                   {row.display_financial_account ?? '—'}
                                 </td>
                                 <td className="py-2 px-2 align-top">
-                                  <LedgerDetailLinksCell row={row} locale={locale} />
+                                  <LedgerDetailLinksCell
+                                    row={row}
+                                    onOpenTour={setTourDetailModalId}
+                                    onOpenReservation={setReservationDetailModalId}
+                                  />
                                 </td>
                                 <td className="py-2 px-2 break-words text-slate-600 text-[10px]">
-                                  {row.source_context?.trim() || '—'}
+                                  <LedgerReferenceCell text={row.source_context} />
+                                </td>
+                                <td className="py-2 px-2 align-top">
+                                  {editingSourceKey === row.source_key ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 text-[10px] px-2"
+                                      disabled={editSaving}
+                                      onClick={cancelExpenseEdit}
+                                    >
+                                      취소
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-[10px] px-2"
+                                      disabled={actionBusy || editSaving}
+                                      onClick={() => startExpenseEdit(row)}
+                                    >
+                                      수정
+                                    </Button>
+                                  )}
                                 </td>
                               </tr>
+                              {editingSourceKey === row.source_key && editDraft ? (
+                                <tr className="bg-blue-50/40 border-b border-amber-100/90">
+                                  <td colSpan={LEDGER_TABLE_COL_COUNT} className="py-2 px-2">
+                                    <UnifiedExpenseInlineEditForm
+                                      row={row}
+                                      draft={editDraft}
+                                      onDraftChange={setEditDraft}
+                                      saving={editSaving}
+                                      onSave={() => void saveExpenseEdit(row)}
+                                      onCancel={cancelExpenseEdit}
+                                    />
+                                  </td>
+                                </tr>
+                              ) : null}
+                              </Fragment>
                             ))}
                           </tbody>
                         </table>
@@ -552,6 +661,68 @@ export default function CompanyExpenseDuplicateCheckModal({
               닫기
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog modal={false} open={tourDetailModalId != null} onOpenChange={(v) => !v && setTourDetailModalId(null)}>
+        <DialogContent
+          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[110] sm:rounded-lg"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
+            <DialogTitle className="text-base font-semibold">투어 상세</DialogTitle>
+            {tourDetailModalId ? (
+              <a
+                href={`/${locale}/admin/tours/${tourDetailModalId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+              >
+                새 탭에서 열기
+                <ExternalLink size={14} aria-hidden />
+              </a>
+            ) : null}
+          </DialogHeader>
+          {tourDetailModalId ? (
+            <div className="flex min-h-0 flex-1 flex-col bg-white">
+              <TourDetailModalContent tourId={tourDetailModalId} />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        modal={false}
+        open={reservationDetailModalId != null}
+        onOpenChange={(v) => !v && setReservationDetailModalId(null)}
+      >
+        <DialogContent
+          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[110] sm:rounded-lg"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
+            <DialogTitle className="text-base font-semibold">예약 상세</DialogTitle>
+            {reservationDetailModalId ? (
+              <a
+                href={`/${locale}/admin/reservations/${reservationDetailModalId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+              >
+                새 탭에서 열기
+                <ExternalLink size={14} aria-hidden />
+              </a>
+            ) : null}
+          </DialogHeader>
+          {reservationDetailModalId ? (
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <iframe
+                src={`/${locale}/admin/reservations/${reservationDetailModalId}`}
+                className="w-full h-full min-h-0 flex-1 border-0"
+                title="예약 상세"
+              />
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </>

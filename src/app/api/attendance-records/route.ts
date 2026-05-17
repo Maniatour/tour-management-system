@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseClientWithToken, supabase } from '@/lib/supabase'
+import {
+  findOpenAttendanceSession,
+  formatOpenSessionBlockMessage,
+} from '@/lib/attendanceOpenSession'
 
 // 출퇴근 기록 조회
 export async function GET(request: NextRequest) {
@@ -92,6 +96,17 @@ export async function POST(request: NextRequest) {
 
     if (employeeError || !employeeData) {
       return NextResponse.json({ error: '직원 정보를 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    // 퇴근 없이 새 세션 추가 시, 진행 중인 세션이 있으면 거부
+    if (!check_out_time) {
+      const openSession = await findOpenAttendanceSession(userDb, employee_email)
+      if (openSession) {
+        return NextResponse.json(
+          { error: formatOpenSessionBlockMessage(openSession) },
+          { status: 409 }
+        )
+      }
     }
 
     // 해당 날짜의 기존 기록 조회하여 다음 세션 번호 계산

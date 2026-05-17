@@ -25,6 +25,7 @@ import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { isBrowserOffline, loadGuideSnapshot, saveGuideSnapshot } from '@/lib/guideOfflineStore'
+import { chunkStrings } from '@/lib/supabaseInChunks'
 import { useAuth } from '@/contexts/AuthContext'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -672,23 +673,32 @@ export default function GuideTourDetailPage() {
         
         // reservation_ids에 있는 ID들이 실제 reservations 테이블에 존재하는지만 확인
         if (ids.length > 0) {
-          const { data: existingReservations } = await supabase
-            .from('reservations')
-            .select('id')
-            .in('id', ids)
-          
-          // 실제로 존재하는 예약 ID만 추가
-          allReservationIds.push(...((existingReservations || []).map(r => r.id)))
+          for (const chunk of chunkStrings(ids)) {
+            const { data: existingReservations } = await supabase
+              .from('reservations')
+              .select('id')
+              .in('id', chunk)
+
+            allReservationIds.push(...((existingReservations || []).map((r) => r.id)))
+          }
         }
       }
 
       if (allReservationIds.length > 0) {
-        const { data: reservationsData } = await supabase
-          .from('reservations')
-          .select('*, selected_options')
-          .in('id', allReservationIds)
-
-        const reservationsListRaw = (reservationsData || []) as ReservationRow[]
+        const reservationsListRaw: ReservationRow[] = []
+        for (const chunk of chunkStrings(allReservationIds)) {
+          const { data: reservationsData, error: resChunkErr } = await supabase
+            .from('reservations')
+            .select('*, selected_options')
+            .in('id', chunk)
+          if (resChunkErr) {
+            console.error('예약 조회 오류 (chunk):', resChunkErr)
+            continue
+          }
+          if (reservationsData?.length) {
+            reservationsListRaw.push(...(reservationsData as ReservationRow[]))
+          }
+        }
         // 관리자 투어 상세(배정·픽업 스케줄)와 동일: reservation_ids에 포함된 예약만 표시, 취소·삭제만 제외.
         // reservations.tour_id는 배정 과정에서 동기화가 어긋날 수 있어 필터에 쓰지 않음.
         const reservationsList = reservationsListRaw.filter((r) => {

@@ -2,6 +2,10 @@
 
 import React, { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import {
+  findOpenAttendanceSession,
+  formatOpenSessionBlockMessage,
+} from '@/lib/attendanceOpenSession'
 import { Calendar, Clock, User, X, Plus } from 'lucide-react'
 
 interface AddAttendanceFormProps {
@@ -101,6 +105,13 @@ export default function AddAttendanceForm({
         }
         if (checkOutTime <= checkInTime) {
           throw new Error('퇴근 시간은 출근 시간보다 늦어야 합니다.')
+        }
+      }
+
+      if (!checkOutTime) {
+        const openSession = await findOpenAttendanceSession(supabase, formData.employee_email)
+        if (openSession) {
+          throw new Error(formatOpenSessionBlockMessage(openSession))
         }
       }
 

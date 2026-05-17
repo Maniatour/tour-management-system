@@ -21,6 +21,7 @@ import {
   ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY,
   ADMIN_TOUR_CHAT_PENDING_ROOM_KEY
 } from '@/components/admin/AdminTourChatNotificationListener'
+import { chunkStrings } from '@/lib/supabaseInChunks'
 
 /** DB에서 조회한 chat_rooms 행 (unread_count 등은 이후 매핑으로 추가) */
 type ChatRoomRow = {
@@ -1419,18 +1420,22 @@ export default function ChatManagementPage() {
 
       let reservationsData: Array<Record<string, unknown>> = []
       if (reservationIdsArray.length > 0) {
-        const { data: assignedReservations, error: reservationsError } = await supabase
-          .from('reservations')
-          .select('*, pickup_notification_sent')
-          .in('id', reservationIdsArray)
-        
-        if (reservationsError) {
-          console.warn('Error fetching assigned reservations:', reservationsError)
-        } else {
-          reservationsData = ((assignedReservations || []) as Array<Record<string, unknown>>).filter(
-            (r) => !isReservationCancelledStatus(r.status)
-          )
+        const assignedRows: Array<Record<string, unknown>> = []
+        for (const chunk of chunkStrings(reservationIdsArray)) {
+          const { data: assignedReservations, error: reservationsError } = await supabase
+            .from('reservations')
+            .select('*, pickup_notification_sent')
+            .in('id', chunk)
+
+          if (reservationsError) {
+            console.warn('Error fetching assigned reservations (chunk):', reservationsError)
+            continue
+          }
+          if (assignedReservations?.length) {
+            assignedRows.push(...(assignedReservations as Array<Record<string, unknown>>))
+          }
         }
+        reservationsData = assignedRows.filter((r) => !isReservationCancelledStatus(r.status))
         
         console.log('[ChatManagement] fetchTourInfo - 예약 데이터 조회:', {
           requestedIds: reservationIdsArray.length,
