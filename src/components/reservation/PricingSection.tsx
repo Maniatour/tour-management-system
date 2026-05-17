@@ -2390,11 +2390,9 @@ export default function PricingSection({
   // 정산 카드 하단 설명 표시 (모바일: 클릭 시 토글)
   const [expandedSettlementCard, setExpandedSettlementCard] = useState<string | null>(null)
 
-  /** 정산 정보: ④ 운영이익 − 예약·투어(배정된 투어만) 지출 */
+  /** 정산 정보: ④ 운영이익 − 투어 지출(매니아 투어·서비스만). 예약 지출은 ④ 산식에 이미 반영됨 */
   const calculateProfit = () => {
-    return roundUsd2(
-      companyViewRevenueLedger.operatingProfit - reservationExpensesTotal - tourExpensesTotal
-    )
+    return roundUsd2(companyViewRevenueLedger.operatingProfit - tourExpensesTotal)
   }
 
   // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
@@ -4759,8 +4757,12 @@ export default function PricingSection({
                       className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'profit' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}
                     >
                       {isKorean
-                        ? `운영 이익 − 예약 지출${showTourCol ? ' − 투어 지출' : ''}`
-                        : `Operating profit − reservation${showTourCol ? ' − tour' : ''} expenses`}
+                        ? showTourCol
+                          ? '운영 이익 − 투어 지출 (예약 지출은 ④에 반영)'
+                          : '④ 운영 이익과 동일 (예약 지출·환불은 ④에 반영)'
+                        : showTourCol
+                          ? 'Operating profit − tour expenses (reservation expenses in ④)'
+                          : 'Same as ④ operating profit (reservation expenses & refunds in ④)'}
                     </div>
                   </div>
                 </div>

@@ -4978,6 +4978,60 @@ export default function ScheduleView() {
     return out
   }, [bookingTotals, monthDays])
 
+  /** 부킹 행 셀: 티켓 인원 불일치 · 멀티데이 호텔 미부킹 */
+  const bookingCellAlerts = useMemo(() => {
+    const byDate: Record<string, { ticketMismatch: boolean; multiDayHotelMissing: boolean }> = {}
+    monthDays.forEach(({ dateString }) => {
+      byDate[dateString] = { ticketMismatch: false, multiDayHotelMissing: false }
+    })
+
+    const isActiveBookingStatus = (status: string | null | undefined) => {
+      if (!status) return false
+      const s = status.toLowerCase()
+      return (
+        s === 'confirmed' ||
+        s === 'paid' ||
+        s === 'pending' ||
+        s === 'tentative' ||
+        s === 'completed'
+      )
+    }
+
+    monthDays.forEach(({ dateString }) => {
+      let tourPeople = 0
+      for (const tour of tours) {
+        if (isTourCancelled(tour.tour_status)) continue
+        if (tourProductExcludedFromTicketPeopleHealthCheck(tour)) continue
+        const tourDate = String(tour.tour_date || '').slice(0, 10)
+        if (tourDate !== dateString) continue
+        tourPeople += computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
+      }
+      const ticketEa = bookingTotals[dateString]?.ticketCount ?? 0
+      if (tourPeople !== ticketEa && (tourPeople > 0 || ticketEa > 0)) {
+        byDate[dateString].ticketMismatch = true
+      }
+    })
+
+    const tourIdsWithHotel = new Set<string>()
+    for (const hb of tourHotelBookings) {
+      if (!hb.tour_id || !isActiveBookingStatus(hb.status)) continue
+      const hasHotelName = Boolean(String(hb.hotel ?? '').trim())
+      const hasRooms = (Number(hb.rooms) || 0) > 0
+      if (hasHotelName || hasRooms) tourIdsWithHotel.add(String(hb.tour_id))
+    }
+    for (const tour of tours) {
+      if (getMultiDayTourDays(tour.product_id) <= 1) continue
+      if (isTourCancelled(tour.tour_status)) continue
+      const assigned = computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
+      if (assigned <= 0) continue
+      if (tourIdsWithHotel.has(String(tour.id))) continue
+      const tourDate = String(tour.tour_date || '').slice(0, 10)
+      if (byDate[tourDate]) byDate[tourDate].multiDayHotelMissing = true
+    }
+
+    return { byDate }
+  }, [monthDays, tours, reservations, bookingTotals, tourHotelBookings, getMultiDayTourDays])
+
   // 가이드별 총계 계산
   const guideTotals = useMemo(() => {
     const dailyTotals: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number } } = {}
@@ -4990,27 +5044,36 @@ export default function ScheduleView() {
       monthDays.forEach(({ dateString }) => {
         const dayData = guide.dailyData[dateString]
         if (dayData) {
-          // 멀티데이 투어의 경우 실제 투어 일수만큼 계산
-          if (dayData.isMultiDay) {
-            const actualTourDays = Math.min(dayData.multiDayDays, monthDays.length - monthDays.findIndex(d => d.dateString === dateString))
-            dailyTotals[dateString].totalPeople += dayData.totalPeople * actualTourDays
-            // assistant는 제외하고 guide 역할의 배정 인원만 합산
-            const assignedForGuides = dayData.role === 'guide' ? dayData.assignedPeople : 0
-            dailyTotals[dateString].assignedPeople += assignedForGuides * actualTourDays
-            dailyTotals[dateString].tours += actualTourDays
-          } else {
-            dailyTotals[dateString].totalPeople += dayData.totalPeople
-            // assistant는 제외하고 guide 역할의 배정 인원만 합산
-            const assignedForGuides = dayData.role === 'guide' ? dayData.assignedPeople : 0
-            dailyTotals[dateString].assignedPeople += assignedForGuides
-            dailyTotals[dateString].tours += dayData.tours
-          }
+          // 일별 합계: 해당 날짜 셀 기준 1회만 집계 (멀티데이도 시작일·진행일당 중복 곱하지 않음)
+          dailyTotals[dateString].totalPeople += dayData.totalPeople
+          const assignedForGuides = dayData.role === 'guide' ? dayData.assignedPeople : 0
+          dailyTotals[dateString].assignedPeople += assignedForGuides
+          dailyTotals[dateString].tours += dayData.tours
         }
       })
     })
 
     return dailyTotals
   }, [guideScheduleData, monthDays])
+
+  /** 가이드 일별 합계(배정 인원) vs 상품 일별 합계(확정 인원) 불일치 */
+  const guideVsProductDailyTotalMismatch = useMemo(() => {
+    const byDate: Record<string, boolean> = {}
+    monthDays.forEach(({ dateString }) => {
+      const guideAssigned = guideTotals[dateString]?.assignedPeople ?? 0
+      const productConfirmed = productTotals[dateString]?.totalPeople ?? 0
+      byDate[dateString] = guideAssigned !== productConfirmed
+    })
+    const guideMonthTotal = Object.values(guideScheduleData).reduce(
+      (sum, guide) => sum + guide.totalAssignedPeople,
+      0,
+    )
+    const productMonthTotal = Object.values(productScheduleData).reduce(
+      (sum, product) => sum + product.totalPeople,
+      0,
+    )
+    return { byDate, month: guideMonthTotal !== productMonthTotal }
+  }, [guideTotals, productTotals, monthDays, guideScheduleData, productScheduleData])
 
   // 해당 월 사용 가능 차량 목록 + 차량별 색상 (scheduleVehicles 기준, 취소·비활성 제외)
   const VEHICLE_COLOR_PALETTE = [
@@ -6114,28 +6177,44 @@ export default function ScheduleView() {
                 </td>
                 {monthDays.map(({ dateString }) => {
                   const dayTotal = guideTotals[dateString]
+                  const isMismatch = guideVsProductDailyTotalMismatch.byDate[dateString]
+                  const todayBorderClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500' : ''
+                  const cellWrapClass = isMismatch
+                    ? `bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold ${todayBorderClass}`
+                    : isToday(dateString)
+                      ? `bg-red-50 ${todayBorderClass}`
+                      : ''
+                  const valueClass = isMismatch
+                    ? ''
+                    : `font-medium ${
+                        dayTotal.assignedPeople === 0
+                          ? 'text-gray-300'
+                          : dayTotal.assignedPeople < 4
+                            ? 'text-blue-600'
+                            : 'text-red-600'
+                      } ${isToday(dateString) ? 'text-red-700' : ''}`
                   return (
-                    <td 
-                      key={dateString} 
-                      className={`px-0 py-0 text-center text-xs ${
-                        isToday(dateString) 
-                          ? 'border-2 border-red-500 bg-red-50' 
-                          : ''
-                      }`}
+                    <td
+                      key={dateString}
+                      className="px-0 py-0 text-center text-xs"
                       style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                     >
-                      <div className={`font-medium ${
-                        dayTotal.assignedPeople === 0 
-                          ? 'text-gray-300' 
-                          : dayTotal.assignedPeople < 4 
-                            ? 'text-blue-600' 
-                            : 'text-red-600'
-                      } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayTotal.assignedPeople}</div>
+                      <div className={`px-1 py-0.5 ${cellWrapClass} ${valueClass}`}>
+                        {dayTotal.assignedPeople}
+                      </div>
                     </td>
                   )
                 })}
                 <td className="px-1 py-0 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                  <div>{Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)} ({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalTours, 0)}일)</div>
+                  <div
+                    className={
+                      guideVsProductDailyTotalMismatch.month
+                        ? 'bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold rounded px-1'
+                        : ''
+                    }
+                  >
+                    {Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)} ({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalTours, 0)}일)
+                  </div>
                 </td>
               </tr>
 
@@ -6924,6 +7003,26 @@ export default function ScheduleView() {
                     {monthDays.map(({ dateString }) => {
                       const bookingData = bookingTotals[dateString]
                       const hasBooking = bookingData && bookingData.totalCount > 0
+                      const cellAlert = bookingCellAlerts.byDate[dateString]
+                      const isBookingAlert =
+                        cellAlert?.ticketMismatch || cellAlert?.multiDayHotelMissing
+                      const todayBorderClass = isToday(dateString)
+                        ? 'border-l-2 border-r-2 border-red-500'
+                        : ''
+                      const cellWrapClass = isBookingAlert
+                        ? `bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold ${todayBorderClass}`
+                        : isToday(dateString)
+                          ? `bg-red-50 ${todayBorderClass}`
+                          : ''
+                      const valueClass = isBookingAlert
+                        ? ''
+                        : `font-medium ${
+                            !hasBooking || bookingData.totalCount === 0
+                              ? 'text-gray-300'
+                              : bookingData.totalCount < 5
+                                ? 'text-blue-600'
+                                : 'text-red-600'
+                          } ${isToday(dateString) ? 'text-red-700' : ''}`
                       return (
                         <td 
                           key={dateString} 
@@ -6938,23 +7037,31 @@ export default function ScheduleView() {
                             setHoveredBookingDate(null)
                           }}
                         >
-                          <div className={`px-1 py-0.5 ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}>
+                          <div
+                            className={`px-1 py-0.5 ${cellWrapClass}`}
+                            title={
+                              isBookingAlert
+                                ? [
+                                    cellAlert?.ticketMismatch
+                                      ? '해당일 투어 배정 인원과 입장권 구매 수량이 다릅니다.'
+                                      : '',
+                                    cellAlert?.multiDayHotelMissing
+                                      ? '멀티데이 투어에 호텔 부킹이 없습니다.'
+                                      : '',
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' ')
+                                : undefined
+                            }
+                          >
                             {hasBooking ? (
-                              <div className={`font-medium ${
-                                bookingData.totalCount === 0 
-                                  ? 'text-gray-300' 
-                                  : bookingData.totalCount < 5 
-                                    ? 'text-blue-600' 
-                                    : 'text-red-600'
-                              } ${isToday(dateString) ? 'text-red-700' : ''}`}>
-                                {bookingData.totalCount}
-                              </div>
+                              <div className={valueClass}>{bookingData.totalCount}</div>
                             ) : (
-                              <div className="text-gray-300">-</div>
+                              <div className={isBookingAlert ? '' : 'text-gray-300'}>-</div>
                             )}
                           </div>
                           {/* 마우스 오버 시 부킹 상세 정보 표시 */}
-                          {hoveredBookingDate === dateString && hasBooking && bookingData && (
+                          {hoveredBookingDate === dateString && (hasBooking || isBookingAlert) && bookingData && (
                             <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-1 w-[22rem] max-w-[min(22rem,calc(100vw-2rem))] p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
                               <div className="font-semibold mb-2">{dateString}</div>
                               {bookingData.ticketDetails.length > 0 && (
@@ -7033,13 +7140,26 @@ export default function ScheduleView() {
                       </td>
                       {monthDays.map(({ dateString }) => {
                         const rows = bookingDetailRowsByDate[dateString] || []
+                        const cellAlert = bookingCellAlerts.byDate[dateString]
+                        const isBookingAlert =
+                          cellAlert?.ticketMismatch || cellAlert?.multiDayHotelMissing
+                        const todayBorderClass = isToday(dateString)
+                          ? 'border-l-2 border-r-2 border-red-500'
+                          : ''
+                        const detailWrapClass = isBookingAlert
+                          ? `bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold ${todayBorderClass}`
+                          : isToday(dateString)
+                            ? 'bg-red-50/40'
+                            : ''
                         return (
                           <td
                             key={`${dateString}-detail`}
-                            className={`p-0 align-top text-[10px] leading-tight border-b-2 border-b-gray-800 ${isToday(dateString) ? 'bg-red-50/40' : ''}`}
+                            className="p-0 align-top text-[10px] leading-tight border-b-2 border-b-gray-800"
                             style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           >
-                            <div className="px-0.5 py-1 text-left text-gray-800 space-y-0.5 break-words">
+                            <div
+                              className={`px-0.5 py-1 text-left space-y-0.5 break-words ${detailWrapClass} ${isBookingAlert ? '' : 'text-gray-800'}`}
+                            >
                               {rows.length === 0 ? (
                                 <span className="text-gray-300">-</span>
                               ) : (
