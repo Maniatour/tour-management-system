@@ -1,14 +1,30 @@
 // 상태 관련 유틸리티 함수들
 
-/** 투어가 취소·삭제 등으로 진행되지 않아 가이드/드라이버 수수료를 두지 않는 상태인지 */
-export function isTourCancelled(tourStatus: string | null | undefined): boolean {
-  if (tourStatus == null || typeof tourStatus !== 'string') return false
-  const s = tourStatus.toLowerCase().trim()
+function normalizeTourStatusKey(tourStatus: string | null | undefined): string {
+  if (tourStatus == null || typeof tourStatus !== 'string') return ''
+  return tourStatus.toLowerCase().trim()
+}
+
+/** 투어 상태가 삭제(Deleted·삭제 요청 등)인지 */
+export function isTourDeleted(tourStatus: string | null | undefined): boolean {
+  const s = normalizeTourStatusKey(tourStatus)
   if (!s) return false
-  if (s === 'deleted' || s.includes('requested for delete')) return true
+  return s === 'deleted' || s.includes('requested for delete')
+}
+
+/** 투어 상태가 취소 계열인지 (삭제는 제외) */
+export function isTourCancelledOnly(tourStatus: string | null | undefined): boolean {
+  if (isTourDeleted(tourStatus)) return false
+  const s = normalizeTourStatusKey(tourStatus)
+  if (!s) return false
   if (s === 'cancelled' || s === 'canceled' || s.includes('cancel')) return true
   if (s.includes('취소')) return true
   return false
+}
+
+/** 투어가 취소·삭제 등으로 진행되지 않아 가이드/드라이버 수수료를 두지 않는 상태인지 */
+export function isTourCancelled(tourStatus: string | null | undefined): boolean {
+  return isTourDeleted(tourStatus) || isTourCancelledOnly(tourStatus)
 }
 
 /** 투어 관리 스케줄 뷰 차량표 하단 일별 합계 등: 예정(scheduled)·모집중·확정만 건수에 포함 */
@@ -24,6 +40,14 @@ export function isTourStatusForVehicleScheduleDayCount(
   if (s === 'recruiting' || s.startsWith('recruiting ') || s.startsWith('recruiting/')) return true
   if (s === 'confirm' || s === 'confirmed') return true
   return false
+}
+
+/** 투어 상태가 확정(confirm / confirmed)인지 */
+export function isTourConfirmedStatus(tourStatus: string | null | undefined): boolean {
+  if (tourStatus == null || typeof tourStatus !== 'string') return false
+  if (isTourCancelled(tourStatus)) return false
+  const s = tourStatus.toLowerCase().trim()
+  return s === 'confirm' || s === 'confirmed'
 }
 
 /**

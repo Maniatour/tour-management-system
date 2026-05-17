@@ -16,6 +16,9 @@ import ChannelInvoicePreviewModal from '@/components/statistics/ChannelInvoicePr
 import ChannelOtaReconciliationModal from '@/components/statistics/ChannelOtaReconciliationModal'
 import type { Reservation } from '@/types/reservation'
 import {
+  buildChannelSettlementGroups,
+  channelIsOtaForSettlementStats,
+  SETTLEMENT_UNASSIGNED_CHANNEL_ID,
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
   computeCompanyTotalRevenueLikePricingSection,
@@ -49,11 +52,7 @@ interface ChannelSettlementTabProps {
   isSuper?: boolean
 }
 
-interface ChannelGroup {
-  type: 'OTA' | 'SELF'
-  label: string
-  channels: Array<{ id: string; name: string; type?: string; category?: string }>
-}
+type ChannelGroup = import('@/utils/channelSettlement').SettlementChannelGroup
 
 interface ReservationItem {
   id: string
@@ -672,8 +671,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     (channelId?: string | null) => {
       if (!channelId || !channels?.length) return false
       const ch = channels.find((c) => c.id === channelId)
-      if (!ch) return false
-      return String(ch.type || '').toLowerCase() === 'ota' || ch.category === 'OTA'
+      return channelIsOtaForSettlementStats(ch)
     },
     [channels]
   )
@@ -1191,45 +1189,31 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     }
   }, [refreshReservations, t])
 
-  // 채널 그룹화
+  // 채널 그룹화 — DB 전 채널 + 예약 channelId(마스터 없음·미지정 포함), OTA/자체/기타로 전부 분류
   const channelGroups = useMemo((): ChannelGroup[] => {
-    if (!channels || channels.length === 0) return []
-    
-    const otaChannels = dedupeChannelsById(
-      channels.filter(channel => {
-        const type = (channel.type || '').toLowerCase()
-        const category = (channel.category || '').toLowerCase()
-        return type === 'ota' || category === 'ota'
-      })
+    const master = dedupeChannelsById(
+      (channels ?? []).map((ch) => ({
+        id: ch.id,
+        name: ch.name,
+        type: ch.type ?? null,
+        category: ch.category ?? null,
+      }))
     )
-
-    const selfChannels = dedupeChannelsById(
-      channels.filter(channel => {
-        const type = (channel.type || '').toLowerCase()
-        const category = (channel.category || '').toLowerCase()
-        return (
-          type === 'self' ||
-          type === 'partner' ||
-          category === 'own' ||
-          category === 'self' ||
-          category === 'partner'
-        )
-      })
-    )
-    
-    return [
-      {
-        type: 'OTA' as const,
-        label: 'OTA 채널',
-        channels: otaChannels
-      },
-      {
-        type: 'SELF' as const,
-        label: '자체 채널',
-        channels: selfChannels
+    let includeUnassigned = false
+    const reservationChannelIds: string[] = []
+    for (const r of reservations) {
+      const cid = r.channelId
+      if (!cid?.trim()) {
+        includeUnassigned = true
+        continue
       }
-    ].filter(group => group.channels.length > 0)
-  }, [channels])
+      reservationChannelIds.push(cid)
+    }
+    return buildChannelSettlementGroups(master, {
+      reservationChannelIds,
+      includeUnassignedChannel: includeUnassigned,
+    })
+  }, [channels, reservations])
 
   // 그룹 토글
   const toggleGroup = (groupType: string) => {
@@ -1314,14 +1298,26 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   }, [reservations, selectedStatuses, dateRange, searchQuery, customers, products, channelFilter])
 
   // 채널별로 예약 필터링하는 헬퍼 함수
-  const getReservationsByChannel = useCallback((channelId: string) => {
-    return filteredReservations.filter(reservation => reservation.channelId === channelId)
-  }, [filteredReservations])
+  const getReservationsByChannel = useCallback(
+    (channelId: string) => {
+      if (channelId === SETTLEMENT_UNASSIGNED_CHANNEL_ID) {
+        return filteredReservations.filter((r) => !String(r.channelId ?? '').trim())
+      }
+      return filteredReservations.filter((reservation) => reservation.channelId === channelId)
+    },
+    [filteredReservations]
+  )
 
   // 투어 아이템을 채널별로 필터링하는 헬퍼 함수
-  const getTourItemsByChannel = useCallback((channelId: string) => {
-    return tourItems.filter(item => item.channelId === channelId)
-  }, [tourItems])
+  const getTourItemsByChannel = useCallback(
+    (channelId: string) => {
+      if (channelId === SETTLEMENT_UNASSIGNED_CHANNEL_ID) {
+        return tourItems.filter((item) => !String(item.channelId ?? '').trim())
+      }
+      return tourItems.filter((item) => item.channelId === channelId)
+    },
+    [tourItems]
+  )
 
   // 예약 가격 정보 가져오기
   useEffect(() => {

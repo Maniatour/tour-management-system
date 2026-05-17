@@ -386,3 +386,131 @@ export function channelIsOtaForPricingSection(
     n.includes('get your guide')
   )
 }
+
+/** Own 복구 등으로 category가 Own이어도 정산 통계에서는 OTA로 취급하는 한국 리셀러·제휴 투어사 */
+const SETTLEMENT_OTA_RESELLER_NAME_PARTS = [
+  'exciting tour',
+  'lte tour',
+  'chowon tour',
+  'navajo kim',
+] as const
+
+export type ChannelSettlementClassifyInput = {
+  type?: string | null
+  category?: string | null
+  name?: string | null
+}
+
+export function channelNameLooksLikeOtaReseller(name: string | null | undefined): boolean {
+  const n = String(name ?? '').toLowerCase().trim()
+  if (!n) return false
+  return SETTLEMENT_OTA_RESELLER_NAME_PARTS.some((part) => n.includes(part))
+}
+
+/** 예약 통계 · 채널별 정산 탭의 OTA 그룹·OTA 산식 판별 */
+export function channelIsOtaForSettlementStats(
+  ch: ChannelSettlementClassifyInput | undefined
+): boolean {
+  if (!ch) return false
+  if (channelIsOtaForPricingSection(ch)) return true
+  const type = String(ch.type ?? '').toLowerCase()
+  const category = String(ch.category ?? '').toLowerCase()
+  if (type === 'partner' || category === 'partner') return true
+  return channelNameLooksLikeOtaReseller(ch.name)
+}
+
+/** 예약 통계 · 채널별 정산 탭의 자체 채널 그룹 (홈페이지·카카오 등 직판만) */
+export function channelIsSelfForSettlementStats(
+  ch: ChannelSettlementClassifyInput | undefined
+): boolean {
+  if (!ch || channelIsOtaForSettlementStats(ch)) return false
+  const type = String(ch.type ?? '').toLowerCase()
+  const category = String(ch.category ?? '').toLowerCase()
+  return type === 'self' || category === 'own' || category === 'self'
+}
+
+/** 채널 미지정 예약용 합성 채널 id */
+export const SETTLEMENT_UNASSIGNED_CHANNEL_ID = '__UNASSIGNED__'
+
+export type SettlementChannelGroupType = 'OTA' | 'SELF' | 'OTHER'
+
+export type SettlementChannelRow = ChannelSettlementClassifyInput & {
+  id: string
+  name: string
+}
+
+export type SettlementChannelGroup = {
+  type: SettlementChannelGroupType
+  label: string
+  channels: SettlementChannelRow[]
+}
+
+/**
+ * 통계·정산 탭용 채널 그룹 — DB 채널 전부 + 예약에만 있는 channelId를 OTA/자체/기타로 분할(누락 없음).
+ */
+export function buildChannelSettlementGroups(
+  channels: SettlementChannelRow[],
+  options?: {
+    /** 예약·투어 목록에 등장하는 channelId (마스터에 없어도 기타 그룹에 포함) */
+    reservationChannelIds?: Iterable<string | null | undefined>
+    /** channel_id가 비어 있는 예약이 있으면 true */
+    includeUnassignedChannel?: boolean
+  }
+): SettlementChannelGroup[] {
+  const byId = new Map<string, SettlementChannelRow>()
+  for (const ch of channels) {
+    if (ch?.id) byId.set(ch.id, ch)
+  }
+
+  for (const raw of options?.reservationChannelIds ?? []) {
+    const id = String(raw ?? '').trim()
+    if (!id || byId.has(id)) continue
+    byId.set(id, { id, name: id, type: null, category: null })
+  }
+
+  if (options?.includeUnassignedChannel && !byId.has(SETTLEMENT_UNASSIGNED_CHANNEL_ID)) {
+    byId.set(SETTLEMENT_UNASSIGNED_CHANNEL_ID, {
+      id: SETTLEMENT_UNASSIGNED_CHANNEL_ID,
+      name: '채널 미지정',
+      type: null,
+      category: null,
+    })
+  }
+
+  const ota: SettlementChannelRow[] = []
+  const self: SettlementChannelRow[] = []
+  const other: SettlementChannelRow[] = []
+
+  for (const ch of byId.values()) {
+    if (channelIsOtaForSettlementStats(ch)) ota.push(ch)
+    else if (channelIsSelfForSettlementStats(ch)) self.push(ch)
+    else other.push(ch)
+  }
+
+  const byName = (a: SettlementChannelRow, b: SettlementChannelRow) =>
+    String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), 'ko')
+
+  ota.sort(byName)
+  self.sort(byName)
+  other.sort(byName)
+
+  return [
+    { type: 'OTA', label: 'OTA 채널', channels: ota },
+    { type: 'SELF', label: '자체 채널', channels: self },
+    { type: 'OTHER', label: '기타 채널', channels: other },
+  ].filter((g) => g.channels.length > 0)
+}
+
+export function settlementStatsChannelIdSet(groups: SettlementChannelGroup[]): Set<string> {
+  const ids = new Set<string>()
+  for (const g of groups) {
+    for (const ch of g.channels) ids.add(ch.id)
+  }
+  return ids
+}
+
+/** 통계 행의 channelId → 그룹 내 채널 키 (미지정 예약은 합성 id) */
+export function channelIdForSettlementGrouping(channelId: string | null | undefined): string {
+  const id = String(channelId ?? '').trim()
+  return id || SETTLEMENT_UNASSIGNED_CHANNEL_ID
+}
