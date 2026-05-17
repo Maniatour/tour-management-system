@@ -1581,9 +1581,12 @@ export default function PricingSection({
           formData.onlinePaymentAmount !== null &&
           String(formData.onlinePaymentAmount) !== '' &&
           Number.isFinite(onl)
-        const grossForDisplay =
-          hasOnline && Math.abs(onl) > 1e-9 ? onl : hasCommissionBase && cb > 0.005 ? cb : null
-        if (grossForDisplay != null && grossForDisplay > 0.005) {
+        const grossForDisplay = hasOnline
+          ? onl
+          : hasCommissionBase
+            ? cb
+            : null
+        if (grossForDisplay != null) {
           let g = grossForDisplay
           /** 취소·자체: 폼 online이 순잔액만 있고 보증금이 실제 캡처면 gross로 보증금 사용(이중 차감·$0 방지) */
           if (

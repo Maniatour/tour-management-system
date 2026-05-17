@@ -339,6 +339,47 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   return roundUsd2(totalRevenue)
 }
 
+/** `value || fallback` 대신 사용 — 금액 0도 유효 */
+export function pickFiniteNumber(...candidates: unknown[]): number | null {
+  for (const v of candidates) {
+    if (v === undefined || v === null) continue
+    if (String(v).trim() === '') continue
+    const n = Number(v)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
+/**
+ * 정산 저장용 채널 결제 gross — 폼에 0이 있어도 `||`로 다른 금액으로 대체되지 않음.
+ */
+export function resolveCommissionGrossForPricingSave(input: {
+  onlinePaymentAmount?: unknown
+  depositAmount?: unknown
+  storedCommissionBase?: unknown
+  returnedAmount: number
+  productPriceTotal: number
+  isOTAChannel: boolean
+}): number {
+  const online = pickFiniteNumber(input.onlinePaymentAmount)
+  if (online !== null) return online
+
+  const dep = pickFiniteNumber(input.depositAmount) ?? 0
+  const stored = pickFiniteNumber(input.storedCommissionBase)
+  const fromDerive =
+    stored !== null
+      ? deriveCommissionGrossForSettlement(stored, {
+          returnedAmount: input.returnedAmount,
+          depositAmount: dep,
+          productPriceTotal: input.productPriceTotal,
+          isOTAChannel: input.isOTAChannel,
+        })
+      : null
+  if (fromDerive != null && fromDerive > 0) return fromDerive
+  if (dep > 0) return dep
+  return stored ?? 0
+}
+
 /**
  * `reservation_pricing.commission_base_price` 저장 시 UI「채널 결제 금액」(net)과 정산 산식 `channelPayNet` 중 무엇을 쓸지 결정.
  * 기존에는 산식만 저장해 사용자가 폼에서 맞춘 금액이 DB에 반영되지 않던 문제를 막는다.
@@ -359,7 +400,7 @@ export function resolveCommissionBasePriceForPersistence(input: {
   if (!has) return net
   const form = roundUsd2(Number(raw))
   if (input.channelPricingFieldsUserEdited) return form
-  if (form <= 0.005 && net > 0.01) return net
+  if (form <= 0.005) return form
   if (Math.abs(form - net) > 0.02) return form
   return net
 }
@@ -432,7 +473,7 @@ export function channelIsSelfForSettlementStats(
 /** 채널 미지정 예약용 합성 채널 id */
 export const SETTLEMENT_UNASSIGNED_CHANNEL_ID = '__UNASSIGNED__'
 
-export type SettlementChannelGroupType = 'OTA' | 'SELF' | 'OTHER'
+export type SettlementChannelGroupType = 'OTA' | 'SELF' | 'PARTNER' | 'OTHER'
 
 export type SettlementChannelRow = ChannelSettlementClassifyInput & {
   id: string
@@ -445,8 +486,29 @@ export type SettlementChannelGroup = {
   channels: SettlementChannelRow[]
 }
 
+/** 예약 통계 · 채널별 정산 테이블 그룹 — `channels.type`만 사용(대소문자 무시). */
+export function normalizeChannelTypeForSettlementGroup(
+  type: string | null | undefined
+): SettlementChannelGroupType {
+  const t = String(type ?? '').trim().toLowerCase()
+  if (t === 'ota') return 'OTA'
+  if (t === 'self') return 'SELF'
+  if (t === 'partner') return 'PARTNER'
+  return 'OTHER'
+}
+
+const SETTLEMENT_GROUP_DEFS: ReadonlyArray<{
+  type: SettlementChannelGroupType
+  label: string
+}> = [
+  { type: 'OTA', label: 'OTA 채널' },
+  { type: 'SELF', label: '자체 채널' },
+  { type: 'PARTNER', label: 'Partner 채널' },
+  { type: 'OTHER', label: '기타 채널' },
+]
+
 /**
- * 통계·정산 탭용 채널 그룹 — DB 채널 전부 + 예약에만 있는 channelId를 OTA/자체/기타로 분할(누락 없음).
+ * 통계·정산 탭용 채널 그룹 — DB 채널 전부 + 예약에만 있는 channelId를 type(OTA/Self/Partner) 기준으로 분할.
  */
 export function buildChannelSettlementGroups(
   channels: SettlementChannelRow[],
@@ -477,28 +539,26 @@ export function buildChannelSettlementGroups(
     })
   }
 
-  const ota: SettlementChannelRow[] = []
-  const self: SettlementChannelRow[] = []
-  const other: SettlementChannelRow[] = []
+  const buckets = new Map<SettlementChannelGroupType, SettlementChannelRow[]>([
+    ['OTA', []],
+    ['SELF', []],
+    ['PARTNER', []],
+    ['OTHER', []],
+  ])
 
   for (const ch of byId.values()) {
-    if (channelIsOtaForSettlementStats(ch)) ota.push(ch)
-    else if (channelIsSelfForSettlementStats(ch)) self.push(ch)
-    else other.push(ch)
+    const groupType = normalizeChannelTypeForSettlementGroup(ch.type)
+    buckets.get(groupType)!.push(ch)
   }
 
   const byName = (a: SettlementChannelRow, b: SettlementChannelRow) =>
     String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), 'ko')
 
-  ota.sort(byName)
-  self.sort(byName)
-  other.sort(byName)
-
-  return [
-    { type: 'OTA', label: 'OTA 채널', channels: ota },
-    { type: 'SELF', label: '자체 채널', channels: self },
-    { type: 'OTHER', label: '기타 채널', channels: other },
-  ].filter((g) => g.channels.length > 0)
+  return SETTLEMENT_GROUP_DEFS.map(({ type, label }) => {
+    const list = buckets.get(type) ?? []
+    list.sort(byName)
+    return { type, label, channels: list }
+  }).filter((g) => g.channels.length > 0)
 }
 
 export function settlementStatsChannelIdSet(groups: SettlementChannelGroup[]): Set<string> {

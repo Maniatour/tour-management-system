@@ -23,6 +23,9 @@ import {
   computeChannelSettlementAmount,
   computeCompanyTotalRevenueLikePricingSection,
   deriveCommissionGrossForSettlement,
+  resolveCommissionBasePriceForPersistence,
+  resolveCommissionGrossForPricingSave,
+  pickFiniteNumber,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
@@ -963,21 +966,22 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             .eq('reservation_id', editingReservation.id)
             .maybeSingle()
 
+          const depAmtForGross = toNum(pricingInfo.depositAmount)
           const storedCb =
-            toNum(pricingInfo.commission_base_price) ||
-            toNum(pricingInfo.commissionBasePrice) ||
-            toNum((existingPricing as { commission_base_price?: number } | null)?.commission_base_price)
+            pickFiniteNumber(
+              pricingInfo.commission_base_price,
+              pricingInfo.commissionBasePrice,
+              (existingPricing as { commission_base_price?: number } | null)?.commission_base_price
+            ) ?? 0
 
-          const commissionGross =
-            toNum(pricingInfo.onlinePaymentAmount) ||
-            toNum(pricingInfo.depositAmount) ||
-            deriveCommissionGrossForSettlement(storedCb, {
-              returnedAmount,
-              depositAmount: toNum(pricingInfo.depositAmount),
-              productPriceTotal: productTotalForChannelSettlement,
-              isOTAChannel: isOtaChannelId(reservation.channelId),
-            }) ||
-            storedCb
+          const commissionGross = resolveCommissionGrossForPricingSave({
+            onlinePaymentAmount: pricingInfo.onlinePaymentAmount,
+            depositAmount: depAmtForGross,
+            storedCommissionBase: storedCb,
+            returnedAmount,
+            productPriceTotal: productTotalForChannelSettlement,
+            isOTAChannel: isOtaChannelId(reservation.channelId),
+          })
 
           const channelSettlementComputeInput = {
             depositAmount: toNum(pricingInfo.depositAmount),
@@ -999,6 +1003,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           }
 
           const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
+          const commissionBaseToSave = resolveCommissionBasePriceForPersistence({
+            formCommissionBase:
+              pricingInfo.commission_base_price ?? pricingInfo.commissionBasePrice,
+            channelPayNet,
+            channelPricingFieldsUserEdited: true,
+          })
           const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
           const channelSettlementToSave = (() => {
@@ -1131,7 +1141,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             commission_percent: pricingInfo.commission_percent || 0,
             commission_amount: pricingInfo.commission_amount || 0,
             pricing_adults: pricingAdultsVal,
-            commission_base_price: Math.round(channelPayNet * 100) / 100,
+            commission_base_price: Math.round(commissionBaseToSave * 100) / 100,
             channel_settlement_amount: channelSettlementToSave,
             company_total_revenue: storedMetrics.company_total_revenue,
             operating_profit: storedMetrics.operating_profit,
@@ -1189,7 +1199,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     }
   }, [refreshReservations, t])
 
-  // 채널 그룹화 — DB 전 채널 + 예약 channelId(마스터 없음·미지정 포함), OTA/자체/기타로 전부 분류
+  // 채널 그룹화 — channels.type(OTA / Self / Partner, 대소문자 무시) + type 없음은 기타
   const channelGroups = useMemo((): ChannelGroup[] => {
     const master = dedupeChannelsById(
       (channels ?? []).map((ch) => ({
@@ -2258,7 +2268,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                    )
                  }
 
-                 // OTA 채널은 기존대로 채널별로 나누어 표시
+                 // OTA·Partner·기타 — 채널별로 나누어 표시
                  return (
                    <div key={group.type} className="border-b border-gray-200">
                      {/* 그룹 헤더 */}
@@ -2946,7 +2956,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                   )
                 }
 
-                // OTA 채널은 기존대로 채널별로 나누어 표시
+                // OTA·Partner·기타 — 채널별로 나누어 표시
                 return (
                   <div key={group.type} className="border-b border-gray-200">
                     {/* 그룹 헤더 */}

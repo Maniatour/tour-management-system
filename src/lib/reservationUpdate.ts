@@ -8,8 +8,9 @@ import type { Reservation } from '@/types/reservation'
 import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
-  deriveCommissionGrossForSettlement,
   resolveCommissionBasePriceForPersistence,
+  resolveCommissionGrossForPricingSave,
+  pickFiniteNumber,
 } from '@/utils/channelSettlement'
 import {
   isReturnedPaymentStatus,
@@ -366,21 +367,22 @@ export async function updateReservation(
         isOTAChannel = false
       }
 
+      const depAmtForGross = toNum(pricingInfo.depositAmount)
       const storedCb =
-        toNum(pricingInfo.commission_base_price) ||
-        toNum(pricingInfo.commissionBasePrice) ||
-        toNum((existingRow as { commission_base_price?: number } | null)?.commission_base_price)
+        pickFiniteNumber(
+          pricingInfo.commission_base_price,
+          pricingInfo.commissionBasePrice,
+          (existingRow as { commission_base_price?: number } | null)?.commission_base_price
+        ) ?? 0
 
-      const commissionGross =
-        toNum(pricingInfo.onlinePaymentAmount) ||
-        toNum(pricingInfo.depositAmount) ||
-        deriveCommissionGrossForSettlement(storedCb, {
-          returnedAmount,
-          depositAmount: toNum(pricingInfo.depositAmount),
-          productPriceTotal: productTotalForChannelSettlement,
-          isOTAChannel,
-        }) ||
-        storedCb
+      const commissionGross = resolveCommissionGrossForPricingSave({
+        onlinePaymentAmount: pricingInfo.onlinePaymentAmount,
+        depositAmount: depAmtForGross,
+        storedCommissionBase: storedCb,
+        returnedAmount,
+        productPriceTotal: productTotalForChannelSettlement,
+        isOTAChannel,
+      })
 
       const channelSettlementComputeInput = {
         depositAmount: toNum(pricingInfo.depositAmount),

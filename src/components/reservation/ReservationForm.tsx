@@ -98,6 +98,8 @@ import {
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
   resolveCommissionBasePriceForPersistence,
+  resolveCommissionGrossForPricingSave,
+  pickFiniteNumber,
 } from '@/utils/channelSettlement'
 import {
   isReturnedPaymentStatus,
@@ -5355,18 +5357,16 @@ export default function ReservationForm({
 
       const depAmt = overrides?.depositAmount ?? toNum(fd.depositAmount)
       const storedCb =
-        toNum(fd.commission_base_price) || toNum((existing as any)?.commission_base_price)
+        pickFiniteNumber(fd.commission_base_price, (existing as any)?.commission_base_price) ?? 0
 
-      const commissionGross =
-        toNum(fd.onlinePaymentAmount) ||
-        depAmt ||
-        deriveCommissionGrossForSettlement(storedCb, {
-          returnedAmount,
-          depositAmount: depAmt,
-          productPriceTotal: newProductTotal,
-          isOTAChannel,
-        }) ||
-        storedCb
+      const commissionGross = resolveCommissionGrossForPricingSave({
+        onlinePaymentAmount: fd.onlinePaymentAmount,
+        depositAmount: depAmt,
+        storedCommissionBase: storedCb,
+        returnedAmount,
+        productPriceTotal: newProductTotal,
+        isOTAChannel,
+      })
 
       const channelSettlementComputeInput = {
         depositAmount: depAmt,
