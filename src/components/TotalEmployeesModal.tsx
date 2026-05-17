@@ -11,6 +11,7 @@ import {
   lasVegasDateFromCheckIn,
 } from '@/lib/employeeHourlyRates'
 import { adjustedWorkHoursForPay, sortAttendanceRecordsForMealPolicy } from '@/lib/attendanceMealPolicy'
+import { calculateEmployeePrepaidTips } from '@/lib/prepaid-tips'
 
 interface TotalEmployeesModalProps {
   isOpen: boolean
@@ -605,56 +606,13 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     return employeeLanguages[0] || 'KR'
   }
 
-  // 투어의 prepaid 팁 (2주급 계산기와 동일: reservation_pricing 합계의 90% 후 2guide 50% / 1guide·guide+driver 가이드 100%, 없으면 tour_tip_shares)
+  // 투어의 prepaid 팁 (2주급 계산기와 동일: Tips 쉐어 저장값 우선)
   const calculatePrepaidTipBreakdown = async (
-    tour: any,
+    tour: { id: string; tour_guide_id: string | null; assistant_id: string | null; team_type?: string | null; reservation_ids?: unknown },
     employeeEmail: string
   ): Promise<{ share: number; prepayment_tip_total: number }> => {
     try {
-      const isGuide = tour.tour_guide_id === employeeEmail
-      const isAssistant = tour.assistant_id === employeeEmail
-      let prepayment_tip_total = 0
-      let prepaidTips = 0
-
-      const resIds = normalizeTourReservationIds(tour.reservation_ids)
-      if (resIds.length > 0) {
-        const { data: pricingData, error: pricingError } = await supabase
-          .from('reservation_pricing')
-          .select('prepayment_tip')
-          .in('reservation_id', resIds)
-        if (!pricingError && pricingData) {
-          prepayment_tip_total = pricingData.reduce(
-            (sum, p) => sum + (Number((p as { prepayment_tip?: unknown }).prepayment_tip) || 0),
-            0
-          )
-          const after10Percent = prepayment_tip_total * 0.9
-          const is2guide = tour.team_type === '2guide'
-          if (is2guide && (isGuide || isAssistant)) {
-            prepaidTips = after10Percent * 0.5
-          } else if (
-            (tour.team_type === '1guide' ||
-              tour.team_type === 'guide+driver' ||
-              tour.team_type === 'guide + driver') &&
-            isGuide
-          ) {
-            prepaidTips = after10Percent
-          }
-        }
-      }
-
-      if (prepaidTips === 0 && prepayment_tip_total === 0) {
-        const { data: tipShareData, error: tipShareError } = await supabase
-          .from('tour_tip_shares')
-          .select('total_tip, guide_amount, assistant_amount')
-          .eq('tour_id', tour.id)
-          .maybeSingle()
-        if (!tipShareError && tipShareData) {
-          if (isGuide) return { share: tipShareData.guide_amount ?? 0, prepayment_tip_total: 0 }
-          if (isAssistant) return { share: tipShareData.assistant_amount ?? 0, prepayment_tip_total: 0 }
-        }
-      }
-
-      return { share: prepaidTips, prepayment_tip_total }
+      return await calculateEmployeePrepaidTips(supabase, tour, employeeEmail)
     } catch (error) {
       console.error('Prepaid tip 계산 오류:', error)
       return { share: 0, prepayment_tip_total: 0 }
