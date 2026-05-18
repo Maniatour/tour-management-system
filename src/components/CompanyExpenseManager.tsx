@@ -2580,16 +2580,6 @@ export default function CompanyExpenseManager({
                           </Button>
                         )}
                       </div>
-                      <span className="text-gray-400">{tTour('reimbursedShort')}</span>
-                      <span>
-                        {formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}
-                      </span>
-                      <span className="text-gray-400">{tTour('outstandingShort')}</span>
-                      <span>
-                        {formatCurrency(
-                          reimbursementOutstanding(parseExpenseAmount(expense), expense.reimbursed_amount)
-                        )}
-                      </span>
                       <span className="text-gray-400">상태</span>
                       <span>{getStatusBadge(expense.status || 'pending')}</span>
                     </div>
@@ -2681,28 +2671,6 @@ export default function CompanyExpenseManager({
                           active={companyTableSortKey === 'amount'}
                           dir={companyTableSortDir}
                           onClick={() => handleCompanyTableSort('amount')}
-                          className="text-right"
-                        />
-                      </div>
-                    </TableHead>
-                    <TableHead className="whitespace-normal text-right leading-tight align-bottom">
-                      <div className="flex justify-end">
-                        <TableSortHeaderButton
-                          label={tTour('reimbursedShort')}
-                          active={companyTableSortKey === 'reimbursed'}
-                          dir={companyTableSortDir}
-                          onClick={() => handleCompanyTableSort('reimbursed')}
-                          className="text-right"
-                        />
-                      </div>
-                    </TableHead>
-                    <TableHead className="whitespace-normal text-right leading-tight align-bottom">
-                      <div className="flex justify-end">
-                        <TableSortHeaderButton
-                          label={tTour('outstandingShort')}
-                          active={companyTableSortKey === 'outstanding'}
-                          dir={companyTableSortDir}
-                          onClick={() => handleCompanyTableSort('outstanding')}
                           className="text-right"
                         />
                       </div>

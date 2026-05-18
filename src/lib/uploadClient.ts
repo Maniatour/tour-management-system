@@ -1,6 +1,14 @@
 'use client';
 
-import { supabase } from '@/lib/supabase';
+import {
+  canAttemptProactiveRefresh,
+  coordinatedRefreshSession,
+  getStoredAccessTokenIfValid,
+  isAuthRefreshRateLimited,
+  markProactiveRefreshAttempted,
+  supabase,
+  updateSupabaseToken,
+} from '@/lib/supabase';
 
 const UPLOAD_SESSION_REFRESH_SKEW_SEC = 300;
 
@@ -28,11 +36,31 @@ export async function ensureFreshAuthSessionForUpload(): Promise<void> {
 
   if (!needsRefresh) return;
 
-  const { data, error } = await supabase.auth.refreshSession({
-    refresh_token: session.refresh_token,
-  });
+  if (isAuthRefreshRateLimited()) {
+    const stored = getStoredAccessTokenIfValid(UPLOAD_SESSION_REFRESH_SKEW_SEC)
+    if (stored) {
+      updateSupabaseToken(stored)
+      return
+    }
+    throw new Error(
+      '로그인 세션 갱신이 일시적으로 제한되었습니다. 1~2분 후 다시 시도해 주세요.'
+    );
+  }
 
-  if (error || !data.session) {
+  if (!canAttemptProactiveRefresh()) {
+    const stored = getStoredAccessTokenIfValid(UPLOAD_SESSION_REFRESH_SKEW_SEC)
+    if (stored) {
+      updateSupabaseToken(stored)
+      return
+    }
+  }
+
+  markProactiveRefreshAttempted()
+  const { session: refreshed, error } = await coordinatedRefreshSession(supabase, {
+    refresh_token: session.refresh_token,
+  })
+
+  if (error || !refreshed) {
     throw new Error(
       error?.message ||
         '세션이 만료되었습니다. 다시 로그인한 뒤 시도해 주세요.'

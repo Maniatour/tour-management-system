@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { supabase, isAbortLikeError, canUseAuthenticatedRest } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   findOpenAttendanceSession,
@@ -32,6 +32,10 @@ export function useAttendanceSync() {
     
     if (!authUser?.email) {
       console.log('authUser.email이 없습니다')
+      return
+    }
+
+    if (!canUseAuthenticatedRest()) {
       return
     }
 

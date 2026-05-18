@@ -17,6 +17,15 @@ const withSerwist = withSerwistInit({
 })
 
 const nextConfig = {
+	// Next 16 dev: `app/admin` 페이지와 `app/api/admin` API가 동시에 있으면 /api/admin/* 가 404 나는 경우가 있음
+	async rewrites() {
+		return {
+			beforeFiles: [
+				{ source: '/api/admin/weather-status', destination: '/api/weather-status' },
+			],
+		}
+	},
+
 	// tesseract.js는 worker 스크립트 경로를 번들에 넣으면 __dirname 이 깨져 MODULE_NOT_FOUND 발생
 	serverExternalPackages: ['tesseract.js', 'tesseract.js-core'],
 

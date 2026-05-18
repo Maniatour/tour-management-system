@@ -53,6 +53,10 @@ export default function StripeErrorHandler() {
       if (message.includes('[i18n]') && message.includes('translation_values')) {
         return
       }
+      // Supabase 네트워크 재시도(구 console.warn) — 터미널 [browser] 로그 폭주 방지
+      if (message.includes('Supabase 요청 실패') && message.includes('재시도')) {
+        return
+      }
       originalWarn(...(args as []))
     }
 

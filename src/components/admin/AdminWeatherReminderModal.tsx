@@ -35,7 +35,7 @@ export default function AdminWeatherReminderModal({ locale }: AdminWeatherRemind
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/weather-status', { cache: 'no-store' })
+      const res = await fetch('/api/weather-status', { cache: 'no-store' })
       if (!res.ok) {
         setError(t('loadError'))
         return
@@ -105,7 +105,7 @@ export default function AdminWeatherReminderModal({ locale }: AdminWeatherRemind
       }
       setCollectMessage(msg)
       await loadStatus()
-      const res2 = await fetch('/api/admin/weather-status', { cache: 'no-store' })
+      const res2 = await fetch('/api/weather-status', { cache: 'no-store' })
       if (res2.ok) {
         const j = (await res2.json()) as WeatherStatusPayload
         setStatus(j)

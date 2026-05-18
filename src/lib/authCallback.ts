@@ -1,5 +1,5 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
-import { updateSupabaseToken } from '@/lib/supabase'
+import { coordinatedRefreshSession, updateSupabaseToken } from '@/lib/supabase'
 
 const SESSION_BUDGET_MS = 10_000
 const EXCHANGE_BUDGET_MS = 12_000
@@ -203,7 +203,10 @@ export async function completeOAuthCallback(
   if (rt) {
     try {
       const refreshed = await Promise.race([
-        supabase.auth.refreshSession({ refresh_token: rt }),
+        coordinatedRefreshSession(supabase, { refresh_token: rt }).then(({ session, error }) => ({
+          data: { session },
+          error: error ?? null,
+        })),
         new Promise<{ data: { session: null }; error: { message: string } }>((resolve) =>
           setTimeout(
             () => resolve({ data: { session: null }, error: { message: 'refresh_timeout' } }),

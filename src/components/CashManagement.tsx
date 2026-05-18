@@ -25,6 +25,8 @@ import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
+const DEFAULT_CASH_PERIOD_START = '2025-01-01'
+
 interface CashTransaction {
   id: string
   transaction_date: string
@@ -39,7 +41,7 @@ interface CashTransaction {
   created_at: string
   updated_at: string
   source?: 'cash_transactions' | 'payment_records' | 'company_expenses' | 'reservation_expenses' // 데이터 출처
-  created_by_name?: string // team 테이블에서 가져온 name_ko
+  created_by_name?: string // team 테이블 display_name (없으면 name_ko)
   /** payment_records 출처만 — DB payment_status */
   payment_status?: string | null
 }
@@ -118,9 +120,9 @@ export default function CashManagement() {
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'deposit' | 'withdrawal' | 'bank_deposit'>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [startDate, setStartDate] = useState('')
+  const [startDate, setStartDate] = useState(DEFAULT_CASH_PERIOD_START)
   const [endDate, setEndDate] = useState('')
-  const [teamMembers, setTeamMembers] = useState<Map<string, string>>(new Map()) // email -> name_ko
+  const [teamMembers, setTeamMembers] = useState<Map<string, string>>(new Map()) // email(lower) -> display_name
   const [showHistory, setShowHistory] = useState(false)
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null)
   const [transactionHistory, setTransactionHistory] = useState<TransactionHistory[]>([])
@@ -146,20 +148,32 @@ export default function CashManagement() {
     notes: ''
   })
 
+  const teamDisplayLabel = useCallback(
+    (email: string) => {
+      const e = String(email || '').trim()
+      if (!e) return ''
+      return teamMembers.get(e.toLowerCase()) || ''
+    },
+    [teamMembers]
+  )
+
   // team 멤버 로드
   const loadTeamMembers = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko')
+        .select('email, display_name, name_ko')
       
       if (error) throw error
       
       const memberMap = new Map<string, string>()
-      if (data) {
-        data.forEach(member => {
-          memberMap.set(member.email, member.name_ko)
-        })
+      for (const member of data ?? []) {
+        const email = String(member.email || '').trim()
+        if (!email) continue
+        const dn = member.display_name != null ? String(member.display_name).trim() : ''
+        const ko = member.name_ko != null ? String(member.name_ko).trim() : ''
+        const label = dn || ko || email
+        memberMap.set(email.toLowerCase(), label)
       }
       setTeamMembers(memberMap)
     } catch (error) {
@@ -182,7 +196,7 @@ export default function CashManagement() {
       // team 멤버 이름 매핑
       const historyWithNames = (data || []).map(history => ({
         ...history,
-        modified_by_name: teamMembers.get(history.modified_by) || history.modified_by
+        modified_by_name: teamDisplayLabel(history.modified_by)
       }))
       
       setTransactionHistory(historyWithNames)
@@ -190,7 +204,7 @@ export default function CashManagement() {
       console.error('수정 히스토리 로드 오류:', error)
       toast.error('수정 히스토리를 불러오는 중 오류가 발생했습니다.')
     }
-  }, [teamMembers, toast])
+  }, [teamDisplayLabel, toast])
 
   const loadTransactions = useCallback(async () => {
     try {
@@ -336,7 +350,7 @@ export default function CashManagement() {
         const converted = cashTransactions.map(t => ({
           ...t,
           source: 'cash_transactions' as const,
-          created_by_name: teamMembers.get(t.created_by) || t.created_by
+          created_by_name: teamDisplayLabel(t.created_by)
         }))
         allTransactions.push(...converted)
       }
@@ -353,7 +367,7 @@ export default function CashManagement() {
           reference_type: 'reservation',
           reference_id: pr.reservation_id,
           created_by: pr.submit_by || '',
-          created_by_name: teamMembers.get(pr.submit_by || '') || pr.submit_by || '',
+          created_by_name: teamDisplayLabel(pr.submit_by || ''),
           notes: pr.note || null,
           created_at: pr.submit_on || new Date().toISOString(),
           updated_at: pr.submit_on || new Date().toISOString(),
@@ -375,7 +389,7 @@ export default function CashManagement() {
           reference_type: 'company_expense',
           reference_id: ce.id,
           created_by: ce.submit_by || '',
-          created_by_name: teamMembers.get(ce.submit_by || '') || ce.submit_by || '',
+          created_by_name: teamDisplayLabel(ce.submit_by || ''),
           notes: ce.notes || null,
           created_at: ce.submit_on || new Date().toISOString(),
           updated_at: ce.submit_on || new Date().toISOString(),
@@ -396,7 +410,7 @@ export default function CashManagement() {
           reference_type: 'reservation',
           reference_id: re.reservation_id,
           created_by: re.submitted_by || '',
-          created_by_name: teamMembers.get(re.submitted_by || '') || re.submitted_by || '',
+          created_by_name: teamDisplayLabel(re.submitted_by || ''),
           notes: re.note || null,
           created_at: re.submit_on || new Date().toISOString(),
           updated_at: re.submit_on || new Date().toISOString(),
@@ -445,7 +459,7 @@ export default function CashManagement() {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, typeFilter, categoryFilter, startDate, endDate, teamMembers])
+  }, [searchTerm, typeFilter, categoryFilter, startDate, endDate, teamDisplayLabel])
 
   useEffect(() => {
     loadTeamMembers()
@@ -888,8 +902,8 @@ export default function CashManagement() {
           vb = b.notes
           break
         case 'author':
-          va = teamMembers.get(a.created_by) || a.created_by
-          vb = teamMembers.get(b.created_by) || b.created_by
+          va = a.created_by_name || a.created_by
+          vb = b.created_by_name || b.created_by
           break
         default:
           va = a.transaction_date
@@ -903,7 +917,6 @@ export default function CashManagement() {
     cashTableSortKey,
     cashTableSortDir,
     cashSortLocale,
-    teamMembers,
     cashTypeSortValue,
     cashSourceSortValue,
   ])
@@ -1015,7 +1028,7 @@ export default function CashManagement() {
               size="sm"
               className="text-xs sm:text-sm h-8 sm:h-10"
               onClick={() => {
-                setStartDate('')
+                setStartDate(DEFAULT_CASH_PERIOD_START)
                 setEndDate('')
               }}
             >
@@ -1410,7 +1423,7 @@ export default function CashManagement() {
                       <TableHead className="py-2 w-12 text-center" title={tStmt('unmatchedTitle')}>
                         {tStmt('columnHeaderShort')}
                       </TableHead>
-                      <TableHead className="py-2 w-48 align-bottom">
+                      <TableHead className="py-2 w-52 align-bottom">
                         <TableSortHeaderButton
                           label="날짜"
                           active={cashTableSortKey === 'date'}
@@ -1450,7 +1463,7 @@ export default function CashManagement() {
                           onClick={() => handleCashTableSort('category')}
                         />
                       </TableHead>
-                      <TableHead className="w-32 py-2 align-bottom">
+                      <TableHead className="w-44 min-w-[11rem] py-2 align-bottom">
                         <TableSortHeaderButton
                           label="출처"
                           active={cashTableSortKey === 'source'}
@@ -1509,7 +1522,7 @@ export default function CashManagement() {
                               onClick={() => openCashStmtRecon(transaction)}
                             />
                           </TableCell>
-                          <TableCell className="py-1 w-48">
+                          <TableCell className="py-1 w-52 whitespace-nowrap">
                             {(() => {
                               // ISO 형식의 날짜를 로컬 시간대로 변환하여 날짜만 표시
                               const date = new Date(transaction.transaction_date)
@@ -1568,8 +1581,8 @@ export default function CashManagement() {
                               '-'
                             )}
                           </TableCell>
-                          <TableCell className="w-32 py-1">
-                            <Badge variant="secondary" className="text-xs">
+                          <TableCell className="w-44 min-w-[11rem] py-1">
+                            <Badge variant="secondary" className="text-xs whitespace-nowrap">
                               {sourceLabel}
                             </Badge>
                           </TableCell>
@@ -1579,8 +1592,8 @@ export default function CashManagement() {
                               : '—'}
                           </TableCell>
                           <TableCell className="max-w-xs truncate py-1 text-sm">{transaction.notes || '-'}</TableCell>
-                          <TableCell className="text-sm text-gray-500 py-1">
-                            {transaction.created_by_name || transaction.created_by}
+                          <TableCell className="text-sm text-gray-500 py-1 whitespace-nowrap">
+                            {transaction.created_by_name || '—'}
                           </TableCell>
                           <TableCell className="text-right w-40 py-1">
                             <div className="flex justify-end gap-1">
@@ -1713,7 +1726,7 @@ export default function CashManagement() {
                           </CardDescription>
                         </div>
                         <Badge variant="outline">
-                          {history.modified_by_name || history.modified_by}
+                          {history.modified_by_name || '—'}
                         </Badge>
                       </div>
                     </CardHeader>

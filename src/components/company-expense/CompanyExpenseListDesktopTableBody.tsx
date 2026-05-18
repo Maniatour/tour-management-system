@@ -9,8 +9,6 @@ import { Wrench } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import { Database } from '@/lib/database.types'
-import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
-
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type TeamMember = Database['public']['Tables']['team']['Row']
 
@@ -159,14 +157,6 @@ export function CompanyExpenseListDesktopTableBody({
           </TableCell>
           <TableCell className="min-w-0 px-1.5 py-1 text-right text-[11px] font-medium tabular-nums whitespace-nowrap">
             ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
-          </TableCell>
-          <TableCell className="min-w-0 px-1.5 py-1 text-right text-[11px] tabular-nums whitespace-nowrap">
-            {formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}
-          </TableCell>
-          <TableCell className="min-w-0 px-1.5 py-1 text-right text-[11px] tabular-nums whitespace-nowrap">
-            {formatCurrency(
-              reimbursementOutstanding(expense.amount ?? 0, expense.reimbursed_amount)
-            )}
           </TableCell>
           <TableCell className="min-w-0 px-1.5 py-1" onClick={(e) => e.stopPropagation()}>
             <button

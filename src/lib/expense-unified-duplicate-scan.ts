@@ -4,7 +4,6 @@ import {
   BULK_COMPANY_DUP_DAY_WINDOW,
   type LedgerDuplicateExpenseRow
 } from '@/lib/statement-bulk-company-duplicate-check'
-import { normalizeReservationIds } from '@/utils/tourUtils'
 
 const FETCH_PAGE = 1000
 const MATCH_IN_CHUNK = 200
@@ -22,10 +21,21 @@ export const UNIFIED_EXPENSE_SOURCE_LABEL: Record<UnifiedExpenseSourceTable, str
   ticket_bookings: '입장권 부킹'
 }
 
+/** 중복 점검 참고란 — 투어 배정·상태 요약 */
+export type TourReferenceSnapshot = {
+  tourStatus: string | null
+  assignmentStatus: string | null
+  guideName: string
+  assistantName: string
+  vehicleName: string
+}
+
 export type UnifiedLedgerDuplicateExpenseRow = LedgerDuplicateExpenseRow & {
   source_table: UnifiedExpenseSourceTable
   source_key: string
   source_context: string | null
+  /** 투어 연결 시 참고란 구조화 데이터 */
+  tour_reference: TourReferenceSnapshot | null
   /** admin 투어 상세 `/[locale]/admin/tours/[id]` */
   detail_tour_id: string | null
   /** admin 예약 상세 `/[locale]/admin/reservations/[id]` */
@@ -368,47 +378,47 @@ function mapCompanyRaw(
     source_table,
     source_key: expenseSourceKey(source_table, id),
     source_context: null,
+    tour_reference: null,
     detail_tour_id: null,
     detail_reservation_id: null
   }
 }
 
-function teamMemberDisplayLabel(
+function teamShortName(
   row: { nick_name?: string | null; name_ko?: string | null } | undefined,
-  fallback: string
+  email: string
 ): string {
-  if (!row) return fallback
-  const nick = String(row.nick_name ?? '').trim()
-  const name = String(row.name_ko ?? '').trim()
-  if (nick && name) return `${name} (${nick})`
-  return name || nick || fallback
+  if (!email) return '—'
+  const nick = String(row?.nick_name ?? '').trim()
+  const name = String(row?.name_ko ?? '').trim()
+  if (nick) return nick
+  if (name) return name
+  const local = email.split('@')[0]?.trim()
+  return local || '—'
 }
 
-function vehicleDisplayLabel(
-  row: { vehicle_number?: string | null; nick?: string | null } | undefined,
-  fallback: string
+function vehicleShortName(
+  row: { vehicle_number?: string | null; nick?: string | null } | undefined
 ): string {
-  if (!row) return fallback
-  const num = String(row.vehicle_number ?? '').trim()
+  if (!row) return '—'
   const nick = String(row.nick ?? '').trim()
-  if (num && nick) return `${num} (${nick})`
-  return num || nick || fallback
+  const num = String(row.vehicle_number ?? '').trim()
+  return nick || num || '—'
 }
 
-/** 투어 ID별 참고란용 요약 (투어일·상품명·배정 인원·가이드·어시·차량) */
-async function fetchTourReferenceLabelMap(tourIds: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
+/** 투어 ID별 참고란 — 상태·가이드·어시·차량(이름만) */
+async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, TourReferenceSnapshot>> {
+  const out = new Map<string, TourReferenceSnapshot>()
   const ids = [...new Set(tourIds.map((x) => x.trim()).filter(Boolean))]
   if (ids.length === 0) return out
 
   type TourRefRow = {
     id?: string
-    tour_date?: string | null
     tour_guide_id?: string | null
     assistant_id?: string | null
     tour_car_id?: string | null
-    reservation_ids?: unknown
-    products?: { name_ko?: string | null; name?: string | null } | null
+    tour_status?: string | null
+    assignment_status?: string | null
   }
 
   const tours: TourRefRow[] = []
@@ -416,9 +426,7 @@ async function fetchTourReferenceLabelMap(tourIds: string[]): Promise<Map<string
     const chunk = ids.slice(i, i + MATCH_IN_CHUNK)
     const { data, error } = await supabase
       .from('tours')
-      .select(
-        'id, tour_date, tour_guide_id, assistant_id, tour_car_id, reservation_ids, products(name_ko, name)'
-      )
+      .select('id, tour_guide_id, assistant_id, tour_car_id, tour_status, assignment_status')
       .in('id', chunk)
     if (error) throw error
     tours.push(...((data as TourRefRow[]) || []))
@@ -426,7 +434,6 @@ async function fetchTourReferenceLabelMap(tourIds: string[]): Promise<Map<string
 
   const emails = new Set<string>()
   const vehicleIds = new Set<string>()
-  const reservationIds = new Set<string>()
   for (const t of tours) {
     const g = String(t.tour_guide_id ?? '').trim()
     const a = String(t.assistant_id ?? '').trim()
@@ -434,7 +441,6 @@ async function fetchTourReferenceLabelMap(tourIds: string[]): Promise<Map<string
     if (a) emails.add(a)
     const vid = String(t.tour_car_id ?? '').trim()
     if (vid) vehicleIds.add(vid)
-    for (const rid of normalizeReservationIds(t.reservation_ids)) reservationIds.add(rid)
   }
 
   const teamByEmail = new Map<string, { nick_name?: string | null; name_ko?: string | null }>()
@@ -463,61 +469,19 @@ async function fetchTourReferenceLabelMap(tourIds: string[]): Promise<Map<string
     }
   }
 
-  const paxByReservationId = new Map<string, number>()
-  const resList = [...reservationIds]
-  for (let i = 0; i < resList.length; i += MATCH_IN_CHUNK) {
-    const chunk = resList.slice(i, i + MATCH_IN_CHUNK)
-    const { data, error } = await supabase
-      .from('reservations')
-      .select('id, adults, child, infant, total_people, status')
-      .in('id', chunk)
-    if (error) throw error
-    for (const row of data || []) {
-      const o = row as {
-        id?: string
-        adults?: number | null
-        child?: number | null
-        infant?: number | null
-        total_people?: number | null
-        status?: string | null
-      }
-      const id = String(o.id ?? '').trim()
-      if (!id) continue
-      const status = String(o.status ?? '').trim().toLowerCase()
-      if (status === 'cancelled' || status === 'canceled') continue
-      const pax =
-        Number(o.total_people) ||
-        (Number(o.adults) || 0) + (Number(o.child) || 0) + (Number(o.infant) || 0)
-      paxByReservationId.set(id, pax)
-    }
-  }
-
   for (const t of tours) {
     const tid = String(t.id ?? '').trim()
     if (!tid) continue
-    const tourDate = String(t.tour_date ?? '').slice(0, 10)
-    const productName = String(t.products?.name_ko ?? t.products?.name ?? '').trim() || '—'
-    const resIds = normalizeReservationIds(t.reservation_ids)
-    const totalPeople = resIds.reduce((sum, rid) => sum + (paxByReservationId.get(rid) ?? 0), 0)
     const guideEmail = String(t.tour_guide_id ?? '').trim()
     const assistantEmail = String(t.assistant_id ?? '').trim()
-    const guide = guideEmail
-      ? teamMemberDisplayLabel(teamByEmail.get(guideEmail), guideEmail)
-      : '미배정'
-    const assistant = assistantEmail
-      ? teamMemberDisplayLabel(teamByEmail.get(assistantEmail), assistantEmail)
-      : '미배정'
     const carId = String(t.tour_car_id ?? '').trim()
-    const vehicle = carId ? vehicleDisplayLabel(vehicleById.get(carId), carId) : '미배정'
-    const headline = [tourDate, productName !== '—' ? productName : ''].filter(Boolean).join(' ')
-    const parts = [
-      headline || productName,
-      `총 ${totalPeople}명`,
-      `가이드 ${guide}`,
-      `어시 ${assistant}`,
-      `차량 ${vehicle}`
-    ]
-    out.set(tid, parts.join(' · '))
+    out.set(tid, {
+      tourStatus: t.tour_status == null ? null : String(t.tour_status),
+      assignmentStatus: t.assignment_status == null ? null : String(t.assignment_status),
+      guideName: teamShortName(teamByEmail.get(guideEmail), guideEmail),
+      assistantName: teamShortName(teamByEmail.get(assistantEmail), assistantEmail),
+      vehicleName: carId ? vehicleShortName(vehicleById.get(carId)) : '—'
+    })
   }
 
   return out
@@ -525,14 +489,14 @@ async function fetchTourReferenceLabelMap(tourIds: string[]): Promise<Map<string
 
 function enrichRowsWithTourReference(
   rows: UnifiedLedgerDuplicateExpenseRow[],
-  tourLabels: Map<string, string>
+  tourRefs: Map<string, TourReferenceSnapshot>
 ): UnifiedLedgerDuplicateExpenseRow[] {
   return rows.map((row) => {
     const tid = row.detail_tour_id?.trim()
-    if (!tid) return row
-    const label = tourLabels.get(tid)
-    if (!label) return row
-    return { ...row, source_context: label }
+    if (!tid) return { ...row, tour_reference: null }
+    const ref = tourRefs.get(tid)
+    if (!ref) return { ...row, tour_reference: null }
+    return { ...row, tour_reference: ref }
   })
 }
 
@@ -562,6 +526,7 @@ function mapTourRaw(
     source_table,
     source_key: expenseSourceKey(source_table, id),
     source_context: ctx,
+    tour_reference: null,
     detail_tour_id: tid.trim() ? tid : null,
     detail_reservation_id: null
   }
@@ -593,6 +558,7 @@ function mapReservationRaw(
     source_table,
     source_key: expenseSourceKey(source_table, id),
     source_context: ctx,
+    tour_reference: null,
     detail_tour_id: tourLinkId.trim() ? tourLinkId : null,
     detail_reservation_id: rid.trim() ? rid : null
   }
@@ -625,6 +591,7 @@ function mapTicketRaw(
     source_table,
     source_key: expenseSourceKey(source_table, id),
     source_context: r.check_in_date == null ? null : `체크인 ${String(r.check_in_date).slice(0, 10)}`,
+    tour_reference: null,
     detail_tour_id: tidTb.trim() ? tidTb : null,
     detail_reservation_id: ridTb.trim() ? ridTb : null
   }
@@ -785,8 +752,8 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(): Promise<{ grou
       if (tid) tourIdsForRef.add(tid)
     }
   }
-  const tourRefLabels = await fetchTourReferenceLabelMap([...tourIdsForRef])
-  const enrichedGroups = groups.map((group) => enrichRowsWithTourReference(group, tourRefLabels))
+  const tourRefs = await fetchTourReferenceMap([...tourIdsForRef])
+  const enrichedGroups = groups.map((group) => enrichRowsWithTourReference(group, tourRefs))
 
   return { groups: enrichedGroups }
 }

@@ -25,8 +25,15 @@ import {
   fetchUnifiedExpenseLedgerDuplicateGroups,
   insertExpenseDuplicateSuppression,
   UNIFIED_EXPENSE_SOURCE_LABEL,
+  type TourReferenceSnapshot,
   type UnifiedLedgerDuplicateExpenseRow
 } from '@/lib/expense-unified-duplicate-scan'
+import {
+  getAssignmentStatusColor,
+  getAssignmentStatusText,
+  getStatusColor,
+  getStatusText
+} from '@/utils/tourStatusUtils'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -74,19 +81,56 @@ function originCell(origin: string | null): string {
   return origin === 'statement_adjustment' ? '명세 보정·일괄' : '운영'
 }
 
-function LedgerReferenceCell({ text }: { text: string | null | undefined }) {
-  const trimmed = text?.trim()
-  if (!trimmed) return <span className="text-slate-400">—</span>
-  const parts = trimmed.split(' · ')
-  return (
-    <div className="space-y-0.5 leading-snug">
-      {parts.map((part, i) => (
-        <div key={`${i}-${part}`} className={i === 0 ? 'font-medium text-slate-800' : 'text-slate-600'}>
-          {part}
+function LedgerReferenceCell({
+  tourRef,
+  fallbackText,
+  locale
+}: {
+  tourRef: TourReferenceSnapshot | null | undefined
+  fallbackText: string | null | undefined
+  locale: string
+}) {
+  if (tourRef) {
+    const tourStatus = (tourRef.tourStatus ?? '').trim()
+    const assignmentStatus = (tourRef.assignmentStatus ?? '').trim()
+    const showAssignmentBadge =
+      assignmentStatus.length > 0 &&
+      assignmentStatus.toLowerCase() !== tourStatus.toLowerCase()
+
+    return (
+      <div className="min-w-[14rem] max-w-[20rem] space-y-1">
+        <div className="flex flex-wrap gap-1">
+          {tourStatus ? (
+            <span
+              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none ${getStatusColor(tourRef.tourStatus)}`}
+              title={tourStatus}
+            >
+              {getStatusText(tourRef.tourStatus, locale)}
+            </span>
+          ) : null}
+          {showAssignmentBadge ? (
+            <span
+              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none ${getAssignmentStatusColor({ assignment_status: tourRef.assignmentStatus })}`}
+              title={assignmentStatus}
+            >
+              배정 {getAssignmentStatusText({ assignment_status: tourRef.assignmentStatus }, locale)}
+            </span>
+          ) : null}
         </div>
-      ))}
-    </div>
-  )
+        <div className="text-[10px] text-slate-800 leading-snug">
+          <span className="text-slate-500">G</span> {tourRef.guideName}
+          <span className="text-slate-300 mx-1">·</span>
+          <span className="text-slate-500">A</span> {tourRef.assistantName}
+          <span className="text-slate-300 mx-1">·</span>
+          <span className="text-slate-500">V</span> {tourRef.vehicleName}
+        </div>
+      </div>
+    )
+  }
+
+  const trimmed = fallbackText?.trim()
+  if (!trimmed) return <span className="text-slate-400">—</span>
+  return <span className="text-[10px] text-slate-600 break-words">{trimmed}</span>
 }
 
 function LedgerDetailLinksCell({
@@ -525,7 +569,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                         </Button>
                       </div>
                       <div className="overflow-x-auto px-1 pb-2 pt-1">
-                        <table className="w-full min-w-[94rem] border-collapse text-left text-[11px]">
+                        <table className="w-full min-w-[106rem] border-collapse text-left text-[11px]">
                           <thead>
                             <tr className="border-b border-amber-200/90 text-slate-600 bg-amber-50/80">
                               <th className="py-1.5 px-2 font-medium w-14 text-center">삭제 선택</th>
@@ -540,7 +584,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                               <th className="py-1.5 px-2 font-medium min-w-[9rem]">명세 대조 현황</th>
                               <th className="py-1.5 px-2 font-medium min-w-[8rem]">대조 금융 계정</th>
                               <th className="py-1.5 px-2 font-medium min-w-[8rem] whitespace-nowrap">투어·예약 상세</th>
-                              <th className="py-1.5 px-2 font-medium min-w-[8rem]">참고</th>
+                              <th className="py-1.5 px-2 font-medium min-w-[16rem] w-[16rem]">참고</th>
                               <th className="py-1.5 px-2 font-medium w-16 whitespace-nowrap">수정</th>
                             </tr>
                           </thead>
@@ -601,8 +645,12 @@ export default function CompanyExpenseDuplicateCheckModal({
                                     onOpenReservation={setReservationDetailModalId}
                                   />
                                 </td>
-                                <td className="py-2 px-2 break-words text-slate-600 text-[10px]">
-                                  <LedgerReferenceCell text={row.source_context} />
+                                <td className="py-2 px-2 align-top text-slate-600 text-[10px] min-w-[16rem] w-[16rem]">
+                                  <LedgerReferenceCell
+                                    tourRef={row.tour_reference}
+                                    fallbackText={row.source_context}
+                                    locale={locale}
+                                  />
                                 </td>
                                 <td className="py-2 px-2 align-top">
                                   {editingSourceKey === row.source_key ? (

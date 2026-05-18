@@ -1503,22 +1503,6 @@ export default function ReservationExpenseManager({
                     )}
                     <span className="text-gray-400">{t('depositPaymentsTotal')}</span>
                     <span className="font-medium text-blue-800">{formatDepositCell(expense.reservation_payments_total)}</span>
-                    {expense.amount > 0 && (
-                      <>
-                        <span className="text-gray-400">{tTour('reimbursedShort')}</span>
-                        <span>{formatCurrency(parseReimbursedAmount(expense.reimbursed_amount))}</span>
-                        <span className="text-gray-400">{tTour('outstandingShort')}</span>
-                        <span
-                          className={
-                            reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009
-                              ? 'font-semibold text-amber-800'
-                              : 'text-green-700'
-                          }
-                        >
-                          {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
-                        </span>
-                      </>
-                    )}
                   </div>
                   <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
                     {expense.image_url && expense.image_url.trim() !== '' && (
@@ -1612,28 +1596,6 @@ export default function ReservationExpenseManager({
                         />
                       </div>
                     </th>
-                    <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
-                      <div className="flex justify-end">
-                        <TableSortHeaderButton
-                          label={tTour('reimbursedShort')}
-                          active={tableSortKey === 'reimbursed'}
-                          dir={tableSortDir}
-                          onClick={() => handleReservationTableSort('reimbursed')}
-                          className="text-right"
-                        />
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
-                      <div className="flex justify-end">
-                        <TableSortHeaderButton
-                          label={tTour('outstandingShort')}
-                          active={tableSortKey === 'outstanding'}
-                          dir={tableSortDir}
-                          onClick={() => handleReservationTableSort('outstanding')}
-                          className="text-right"
-                        />
-                      </div>
-                    </th>
                     <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
                       <TableSortHeaderButton
                         label={tTour('submitter')}
@@ -1678,24 +1640,6 @@ export default function ReservationExpenseManager({
                       </td>
                       <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium text-right ${amountDisplayClass(expense.amount)}`}>
                         {formatCurrency(expense.amount)}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 text-right">
-                        {expense.amount > 0 ? formatCurrency(parseReimbursedAmount(expense.reimbursed_amount)) : '—'}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
-                        {expense.amount > 0 ? (
-                          <span
-                            className={
-                              reimbursementOutstanding(expense.amount, expense.reimbursed_amount) > 0.009
-                                ? 'font-semibold text-amber-700'
-                                : 'text-green-700'
-                            }
-                          >
-                            {formatCurrency(reimbursementOutstanding(expense.amount, expense.reimbursed_amount))}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
                         {teamMembers[expense.submitted_by] || expense.submitted_by}

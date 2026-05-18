@@ -36,7 +36,7 @@ import {
 import { mergePersonaCrudWithPatches } from '@/lib/site-access-matrix-overrides'
 import { resolveSiteAccessPersona } from '@/lib/site-access-persona'
 import { useSiteAccessMatrixPatchContext } from '@/contexts/SiteAccessMatrixPatchContext'
-import { supabase } from '@/lib/supabase'
+import { canUseAuthenticatedRest, supabase } from '@/lib/supabase'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { useAdminNavAccessFlags } from '@/hooks/useAdminNavAccessFlags'
@@ -197,6 +197,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     try {
       if (!authUser?.email) {
         setTeamBoardCount(0)
+        return
+      }
+
+      if (!canUseAuthenticatedRest()) {
         return
       }
 

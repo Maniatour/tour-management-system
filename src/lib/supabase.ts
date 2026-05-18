@@ -1,7 +1,20 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
+import {
+  fetchAuthRefreshTokenSingleFlight,
+  isAuthRefreshRateLimited,
+  isAuthRefreshTokenRequestUrl,
+} from './authRefreshCoordinator'
 
 export { isAbortLikeError } from './isAbortLikeError'
+export {
+  canAttemptProactiveRefresh,
+  coordinatedRefreshSession,
+  getAuthRefreshCooldownRemainingMs,
+  isAuthRefreshRateLimited,
+  isAuthRateLimitError,
+  markProactiveRefreshAttempted,
+} from './authRefreshCoordinator'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -22,12 +35,71 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 /** 브라우저가 동시에 수백 개 REST 요청을 열면 net::ERR_INSUFFICIENT_RESOURCES 발생 — 전역으로 동시 실행 제한 */
-const supabaseOutboundMaxConcurrent = typeof window === 'undefined' ? 14 : 6
+const supabaseOutboundMaxConcurrentDefault = typeof window === 'undefined' ? 14 : 6
+let supabaseOutboundLimit = supabaseOutboundMaxConcurrentDefault
 let supabaseOutboundActive = 0
 const supabaseOutboundWaiters: Array<() => void> = []
 
+/** Failed to fetch 연쇄 시 동시 재시도·로그 폭주 방지 */
+const REST_NETWORK_FAILURE_WINDOW_MS = 12_000
+let restNetworkFailureWindowStartMs = 0
+let restNetworkFailureCount = 0
+let restGlobalBackoffUntilMs = 0
+let lastRestRetryLogAtMs = 0
+
+function isBrowserNetworkFetchError(message: string): boolean {
+  return (
+    message.includes('Failed to fetch') ||
+    message.includes('ERR_CONNECTION_CLOSED') ||
+    message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+    message.includes('network') ||
+    message.includes('ECONNRESET') ||
+    message.includes('ETIMEDOUT')
+  )
+}
+
+function recordRestNetworkFailure(): void {
+  if (typeof window === 'undefined') return
+  const now = Date.now()
+  if (now - restNetworkFailureWindowStartMs > REST_NETWORK_FAILURE_WINDOW_MS) {
+    restNetworkFailureWindowStartMs = now
+    restNetworkFailureCount = 0
+  }
+  restNetworkFailureCount += 1
+  if (restNetworkFailureCount >= 2) {
+    const backoffMs = Math.min(45_000, 2_500 * restNetworkFailureCount)
+    restGlobalBackoffUntilMs = Math.max(restGlobalBackoffUntilMs, now + backoffMs)
+    supabaseOutboundLimit = Math.max(2, supabaseOutboundMaxConcurrentDefault - 3)
+  }
+}
+
+function recordRestNetworkSuccess(): void {
+  if (typeof window === 'undefined') return
+  restNetworkFailureCount = 0
+  restGlobalBackoffUntilMs = 0
+  supabaseOutboundLimit = supabaseOutboundMaxConcurrentDefault
+}
+
+async function waitRestGlobalBackoff(): Promise<void> {
+  const waitMs = restGlobalBackoffUntilMs - Date.now()
+  if (waitMs <= 0) return
+  await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs, 8_000)))
+}
+
+function logRestRetryThrottled(attempt: number, maxRetries: number, message: string): void {
+  if (typeof window === 'undefined') return
+  const now = Date.now()
+  if (now - lastRestRetryLogAtMs < 8_000) return
+  lastRestRetryLogAtMs = now
+  if (process.env.NODE_ENV === 'development') {
+    console.debug(
+      `[supabase] network retry ${attempt}/${maxRetries} (recent failures: ${restNetworkFailureCount}): ${message}`
+    )
+  }
+}
+
 function acquireSupabaseOutboundSlot(): Promise<void> {
-  if (supabaseOutboundActive < supabaseOutboundMaxConcurrent) {
+  if (supabaseOutboundActive < supabaseOutboundLimit) {
     supabaseOutboundActive += 1
     return Promise.resolve()
   }
@@ -80,21 +152,74 @@ function getSupabaseFetchTimeoutMs(url: RequestInfo | URL): number {
   return typeof window === 'undefined' ? 60000 : 30000
 }
 
+export function decodeJwtExpSec(accessToken: string): number | null {
+  try {
+    const part = accessToken.split('.')[1]
+    if (!part) return null
+    const payload = JSON.parse(
+      atob(part.replace(/-/g, '+').replace(/_/g, '/'))
+    ) as { exp?: number }
+    return typeof payload.exp === 'number' ? payload.exp : null
+  } catch {
+    return null
+  }
+}
+
+/** REST·RLS 호출에 쓸 수 있는 access JWT가 있는지 (429 쿨다운 중 유효 토큰이면 true) */
+export function canUseAuthenticatedRest(): boolean {
+  return getStoredAccessTokenIfValid(30) != null
+}
+
+/** GoTrue 세션이 비어도(localStorage JWT 유효 시) REST RLS 요청이 401 나지 않도록 */
+export function getStoredAccessTokenIfValid(minTtlSec = 45): string | null {
+  if (typeof window === 'undefined') return null
+  const token = localStorage.getItem('sb-access-token')?.trim()
+  if (!token) return null
+  const exp = decodeJwtExpSec(token)
+  const nowSec = Math.floor(Date.now() / 1000)
+  if (exp != null && exp <= nowSec + minTtlSec) return null
+  return token
+}
+
+function bearerTokenFromAuthorizationHeader(authHeader: string | null | undefined): string | null {
+  if (!authHeader?.trim()) return null
+  const match = authHeader.trim().match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() ?? null
+}
+
+function mergeRestAuthorizationFromStorage(options: RequestInit): RequestInit {
+  if (typeof window === 'undefined') return options
+  const stored = getStoredAccessTokenIfValid(30)
+  if (!stored) return options
+
+  const headers = new Headers(options.headers)
+  const existingBearer = bearerTokenFromAuthorizationHeader(headers.get('Authorization'))
+  if (existingBearer === stored) return options
+
+  headers.set('Authorization', `Bearer ${stored}`)
+  return { ...options, headers }
+}
+
 // 재시도 로직이 포함된 fetch 함수
 const fetchWithRetry = async (
   url: RequestInfo | URL,
   options: RequestInit = {}
 ): Promise<Response> => {
-  const maxRetries = 3
+  const maxServerRetries = typeof window === 'undefined' ? 3 : 2
+  const maxNetworkRetriesDefault = typeof window === 'undefined' ? 3 : 1
   const retryDelay = 1000
   let lastError: Error | null = null
+  let maxRetries = maxServerRetries
 
   // Supabase가 넘기는 AbortSignal은 세션 갱신·내부 요청 정리 등으로 조기 abort되어
   // 정상적인 REST 조회도 전부 AbortError로 끝나는 경우가 있다. fetch에는 사용하지 않고
   // 여기서만 타임아웃(AbortController)을 건다.
-  const { signal: _supabaseSignal, ...restOptions } = options
+  const { signal: _supabaseSignal, ...baseOptions } = options
+
+  await waitRestGlobalBackoff()
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const restOptions = mergeRestAuthorizationFromStorage(baseOptions)
     try {
       const headers = new Headers(restOptions.headers)
 
@@ -125,7 +250,17 @@ const fetchWithRetry = async (
         }
       })
 
+      if (response.status === 401 && attempt < maxRetries) {
+        const stored = getStoredAccessTokenIfValid(0)
+        const sentBearer = bearerTokenFromAuthorizationHeader(headers.get('Authorization'))
+        if (stored && sentBearer !== stored) {
+          await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)))
+          continue
+        }
+      }
+
       if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408)) {
+        recordRestNetworkSuccess()
         return response
       }
 
@@ -142,15 +277,22 @@ const fetchWithRetry = async (
         error instanceof Error &&
         /^Server error: (408|5\d{2})$/.test(error.message.trim())
 
+      const isNetworkFetchError =
+        error instanceof Error && isBrowserNetworkFetchError(error.message)
+
       const isRetryableError =
         error instanceof Error &&
-        (isRetryableGatewayOrServerStatus ||
-          error.message.includes('Failed to fetch') ||
-          error.message.includes('ERR_CONNECTION_CLOSED') ||
-          error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-          error.message.includes('network') ||
-          error.message.includes('ECONNRESET') ||
-          error.message.includes('ETIMEDOUT'))
+        (isRetryableGatewayOrServerStatus || isNetworkFetchError)
+
+      if (isNetworkFetchError) {
+        recordRestNetworkFailure()
+        maxRetries =
+          Date.now() < restGlobalBackoffUntilMs
+            ? 0
+            : maxNetworkRetriesDefault
+      } else if (isRetryableGatewayOrServerStatus) {
+        maxRetries = maxServerRetries
+      }
 
       // AbortError는 재시도하지 않음 (타임아웃 또는 컴포넌트 언마운트)
       const isAbortError = error instanceof Error && (
@@ -167,9 +309,17 @@ const fetchWithRetry = async (
         throw lastError
       }
 
-      const delay = retryDelay * Math.pow(2, attempt)
-      console.warn(`Supabase 요청 실패, ${delay}ms 후 재시도 (${attempt + 1}/${maxRetries}):`, lastError.message)
-      await new Promise(resolve => setTimeout(resolve, delay))
+      const jitter = 0.85 + Math.random() * 0.3
+      const delay = Math.round(retryDelay * Math.pow(2, attempt) * jitter)
+      if (isNetworkFetchError) {
+        logRestRetryThrottled(attempt + 1, maxRetries, lastError.message)
+      } else if (process.env.NODE_ENV === 'development') {
+        console.debug(
+          `Supabase 요청 실패, ${delay}ms 후 재시도 (${attempt + 1}/${maxRetries}):`,
+          lastError.message
+        )
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
 
@@ -181,7 +331,7 @@ const fetchWithRetry = async (
  * 게이트웨이 일시 오류(502/503/504/408)는 짧은 백오프로 재시도하고,
  * `Failed to fetch` 등 브라우저 네트워크 일시 오류도 동일하게 소수 재시도(Abort는 제외).
  */
-async function fetchAuthWithGatewayRetry(
+async function fetchAuthWithGatewayRetryCore(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<Response> {
@@ -237,15 +387,19 @@ async function fetchAuthWithGatewayRetry(
   throw lastError ?? new Error('Auth fetch failed')
 }
 
+async function fetchAuthWithGatewayRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const url = requestUrlString(input)
+  if (isAuthRefreshTokenRequestUrl(url)) {
+    return fetchAuthRefreshTokenSingleFlight(() => fetchAuthWithGatewayRetryCore(input, init))
+  }
+  return fetchAuthWithGatewayRetryCore(input, init)
+}
+
 function supabaseGlobalFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const url =
-    typeof input === 'string'
-      ? input
-      : input instanceof URL
-        ? input.href
-        : input instanceof Request
-          ? input.url
-          : String(input)
+  const url = requestUrlString(input)
   if (url.includes('/auth/v1/')) {
     return fetchAuthWithGatewayRetry(input, init)
   }
@@ -256,7 +410,8 @@ function supabaseGlobalFetch(input: RequestInfo | URL, init?: RequestInit): Prom
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    autoRefreshToken: true,
+    // 자동 refresh는 429·SIGNED_OUT 연쇄를 유발 — AuthContext.refreshTokenIfNeeded + coordinatedRefresh만 사용
+    autoRefreshToken: false,
     detectSessionInUrl: true
   },
   global: {
@@ -313,19 +468,46 @@ export const checkSupabaseConnection = async (): Promise<boolean> => {
   }
 }
 
-// 토큰을 동적으로 업데이트하는 함수
-export const updateSupabaseToken = (accessToken: string) => {
-  if (typeof window !== 'undefined') {
-    // Supabase 클라이언트의 auth 헤더 업데이트
-    supabase.auth.setSession({
+let lastAppliedAccessToken: string | null = null
+
+/** GoTrue in-memory 세션과 동기화. SIGNED_IN 직후 불필요한 setSession(→ refresh_token 폭주)은 피한다. */
+export const updateSupabaseToken = (
+  accessToken: string,
+  options?: { refreshToken?: string; forceSetSession?: boolean }
+) => {
+  if (typeof window === 'undefined' || !accessToken.trim()) return
+  if (!options?.forceSetSession && lastAppliedAccessToken === accessToken) return
+
+  const refreshToken = options?.refreshToken ?? localStorage.getItem('sb-refresh-token') ?? ''
+  localStorage.setItem('sb-access-token', accessToken)
+  if (options?.refreshToken) {
+    localStorage.setItem('sb-refresh-token', options.refreshToken)
+  }
+
+  const expSec = decodeJwtExpSec(accessToken)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const stillValid = expSec != null && expSec > nowSec + 120
+
+  lastAppliedAccessToken = accessToken
+
+  // 429 쿨다운 중 setSession은 refresh_token을 다시 치므로 생략. REST는 localStorage JWT로 계속 가능.
+  if (isAuthRefreshRateLimited()) return
+
+  if (!options?.forceSetSession && stillValid) {
+    return
+  }
+
+  void supabase.auth
+    .setSession({
       access_token: accessToken,
-      refresh_token: localStorage.getItem('sb-refresh-token') || ''
-    }).catch(error => {
+      refresh_token: refreshToken,
+    })
+    .catch((error) => {
       const msg = error?.message ?? String(error)
       if (msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')) return
+      if (msg.toLowerCase().includes('too many requests') || msg.includes('429')) return
       console.error('Failed to update Supabase token:', error)
     })
-  }
 }
 
 // 클라이언트 컴포넌트용 Supabase 클라이언트 (같은 인스턴스 사용)

@@ -1,7 +1,18 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
-import { supabase, updateSupabaseToken } from '@/lib/supabase'
+import {
+  canAttemptProactiveRefresh,
+  canUseAuthenticatedRest,
+  coordinatedRefreshSession,
+  getAuthRefreshCooldownRemainingMs,
+  getStoredAccessTokenIfValid,
+  isAuthRateLimitError,
+  isAuthRefreshRateLimited,
+  markProactiveRefreshAttempted,
+  supabase,
+  updateSupabaseToken,
+} from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
@@ -37,6 +48,40 @@ function persistSupabaseSessionToStorage(session: Session) {
   localStorage.setItem('sb-expires-at', tokenExpiry.toString())
 }
 
+/** GoTrue SIGNED_OUT·429 후에도 저장된 access JWT로 UI 복구용 */
+function authUserFromStoredAccessToken(): AuthUser | null {
+  const accessToken = getStoredAccessTokenIfValid(60)
+  if (!accessToken) return null
+  try {
+    const payload = JSON.parse(atob(accessToken.split('.')[1])) as {
+      sub?: string
+      email?: string
+      user_metadata?: Record<string, unknown>
+      iat?: number
+    }
+    const email = typeof payload.email === 'string' ? payload.email.trim() : ''
+    if (!email) return null
+    const meta = payload.user_metadata ?? {}
+    const authUser: AuthUser = {
+      id: payload.sub || email,
+      email,
+      name:
+        (typeof meta.name === 'string' && meta.name) ||
+        (typeof meta.full_name === 'string' && meta.full_name) ||
+        email.split('@')[0] ||
+        'User',
+      created_at: payload.iat ? new Date(payload.iat * 1000).toISOString() : new Date().toISOString(),
+      user_metadata: meta as AuthUser['user_metadata'],
+    }
+    if (typeof meta.avatar_url === 'string' && meta.avatar_url) {
+      authUser.avatar_url = meta.avatar_url
+    }
+    return authUser
+  } catch {
+    return null
+  }
+}
+
 /** 모바일에서 GoTrue getSession이 무한 대기하는 경우 방지 */
 const AUTH_SESSION_BUDGET_MS = 10_000
 const AUTH_SESSION_RETRY_MS = 8_000
@@ -59,12 +104,12 @@ async function refreshSupabaseSessionBounded(
   refreshToken: string,
   budgetMs: number
 ): Promise<Session | null> {
-  if (!supabase) return null
+  if (!supabase || isAuthRefreshRateLimited()) return null
   try {
     return await Promise.race([
-      supabase.auth
-        .refreshSession({ refresh_token: refreshToken })
-        .then(({ data, error }) => (error || !data.session ? null : data.session)),
+      coordinatedRefreshSession(supabase, { refresh_token: refreshToken }).then(
+        ({ session, error }) => (error || !session ? null : session)
+      ),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), budgetMs)),
     ])
   } catch {
@@ -133,10 +178,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /** 동일 이메일에 대한 동시 `checkUserRole` 호출을 하나의 team 쿼리로 합침 */
   const roleCheckInflightRef = useRef<Map<string, Promise<void>>>(new Map())
+  const signedOutRecoveryInFlightRef = useRef(false)
 
   // 토큰 자동 갱신 함수
   const refreshTokenIfNeeded = useCallback(async () => {
     try {
+      if (isAuthRefreshRateLimited()) {
+        return true
+      }
+
       const accessToken = localStorage.getItem('sb-access-token')
       const refreshToken = localStorage.getItem('sb-refresh-token')
       const expiresAt = localStorage.getItem('sb-expires-at')
@@ -148,24 +198,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const now = Math.floor(Date.now() / 1000)
       const tokenExpiry = parseInt(expiresAt)
       
-      // 토큰이 1시간 이내에 만료되는 경우 갱신
-      if (tokenExpiry <= now + 3600) {
+      // 만료 5분 전에만 갱신 (1시간 전 갱신은 refresh_token 429 유발)
+      if (tokenExpiry <= now + 300 && canAttemptProactiveRefresh()) {
         console.log('AuthContext: Token expires soon, attempting refresh')
-        
+        markProactiveRefreshAttempted()
+
         if (supabase) {
-          const { data, error } = await supabase.auth.refreshSession({
-            refresh_token: refreshToken
+          const { session, error } = await coordinatedRefreshSession(supabase, {
+            refresh_token: refreshToken,
           })
           
-          if (data.session && !error) {
+          if (session && !error) {
             console.log('AuthContext: Token refreshed successfully')
-            localStorage.setItem('sb-access-token', data.session.access_token)
-            localStorage.setItem('sb-refresh-token', data.session.refresh_token)
-            const newExpiry = data.session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
+            localStorage.setItem('sb-access-token', session.access_token)
+            localStorage.setItem('sb-refresh-token', session.refresh_token)
+            const newExpiry = session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
             localStorage.setItem('sb-expires-at', newExpiry.toString())
-            updateSupabaseToken(data.session.access_token)
+            updateSupabaseToken(session.access_token)
             return true
           } else {
+            if (isAuthRateLimitError(error)) {
+              console.warn('AuthContext: Token refresh rate limited, keeping current session')
+              return true
+            }
             console.warn('AuthContext: Token refresh failed:', error)
             return false
           }
@@ -174,6 +229,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       return true
     } catch (error) {
+      if (isAuthRateLimitError(error)) {
+        return true
+      }
       console.warn('AuthContext: Token refresh error:', error)
       return false
     }
@@ -222,6 +280,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return
           }
 
+          if (!canUseAuthenticatedRest()) {
+            if (isAuthRefreshRateLimited()) {
+              const prevRole = userRoleRef.current
+              if (prevRole && prevRole !== 'customer') {
+                console.warn(
+                  'AuthContext: Skipping team query during refresh cooldown — keeping prior role'
+                )
+                setLoading(false)
+                setIsInitialized(true)
+                resolve()
+                const retryMs = getAuthRefreshCooldownRemainingMs() + 800
+                setTimeout(() => {
+                  void checkUserRole(email).catch(() => {})
+                }, retryMs)
+                return
+              }
+            }
+          }
+
           console.log('AuthContext: Querying team table for email:', email)
 
           const normalizedEmail = email.toLowerCase()
@@ -262,8 +339,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } | null = null
             let error: { message?: string; code?: string } | null = null
 
+            const isTeamAuthError = (code?: string, message?: string) =>
+              code === '42501' ||
+              code === 'PGRST301' ||
+              (message != null &&
+                (message.includes('JWT') ||
+                  message.includes('permission denied') ||
+                  message.toLowerCase().includes('not authenticated')))
+
             for (let attempt = 0; attempt < MAX_TEAM_ATTEMPTS; attempt++) {
               try {
+                if (attempt > 0) {
+                  await getSupabaseSessionBounded(2000)
+                  if (isAuthRefreshRateLimited()) {
+                    await new Promise((r) => setTimeout(r, 1500))
+                  } else {
+                    await new Promise((r) => setTimeout(r, 400 * attempt))
+                  }
+                }
+
                 const queryPromise = supabase
                   .from('team')
                   .select('name_ko, email, position, is_active')
@@ -281,6 +375,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
                 teamData = result.data
                 error = result.error
+
+                if (
+                  !teamData &&
+                  isTeamAuthError(error?.code, error?.message) &&
+                  attempt < MAX_TEAM_ATTEMPTS - 1
+                ) {
+                  console.warn(
+                    `AuthContext: Team query auth error (attempt ${attempt + 1}), retrying after session sync`
+                  )
+                  continue
+                }
                 break
               } catch (attemptErr) {
                 console.warn(
@@ -392,6 +497,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const hydrateAuthFromStoredAccessToken = useCallback(
+    (reason: string): boolean => {
+      const accessToken = getStoredAccessTokenIfValid(30)
+      if (!accessToken) return false
+      const hydrated = authUserFromStoredAccessToken()
+      if (!hydrated?.email) return false
+      updateSupabaseToken(accessToken)
+      if (
+        userRef.current?.email?.toLowerCase() === hydrated.email.toLowerCase() &&
+        userRoleRef.current != null
+      ) {
+        return true
+      }
+      console.log(`AuthContext: Hydrated user from stored JWT (${reason}):`, hydrated.email)
+      setUser(hydrated)
+      setAuthUser(hydrated)
+      if (!canUseAuthenticatedRest() && isAuthRefreshRateLimited()) {
+        setLoading(false)
+        setIsInitialized(true)
+        return true
+      }
+      void checkUserRole(hydrated.email).catch((error) => {
+        console.error('AuthContext: Team membership check failed after JWT hydrate:', error)
+        setUserRole('customer')
+        setUserPosition(null)
+        setPermissions(null)
+        setLoading(false)
+        setIsInitialized(true)
+      })
+      return true
+    },
+    [checkUserRole]
+  )
+
   const recoverAuthSession = useCallback(async () => {
     if (typeof window === 'undefined' || !supabase) return
     if (isSimulating && simulatedUser) return
@@ -421,13 +560,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let session = await getSupabaseSessionBounded(AUTH_SESSION_BUDGET_MS)
 
       if (!session?.user?.email) {
-        const rt = localStorage.getItem('sb-refresh-token')
-        if (rt) {
-          session = await refreshSupabaseSessionBounded(rt, AUTH_SESSION_RETRY_MS)
+        const storedAccess = getStoredAccessTokenIfValid(30)
+        if (storedAccess) {
+          updateSupabaseToken(storedAccess)
+        } else {
+          const rt = localStorage.getItem('sb-refresh-token')
+          if (rt && canAttemptProactiveRefresh()) {
+            markProactiveRefreshAttempted()
+            session = await refreshSupabaseSessionBounded(rt, AUTH_SESSION_RETRY_MS)
+          }
         }
       }
 
       if (!session?.user?.email) {
+        if (hydrateAuthFromStoredAccessToken('recoverAuthSession')) {
+          if (!userRef.current?.email && hasStoredAuth) {
+            setLoading(false)
+          }
+          return
+        }
         if (!userRef.current?.email && hasStoredAuth) {
           setLoading(false)
         }
@@ -451,7 +602,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       }
     }
-  }, [isSimulating, simulatedUser, checkUserRole])
+  }, [hydrateAuthFromStoredAccessToken, isSimulating, simulatedUser, checkUserRole])
 
   // 시뮬레이션 정보 복원 (클라이언트에서만 실행, SSR 호환성)
   useEffect(() => {
@@ -718,17 +869,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           expiresAt: expiresAt ? new Date(parseInt(expiresAt) * 1000).toISOString() : 'N/A'
         })
         
-        if (accessToken && expiresAt) {
+        const validAccessToken = getStoredAccessTokenIfValid(0)
+        if (validAccessToken && expiresAt) {
           const now = Math.floor(Date.now() / 1000)
           const tokenExpiry = parseInt(expiresAt)
           
-          // 토큰이 유효하거나 만료 시간이 1시간 이내인 경우 갱신 시도
-          if (tokenExpiry > now || (tokenExpiry > now - 3600)) {
+          if (tokenExpiry > now) {
             console.log('AuthContext: Found valid stored token, creating mock session')
             
             // JWT 토큰에서 사용자 정보 추출 (간단한 방법)
             try {
-              const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]))
+              const tokenPayload = JSON.parse(atob(validAccessToken.split('.')[1]))
               console.log('AuthContext: Token payload:', tokenPayload)
               
               if (tokenPayload.email) {
@@ -763,27 +914,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 console.log('AuthContext: Mock session created, updating Supabase token')
                 
                 // Supabase 클라이언트에 토큰 설정
-                updateSupabaseToken(accessToken)
+                updateSupabaseToken(validAccessToken)
 
                 // 갱신은 네트워크 지연·504에 막히지 않도록 백그라운드만 수행 — 역할 확인·UI는 바로 진행
-                if (tokenExpiry <= now + 3600) {
+                if (tokenExpiry <= now + 300 && canAttemptProactiveRefresh()) {
                   const refreshToken = localStorage.getItem('sb-refresh-token')
                   if (refreshToken && supabase) {
                     void (async () => {
+                      if (!supabase || !canAttemptProactiveRefresh()) return
+                      markProactiveRefreshAttempted()
                       try {
-                        const { data, error } = await supabase.auth.refreshSession({
+                        const { session, error } = await coordinatedRefreshSession(supabase, {
                           refresh_token: refreshToken,
                         })
-                        if (data.session && !error) {
-                          localStorage.setItem('sb-access-token', data.session.access_token)
-                          localStorage.setItem('sb-refresh-token', data.session.refresh_token)
+                        if (session && !error) {
+                          localStorage.setItem('sb-access-token', session.access_token)
+                          localStorage.setItem('sb-refresh-token', session.refresh_token)
                           const newExpiry =
-                            data.session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
+                            session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
                           localStorage.setItem('sb-expires-at', newExpiry.toString())
-                          updateSupabaseToken(data.session.access_token)
+                          updateSupabaseToken(session.access_token)
                         }
                       } catch (e) {
-                        console.warn('AuthContext: background refreshSession error:', e)
+                        if (!isAuthRateLimitError(e)) {
+                          console.warn('AuthContext: background refreshSession error:', e)
+                        }
                       }
                     })()
                   }
@@ -988,6 +1143,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_OUT') {
           // 모바일에서 카메라 등 다른 앱 후 복귀 시 일시적 SIGNED_OUT·빈 getSession이 올 수 있음.
           // 짧은 지연·재시도 후에도 세션이 없을 때만 로그아웃 처리한다.
+          if (signedOutRecoveryInFlightRef.current) {
+            return
+          }
+          signedOutRecoveryInFlightRef.current = true
           console.log('AuthContext: SIGNED_OUT received, verifying session (mobile resume guard)')
           void (async () => {
             const clearSignedOutState = () => {
@@ -1001,14 +1160,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
             const isMobile = /iPhone|iPad|iPod|Android/i.test(ua)
             const initialDelayMs = isMobile ? 700 : 220
+            let refreshAttempted = false
+            let keepUserDespiteSignedOut = false
 
             const tryRestoreFromStorage = async (): Promise<Session | null> => {
-              if (!supabase) return null
+              if (!supabase || isAuthRefreshRateLimited() || refreshAttempted) return null
               const rt = localStorage.getItem('sb-refresh-token')
               if (!rt) return null
-              const { data, error } = await supabase.auth.refreshSession({ refresh_token: rt })
-              if (error || !data.session?.user?.email) return null
-              return data.session
+              refreshAttempted = true
+              const { session, error } = await coordinatedRefreshSession(supabase, {
+                refresh_token: rt,
+              })
+              if (error && isAuthRateLimitError(error)) {
+                console.warn('AuthContext: SIGNED_OUT recovery skipped refresh (rate limited)')
+              }
+              if (error || !session?.user?.email) return null
+              return session
             }
 
             try {
@@ -1018,9 +1185,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return
               }
 
-              for (let attempt = 0; attempt < 3; attempt++) {
+              for (let attempt = 0; attempt < 2; attempt++) {
                 if (attempt > 0) {
-                  await new Promise((r) => setTimeout(r, 450))
+                  await new Promise((r) => setTimeout(r, isAuthRefreshRateLimited() ? 1200 : 500))
                 }
                 const verifySession = await getSupabaseSessionBounded(AUTH_SESSION_RETRY_MS)
                 if (verifySession?.user?.email) {
@@ -1031,6 +1198,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   persistSupabaseSessionToStorage(verifySession)
                   updateSupabaseToken(verifySession.access_token)
                   return
+                }
+                if (isAuthRefreshRateLimited()) {
+                  continue
                 }
                 const refreshed = await tryRestoreFromStorage()
                 if (refreshed?.user?.email) {
@@ -1043,8 +1213,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   return
                 }
               }
+
+              if (isAuthRefreshRateLimited() && localStorage.getItem('sb-access-token')) {
+                console.warn(
+                  'AuthContext: SIGNED_OUT during auth rate limit — keeping stored session, not clearing user'
+                )
+                keepUserDespiteSignedOut = true
+              }
             } catch (e) {
-              console.warn('AuthContext: SIGNED_OUT verification failed:', e)
+              if (!isAuthRateLimitError(e)) {
+                console.warn('AuthContext: SIGNED_OUT verification failed:', e)
+              }
+            } finally {
+              signedOutRecoveryInFlightRef.current = false
+            }
+            if (keepUserDespiteSignedOut) {
+              hydrateAuthFromStoredAccessToken('SIGNED_OUT_RATE_LIMIT')
+              return
             }
             console.log('AuthContext: User signed out (confirmed)')
             clearSignedOutState()
@@ -1054,6 +1239,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (event === 'SIGNED_IN' && session?.user?.email) {
           console.log('AuthContext: User signed in, setting user data')
+
+          persistSupabaseSessionToStorage(session)
+          // GoTrue가 이미 세션을 갖고 있음 — setSession 재호출은 refresh_token 연쇄(429)를 유발할 수 있음
           
           // Supabase User를 AuthUser로 변환
           const authUserData: AuthUser = {
@@ -1083,7 +1271,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('AuthContext: Token refreshed')
           
           persistSupabaseSessionToStorage(session)
-          updateSupabaseToken(session.access_token)
 
           // Supabase User를 AuthUser로 변환
           const authUserData: AuthUser = {
@@ -1113,7 +1300,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (alreadyBootstrapped) {
               persistSupabaseSessionToStorage(session)
-              updateSupabaseToken(session.access_token)
               const synced = authUserFromSupabaseSessionUser(session.user)
               setUser(synced)
               setAuthUser(synced)
@@ -1145,6 +1331,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             })
           } else {
             console.log('AuthContext: No initial session in INITIAL_SESSION event')
+            hydrateAuthFromStoredAccessToken('INITIAL_SESSION_EMPTY')
           }
         }
       }
@@ -1155,7 +1342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
       subscription.unsubscribe()
     }
-  }, [checkUserRole, isSimulating, simulatedUser])
+  }, [checkUserRole, hydrateAuthFromStoredAccessToken, isSimulating, simulatedUser])
 
   // 모바일: 다른 앱 후 복귀 시(bfcache·visibility) React 상태와 Supabase 세션이 어긋나면 가이드 레이아웃이 auth로 보내는 문제 방지
   useEffect(() => {
@@ -1190,12 +1377,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let session = await getSupabaseSessionBounded(AUTH_SESSION_BUDGET_MS)
         // 카메라 앱 복귀 직후 in-memory 세션이 비어 있어도 localStorage 리프레시로 복구되는 경우가 많음
         if (!session?.user?.email && typeof window !== 'undefined') {
-          const rt = localStorage.getItem('sb-refresh-token')
-          if (rt) {
-            session = await refreshSupabaseSessionBounded(rt, AUTH_SESSION_RETRY_MS)
+          const storedAccess = getStoredAccessTokenIfValid(30)
+          if (storedAccess) {
+            updateSupabaseToken(storedAccess)
+          } else {
+            const rt = localStorage.getItem('sb-refresh-token')
+            if (rt && canAttemptProactiveRefresh()) {
+              markProactiveRefreshAttempted()
+              session = await refreshSupabaseSessionBounded(rt, AUTH_SESSION_RETRY_MS)
+            }
           }
         }
-        if (!session?.user?.email) return
+        if (!session?.user?.email) {
+          const storedAccess = getStoredAccessTokenIfValid(30)
+          if (storedAccess) {
+            const hydrated = authUserFromStoredAccessToken()
+            if (hydrated?.email) {
+              updateSupabaseToken(storedAccess)
+              if (userRef.current?.email !== hydrated.email) {
+                setUser(hydrated)
+                setAuthUser(hydrated)
+              }
+              if (userRoleRef.current == null) {
+                void checkUserRole(hydrated.email)
+              }
+            }
+          }
+          return
+        }
 
         const nowSec = Math.floor(Date.now() / 1000)
         const exp = session.expires_at ?? 0
@@ -1203,15 +1412,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let activeSession = session
 
         if (
+          canAttemptProactiveRefresh() &&
           session.refresh_token &&
           (!session.expires_at || exp <= nowSec + skewSec)
         ) {
-          const { data: refData, error: refErr } =
-            await supabase.auth.refreshSession({
-              refresh_token: session.refresh_token,
-            })
-          if (!refErr && refData.session?.user?.email) {
-            activeSession = refData.session
+          markProactiveRefreshAttempted()
+          const { session: refreshed, error: refErr } = await coordinatedRefreshSession(supabase, {
+            refresh_token: session.refresh_token,
+          })
+          if (!refErr && refreshed?.user?.email) {
+            activeSession = refreshed
           }
         }
 
