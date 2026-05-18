@@ -43,6 +43,17 @@ import {
   computeRefundAmountForCompanyRevenueBlock,
   computeStoredCompanyRevenueFields,
 } from '@/utils/storedCompanyRevenue'
+import {
+  aggregatePricingCalcTotals,
+  buildChannelSettlementPricingCalcDisplay,
+  formatChannelSettlementRegistrationDate,
+  formatUsdStatsCell,
+} from '@/lib/channelSettlementStatsPricingDisplay'
+import {
+  ChannelSettlementPricingCalcFooterCells,
+  ChannelSettlementPricingCalcHeaderCells,
+  ChannelSettlementPricingCalcRowCells,
+} from '@/components/statistics/ChannelSettlementPricingCalcTableParts'
 
 interface ChannelSettlementTabProps {
   dateRange: { start: string; end: string }
@@ -104,6 +115,10 @@ interface ReservationItem {
   amountAuditedBy?: string | null
   /** 채널 정산 집계용 — enrichItemsWithCompanyTotalRevenue 로 채움 */
   companyTotalRevenue?: number
+  /** DB reservation_pricing.company_total_revenue */
+  dbCompanyTotalRevenue?: number | null
+  /** DB reservation_pricing.operating_profit */
+  dbOperatingProfit?: number | null
   /** Partner Received − Returned(파트너 환불) */
   partnerReceivedNet?: number
 }
@@ -459,7 +474,7 @@ function commissionBasePriceFromRow(row: { commission_base_price?: unknown }): n
 /** 채널별 정산 탭 예약·투어 가격 조회/동기화 공통 */
 /** `online_payment_amount` 등은 스키마에 없을 수 있어 SELECT에 넣지 않음 — 매퍼에서 없으면 0 */
 const CHANNEL_SETTLEMENT_PRICING_SELECT =
-  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, prepayment_cost, channel_settlement_amount, commission_base_price, pricing_adults, not_included_price, refund_amount'
+  'reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total, card_fee, prepayment_tip, prepayment_cost, channel_settlement_amount, commission_base_price, pricing_adults, not_included_price, refund_amount, company_total_revenue, operating_profit'
 
 /** `.in()` URL 한도 대응 + 청크 간 병렬로 왕복 횟수 감소 */
 const RESERVATION_REL_CHUNK = 100
@@ -502,6 +517,8 @@ function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
       p.pricing_adults != null && p.pricing_adults !== ''
         ? Math.max(0, Math.floor(Number(p.pricing_adults)))
         : null,
+    dbCompanyTotalRevenue: numericDbOrNull(p.company_total_revenue),
+    dbOperatingProfit: numericDbOrNull(p.operating_profit),
   }
 }
 
@@ -727,6 +744,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     ]
   )
 
+  const pricingCalcCtxForItem = useCallback(
+    (item: ReservationItem) => ({
+      returnedAmount: returnedAmountByReservation[item.id] ?? 0,
+      partnerReceived: partnerReceivedByReservation[item.id] ?? 0,
+      isOta: isOtaChannelId(item.channelId),
+      channels,
+      computedCompanyTotalRevenue: item.companyTotalRevenue,
+    }),
+    [returnedAmountByReservation, partnerReceivedByReservation, isOtaChannelId, channels]
+  )
+
   // 예약 클릭 시 수정 모달 열기
   const openReservationEditModal = useCallback((reservationId: string) => {
     const reservation = reservations.find(r => r.id === reservationId)
@@ -769,6 +797,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             refundAmount: mapped.refundAmount,
             channelSettlementAmount: mapped.channelSettlementStored,
             pricingCommissionPercent: mapped.pricingCommissionPercent,
+            dbCompanyTotalRevenue: mapped.dbCompanyTotalRevenue,
+            dbOperatingProfit: mapped.dbOperatingProfit,
             pricingAdults:
               mapped.pricingAdults != null
                 ? mapped.pricingAdults
@@ -1504,6 +1534,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         commissionBasePrice: null,
         pricingAdults: null,
         refundAmount: 0,
+        dbCompanyTotalRevenue: null,
+        dbOperatingProfit: null,
       }
       const pricingAdultsResolved =
         pricing.pricingAdults != null
@@ -1549,6 +1581,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         amountAuditedAt: reservationAudit[reservation.id]?.amount_audited_at ?? null,
         amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null,
         ...(pricing.commissionBasePrice != null ? { commissionBasePrice: pricing.commissionBasePrice } : {}),
+        dbCompanyTotalRevenue: pricing.dbCompanyTotalRevenue ?? null,
+        dbOperatingProfit: pricing.dbOperatingProfit ?? null,
       }
     })
     
@@ -1937,53 +1971,53 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
-              <div className="flex items-center gap-2 sm:gap-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
                   <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
                 </div>
-                <div className="min-w-0 sm:ml-4">
-                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">예약 건수</p>
-                  <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{totals.reservations.count}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">예약 건수</p>
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">{totals.reservations.count}</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
-              <div className="flex items-center gap-2 sm:gap-0">
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
                   <Users className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                 </div>
-                <div className="min-w-0 sm:ml-4">
-                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate" title="reservation_pricing.pricing_adults 합 (없으면 예약 성인)">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug" title="reservation_pricing.pricing_adults 합 (없으면 예약 성인)">
                     청구 성인 합
                   </p>
-                  <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{totals.reservations.totalPeople}명</p>
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">{totals.reservations.totalPeople}명</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
-              <div className="flex items-center gap-2 sm:gap-0">
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
                   <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
                 </div>
-                <div className="min-w-0 sm:ml-4">
-                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">투어 예약</p>
-                  <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{totals.tours.count}건</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">투어 예약</p>
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">{totals.tours.count}건</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 col-span-2 lg:col-span-1">
-              <div className="flex items-center gap-2 sm:gap-0">
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <div className="p-1.5 sm:p-2 bg-yellow-100 rounded-lg flex-shrink-0">
                   <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600" />
                 </div>
-                <div className="min-w-0 sm:ml-4">
-                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">투어 총액</p>
-                  <p className="text-lg sm:text-2xl font-bold text-green-600 truncate">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">투어 총액</p>
+                  <p className="text-lg sm:text-2xl font-bold text-green-600 tabular-nums">
                     ${totals.tours.totalPrice.toLocaleString()}
                   </p>
                 </div>
@@ -2116,37 +2150,21 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
-                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
-                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
-                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24" title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식">총 매출</th>
+                                 <ChannelSettlementPricingCalcHeaderCells />
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                                {allChannelItems.length === 0 ? (
                     <tr>
-                                   <td colSpan={16} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                   <td colSpan={18} className="px-2 py-3 text-center text-gray-500 text-xs">
                                      예약 내역이 없습니다.
                       </td>
                     </tr>
                   ) : (
                                  allChannelItems.map((item, idx) => {
                                    const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                   const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                   const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                   const companyRev = buildCompanyTotalRevenueForChannelRow(
-                                     item,
-                                     reservationRowPricingExtras(item.id),
-                                     {
-                                       returnedAmount: returnedAmountByReservation[item.id] ?? 0,
-                                       partnerReceived: partnerReceivedByReservation[item.id] ?? 0,
-                                       refundedOur: refundedOurByReservation[item.id] ?? 0,
-                                       reservationOptionsSum: reservationOptionsSumByReservation[item.id] ?? 0,
-                                       isOta: isOtaChannelId(item.channelId),
-                                       isHomepageChannel: isHomepageBookingChannel(item.channelId, channels),
-                                     }
-                                   )
+                                   const pricingCalcCtx = pricingCalcCtxForItem(item)
                                    return (
                                      <tr 
                                        key={`self-${item.id}-${idx}`} 
@@ -2164,7 +2182,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                          </span>
                         </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
-                                         {new Date(item.registrationDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                                         {formatChannelSettlementRegistrationDate(item.registrationDate)}
                                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                           {item.customerName}
@@ -2197,21 +2215,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                          ${(item.additionalCost || 0).toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
-                                         ${grandTotal.toLocaleString()}
-                                       </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
-                                         ${(item.commissionAmount || 0).toLocaleString()}
-                                       </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
-                                         ${totalPrice.toLocaleString()}
-                                       </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                          ${(item.optionTotal || 0).toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                         ${companyRev.toLocaleString()}
-                                       </td>
+                                       <ChannelSettlementPricingCalcRowCells item={item} ctx={pricingCalcCtx} />
                                      </tr>
                                    )
                                  })
@@ -2237,28 +2244,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                  <td className="px-2 py-2 text-xs font-semibold text-orange-600 text-right">
                                    ${allChannelItems.reduce((sum, item) => sum + (item.additionalCost || 0), 0).toLocaleString()}
                                  </td>
-                                 <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                   ${allChannelItems.reduce((sum, item) => {
-                                     const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                     return sum + ((item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0))
-                                   }, 0).toLocaleString()}
-                                 </td>
-                                 <td className="px-2 py-2 text-xs font-semibold text-blue-600 text-right">
-                                   ${allChannelItems.reduce((sum, item) => sum + (item.commissionAmount || 0), 0).toLocaleString()}
-                                 </td>
-                                 <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                   ${allChannelItems.reduce((sum, item) => {
-                                     const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                     const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                     return sum + (grandTotal - (item.commissionAmount || 0))
-                                   }, 0).toLocaleString()}
-                                 </td>
                                  <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                    ${allChannelItems.reduce((sum, item) => sum + (item.optionTotal || 0), 0).toLocaleString()}
                                  </td>
-                                 <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
-                                   ${groupTotal.toLocaleString()}
-                                 </td>
+                                 <ChannelSettlementPricingCalcFooterCells
+                                   totals={aggregatePricingCalcTotals(allChannelItems, (row) =>
+                                     buildChannelSettlementPricingCalcDisplay(row, pricingCalcCtxForItem(row))
+                                   )}
+                                 />
                                </tr>
                              </tfoot>
                            </table>
@@ -2367,6 +2360,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               ...(pricing.commissionBasePrice != null
                                 ? { commissionBasePrice: pricing.commissionBasePrice }
                                 : {}),
+                              dbCompanyTotalRevenue: pricing.dbCompanyTotalRevenue ?? null,
+                              dbOperatingProfit: pricing.dbOperatingProfit ?? null,
                             }
                           }).sort((a, b) => {
                             const dateA = new Date(a.registrationDate).getTime()
@@ -2376,6 +2371,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
 
                           const displayChannelItems = enrichItemsWithCompanyTotalRevenue(channelItems)
                           const channelRowTotals = aggregateChannelPricingRows(displayChannelItems)
+                          const channelPricingTotals = aggregatePricingCalcTotals(displayChannelItems, (row) =>
+                            buildChannelSettlementPricingCalcDisplay(row, pricingCalcCtxForItem(row))
+                          )
 
                           return (
                             <div key={channel.id} className="border-t border-gray-200">
@@ -2393,29 +2391,26 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                   <span className="font-medium text-gray-800 text-sm sm:text-base truncate">{channel.name}</span>
                                   <span className="text-xs text-gray-500">({channelItems.length}건)</span>
                                   <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 text-[11px] sm:text-xs">
-                                    <span className="font-medium text-green-600">
-                                      Grand Total: ${formatUsd2(channelRowTotals.grandTotal)}
+                                    <span className="font-medium text-indigo-700">
+                                      고객 총 결제: {formatUsdStatsCell(channelPricingTotals.customerTotalPayment)}
                                     </span>
-                                    <span className="font-medium text-blue-600">
-                                      Commission: ${formatUsd2(channelRowTotals.commission)}
+                                    <span className="font-medium text-sky-700">
+                                      채널 결제: {formatUsdStatsCell(channelPricingTotals.channelPaymentAmount)}
                                     </span>
-                                    <span className="font-medium text-purple-600">
-                                      총 가격: ${formatUsd2(channelRowTotals.totalPrice)}
-                                    </span>
-                                    <span className="font-medium text-gray-700">
-                                      옵션: ${formatUsd2(channelRowTotals.optionTotal)}
+                                    <span className="font-medium text-amber-600">
+                                      채널 정산: {formatUsdStatsCell(channelPricingTotals.channelSettlementAmount)}
                                     </span>
                                     <span className="font-medium text-purple-600">
-                                      총 매출: ${formatUsd2(channelRowTotals.netPrice)}
+                                      총매출: {formatUsdStatsCell(channelPricingTotals.companyTotalRevenue)}
+                                    </span>
+                                    <span className="font-medium text-emerald-700">
+                                      운영이익: {formatUsdStatsCell(channelPricingTotals.operatingProfit)}
                                     </span>
                                     <span
                                       className="font-medium text-teal-600"
                                       title="순입금 = 파트너 수령 − Returned(파트너 환불)"
                                     >
                                       입금내역: ${formatUsd2(channelRowTotals.partnerReceived)}
-                                    </span>
-                                    <span className="font-medium text-amber-600">
-                                      채널 정산: ${formatUsd2(channelRowTotals.channelSettlement)}
                                     </span>
                                   </div>
                                 </div>
@@ -2437,23 +2432,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                        <th
-                                          className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
-                                          title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식"
-                                        >
-                                          총 매출
-                                        </th>
+                                        <ChannelSettlementPricingCalcHeaderCells />
                                         <th
                                           className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
                                           title="순입금 = 파트너 수령 − Returned(파트너 환불). 행 툴팁에 수령·환불 금액이 표시됩니다."
                                         >
                                           입금내역 (Partner Received)
                                         </th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
                                         <th
                                           className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-[4.5rem]"
                                           title="금액 Audit 완료 여부(취소 행은 취소·검증 / 취소·미검증)"
@@ -2466,16 +2452,21 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                     <tbody className="bg-white divide-y divide-gray-200">
                                       {channelItems.length === 0 ? (
                                         <tr>
-                                          <td colSpan={19} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                          <td colSpan={21} className="px-2 py-3 text-center text-gray-500 text-xs">
                                             예약 내역이 없습니다.
                                           </td>
                                         </tr>
                                       ) : (
                                         displayChannelItems.map((item, idx) => {
                                           const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                          const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                          const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                          const companyRev = item.companyTotalRevenue ?? totalPrice + (item.optionTotal || 0)
+                                          const pricingCalcCtx = pricingCalcCtxForItem(item)
+                                          const settlementPctVerify = channelSettlementPctMismatch(
+                                            item,
+                                            returnedAmountByReservation[item.id] ?? 0,
+                                            partnerReceivedByReservation[item.id] ?? 0,
+                                            channels,
+                                            isOtaChannelId(item.channelId)
+                                          )
                                           const pr = partnerReceivedByReservation[item.id] ?? 0
                                           const ret = returnedAmountByReservation[item.id] ?? 0
                                           const partnerNet = item.partnerReceivedNet ?? Math.max(0, Math.round((pr - ret) * 100) / 100)
@@ -2505,7 +2496,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                           </span>
                         </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
-                                                {new Date(item.registrationDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                                                {formatChannelSettlementRegistrationDate(item.registrationDate)}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                                                 {item.customerName}
@@ -2535,29 +2526,24 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                                 ${(item.additionalCost || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
-                                                ${grandTotal.toLocaleString()}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
-                                                ${(item.commissionAmount || 0).toLocaleString()}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
-                                                ${totalPrice.toLocaleString()}
-                                              </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                                 ${(item.optionTotal || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                                ${companyRev.toLocaleString()}
-                                              </td>
+                                              <ChannelSettlementPricingCalcRowCells
+                                                item={item}
+                                                ctx={pricingCalcCtx}
+                                                settlementCellClassName={
+                                                  settlementPctVerify.mismatch
+                                                    ? 'text-red-600 font-semibold'
+                                                    : 'text-amber-600'
+                                                }
+                                                settlementTitle={settlementPctVerify.title}
+                                              />
                                               <td
                                                 className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24"
                                                 title={partnerTitle}
                                               >
                                                 ${partnerNet.toLocaleString()}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
-                                                {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-center text-xs w-[4.5rem]">
                                                 <AuditedStatusLabel
@@ -2602,26 +2588,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <td className="px-2 py-2 text-xs font-semibold text-orange-600 text-right">
                                           ${formatUsd2(channelRowTotals.additionalCostSum)}
                                         </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${formatUsd2(channelRowTotals.grandTotal)}
-                                        </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-blue-600 text-right">
-                                          ${formatUsd2(channelRowTotals.commission)}
-                                        </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${formatUsd2(channelRowTotals.totalPrice)}
-                                        </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${formatUsd2(channelRowTotals.optionTotal)}
                                         </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
-                                          ${formatUsd2(channelRowTotals.netPrice)}
-                                        </td>
+                                        <ChannelSettlementPricingCalcFooterCells
+                                          totals={channelPricingTotals}
+                                        />
                                         <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
                                           ${formatUsd2(channelRowTotals.partnerReceived)}
-                                        </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
-                                          ${formatUsd2(channelRowTotals.channelSettlement)}
                                         </td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
@@ -2732,23 +2706,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                <th
-                                  className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
-                                  title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식"
-                                >
-                                  총 매출
-                                </th>
+                                <ChannelSettlementPricingCalcHeaderCells />
                                 <th
                                   className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
                                   title="순입금 = 파트너 수령 − Returned(파트너 환불). 행 툴팁에 수령·환불 금액이 표시됩니다."
                                 >
                                   입금내역 (Partner Received)
                                 </th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
                                 <th
                                   className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-[4.5rem]"
                                   title="금액 Audit 완료 여부(취소 행은 취소·검증 / 취소·미검증)"
@@ -2761,17 +2726,21 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                   <tbody className="bg-white divide-y divide-gray-200">
                               {allTourItems.length === 0 ? (
                       <tr>
-                                  <td colSpan={20} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                  <td colSpan={21} className="px-2 py-3 text-center text-gray-500 text-xs">
                                     투어 진행 내역이 없습니다.
                         </td>
                       </tr>
                     ) : (
                                 allTourItems.map((item, idx) => {
                                   const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                  const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                  const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                  const companyRev =
-                                    item.companyTotalRevenue ?? totalPrice + (item.optionTotal || 0)
+                                  const pricingCalcCtx = pricingCalcCtxForItem(item)
+                                  const settlementPctVerify = channelSettlementPctMismatch(
+                                    item,
+                                    returnedAmountByReservation[item.id] ?? 0,
+                                    partnerReceivedByReservation[item.id] ?? 0,
+                                    channels,
+                                    isOtaChannelId(item.channelId)
+                                  )
                                   const pr = partnerReceivedByReservation[item.id] ?? 0
                                   const ret = returnedAmountByReservation[item.id] ?? 0
                                   const partnerNet =
@@ -2785,13 +2754,6 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                     : effectiveAudited && (effectiveAuditedBy || effectiveAuditedAt)
                                       ? `Audit: ${effectiveAuditedBy ?? '-'} / ${effectiveAuditedAt ? new Date(effectiveAuditedAt).toLocaleString('ko-KR') : '-'}`
                                       : '금액 더블체크 완료 시 체크'
-                                  const settlementPctVerify = channelSettlementPctMismatch(
-                                    item,
-                                    returnedAmountByReservation[item.id] ?? 0,
-                                    partnerReceivedByReservation[item.id] ?? 0,
-                                    channels,
-                                    isOtaChannelId(item.channelId)
-                                  )
                                   return (
                                     <tr 
                                       key={`self-tour-${item.id}-${idx}`} 
@@ -2845,32 +2807,24 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                         ${(item.additionalCost || 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
-                                        ${grandTotal.toLocaleString()}
-                                      </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
-                                        ${(item.commissionAmount || 0).toLocaleString()}
-                                      </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
-                                        ${totalPrice.toLocaleString()}
-                                      </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                         ${(item.optionTotal || 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                        ${companyRev.toLocaleString()}
-                                      </td>
+                                      <ChannelSettlementPricingCalcRowCells
+                                        item={item}
+                                        ctx={pricingCalcCtx}
+                                        settlementCellClassName={
+                                          settlementPctVerify.mismatch
+                                            ? 'text-red-600 font-semibold'
+                                            : 'text-amber-600'
+                                        }
+                                        settlementTitle={settlementPctVerify.title}
+                                      />
                                       <td
                                         className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24"
                                         title={partnerTitle}
                                       >
                                         ${partnerNet.toLocaleString()}
-                                      </td>
-                                      <td
-                                        className={`px-2 py-2 whitespace-nowrap text-xs text-right w-24 ${settlementPctVerify.mismatch ? 'text-red-600 font-semibold' : 'text-amber-600'}`}
-                                        title={settlementPctVerify.title}
-                                      >
-                                        {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-center text-xs w-[4.5rem]">
                                         <AuditedStatusLabel
@@ -2914,36 +2868,19 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                 <td className="px-2 py-2 text-xs font-semibold text-orange-600 text-right">
                                   ${allTourItems.reduce((sum, item) => sum + (item.additionalCost || 0), 0).toLocaleString()}
                                 </td>
-                                <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                  ${allTourItems.reduce((sum, item) => {
-                                    const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                    return sum + ((item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0))
-                                  }, 0).toLocaleString()}
-                                </td>
-                                <td className="px-2 py-2 text-xs font-semibold text-blue-600 text-right">
-                                  ${allTourItems.reduce((sum, item) => sum + (item.commissionAmount || 0), 0).toLocaleString()}
-                                </td>
-                                <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                  ${allTourItems.reduce((sum, item) => {
-                                    const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                    const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                    return sum + (grandTotal - (item.commissionAmount || 0))
-                                  }, 0).toLocaleString()}
-                                </td>
                                 <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                   ${allTourItems.reduce((sum, item) => sum + (item.optionTotal || 0), 0).toLocaleString()}
                                 </td>
-                                <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
-                                  ${groupTotal.toLocaleString()}
-                                </td>
+                                <ChannelSettlementPricingCalcFooterCells
+                                  totals={aggregatePricingCalcTotals(allTourItems, (row) =>
+                                    buildChannelSettlementPricingCalcDisplay(row, pricingCalcCtxForItem(row))
+                                  )}
+                                />
                                 <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
                                   $
                                   {allTourItems
                                     .reduce((sum, item) => sum + (item.partnerReceivedNet ?? 0), 0)
                                     .toLocaleString()}
-                                </td>
-                                <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
-                                  ${allTourItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
                                 </td>
                                 <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                                 <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
@@ -2995,6 +2932,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                           const displayTourChannelItems = enrichItemsWithCompanyTotalRevenue(sortedChannelItems)
 
                           const channelRowTotals = aggregateChannelPricingRows(displayTourChannelItems)
+                          const channelPricingTotals = aggregatePricingCalcTotals(displayTourChannelItems, (row) =>
+                            buildChannelSettlementPricingCalcDisplay(row, pricingCalcCtxForItem(row))
+                          )
 
                           const formatDateForInvoice = (d: string) => {
                             if (!d) return '-'
@@ -3081,29 +3021,26 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                     <span className="font-medium text-gray-800">{channel.name}</span>
                                     <span className="text-xs text-gray-500">({sortedChannelItems.length}건)</span>
                                     <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 text-[11px] sm:text-xs">
-                                      <span className="font-medium text-green-600">
-                                        Grand Total: ${formatUsd2(channelRowTotals.grandTotal)}
+                                      <span className="font-medium text-indigo-700">
+                                        고객 총 결제: {formatUsdStatsCell(channelPricingTotals.customerTotalPayment)}
                                       </span>
-                                      <span className="font-medium text-blue-600">
-                                        Commission: ${formatUsd2(channelRowTotals.commission)}
+                                      <span className="font-medium text-sky-700">
+                                        채널 결제: {formatUsdStatsCell(channelPricingTotals.channelPaymentAmount)}
                                       </span>
-                                      <span className="font-medium text-purple-600">
-                                        총 가격: ${formatUsd2(channelRowTotals.totalPrice)}
-                                      </span>
-                                      <span className="font-medium text-gray-700">
-                                        옵션: ${formatUsd2(channelRowTotals.optionTotal)}
+                                      <span className="font-medium text-amber-600">
+                                        채널 정산: {formatUsdStatsCell(channelPricingTotals.channelSettlementAmount)}
                                       </span>
                                       <span className="font-medium text-purple-600">
-                                        총 매출: ${formatUsd2(channelRowTotals.netPrice)}
+                                        총매출: {formatUsdStatsCell(channelPricingTotals.companyTotalRevenue)}
+                                      </span>
+                                      <span className="font-medium text-emerald-700">
+                                        운영이익: {formatUsdStatsCell(channelPricingTotals.operatingProfit)}
                                       </span>
                                       <span
                                         className="font-medium text-teal-600"
                                         title="순입금 = 파트너 수령 − Returned(파트너 환불)"
                                       >
                                         입금내역: ${formatUsd2(channelRowTotals.partnerReceived)}
-                                      </span>
-                                      <span className="font-medium text-amber-600">
-                                        채널 정산: ${formatUsd2(channelRowTotals.channelSettlement)}
                                       </span>
                                     </div>
                                   </div>
@@ -3154,23 +3091,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
-                                        <th
-                                          className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
-                                          title="예약 수정 · 가격정보 · 4. 총 매출과 동일 산식"
-                                        >
-                                          총 매출
-                                        </th>
+                                        <ChannelSettlementPricingCalcHeaderCells />
                                         <th
                                           className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24"
                                           title="순입금 = 파트너 수령 − Returned(파트너 환불). 행 툴팁에 수령·환불 금액이 표시됩니다."
                                         >
                                           입금내역 (Partner Received)
                                         </th>
-                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
                                         <th
                                           className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-[4.5rem]"
                                           title="금액 Audit 완료 여부(취소 행은 취소·검증 / 취소·미검증)"
@@ -3183,17 +3111,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                     <tbody className="bg-white divide-y divide-gray-200">
                                       {displayTourChannelItems.length === 0 ? (
                                         <tr>
-                                          <td colSpan={19} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                          <td colSpan={20} className="px-2 py-3 text-center text-gray-500 text-xs">
                                             투어 진행 내역이 없습니다.
                                           </td>
                                         </tr>
                                       ) : (
                                         displayTourChannelItems.map((item, idx) => {
                                           const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
-                                          const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
-                                          const totalPrice = grandTotal - (item.commissionAmount || 0)
-                                          const companyRev =
-                                            item.companyTotalRevenue ?? totalPrice + (item.optionTotal || 0)
+                                          const pricingCalcCtx = pricingCalcCtxForItem(item)
                                           const pr = partnerReceivedByReservation[item.id] ?? 0
                                           const ret = returnedAmountByReservation[item.id] ?? 0
                                           const partnerNet =
@@ -3264,32 +3189,24 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                                 ${(item.additionalCost || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
-                                                ${grandTotal.toLocaleString()}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
-                                                ${(item.commissionAmount || 0).toLocaleString()}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
-                                                ${totalPrice.toLocaleString()}
-                                              </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                                 ${(item.optionTotal || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
-                                                ${companyRev.toLocaleString()}
-                                              </td>
+                                              <ChannelSettlementPricingCalcRowCells
+                                                item={item}
+                                                ctx={pricingCalcCtx}
+                                                settlementCellClassName={
+                                                  settlementPctVerify.mismatch
+                                                    ? 'text-red-600 font-semibold'
+                                                    : 'text-amber-600'
+                                                }
+                                                settlementTitle={settlementPctVerify.title}
+                                              />
                                               <td
                                                 className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24"
                                                 title={partnerTitle}
                                               >
                                                 ${partnerNet.toLocaleString()}
-                                              </td>
-                                              <td
-                                                className={`px-2 py-2 whitespace-nowrap text-xs text-right w-24 ${settlementPctVerify.mismatch ? 'text-red-600 font-semibold' : 'text-amber-600'}`}
-                                                title={settlementPctVerify.title}
-                                              >
-                                                {formatTourChannelSettlementCell(item.channelSettlementAmount)}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-center text-xs w-[4.5rem]">
                                                 <AuditedStatusLabel
@@ -3333,26 +3250,14 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                         <td className="px-2 py-2 text-xs font-semibold text-orange-600 text-right">
                                           ${formatUsd2(channelRowTotals.additionalCostSum)}
                                         </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${formatUsd2(channelRowTotals.grandTotal)}
-                                        </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-blue-600 text-right">
-                                          ${formatUsd2(channelRowTotals.commission)}
-                                        </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-green-600 text-right">
-                                          ${formatUsd2(channelRowTotals.totalPrice)}
-                                        </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${formatUsd2(channelRowTotals.optionTotal)}
                                         </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
-                                          ${formatUsd2(channelRowTotals.netPrice)}
-                                        </td>
+                                        <ChannelSettlementPricingCalcFooterCells
+                                          totals={channelPricingTotals}
+                                        />
                                         <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
                                           ${formatUsd2(channelRowTotals.partnerReceived)}
-                                        </td>
-                                        <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
-                                          ${formatUsd2(channelRowTotals.channelSettlement)}
                                         </td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                                         <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>

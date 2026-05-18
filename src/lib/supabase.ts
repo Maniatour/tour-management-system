@@ -11,10 +11,16 @@ export {
   canAttemptProactiveRefresh,
   coordinatedRefreshSession,
   getAuthRefreshCooldownRemainingMs,
+  isAuthInvalidRefreshError,
   isAuthRefreshRateLimited,
   isAuthRateLimitError,
   markProactiveRefreshAttempted,
 } from './authRefreshCoordinator'
+export {
+  clearStoredAuthTokens,
+  persistSupabaseSessionToStorage,
+  syncCustomTokensFromGoTrueStorage,
+} from './authStorage'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -179,6 +185,44 @@ export function getStoredAccessTokenIfValid(minTtlSec = 45): string | null {
   const nowSec = Math.floor(Date.now() / 1000)
   if (exp != null && exp <= nowSec + minTtlSec) return null
   return token
+}
+
+/**
+ * App Router API 호출용 Bearer JWT.
+ * getSession()만 쓰면 GoTrue 메모리 세션과 localStorage(sb-access-token) 불일치로
+ * 직원 UI(isStaff)인데도 토큰이 비어 인증 오류가 날 수 있습니다.
+ */
+export async function getAccessTokenForApi(minTtlSec = 30): Promise<string | null> {
+  const stored = getStoredAccessTokenIfValid(minTtlSec)
+  if (stored) return stored
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (session?.access_token) {
+    const exp = decodeJwtExpSec(session.access_token)
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (exp == null || exp > nowSec + minTtlSec) {
+      return session.access_token
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    const { coordinatedRefreshSession, canAttemptProactiveRefresh, markProactiveRefreshAttempted } =
+      await import('./authRefreshCoordinator')
+    const rt = localStorage.getItem('sb-refresh-token')
+    if (rt && canAttemptProactiveRefresh()) {
+      markProactiveRefreshAttempted()
+      const { session: refreshed, error } = await coordinatedRefreshSession(supabase, {
+        refresh_token: rt,
+      })
+      if (!error && refreshed?.access_token) {
+        return refreshed.access_token
+      }
+    }
+  }
+
+  return getStoredAccessTokenIfValid(0)
 }
 
 function bearerTokenFromAuthorizationHeader(authHeader: string | null | undefined): string | null {
@@ -470,6 +514,10 @@ export const checkSupabaseConnection = async (): Promise<boolean> => {
 
 let lastAppliedAccessToken: string | null = null
 
+export function resetSupabaseTokenSyncCache(): void {
+  lastAppliedAccessToken = null
+}
+
 /** GoTrue in-memory 세션과 동기화. SIGNED_IN 직후 불필요한 setSession(→ refresh_token 폭주)은 피한다. */
 export const updateSupabaseToken = (
   accessToken: string,
@@ -494,6 +542,16 @@ export const updateSupabaseToken = (
   if (isAuthRefreshRateLimited()) return
 
   if (!options?.forceSetSession && stillValid) {
+    return
+  }
+
+  // 만료된 access로 setSession하면 GoTrue가 refresh_token을 치는데, sb-refresh-token이 stale이면 400·SIGNED_OUT 연쇄
+  const accessExpired = expSec != null && expSec <= nowSec
+  if (!options?.forceSetSession && accessExpired) {
+    return
+  }
+
+  if (!options?.forceSetSession && !refreshToken.trim()) {
     return
   }
 

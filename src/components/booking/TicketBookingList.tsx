@@ -7,7 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { isSuperAdminActor } from '@/lib/superAdmin';
 import {
   filterTicketBookingsExcludedFromMainUi,
-  canRequestTicketBookingSoftDelete,
+  canShowTicketBookingSoftDeleteUi,
+  isTicketBookingOffsetOrCancelRow,
 } from '@/lib/ticketBookingSoftDelete';
 import TicketBookingDeletionReviewModal from '@/components/booking/TicketBookingDeletionReviewModal';
 import { supabase, isAbortLikeError } from '@/lib/supabase';
@@ -19,6 +20,14 @@ import BookingHistory from './BookingHistory';
 import TicketBookingReservationDetailModal, {
   type TicketBookingReservationDetailRow,
 } from './TicketBookingReservationDetailModal';
+import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal';
+import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon';
+import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries';
+import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines';
+import {
+  buildTicketBookingStatementReconContextResolved,
+  isTicketBookingStatementReconDisabled,
+} from '@/lib/ticket-booking-statement-recon';
 import {
   Grid,
   Calendar as CalendarIcon,
@@ -932,14 +941,14 @@ const TICKET_TABLE_AXES_UNDO_STACK_MAX = 50;
 
 export default function TicketBookingList() {
   const locale = useLocale();
-  const { user, userPosition } = useAuth();
+  const { user, userPosition, permissions } = useAuth();
   const canSuperDeleteTicketBooking = useMemo(
     () => isSuperAdminActor(user?.email, userPosition),
     [user?.email, userPosition]
   );
   const canBookingMgmtSoftDeleteUi = useMemo(
-    () => canRequestTicketBookingSoftDelete(userPosition),
-    [userPosition]
+    () => canShowTicketBookingSoftDeleteUi(userPosition, permissions?.canManageBookings),
+    [userPosition, permissions?.canManageBookings]
   );
   const t = useTranslations('booking.calendar');
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis');
@@ -959,7 +968,8 @@ export default function TicketBookingList() {
   const [editingBooking, setEditingBooking] = useState<TicketBooking | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('');
+  const [checkInDateFrom, setCheckInDateFrom] = useState('');
+  const [checkInDateTo, setCheckInDateTo] = useState('');
   const [tourFilter, setTourFilter] = useState('all'); // 'all', 'connected', 'unconnected'
   const [futureEventFilter, setFutureEventFilter] = useState(false);
   const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
@@ -1152,6 +1162,10 @@ export default function TicketBookingList() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
+  const [detailReconciledIds, setDetailReconciledIds] = useState<Set<string>>(() => new Set());
+  const [detailStmtOpen, setDetailStmtOpen] = useState(false);
+  const [detailStmtCtx, setDetailStmtCtx] = useState<ExpenseStatementReconContext | null>(null);
+  const tStmtRecon = useTranslations('expenses.statementRecon');
   const [showInvoiceUploadModal, setShowInvoiceUploadModal] = useState(false);
   const [showNeedCheckModal, setShowNeedCheckModal] = useState(false);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
@@ -1161,15 +1175,60 @@ export default function TicketBookingList() {
     if (!showBookingModal) return
     setSelectedBookings((prev) => {
       if (prev.length === 0) return prev
-      let changed = false
-      const next = prev.map((b) => {
-        const fresh = bookings.find((x) => x.id === b.id)
-        if (fresh && fresh !== b) changed = true
-        return fresh ?? b
-      })
-      return changed ? next : prev
+      const byId = new Map(bookings.map((b) => [b.id, b]))
+      const next = prev
+        .map((b) => byId.get(b.id))
+        .filter((b): b is TicketBooking => b != null)
+      if (next.length === prev.length && next.every((b, i) => b === prev[i])) return prev
+      return next
     })
   }, [bookings, showBookingModal])
+
+  const detailReconKey = useMemo(
+    () => selectedBookings.map((b) => b.id).sort().join('|'),
+    [selectedBookings]
+  )
+
+  useEffect(() => {
+    if (!showBookingModal) {
+      setDetailReconciledIds(new Set())
+      return
+    }
+    const ids = selectedBookings.map((b) => b.id).filter(Boolean)
+    if (ids.length === 0) {
+      setDetailReconciledIds(new Set())
+      return
+    }
+    let cancelled = false
+    void fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids).then((s) => {
+      if (!cancelled) setDetailReconciledIds(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showBookingModal, detailReconKey, selectedBookings])
+
+  const openDetailStatementRecon = useCallback(async (booking: TicketBooking) => {
+    if (isTicketBookingStatementReconDisabled(booking)) return
+    const ctx = await buildTicketBookingStatementReconContextResolved(supabase, booking)
+    if (!ctx) return
+    setDetailStmtCtx(ctx)
+    setDetailStmtOpen(true)
+  }, [])
+
+  const renderDetailStatementReconCell = useCallback(
+    (booking: TicketBooking) => (
+      <ExpenseStatementReconIcon
+        matched={detailReconciledIds.has(booking.id)}
+        disabled={isTicketBookingStatementReconDisabled(booking)}
+        titleMatched={tStmtRecon('matchedTitle')}
+        titleUnmatched={tStmtRecon('unmatchedTitle')}
+        titleDisabled={tStmtRecon('disabledTitle')}
+        onClick={() => void openDetailStatementRecon(booking)}
+      />
+    ),
+    [detailReconciledIds, openDetailStatementRecon, tStmtRecon]
+  )
 
   const refreshInvoiceAttachmentMapForBookings = useCallback(
     async (list: TicketBooking[]) => {
@@ -2113,10 +2172,16 @@ export default function TicketBookingList() {
 
   const handleEdit = (booking: TicketBooking) => {
     setEditingBooking(booking);
+    setShowBookingModal(false);
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const removeBookingFromUi = useCallback((id: string) => {
+    setBookings((prev) => prev.filter((b) => b.id !== id));
+    setSelectedBookings((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
+  const handleDelete = async (id: string, opts?: { fromDetailModal?: boolean }) => {
     if (!canSuperDeleteTicketBooking) {
       alert(
         locale === 'ko'
@@ -2134,16 +2199,32 @@ export default function TicketBookingList() {
         .eq('id', id);
 
       if (error) throw error;
-      
-      setBookings(prev => prev.filter(booking => booking.id !== id));
+
+      removeBookingFromUi(id);
+      if (!opts?.fromDetailModal) {
+        setShowForm(false);
+        setEditingBooking(null);
+      }
     } catch (error) {
       console.error('입장권 부킹 삭제 오류:', error);
       alert('삭제 중 오류가 발생했습니다.');
     }
   };
 
-  const handleRequestSoftDelete = async (id: string) => {
+  const handleRequestSoftDelete = async (id: string, opts?: { fromDetailModal?: boolean }) => {
     const email = user?.email || '';
+    const row = bookings.find((b) => b.id === id) ?? selectedBookings.find((b) => b.id === id);
+    const offsetRow = row ? isTicketBookingOffsetOrCancelRow(row) : false;
+    const confirmMsg =
+      locale === 'ko'
+        ? offsetRow
+          ? '이 조정/취소 부킹 행을 삭제 요청하시겠습니까? 목록·상세에서 숨겨지며, 본 건은 편집으로 수량을 맞춘 뒤 SUPER가 영구 삭제할 수 있습니다.'
+          : '삭제를 요청하시겠습니까? 목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.'
+        : offsetRow
+          ? 'Request deletion for this adjustment/cancel row? It will be hidden; update the main row quantity, then a super admin can purge it.'
+          : 'Request deletion? It will be hidden from the list until a super admin permanently deletes it.';
+    if (!confirm(confirmMsg)) return;
+
     try {
       const { error } = await supabase
         .from('ticket_bookings')
@@ -2158,9 +2239,11 @@ export default function TicketBookingList() {
           ? '삭제 요청되었습니다. 목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.'
           : 'Deletion requested. It is hidden from the list until a super admin permanently deletes it.'
       );
-      setBookings((prev) => prev.filter((b) => b.id !== id));
-      setShowForm(false);
-      setEditingBooking(null);
+      removeBookingFromUi(id);
+      if (!opts?.fromDetailModal) {
+        setShowForm(false);
+        setEditingBooking(null);
+      }
     } catch (error) {
       console.error('입장권 삭제 요청 오류:', error);
       alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Failed to request deletion.');
@@ -2171,6 +2254,121 @@ export default function TicketBookingList() {
     setSelectedBookingId(bookingId);
     setShowHistory(true);
   };
+
+  const renderTicketBookingActionButtons = useCallback(
+    (
+      booking: TicketBooking,
+      opts?: { fromDetailModal?: boolean; size?: 'compact' | 'touch' }
+    ) => {
+      const touch = opts?.size === 'touch';
+      const btn =
+        touch
+          ? 'flex-1 min-w-0 py-2 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors'
+          : 'px-1.5 py-0.5 text-xs rounded hover:opacity-90 transition-colors relative z-20';
+      const wrap = touch ? 'flex flex-wrap gap-2 w-full' : 'flex flex-wrap items-center gap-0.5';
+
+      return (
+        <div className={wrap}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleEdit(booking);
+            }}
+            className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}
+            title={locale === 'ko' ? '편집' : 'Edit'}
+          >
+            {locale === 'ko' ? '편집' : 'Edit'}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleViewHistory(booking.id);
+            }}
+            className={`${btn} bg-green-600 text-white hover:bg-green-700`}
+            title={locale === 'ko' ? '히스토리' : 'History'}
+          >
+            {locale === 'ko' ? '히스토리' : 'History'}
+          </button>
+          {canBookingMgmtSoftDeleteUi && !booking.deletion_requested_at ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void handleRequestSoftDelete(booking.id, { fromDetailModal: opts?.fromDetailModal });
+              }}
+              className={`${btn} bg-amber-600 text-white hover:bg-amber-700`}
+              title={locale === 'ko' ? '삭제 요청 (목록에서 숨김)' : 'Request deletion'}
+            >
+              {locale === 'ko' ? '삭제' : 'Delete'}
+            </button>
+          ) : null}
+          {canSuperDeleteTicketBooking && booking.deletion_requested_at ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void handleDelete(booking.id, { fromDetailModal: opts?.fromDetailModal });
+              }}
+              className={`${btn} bg-red-700 text-white hover:bg-red-800`}
+              title={locale === 'ko' ? '영구 삭제' : 'Permanent delete'}
+            >
+              {locale === 'ko' ? '영구 삭제' : 'Purge'}
+            </button>
+          ) : null}
+          {canSuperDeleteTicketBooking &&
+          isTicketBookingOffsetOrCancelRow(booking) &&
+          !booking.deletion_requested_at ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (
+                  confirm(
+                    locale === 'ko'
+                      ? '이 조정/취소 행을 바로 영구 삭제하시겠습니까? (되돌릴 수 없습니다)'
+                      : 'Permanently delete this adjustment/cancel row now? This cannot be undone.'
+                  )
+                ) {
+                  void handleDelete(booking.id, { fromDetailModal: opts?.fromDetailModal });
+                }
+              }}
+              className={`${btn} bg-red-700 text-white hover:bg-red-800`}
+              title={locale === 'ko' ? '조정 행 영구 삭제' : 'Purge adjustment row'}
+            >
+              {locale === 'ko' ? '영구 삭제' : 'Purge'}
+            </button>
+          ) : null}
+          {booking.deletion_requested_at && !canSuperDeleteTicketBooking ? (
+            <span
+              className={
+                touch
+                  ? 'flex-1 text-center text-xs text-amber-700 bg-amber-50 py-2 rounded-lg'
+                  : 'text-[10px] text-amber-700 px-1'
+              }
+            >
+              {locale === 'ko' ? '삭제 요청됨' : 'Pending delete'}
+            </span>
+          ) : null}
+        </div>
+      );
+    },
+    [
+      locale,
+      canBookingMgmtSoftDeleteUi,
+      canSuperDeleteTicketBooking,
+      handleEdit,
+      handleViewHistory,
+      handleRequestSoftDelete,
+      handleDelete,
+    ]
+  );
 
   const openInvoiceQuickModal = (booking: TicketBooking) => {
     invoicePhotoLoadGenRef.current += 1;
@@ -2861,10 +3059,16 @@ export default function TicketBookingList() {
     return Number(booking.ea) !== Number(tourTotal);
   };
 
-  // 제출일 필터
+  const hasCheckInDateRangeFilter = Boolean(checkInDateFrom || checkInDateTo);
+
+  // 체크인일(시작–종료) 필터
   const matchesDate = (booking: TicketBooking): boolean => {
-    if (!dateFilter) return true;
-    return booking.submit_on === dateFilter;
+    if (!hasCheckInDateRangeFilter) return true;
+    const ymd = bookingCheckInYmd(booking);
+    if (!ymd) return false;
+    if (checkInDateFrom && ymd < checkInDateFrom) return false;
+    if (checkInDateTo && ymd > checkInDateTo) return false;
+    return true;
   };
 
   // 투어 연결 필터
@@ -2897,7 +3101,8 @@ export default function TicketBookingList() {
     bookings,
     searchTerm,
     statusFilter,
-    dateFilter,
+    checkInDateFrom,
+    checkInDateTo,
     tourFilter,
     futureEventFilter,
     cancelDeadlineFilter,
@@ -2935,7 +3140,7 @@ export default function TicketBookingList() {
 
   useEffect(() => {
     setListPage(1);
-  }, [searchTerm, statusFilter, dateFilter, tourFilter, futureEventFilter, cancelDeadlineFilter, needsReviewEaMismatch, viewMode]);
+  }, [searchTerm, statusFilter, checkInDateFrom, checkInDateTo, tourFilter, futureEventFilter, cancelDeadlineFilter, needsReviewEaMismatch, viewMode]);
 
   useEffect(() => {
     if (viewMode !== 'table') setNeedsReviewEaMismatch(false);
@@ -3760,49 +3965,28 @@ export default function TicketBookingList() {
           </button>
         </div>
         {renderTicketBookingAxisDropdownPortal(booking)}
-        <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); handleEdit(booking); }}
-            className="px-2 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
-          >
-            편집
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); handleViewHistory(booking.id); }}
-            className="px-2 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700"
-          >
-            히스토리
-          </button>
-          {isModalForm && canBookingMgmtSoftDeleteUi ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (
-                  confirm(
-                    locale === 'ko'
-                      ? '삭제를 요청하시겠습니까? (목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.)'
-                      : 'Request deletion? It will be hidden until a super admin deletes it.'
-                  )
-                ) {
-                  void handleRequestSoftDelete(booking.id);
-                }
-              }}
-              className="px-2 py-1 bg-amber-600 text-white text-xs rounded-lg hover:bg-amber-700"
-            >
-              {locale === 'ko' ? '삭제' : 'Delete'}
-            </button>
-          ) : null}
+        {isModalForm ? (
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+              {tStmtRecon('columnHeaderShort')}
+            </span>
+            {renderDetailStatementReconCell(booking)}
+          </div>
+        ) : null}
+        <div className="pt-2 border-t border-gray-100">
+          {renderTicketBookingActionButtons(booking, {
+            fromDetailModal: isModalForm,
+            size: 'touch',
+          })}
         </div>
       </div>
     );
   };
 
   const renderTicketDesktopTableThead = useCallback(
-    (opts?: { interactiveSort?: boolean }) => {
+    (opts?: { interactiveSort?: boolean; showStatementRecon?: boolean }) => {
       const interactive = opts?.interactiveSort !== false;
+      const showStmt = opts?.showStatementRecon === true;
       const sortableTh =
         'px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ' +
         (interactive ? 'cursor-pointer hover:bg-gray-100 select-none' : '');
@@ -3877,6 +4061,11 @@ export default function TicketBookingList() {
             <th className="hidden md:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               첨부
             </th>
+            {showStmt ? (
+              <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                {tStmtRecon('columnHeaderShort')}
+              </th>
+            ) : null}
             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
             <th className={sortableTh} onClick={interactive ? () => handleSort('submit_on') : undefined}>
               <div className="flex items-center space-x-1">
@@ -3893,10 +4082,15 @@ export default function TicketBookingList() {
         </thead>
       );
     },
-    [t, sortField, sortDirection, handleSort]
+    [t, sortField, sortDirection, handleSort, tStmtRecon]
   );
 
-  const renderDesktopRow = (booking: TicketBooking, rnRowStripe = '', cancelDueColorMap: Map<string, string>) => {
+  const renderDesktopRow = (
+    booking: TicketBooking,
+    rnRowStripe = '',
+    cancelDueColorMap: Map<string, string>,
+    opts?: { inDetailModal?: boolean }
+  ) => {
     const changePending = isTicketBookingChangeRequestPending(booking);
     const cancelDueDateRow = getCancelDueDate(booking);
     const bgColor = cancelDueDateRow 
@@ -4368,55 +4562,13 @@ export default function TicketBookingList() {
         })()}
       </button>
     </td>
+    {opts?.inDetailModal ? (
+      <td className="align-middle px-1 py-1.5 text-center text-xs">
+        {renderDetailStatementReconCell(booking)}
+      </td>
+    ) : null}
     <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="flex flex-wrap items-center gap-0.5 relative z-20">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleEdit(booking);
-          }}
-          className="px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors relative z-20"
-          title="편집"
-        >
-          편집
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleViewHistory(booking.id);
-          }}
-          className="px-1.5 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors relative z-20"
-          title="히스토리"
-        >
-          히스토리
-        </button>
-        {canBookingMgmtSoftDeleteUi ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (
-                confirm(
-                  locale === 'ko'
-                    ? '삭제를 요청하시겠습니까? (목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.)'
-                    : 'Request deletion? It will be hidden until a super admin deletes it.'
-                )
-              ) {
-                void handleRequestSoftDelete(booking.id);
-              }
-            }}
-            className="px-1.5 py-0.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 transition-colors relative z-20"
-            title={locale === 'ko' ? '삭제 (목록에서 숨김)' : 'Delete (hide from list)'}
-          >
-            {locale === 'ko' ? '삭제' : 'Delete'}
-          </button>
-        ) : null}
-      </div>
+      {renderTicketBookingActionButtons(booking, { fromDetailModal: opts?.inDetailModal })}
     </td>
     <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
       <div className="text-gray-900">
@@ -4615,18 +4767,32 @@ export default function TicketBookingList() {
             </select>
           </div>
 
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 sm:min-w-[14rem]">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              {t('submissionDate')}
+              {t('checkInDateRange')}
             </label>
-            <div className="relative">
-              <Calendar className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
-              />
+            <div className="flex items-center gap-1.5">
+              <div className="relative min-w-0 flex-1">
+                <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
+                <input
+                  type="date"
+                  value={checkInDateFrom}
+                  onChange={(e) => setCheckInDateFrom(e.target.value)}
+                  aria-label={t('dateRangeStart')}
+                  className="w-full pl-6 pr-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                />
+              </div>
+              <span className="text-gray-400 text-xs shrink-0">–</span>
+              <div className="relative min-w-0 flex-1">
+                <input
+                  type="date"
+                  value={checkInDateTo}
+                  onChange={(e) => setCheckInDateTo(e.target.value)}
+                  aria-label={t('dateRangeEnd')}
+                  min={checkInDateFrom || undefined}
+                  className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                />
+              </div>
             </div>
           </div>
 
@@ -4731,7 +4897,7 @@ export default function TicketBookingList() {
               <div className="block sm:hidden space-y-3">
                 {sortedBookings.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">
-                    {searchTerm || statusFilter !== 'all' || dateFilter || needsReviewEaMismatch
+                    {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || needsReviewEaMismatch
                       ? '검색 조건에 맞는 부킹이 없습니다.'
                       : '등록된 입장권 부킹이 없습니다.'}
                   </div>
@@ -4813,12 +4979,12 @@ export default function TicketBookingList() {
             {sortedBookings.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <div className="text-lg font-medium mb-2">
-                  {searchTerm || statusFilter !== 'all' || dateFilter || needsReviewEaMismatch
+                  {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || needsReviewEaMismatch
                     ? '검색 조건에 맞는 부킹이 없습니다.'
                     : '등록된 입장권 부킹이 없습니다.'}
                 </div>
                 <p className="text-sm text-gray-400">
-                  {!searchTerm && statusFilter === 'all' && !dateFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
+                  {!searchTerm && statusFilter === 'all' && !hasCheckInDateRangeFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
                 </p>
               </div>
             )}
@@ -5522,39 +5688,7 @@ export default function TicketBookingList() {
 
                   {/* 액션 버튼들 - 모바일 터치 친화 */}
                   <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-200">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEdit(booking)}
-                        className="flex-1 bg-blue-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-blue-700 text-xs sm:text-sm font-medium transition-colors"
-                      >
-                        편집
-                      </button>
-                      <button
-                        onClick={() => handleViewHistory(booking.id)}
-                        className="flex-1 bg-green-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-green-700 text-xs sm:text-sm font-medium transition-colors"
-                      >
-                        히스토리
-                      </button>
-                      {canBookingMgmtSoftDeleteUi ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (
-                              confirm(
-                                locale === 'ko'
-                                  ? '삭제를 요청하시겠습니까? (목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.)'
-                                  : 'Request deletion? It will be hidden until a super admin deletes it.'
-                              )
-                            ) {
-                              void handleRequestSoftDelete(booking.id);
-                            }
-                          }}
-                          className="flex-1 bg-amber-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-amber-700 text-xs sm:text-sm font-medium transition-colors"
-                        >
-                          {locale === 'ko' ? '삭제' : 'Delete'}
-                        </button>
-                      ) : null}
-                    </div>
+                    {renderTicketBookingActionButtons(booking, { size: 'touch' })}
                   </div>
                 </div>
               </div>
@@ -5651,12 +5785,12 @@ export default function TicketBookingList() {
         {filteredBookings.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             <div className="text-lg font-medium mb-2">
-              {searchTerm || statusFilter !== 'all' || dateFilter || needsReviewEaMismatch
+              {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || needsReviewEaMismatch
                 ? '검색 조건에 맞는 부킹이 없습니다.'
                 : '등록된 입장권 부킹이 없습니다.'}
             </div>
             <p className="text-sm text-gray-400">
-              {!searchTerm && statusFilter === 'all' && !dateFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
+              {!searchTerm && statusFilter === 'all' && !hasCheckInDateRangeFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
             </p>
           </div>
         )}
@@ -5674,7 +5808,7 @@ export default function TicketBookingList() {
 
       {/* 폼 모달 */}
       {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120] p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
               <h3 className="text-xl font-semibold">
@@ -5763,16 +5897,19 @@ export default function TicketBookingList() {
         open={showBookingModal}
         onOpenChange={setShowBookingModal}
         bookings={selectedBookings as TicketBookingReservationDetailRow[]}
-        onEdit={(b) => {
-          setEditingBooking(b as TicketBooking);
-          setShowForm(true);
-        }}
+        onEdit={(b) => handleEdit(b as TicketBooking)}
         onViewHistory={(id) => {
           setSelectedBookingId(id);
           setShowHistory(true);
         }}
-        {...(canBookingMgmtSoftDeleteUi ? { onRequestSoftDelete: handleRequestSoftDelete } : {})}
-        {...(canSuperDeleteTicketBooking ? { onHardDelete: handleDelete } : {})}
+        {...(canBookingMgmtSoftDeleteUi
+          ? {
+              onRequestSoftDelete: (id) => void handleRequestSoftDelete(id, { fromDetailModal: true }),
+            }
+          : {})}
+        {...(canSuperDeleteTicketBooking
+          ? { onHardDelete: (id) => void handleDelete(id, { fromDetailModal: true }) }
+          : {})}
         onActionApplied={() => {
           void fetchBookings();
         }}
@@ -5782,9 +5919,9 @@ export default function TicketBookingList() {
           return (
             <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
               <table className="w-full min-w-[1100px] divide-y divide-gray-200">
-                {renderTicketDesktopTableThead({ interactiveSort: false })}
+                {renderTicketDesktopTableThead({ interactiveSort: false, showStatementRecon: true })}
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {rb.map((b) => renderDesktopRow(b, '', dueMap))}
+                  {rb.map((b) => renderDesktopRow(b, '', dueMap, { inDetailModal: true }))}
                 </tbody>
               </table>
             </div>
@@ -5797,6 +5934,18 @@ export default function TicketBookingList() {
               {rb.map((b) => renderTicketMobileCard(b, { variant: 'modalForm' }))}
             </div>
           );
+        }}
+        renderStatementReconCell={(b) => renderDetailStatementReconCell(b as TicketBooking)}
+      />
+
+      <ExpenseStatementSimilarLinesModal
+        open={detailStmtOpen}
+        onOpenChange={setDetailStmtOpen}
+        context={detailStmtCtx}
+        onApplied={() => {
+          const ids = selectedBookings.map((b) => b.id).filter(Boolean);
+          void fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids).then(setDetailReconciledIds);
+          void fetchBookings();
         }}
       />
 

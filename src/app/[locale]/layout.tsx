@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "../globals.css";
 import Navigation from "@/components/Navigation";
 import Sidebar from "@/components/Sidebar";
 import UserFooter from "@/components/UserFooter";
@@ -14,13 +12,6 @@ import { headers } from 'next/headers';
 import { createServerSupabase } from '@/lib/supabase-server';
 import CartProviderWrapper from '@/components/CartProviderWrapper';
 
-const inter = Inter({ 
-  subsets: ["latin"],
-  display: 'swap',
-  preload: true,
-  fallback: ['system-ui', 'arial']
-});
-
 // Use generateMetadata instead of static metadata to inject dynamic favicon
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -31,9 +22,6 @@ export async function generateMetadata(): Promise<Metadata> {
       shortcut: [{ url: '/company-logo.png' }],
       apple: [{ url: '/company-logo.png' }]
     },
-    other: {
-      'preload-css': 'true'
-    }
   };
 
   try {
@@ -82,9 +70,6 @@ export async function generateMetadata(): Promise<Metadata> {
         shortcut: [{ url: faviconUrl }],
         apple: [{ url: faviconUrl }]
       },
-      other: {
-        'preload-css': 'true'
-      }
     };
   } catch {
     return fallbackMetadata;
@@ -116,14 +101,15 @@ export default async function LocaleLayout({
   const isGuidePage =
     pathname.includes('/guide') || headersList.get('x-is-guide-route') === '1';
   const isPhotosPage = pathname.includes('/photos/'); // 사진 공유 링크 페이지
+  const isAuthPage = /\/auth(\/|$)/.test(pathname);
   const isCustomerPage = pathname.includes('/dashboard') || 
                          pathname.includes('/products') || 
                          pathname.includes('/off-schedule') ||
                          pathname === `/${locale}` ||
                          pathname === `/${locale}/`;
 
-  // Admin, Embed, Photos: 기본 레이아웃만 (사이드바/네비 없음)
-  if (isAdminPage || isEmbedPage || isPhotosPage) {
+  // Admin, Embed, Photos, Auth(콜백): 기본 레이아웃만 (사이드바/네비 없음)
+  if (isAdminPage || isEmbedPage || isPhotosPage || isAuthPage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <FloatingChatProvider>

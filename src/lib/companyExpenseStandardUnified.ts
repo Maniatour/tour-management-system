@@ -20,17 +20,30 @@ export type UnifiedStandardLeafItem = {
   searchText: string
 }
 
+export type UnifiedStandardTreeRow =
+  | { type: 'branch'; id: string; label: string; depth: number }
+  | { type: 'leaf'; item: UnifiedStandardLeafItem; depth: number }
+
 export type UnifiedStandardLeafGroup = {
   /** 부모 표준 카테고리 id (React key용) */
   rootId: string
   /** 하위만 있을 때 상단 그룹 제목 (예: Car and Truck Expenses) */
   groupLabel: string
+  /** 선택 가능한 리프만 (검색·역매칭·하위 호환) */
   items: UnifiedStandardLeafItem[]
+  /** 피커용 전체 트리(중간 분류 + 리프, depth로 들여쓰기) */
+  rows: UnifiedStandardTreeRow[]
 }
 
 /** includeInactive: 카테고리 매니저·결제 내용 정규화와 동일하게 비활성 행 포함 */
 export type BuildUnifiedStandardLeafGroupsOptions = {
   includeInactive?: boolean
+  /** 피커·paid_for 채우기 표시 언어 (기본: locale이 en이면 en, 아니면 ko) */
+  labelLanguage?: 'en' | 'ko'
+}
+
+export type ApplyStandardLeafToCompanyExpenseOptions = {
+  paidForLanguage?: 'en' | 'ko'
 }
 
 /** 표준 카테고리: 영문·한글을 한 줄로 (둘 다 있고 다르면 "EN · KO") */
@@ -46,6 +59,73 @@ export function bilingualStandardLabel(
   return ''
 }
 
+/** 피커·트리 한 줄 라벨 (en: 영문 name 우선) */
+export function standardPickerLabel(
+  name: string | null | undefined,
+  name_ko: string | null | undefined,
+  language: 'en' | 'ko'
+): string {
+  const en = (name ?? '').trim()
+  const ko = (name_ko ?? '').trim()
+  if (language === 'en') return en || ko
+  if (ko && en && en !== ko) return `${en} · ${ko}`
+  if (ko) return ko
+  return en
+}
+
+function labelLanguageFromBuildOptions(
+  locale: string,
+  options?: BuildUnifiedStandardLeafGroupsOptions
+): 'en' | 'ko' {
+  if (options?.labelLanguage) return options.labelLanguage
+  return locale.startsWith('en') ? 'en' : 'ko'
+}
+
+function makeUnifiedLeafItem(
+  cat: ExpenseStandardCategoryPickRow,
+  root: ExpenseStandardCategoryPickRow,
+  labelLanguage: 'en' | 'ko'
+): UnifiedStandardLeafItem {
+  const display = standardPickerLabel(cat.name, cat.name_ko, labelLanguage)
+  return {
+    id: cat.id,
+    menuLabel: display,
+    displayLabel: display,
+    paidForText: canonicalPaidForTextFromStandardCategory(cat, { language: labelLanguage }),
+    searchText: searchBlobForLeaf(root, cat),
+  }
+}
+
+function buildSubtreeRows(
+  cat: ExpenseStandardCategoryPickRow,
+  root: ExpenseStandardCategoryPickRow,
+  pool: ExpenseStandardCategoryPickRow[],
+  depth: number,
+  labelLanguage: 'en' | 'ko',
+  sortFn: (a: ExpenseStandardCategoryPickRow, b: ExpenseStandardCategoryPickRow) => number
+): { rows: UnifiedStandardTreeRow[]; items: UnifiedStandardLeafItem[] } {
+  const subs = pool.filter((c) => c.parent_id === cat.id).sort(sortFn)
+  if (subs.length === 0) {
+    const item = makeUnifiedLeafItem(cat, root, labelLanguage)
+    return { rows: [{ type: 'leaf', item, depth }], items: [item] }
+  }
+  const rows: UnifiedStandardTreeRow[] = [
+    {
+      type: 'branch',
+      id: cat.id,
+      label: standardPickerLabel(cat.name, cat.name_ko, labelLanguage),
+      depth,
+    },
+  ]
+  const items: UnifiedStandardLeafItem[] = []
+  for (const sub of subs) {
+    const nested = buildSubtreeRows(sub, root, pool, depth + 1, labelLanguage, sortFn)
+    rows.push(...nested.rows)
+    items.push(...nested.items)
+  }
+  return { rows, items }
+}
+
 function searchBlobForLeaf(
   root: ExpenseStandardCategoryPickRow,
   leaf: ExpenseStandardCategoryPickRow
@@ -57,7 +137,8 @@ function searchBlobForLeaf(
     leaf.name,
     leaf.name_ko,
     leaf.id,
-    canonicalPaidForTextFromStandardCategory(leaf),
+    canonicalPaidForTextFromStandardCategory(leaf, { language: 'en' }),
+    canonicalPaidForTextFromStandardCategory(leaf, { language: 'ko' }),
   ]
   return parts
     .filter((p): p is string => Boolean(p && String(p).trim()))
@@ -66,7 +147,13 @@ function searchBlobForLeaf(
 }
 
 function searchBlobForRootOnly(root: ExpenseStandardCategoryPickRow): string {
-  const parts = [root.name, root.name_ko, root.id, canonicalPaidForTextFromStandardCategory(root)]
+  const parts = [
+    root.name,
+    root.name_ko,
+    root.id,
+    canonicalPaidForTextFromStandardCategory(root, { language: 'en' }),
+    canonicalPaidForTextFromStandardCategory(root, { language: 'ko' }),
+  ]
   return parts
     .filter((p): p is string => Boolean(p && String(p).trim()))
     .join(' ')
@@ -76,9 +163,10 @@ function searchBlobForRootOnly(root: ExpenseStandardCategoryPickRow): string {
 /** 부모 헤더 + 자식만 선택. 부모에 자식이 없으면 부모 한 줄만 선택 가능 */
 export function buildUnifiedStandardLeafGroups(
   cats: ExpenseStandardCategoryPickRow[],
-  _locale: string,
+  locale: string,
   options?: BuildUnifiedStandardLeafGroupsOptions
 ): UnifiedStandardLeafGroup[] {
+  const labelLanguage = labelLanguageFromBuildOptions(locale, options)
   const pool = options?.includeInactive ? cats : cats.filter((c) => c.is_active !== false)
   const poolIds = new Set(pool.map((c) => c.id))
   const sortFn = (a: ExpenseStandardCategoryPickRow, b: ExpenseStandardCategoryPickRow) =>
@@ -96,36 +184,28 @@ export function buildUnifiedStandardLeafGroups(
 
   for (const r of roots) {
     const subs = pool.filter((c) => c.parent_id === r.id).sort(sortFn)
-    const gLabel = bilingualStandardLabel(r.name, r.name_ko)
+    const gLabel = standardPickerLabel(r.name, r.name_ko, labelLanguage)
     if (subs.length === 0) {
-      const display = bilingualStandardLabel(r.name, r.name_ko)
+      const item = makeUnifiedLeafItem(r, r, labelLanguage)
       groups.push({
         rootId: r.id,
         groupLabel: gLabel,
-        items: [
-          {
-            id: r.id,
-            menuLabel: display,
-            displayLabel: display,
-            paidForText: canonicalPaidForTextFromStandardCategory(r),
-            searchText: searchBlobForRootOnly(r),
-          },
-        ],
+        items: [item],
+        rows: [{ type: 'leaf', item, depth: 0 }],
       })
     } else {
+      const rows: UnifiedStandardTreeRow[] = []
+      const items: UnifiedStandardLeafItem[] = []
+      for (const sub of subs) {
+        const nested = buildSubtreeRows(sub, r, pool, 1, labelLanguage, sortFn)
+        rows.push(...nested.rows)
+        items.push(...nested.items)
+      }
       groups.push({
         rootId: r.id,
         groupLabel: gLabel,
-        items: subs.map((s) => {
-          const display = bilingualStandardLabel(s.name, s.name_ko)
-          return {
-            id: s.id,
-            menuLabel: display,
-            displayLabel: display,
-            paidForText: canonicalPaidForTextFromStandardCategory(s),
-            searchText: searchBlobForLeaf(r, s),
-          }
-        }),
+        items,
+        rows,
       })
     }
   }
@@ -137,20 +217,15 @@ export function buildUnifiedStandardLeafGroups(
   }
   for (const c of [...pool].sort(sortFn)) {
     if (seen.has(c.id)) continue
-    const display = bilingualStandardLabel(c.name, c.name_ko)
+    const display = standardPickerLabel(c.name, c.name_ko, labelLanguage)
     const parent = c.parent_id ? pool.find((x) => x.id === c.parent_id) ?? null : null
+    const rootForBlob = parent ?? c
+    const item = makeUnifiedLeafItem(c, rootForBlob, labelLanguage)
     groups.push({
       rootId: c.id,
       groupLabel: display,
-      items: [
-        {
-          id: c.id,
-          menuLabel: display,
-          displayLabel: display,
-          paidForText: canonicalPaidForTextFromStandardCategory(c),
-          searchText: parent ? searchBlobForLeaf(parent, c) : searchBlobForRootOnly(c),
-        },
-      ],
+      items: [item],
+      rows: [{ type: 'leaf', item, depth: 0 }],
     })
     seen.add(c.id)
   }
@@ -272,15 +347,26 @@ function getRoot(
   return c ?? leaf
 }
 
+function paidForTextsForLeaf(
+  leaf: ExpenseStandardCategoryPickRow
+): { en: string; ko: string } {
+  return {
+    en: canonicalPaidForTextFromStandardCategory(leaf, { language: 'en' }),
+    ko: canonicalPaidForTextFromStandardCategory(leaf, { language: 'ko' }),
+  }
+}
+
 /** 표준 카테고리(리프) → 회사 지출 paid_for / category / expense_type */
 export function applyStandardLeafToCompanyExpense(
   leafId: string,
-  catsById: Map<string, ExpenseStandardCategoryPickRow>
+  catsById: Map<string, ExpenseStandardCategoryPickRow>,
+  options?: ApplyStandardLeafToCompanyExpenseOptions
 ): { paid_for: string; category: string; expense_type: string; tax_deductible: boolean } | null {
   const leaf = catsById.get(leafId)
   if (!leaf) return null
   const root = getRoot(leaf, catsById)
-  const paid_for = canonicalPaidForTextFromStandardCategory(leaf)
+  const lang = options?.paidForLanguage ?? 'ko'
+  const paid_for = canonicalPaidForTextFromStandardCategory(leaf, { language: lang })
   const tax_deductible = leaf.tax_deductible !== false
 
   const OVERRIDES: Record<string, { category: string; expense_type: string }> = {
@@ -347,11 +433,18 @@ export function matchUnifiedLeafIdFromForm(
   const cat = (category || '').trim()
   const et = (expense_type || '').trim()
 
+  const paidForMatchesLeaf = (leafId: string, paidFor: string): boolean => {
+    const row = byId.get(leafId)
+    if (!row) return false
+    const { en, ko } = paidForTextsForLeaf(row)
+    return paidFor === en || paidFor === ko
+  }
+
   for (const leaf of leaves) {
     const applied = applyStandardLeafToCompanyExpense(leaf.id, byId)
     if (!applied) continue
     if (
-      applied.paid_for === pf &&
+      paidForMatchesLeaf(leaf.id, pf) &&
       applied.category === cat &&
       applied.expense_type === et
     ) {
@@ -359,9 +452,7 @@ export function matchUnifiedLeafIdFromForm(
     }
   }
   for (const leaf of leaves) {
-    const applied = applyStandardLeafToCompanyExpense(leaf.id, byId)
-    if (!applied) continue
-    if (applied.paid_for === pf) return leaf.id
+    if (paidForMatchesLeaf(leaf.id, pf)) return leaf.id
   }
   return '__custom__'
 }

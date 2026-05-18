@@ -98,6 +98,7 @@ async function fetchCompanyExpensesInWindow(startIso: string, endIso: string): P
       .select(
         'id, amount, submit_on, paid_to, paid_for, description, category, status, statement_line_id, ledger_expense_origin, standard_paid_for, payment_method'
       )
+      .is('deleted_at', null)
       .gte('submit_on', startIso)
       .lte('submit_on', endIso)
       .order('submit_on', { ascending: true })

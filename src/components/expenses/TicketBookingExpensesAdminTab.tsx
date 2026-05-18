@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import ReservationExpenseTabPager, {
   reservationExpenseTotalPages
 } from '@/components/expenses/ReservationExpenseTabPager'
@@ -8,9 +9,14 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { RefreshCw } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
-import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
+import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
+import {
+  canRequestTicketBookingSoftDelete,
+  filterTicketBookingsExcludedFromMainUi
+} from '@/lib/ticketBookingSoftDelete'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
+import { buildTicketBookingStatementReconContextResolved } from '@/lib/ticket-booking-statement-recon'
 import type { Tables } from '@/lib/database.types'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
@@ -52,6 +58,11 @@ function ticketStatusLine(r: { booking_status: string; operation_status: string;
 export default function TicketBookingExpensesAdminTab({ locale }: { locale: string }) {
   const t = useTranslations('expenses.reservationSubTabs')
   const tStmt = useTranslations('expenses.statementRecon')
+  const { user, userPosition } = useAuth()
+  const canSoftDeleteTicket = useMemo(
+    () => canRequestTicketBookingSoftDelete(userPosition),
+    [userPosition]
+  )
   const [rows, setRows] = useState<TicketRow[]>([])
   const [loading, setLoading] = useState(true)
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
@@ -89,6 +100,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
         .select(
           'id, category, company, expense, submit_on, check_in_date, tour_id, reservation_id, payment_method, submitted_by, note, deletion_requested_at, booking_status, operation_status, payment_status'
         )
+        .is('deleted_at', null)
         .order('submit_on', { ascending: false, nullsFirst: false })
         .limit(1000)
       if (error) throw error
@@ -176,29 +188,27 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
     return filteredAll.slice(start, start + pageSize)
   }, [filteredAll, safePage, pageSize])
 
-  const openStmt = (r: TicketRow) => {
-    const ymd = (r.submit_on || r.check_in_date || '').slice(0, 10)
-    const amt = Math.abs(Number(r.expense ?? 0))
-    if (!ymd || amt <= 0) return
-    setStmtCtx({
-      sourceTable: 'ticket_bookings',
-      sourceId: r.id,
-      dateYmd: ymd,
-      amount: amt,
-      direction: 'outflow'
-    })
+  const openStmt = async (r: TicketRow) => {
+    const ctx = await buildTicketBookingStatementReconContextResolved(supabase, r)
+    if (!ctx) return
+    setStmtCtx(ctx)
     setStmtOpen(true)
   }
 
   const stmtDisabled = (r: TicketRow) => {
-    const ymd = (r.submit_on || r.check_in_date || '').slice(0, 10)
-    const amt = Math.abs(Number(r.expense ?? 0))
-    return !ymd || amt <= 0
+    const submitYmd = (r.submit_on || '').slice(0, 10)
+    const checkInYmd = (r.check_in_date || '').slice(0, 10)
+    return !/^\d{4}-\d{2}-\d{2}$/.test(submitYmd) && !/^\d{4}-\d{2}-\d{2}$/.test(checkInYmd)
   }
 
   const openTicketEdit = async (id: string) => {
     try {
-      const { data, error } = await supabase.from('ticket_bookings').select('*').eq('id', id).maybeSingle()
+      const { data, error } = await supabase
+        .from('ticket_bookings')
+        .select('*')
+        .eq('id', id)
+        .is('deleted_at', null)
+        .maybeSingle()
       if (error) throw error
       if (!data) throw new Error('missing row')
       setTicketEditingRow(data as TicketBookingRow)
@@ -208,6 +218,22 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
       window.alert(t('saveError'))
     }
   }
+
+  const handleTicketExpenseSoftDelete = useCallback(
+    async (id: string) => {
+      try {
+        await softDeleteExpenseRecord(supabase, 'ticket_bookings', id, user?.email ?? null)
+        setTicketFormOpen(false)
+        setTicketEditingRow(null)
+        await loadRows()
+        window.alert(t('ticketDeleteArchiveSuccess'))
+      } catch (e) {
+        if (!isAbortLikeError(e)) console.error(e)
+        window.alert(t('saveError'))
+      }
+    },
+    [loadRows, t, user?.email]
+  )
 
   return (
     <div className="space-y-3">
@@ -311,7 +337,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
                       titleMatched={tStmt('matchedTitle')}
                       titleUnmatched={tStmt('unmatchedTitle')}
                       titleDisabled={tStmt('unmatchedTitle')}
-                      onClick={() => openStmt(r)}
+                      onClick={() => void openStmt(r)}
                     />
                   </td>
                   <td className="px-2 py-2 tabular-nums whitespace-nowrap text-right font-medium">
@@ -414,6 +440,9 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DB row를 폼 초기값으로 그대로 전달
                 booking={ticketEditingRow as any}
                 tourId={ticketEditingRow.tour_id ?? undefined}
+                softDeleteVariant="expense"
+                canRequestSoftDelete={canSoftDeleteTicket}
+                onRequestDelete={(id) => void handleTicketExpenseSoftDelete(id)}
                 onSave={() => {
                   setTicketFormOpen(false)
                   setTicketEditingRow(null)

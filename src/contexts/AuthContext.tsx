@@ -4,15 +4,21 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import {
   canAttemptProactiveRefresh,
   canUseAuthenticatedRest,
+  clearStoredAuthTokens,
   coordinatedRefreshSession,
   getAuthRefreshCooldownRemainingMs,
+  getAccessTokenForApi,
   getStoredAccessTokenIfValid,
+  isAuthInvalidRefreshError,
   isAuthRateLimitError,
   isAuthRefreshRateLimited,
   markProactiveRefreshAttempted,
+  resetSupabaseTokenSyncCache,
   supabase,
+  syncCustomTokensFromGoTrueStorage,
   updateSupabaseToken,
 } from '@/lib/supabase'
+import { persistSupabaseSessionToStorage } from '@/lib/authStorage'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
@@ -38,14 +44,6 @@ function authUserFromSupabaseSessionUser(sessionUser: User): AuthUser {
     created_at: sessionUser.created_at,
     user_metadata: sessionUser.user_metadata,
   }
-}
-
-function persistSupabaseSessionToStorage(session: Session) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem('sb-access-token', session.access_token)
-  localStorage.setItem('sb-refresh-token', session.refresh_token)
-  const tokenExpiry = session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
-  localStorage.setItem('sb-expires-at', tokenExpiry.toString())
 }
 
 /** GoTrue SIGNED_OUT·429 후에도 저장된 access JWT로 UI 복구용 */
@@ -214,7 +212,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem('sb-refresh-token', session.refresh_token)
             const newExpiry = session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
             localStorage.setItem('sb-expires-at', newExpiry.toString())
-            updateSupabaseToken(session.access_token)
+            updateSupabaseToken(session.access_token, {
+              refreshToken: session.refresh_token,
+              forceSetSession: true,
+            })
             return true
           } else {
             if (isAuthRateLimitError(error)) {
@@ -860,6 +861,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // localStorage에서 토큰 확인
     const checkStoredTokens = async () => {
       try {
+        syncCustomTokensFromGoTrueStorage()
+
         const accessToken = localStorage.getItem('sb-access-token')
         const expiresAt = localStorage.getItem('sb-expires-at')
         
@@ -933,7 +936,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                           const newExpiry =
                             session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
                           localStorage.setItem('sb-expires-at', newExpiry.toString())
-                          updateSupabaseToken(session.access_token)
+                          updateSupabaseToken(session.access_token, {
+                            refreshToken: session.refresh_token,
+                            forceSetSession: true,
+                          })
                         }
                       } catch (e) {
                         if (!isAuthRateLimitError(e)) {
@@ -1174,6 +1180,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (error && isAuthRateLimitError(error)) {
                 console.warn('AuthContext: SIGNED_OUT recovery skipped refresh (rate limited)')
               }
+              if (error && isAuthInvalidRefreshError(error)) {
+                console.warn('AuthContext: SIGNED_OUT recovery — refresh token invalid, clearing storage')
+                clearStoredAuthTokens()
+                return null
+              }
               if (error || !session?.user?.email) return null
               return session
             }
@@ -1209,7 +1220,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   setUser(authUserData)
                   setAuthUser(authUserData)
                   persistSupabaseSessionToStorage(refreshed)
-                  updateSupabaseToken(refreshed.access_token)
+                  updateSupabaseToken(refreshed.access_token, {
+                    refreshToken: refreshed.refresh_token,
+                    forceSetSession: true,
+                  })
                   return
                 }
               }
@@ -1426,7 +1440,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         persistSupabaseSessionToStorage(activeSession)
-        updateSupabaseToken(activeSession.access_token)
+        updateSupabaseToken(activeSession.access_token, {
+          refreshToken: activeSession.refresh_token,
+          forceSetSession: true,
+        })
 
         const resumedEmail = activeSession.user.email
         if (!resumedEmail) return
@@ -1490,11 +1507,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut()
 
       roleCheckInflightRef.current.clear()
-      
-      // localStorage에서 토큰 제거
-      localStorage.removeItem('sb-access-token')
-      localStorage.removeItem('sb-refresh-token')
-      localStorage.removeItem('sb-expires-at')
+      clearStoredAuthTokens()
+      resetSupabaseTokenSyncCache()
       
       setUser(null)
       setAuthUser(null)
@@ -1610,23 +1624,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
       
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
+      const accessToken = await getAccessTokenForApi(30)
+      if (!accessToken) {
         return
       }
 
-      const response = await fetch('/api/team-chat/unread-count', {
+      const response = await fetch('/api/team-chat-unread-count', {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
+          Authorization: `Bearer ${accessToken}`,
+        },
       })
 
       if (response.ok) {
         const result = await response.json()
         setTeamChatUnreadCount(result.unreadCount || 0)
       } else {
-        // 응답이 실패한 경우 (401, 500 등)
-        // 네트워크 오류가 아닌 경우에만 콘솔에 기록
+        if (response.status === 404 && process.env.NODE_ENV === 'development') {
+          return
+        }
         if (response.status !== 500) {
           console.warn('팀 채팅 안읽은 메시지 수 조회 실패:', response.status, response.statusText)
         }
@@ -1646,8 +1661,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 사용자가 로그인되어 있을 때만 안읽은 메시지 수 조회
   useEffect(() => {
-    if (user?.email && userRole && userRole !== 'customer') {
-      refreshTeamChatUnreadCount()
+    if (user?.email && userRole && userRole !== 'customer' && isInitialized) {
+      void refreshTeamChatUnreadCount()
       
       // 실시간 구독으로 새 메시지 감지
       if (supabase) {
@@ -1679,7 +1694,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     // 모든 경우에 cleanup 함수 반환 (빈 함수라도)
     return () => {}
-  }, [user?.email, userRole, refreshTeamChatUnreadCount])
+  }, [user?.email, userRole, isInitialized, refreshTeamChatUnreadCount])
 
   // 토큰 자동 갱신 (30분마다 체크)
   useEffect(() => {

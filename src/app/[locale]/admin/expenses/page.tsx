@@ -11,8 +11,9 @@ import CashManagement from '@/components/CashManagement'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import PaymentRecordsHistoryTab from '@/components/expenses/PaymentRecordsHistoryTab'
 import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
+import DeletedUnifiedExpensesModal from '@/components/reconciliation/DeletedUnifiedExpensesModal'
 import { useAuth } from '@/contexts/AuthContext'
-import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle } from 'lucide-react'
+import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle, Archive } from 'lucide-react'
 
 type ExpenseTab = 'payments' | 'reservation' | 'company' | 'tour' | 'cash'
 
@@ -28,6 +29,7 @@ export default function ExpensesManagementPage() {
   const [activeTab, setActiveTab] = useState<ExpenseTab>(tabFromUrl || 'tour')
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [ledgerDupModalOpen, setLedgerDupModalOpen] = useState(false)
+  const [deletedVaultOpen, setDeletedVaultOpen] = useState(false)
   const openCompanyLedgerDupRef = useRef<(() => void) | null>(null)
   const registerOpenCompanyLedgerDup = useCallback((fn: (() => void) | null) => {
     openCompanyLedgerDupRef.current = fn
@@ -117,6 +119,16 @@ export default function ExpensesManagementPage() {
             <AlertTriangle size={14} className="sm:w-4 sm:h-4 shrink-0 text-amber-600" aria-hidden />
             <span className="hidden sm:inline">회사·투어·예약·입장권 지출 중복 점검</span>
             <span className="sm:hidden">지출 중복 점검</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeletedVaultOpen(true)}
+            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-slate-800 text-xs sm:text-sm font-medium"
+            title="소프트 삭제된 회사·투어·예약·입장권 지출을 모아 보고 복구합니다."
+          >
+            <Archive size={14} className="sm:w-4 sm:h-4 shrink-0 text-slate-600" aria-hidden />
+            <span className="hidden sm:inline">삭제된 지출 보관함</span>
+            <span className="sm:hidden">삭제 지출</span>
           </button>
           <button
             type="button"
@@ -222,6 +234,7 @@ export default function ExpensesManagementPage() {
         mode="ledger"
         createdByEmail={user?.email ?? null}
       />
+      <DeletedUnifiedExpensesModal open={deletedVaultOpen} onOpenChange={setDeletedVaultOpen} />
     </div>
   )
 }

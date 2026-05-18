@@ -25,6 +25,7 @@ import { fetchTicketToursForCheckIn } from '@/lib/ticketBookingToursForCheckIn';
 import { buildTicketBookingRequestEmail } from '@/lib/ticketBookingVendorEmail';
 import { useTeamMemberDisplayName } from '@/lib/useTeamMemberDisplayName';
 import TicketBookingVendorEmailCopyBlock from '@/components/booking/TicketBookingVendorEmailCopyBlock';
+import { isTicketBookingOffsetOrCancelRow } from '@/lib/ticketBookingSoftDelete';
 
 /** 원격 DB에 ticket_bookings.zelle_confirmation_number 가 아직 없을 때 PostgREST PGRST204 */
 function isMissingZelleConfirmationColumnError(err: unknown): boolean {
@@ -73,6 +74,8 @@ interface TicketBooking {
   uploaded_file_urls?: string[]; // 업로드된 파일 URL들
   deletion_requested_at?: string | null;
   deletion_requested_by?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   booking_status?: string | null;
   vendor_status?: string | null;
   change_status?: string | null;
@@ -134,6 +137,11 @@ interface TicketBookingFormProps {
   tourId?: string;
   /** true면 6축 워크플로 액션 패널 숨김 (스케줄 달력 등 — 상태·벤더는 달력 셀에서 관리) */
   hideAxisActionPanel?: boolean;
+  /**
+   * booking: deletion_requested (부킹 관리 — SUPER 영구 삭제)
+   * expense: deleted_at (지출 보관함 — 복구 가능)
+   */
+  softDeleteVariant?: 'booking' | 'expense';
 }
 
 export default function TicketBookingForm({ 
@@ -146,6 +154,7 @@ export default function TicketBookingForm({
   isSuper,
   tourId,
   hideAxisActionPanel = false,
+  softDeleteVariant = 'booking',
 }: TicketBookingFormProps) {
   const t = useTranslations('booking.ticketBooking');
   const tCal = useTranslations('booking.calendar');
@@ -884,12 +893,9 @@ export default function TicketBookingForm({
 
       console.log('전송할 데이터:', booking?.id ? dbPayloadBase : dbPayloadInsert);
 
-      let authSession = (await supabase.auth.getSession()).data.session;
-      if (!authSession?.access_token) {
-        const { data } = await supabase.auth.refreshSession();
-        authSession = data.session ?? null;
-      }
-      if (!authSession?.access_token) {
+      const { getAccessTokenForApi } = await import('@/lib/supabase');
+      const accessToken = await getAccessTokenForApi(30);
+      if (!accessToken) {
         alert(
           locale === 'ko'
             ? '로그인 세션이 없거나 아직 붙지 않았습니다. 잠시 후 다시 시도하거나 페이지를 새로고침해 주세요.'
@@ -1871,9 +1877,12 @@ export default function TicketBookingForm({
           <div className="flex justify-between items-center pt-4">
             {booking?.id && (() => {
               const bookingId = booking.id;
+              const isExpenseArchive = softDeleteVariant === 'expense';
+              const pendingBookingDelete = !isExpenseArchive && Boolean(booking.deletion_requested_at);
+              const archivedExpense = isExpenseArchive && Boolean(booking.deleted_at);
               return (
               <div className="flex items-center gap-2">
-                {isSuper && booking.deletion_requested_at && onDelete && (
+                {!isExpenseArchive && isSuper && pendingBookingDelete && onDelete && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1886,22 +1895,53 @@ export default function TicketBookingForm({
                     {t('deleteActual')}
                   </button>
                 )}
-                {!booking.deletion_requested_at && onRequestDelete && canRequestSoftDelete && (
+                {!isExpenseArchive &&
+                  isSuper &&
+                  onDelete &&
+                  !pendingBookingDelete &&
+                  isTicketBookingOffsetOrCancelRow(booking) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          confirm(
+                            locale === 'ko'
+                              ? '이 조정/취소 행을 바로 영구 삭제하시겠습니까? (되돌릴 수 없습니다)'
+                              : 'Permanently delete this adjustment/cancel row now? This cannot be undone.'
+                          )
+                        ) {
+                          onDelete(bookingId);
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800"
+                    >
+                      {locale === 'ko' ? '영구 삭제' : 'Permanent delete'}
+                    </button>
+                  )}
+                {!pendingBookingDelete && !archivedExpense && onRequestDelete && canRequestSoftDelete && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm(t('deleteRequestConfirm'))) {
+                      const msg = isExpenseArchive
+                        ? t('deleteExpenseArchiveConfirm')
+                        : t('deleteRequestConfirm');
+                      if (confirm(msg)) {
                         onRequestDelete(bookingId);
                       }
                     }}
                     className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700"
                   >
-                    {t('deleteRequest')}
+                    {isExpenseArchive ? t('deleteExpenseArchive') : t('deleteRequest')}
                   </button>
                 )}
-                {booking.deletion_requested_at && !isSuper && (
+                {pendingBookingDelete && !isSuper && (
                   <span className="text-sm text-amber-700 bg-amber-50 px-3 py-1.5 rounded">
                     {t('deleteRequestedWaiting')}
+                  </span>
+                )}
+                {archivedExpense && (
+                  <span className="text-sm text-gray-600 bg-gray-100 px-3 py-1.5 rounded">
+                    {t('deleteExpenseArchived')}
                   </span>
                 )}
               </div>

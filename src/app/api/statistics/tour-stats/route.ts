@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/lib/supabase-server'
 import type { Database } from '@/lib/database.types'
 import {
-  calculateOperatingProfit,
   reservationExcludedFromTourSettlementAggregates,
+  sumOperatingProfitForTourPricing,
   type ReservationPricingRow
 } from '@/lib/tourStatsCalculator'
 import {
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
       const batch = uniqueReservationIds.slice(i, i + BATCH)
       const { data } = await supabase
         .from('reservation_pricing')
-        .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, not_included_price, card_fee, prepayment_tip, commission_amount, commission_percent')
+        .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, not_included_price, card_fee, prepayment_tip, commission_amount, commission_percent, operating_profit')
         .in('reservation_id', batch)
       if (data?.length) reservationPricing = reservationPricing.concat(data)
     }
@@ -349,9 +349,12 @@ export async function GET(request: NextRequest) {
         (p) => !reservationExcludedFromTourSettlementAggregates(reservationStatusById.get(p.reservation_id))
       )
 
-      const totalOperatingProfit = pricingForOperatingTotals.reduce((sum, pricing) => {
-        return sum + calculateOperatingProfit(pricing, pricing.reservation_id, reservationExpensesMap, reservationChannels)
-      }, 0)
+      const totalOperatingProfit = sumOperatingProfitForTourPricing(
+        pricingForOperatingTotals,
+        reservationStatusById,
+        reservationExpensesMap,
+        reservationChannels
+      )
       const totalAdditionalCostRounded = pricingForOperatingTotals.reduce((sum, pricing) => {
         const additionalCost = pricing.additional_cost || 0
         return sum + Math.floor(additionalCost / 100) * 100

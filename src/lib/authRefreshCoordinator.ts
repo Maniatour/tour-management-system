@@ -1,4 +1,5 @@
 import type { AuthError, Session, SupabaseClient } from '@supabase/supabase-js'
+import { clearStoredAuthTokens, persistSupabaseSessionToStorage } from './authStorage'
 
 const DEFAULT_COOLDOWN_MS = 90_000
 /** checkStoredTokens·visibility·주기 갱신이 겹쳐 GoTrue 429를 유발하지 않도록 */
@@ -45,6 +46,30 @@ export function isAuthRateLimitError(error: unknown): boolean {
   if (e.status === 429) return true
   const msg = String(e.message ?? '').toLowerCase()
   return msg.includes('429') || msg.includes('too many requests') || msg.includes('rate limit')
+}
+
+/** refresh_token 재사용·만료·폐기 — 재시도해도 400만 반복되며 SIGNED_OUT 연쇄를 유발 */
+export function isAuthInvalidRefreshError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { status?: number; message?: string; code?: string }
+  if (e.status === 400 || e.status === 401) return true
+  const code = String(e.code ?? '').toLowerCase()
+  if (
+    code.includes('refresh_token') ||
+    code === 'invalid_grant' ||
+    code === 'session_not_found'
+  ) {
+    return true
+  }
+  const msg = String(e.message ?? '').toLowerCase()
+  return (
+    msg.includes('invalid refresh') ||
+    msg.includes('refresh token not found') ||
+    msg.includes('refresh_token') ||
+    msg.includes('invalid_grant') ||
+    msg.includes('already been used') ||
+    msg.includes('session not found')
+  )
 }
 
 export function parseRetryAfterSeconds(response: Response): number | undefined {
@@ -118,6 +143,11 @@ export async function coordinatedRefreshSession(
       const { data, error } = await client.auth.refreshSession(params)
       if (error && isAuthRateLimitError(error)) {
         markAuthRefreshRateLimited()
+      }
+      if (error && isAuthInvalidRefreshError(error)) {
+        clearStoredAuthTokens()
+      } else if (data.session) {
+        persistSupabaseSessionToStorage(data.session)
       }
       return { session: data.session ?? null, error: error ?? null }
     } catch (e) {

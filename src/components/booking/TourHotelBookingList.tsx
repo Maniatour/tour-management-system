@@ -62,7 +62,9 @@ export default function TourHotelBookingList() {
   const [editingBooking, setEditingBooking] = useState<TourHotelBooking | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('');
+  const [checkInDateFrom, setCheckInDateFrom] = useState('');
+  const [checkInDateTo, setCheckInDateTo] = useState('');
+  const hasCheckInDateRangeFilter = Boolean(checkInDateFrom || checkInDateTo);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [viewMode, setViewMode] = useRoutePersistedState<'card' | 'calendar'>(
@@ -302,11 +304,17 @@ export default function TourHotelBookingList() {
         booking.rn_number.toLowerCase().includes(q);
 
       const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
-      const matchesDate = !dateFilter || booking.check_in_date === dateFilter;
+      let matchesDate = true;
+      if (hasCheckInDateRangeFilter) {
+        const ymd = (booking.check_in_date || '').trim().slice(0, 10);
+        if (!ymd) matchesDate = false;
+        else if (checkInDateFrom && ymd < checkInDateFrom) matchesDate = false;
+        else if (checkInDateTo && ymd > checkInDateTo) matchesDate = false;
+      }
 
       return matchesSearch && matchesStatus && matchesDate;
     });
-  }, [bookings, searchTerm, statusFilter, dateFilter]);
+  }, [bookings, searchTerm, statusFilter, checkInDateFrom, checkInDateTo, hasCheckInDateRangeFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -478,18 +486,32 @@ export default function TourHotelBookingList() {
             </select>
           </div>
 
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 sm:min-w-[14rem]">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              {t('checkInDate')}
+              {t('checkInDateRange')}
             </label>
-            <div className="relative">
-              <Calendar className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
-              />
+            <div className="flex items-center gap-1.5">
+              <div className="relative min-w-0 flex-1">
+                <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
+                <input
+                  type="date"
+                  value={checkInDateFrom}
+                  onChange={(e) => setCheckInDateFrom(e.target.value)}
+                  aria-label={t('dateRangeStart')}
+                  className="w-full pl-6 pr-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                />
+              </div>
+              <span className="text-gray-400 text-xs shrink-0">–</span>
+              <div className="relative min-w-0 flex-1">
+                <input
+                  type="date"
+                  value={checkInDateTo}
+                  onChange={(e) => setCheckInDateTo(e.target.value)}
+                  aria-label={t('dateRangeEnd')}
+                  min={checkInDateFrom || undefined}
+                  className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -865,13 +887,13 @@ export default function TourHotelBookingList() {
         {filteredBookings.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             <div className="text-lg font-medium mb-2">
-              {searchTerm || statusFilter !== 'all' || dateFilter 
+              {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter 
                 ? '검색 조건에 맞는 부킹이 없습니다.' 
                 : '등록된 투어 호텔 부킹이 없습니다.'
               }
             </div>
             <p className="text-sm text-gray-400">
-              {!searchTerm && statusFilter === 'all' && !dateFilter && '새 부킹을 추가해보세요.'}
+              {!searchTerm && statusFilter === 'all' && !hasCheckInDateRangeFilter && '새 부킹을 추가해보세요.'}
             </p>
           </div>
         )}

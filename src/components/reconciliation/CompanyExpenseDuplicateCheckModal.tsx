@@ -1,8 +1,9 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ExternalLink } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { AlertTriangle, Archive, Car, ExternalLink, User, Users } from 'lucide-react'
+import DeletedUnifiedExpensesModal from '@/components/reconciliation/DeletedUnifiedExpensesModal'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import { UnifiedExpenseInlineEditForm } from '@/components/reconciliation/UnifiedExpenseInlineEditForm'
 import {
@@ -23,17 +24,13 @@ import {
   canonPairFingerprint,
   deleteExpenseBySourceKey,
   fetchUnifiedExpenseLedgerDuplicateGroups,
+  formatExpenseStatementLinkDisplay,
   insertExpenseDuplicateSuppression,
   UNIFIED_EXPENSE_SOURCE_LABEL,
   type TourReferenceSnapshot,
   type UnifiedLedgerDuplicateExpenseRow
 } from '@/lib/expense-unified-duplicate-scan'
-import {
-  getAssignmentStatusColor,
-  getAssignmentStatusText,
-  getStatusColor,
-  getStatusText
-} from '@/utils/tourStatusUtils'
+import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -72,9 +69,8 @@ function linkCell(m: {
   reconciled_statement_line_id: string | null
   statement_line_id: string | null
 }): string {
-  if (m.reconciled_statement_line_id) return `대조:${m.reconciled_statement_line_id.slice(0, 8)}…`
-  if (m.statement_line_id) return `행:${m.statement_line_id.slice(0, 8)}…`
-  return '—'
+  const label = formatExpenseStatementLinkDisplay(m)
+  return label === '미연결' ? '—' : label
 }
 
 function originCell(origin: string | null): string {
@@ -92,37 +88,40 @@ function LedgerReferenceCell({
 }) {
   if (tourRef) {
     const tourStatus = (tourRef.tourStatus ?? '').trim()
-    const assignmentStatus = (tourRef.assignmentStatus ?? '').trim()
-    const showAssignmentBadge =
-      assignmentStatus.length > 0 &&
-      assignmentStatus.toLowerCase() !== tourStatus.toLowerCase()
+    const tourName = tourRef.tourName?.trim() || ''
 
     return (
-      <div className="min-w-[14rem] max-w-[20rem] space-y-1">
-        <div className="flex flex-wrap gap-1">
+      <div className="min-w-0 max-w-full space-y-1">
+        <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-800 leading-snug font-medium">
+          {tourRef.tourDate ? <span className="shrink-0">{tourRef.tourDate}</span> : <span className="text-slate-400 shrink-0">날짜 —</span>}
+          <span className="text-slate-300 shrink-0">·</span>
+          <span className="break-words">{tourName || '투어명 —'}</span>
           {tourStatus ? (
             <span
-              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none ${getStatusColor(tourRef.tourStatus)}`}
+              className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none ${getStatusColor(tourRef.tourStatus)}`}
               title={tourStatus}
             >
               {getStatusText(tourRef.tourStatus, locale)}
             </span>
           ) : null}
-          {showAssignmentBadge ? (
-            <span
-              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none ${getAssignmentStatusColor({ assignment_status: tourRef.assignmentStatus })}`}
-              title={assignmentStatus}
-            >
-              배정 {getAssignmentStatusText({ assignment_status: tourRef.assignmentStatus }, locale)}
-            </span>
-          ) : null}
         </div>
-        <div className="text-[10px] text-slate-800 leading-snug">
-          <span className="text-slate-500">G</span> {tourRef.guideName}
-          <span className="text-slate-300 mx-1">·</span>
-          <span className="text-slate-500">A</span> {tourRef.assistantName}
-          <span className="text-slate-300 mx-1">·</span>
-          <span className="text-slate-500">V</span> {tourRef.vehicleName}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-800 leading-snug">
+          <span className="inline-flex items-center gap-0.5" title="배정 인원">
+            <User className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+            <span className="tabular-nums font-medium">{tourRef.assignedPeople}</span>
+          </span>
+          <span className="inline-flex items-center gap-0.5 min-w-0" title={`가이드 ${tourRef.guideName}`}>
+            <User className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+            <span className="truncate max-w-[5.5rem]">{tourRef.guideName}</span>
+          </span>
+          <span className="inline-flex items-center gap-0.5 min-w-0" title={`어시 ${tourRef.assistantName}`}>
+            <Users className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+            <span className="truncate max-w-[5.5rem]">{tourRef.assistantName}</span>
+          </span>
+          <span className="inline-flex items-center gap-0.5 min-w-0" title={`차량 ${tourRef.vehicleName}`}>
+            <Car className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+            <span className="truncate max-w-[5.5rem]">{tourRef.vehicleName}</span>
+          </span>
         </div>
       </div>
     )
@@ -183,6 +182,135 @@ function standardCategoryCell(row: LedgerDuplicateExpenseRow): string {
   return '—'
 }
 
+function formatUsd(amount: number | null | undefined): string {
+  if (amount == null || !Number.isFinite(amount)) return '—'
+  return `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+}
+
+function MobileField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="text-slate-500 shrink-0">{label}</dt>
+      <dd className="text-slate-900 min-w-0 break-words">{children}</dd>
+    </>
+  )
+}
+
+function LedgerDuplicateRowMobileCard({
+  row,
+  rowIndex,
+  groupIndex,
+  locale,
+  selected,
+  editing,
+  editDraft,
+  editSaving,
+  onToggleDelete,
+  onStartEdit,
+  onCancelEdit,
+  onDraftChange,
+  onSaveEdit,
+  onOpenTour,
+  onOpenReservation
+}: {
+  row: UnifiedLedgerDuplicateExpenseRow
+  rowIndex: number
+  groupIndex: number
+  locale: string
+  selected: boolean
+  editing: boolean
+  editDraft: UnifiedExpenseEditDraft | null
+  editSaving: boolean
+  onToggleDelete: (checked: boolean) => void
+  onStartEdit: () => void
+  onCancelEdit: () => void
+  onDraftChange: (draft: UnifiedExpenseEditDraft) => void
+  onSaveEdit: () => void
+  onOpenTour: (tourId: string) => void
+  onOpenReservation: (reservationId: string) => void
+}) {
+  return (
+    <div
+      className={`rounded-lg border p-3 space-y-2 ${
+        selected ? 'border-red-300 bg-red-50/90' : rowIndex === 0 ? 'border-amber-300 bg-amber-50/80' : 'border-amber-100 bg-white'
+      } ${editing ? 'ring-2 ring-blue-300' : ''}`}
+    >
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 shrink-0 accent-red-600"
+          checked={selected}
+          onChange={(e) => onToggleDelete(e.target.checked)}
+          aria-label={`그룹 ${groupIndex + 1}에서 삭제할 지출 선택`}
+        />
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                rowIndex === 0 ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-800'
+              }`}
+            >
+              {rowIndex === 0 ? '기준' : '비슷'}
+            </span>
+            <span className="text-xs font-semibold text-slate-900">{UNIFIED_EXPENSE_SOURCE_LABEL[row.source_table]}</span>
+          </div>
+          <p className="text-lg font-bold tabular-nums text-slate-900">{formatUsd(row.amount)}</p>
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1.5 text-xs border-t border-amber-100/80 pt-2">
+        <MobileField label="등록일">{row.submit_on ? String(row.submit_on).slice(0, 10) : '—'}</MobileField>
+        <MobileField label="Paid to">{row.paid_to?.trim() || '—'}</MobileField>
+        <MobileField label="Paid for">{row.paid_for?.trim() || '—'}</MobileField>
+        <MobileField label="표준 카테고리">{standardCategoryCell(row)}</MobileField>
+        <MobileField label="결제 방법">{row.display_payment_method}</MobileField>
+        <MobileField label="명세 대조">{row.display_statement_status}</MobileField>
+        <MobileField label="금융 계정">{row.display_financial_account ?? '—'}</MobileField>
+        <MobileField label="지출 ID">
+          <span className="font-mono text-[10px] break-all">{row.id}</span>
+        </MobileField>
+        <dt className="text-slate-500 shrink-0 col-span-2 pt-0.5">참고</dt>
+        <dd className="col-span-2 min-w-0">
+          <LedgerReferenceCell tourRef={row.tour_reference} fallbackText={row.source_context} locale={locale} />
+        </dd>
+      </dl>
+
+      <div className="flex flex-wrap gap-1.5 pt-1">
+        <LedgerDetailLinksCell row={row} onOpenTour={onOpenTour} onOpenReservation={onOpenReservation} />
+        {editing ? (
+          <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" disabled={editSaving} onClick={onCancelEdit}>
+            취소
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            disabled={editSaving}
+            onClick={onStartEdit}
+          >
+            수정
+          </Button>
+        )}
+      </div>
+
+      {editing && editDraft ? (
+        <div className="border-t border-blue-100 pt-2">
+          <UnifiedExpenseInlineEditForm
+            row={row}
+            draft={editDraft}
+            onDraftChange={onDraftChange}
+            saving={editSaving}
+            onSave={onSaveEdit}
+            onCancel={onCancelEdit}
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function CompanyExpenseDuplicateCheckModal({
   open,
   onOpenChange,
@@ -199,13 +327,13 @@ export default function CompanyExpenseDuplicateCheckModal({
   const [statementRows, setStatementRows] = useState<BulkCompanyDuplicateRow[] | null>(null)
   const [ledgerGroups, setLedgerGroups] = useState<UnifiedLedgerDuplicateExpenseRow[][] | null>(null)
   const [deleteKeysByGroup, setDeleteKeysByGroup] = useState<Record<number, string[]>>({})
-  const [actionBusy, setActionBusy] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ deleteKeys: string[] } | null>(null)
   const [tourDetailModalId, setTourDetailModalId] = useState<string | null>(null)
   const [reservationDetailModalId, setReservationDetailModalId] = useState<string | null>(null)
   const [editingSourceKey, setEditingSourceKey] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<UnifiedExpenseEditDraft | null>(null)
   const [editSaving, setEditSaving] = useState(false)
+  const [deletedVaultOpen, setDeletedVaultOpen] = useState(false)
 
   const LEDGER_TABLE_COL_COUNT = 13
 
@@ -289,30 +417,31 @@ export default function CompanyExpenseDuplicateCheckModal({
     })
   }
 
-  async function onMarkGroupDifferent(group: UnifiedLedgerDuplicateExpenseRow[]) {
+  function onMarkGroupDifferent(group: UnifiedLedgerDuplicateExpenseRow[]) {
     const keys = group.map((r) => r.source_key)
     if (keys.length < 2) return
     const fp = keys.length === 2 ? canonPairFingerprint(keys[0]!, keys[1]!) : canonGroupFingerprint(keys)
     const kind = keys.length === 2 ? 'pair' : 'group'
-    setActionBusy(true)
-    setErr(null)
-    try {
-      await insertExpenseDuplicateSuppression({
-        fingerprint: fp,
-        kind,
-        member_keys: [...keys].sort((a, b) => a.localeCompare(b)),
-        created_by: createdByEmail ?? null
-      })
-      toast.success('다른 지출로 기록했습니다. 이 목록에서는 다시 표시되지 않습니다.')
-      removeLedgerKeysFromCurrentList(keys)
-      await reloadLedger()
-      onAfterLedgerMutation?.()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : '저장 실패')
-      toast.error(e instanceof Error ? e.message : '저장 실패')
-    } finally {
-      setActionBusy(false)
-    }
+
+    removeLedgerKeysFromCurrentList(keys)
+    toast.success('다른 지출로 기록했습니다. 이 목록에서는 다시 표시되지 않습니다.')
+
+    void (async () => {
+      try {
+        await insertExpenseDuplicateSuppression({
+          fingerprint: fp,
+          kind,
+          member_keys: [...keys].sort((a, b) => a.localeCompare(b)),
+          created_by: createdByEmail ?? null
+        })
+        onAfterLedgerMutation?.()
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '저장 실패'
+        setErr(msg)
+        toast.error(msg)
+        await reloadLedger()
+      }
+    })()
   }
 
   const cancelExpenseEdit = useCallback(() => {
@@ -347,49 +476,52 @@ export default function CompanyExpenseDuplicateCheckModal({
     [editDraft, cancelExpenseEdit, reloadLedger, onAfterLedgerMutation]
   )
 
-  async function runDeleteSelected(deleteKeys: string[]) {
+  function runDeleteSelected(deleteKeys: string[]) {
     setDeleteConfirm(null)
-    setActionBusy(true)
-    setErr(null)
-    try {
-      for (const k of deleteKeys) {
-        await deleteExpenseBySourceKey(k)
+    const count = deleteKeys.length
+    removeLedgerKeysFromCurrentList(deleteKeys)
+    toast.success(`${count}건을 삭제 보관함으로 옮겼습니다.`)
+
+    void (async () => {
+      try {
+        for (const k of deleteKeys) {
+          await deleteExpenseBySourceKey(k, createdByEmail)
+        }
+        onAfterLedgerMutation?.()
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '삭제 중 오류'
+        setErr(msg)
+        toast.error(msg)
+        await reloadLedger()
       }
-      toast.success(`${deleteKeys.length}건을 삭제했습니다.`)
-      removeLedgerKeysFromCurrentList(deleteKeys)
-      await reloadLedger()
-      onAfterLedgerMutation?.()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : '삭제 중 오류')
-      toast.error(e instanceof Error ? e.message : '삭제 중 오류')
-    } finally {
-      setActionBusy(false)
-    }
+    })()
   }
 
   return (
     <>
       <AlertDialog open={deleteConfirm != null} onOpenChange={(v) => !v && setDeleteConfirm(null)}>
-        <AlertDialogContent className="max-w-lg">
+        <AlertDialogContent className="w-[calc(100vw-1.5rem)] max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-left text-base">선택한 지출 삭제</AlertDialogTitle>
-            <AlertDialogDescription className="text-left text-sm space-y-2">
-              <p>
-                아래에서 선택한 지출만 <strong>영구 삭제</strong>됩니다. 명세 대조 연결이 있으면 함께 해제됩니다.
-              </p>
-              {deleteConfirm && deleteConfirm.deleteKeys.length > 0 ? (
-                <ul className="list-disc pl-4 font-mono text-[11px] break-all text-slate-700">
-                  {deleteConfirm.deleteKeys.map((k) => (
-                    <li key={k}>{k}</li>
-                  ))}
-                </ul>
-              ) : null}
+            <AlertDialogDescription asChild>
+              <div className="text-left text-sm text-muted-foreground space-y-2">
+                <p>
+                  아래에서 선택한 지출은 <strong>삭제 보관함</strong>으로 옮깁니다(복구 가능). 명세 대조 연결이 있으면 함께
+                  해제됩니다.
+                </p>
+                {deleteConfirm && deleteConfirm.deleteKeys.length > 0 ? (
+                  <ul className="list-disc pl-4 font-mono text-[11px] break-all text-slate-700">
+                    {deleteConfirm.deleteKeys.map((k) => (
+                      <li key={k}>{k}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionBusy}>취소</AlertDialogCancel>
+            <AlertDialogCancel>취소</AlertDialogCancel>
             <AlertDialogAction
-              disabled={actionBusy}
               className="bg-red-600 hover:bg-red-700"
               onClick={(ev) => {
                 ev.preventDefault()
@@ -397,7 +529,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                 void runDeleteSelected(deleteConfirm.deleteKeys)
               }}
             >
-              삭제 실행
+              삭제 보관함으로
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -406,25 +538,37 @@ export default function CompanyExpenseDuplicateCheckModal({
       <Dialog
         open={open}
         onOpenChange={(v) => {
-          if (!v && (loading || actionBusy)) return
+          if (!v && loading) return
           onOpenChange(v)
         }}
       >
         <DialogContent
-          className="max-w-[min(96rem,calc(100vw-1.5rem))] w-[calc(100vw-1rem)] max-h-[min(88vh,820px)] flex flex-col gap-0 p-0"
+          className="flex flex-col gap-0 p-0 w-full max-w-none h-[100dvh] max-h-[100dvh] rounded-none sm:rounded-lg sm:w-[calc(100vw-1rem)] sm:max-w-[min(96rem,calc(100vw-1.5rem))] md:max-w-[min(112rem,calc(100vw-1rem))] lg:max-w-[min(120rem,calc(100vw-0.75rem))] sm:h-auto sm:max-h-[min(88vh,820px)] md:max-h-[min(92vh,920px)]"
           onPointerDownOutside={(e) => {
-            if (loading || actionBusy) e.preventDefault()
+            if (loading) e.preventDefault()
           }}
           onEscapeKeyDown={(e) => {
-            if (loading || actionBusy) e.preventDefault()
+            if (loading) e.preventDefault()
           }}
         >
-          <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b border-slate-100 shrink-0 text-left space-y-1">
-            <DialogTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" aria-hidden />
-              {title}
+          <DialogHeader className="px-3 sm:px-4 pt-3 sm:pt-4 pb-2 pr-10 sm:pr-12 border-b border-slate-100 shrink-0 text-left space-y-1">
+            <DialogTitle className="text-sm sm:text-base flex items-start sm:items-center gap-2 leading-snug pr-1">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5 sm:mt-0" aria-hidden />
+              <span>{title}</span>
             </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm text-slate-600">
+            {mode === 'ledger' ? (
+              <details className="sm:hidden text-xs text-slate-600 group">
+                <summary className="cursor-pointer list-none text-blue-700 font-medium marker:content-none [&::-webkit-details-marker]:hidden">
+                  점검 기준 안내
+                  <span className="inline-block ml-1 transition group-open:rotate-180">▾</span>
+                </summary>
+                <p className="mt-2 leading-relaxed">
+                  전체 지출을 금액(±{BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)로 묶습니다. 투어
+                  지출끼리 연결 투어가 다르면 제외합니다. 금액 0은 제외합니다.
+                </p>
+              </details>
+            ) : null}
+            <DialogDescription className="hidden sm:block text-xs sm:text-sm text-slate-600">
               {mode === 'statement' ? (
                 <>
                   명세 <strong>출금·미대조</strong> 후보 줄마다, 금액(±{BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±
@@ -436,9 +580,11 @@ export default function CompanyExpenseDuplicateCheckModal({
                   날짜 필터와 상관없이 <strong>전체 데이터</strong>를 조회합니다. <strong>회사·투어·예약·입장권(확정)</strong> 네
                   종류 지출을 한 풀에 넣어 비교하며,{' '}
                   <strong>같은 테이블 안끼리만이 아니라</strong> 출처가 달라도(예: 회사 지출 ↔ 투어 지출) 금액(±
-                  {BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)이 비슷하면 한 그룹으로 묶습니다.
-                  우연히 겹친 경우 <strong>다른 지출로 숨김</strong>을 남기거나, 동일 거래 중복이면{' '}
-                  <strong>삭제할 지출을 선택해서 삭제</strong>하세요.
+                  {BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)이 비슷하면 한 그룹으로 묶습니다.{' '}
+                  <strong>투어 지출끼리</strong>는 연결된 투어가 다르면 같은 금액·등록일이어도 묶지 않습니다. 우연히 겹친 경우{' '}
+                  <strong>다른 지출로 숨김</strong>을 남기거나, 동일 거래 중복이면{' '}
+                  <strong>삭제할 지출을 선택해 삭제 보관함으로 옮기세요</strong>. 삭제한 지출은{' '}
+                  <strong>삭제된 지출 보관함</strong>에서 복구할 수 있습니다.
                 </>
               )}
             </DialogDescription>
@@ -472,7 +618,41 @@ export default function CompanyExpenseDuplicateCheckModal({
             ) : null}
 
             {!loading && !err && mode === 'statement' && statementRows && statementRows.length > 0 ? (
-              <div className="rounded-md border border-amber-200/90 bg-amber-50/50 overflow-x-auto">
+              <>
+              <div className="md:hidden space-y-3">
+                {statementRows.map((block) =>
+                  block.matches.map((m) => (
+                    <div
+                      key={`${block.proposal.statement_line_id}-${m.id}-m`}
+                      className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2"
+                    >
+                      <div className="flex justify-between gap-2 border-b border-amber-100 pb-2">
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-slate-500">명세</p>
+                          <p className="text-sm font-semibold text-slate-900">{block.proposal.posted_date}</p>
+                          <p className="text-xs text-slate-700 break-words">{block.proposal.line_desc || '—'}</p>
+                        </div>
+                        <p className="text-lg font-bold tabular-nums text-slate-900 shrink-0">
+                          {formatUsd(Number(block.proposal.amount))}
+                        </p>
+                      </div>
+                      <dl className="grid grid-cols-[5rem_1fr] gap-x-2 gap-y-1 text-xs">
+                        <MobileField label="기존 ID">
+                          <span className="font-mono text-[10px]">{m.id.slice(0, 8)}…</span>
+                        </MobileField>
+                        <MobileField label="기존 금액">{formatUsd(m.amount)}</MobileField>
+                        <MobileField label="등록일">{m.submit_on ? String(m.submit_on).slice(0, 10) : '—'}</MobileField>
+                        <MobileField label="Paid to">{m.paid_to?.trim() || '—'}</MobileField>
+                        <MobileField label="Paid for">{m.paid_for?.trim() || '—'}</MobileField>
+                        <MobileField label="상태">{m.status?.trim() || '—'}</MobileField>
+                        <MobileField label="지출↔명세">{linkCell(m)}</MobileField>
+                        <MobileField label="비고">{originCell(m.ledger_expense_origin)}</MobileField>
+                      </dl>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="hidden md:block rounded-md border border-amber-200/90 bg-amber-50/50 overflow-x-auto">
                 <table className="w-full min-w-[72rem] border-collapse text-left">
                   <thead>
                     <tr className="border-b border-amber-200/80 text-slate-600 bg-amber-100/40">
@@ -518,6 +698,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                   </tbody>
                 </table>
               </div>
+              </>
             ) : null}
 
             {!loading && !err && mode === 'ledger' && ledgerGroups && ledgerGroups.length > 0 ? (
@@ -535,40 +716,64 @@ export default function CompanyExpenseDuplicateCheckModal({
                       key={`ledger-group-${gi}-${group.map((r) => r.source_key).join('-')}`}
                       className="rounded-lg border-2 border-amber-400/90 bg-gradient-to-b from-amber-50/90 to-white overflow-hidden shadow-sm ring-1 ring-amber-200/60"
                     >
-                      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-amber-100/90 border-b border-amber-300/80 text-xs text-amber-950">
-                        <span
-                          className="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-full bg-amber-600 px-2 text-[11px] font-bold text-white"
-                          title={`중복 의심 그룹 ${gi + 1}`}
-                        >
-                          {gi + 1}
-                        </span>
-                        <span className="font-semibold">중복 의심 그룹</span>
-                        <span className="text-slate-700">
-                          · {group.length}건 · 금액 근접 {amtLabel}
-                        </span>
-                        <span className="grow" />
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="h-8 text-[11px]"
-                          disabled={actionBusy}
-                          onClick={() => void onMarkGroupDifferent(group)}
-                        >
-                          다른 지출(목록에서 숨김)
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          className="h-8 text-[11px]"
-                          disabled={actionBusy || selectedDeleteKeys.length === 0}
-                          onClick={() => setDeleteConfirm({ deleteKeys: selectedDeleteKeys })}
-                        >
-                          선택한 지출 삭제{selectedDeleteKeys.length > 0 ? ` (${selectedDeleteKeys.length})` : ''}
-                        </Button>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center px-2 sm:px-3 py-2 bg-amber-100/90 border-b border-amber-300/80 text-xs text-amber-950">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                          <span
+                            className="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-full bg-amber-600 px-2 text-[11px] font-bold text-white shrink-0"
+                            title={`중복 의심 그룹 ${gi + 1}`}
+                          >
+                            {gi + 1}
+                          </span>
+                          <span className="font-semibold">중복 의심 그룹</span>
+                          <span className="text-slate-700 text-[11px] sm:text-xs">
+                            · {group.length}건 · {amtLabel}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1.5 w-full sm:w-auto sm:flex-row sm:ml-auto">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="h-9 w-full sm:w-auto text-xs sm:text-[11px]"
+                            onClick={() => onMarkGroupDifferent(group)}
+                          >
+                            다른 지출(숨김)
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            className="h-9 w-full sm:w-auto text-xs sm:text-[11px]"
+                            disabled={selectedDeleteKeys.length === 0}
+                            onClick={() => setDeleteConfirm({ deleteKeys: selectedDeleteKeys })}
+                          >
+                            선택 삭제{selectedDeleteKeys.length > 0 ? ` (${selectedDeleteKeys.length})` : ''}
+                          </Button>
+                        </div>
                       </div>
-                      <div className="overflow-x-auto px-1 pb-2 pt-1">
+                      <div className="md:hidden space-y-2 px-2 pb-2 pt-1">
+                        {group.map((row, ri) => (
+                          <LedgerDuplicateRowMobileCard
+                            key={`${row.source_key}-m`}
+                            row={row}
+                            rowIndex={ri}
+                            groupIndex={gi}
+                            locale={locale}
+                            selected={selectedDeleteKeySet.has(row.source_key)}
+                            editing={editingSourceKey === row.source_key}
+                            editDraft={editingSourceKey === row.source_key ? editDraft : null}
+                            editSaving={editSaving}
+                            onToggleDelete={(checked) => toggleDeleteKey(gi, row.source_key, checked)}
+                            onStartEdit={() => startExpenseEdit(row)}
+                            onCancelEdit={cancelExpenseEdit}
+                            onDraftChange={setEditDraft}
+                            onSaveEdit={() => void saveExpenseEdit(row)}
+                            onOpenTour={setTourDetailModalId}
+                            onOpenReservation={setReservationDetailModalId}
+                          />
+                        ))}
+                      </div>
+                      <div className="hidden md:block overflow-x-auto px-1 pb-2 pt-1">
                         <table className="w-full min-w-[106rem] border-collapse text-left text-[11px]">
                           <thead>
                             <tr className="border-b border-amber-200/90 text-slate-600 bg-amber-50/80">
@@ -670,7 +875,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                                       size="sm"
                                       variant="outline"
                                       className="h-7 text-[10px] px-2"
-                                      disabled={actionBusy || editSaving}
+                                      disabled={editSaving}
                                       onClick={() => startExpenseEdit(row)}
                                     >
                                       수정
@@ -704,8 +909,29 @@ export default function CompanyExpenseDuplicateCheckModal({
             ) : null}
           </div>
 
-          <DialogFooter className="px-4 py-3 border-t border-slate-100 shrink-0">
-            <Button type="button" variant="outline" disabled={loading || actionBusy} onClick={() => onOpenChange(false)}>
+          <DialogFooter className="px-3 sm:px-4 py-3 border-t border-slate-100 shrink-0 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+            {mode === 'ledger' ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-1.5 w-full sm:w-auto h-10"
+                disabled={loading}
+                onClick={() => setDeletedVaultOpen(true)}
+              >
+                <Archive className="h-4 w-4 shrink-0" aria-hidden />
+                삭제된 지출 보관함
+              </Button>
+            ) : (
+              <span className="hidden sm:block" />
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto h-10"
+              disabled={loading}
+              onClick={() => onOpenChange(false)}
+            >
               닫기
             </Button>
           </DialogFooter>
@@ -773,6 +999,17 @@ export default function CompanyExpenseDuplicateCheckModal({
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {mode === 'ledger' ? (
+        <DeletedUnifiedExpensesModal
+          open={deletedVaultOpen}
+          onOpenChange={setDeletedVaultOpen}
+          onRestored={() => {
+            void reloadLedger()
+            onAfterLedgerMutation?.()
+          }}
+        />
+      ) : null}
     </>
   )
 }

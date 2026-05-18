@@ -12,6 +12,16 @@ import type { Database } from '@/lib/database.types'
 export async function getSupabaseForApiRoute(
   request: NextRequest
 ): Promise<SupabaseClient<Database> | NextResponse> {
+  const resolveCookieAuth = async (): Promise<SupabaseClient<Database> | null> => {
+    const cookieClient = await createClient()
+    const {
+      data: { user },
+      error,
+    } = await cookieClient.auth.getUser()
+    if (!error && user) return cookieClient
+    return null
+  }
+
   const authHeader = request.headers.get('authorization')
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7).trim()
@@ -23,17 +33,14 @@ export async function getSupabaseForApiRoute(
       if (!error && user) {
         return createSupabaseClientWithToken(token)
       }
+      // localStorage JWT가 만료·불일치여도 SSR 쿠키 세션이 있으면 사용
+      const cookieClient = await resolveCookieAuth()
+      if (cookieClient) return cookieClient
     }
   }
 
-  const cookieClient = await createClient()
-  const {
-    data: { user },
-    error,
-  } = await cookieClient.auth.getUser()
-  if (!error && user) {
-    return cookieClient
-  }
+  const cookieClient = await resolveCookieAuth()
+  if (cookieClient) return cookieClient
 
   return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
 }

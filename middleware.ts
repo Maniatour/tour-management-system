@@ -9,6 +9,18 @@ const intlMiddleware = createIntlMiddleware({
 })
 
 export async function middleware(req: NextRequest) {
+  const pathname = req.nextUrl.pathname
+
+  // OAuth 콜백: URL hash(#access_token) 유지, next-intl 리다이렉트로 404·이중 locale 방지
+  if (
+    pathname === '/auth/callback' ||
+    /^\/(ko|en)\/auth\/callback\/?$/.test(pathname)
+  ) {
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-pathname', pathname)
+    return NextResponse.next({ request: { headers: requestHeaders } })
+  }
+
   // 정적 파일들은 미들웨어를 건너뛰도록 처리
   if (
     req.nextUrl.pathname.startsWith('/_next/') ||
@@ -46,7 +58,6 @@ export async function middleware(req: NextRequest) {
 
   // 언어 처리 미들웨어 실행
   const response = intlMiddleware(req)
-  const pathname = req.nextUrl.pathname
 
   // 리다이렉트인 경우 그대로 반환 (pathname은 다음 요청에서 설정됨)
   if (response.status >= 300 && response.status < 400) {

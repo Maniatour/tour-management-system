@@ -73,6 +73,8 @@ import {
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 import { cn } from '@/lib/utils'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import { paidForComboboxHelpWhenStandardUnset } from '@/lib/companyExpenseFormCopy'
+import { collectPaidForFromStandardUnsetExpenses } from '@/lib/companyExpensePaidForSuggestions'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
@@ -201,6 +203,8 @@ export default function CompanyExpenseManager({
   const [expenseSuggestions, setExpenseSuggestions] = useState<{
     paid_to: string[]
     paid_for: string[]
+    /** standard_paid_for 미저장 지출에 저장된 paid_for 목록 */
+    paid_for_standard_unset: string[]
   } | null>(null)
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   /** reconciliation_matches에 연결된 회사 지출 id */
@@ -505,14 +509,17 @@ export default function CompanyExpenseManager({
         if (res.ok && json && typeof json === 'object' && !Array.isArray(json)) {
           const paid_to = Array.isArray(json.paid_to) ? json.paid_to.filter((x: unknown) => typeof x === 'string') : []
           const paid_for = Array.isArray(json.paid_for) ? json.paid_for.filter((x: unknown) => typeof x === 'string') : []
-          setExpenseSuggestions({ paid_to, paid_for })
+          const paid_for_standard_unset = Array.isArray(json.paid_for_standard_unset)
+            ? json.paid_for_standard_unset.filter((x: unknown) => typeof x === 'string')
+            : []
+          setExpenseSuggestions({ paid_to, paid_for, paid_for_standard_unset })
         } else {
-          setExpenseSuggestions({ paid_to: [], paid_for: [] })
+          setExpenseSuggestions({ paid_to: [], paid_for: [], paid_for_standard_unset: [] })
           if (!res.ok) toast.error(t('messages.suggestionsLoadError'))
         }
       } catch {
         if (!cancelled) {
-          setExpenseSuggestions({ paid_to: [], paid_for: [] })
+          setExpenseSuggestions({ paid_to: [], paid_for: [], paid_for_standard_unset: [] })
           toast.error(t('messages.suggestionsLoadError'))
         }
       } finally {
@@ -535,7 +542,11 @@ export default function CompanyExpenseManager({
   }, [expenseSuggestions, formData.paid_to])
 
   const unifiedStandardGroups: UnifiedStandardLeafGroup[] = useMemo(
-    () => buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, { includeInactive: true }),
+    () =>
+      buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, {
+        includeInactive: true,
+        labelLanguage: 'en',
+      }),
     [expenseStandardCategories, locale]
   )
 
@@ -563,7 +574,7 @@ export default function CompanyExpenseManager({
   const applyStandardHierarchyLeaf = useCallback(
     (leafId: string) => {
       const byId = new Map(expenseStandardCategories.map((c) => [c.id, c]))
-      const applied = applyStandardLeafToCompanyExpense(leafId, byId)
+      const applied = applyStandardLeafToCompanyExpense(leafId, byId, { paidForLanguage: 'en' })
       if (!applied) return
       setStandardHierarchyLeafId(leafId)
       setFormData((prev) => ({
@@ -706,29 +717,46 @@ export default function CompanyExpenseManager({
     standardHierarchyLeafId,
   ])
 
+  /** 표준 결제 내용 피커가 «선택 안 함»(미저장)일 때 결제 내용 datalist 소스 전환 */
+  const isStandardPaidForUnsetInForm = !standardHierarchyLeafId.trim()
+
   const paidForDatalistOptions = useMemo(() => {
     const s = new Set<string>()
-    expenseSuggestions?.paid_for?.forEach((x) => {
-      if (x) s.add(x)
-    })
-    unifiedFlatLeaves.forEach((o) => {
-      if (o.paidForText) s.add(o.paidForText)
-    })
+    if (isStandardPaidForUnsetInForm) {
+      collectPaidForFromStandardUnsetExpenses(expenseSuggestions, expenses).forEach((x) => s.add(x))
+    } else {
+      expenseSuggestions?.paid_for?.forEach((x) => {
+        if (x) s.add(x)
+      })
+      unifiedFlatLeaves.forEach((o) => {
+        if (o.paidForText) s.add(o.paidForText)
+      })
+    }
     const cur = formData.paid_for.trim()
     if (cur) s.add(cur)
     return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [expenseSuggestions, formData.paid_for, unifiedFlatLeaves])
+  }, [
+    expenseSuggestions,
+    expenses,
+    formData.paid_for,
+    isStandardPaidForUnsetInForm,
+    unifiedFlatLeaves,
+  ])
 
   const paidForFilterOptions = useMemo(() => {
     const s = new Set<string>()
-    expenseSuggestions?.paid_for?.forEach((x) => {
-      if (x && x.trim()) s.add(x.trim())
-    })
+    if (standardPaidForFilter === 'unset') {
+      collectPaidForFromStandardUnsetExpenses(expenseSuggestions, expenses).forEach((x) => s.add(x))
+    } else {
+      expenseSuggestions?.paid_for?.forEach((x) => {
+        if (x && x.trim()) s.add(x.trim())
+      })
+    }
     if (paidForFilter && paidForFilter !== 'all' && paidForFilter.trim()) {
       s.add(paidForFilter.trim())
     }
     return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [expenseSuggestions, paidForFilter])
+  }, [expenseSuggestions, expenses, paidForFilter, standardPaidForFilter])
 
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1416,7 +1444,7 @@ export default function CompanyExpenseManager({
       const q = listQuickField
       if (!q || q.type !== 'standard') return
       const byId = new Map(expenseStandardCategories.map((c) => [c.id, c]))
-      const applied = applyStandardLeafToCompanyExpense(leafId, byId)
+      const applied = applyStandardLeafToCompanyExpense(leafId, byId, { paidForLanguage: 'en' })
       if (!applied) {
         toast.error(t('listQuickEdit.saveError'))
         return
@@ -1837,7 +1865,11 @@ export default function CompanyExpenseManager({
                     ))}
                   </datalist>
                   <p className="text-muted-foreground text-xs mt-1">
-                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.paidForComboboxHelp')}
+                    {suggestionsLoading
+                      ? t('form.suggestionsLoading')
+                      : isStandardPaidForUnsetInForm && unifiedStandardGroups.length > 0
+                        ? paidForComboboxHelpWhenStandardUnset(locale)
+                        : t('form.paidForComboboxHelp')}
                   </p>
                 </div>
               </div>
@@ -2586,31 +2618,13 @@ export default function CompanyExpenseManager({
                   </div>
                 ))}
               </div>
-              {/* 데스크톱: 테이블 — 화면 너비에 맞춤(table-fixed), 가로 스크롤 없음 */}
+              {/* 데스크톱: 열이 많아 가로 스크롤로 전체 표시 */}
               <div className="hidden md:block w-full min-w-0">
+              <div className="overflow-x-auto rounded-lg border border-gray-200/80 [-webkit-overflow-scrolling:touch]">
               <Table
-                wrapperClassName="max-w-full overflow-x-hidden"
-                className="w-full table-fixed border-collapse text-xs [&_th]:h-auto [&_th]:px-1.5 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:leading-tight [&_td]:px-1.5 [&_td]:py-1"
+                wrapperClassName="overflow-visible min-w-0"
+                className="min-w-[1380px] w-full border-collapse text-xs [&_th]:h-auto [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:leading-tight [&_th]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1"
               >
-                <colgroup>
-                  <col style={{ width: '2.2%' }} />
-                  <col style={{ width: '2.2%' }} />
-                  <col style={{ width: '4.8%' }} />
-                  <col style={{ width: '8.5%' }} />
-                  <col style={{ width: '8%' }} />
-                  <col style={{ width: '7.5%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '5.5%' }} />
-                  <col style={{ width: '4%' }} />
-                  <col style={{ width: '4%' }} />
-                  <col style={{ width: '6%' }} />
-                  <col style={{ width: '5.5%' }} />
-                  <col style={{ width: '7.5%' }} />
-                  <col style={{ width: '2.8%' }} />
-                  <col style={{ width: '5.5%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '6%' }} />
-                </colgroup>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-center">
@@ -2648,7 +2662,7 @@ export default function CompanyExpenseManager({
                         onClick={() => handleCompanyTableSort('paid_for')}
                       />
                     </TableHead>
-                    <TableHead className="whitespace-normal align-bottom" title={t('listStandardPaidFor.columnHint')}>
+                    <TableHead className="min-w-[7.5rem] whitespace-normal align-bottom" title={t('listStandardPaidFor.columnHint')}>
                       <TableSortHeaderButton
                         label={t('listStandardPaidFor.column')}
                         active={companyTableSortKey === 'standard_paid_for'}
@@ -2656,7 +2670,7 @@ export default function CompanyExpenseManager({
                         onClick={() => handleCompanyTableSort('standard_paid_for')}
                       />
                     </TableHead>
-                    <TableHead className="align-bottom">
+                    <TableHead className="min-w-[8rem] max-w-[12rem] whitespace-normal align-bottom">
                       <TableSortHeaderButton
                         label="설명"
                         active={companyTableSortKey === 'description'}
@@ -2752,6 +2766,7 @@ export default function CompanyExpenseManager({
                   formatCurrency={formatCurrency}
                 />
               </Table>
+              </div>
               </div>
               {/* 페이지 네비게이션 */}
               {pagination.totalPages > 1 && (

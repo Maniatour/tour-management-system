@@ -12,10 +12,18 @@ import type { ExpenseStatementReconContext, SimilarStatementLineRow, SimilarStat
 import {
   expenseReconciliationAmountTolerance,
   fetchSimilarStatementLinesForExpenseRow,
+  fetchStatementLinesForTicketBookingDateProbe,
   replaceExpenseReconciliationMatch,
   searchStatementLinesAcrossImports,
   sumMatchedAmountAllocatedToSource
 } from '@/lib/expense-reconciliation-similar-lines'
+
+const ACCOUNT_TAB_ALL = '__all__'
+const UNKNOWN_ACCOUNT_TAB_ID = '__unknown_account__'
+
+function accountTabIdForRow(r: SimilarStatementLineRow): string {
+  return r.financial_account_id?.trim() || UNKNOWN_ACCOUNT_TAB_ID
+}
 
 function dedupeStatementLineIdsPreserveOrder(ids: string[]): string[] {
   const seen = new Set<string>()
@@ -187,6 +195,9 @@ export default function ExpenseStatementSimilarLinesModal({
   const [sourceAllocatedSum, setSourceAllocatedSum] = useState<number | null>(null)
   const appendAmountUserEditedRef = useRef(false)
   const headerSelectAllRef = useRef<HTMLInputElement>(null)
+  const [activeAccountTab, setActiveAccountTab] = useState(ACCOUNT_TAB_ALL)
+
+  const ticketDateProbe = context?.ticketBookingDateProbe
 
   const load = useCallback(async () => {
     if (!context) return
@@ -194,13 +205,23 @@ export default function ExpenseStatementSimilarLinesModal({
     setMessage(null)
     setSelectedIdsOrdered([])
     try {
-      const list = await fetchSimilarStatementLinesForExpenseRow(supabase, {
-        dateYmd: context.dateYmd,
-        amount: context.amount,
-        direction: context.direction,
-        matchMode,
-        limit: matchMode === 'amountOnly' ? 200 : 100
-      })
+      const list = ticketDateProbe
+        ? await fetchStatementLinesForTicketBookingDateProbe(supabase, {
+            submitYmd: ticketDateProbe.submitYmd,
+            checkInYmd: ticketDateProbe.checkInYmd,
+            dayWindow: ticketDateProbe.dayWindow,
+            financialAccountId: ticketDateProbe.financialAccountId,
+            direction: context.direction,
+            ledgerAmount: context.amount,
+            limit: 300
+          })
+        : await fetchSimilarStatementLinesForExpenseRow(supabase, {
+            dateYmd: context.dateYmd,
+            amount: context.amount,
+            direction: context.direction,
+            matchMode,
+            limit: matchMode === 'amountOnly' ? 200 : 100
+          })
       setRows(list)
     } catch (e) {
       setMessage(e instanceof Error ? e.message : t('loadError'))
@@ -208,7 +229,7 @@ export default function ExpenseStatementSimilarLinesModal({
     } finally {
       setLoading(false)
     }
-  }, [context, t, matchMode])
+  }, [context, t, matchMode, ticketDateProbe])
 
   useEffect(() => {
     if (open && context) void load()
@@ -226,6 +247,7 @@ export default function ExpenseStatementSimilarLinesModal({
       setAppendAmountStr('')
       setSourceAllocatedSum(null)
       appendAmountUserEditedRef.current = false
+      setActiveAccountTab(ACCOUNT_TAB_ALL)
     }
   }, [open, context, load])
 
@@ -261,10 +283,36 @@ export default function ExpenseStatementSimilarLinesModal({
   const searchQueryTrimmed = rowSearch.trim()
   const isSearchActive = searchQueryTrimmed.length > 0
 
-  const displayRows = useMemo(() => {
+  const sourceRows = useMemo(() => {
     if (!isSearchActive) return rows
     return searchResultRows
   }, [rows, searchResultRows, isSearchActive])
+
+  const accountTabs = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>()
+    for (const r of sourceRows) {
+      const id = accountTabIdForRow(r)
+      const name = r.financial_account_name?.trim() || '—'
+      const cur = map.get(id)
+      if (cur) cur.count += 1
+      else map.set(id, { name, count: 1 })
+    }
+    return [...map.entries()]
+      .map(([id, { name, count }]) => ({ id, name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  }, [sourceRows])
+
+  const visibleRows = useMemo(() => {
+    if (activeAccountTab === ACCOUNT_TAB_ALL) return sourceRows
+    return sourceRows.filter((r) => accountTabIdForRow(r) === activeAccountTab)
+  }, [sourceRows, activeAccountTab])
+
+  const rowById = useMemo(() => {
+    const m = new Map<string, SimilarStatementLineRow>()
+    for (const r of rows) m.set(r.id, r)
+    for (const r of searchResultRows) m.set(r.id, r)
+    return m
+  }, [rows, searchResultRows])
 
   useEffect(() => {
     if (!open || !context) return
@@ -304,16 +352,16 @@ export default function ExpenseStatementSimilarLinesModal({
   }, [rowSearch, open, context, t])
 
   useEffect(() => {
-    setSelectedIdsOrdered((prev) => prev.filter((id) => displayRows.some((r) => r.id === id)))
-  }, [displayRows])
+    setSelectedIdsOrdered((prev) => prev.filter((id) => visibleRows.some((r) => r.id === id)))
+  }, [visibleRows])
 
   const toggleLineId = useCallback((id: string) => {
     setSelectedIdsOrdered((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }, [])
 
   const allVisibleSelected =
-    displayRows.length > 0 && displayRows.every((r) => selectedIdsOrdered.includes(r.id))
-  const someVisibleSelected = displayRows.some((r) => selectedIdsOrdered.includes(r.id))
+    visibleRows.length > 0 && visibleRows.every((r) => selectedIdsOrdered.includes(r.id))
+  const someVisibleSelected = visibleRows.some((r) => selectedIdsOrdered.includes(r.id))
 
   useEffect(() => {
     const el = headerSelectAllRef.current
@@ -322,22 +370,22 @@ export default function ExpenseStatementSimilarLinesModal({
 
   const toggleAllVisible = useCallback(() => {
     if (allVisibleSelected) {
-      setSelectedIdsOrdered((prev) => prev.filter((id) => !displayRows.some((r) => r.id === id)))
+      setSelectedIdsOrdered((prev) => prev.filter((id) => !visibleRows.some((r) => r.id === id)))
     } else {
       setSelectedIdsOrdered((prev) => {
         const next = [...prev]
-        for (const r of displayRows) {
+        for (const r of visibleRows) {
           if (!next.includes(r.id)) next.push(r.id)
         }
         return next
       })
     }
-  }, [allVisibleSelected, displayRows])
+  }, [allVisibleSelected, visibleRows])
 
   const primarySelectedId = selectedIdsOrdered[0] ?? null
   const selectedRow = useMemo(
-    () => (primarySelectedId ? displayRows.find((r) => r.id === primarySelectedId) ?? null : null),
-    [displayRows, primarySelectedId]
+    () => (primarySelectedId ? rowById.get(primarySelectedId) ?? null : null),
+    [rowById, primarySelectedId]
   )
 
   const ledgerTotalAbs = context ? Math.abs(context.amount) : 0
@@ -390,7 +438,7 @@ export default function ExpenseStatementSimilarLinesModal({
       const email = user.email
 
       if (!appendLink) {
-        const row = displayRows.find((r) => r.id === ordered[0])
+        const row = rowById.get(ordered[0]!)
         if (!row) {
           setMessage(t('saveError'))
           return
@@ -417,7 +465,7 @@ export default function ExpenseStatementSimilarLinesModal({
       }
 
       if (ordered.length === 1) {
-        const row = displayRows.find((r) => r.id === ordered[0])
+        const row = rowById.get(ordered[0]!)
         if (!row) {
           setMessage(t('saveError'))
           return
@@ -445,7 +493,7 @@ export default function ExpenseStatementSimilarLinesModal({
       }
 
       for (const lineId of ordered) {
-        const row = displayRows.find((r) => r.id === lineId)
+        const row = rowById.get(lineId)
         if (!row) continue
 
         const allocated = await sumMatchedAmountAllocatedToSource(supabase, context.sourceTable, context.sourceId)
@@ -509,6 +557,32 @@ export default function ExpenseStatementSimilarLinesModal({
     paymentMethodFinancialAccountNameByMethodKey
   ])
 
+  const preferredAccountTabId = useMemo(() => {
+    const probeId = ticketDateProbe?.financialAccountId?.trim()
+    if (probeId && accountTabs.some((tab) => tab.id === probeId)) return probeId
+    const linkedName = linkedFinancialAccountDisplay?.trim()
+    if (linkedName) {
+      const byName = accountTabs.find((tab) => tab.name === linkedName)
+      if (byName) return byName.id
+    }
+    if (accountTabs.length === 1) return accountTabs[0]!.id
+    return ACCOUNT_TAB_ALL
+  }, [ticketDateProbe?.financialAccountId, accountTabs, linkedFinancialAccountDisplay])
+
+  useEffect(() => {
+    if (!open) return
+    setActiveAccountTab(preferredAccountTabId)
+  }, [open, context?.sourceId, preferredAccountTabId])
+
+  useEffect(() => {
+    if (activeAccountTab === ACCOUNT_TAB_ALL) return
+    if (!accountTabs.some((tab) => tab.id === activeAccountTab)) {
+      setActiveAccountTab(ACCOUNT_TAB_ALL)
+    }
+  }, [activeAccountTab, accountTabs])
+
+  const showAccountTabs = accountTabs.length > 0
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] w-full max-w-[min(96vw,72rem)] flex flex-col">
@@ -566,7 +640,18 @@ export default function ExpenseStatementSimilarLinesModal({
               </p>
             ) : null}
             <p className="text-[11px] text-muted-foreground leading-snug">
-              {matchMode === 'amountOnly' ? t('amountOnlyModeHint') : t('dateProximityModeHint')}
+              {ticketDateProbe
+                ? t('ticketBookingDateProbeHint', {
+                    window: ticketDateProbe.dayWindow ?? 3,
+                    submit: ticketDateProbe.submitYmd || '—',
+                    checkIn: ticketDateProbe.checkInYmd || '—',
+                    account: ticketDateProbe.financialAccountId
+                      ? t('ticketBookingDateProbeAccountLinked')
+                      : t('ticketBookingDateProbeAccountAll')
+                  })
+                : matchMode === 'amountOnly'
+                  ? t('amountOnlyModeHint')
+                  : t('dateProximityModeHint')}
             </p>
             <p className="text-[11px] text-muted-foreground leading-snug">{t('searchGlobalHint')}</p>
             <label className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground leading-snug">
@@ -615,28 +700,32 @@ export default function ExpenseStatementSimilarLinesModal({
 
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between mb-2">
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={matchMode === 'dateProximity' ? 'default' : 'outline'}
-              disabled={loading || !context}
-              onClick={() => {
-                setMatchMode('dateProximity')
-              }}
-            >
-              {t('matchModeDateProximity')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={matchMode === 'amountOnly' ? 'default' : 'outline'}
-              disabled={loading || !context}
-              onClick={() => {
-                setMatchMode('amountOnly')
-              }}
-            >
-              {t('matchModeAmountOnly')}
-            </Button>
+            {!ticketDateProbe ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={matchMode === 'dateProximity' ? 'default' : 'outline'}
+                  disabled={loading || !context}
+                  onClick={() => {
+                    setMatchMode('dateProximity')
+                  }}
+                >
+                  {t('matchModeDateProximity')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={matchMode === 'amountOnly' ? 'default' : 'outline'}
+                  disabled={loading || !context}
+                  onClick={() => {
+                    setMatchMode('amountOnly')
+                  }}
+                >
+                  {t('matchModeAmountOnly')}
+                </Button>
+              </>
+            ) : null}
           </div>
           <div className="flex-1 min-w-[10rem] max-w-md">
             <Input
@@ -649,14 +738,58 @@ export default function ExpenseStatementSimilarLinesModal({
             />
           </div>
         </div>
+        {showAccountTabs ? (
+          <div
+            className="mb-2 flex gap-1 overflow-x-auto border-b border-gray-200 pb-0.5"
+            role="tablist"
+            aria-label={t('accountTabsLabel')}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeAccountTab === ACCOUNT_TAB_ALL}
+              onClick={() => setActiveAccountTab(ACCOUNT_TAB_ALL)}
+              className={`shrink-0 rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeAccountTab === ACCOUNT_TAB_ALL
+                  ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px'
+                  : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              {t('accountTabAll', { count: sourceRows.length })}
+            </button>
+            {accountTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeAccountTab === tab.id}
+                onClick={() => setActiveAccountTab(tab.id)}
+                className={`shrink-0 max-w-[14rem] truncate rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeAccountTab === tab.id
+                    ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px'
+                    : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+                title={tab.name}
+              >
+                {t('accountTabNamed', { name: tab.name, count: tab.count })}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {!loading && !isSearchActive && rows.length > 0 ? (
           <p className="text-[11px] text-muted-foreground mb-1.5 tabular-nums">
-            {t('similarCandidatesCount', { count: rows.length })}
+            {t('similarCandidatesCount', { count: visibleRows.length })}
+            {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
+              ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
+              : ''}
           </p>
         ) : null}
         {isSearchActive && !searchLoading ? (
           <p className="text-[11px] text-muted-foreground mb-1.5 tabular-nums">
-            {t('searchResultsCount', { count: searchResultRows.length })}
+            {t('searchResultsCount', { count: visibleRows.length })}
+            {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
+              ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
+              : ''}
           </p>
         ) : null}
 
@@ -690,8 +823,8 @@ export default function ExpenseStatementSimilarLinesModal({
             <div className="p-6 text-center text-sm text-muted-foreground">{t('loading')}</div>
           ) : !isSearchActive && rows.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">{t('empty')}</div>
-          ) : displayRows.length === 0 ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">{t('noSearchResults')}</div>
+          ) : visibleRows.length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted-foreground">{isSearchActive ? t('noSearchResults') : t('accountTabEmpty')}</div>
           ) : (
             <table className="min-w-full text-sm">
               <thead className="bg-muted sticky top-0 z-[1]">
@@ -716,7 +849,7 @@ export default function ExpenseStatementSimilarLinesModal({
                 </tr>
               </thead>
               <tbody>
-                {displayRows.map((r) => (
+                {visibleRows.map((r) => (
                   <tr
                     key={r.id}
                     className={`border-t cursor-pointer hover:bg-muted/50 ${

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
+import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
 import { Database } from '@/lib/database.types'
 
 type CompanyExpenseUpdate = Database['public']['Tables']['company_expenses']['Update']
@@ -35,6 +36,7 @@ export async function GET(
         )
       `)
       .eq('id', id)
+      .is('deleted_at', null)
       .single()
 
     if (error) {
@@ -198,14 +200,17 @@ export async function DELETE(
       return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
     }
 
-    const { error } = await supabase.from('company_expenses').delete().eq('id', id)
-
-    if (error) {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser()
+    try {
+      await softDeleteExpenseRecord(supabase, 'company_expenses', id, user?.email ?? null)
+    } catch (error) {
       console.error('회사 지출 삭제 오류:', error)
       return NextResponse.json({ error: '회사 지출을 삭제할 수 없습니다.' }, { status: 500 })
     }
 
-    return NextResponse.json({ message: '회사 지출이 삭제되었습니다.' })
+    return NextResponse.json({ message: '회사 지출이 삭제 보관함으로 옮겨졌습니다.' })
   } catch (error) {
     console.error('회사 지출 삭제 오류:', error)
     return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })

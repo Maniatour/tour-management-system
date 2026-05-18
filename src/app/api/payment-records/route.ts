@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  createSupabaseClientWithToken,
-  supabaseAdmin,
-} from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 
 // 입금 내역 조회
@@ -11,25 +9,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const reservationId = searchParams.get('reservation_id')
 
-    // Authorization 헤더에서 토큰 확인
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
+    const db = await getSupabaseForApiRoute(request)
+    if (db instanceof NextResponse) return db
 
-    const token = authHeader.split(' ')[1]
-
-    // 요청별 JWT 클라이언트로 인증·조회 (전역 supabase 싱글톤 + getUser(token) 동시 요청 시 경합 방지)
-    const db = createSupabaseClientWithToken(token)
-    const {
-      data: { user },
-      error: authError,
-    } = await db.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    // 입금 내역 조회 — 브라우저 세션과 동일한 RLS가 적용되도록 사용자 JWT 클라이언트 사용
     try {
       let query = db
         .from('payment_records')
@@ -54,7 +36,6 @@ export async function GET(request: NextRequest) {
     }
   } catch (error) {
     console.error('입금 내역 조회 오류:', error)
-    // HTML 500(비JSON)으로 클라이언트가 깨지지 않도록 항상 JSON. 개발 서버 .next 손상 시에도 UI는 동작.
     return NextResponse.json({ paymentRecords: [], degraded: true })
   }
 }
@@ -63,21 +44,20 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { 
-      reservation_id, 
+    const {
+      reservation_id,
       payment_status = 'pending',
-      amount, 
-      payment_method, 
-      note, 
+      amount,
+      payment_method,
+      note,
       image_file_url,
-      amount_krw 
+      amount_krw,
     } = body
 
     const parsedAmount =
       amount !== null && amount !== undefined && amount !== ''
         ? parseFloat(String(amount))
         : Number.NaN
-    // Required fields; amount must be finite and > 0
     if (
       !reservation_id ||
       payment_method == null ||
@@ -88,24 +68,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
     }
 
-    // Authorization 헤더에서 토큰 확인
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
+    const userDb = await getSupabaseForApiRoute(request)
+    if (userDb instanceof NextResponse) return userDb
 
-    const token = authHeader.split(' ')[1]
-
-    const userDb = createSupabaseClientWithToken(token)
     const {
       data: { user },
       error: authError,
-    } = await userDb.auth.getUser(token)
-    if (authError || !user) {
+    } = await userDb.auth.getUser()
+    if (authError || !user?.email) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    // RLS: anon 은 payment_records 접근 불가 — PUT/[id] 와 동일하게 서비스 롤 또는 사용자 JWT
     const db = supabaseAdmin ?? userDb
 
     const { data: newPaymentRecord, error } = await db
@@ -118,8 +91,8 @@ export async function POST(request: NextRequest) {
         payment_method,
         note: note || null,
         image_file_url: image_file_url || null,
-        submit_by: user.email!,
-        amount_krw: amount_krw ? parseFloat(amount_krw) : null
+        submit_by: user.email,
+        amount_krw: amount_krw ? parseFloat(amount_krw) : null,
       })
       .select('*')
       .single()

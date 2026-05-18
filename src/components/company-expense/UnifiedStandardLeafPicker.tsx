@@ -11,7 +11,54 @@ import {
   unifiedStandardTriggerLabel,
   type UnifiedStandardLeafGroup,
   type UnifiedStandardLeafItem,
+  type UnifiedStandardTreeRow,
 } from '@/lib/companyExpenseStandardUnified'
+
+function leafIndentClass(depth: number): string {
+  if (depth <= 0) return 'pl-3'
+  if (depth === 1) return 'pl-6'
+  if (depth === 2) return 'pl-10'
+  return 'pl-14'
+}
+
+function filterGroupRows(
+  g: UnifiedStandardLeafGroup,
+  q: string
+): UnifiedStandardTreeRow[] {
+  const rows = g.rows?.length ? g.rows : g.items.map((it) => ({ type: 'leaf' as const, item: it, depth: 1 }))
+  if (!q) return rows
+  const headerHit = g.groupLabel.toLowerCase().includes(q)
+  if (headerHit) return rows
+  const matchedLeafIds = new Set(
+    g.items
+      .filter(
+        (it) => it.searchText.includes(q) || it.displayLabel.toLowerCase().includes(q)
+      )
+      .map((it) => it.id)
+  )
+  if (matchedLeafIds.size === 0) return []
+  const out: UnifiedStandardTreeRow[] = []
+  let pendingBranches: UnifiedStandardTreeRow[] = []
+  const flushBranches = () => {
+    if (pendingBranches.length > 0) {
+      out.push(...pendingBranches)
+      pendingBranches = []
+    }
+  }
+  for (const row of rows) {
+    if (row.type === 'branch') {
+      pendingBranches.push(row)
+      continue
+    }
+    if (matchedLeafIds.has(row.item.id)) {
+      flushBranches()
+      out.push(...pendingBranches)
+      pendingBranches = []
+      out.push(row)
+    }
+  }
+  return out
+}
 
 export type UnifiedStandardLeafPickerProps = {
   groups: UnifiedStandardLeafGroup[]
@@ -64,19 +111,10 @@ export function UnifiedStandardLeafPicker({
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    const out: { group: UnifiedStandardLeafGroup; items: UnifiedStandardLeafItem[] }[] = []
+    const out: { group: UnifiedStandardLeafGroup; rows: UnifiedStandardTreeRow[] }[] = []
     for (const g of groups) {
-      if (!q) {
-        out.push({ group: g, items: g.items })
-        continue
-      }
-      const headerHit = g.groupLabel.toLowerCase().includes(q)
-      const matched = headerHit
-        ? g.items
-        : g.items.filter(
-            (it) => it.searchText.includes(q) || it.displayLabel.toLowerCase().includes(q)
-          )
-      if (matched.length > 0) out.push({ group: g, items: matched })
+      const rows = filterGroupRows(g, q)
+      if (rows.length > 0) out.push({ group: g, rows })
     }
     return out
   }, [groups, searchQuery])
@@ -205,11 +243,15 @@ export function UnifiedStandardLeafPicker({
                   {t('unifiedStandardSearchEmpty')}
                 </div>
               ) : (
-                filtered.map(({ group: g, items }) => {
+                filtered.map(({ group: g, rows }) => {
                   const chrome = unifiedStandardGroupSelectChrome(g.rootId)
-                  const soleRoot = items.length === 1 && items[0].id === g.rootId
-                  if (soleRoot) {
-                    const it0 = items[0]
+                  const soleRoot =
+                    g.items.length === 1 &&
+                    g.items[0].id === g.rootId &&
+                    rows.length === 1 &&
+                    rows[0].type === 'leaf'
+                  if (soleRoot && rows[0].type === 'leaf') {
+                    const it0 = rows[0].item
                     const selected = value === it0.id
                     return (
                       <button
@@ -242,7 +284,22 @@ export function UnifiedStandardLeafPicker({
                       >
                         {g.groupLabel}
                       </div>
-                      {items.map((it) => {
+                      {rows.map((row) => {
+                        if (row.type === 'branch') {
+                          return (
+                            <div
+                              key={`branch-${row.id}`}
+                              role="presentation"
+                              className={cn(
+                                'py-1.5 pr-3 text-xs font-semibold text-muted-foreground',
+                                leafIndentClass(row.depth)
+                              )}
+                            >
+                              {row.label}
+                            </div>
+                          )
+                        }
+                        const it = row.item
                         const selected = value === it.id
                         return (
                           <button
@@ -252,7 +309,8 @@ export function UnifiedStandardLeafPicker({
                             aria-selected={selected}
                             onMouseDown={(e) => e.preventDefault()}
                             className={cn(
-                              'w-full border-0 py-2 pl-10 pr-3 text-left text-sm hover:bg-gray-50',
+                              'w-full border-0 py-2 pr-3 text-left text-sm hover:bg-gray-50',
+                              leafIndentClass(row.depth),
                               selected && 'bg-blue-50'
                             )}
                             onClick={() => pick(it.id)}

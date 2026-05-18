@@ -4,8 +4,9 @@ import { useLocale, useTranslations } from 'next-intl'
 import { formatTicketBookingStatusLabel, getTicketBookingStatusBadgeClass } from '@/lib/ticketBookingStatus'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
-/** 간단히 보기(집계) 시 시간·인원·예약번호·RN#을 줄 단위로 표시하기 위한 한 줄 데이터 */
+/** 간단히 보기(집계) 시 체크인·시간·인원·예약번호를 줄 단위로 표시하기 위한 한 줄 데이터 */
 export interface TicketBookingDetailRow {
+  check_in_date: string | null
   time: string | null
   ea: number
   reservation_id: string | null
@@ -19,14 +20,86 @@ interface LocalTicketBooking {
   status?: string | null
   company?: string | null
   category?: string | null
+  check_in_date?: string | null
   time?: string | null
   ea?: number | null
   expense?: number | null
   rn_number?: string | null
   invoice_number?: string | null
   deletion_requested_at?: string | null
-  /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
+  /** 간단히 보기 시 회사별 하위 행 */
   bookingDetails?: TicketBookingDetailRow[]
+}
+
+function formatTicketCheckInYmd(raw: string | null | undefined): string | null {
+  if (raw == null || String(raw).trim() === '') return null
+  const s = String(raw).trim()
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1] : s
+}
+
+function formatTicketTimeHm(raw: string | null | undefined): string | null {
+  if (raw == null || raw === '') return null
+  return typeof raw === 'string' ? raw.substring(0, 5) : String(raw)
+}
+
+function TicketBookingInfoBadges({
+  checkInDate,
+  time,
+  ea,
+  reservationId,
+  peopleLabel,
+  checkInLabel,
+  timeLabel,
+  reservationLabel,
+}: {
+  checkInDate: string | null
+  time: string | null
+  ea: number
+  reservationId: string | null
+  peopleLabel: string
+  checkInLabel: string
+  timeLabel: string
+  reservationLabel: string
+}) {
+  const dateYmd = formatTicketCheckInYmd(checkInDate)
+  const timeHm = formatTicketTimeHm(time)
+  const resId = reservationId?.trim() || null
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {dateYmd ? (
+        <span
+          className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-900"
+          title={checkInLabel}
+        >
+          {dateYmd}
+        </span>
+      ) : null}
+      {timeHm ? (
+        <span
+          className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-950"
+          title={timeLabel}
+        >
+          {timeHm}
+        </span>
+      ) : null}
+      <span
+        className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-800"
+        title={peopleLabel}
+      >
+        {ea} {peopleLabel}
+      </span>
+      {resId ? (
+        <span
+          className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-mono text-xs font-medium text-violet-900"
+          title={reservationLabel}
+        >
+          #{resId}
+        </span>
+      ) : null}
+    </div>
+  )
 }
 
 interface LocalTourHotelBooking {
@@ -79,6 +152,13 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
   const t = useTranslations('tours.bookingManagement')
   const tCal = useTranslations('booking.calendar')
   const locale = useLocale()
+
+  const badgeLabels = {
+    checkIn: t('checkIn'),
+    time: t('time'),
+    people: t('people'),
+    reservation: t('reservationId'),
+  }
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
@@ -170,55 +250,75 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                         )}
                       </div>
                       
-                      {/* 두 번째 줄: 상세보기 = 카테고리/시간/인원/예약번호, 간단히 보기 = 줄마다 "시간 인원 #예약번호" */}
-                      <div className="text-xs text-gray-500">
+                      {/* 두 번째 줄: 체크인·시간·인원·예약번호 뱃지 */}
+                      <div className="text-xs">
                         {isAggregated && booking.bookingDetails && booking.bookingDetails.length > 0 ? (
-                          <div className="space-y-0.5">
+                          <div className="space-y-1.5">
                             {booking.bookingDetails.map((row, i) => (
-                              <div key={i} className="flex items-center gap-x-2">
-                                <span>{row.time ?? '–'}</span>
-                                <span>{row.ea} {t('people')}</span>
-                                {row.reservation_id && (
-                                  <span className="font-mono">#{row.reservation_id}</span>
-                                )}
-                                {row.rn_number && (
-                                  <span className="font-mono">{t('rnNumber')}: {row.rn_number}</span>
-                                )}
-                                {row.invoice_number?.trim() && (
-                                  <span className="font-mono">Invoice#: {row.invoice_number}</span>
-                                )}
+                              <div key={i} className="flex flex-wrap items-center justify-between gap-1">
+                                <TicketBookingInfoBadges
+                                  checkInDate={row.check_in_date}
+                                  time={row.time}
+                                  ea={row.ea}
+                                  reservationId={row.reservation_id}
+                                  peopleLabel={badgeLabels.people}
+                                  checkInLabel={badgeLabels.checkIn}
+                                  timeLabel={badgeLabels.time}
+                                  reservationLabel={badgeLabels.reservation}
+                                />
+                                <span className="flex flex-wrap items-center gap-1 text-[10px] text-gray-500">
+                                  {row.rn_number ? (
+                                    <span className="rounded-full border border-gray-200 bg-white px-1.5 py-0.5 font-mono">
+                                      {t('rnNumber')}: {row.rn_number}
+                                    </span>
+                                  ) : null}
+                                  {row.invoice_number?.trim() ? (
+                                    <span className="rounded-full border border-gray-200 bg-white px-1.5 py-0.5 font-mono">
+                                      Inv: {row.invoice_number}
+                                    </span>
+                                  ) : null}
+                                </span>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                              {!isAggregated && (
-                                <span className="font-medium text-gray-700">
-                                  {booking.category || 'N/A'}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1 space-y-1">
+                              {!isAggregated && booking.category ? (
+                                <span className="block text-[11px] font-medium text-gray-600">
+                                  {booking.category}
                                 </span>
-                              )}
-                              {booking.time != null && booking.time !== '' && (
-                                <span>{typeof booking.time === 'string' ? booking.time.substring(0, 5) : booking.time}</span>
-                              )}
-                              <span>
-                                {booking.ea || 0} {t('people')}
-                              </span>
-                              {booking.reservation_id != null && booking.reservation_id !== '' && (
-                                <span className="font-mono">{booking.reservation_id}</span>
-                              )}
-                              {!isAggregated && booking.rn_number && (
-                                <span>#{booking.rn_number}</span>
-                              )}
-                              {!isAggregated && booking.invoice_number?.trim() && (
-                                <span className="font-mono">Inv: {booking.invoice_number}</span>
-                              )}
+                              ) : null}
+                              <TicketBookingInfoBadges
+                                checkInDate={booking.check_in_date ?? null}
+                                time={booking.time ?? null}
+                                ea={booking.ea || 0}
+                                reservationId={booking.reservation_id ?? null}
+                                peopleLabel={badgeLabels.people}
+                                checkInLabel={badgeLabels.checkIn}
+                                timeLabel={badgeLabels.time}
+                                reservationLabel={badgeLabels.reservation}
+                              />
+                              {!isAggregated && (booking.rn_number || booking.invoice_number?.trim()) ? (
+                                <div className="flex flex-wrap items-center gap-1 text-[10px] text-gray-500">
+                                  {booking.rn_number ? (
+                                    <span className="rounded-full border border-gray-200 bg-white px-1.5 py-0.5 font-mono">
+                                      {t('rnNumber')}: {booking.rn_number}
+                                    </span>
+                                  ) : null}
+                                  {booking.invoice_number?.trim() ? (
+                                    <span className="rounded-full border border-gray-200 bg-white px-1.5 py-0.5 font-mono">
+                                      Inv: {booking.invoice_number}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
-                            {!isAggregated && booking.expense && booking.expense > 0 && (
-                              <span className="font-semibold text-green-600">
+                            {!isAggregated && booking.expense && booking.expense > 0 ? (
+                              <span className="shrink-0 font-semibold text-green-600">
                                 ${booking.expense.toFixed(2)}
                               </span>
-                            )}
+                            ) : null}
                           </div>
                         )}
                       </div>

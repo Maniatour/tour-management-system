@@ -800,51 +800,51 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         <>
 
       {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
               <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 예약</p>
-              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{statisticsData.totalReservations.toLocaleString()}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 예약</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">{statisticsData.totalReservations.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
               <Users className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 인원</p>
-              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{statisticsData.totalPeople.toLocaleString()}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 인원</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">{statisticsData.totalPeople.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-yellow-100 rounded-lg flex-shrink-0">
               <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">예상 수익</p>
-              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">${statisticsData.totalRevenue.toLocaleString()}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">예상 수익</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">${statisticsData.totalRevenue.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
               <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">확정 예약</p>
-              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">확정 예약</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">
                 {statisticsData.statusStats.find(s => s.status?.toLowerCase() === 'confirmed')?.count || 0}
               </p>
             </div>

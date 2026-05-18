@@ -45,7 +45,11 @@ import {
   AlertTriangle
 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
-import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
+import {
+  replaceExpenseReconciliationMatch,
+  syncStatementLineMatchedStatus,
+  type ExpenseReconSourceTable
+} from '@/lib/expense-reconciliation-similar-lines'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 
 /** getSession()은 세션 갱신·Strict Mode 등으로 Abort 되어 "signal is aborted"가 날 수 있음 — 저장된 JWT 우선 */
@@ -217,6 +221,10 @@ type ExpenseOption = {
   label: string
   amount: number
   submit_on: string
+  /** ticket_bookings — 체크인일(YMD). 피커·검색·명세일 비교에 우선 사용 */
+  check_in_date_ymd?: string | null
+  /** ticket_bookings — RN# (검색용) */
+  rn_number?: string | null
   paid_to: string
   paid_for: string
   description: string | null
@@ -333,7 +341,12 @@ type AutoMatchCandidateOption = {
   source_table: ExpenseCandidate['source_table']
   source_id: string
   expense_label: string
+  /** 명세일 비교·정렬용 — 등록·체크인 중 명세에 더 가까운 날짜 */
   expense_registered_date: string
+  /** 등록일(submit_on) YMD */
+  expense_submit_ymd: string
+  /** 입장권·호텔 체크인일 YMD (없으면 null) */
+  expense_check_in_ymd: string | null
   expense_amount: number
   expense_paid_to: string
   expense_paid_for: string
@@ -485,6 +498,30 @@ function autoMatchDisplayDateForLine(postedDate: string, expense: AutoMatchExpen
   const d0 = dayDiffFromYmd(expense.occurred_at, postedDate)
   const d1 = dayDiffFromYmd(alt, postedDate)
   return d1 < d0 ? alt : expense.occurred_at
+}
+
+/** 자동 매칭 미리보기 — 등록일·체크인일 분리(입장권·호텔) */
+function autoMatchSubmitAndCheckInYmd(expense: AutoMatchExpenseCandidate): {
+  submitYmd: string
+  checkInYmd: string | null
+} {
+  const occurred = autoMatchComparableYmd(expense.occurred_at)
+  const altRaw = expense.auto_match_alt_ymd?.trim() ?? ''
+  const alt = altRaw.length >= 10 ? altRaw.slice(0, 10) : null
+  if (expense.source_table === 'ticket_bookings') {
+    return { submitYmd: occurred, checkInYmd: alt }
+  }
+  if (expense.source_table === 'tour_hotel_bookings') {
+    return { submitYmd: alt ?? occurred, checkInYmd: occurred || alt }
+  }
+  return { submitYmd: occurred, checkInYmd: null }
+}
+
+function formatAutoMatchCandidateDates(submitYmd: string, checkInYmd: string | null): string {
+  const reg = submitYmd.length >= 10 ? formatExpenseSubmitOnUsMdY(submitYmd) : submitYmd || '—'
+  if (!checkInYmd || checkInYmd.length < 10) return reg
+  if (checkInYmd.slice(0, 10) === submitYmd.slice(0, 10)) return reg
+  return `${reg} · 체크인 ${formatExpenseSubmitOnUsMdY(checkInYmd)}`
 }
 
 /** 금액·거래일 근접만 반영 (텍스트·라벨·결제수단은 사용하지 않음) */
@@ -676,6 +713,125 @@ async function fetchAllTicketBookingsForAutoMatchMerged(
     m.set(id, prev ? { ...prev, ...r } : r)
   }
   return [...m.values()]
+}
+
+/** 자동 매칭 — 입장권 체크인일 DB 조회 구간(등록일 조회와 별도, 명세·대상 줄 거래일 ±4일 합집합) */
+function ticketCheckInYmdRangeForAutoMatch(
+  periodStartYmd: string,
+  periodEndYmd: string,
+  statementLines: { posted_date?: string | null }[],
+  amountMode: AutoMatchAmountMode
+): { startYmd: string; endYmd: string } {
+  const periodPad =
+    amountMode === 'amount_only'
+      ? AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS
+      : AUTO_MATCH_EXACT_DAY_WINDOW
+  const linePad = AUTO_MATCH_EXACT_DAY_WINDOW
+  let startYmd = addCalendarDaysYmd(periodStartYmd, -periodPad)
+  let endYmd = addCalendarDaysYmd(periodEndYmd, periodPad)
+  for (const line of statementLines) {
+    const ymd = statementLinePostedYmd(line)
+    if (ymd.length < 10) continue
+    const s = addCalendarDaysYmd(ymd, -linePad)
+    const e = addCalendarDaysYmd(ymd, linePad)
+    if (s < startYmd) startYmd = s
+    if (e > endYmd) endYmd = e
+  }
+  return { startYmd, endYmd }
+}
+
+/** 지출 연결·미매칭 후보 — 입장권은 등록일·체크인일 창을 합쳐 조회 */
+async function fetchTicketBookingsForExpensePickerMerged(
+  startIso: string,
+  endIso: string,
+  startYmd: string,
+  endYmd: string
+): Promise<Record<string, unknown>[]> {
+  const sel = 'id,expense,submit_on,check_in_date,category,company,payment_method,rn_number'
+  const fetchBy = async (
+    column: 'submit_on' | 'check_in_date',
+    start: string,
+    end: string
+  ): Promise<Record<string, unknown>[]> => {
+    const out: Record<string, unknown>[] = []
+    let from = 0
+    for (;;) {
+      const q = supabase
+        .from('ticket_bookings')
+        .select(sel)
+        .gte(column, start)
+        .lte(column, end)
+        .order(column, { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
+      const { data, error } = await q
+      if (error) {
+        if (!isAbortLikeError(error)) console.error(`expense-picker ticket_bookings by ${column}:`, error)
+        throw error
+      }
+      const batch = (data as Record<string, unknown>[]) || []
+      out.push(...batch)
+      if (batch.length < STATEMENT_LINES_FETCH_PAGE) break
+      from += STATEMENT_LINES_FETCH_PAGE
+    }
+    return out
+  }
+  const [bySubmit, byCheckIn] = await Promise.all([
+    fetchBy('submit_on', startIso, endIso),
+    fetchBy('check_in_date', startYmd, endYmd)
+  ])
+  const m = new Map<string, Record<string, unknown>>()
+  for (const r of bySubmit) m.set(String(r.id), r)
+  for (const r of byCheckIn) {
+    const id = String(r.id)
+    const prev = m.get(id)
+    m.set(id, prev ? { ...prev, ...r } : r)
+  }
+  return [...m.values()]
+}
+
+/** 지출 연결 모달 — 명세 줄 주변 기간만 조회(미매칭 패널 전체 기간 대비 경량) */
+async function fetchExpenseOptionsForYmdWindow(
+  startYmd: string,
+  endYmd: string
+): Promise<ExpenseOption[]> {
+  let s = startYmd.trim().slice(0, 10)
+  let e = endYmd.trim().slice(0, 10)
+  if (s.length < 10 || e.length < 10) return []
+  if (s > e) {
+    const t = s
+    s = e
+    e = t
+  }
+  const start = new Date(`${s}T00:00:00`)
+  const end = new Date(`${e}T23:59:59.999`)
+  const startIso = start.toISOString()
+  const endIso = end.toISOString()
+  const [{ data: ce }, { data: te }, { data: re }, tb] = await Promise.all([
+    supabase
+      .from('company_expenses')
+      .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
+      .gte('submit_on', startIso)
+      .lte('submit_on', endIso),
+    supabase
+      .from('tour_expenses')
+      .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
+      .gte('submit_on', startIso)
+      .lte('submit_on', endIso),
+    supabase
+      .from('reservation_expenses')
+      .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
+      .gte('submit_on', startIso)
+      .lte('submit_on', endIso),
+    fetchTicketBookingsForExpensePickerMerged(startIso, endIso, s, e)
+  ])
+  const ex: ExpenseOption[] = [
+    ...(ce || []).map((r: Record<string, unknown>) => recordToExpenseOption('company_expenses', r)),
+    ...(te || []).map((r: Record<string, unknown>) => recordToExpenseOption('tour_expenses', r)),
+    ...(re || []).map((r: Record<string, unknown>) => recordToExpenseOption('reservation_expenses', r)),
+    ...tb.map((r: Record<string, unknown>) => recordToExpenseOption('ticket_bookings', r))
+  ]
+  return dedupeExpenseOptionsList(ex)
 }
 
 /** 호텔: 등록일(submit_on)이 창 안 */
@@ -985,6 +1141,8 @@ function recordToExpenseOption(
       label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
       amount: Number(r.expense ?? 0),
       submit_on: String(r.submit_on),
+      check_in_date_ymd: ledgerDateYmdOrNull(r.check_in_date),
+      rn_number: r.rn_number == null ? null : String(r.rn_number),
       paid_to: String(r.company ?? ''),
       paid_for: String(r.category ?? ''),
       description: null,
@@ -1019,9 +1177,68 @@ function formatExpensePickerLineLabel(o: ExpenseOption) {
   return `${tag} · $${o.amount.toFixed(2)} · ${o.label.slice(0, 56)}`
 }
 
-function formatExpenseOptionSubmitDate(o: ExpenseOption) {
+function expenseOptionCheckInYmd(o: ExpenseOption): string | null {
+  if (o.source_table !== 'ticket_bookings') return null
+  const y = String(o.check_in_date_ymd ?? '').trim()
+  return y.length >= 10 ? y.slice(0, 10) : null
+}
+
+/** 지출 연결 피커 — 입장권은 체크인일, 그 외는 등록일(submit_on) */
+function expenseOptionPrimaryDateYmd(o: ExpenseOption): string {
+  const checkIn = expenseOptionCheckInYmd(o)
+  if (checkIn) return checkIn
   const s = o.submit_on?.trim() ?? ''
-  return s.length >= 10 ? s.slice(0, 10) : s || '—'
+  return s.length >= 10 ? s.slice(0, 10) : s
+}
+
+function expenseOptionSecondaryDateYmd(o: ExpenseOption): string | null {
+  if (o.source_table !== 'ticket_bookings') return null
+  const submit = o.submit_on?.trim() ?? ''
+  const submitYmd = submit.length >= 10 ? submit.slice(0, 10) : null
+  const checkIn = expenseOptionCheckInYmd(o)
+  if (checkIn && submitYmd && checkIn !== submitYmd) return submitYmd
+  return null
+}
+
+function formatExpenseOptionSubmitDate(o: ExpenseOption) {
+  return expenseOptionPrimaryDateYmd(o) || '—'
+}
+
+function formatExpenseOptionPickerDate(o: ExpenseOption): string {
+  const primary = formatExpenseSubmitOnUsMdY(expenseOptionPrimaryDateYmd(o))
+  const secondary = expenseOptionSecondaryDateYmd(o)
+  if (secondary) {
+    return `${primary} · 등록 ${formatExpenseSubmitOnUsMdY(secondary)}`
+  }
+  return primary
+}
+
+function expenseOptionSearchHaystack(o: ExpenseOption, paymentMethods: PaymentMethodRow[]): string {
+  const primary = expenseOptionPrimaryDateYmd(o)
+  const checkIn = expenseOptionCheckInYmd(o) ?? ''
+  const submit = o.submit_on?.trim() ?? ''
+  const typeKo = expenseSourceTableAriaLabel(o.source_table)
+  const pmLabel = paymentMethodLabelFromRows(o.payment_method, paymentMethods)
+  return [
+    o.label,
+    o.paid_to,
+    o.paid_for,
+    o.description ?? '',
+    String(o.amount),
+    o.source_id,
+    o.source_table,
+    typeKo,
+    primary,
+    checkIn,
+    submit,
+    formatExpenseSubmitOnUsMdY(primary),
+    formatExpenseSubmitOnUsMdY(submit),
+    pmLabel,
+    o.payment_method ?? '',
+    o.rn_number ?? ''
+  ]
+    .join(' ')
+    .toLowerCase()
 }
 
 function formatReconciliationTimestamp(value: string | null | undefined): string {
@@ -1159,6 +1376,18 @@ function dedupeExpensePickerQuickItems(items: ExpensePickerQuickItem[]): Expense
   return [...m.values()]
 }
 
+/** 지출 연결 모달 검색 — 옵션별 haystack 1회만 생성 */
+function buildExpensePickerSearchHaystackIndex(
+  options: ExpenseOption[],
+  paymentMethods: PaymentMethodRow[]
+): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const o of options) {
+    m.set(expenseKey(o.source_table, o.source_id), expenseOptionSearchHaystack(o, paymentMethods))
+  }
+  return m
+}
+
 /** 현재 명세 줄이 아닌 다른 줄에 이 지출이 연결되어 있으면 그 명세 줄 id 하나 */
 function firstOtherStatementLineIdForExpense(
   lineId: string,
@@ -1172,6 +1401,36 @@ function firstOtherStatementLineIdForExpense(
     if (lid !== lineId) return lid
   }
   return null
+}
+
+function expensePickerRowLinkState(
+  lineId: string,
+  o: ExpenseOption,
+  expensePairOnLine: Set<string>,
+  expenseKeyToLineIds: Map<string, Set<string>>,
+  pendingKeys: ReadonlySet<string>
+) {
+  const rawKey = `${o.source_table}:${o.source_id}`
+  const ek = expenseKey(o.source_table, o.source_id)
+  const onThisLine = expensePairOnLine.has(`${lineId}|${ek}`)
+  let blockedElsewhere = false
+  if (!onThisLine) {
+    const lines = expenseKeyToLineIds.get(ek)
+    if (lines) {
+      for (const lid of lines) {
+        if (lid !== lineId) {
+          blockedElsewhere = true
+          break
+        }
+      }
+    }
+  }
+  return {
+    rawKey,
+    onThisLine,
+    blockedElsewhere,
+    pending: pendingKeys.has(rawKey)
+  }
 }
 
 /** API·동기화 등으로 같은 행이 두 번 들어오는 경우 제거 */
@@ -1344,6 +1603,10 @@ export default function StatementReconciliationTab() {
   const [statementTableDateStart, setStatementTableDateStart] = useState('')
   const [statementTableDateEnd, setStatementTableDateEnd] = useState('')
   const [expenseOptions, setExpenseOptions] = useState<ExpenseOption[]>([])
+  /** 지출 연결 모달 전용 후보(명세 줄 ±일 창 — 미매칭 패널 전체 목록과 분리) */
+  const [expensePickerPool, setExpensePickerPool] = useState<ExpenseOption[]>([])
+  const [expensePickerPoolLoading, setExpensePickerPoolLoading] = useState(false)
+  const [expensePickerPoolWideLoaded, setExpensePickerPoolWideLoaded] = useState(false)
   /** 기간 내 지출 후보 중 DB에 이미 매칭된 expenseKey (미매칭 패널·드래그용) */
   const [matchedExpenseKeysInDb, setMatchedExpenseKeysInDb] = useState<Set<string>>(() => new Set())
   const [matchedExpenseKeysLoading, setMatchedExpenseKeysLoading] = useState(false)
@@ -1446,6 +1709,22 @@ export default function StatementReconciliationTab() {
   const [expensePickerBrowseRows, setExpensePickerBrowseRows] = useState<ExpenseOption[]>([])
   const [expensePickerBrowseLoading, setExpensePickerBrowseLoading] = useState(false)
   const [expensePickerBrowseHasMore, setExpensePickerBrowseHasMore] = useState(false)
+  const [expensePickerSearchSourceFilter, setExpensePickerSearchSourceFilter] = useState<
+    '' | ExpensePickerBrowseTable
+  >('')
+  const [expensePickerSearchDateScope, setExpensePickerSearchDateScope] = useState<
+    'all' | 'line_window' | 'quick_window'
+  >('all')
+  const [expensePickerSearchSort, setExpensePickerSearchSort] = useState<
+    'relevance' | 'date_desc' | 'date_asc' | 'amount'
+  >('relevance')
+  /** 모달에서 저장 전까지 선택한 지출 키(`source_table:source_id`) */
+  const [expensePickerPendingKeys, setExpensePickerPendingKeys] = useState<string[]>([])
+  /** 다른 명세에 연결된 지출을 이 줄로 옮길 때(replace) */
+  const [expensePickerPendingReconnectKeys, setExpensePickerPendingReconnectKeys] = useState<Set<string>>(
+    () => new Set()
+  )
+  const [expensePickerSaving, setExpensePickerSaving] = useState(false)
   const [matchedExpenseDetails, setMatchedExpenseDetails] = useState<Record<string, ExpenseOption>>({})
   const [paymentPickerLineId, setPaymentPickerLineId] = useState<string | null>(null)
   const [paymentPickerQuery, setPaymentPickerQuery] = useState('')
@@ -1670,6 +1949,8 @@ export default function StatementReconciliationTab() {
   const loadLinesGenRef = useRef(0)
   /** 동시에 여러 번 호출될 때 로딩 스피너가 영구히 남는 것 방지 */
   const loadLinesInFlightRef = useRef(0)
+  /** 매칭 지출 상세 hydrate — 빈 응답·실패 후 expenseOptions 갱신마다 무한 재조회 방지 */
+  const matchedExpenseHydrateAttemptedRef = useRef<Set<string>>(new Set())
 
   /** 선택 금융 계정에 연결된 모든 명세 업로드의 줄·매칭을 합쳐 로드 */
   const loadLinesAndMatchesForAccount = useCallback(async (accountId: string, options?: { force?: boolean }) => {
@@ -2006,11 +2287,14 @@ export default function StatementReconciliationTab() {
     for (const o of expenseOptions) {
       m.set(`${o.source_table}:${o.source_id}`, o)
     }
+    for (const o of expensePickerBrowseRows) {
+      m.set(`${o.source_table}:${o.source_id}`, o)
+    }
     for (const [k, o] of Object.entries(matchedExpenseDetails)) {
       if (!m.has(k)) m.set(k, o)
     }
     return m
-  }, [expenseOptions, matchedExpenseDetails])
+  }, [expenseOptions, matchedExpenseDetails, expensePickerBrowseRows])
 
   const refreshUnmatchedExpenseKeys = useCallback(async () => {
     if (expenseOptions.length === 0) {
@@ -2434,7 +2718,7 @@ export default function StatementReconciliationTab() {
       for (const m of ms) {
         if (!EXPENSE_TABLES.includes(m.source_table as ExpenseOption['source_table'])) continue
         const key = expenseKey(m.source_table, m.source_id)
-        if (expenseOptionByKey.has(key)) continue
+        if (matchedExpenseDetails[key] || matchedExpenseHydrateAttemptedRef.current.has(key)) continue
         const table = m.source_table as ExpenseOption['source_table']
         const ids = wanted.get(table) || new Set<string>()
         ids.add(m.source_id)
@@ -2451,7 +2735,7 @@ export default function StatementReconciliationTab() {
         if (idList.length === 0) return
         const sel =
           table === 'ticket_bookings'
-            ? 'id,expense,submit_on,category,company,payment_method'
+            ? 'id,expense,submit_on,category,company,payment_method,rn_number'
             : table === 'tour_hotel_bookings'
               ? 'id,total_price,submit_on,check_in_date,hotel,reservation_name,payment_method'
             : table === 'company_expenses'
@@ -2468,14 +2752,20 @@ export default function StatementReconciliationTab() {
         }
       })
       await Promise.all(jobs)
-      if (cancelled || Object.keys(next).length === 0) return
+      if (cancelled) return
+      for (const [table, ids] of wanted.entries()) {
+        for (const id of ids) {
+          matchedExpenseHydrateAttemptedRef.current.add(expenseKey(table, id))
+        }
+      }
+      if (Object.keys(next).length === 0) return
       setMatchedExpenseDetails((prev) => ({ ...prev, ...next }))
     })()
 
     return () => {
       cancelled = true
     }
-  }, [pagedReconciliationLines, matchesByLine, expenseOptionByKey])
+  }, [pagedReconciliationLines, matchesByLine, matchedExpenseDetails])
 
   /** 명세 표 현재 페이지 첫·마지막 행 거래일 ±RECON_STATEMENT_DAY_WINDOW — 미매칭 지출 조회 기본값 */
   const defaultUnmatchedExpenseRange = useMemo(() => {
@@ -2527,8 +2817,8 @@ export default function StatementReconciliationTab() {
     if (unmatchedExpenseRangeTouched) return
     const { start, end } = defaultUnmatchedExpenseRange
     if (start && end) {
-      setUnmatchedExpenseQueryStart(start)
-      setUnmatchedExpenseQueryEnd(end)
+      setUnmatchedExpenseQueryStart((prev) => (prev === start ? prev : start))
+      setUnmatchedExpenseQueryEnd((prev) => (prev === end ? prev : end))
     }
   }, [
     defaultUnmatchedExpenseRange.start,
@@ -2562,44 +2852,7 @@ export default function StatementReconciliationTab() {
     let startYmd = unmatchedExpenseQueryStart.trim().slice(0, 10)
     let endYmd = unmatchedExpenseQueryEnd.trim().slice(0, 10)
     if (!startYmd || !endYmd || startYmd.length < 10 || endYmd.length < 10) return null
-    if (startYmd > endYmd) {
-      const t = startYmd
-      startYmd = endYmd
-      endYmd = t
-    }
-    const start = new Date(startYmd + 'T00:00:00')
-    const end = new Date(endYmd + 'T23:59:59.999')
-    const startIso = start.toISOString()
-    const endIso = end.toISOString()
-    const [{ data: ce }, { data: te }, { data: re }, { data: tb }] = await Promise.all([
-      supabase
-        .from('company_expenses')
-        .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso),
-      supabase
-        .from('tour_expenses')
-        .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso),
-      supabase
-        .from('reservation_expenses')
-        .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso),
-      supabase
-        .from('ticket_bookings')
-        .select('id,expense,submit_on,category,company,payment_method')
-        .gte('submit_on', startIso)
-        .lte('submit_on', endIso)
-    ])
-    const ex: ExpenseOption[] = [
-      ...(ce || []).map((r: Record<string, unknown>) => recordToExpenseOption('company_expenses', r)),
-      ...(te || []).map((r: Record<string, unknown>) => recordToExpenseOption('tour_expenses', r)),
-      ...(re || []).map((r: Record<string, unknown>) => recordToExpenseOption('reservation_expenses', r)),
-      ...(tb || []).map((r: Record<string, unknown>) => recordToExpenseOption('ticket_bookings', r))
-    ]
-    return dedupeExpenseOptionsList(ex)
+    return fetchExpenseOptionsForYmdWindow(startYmd, endYmd)
   }, [filterAccountId, unmatchedExpenseQueryStart, unmatchedExpenseQueryEnd])
 
   useEffect(() => {
@@ -2625,6 +2878,8 @@ export default function StatementReconciliationTab() {
     setUnmatchedPanelSourceTableFilter('')
     setUnmatchedPmFilterOpen(false)
     setUnmatchedSidebarOpen(false)
+    matchedExpenseHydrateAttemptedRef.current.clear()
+    setMatchedExpenseDetails({})
   }, [filterAccountId])
 
   useEffect(() => {
@@ -2698,25 +2953,113 @@ export default function StatementReconciliationTab() {
     }
   }, [unmatchedSidebarOpen, fetchExpenseOptionsForPeriod])
 
-  const refreshExpenseOptionsFromServer = useCallback(async () => {
-    const ex = await fetchExpenseOptionsForPeriod()
-    if (!ex) {
-      startTransition(() => {
-        setExpenseOptions([])
-      })
+  /** 지출 연결 모달 — 명세 거래일 ±PICKER_QUICK_DATE_WINDOW일만 우선 로드 */
+  useEffect(() => {
+    if (!expensePickerLineId || !filterAccountId) {
+      setExpensePickerPool([])
+      setExpensePickerPoolWideLoaded(false)
+      setExpensePickerPoolLoading(false)
       return
     }
-    startTransition(() => {
-      setExpenseOptions(ex)
-    })
-  }, [fetchExpenseOptionsForPeriod])
+    const lineYmd =
+      lines.find((l) => l.id === expensePickerLineId)?.posted_date?.trim().slice(0, 10) ?? ''
+    if (lineYmd.length < 10) {
+      setExpensePickerPool([])
+      setExpensePickerPoolWideLoaded(false)
+      return
+    }
+    let cancelled = false
+    setExpensePickerPoolLoading(true)
+    setExpensePickerPoolWideLoaded(false)
+    ;(async () => {
+      try {
+        const startYmd = addCalendarDaysYmd(lineYmd, -PICKER_QUICK_DATE_WINDOW_DAYS)
+        const endYmd = addCalendarDaysYmd(lineYmd, PICKER_QUICK_DATE_WINDOW_DAYS)
+        const ex = await fetchExpenseOptionsForYmdWindow(startYmd, endYmd)
+        if (cancelled) return
+        startTransition(() => {
+          setExpensePickerPool(ex)
+        })
+      } catch (e) {
+        if (!cancelled && !isAbortLikeError(e)) console.error(e)
+        if (!cancelled) {
+          startTransition(() => {
+            setExpensePickerPool([])
+          })
+        }
+      } finally {
+        if (!cancelled) setExpensePickerPoolLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [expensePickerLineId, filterAccountId, lines])
 
-  /** 미매칭 패널을 열지 않은 채 지출 연결 모달만 연 경우 — 후보·검색용 지출 로드 */
+  /** 검색 «일자 제한 없음» 선택 시에만 미매칭 패널과 동일한 넓은 기간 조회 */
   useEffect(() => {
-    if (!expensePickerLineId || !filterAccountId) return
-    if (expenseOptions.length > 0) return
-    void refreshExpenseOptionsFromServer()
-  }, [expensePickerLineId, filterAccountId, expenseOptions.length, refreshExpenseOptionsFromServer])
+    if (!expensePickerLineId || expensePickerSearchDateScope !== 'all' || expensePickerPoolWideLoaded) return
+    let cancelled = false
+    setExpensePickerPoolLoading(true)
+    ;(async () => {
+      try {
+        const ex = await fetchExpenseOptionsForPeriod()
+        if (cancelled) return
+        startTransition(() => {
+          setExpensePickerPool(ex ?? [])
+          setExpensePickerPoolWideLoaded(true)
+        })
+      } catch (e) {
+        if (!cancelled && !isAbortLikeError(e)) console.error(e)
+      } finally {
+        if (!cancelled) setExpensePickerPoolLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    expensePickerLineId,
+    expensePickerSearchDateScope,
+    expensePickerPoolWideLoaded,
+    fetchExpenseOptionsForPeriod
+  ])
+
+  /** 지출 연결 모달·피커 내 수정 후 후보 풀 갱신 */
+  const refreshExpensePickerPool = useCallback(async () => {
+    if (!expensePickerLineId) return
+    const lineYmd =
+      lines.find((l) => l.id === expensePickerLineId)?.posted_date?.trim().slice(0, 10) ?? ''
+    try {
+      if (expensePickerSearchDateScope === 'all' && expensePickerPoolWideLoaded) {
+        const ex = await fetchExpenseOptionsForPeriod()
+        if (ex) {
+          startTransition(() => {
+            setExpensePickerPool(ex)
+          })
+        }
+        return
+      }
+      if (lineYmd.length < 10) return
+      const startYmd = addCalendarDaysYmd(lineYmd, -PICKER_QUICK_DATE_WINDOW_DAYS)
+      const endYmd = addCalendarDaysYmd(lineYmd, PICKER_QUICK_DATE_WINDOW_DAYS)
+      const ex = await fetchExpenseOptionsForYmdWindow(startYmd, endYmd)
+      startTransition(() => {
+        setExpensePickerPool(ex)
+      })
+    } catch (e) {
+      if (!isAbortLikeError(e)) console.error(e)
+    }
+  }, [
+    expensePickerLineId,
+    lines,
+    expensePickerSearchDateScope,
+    expensePickerPoolWideLoaded,
+    fetchExpenseOptionsForPeriod
+  ])
+
+  const fetchPaymentRecordsForUnmatchedQueryRangeRef = useRef(fetchPaymentRecordsForUnmatchedQueryRange)
+  fetchPaymentRecordsForUnmatchedQueryRangeRef.current = fetchPaymentRecordsForUnmatchedQueryRange
 
   /** 입금 연결 모달 — 열릴 때만 해당 기간 payment_records 순회 */
   useEffect(() => {
@@ -2730,7 +3073,7 @@ export default function StatementReconciliationTab() {
     ;(async () => {
       setPaymentOptionsLoading(true)
       try {
-        const pr = await fetchPaymentRecordsForUnmatchedQueryRange()
+        const pr = await fetchPaymentRecordsForUnmatchedQueryRangeRef.current()
         if (cancelled) return
         setPaymentOptions(pr ?? [])
       } catch (e) {
@@ -2743,7 +3086,7 @@ export default function StatementReconciliationTab() {
     return () => {
       cancelled = true
     }
-  }, [paymentPickerLineId, filterAccountId, fetchPaymentRecordsForUnmatchedQueryRange])
+  }, [paymentPickerLineId, filterAccountId])
 
   /** 지출 연결 모달 — 테이블 탐색: 현재 명세 줄 거래일(posted_date) 기준 ±RECON_STATEMENT_DAY_WINDOW */
   const expensePickerLinePostedYmd = useMemo(() => {
@@ -2767,29 +3110,32 @@ export default function StatementReconciliationTab() {
       }
       setExpensePickerBrowseLoading(true)
       try {
-        const start = new Date(mid.getTime())
-        const end = new Date(mid.getTime())
-        start.setDate(start.getDate() - RECON_STATEMENT_DAY_WINDOW)
-        end.setDate(end.getDate() + RECON_STATEMENT_DAY_WINDOW)
+        const startYmd = addCalendarDaysYmd(lineDate, -RECON_STATEMENT_DAY_WINDOW)
+        const endYmd = addCalendarDaysYmd(lineDate, RECON_STATEMENT_DAY_WINDOW)
+        const start = new Date(`${startYmd}T00:00:00`)
+        const end = new Date(`${endYmd}T23:59:59.999`)
         const startIso = start.toISOString()
         const endIso = end.toISOString()
         const from = page * PICKER_BROWSE_PAGE_SIZE
         const sel =
           table === 'ticket_bookings'
-            ? 'id,expense,submit_on,category,company,payment_method'
+            ? 'id,expense,submit_on,check_in_date,category,company,payment_method,rn_number'
             : table === 'tour_expenses'
               ? 'id,amount,submit_on,paid_for,paid_to,note,tour_date,payment_method'
               : table === 'company_expenses'
                 ? 'id,amount,submit_on,paid_for,paid_to,description,payment_method'
                 : 'id,amount,submit_on,paid_for,paid_to,note,payment_method'
 
-        const { data, error } = await supabase
-          .from(table)
-          .select(sel)
-          .gte('submit_on', startIso)
-          .lte('submit_on', endIso)
-          .order('submit_on', { ascending: false })
-          .range(from, from + PICKER_BROWSE_PAGE_SIZE)
+        let query = supabase.from(table).select(sel)
+        if (table === 'ticket_bookings') {
+          query = query
+            .gte('check_in_date', startYmd)
+            .lte('check_in_date', endYmd)
+            .order('check_in_date', { ascending: false })
+        } else {
+          query = query.gte('submit_on', startIso).lte('submit_on', endIso).order('submit_on', { ascending: false })
+        }
+        const { data, error } = await query.range(from, from + PICKER_BROWSE_PAGE_SIZE)
 
         if (error) throw error
         const rows = data ?? []
@@ -2828,6 +3174,12 @@ export default function StatementReconciliationTab() {
     setExpensePickerBrowsePage(0)
     setExpensePickerBrowseRows([])
     setExpensePickerBrowseHasMore(false)
+    setExpensePickerSearchSourceFilter('')
+    setExpensePickerSearchDateScope('line_window')
+    setExpensePickerSearchSort('relevance')
+    setExpensePickerPendingKeys([])
+    setExpensePickerPendingReconnectKeys(new Set())
+    setExpensePickerPoolWideLoaded(false)
   }, [expensePickerLineId])
 
   useEffect(() => {
@@ -2944,7 +3296,15 @@ export default function StatementReconciliationTab() {
       }
       setUnmatchedEditOption(null)
       setMessage('저장했습니다.')
-      await refreshExpenseOptionsFromServer()
+      await refreshExpensePickerPool()
+      if (unmatchedSidebarOpen) {
+        const ex = await fetchExpenseOptionsForPeriod()
+        if (ex) {
+          startTransition(() => {
+            setExpenseOptions(ex)
+          })
+        }
+      }
       await refreshUnmatchedExpenseKeys()
       if (expensePickerBrowseTable !== null && expensePickerLineId) {
         await loadExpensePickerBrowse(expensePickerBrowseTable, expensePickerBrowsePage)
@@ -2963,7 +3323,9 @@ export default function StatementReconciliationTab() {
     unmatchedEditPaidTo,
     unmatchedEditSubmitOn,
     unmatchedEditTourDate,
-    refreshExpenseOptionsFromServer,
+    refreshExpensePickerPool,
+    unmatchedSidebarOpen,
+    fetchExpenseOptionsForPeriod,
     refreshUnmatchedExpenseKeys,
     expensePickerBrowseTable,
     expensePickerBrowsePage,
@@ -3364,6 +3726,12 @@ export default function StatementReconciliationTab() {
     const peYmd = accountExpenseWindow.period_end.trim().slice(0, 10)
     const hotelCheckInStartYmd = addCalendarDaysYmd(psYmd, -fetchPad)
     const hotelCheckInEndYmd = addCalendarDaysYmd(peYmd, fetchPad)
+    const ticketCheckInRange = ticketCheckInYmdRangeForAutoMatch(
+      psYmd,
+      peYmd,
+      linesForAutoMatch,
+      amountMode
+    )
 
     let ce: Record<string, unknown>[] = []
     let te: Record<string, unknown>[] = []
@@ -3390,8 +3758,8 @@ export default function StatementReconciliationTab() {
         fetchAllTicketBookingsForAutoMatchMerged(
           startIso,
           endIso,
-          hotelCheckInStartYmd,
-          hotelCheckInEndYmd
+          ticketCheckInRange.startYmd,
+          ticketCheckInRange.endYmd
         ),
         fetchAllTourHotelBookingsForAutoMatchMerged(
           startIso,
@@ -3481,12 +3849,15 @@ export default function StatementReconciliationTab() {
           if (used.has(key)) return null
           const score = autoMatchCandidateScore(amt, line.posted_date, expense, matchRule)
           if (!score) return null
+          const { submitYmd, checkInYmd } = autoMatchSubmitAndCheckInYmd(expense)
           return {
             key,
             source_table: expense.source_table,
             source_id: expense.source_id,
             expense_label: expense.label,
             expense_registered_date: autoMatchDisplayDateForLine(line.posted_date, expense),
+            expense_submit_ymd: submitYmd,
+            expense_check_in_ymd: checkInYmd,
             expense_amount: Number(expense.amount),
             expense_paid_to: expense.paid_to,
             expense_paid_for: expense.paid_for,
@@ -3503,7 +3874,7 @@ export default function StatementReconciliationTab() {
           if (diffCmp !== 0) return diffCmp
           const srcCmp = autoMatchSourceTableTieOrder(a.source_table) - autoMatchSourceTableTieOrder(b.source_table)
           if (srcCmp !== 0) return srcCmp
-          return new Date(a.expense_registered_date).getTime() - new Date(b.expense_registered_date).getTime()
+          return new Date(a.expense_submit_ymd).getTime() - new Date(b.expense_submit_ymd).getTime()
         })
         .slice(0, AUTO_MATCH_CANDIDATE_LIMIT)
 
@@ -3558,9 +3929,9 @@ export default function StatementReconciliationTab() {
           : `금액만 일치(날짜 무시 · 조회 ±${AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS}일)`
     setAutoMatchRuleNarrative(
       amountMode === 'exact'
-        ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내입니다. 입장권·호텔 부킹은 DB에서 등록일(submit_on) 또는 체크인일(check_in_date)이 조회 구간에 들어오면 후보에 올라가며, 점수·날짜 비교는 둘 중 명세 거래일에 더 가까운 날짜를 씁니다. 그 외 지출은 등록일(submit_on)만 사용합니다.`
+        ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내입니다. 입장권은 등록일(submit_on)을 명세 기간 ±${fetchPad}일로, 체크인(check_in_date)을 명세·대상 줄 거래일 각 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일로 추가 조회합니다. 점수·날짜 비교는 등록일·체크인 중 명세에 더 가까운 날짜를 씁니다. 호텔 부킹도 등록일·체크인을 병합 조회하며, 그 외 지출은 등록일만 사용합니다.`
         : amountMode === 'similar'
-          ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 비슷한 범위(차이가 큰 쪽 대비 12% 이하이거나 $4 이하, 또는 $0.02 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내입니다. 입장권·호텔 부킹은 등록일·체크인일 중 명세에 더 가까운 날짜로 판정하며, 조회는 두 날짜 각각의 기간 확장 창으로 합니다. 금액 차이가 허용 범위 안에서도 크면 점수에서 추가로 감점합니다.`
+          ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 비슷한 범위(차이가 큰 쪽 대비 12% 이하이거나 $4 이하, 또는 $0.02 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내입니다. 입장권은 등록일을 명세 기간 ±${fetchPad}일, 체크인을 명세·대상 줄 거래일 각 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일로 추가 조회합니다. 호텔 부킹·입장권 모두 등록일·체크인 중 명세에 더 가까운 날짜로 판정합니다. 금액 차이가 허용 범위 안에서도 크면 점수에서 추가로 감점합니다.`
           : `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)인 지출만 후보로 올리며, 등록일·체크인과 명세 거래일의 차이는 «제외하지 않고» 점수만 조정합니다. 지출·부킹은 선택한 명세 기간을 기준으로 앞뒤 ±${AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS}일 범위(등록일 submit_on·체크인)로만 불러옵니다. 그 밖의 기간에 있는 지출은 후보에 나오지 않습니다.`
     )
     setAutoMatchSummaryHint(
@@ -3945,6 +4316,21 @@ export default function StatementReconciliationTab() {
     [expensePickerLineId, lines]
   )
 
+  const expensePickerStatementDesc = useMemo(() => {
+    if (!expensePickerLine) return ''
+    return formatStatementLineDescription(expensePickerLine.description, expensePickerLine.merchant)
+  }, [expensePickerLine])
+
+  const expensePickerPendingKeySet = useMemo(
+    () => new Set(expensePickerPendingKeys),
+    [expensePickerPendingKeys]
+  )
+
+  const expensePickerHaystackIndex = useMemo(
+    () => buildExpensePickerSearchHaystackIndex(expensePickerPool, paymentMethods),
+    [expensePickerPool, paymentMethods]
+  )
+
   const paymentPickerLine = useMemo(
     () => (paymentPickerLineId ? lines.find((l) => l.id === paymentPickerLineId) ?? null : null),
     [paymentPickerLineId, lines]
@@ -3963,7 +4349,13 @@ export default function StatementReconciliationTab() {
     const lineDate = expensePickerLine.posted_date?.slice(0, 10) ?? ''
 
     const exact: ExpensePickerQuickItem[] = []
-    for (const o of expenseOptions) {
+    for (const o of expensePickerPool) {
+      if (lineDate.length >= 10) {
+        const oDate = expenseOptionPrimaryDateYmd(o)
+        if (oDate.length >= 10 && calendarDaysBetweenIsoDates(lineDate, oDate) > PICKER_QUICK_DATE_WINDOW_DAYS) {
+          continue
+        }
+      }
       if (Math.abs(o.amount - lineAmt) < 0.02) {
         exact.push({
           o,
@@ -3985,8 +4377,8 @@ export default function StatementReconciliationTab() {
 
     type Scored = { item: ExpensePickerQuickItem; score: number }
     const scored: Scored[] = []
-    for (const o of expenseOptions) {
-      const oDate = o.submit_on?.trim() ? o.submit_on.trim().slice(0, 10) : ''
+    for (const o of expensePickerPool) {
+      const oDate = expenseOptionPrimaryDateYmd(o)
       if (!lineDate || oDate.length < 10) continue
       const days = calendarDaysBetweenIsoDates(lineDate, oDate)
       if (days > PICKER_QUICK_DATE_WINDOW_DAYS) continue
@@ -4014,7 +4406,7 @@ export default function StatementReconciliationTab() {
   }, [
     expensePickerLineId,
     expensePickerLine,
-    expenseOptions,
+    expensePickerPool,
     expenseOptionSelectableFast,
     compareExpenseFinancialAccountPriority
   ])
@@ -4023,24 +4415,65 @@ export default function StatementReconciliationTab() {
     if (!expensePickerLineId || !expensePickerLine) return []
     const q = deferredExpensePickerQuery.trim().toLowerCase()
     if (q.length < PICKER_SEARCH_MIN_CHARS) return []
-    const out: ExpenseOption[] = []
-    for (const o of expenseOptions) {
-      if (!expenseOptionSelectableFast(expensePickerLineId, o)) continue
-      const hay = `${o.label} ${o.amount} ${o.submit_on} ${o.source_id}`.toLowerCase()
-      if (!hay.includes(q)) continue
-      out.push(o)
-      if (out.length >= PICKER_SEARCH_MAX) break
+    const lineDate = expensePickerLine.posted_date?.slice(0, 10) ?? ''
+    const dateWindowDays =
+      expensePickerSearchDateScope === 'line_window'
+        ? RECON_STATEMENT_DAY_WINDOW
+        : expensePickerSearchDateScope === 'quick_window'
+          ? PICKER_QUICK_DATE_WINDOW_DAYS
+          : null
+    const qAmt = q.replace(/[$,]/g, '')
+    const matched: ExpenseOption[] = []
+    for (const o of expensePickerPool) {
+      const ek = expenseKey(o.source_table, o.source_id)
+      if (expensePairOnLine.has(`${expensePickerLineId}|${ek}`)) continue
+      if (expensePickerSearchSourceFilter && o.source_table !== expensePickerSearchSourceFilter) continue
+      if (dateWindowDays != null && lineDate.length >= 10) {
+        const oDate = expenseOptionPrimaryDateYmd(o)
+        if (oDate.length < 10) continue
+        if (calendarDaysBetweenIsoDates(lineDate, oDate) > dateWindowDays) continue
+      }
+      const hay = expensePickerHaystackIndex.get(ek) ?? ''
+      const amtNorm = Number(o.amount)
+      const amtStr = Number.isFinite(amtNorm) ? amtNorm.toFixed(2) : ''
+      const amtHit =
+        Boolean(amtStr && qAmt !== '' && amtStr.includes(qAmt)) ||
+        String(o.amount ?? '').toLowerCase().includes(q)
+      if (!hay.includes(q) && !amtHit) continue
+      matched.push(o)
     }
-    return dedupeExpenseOptionsByKey(out)
-      .sort((a, b) => compareExpenseFinancialAccountPriority(a, b))
-      .slice(0, PICKER_SEARCH_MAX)
+    const lineAmt = Number(expensePickerLine.amount)
+    const sorted = dedupeExpenseOptionsByKey(matched).sort((a, b) => {
+      if (expensePickerSearchSort === 'amount') {
+        return Math.abs(b.amount - lineAmt) - Math.abs(a.amount - lineAmt)
+      }
+      if (expensePickerSearchSort === 'date_desc' || expensePickerSearchSort === 'date_asc') {
+        const ta = new Date(`${expenseOptionPrimaryDateYmd(a)}T12:00:00`).getTime()
+        const tb = new Date(`${expenseOptionPrimaryDateYmd(b)}T12:00:00`).getTime()
+        const cmp = tb - ta
+        return expensePickerSearchSort === 'date_desc' ? cmp : -cmp
+      }
+      const priorityCmp = compareExpenseFinancialAccountPriority(a, b)
+      if (priorityCmp !== 0) return priorityCmp
+      if (lineDate.length >= 10) {
+        const dayA = calendarDaysBetweenIsoDates(lineDate, expenseOptionPrimaryDateYmd(a))
+        const dayB = calendarDaysBetweenIsoDates(lineDate, expenseOptionPrimaryDateYmd(b))
+        if (dayA !== dayB) return dayA - dayB
+      }
+      return Math.abs(a.amount - lineAmt) - Math.abs(b.amount - lineAmt)
+    })
+    return sorted.slice(0, PICKER_SEARCH_MAX)
   }, [
     expensePickerLineId,
     expensePickerLine,
     deferredExpensePickerQuery,
-    expenseOptions,
-    expenseOptionSelectableFast,
-    compareExpenseFinancialAccountPriority
+    expensePickerPool,
+    expensePickerHaystackIndex,
+    expensePairOnLine,
+    compareExpenseFinancialAccountPriority,
+    expensePickerSearchSourceFilter,
+    expensePickerSearchDateScope,
+    expensePickerSearchSort
   ])
 
   const paymentPickerQuickOptions = useMemo(() => {
@@ -4164,6 +4597,182 @@ export default function StatementReconciliationTab() {
     },
     []
   )
+
+  const removeExpensePickerPending = useCallback((rawKey: string) => {
+    startTransition(() => {
+      setExpensePickerPendingKeys((prev) => prev.filter((k) => k !== rawKey))
+      setExpensePickerPendingReconnectKeys((s) => {
+        const next = new Set(s)
+        next.delete(rawKey)
+        return next
+      })
+    })
+  }, [])
+
+  const toggleExpensePickerPending = useCallback((rawKey: string, reconnect = false) => {
+    startTransition(() => {
+      setExpensePickerPendingKeys((pending) => {
+        setExpensePickerPendingReconnectKeys((reconnectSet) => {
+          const already = pending.includes(rawKey)
+          const wasReconnect = reconnectSet.has(rawKey)
+          const nextReconnect = new Set(reconnectSet)
+
+          if (!already) {
+            if (reconnect) nextReconnect.add(rawKey)
+            setExpensePickerPendingKeys([...pending, rawKey])
+            return nextReconnect
+          }
+
+          if (reconnect === wasReconnect) {
+            nextReconnect.delete(rawKey)
+            setExpensePickerPendingKeys(pending.filter((k) => k !== rawKey))
+            return nextReconnect
+          }
+
+          if (reconnect) nextReconnect.add(rawKey)
+          else nextReconnect.delete(rawKey)
+          return nextReconnect
+        })
+        return pending
+      })
+    })
+  }, [])
+
+  const saveExpensePickerBatch = useCallback(
+    async (line: StatementLine) => {
+      if (!email) {
+        setMessage('로그인이 필요합니다.')
+        return
+      }
+      if (!filterAccountId || expensePickerPendingKeys.length === 0) return
+      setExpensePickerSaving(true)
+      setLoading(true)
+      setMessage(null)
+      const affectedLineIds = new Set<string>([line.id])
+      try {
+        for (const rawKey of expensePickerPendingKeys) {
+          const colon = rawKey.indexOf(':')
+          if (colon <= 0) continue
+          const st = rawKey.slice(0, colon)
+          const sid = rawKey.slice(colon + 1)
+          if (!EXPENSE_TABLES.includes(st as (typeof EXPENSE_TABLES)[number])) continue
+          const pairKey = `${line.id}|${expenseKey(st, sid)}`
+          if (expensePairOnLine.has(pairKey)) continue
+
+          const opt = expenseOptionByKey.get(rawKey)
+          const matchedAmount =
+            opt != null && Number.isFinite(Number(opt.amount))
+              ? Math.abs(Number(opt.amount))
+              : Math.abs(Number(line.amount))
+
+          const otherLineIds = expenseKeyToLineIds.get(expenseKey(st, sid))
+          const linkedElsewhere =
+            otherLineIds != null && [...otherLineIds].some((lid) => lid !== line.id)
+          const useReplace = expensePickerPendingReconnectKeys.has(rawKey)
+
+          if (useReplace) {
+            for (const lid of otherLineIds || []) {
+              if (lid !== line.id) affectedLineIds.add(lid)
+            }
+            await replaceExpenseReconciliationMatch(supabase, {
+              actorEmail: email,
+              sourceTable: st as ExpenseReconSourceTable,
+              sourceId: sid,
+              statementLineId: line.id,
+              statementLineAmount: Number(line.amount),
+              matchedAmount,
+              linkMode: 'replace'
+            })
+          } else {
+            const { data: inserted, error } = await supabase
+              .from('reconciliation_matches')
+              .insert({
+                statement_line_id: line.id,
+                source_table: st,
+                source_id: sid,
+                matched_amount: matchedAmount,
+                matched_by: email
+              })
+              .select('id')
+              .maybeSingle()
+            if (error) throw error
+            await logReconciliationMatchEvent({
+              match_id: inserted?.id ? String(inserted.id) : null,
+              statement_line_id: line.id,
+              action: 'created',
+              actor_email: email,
+              before_source_table: null,
+              before_source_id: null,
+              after_source_table: st,
+              after_source_id: sid,
+              before_matched_amount: null,
+              after_matched_amount: matchedAmount
+            })
+          }
+        }
+        for (const lid of affectedLineIds) {
+          await syncLineMatchedFlag(lid)
+        }
+        const n = expensePickerPendingKeys.length
+        setExpensePickerPendingKeys([])
+        setExpensePickerPendingReconnectKeys(new Set())
+        setExpensePickerLineId(null)
+        setExpensePickerQuery('')
+        setMessage(n > 1 ? `${n}건 지출을 연결했습니다.` : '지출 매칭을 저장했습니다.')
+        await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
+        await refreshUnmatchedExpenseKeys()
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : '저장 실패')
+      } finally {
+        setExpensePickerSaving(false)
+        setLoading(false)
+      }
+    },
+    [
+      email,
+      filterAccountId,
+      expensePickerPendingKeys,
+      expensePickerPendingReconnectKeys,
+      expensePairOnLine,
+      expenseOptionByKey,
+      expenseKeyToLineIds,
+      logReconciliationMatchEvent,
+      loadLinesAndMatchesForAccount,
+      refreshUnmatchedExpenseKeys
+    ]
+  )
+
+  const expensePickerPendingSummary = useMemo(() => {
+    let sum = 0
+    let moveCount = 0
+    let addAlsoCount = 0
+    for (const k of expensePickerPendingKeys) {
+      const o = expenseOptionByKey.get(k)
+      if (o && Number.isFinite(Number(o.amount))) sum += Math.abs(Number(o.amount))
+      if (expensePickerPendingReconnectKeys.has(k)) {
+        moveCount++
+        continue
+      }
+      if (expensePickerLineId) {
+        const colon = k.indexOf(':')
+        if (colon > 0) {
+          const st = k.slice(0, colon)
+          const sid = k.slice(colon + 1)
+          const lids = expenseKeyToLineIds.get(expenseKey(st, sid))
+          if (lids?.size && [...lids].some((lid) => lid !== expensePickerLineId)) {
+            addAlsoCount++
+          }
+        }
+      }
+    }
+    return { count: expensePickerPendingKeys.length, sum, moveCount, addAlsoCount }
+  }, [
+    expensePickerPendingKeys,
+    expensePickerPendingReconnectKeys,
+    expensePickerLineId,
+    expenseOptionByKey,
+    expenseKeyToLineIds
+  ])
 
   const loadOperationalLedgerRows = useCallback(async () => {
     let startYmd = operationalLedgerStart.trim().slice(0, 10)
@@ -5499,7 +6108,7 @@ export default function StatementReconciliationTab() {
                   <th className="py-1.5 pr-2 font-medium min-w-[14rem]">명세 설명</th>
                   <th className="py-1.5 pr-2 font-medium min-w-[18rem]">후보 선택</th>
                   <th className="py-1.5 pr-2 font-medium w-[5.5rem]">연결 출처</th>
-                  <th className="py-1.5 pr-2 font-medium w-[6.5rem]">등록 날짜</th>
+                  <th className="py-1.5 pr-2 font-medium min-w-[8.5rem]">등록 · 체크인</th>
                   <th className="py-1.5 pr-2 font-medium text-right w-[6rem]">지출 금액</th>
                   <th className="py-1.5 pr-2 font-medium min-w-[10rem]">Paid To</th>
                   <th className="py-1.5 pr-2 font-medium min-w-[12rem]">Paid For</th>
@@ -5565,7 +6174,7 @@ export default function StatementReconciliationTab() {
                               {idx + 1}. {AUTO_MATCH_SOURCE_LABEL[c.source_table]} · $
                               {c.expense_amount.toFixed(2)}
                               {diff >= 0.015 ? ` (차이 $${diff.toFixed(2)})` : ''} ·{' '}
-                              {formatExpenseSubmitOnUsMdY(c.expense_registered_date)} ·{' '}
+                              {formatAutoMatchCandidateDates(c.expense_submit_ymd, c.expense_check_in_ymd)} ·{' '}
                               {c.expense_paid_for || c.expense_label}
                             </option>
                           )
@@ -5580,8 +6189,11 @@ export default function StatementReconciliationTab() {
                     <td className="py-1.5 pr-2 text-slate-700 whitespace-nowrap">
                       {AUTO_MATCH_SOURCE_LABEL[selected.source_table]}
                     </td>
-                    <td className={`py-1.5 pr-2 whitespace-nowrap tabular-nums ${dateMismatchClassMuted}`}>
-                      {formatExpenseSubmitOnUsMdY(selected.expense_registered_date)}
+                    <td className={`py-1.5 pr-2 whitespace-nowrap tabular-nums text-[10px] sm:text-[11px] leading-snug ${dateMismatchClassMuted}`}>
+                      {formatAutoMatchCandidateDates(
+                        selected.expense_submit_ymd,
+                        selected.expense_check_in_ymd
+                      )}
                     </td>
                     <td className={`py-1.5 pr-2 text-right tabular-nums ${expenseAmountClass}`}>
                       {`$${selected.expense_amount.toFixed(2)}`}
@@ -6940,42 +7552,39 @@ export default function StatementReconciliationTab() {
                 <span className="text-sm font-medium text-slate-700">명세 줄 불러오는 중…</span>
               </div>
             )}
-          <table className="w-full min-w-[1350px] text-[11px] leading-snug sm:text-xs sm:leading-snug table-fixed">
+          <table className="w-full min-w-[42rem] md:min-w-[56rem] xl:min-w-[84.375rem] text-[10px] leading-snug sm:text-[11px] md:text-xs sm:leading-snug table-fixed">
             <thead>
               <tr className="border-b text-left text-gray-500">
-                <th className="px-1.5 py-1.5 align-middle w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem]">
+                <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                   일자
                 </th>
-                <th className="px-1.5 py-1.5 text-right align-middle w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem]">
+                <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 text-right align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                   지출
                 </th>
-                <th className="px-1.5 py-1.5 text-right align-middle w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem]">
+                <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 text-right align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                   수입
                 </th>
-                <th className="px-1.5 py-1.5 min-w-[28rem] w-[28rem] max-w-[30rem] text-center align-middle">
+                <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 min-w-[9.5rem] w-[9.5rem] max-w-[11rem] md:min-w-[16rem] md:w-[16rem] lg:min-w-[28rem] lg:w-[28rem] lg:max-w-[30rem] text-center align-middle">
                   설명
                 </th>
-                <th className="px-1.5 py-1.5 min-w-[28rem] w-[28rem] max-w-[30rem] align-middle">
+                <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 min-w-[9.5rem] w-[9.5rem] max-w-[11rem] md:min-w-[16rem] md:w-[16rem] lg:min-w-[28rem] lg:w-[28rem] lg:max-w-[30rem] align-middle">
                   <AccountingTerm termKey="매칭">매칭</AccountingTerm>
                 </th>
-                <th className="px-1.5 py-1.5 min-w-[7.5rem]">개인·파트너 / 제외</th>
-                <th className="px-1.5 py-1.5 align-middle">동작</th>
+                <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 min-w-[5.25rem] w-[5.25rem] sm:min-w-[7.5rem] sm:w-auto">
+                  개인·파트너 / 제외
+                </th>
+                <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-middle w-[4.5rem] sm:w-auto">동작</th>
               </tr>
             </thead>
             <tbody>
               {pagedReconciliationLines.map((line) => {
                 const lineMs = matchesByLine.get(line.id) || []
-                const expenseMatch = lineMs.find((m) =>
+                const expenseMatches = lineMs.filter((m) =>
                   EXPENSE_TABLES.includes(m.source_table as (typeof EXPENSE_TABLES)[number])
                 )
                 const payMatches = lineMs.filter((m) => m.source_table === 'payment_records')
                 const isOut = line.direction === 'outflow'
                 const descShown = formatStatementLineDescription(line.description, line.merchant)
-                const linkedExpenseOpt = expenseMatch
-                  ? expenseOptionByKey.get(
-                      `${expenseMatch.source_table}:${expenseMatch.source_id}`
-                    )
-                  : undefined
                 return (
                   <tr
                     key={line.id}
@@ -7001,10 +7610,11 @@ export default function StatementReconciliationTab() {
                             try {
                               const parsed = JSON.parse(raw) as { source_table?: string; source_id?: string }
                               if (!parsed.source_table || !parsed.source_id) return
-                              void saveExpenseSelection(
-                                line,
-                                `${parsed.source_table}:${parsed.source_id}`
-                              )
+                              const key = `${parsed.source_table}:${parsed.source_id}`
+                              setExpensePickerQuery('')
+                              setExpensePickerLineId(line.id)
+                              setExpensePickerPendingKeys([key])
+                              setExpensePickerPendingReconnectKeys(new Set())
                             } catch {
                               /* ignore */
                             }
@@ -7012,16 +7622,16 @@ export default function StatementReconciliationTab() {
                         : undefined
                     }
                   >
-                    <td className="px-1.5 py-1.5 whitespace-nowrap tabular-nums align-middle w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem]">
+                    <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 whitespace-nowrap tabular-nums align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                       {line.posted_date}
                     </td>
-                    <td className="px-1.5 py-1.5 text-right tabular-nums text-rose-800 align-middle w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem]">
+                    <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 text-right tabular-nums text-rose-800 align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                       {isOut ? `$${Number(line.amount).toFixed(2)}` : '—'}
                     </td>
-                    <td className="px-1.5 py-1.5 text-right tabular-nums text-emerald-800 align-middle w-[6.75rem] min-w-[6.75rem] max-w-[6.75rem]">
+                    <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 text-right tabular-nums text-emerald-800 align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                       {!isOut ? `$${Number(line.amount).toFixed(2)}` : '—'}
                     </td>
-                    <td className="px-1.5 py-1.5 min-w-[28rem] w-[28rem] max-w-[30rem] align-middle text-center">
+                    <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 min-w-[9.5rem] w-[9.5rem] max-w-[11rem] md:min-w-[16rem] md:w-[16rem] lg:min-w-[28rem] lg:w-[28rem] lg:max-w-[30rem] align-middle text-center">
                       <div
                         className="line-clamp-2 break-words leading-snug min-w-0 text-center"
                         title={descShown}
@@ -7029,138 +7639,140 @@ export default function StatementReconciliationTab() {
                         {descShown}
                       </div>
                     </td>
-                    <td className="px-1.5 py-1.5 text-[10px] sm:text-[11px] space-y-0.5 min-w-[28rem] w-[28rem] max-w-[30rem] align-middle">
+                    <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 text-[10px] sm:text-[11px] space-y-0.5 min-w-[9.5rem] w-[9.5rem] max-w-[11rem] md:min-w-[16rem] md:w-[16rem] lg:min-w-[28rem] lg:w-[28rem] lg:max-w-[30rem] align-middle">
                       {isOut ? (
                         <div className="space-y-1 w-full min-w-0">
-                          {expenseMatch ? (
-                            <div className="rounded border border-slate-200 bg-slate-50/80 px-1.5 py-1">
-                              <div className="flex items-center justify-between gap-1.5 min-w-0">
-                                <div className="flex min-w-0 flex-1 items-start gap-1 pr-0.5">
-                                  <span
-                                    className="mt-0.5 shrink-0"
-                                    title={expenseSourceTableAriaLabel(expenseMatch.source_table)}
-                                    aria-label={expenseSourceTableAriaLabel(expenseMatch.source_table)}
-                                  >
-                                    <ExpenseSourceTypeIcon sourceTable={expenseMatch.source_table} />
-                                  </span>
+                          {expenseMatches.length > 0 ? (
+                            <>
+                              {expenseMatches.map((expenseMatch) => {
+                                const linkedExpenseOpt = expenseOptionByKey.get(
+                                  `${expenseMatch.source_table}:${expenseMatch.source_id}`
+                                )
+                                return (
                                   <div
-                                    className="min-w-0 flex-1 text-[11px] leading-snug text-slate-800 space-y-0.5"
-                                    title={
-                                      linkedExpenseOpt
-                                        ? [
-                                            expenseSourceTableAriaLabel(expenseMatch.source_table),
-                                            `등록: ${formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)}`,
-                                            `금액: $${Number(linkedExpenseOpt.amount).toFixed(2)}`,
-                                            `paid_to: ${linkedExpenseOpt.paid_to || '—'}`,
-                                            `paid_for: ${linkedExpenseOpt.paid_for || '—'}`,
-                                            `description: ${linkedExpenseOpt.description || '—'}`
-                                          ].join('\n')
-                                        : `${expenseSourceTableAriaLabel(expenseMatch.source_table)} · ${expenseMatch.source_id}`
-                                    }
+                                    key={expenseMatch.id}
+                                    className="rounded border border-slate-200 bg-slate-50/80 px-1 py-0.5 sm:px-1.5 sm:py-1"
                                   >
-                                    {linkedExpenseOpt ? (
-                                      <>
-                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-tight">
-                                          <span className="tabular-nums text-slate-700">
-                                            {formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)}
-                                          </span>
-                                          <span className="tabular-nums font-medium">
-                                            ${Number(linkedExpenseOpt.amount).toFixed(2)}
-                                          </span>
-                                          <span className="inline-flex min-w-0 items-center gap-0.5" title="Paid to">
-                                            <UserRound className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
-                                            <span className="max-w-[7rem] truncate">{linkedExpenseOpt.paid_to || '—'}</span>
-                                          </span>
-                                          <span className="inline-flex min-w-0 items-center gap-0.5" title="Paid for">
-                                            <Tag className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
-                                            <span className="max-w-[8rem] truncate">{linkedExpenseOpt.paid_for || '—'}</span>
-                                          </span>
-                                          <span className="inline-flex min-w-0 items-center gap-0.5" title="Description">
-                                            <FileText className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
-                                            <span className="max-w-[10rem] truncate">{linkedExpenseOpt.description || '—'}</span>
-                                          </span>
+                                    <div className="flex items-center justify-between gap-1.5 min-w-0">
+                                      <div className="flex min-w-0 flex-1 items-start gap-1 pr-0.5">
+                                        <span
+                                          className="mt-0.5 shrink-0"
+                                          title={expenseSourceTableAriaLabel(expenseMatch.source_table)}
+                                          aria-label={expenseSourceTableAriaLabel(expenseMatch.source_table)}
+                                        >
+                                          <ExpenseSourceTypeIcon sourceTable={expenseMatch.source_table} />
+                                        </span>
+                                        <div
+                                          className="min-w-0 flex-1 text-[11px] leading-snug text-slate-800 space-y-0.5"
+                                          title={
+                                            linkedExpenseOpt
+                                              ? [
+                                                  expenseSourceTableAriaLabel(expenseMatch.source_table),
+                                                  `등록: ${formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)}`,
+                                                  `금액: $${Number(linkedExpenseOpt.amount).toFixed(2)}`,
+                                                  `paid_to: ${linkedExpenseOpt.paid_to || '—'}`,
+                                                  `paid_for: ${linkedExpenseOpt.paid_for || '—'}`,
+                                                  `description: ${linkedExpenseOpt.description || '—'}`
+                                                ].join('\n')
+                                              : `${expenseSourceTableAriaLabel(expenseMatch.source_table)} · ${expenseMatch.source_id}`
+                                          }
+                                        >
+                                          {linkedExpenseOpt ? (
+                                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-tight">
+                                              <span className="tabular-nums text-slate-700">
+                                                {formatExpenseSubmitOnUsMdY(linkedExpenseOpt.submit_on)}
+                                              </span>
+                                              <span className="tabular-nums font-medium">
+                                                ${Number(linkedExpenseOpt.amount).toFixed(2)}
+                                              </span>
+                                              <span className="inline-flex min-w-0 items-center gap-0.5" title="Paid to">
+                                                <UserRound className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+                                                <span className="max-w-[3.5rem] sm:max-w-[7rem] truncate">{linkedExpenseOpt.paid_to || '—'}</span>
+                                              </span>
+                                              <span className="inline-flex min-w-0 items-center gap-0.5" title="Paid for">
+                                                <Tag className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
+                                                <span className="max-w-[3.5rem] sm:max-w-[8rem] truncate">{linkedExpenseOpt.paid_for || '—'}</span>
+                                              </span>
+                                            </div>
+                                          ) : (
+                                            <span className="text-slate-600">
+                                              {expenseMatch.source_id.slice(0, 8)}…
+                                            </span>
+                                          )}
                                         </div>
-                                      </>
-                                    ) : (
-                                      <span className="text-slate-600">
-                                        {expenseMatch.source_id.slice(0, 8)}…
+                                      </div>
+                                      <div className="flex shrink-0 items-center gap-0.5">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 w-6 shrink-0 p-0 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                          disabled={loading}
+                                          title="이 지출 연결만 해제"
+                                          aria-label="연결 해제"
+                                          onClick={() => void removeMatchRow(line.id, expenseMatch.id)}
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                    <div className="mt-0.5 sm:mt-1 flex flex-wrap items-center gap-x-1 sm:gap-x-2 gap-y-0.5 border-t border-slate-200/60 pt-0.5 sm:pt-1 text-[10px] sm:text-[11px] text-slate-500">
+                                      <span className="inline-flex items-center gap-0.5">
+                                        <Save className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-blue-600" aria-hidden />
+                                        <span className="truncate max-w-[4.5rem] sm:max-w-none">{displayNameForEmail(expenseMatch.matched_by)}</span>
                                       </span>
-                                    )}
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-slate-500 underline decoration-dotted hover:bg-slate-100 hover:text-slate-800"
+                                        title="매칭 이력 보기"
+                                        onClick={() =>
+                                          void loadMatchHistory({
+                                            line,
+                                            match: expenseMatch,
+                                            ...(linkedExpenseOpt ? { expense: linkedExpenseOpt } : {})
+                                          })
+                                        }
+                                      >
+                                        <Clock className="h-3.5 w-3.5" aria-hidden />
+                                        <span>
+                                          {formatReconciliationTimestamp(
+                                            expenseMatch.updated_at || expenseMatch.matched_at
+                                          )}
+                                        </span>
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="flex shrink-0 items-center gap-0.5">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 w-6 shrink-0 p-0"
-                                    disabled={loading}
-                                    title="수정"
-                                    aria-label="지출 연결 수정"
-                                    onClick={() => {
-                                      setExpensePickerQuery('')
-                                      setExpensePickerLineId(line.id)
-                                    }}
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 w-6 shrink-0 p-0 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                                    disabled={loading}
-                                    title="연결 해제"
-                                    aria-label="연결 해제"
-                                    onClick={() => void saveExpenseSelection(line, '')}
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-200/60 pt-1 text-[11px] text-slate-500">
-                                <span className="inline-flex items-center gap-0.5">
-                                  <Save className="h-3.5 w-3.5 text-blue-600" aria-hidden />
-                                  <span>{displayNameForEmail(expenseMatch.matched_by)}</span>
-                                </span>
-                                {expenseMatch.updated_by ? (
-                                  <span className="inline-flex items-center gap-0.5">
-                                    <Pencil className="h-3.5 w-3.5 text-red-600" aria-hidden />
-                                    <span>{displayNameForEmail(expenseMatch.updated_by)}</span>
-                                  </span>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-slate-500 underline decoration-dotted hover:bg-slate-100 hover:text-slate-800"
-                                  title="매칭 이력 보기"
-                                  onClick={() =>
-                                    void loadMatchHistory({
-                                      line,
-                                      match: expenseMatch,
-                                      ...(linkedExpenseOpt ? { expense: linkedExpenseOpt } : {})
-                                    })
-                                  }
-                                >
-                                  <Clock className="h-3.5 w-3.5" aria-hidden />
-                                  <span>
-                                    {formatReconciliationTimestamp(expenseMatch.updated_at || expenseMatch.matched_at)}
-                                  </span>
-                                </button>
-                              </div>
-                            </div>
+                                )
+                              })}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-6 sm:h-7 w-auto max-w-full shrink-0 self-start text-[10px] sm:text-xs py-0.5 px-1.5 sm:py-1 sm:px-2"
+                                disabled={loading}
+                                onClick={() => {
+                                  setExpensePickerQuery('')
+                                  setExpensePickerLineId(line.id)
+                                }}
+                              >
+                                <span className="sm:hidden">+ 추가</span>
+                                <span className="hidden sm:inline">지출 추가 연결…</span>
+                              </Button>
+                            </>
                           ) : (
                             <Button
                               type="button"
                               size="sm"
                               variant="outline"
-                              className="h-7 w-full max-w-full text-[10px] sm:text-xs py-1"
+                              className="h-6 sm:h-7 w-auto max-w-full shrink-0 self-start text-[10px] sm:text-xs py-0.5 px-1.5 sm:py-1 sm:px-2"
                               disabled={loading}
                               onClick={() => {
                                 setExpensePickerQuery('')
                                 setExpensePickerLineId(line.id)
                               }}
                             >
-                              지출 연결…
+                              <span className="sm:hidden">연결</span>
+                              <span className="hidden sm:inline">지출 연결…</span>
                             </Button>
                           )}
                         </div>
@@ -7193,20 +7805,21 @@ export default function StatementReconciliationTab() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            className="h-7 w-full max-w-full text-[10px] sm:text-xs py-1"
+                            className="h-6 sm:h-7 w-auto max-w-full shrink-0 self-start text-[10px] sm:text-xs py-0.5 px-1.5 sm:py-1 sm:px-2"
                             disabled={loading}
                             onClick={() => {
                               setPaymentPickerQuery('')
                               setPaymentPickerLineId(line.id)
                             }}
                           >
-                            + 입금 기록 연결…
+                            <span className="sm:hidden">+ 입금</span>
+                            <span className="hidden sm:inline">+ 입금 기록 연결…</span>
                           </Button>
                         </div>
                       )}
                     </td>
-                    <td className="px-1.5 py-1.5 align-top">
-                      <label className="flex items-center gap-1 text-[10px] sm:text-xs mb-0.5">
+                    <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-top min-w-[5.25rem] w-[5.25rem] sm:min-w-0 sm:w-auto">
+                      <label className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-xs mb-0.5">
                         <input
                           type="checkbox"
                           checked={line.is_personal}
@@ -7216,7 +7829,7 @@ export default function StatementReconciliationTab() {
                       </label>
                       {line.is_personal && isOut && (
                         <select
-                          className="border rounded px-1 py-0.5 text-xs w-full max-w-[9rem] mb-1"
+                          className="border rounded px-1 py-0.5 text-[10px] sm:text-xs w-full max-w-full sm:max-w-[9rem] mb-1"
                           value={line.personal_partner || ''}
                           onChange={(e) =>
                             setStatementPersonalPartner(
@@ -7243,13 +7856,13 @@ export default function StatementReconciliationTab() {
                         <AccountingTerm termKey="PNL제외">PNL 제외</AccountingTerm>
                       </label>
                     </td>
-                    <td className="px-1.5 py-1.5 align-middle">
-                      {isOut && !expenseMatch && (
+                    <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-middle w-[4.5rem] sm:w-auto">
+                      {isOut && expenseMatches.length === 0 && (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="h-7 text-[10px] sm:text-xs py-1 px-2"
+                          className="h-6 sm:h-7 text-[10px] sm:text-xs py-0.5 px-1.5 sm:py-1 sm:px-2 whitespace-nowrap"
                           onClick={() => setAdjustModalLine(line)}
                         >
                           <AccountingTerm termKey="보정지출">보정 지출</AccountingTerm>
@@ -8351,6 +8964,13 @@ export default function StatementReconciliationTab() {
             setExpensePickerBrowsePage(0)
             setExpensePickerBrowseRows([])
             setExpensePickerBrowseHasMore(false)
+            setExpensePickerSearchSourceFilter('')
+            setExpensePickerSearchDateScope('line_window')
+            setExpensePickerSearchSort('relevance')
+            setExpensePickerPendingKeys([])
+            setExpensePickerPendingReconnectKeys(new Set())
+            setExpensePickerPool([])
+            setExpensePickerPoolWideLoaded(false)
           }
         }}
       >
@@ -8359,16 +8979,39 @@ export default function StatementReconciliationTab() {
             <DialogTitle className="text-base">회사/투어/예약/입장권 지출 연결</DialogTitle>
           </DialogHeader>
           {expensePickerLine ? (
+            <>
             <div className="flex flex-col flex-1 min-h-0 gap-3 px-4 py-3 overflow-y-auto">
               <p className="text-xs text-slate-600 break-words">
-                명세 <strong>{expensePickerLine.posted_date}</strong> · 출금{' '}
-                <strong>${Number(expensePickerLine.amount).toFixed(2)}</strong>
+                <span className="inline-flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                  <span>
+                    명세 <strong>{expensePickerLine.posted_date}</strong> · 출금{' '}
+                    <strong>${Number(expensePickerLine.amount).toFixed(2)}</strong>
+                  </span>
+                  {expensePickerStatementDesc ? (
+                    <span
+                      className="text-slate-700 min-w-0 break-words line-clamp-2"
+                      title={expensePickerStatementDesc}
+                    >
+                      · {expensePickerStatementDesc}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="block mt-1 text-[11px] text-slate-500">
-                  현재 금융 계정에 연결된 결제수단의 지출을 후보 상단에 표시합니다.
+                  현재 금융 계정에 연결된 결제수단의 지출을 후보 상단에 표시합니다. 여러 건(예: 입장권 2건)을
+                  고른 뒤 아래 <strong>연결 저장</strong>으로 한 번에 반영할 수 있습니다. 이미 다른 명세에 연결된
+                  지출은 <strong>이 명세에도 연결</strong>(기존 명세 유지) 또는 <strong>기존 끊고 이 줄로</strong>
+                  (옮기기)를 고를 수 있습니다. 후보는 명세 거래일 기준 ±{PICKER_QUICK_DATE_WINDOW_DAYS}일 구간을 먼저
+                  불러옵니다.
                 </span>
               </p>
+              {expensePickerPoolLoading ? (
+                <p className="inline-flex items-center gap-1.5 text-xs text-slate-600" role="status">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+                  지출 후보 불러오는 중…
+                </p>
+              ) : null}
               <label className="text-xs text-slate-600 block space-y-1">
-                검색 ({PICKER_SEARCH_MIN_CHARS}자 이상 — 설명·금액·일자·ID)
+                검색 ({PICKER_SEARCH_MIN_CHARS}자 이상 — 비고·금액·등록·체크인·유형·결제·ID·RN#)
                 <input
                   className="w-full border rounded px-2 py-2 text-sm"
                   value={expensePickerQuery}
@@ -8382,7 +9025,8 @@ export default function StatementReconciliationTab() {
                 </div>
                 {expensePickerQuick.mode === 'similar' ? (
                   <p className="text-[11px] text-slate-500 mb-1">
-                    같은 금액이 없어 명세일 ±{PICKER_QUICK_DATE_WINDOW_DAYS}일 안, 유사 금액 후보를 표시합니다.
+                    같은 금액이 없어 명세일 ±{PICKER_QUICK_DATE_WINDOW_DAYS}일 안(입장권은 체크인일), 유사 금액
+                    후보를 표시합니다.
                   </p>
                 ) : null}
                 <div className="max-h-[min(28vh,280px)] overflow-y-auto border rounded divide-y divide-slate-100 bg-white">
@@ -8396,54 +9040,114 @@ export default function StatementReconciliationTab() {
                       const otherLineId = blockedElsewhere
                         ? firstOtherStatementLineIdForExpense(expensePickerLine!.id, o, expenseKeyToLineIds)
                         : null
-                      const blockedTitle = blockedElsewhere
-                        ? otherLineId
-                          ? `이미 다른 명세 줄에 연결되어 있습니다. (명세 줄 id: ${otherLineId})`
-                          : '이미 다른 명세 줄에 연결되어 있습니다.'
-                        : undefined
+                      const link = expensePickerRowLinkState(
+                        expensePickerLine!.id,
+                        o,
+                        expensePairOnLine,
+                        expenseKeyToLineIds,
+                        expensePickerPendingKeySet
+                      )
                       return (
-                        <button
-                          key={`${o.source_table}:${o.source_id}`}
-                          type="button"
-                          disabled={loading || blockedElsewhere}
-                          title={blockedTitle}
-                          className={`w-full text-left px-2 py-2 text-sm flex flex-col items-start gap-0.5 border-l-2 ${
-                            blockedElsewhere
-                              ? 'border-amber-400 bg-amber-50/60 cursor-not-allowed opacity-90'
-                              : 'border-transparent hover:bg-slate-50 disabled:opacity-50'
+                        <div
+                          key={link.rawKey}
+                          className={`w-full px-2 py-2 text-sm flex flex-col gap-1 border-l-2 ${
+                            link.pending
+                              ? 'border-sky-500 bg-sky-50/50'
+                              : link.onThisLine
+                                ? 'border-emerald-500 bg-emerald-50/40'
+                                : blockedElsewhere
+                                  ? 'border-amber-400 bg-amber-50/40'
+                                  : 'border-transparent'
                           }`}
-                          onClick={() => {
-                            if (blockedElsewhere) return
-                            setExpensePickerLineId(null)
-                            setExpensePickerQuery('')
-                            void saveExpenseSelection(expensePickerLine, `${o.source_table}:${o.source_id}`)
-                          }}
                         >
-                          <span className="flex flex-wrap items-center gap-1.5 w-full">
-                            <span className={blockedElsewhere ? 'text-slate-600' : ''}>
-                              {formatExpensePickerLineLabel(o)}
-                            </span>
-                            {blockedElsewhere ? (
-                              <span className="text-[10px] font-medium text-amber-900 bg-amber-100 px-1.5 py-0 rounded shrink-0">
-                                다른 명세에 연결됨
+                          <div className="flex items-start justify-between gap-2 w-full">
+                            <div className="min-w-0 flex-1 flex flex-col items-start gap-0.5">
+                              <span className="flex flex-wrap items-center gap-1.5 w-full">
+                                <span className={blockedElsewhere ? 'text-slate-600' : ''}>
+                                  {formatExpensePickerLineLabel(o)}
+                                </span>
+                                {link.onThisLine ? (
+                                  <span className="text-[10px] font-medium text-emerald-900 bg-emerald-100 px-1.5 py-0 rounded shrink-0">
+                                    이 명세에 연결됨
+                                  </span>
+                                ) : blockedElsewhere ? (
+                                  <span className="text-[10px] font-medium text-amber-900 bg-amber-100 px-1.5 py-0 rounded shrink-0">
+                                    다른 명세에 연결됨
+                                  </span>
+                                ) : null}
+                                {expenseMatchesSelectedFinancialAccount(o) ? (
+                                  <span className="text-[10px] font-medium text-sky-800 bg-sky-100 px-1.5 py-0 rounded shrink-0">
+                                    금융계정 우선
+                                  </span>
+                                ) : null}
                               </span>
-                            ) : null}
-                            {expenseMatchesSelectedFinancialAccount(o) ? (
-                              <span className="text-[10px] font-medium text-sky-800 bg-sky-100 px-1.5 py-0 rounded shrink-0">
-                                금융계정 우선
+                              <span className="text-[11px] text-slate-500 tabular-nums">
+                                {o.source_table === 'ticket_bookings' ? '체크인' : '일자'}{' '}
+                                {formatExpenseOptionPickerDate(o)}
                               </span>
-                            ) : null}
-                          </span>
-                          <span className="text-[11px] text-slate-500 tabular-nums">
-                            일자 {formatExpenseOptionSubmitDate(o)}
-                          </span>
-                          <span
-                            className="text-[10px] text-slate-400 font-mono break-all w-full"
-                            title={`${o.source_table}:${o.source_id}`}
-                          >
-                            {o.source_table}:{o.source_id}
-                          </span>
-                        </button>
+                              <span
+                                className="text-[10px] text-slate-400 font-mono break-all w-full"
+                                title={`${o.source_table}:${o.source_id}`}
+                              >
+                                {o.source_table}:{o.source_id}
+                              </span>
+                            </div>
+                            <div className="flex shrink-0 flex-col gap-1 items-end">
+                              {link.onThisLine ? null : link.pending ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-7 text-[10px] px-2"
+                                  disabled={loading}
+                                  onClick={() => removeExpensePickerPending(link.rawKey)}
+                                >
+                                  선택 해제
+                                </Button>
+                              ) : blockedElsewhere ? (
+                                <>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="default"
+                                    className="h-7 text-[10px] px-2"
+                                    disabled={loading}
+                                    title="다른 명세에 연결된 채로 이 줄에도 연결합니다"
+                                    onClick={() => toggleExpensePickerPending(link.rawKey)}
+                                  >
+                                    이 명세에도 연결
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-[10px] px-2"
+                                    disabled={loading}
+                                    title={
+                                      otherLineId
+                                        ? `다른 명세(${otherLineId.slice(0, 8)}…) 연결을 끊고 이 줄에만 연결`
+                                        : '다른 명세 연결을 끊고 이 줄에만 연결'
+                                    }
+                                    onClick={() => toggleExpensePickerPending(link.rawKey, true)}
+                                  >
+                                    기존 끊고 이 줄로
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="default"
+                                  className="h-7 text-[10px] px-2"
+                                  disabled={loading}
+                                  onClick={() => toggleExpensePickerPending(link.rawKey)}
+                                >
+                                  선택
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       )
                     })
                   )}
@@ -8455,9 +9159,15 @@ export default function StatementReconciliationTab() {
                   테이블에서 직접 선택
                   <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
                     위 명세 줄 거래일 <strong className="text-slate-700">{expensePickerLinePostedYmd || '—'}</strong> 기준
-                    ±{RECON_STATEMENT_DAY_WINDOW}일(<span className="tabular-nums">submit_on</span>)만 조회합니다.
-                    페이지당{' '}
-                    {PICKER_BROWSE_PAGE_SIZE}건씩 불러옵니다.
+                    ±{RECON_STATEMENT_DAY_WINDOW}일
+                    {expensePickerBrowseTable === 'ticket_bookings' ? (
+                      <> (<span className="tabular-nums">체크인일</span>)</>
+                    ) : expensePickerBrowseTable ? (
+                      <> (<span className="tabular-nums">등록일 submit_on</span>)</>
+                    ) : (
+                      <> — 회사·투어·예약은 등록일, 입장권은 체크인일</>
+                    )}
+                    만 조회합니다. 페이지당 {PICKER_BROWSE_PAGE_SIZE}건씩 불러옵니다.
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -8500,7 +9210,9 @@ export default function StatementReconciliationTab() {
                             <tr>
                               <th className="px-2 py-1.5 w-8" aria-hidden />
                               <th className="px-2 py-1.5 min-w-[6rem] max-w-[7.5rem]">행 ID</th>
-                              <th className="px-2 py-1.5">일자</th>
+                              <th className="px-2 py-1.5">
+                                {expensePickerBrowseTable === 'ticket_bookings' ? '체크인' : '일자'}
+                              </th>
                               <th className="px-2 py-1.5 text-right whitespace-nowrap">금액</th>
                               <th className="px-2 py-1.5 min-w-[8rem]">비고</th>
                               <th className="px-2 py-1.5 w-[7.5rem] text-center">동작</th>
@@ -8515,11 +9227,27 @@ export default function StatementReconciliationTab() {
                               </tr>
                             ) : (
                               expensePickerBrowseRows.map((o) => {
-                                const canLink = expensePickerLine
-                                  ? canPickExpenseKeysFast(expensePickerLine.id, o.source_table, o.source_id)
-                                  : false
+                                const link = expensePickerLine
+                                  ? expensePickerRowLinkState(
+                                      expensePickerLine.id,
+                                      o,
+                                      expensePairOnLine,
+                                      expenseKeyToLineIds,
+                                      expensePickerPendingKeySet
+                                    )
+                                  : {
+                                      rawKey: `${o.source_table}:${o.source_id}`,
+                                      onThisLine: false,
+                                      blockedElsewhere: false,
+                                      pending: false
+                                    }
                                 return (
-                                  <tr key={`${o.source_table}:${o.source_id}`} className="border-b border-slate-100">
+                                  <tr
+                                    key={`${o.source_table}:${o.source_id}`}
+                                    className={`border-b border-slate-100 ${
+                                      link.pending ? 'bg-sky-50/40' : link.onThisLine ? 'bg-emerald-50/30' : ''
+                                    }`}
+                                  >
                                     <td className="px-2 py-1 align-middle">
                                       <ExpenseSourceTypeIcon sourceTable={o.source_table} className="h-3.5 w-3.5" />
                                     </td>
@@ -8530,7 +9258,7 @@ export default function StatementReconciliationTab() {
                                       {o.source_table}:{o.source_id}
                                     </td>
                                     <td className="px-2 py-1 tabular-nums text-slate-800 whitespace-nowrap">
-                                      {formatExpenseSubmitOnUsMdY(o.submit_on)}
+                                      {formatExpenseOptionPickerDate(o)}
                                     </td>
                                     <td className="px-2 py-1 text-right tabular-nums font-medium">
                                       ${o.amount.toFixed(2)}
@@ -8542,25 +9270,56 @@ export default function StatementReconciliationTab() {
                                     </td>
                                     <td className="px-2 py-1">
                                       <div className="flex flex-wrap gap-1 justify-end">
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="default"
-                                          className="h-7 text-[10px] px-2"
-                                          disabled={loading || !canLink}
-                                          title={!canLink ? '다른 명세 줄에 이미 연결된 지출입니다.' : '이 명세 줄에 연결'}
-                                          onClick={() => {
-                                            if (!expensePickerLine) return
-                                            setExpensePickerLineId(null)
-                                            setExpensePickerQuery('')
-                                            void saveExpenseSelection(
-                                              expensePickerLine,
-                                              `${o.source_table}:${o.source_id}`
-                                            )
-                                          }}
-                                        >
-                                          연결
-                                        </Button>
+                                        {link.onThisLine ? (
+                                          <span className="text-[10px] text-emerald-800 px-1 py-0.5">연결됨</span>
+                                        ) : link.pending ? (
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="secondary"
+                                            className="h-7 text-[10px] px-2"
+                                            disabled={loading}
+                                            onClick={() => removeExpensePickerPending(link.rawKey)}
+                                          >
+                                            선택 해제
+                                          </Button>
+                                        ) : link.blockedElsewhere ? (
+                                          <>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant="default"
+                                              className="h-7 text-[10px] px-1.5"
+                                              disabled={loading}
+                                              title="다른 명세에 연결된 채로 이 줄에도 연결합니다"
+                                              onClick={() => toggleExpensePickerPending(link.rawKey)}
+                                            >
+                                              이 명세에도
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-7 text-[10px] px-1.5"
+                                              disabled={loading}
+                                              title="다른 명세 연결을 끊고 이 줄에만 연결"
+                                              onClick={() => toggleExpensePickerPending(link.rawKey, true)}
+                                            >
+                                              기존 끊고
+                                            </Button>
+                                          </>
+                                        ) : (
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={link.pending ? 'secondary' : 'default'}
+                                            className="h-7 text-[10px] px-2"
+                                            disabled={loading}
+                                            onClick={() => toggleExpensePickerPending(link.rawKey)}
+                                          >
+                                            선택
+                                          </Button>
+                                        )}
                                         <Button
                                           type="button"
                                           size="sm"
@@ -8611,54 +9370,229 @@ export default function StatementReconciliationTab() {
               </div>
 
               {deferredExpensePickerQuery.trim().length >= PICKER_SEARCH_MIN_CHARS ? (
-                <div>
-                  <div className="text-xs font-medium text-slate-700 mb-1">
-                    검색 결과 (최대 {PICKER_SEARCH_MAX}건)
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <div
+                      className="flex flex-wrap items-center gap-1"
+                      role="tablist"
+                      aria-label="검색 결과 유형"
+                    >
+                      {EXPENSE_SOURCE_FILTER_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value || 'all'}
+                          type="button"
+                          role="tab"
+                          aria-selected={expensePickerSearchSourceFilter === opt.value}
+                          className={`rounded-full border px-2 py-1 text-[10px] leading-none ${
+                            expensePickerSearchSourceFilter === opt.value
+                              ? 'border-slate-900 bg-slate-900 text-white'
+                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                          onClick={() => setExpensePickerSearchSourceFilter(opt.value)}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      aria-label="검색 일자 범위"
+                      className="border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white"
+                      value={expensePickerSearchDateScope}
+                      onChange={(e) =>
+                        setExpensePickerSearchDateScope(
+                          e.target.value as 'all' | 'line_window' | 'quick_window'
+                        )
+                      }
+                    >
+                      <option value="all">일자 제한 없음</option>
+                      <option value="line_window">명세일 ±{RECON_STATEMENT_DAY_WINDOW}일</option>
+                      <option value="quick_window">명세일 ±{PICKER_QUICK_DATE_WINDOW_DAYS}일</option>
+                    </select>
+                    <select
+                      aria-label="검색 정렬"
+                      className="border border-slate-200 rounded px-1.5 py-1 text-[10px] bg-white"
+                      value={expensePickerSearchSort}
+                      onChange={(e) =>
+                        setExpensePickerSearchSort(
+                          e.target.value as 'relevance' | 'date_desc' | 'date_asc' | 'amount'
+                        )
+                      }
+                    >
+                      <option value="relevance">관련도순</option>
+                      <option value="date_desc">일자 최신순</option>
+                      <option value="date_asc">일자 과거순</option>
+                      <option value="amount">금액 근접순</option>
+                    </select>
+                  </div>
+                  <div className="text-xs font-medium text-slate-700">
+                    검색 결과 {expensePickerSearchResults.length}건 (최대 {PICKER_SEARCH_MAX})
+                    {expensePickerSearchDateScope !== 'all' ? (
+                      <span className="ml-1 font-normal text-slate-500">· 입장권은 체크인일 기준</span>
+                    ) : null}
                   </div>
                   <div className="max-h-[min(28vh,280px)] overflow-y-auto border rounded divide-y divide-slate-100 bg-white">
                     {expensePickerSearchResults.length === 0 ? (
                       <div className="p-3 text-slate-500 text-sm">결과 없음</div>
                     ) : (
-                      expensePickerSearchResults.map((o) => (
-                        <button
-                          key={`s:${o.source_table}:${o.source_id}`}
-                          type="button"
-                          disabled={loading}
-                          className="w-full text-left px-2 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 flex flex-col items-start gap-0.5"
-                          onClick={() => {
-                            setExpensePickerLineId(null)
-                            setExpensePickerQuery('')
-                            void saveExpenseSelection(expensePickerLine, `${o.source_table}:${o.source_id}`)
-                          }}
-                        >
-                          <span className="flex flex-wrap items-center gap-1.5 w-full">
-                            <span>{formatExpensePickerLineLabel(o)}</span>
-                            {expenseMatchesSelectedFinancialAccount(o) ? (
-                              <span className="text-[10px] font-medium text-sky-800 bg-sky-100 px-1.5 py-0 rounded shrink-0">
-                                금융계정 우선
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="text-[11px] text-slate-500 tabular-nums">
-                            일자 {formatExpenseOptionSubmitDate(o)}
-                          </span>
-                          <span
-                            className="text-[10px] text-slate-400 font-mono break-all w-full"
-                            title={`${o.source_table}:${o.source_id}`}
+                      expensePickerSearchResults.map((o) => {
+                        const link = expensePickerRowLinkState(
+                          expensePickerLine.id,
+                          o,
+                          expensePairOnLine,
+                          expenseKeyToLineIds,
+                          expensePickerPendingKeySet
+                        )
+                        const blockedElsewhere = link.blockedElsewhere
+                        return (
+                          <div
+                            key={`s:${link.rawKey}`}
+                            className={`w-full px-2 py-2 text-sm flex items-start justify-between gap-2 border-l-2 ${
+                              link.pending
+                                ? 'border-sky-500 bg-sky-50/50'
+                                : link.onThisLine
+                                  ? 'border-emerald-500 bg-emerald-50/40'
+                                  : blockedElsewhere
+                                    ? 'border-amber-400 bg-amber-50/40'
+                                    : 'border-transparent'
+                            }`}
                           >
-                            {o.source_table}:{o.source_id}
-                          </span>
-                        </button>
-                      ))
+                            <div className="min-w-0 flex flex-col items-start gap-0.5">
+                              <span className="flex flex-wrap items-center gap-1.5 w-full">
+                                <span>{formatExpensePickerLineLabel(o)}</span>
+                                {expenseMatchesSelectedFinancialAccount(o) ? (
+                                  <span className="text-[10px] font-medium text-sky-800 bg-sky-100 px-1.5 py-0 rounded shrink-0">
+                                    금융계정 우선
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="text-[11px] text-slate-500 tabular-nums">
+                                {o.source_table === 'ticket_bookings' ? '체크인' : '일자'}{' '}
+                                {formatExpenseOptionPickerDate(o)}
+                              </span>
+                              <span
+                                className="text-[10px] text-slate-400 font-mono break-all w-full"
+                                title={`${o.source_table}:${o.source_id}`}
+                              >
+                                {o.source_table}:{o.source_id}
+                              </span>
+                            </div>
+                            <div className="flex shrink-0 flex-col gap-1">
+                              {link.onThisLine ? (
+                                <span className="text-[10px] text-emerald-800">연결됨</span>
+                              ) : link.pending ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-7 text-[10px] px-2"
+                                  disabled={loading}
+                                  onClick={() => removeExpensePickerPending(link.rawKey)}
+                                >
+                                  해제
+                                </Button>
+                              ) : blockedElsewhere ? (
+                                <>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="default"
+                                    className="h-7 text-[10px] px-2"
+                                    disabled={loading}
+                                    title="다른 명세에 연결된 채로 이 줄에도 연결합니다"
+                                    onClick={() => toggleExpensePickerPending(link.rawKey)}
+                                  >
+                                    이 명세에도 연결
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-[10px] px-2"
+                                    disabled={loading}
+                                    title="다른 명세 연결을 끊고 이 줄에만 연결"
+                                    onClick={() => toggleExpensePickerPending(link.rawKey, true)}
+                                  >
+                                    기존 끊고 이 줄로
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="default"
+                                  className="h-7 text-[10px] px-2"
+                                  disabled={loading}
+                                  onClick={() => toggleExpensePickerPending(link.rawKey)}
+                                >
+                                  선택
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })
                     )}
                   </div>
                 </div>
               ) : (
                 <p className="text-[11px] text-slate-500">
-                  {PICKER_SEARCH_MIN_CHARS}글자 이상 입력하면 전체 후보에서 검색합니다.
+                  {PICKER_SEARCH_MIN_CHARS}글자 이상 입력하면 전체 후보에서 검색합니다. 입장권은 체크인일·등록일 모두
+                  검색됩니다.
                 </p>
               )}
             </div>
+            <DialogFooter className="shrink-0 flex-col sm:flex-row gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50/80">
+              <div className="flex-1 text-[11px] text-slate-600 text-left min-w-0">
+                {expensePickerPendingSummary.count > 0 ? (
+                  <>
+                    선택 <strong>{expensePickerPendingSummary.count}</strong>건 · 합계{' '}
+                    <strong className="tabular-nums">${expensePickerPendingSummary.sum.toFixed(2)}</strong>
+                    {expensePickerPendingSummary.addAlsoCount > 0 ? (
+                      <span className="block text-emerald-800 mt-0.5">
+                        {expensePickerPendingSummary.addAlsoCount}건은 기존 명세를 유지한 채 이 줄에도
+                        연결됩니다.
+                      </span>
+                    ) : null}
+                    {expensePickerPendingSummary.moveCount > 0 ? (
+                      <span className="block text-amber-800 mt-0.5">
+                        {expensePickerPendingSummary.moveCount}건은 다른 명세 연결을 끊고 이 줄로 옮깁니다.
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  <span>테이블·검색에서 지출을 고른 뒤 저장하세요.</span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 justify-end w-full sm:w-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={expensePickerPendingSummary.count === 0 || expensePickerSaving || loading}
+                  onClick={() => {
+                    setExpensePickerPendingKeys([])
+                    setExpensePickerPendingReconnectKeys(new Set())
+                  }}
+                >
+                  선택 비우기
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={
+                    expensePickerPendingSummary.count === 0 || expensePickerSaving || loading
+                  }
+                  onClick={() => void saveExpensePickerBatch(expensePickerLine)}
+                >
+                  {expensePickerSaving
+                    ? '저장 중…'
+                    : expensePickerPendingSummary.count > 1
+                      ? `연결 저장 (${expensePickerPendingSummary.count}건)`
+                      : '연결 저장'}
+                </Button>
+              </div>
+            </DialogFooter>
+            </>
           ) : null}
         </DialogContent>
       </Dialog>

@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 
-type SuggestionsPayload = { paid_to: string[]; paid_for: string[]; payment_method: string[] }
+type SuggestionsPayload = {
+  paid_to: string[]
+  paid_for: string[]
+  /** standard_paid_for 가 비어 있고 paid_for 만 있는 지출의 결제 내용 */
+  paid_for_standard_unset: string[]
+  payment_method: string[]
+}
 
 function mergeDistinctSorted(base: string[], extra: string[]): string[] {
   const s = new Set<string>()
@@ -36,7 +42,12 @@ export async function GET(request: NextRequest) {
     }
 
     const raw = rpcResult.data as unknown
-    let payload: SuggestionsPayload = { paid_to: [], paid_for: [], payment_method: [] }
+    let payload: SuggestionsPayload = {
+      paid_to: [],
+      paid_for: [],
+      paid_for_standard_unset: [],
+      payment_method: [],
+    }
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       const o = raw as Record<string, unknown>
       const asStrArr = (v: unknown): string[] =>
@@ -44,6 +55,7 @@ export async function GET(request: NextRequest) {
       payload = {
         paid_to: asStrArr(o.paid_to),
         paid_for: asStrArr(o.paid_for),
+        paid_for_standard_unset: asStrArr(o.paid_for_standard_unset),
         payment_method: asStrArr(o.payment_method),
       }
     }

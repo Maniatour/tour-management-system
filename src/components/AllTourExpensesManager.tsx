@@ -60,6 +60,30 @@ interface TourExpense {
   }
 }
 
+function normalizeAmountSearchQuery(raw: string): string {
+  return raw.trim().replace(/[$,\s]/g, '')
+}
+
+/** 금액 검색: 숫자·소수 포함 문자열 일치 또는 동일 금액 */
+function matchesTourExpenseAmountSearch(amount: number | null | undefined, searchRaw: string): boolean {
+  const q = normalizeAmountSearchQuery(searchRaw)
+  if (!q || !/^-?\d+(\.\d+)?$/.test(q)) return false
+  if (amount == null || !Number.isFinite(amount)) return false
+
+  const absAmt = Math.abs(amount)
+  const amountStrings = new Set(
+    [String(amount), String(absAmt), amount.toFixed(2), absAmt.toFixed(2)].map((s) =>
+      s.replace(/,/g, '')
+    )
+  )
+  for (const s of amountStrings) {
+    if (s.includes(q)) return true
+  }
+
+  const qNum = Number(q)
+  return Number.isFinite(qNum) && Math.abs(absAmt - Math.abs(qNum)) < 0.005
+}
+
 export default function AllTourExpensesManager() {
   const t = useTranslations('tours.tourExpense')
   const tRes = useTranslations('reservations')
@@ -118,6 +142,8 @@ export default function AllTourExpensesManager() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [tourIdFilter, setTourIdFilter] = useState('')
+  const [paidToFilter, setPaidToFilter] = useState('all')
+  const [paidForFilter, setPaidForFilter] = useState('all')
   const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
   const [reimburseModal, setReimburseModal] = useState<TourExpense | null>(null)
   const [reimburseForm, setReimburseForm] = useState({
@@ -265,14 +291,16 @@ export default function AllTourExpensesManager() {
     loadTeamMembers()
   }, [loadExpenses])
 
-  // 검색 필터 적용 (결제방법: 저장 ID + 결제 방법 관리 표시명)
+  // 검색 필터 적용 (결제방법: 저장 ID + 결제 방법 관리 표시명, 금액, 지출 ID)
   const searchFilteredExpenses = expenses.filter((expense) => {
-    if (!searchTerm) return true
+    const q = searchTerm.trim()
+    if (!q) return true
 
-    const searchLower = searchTerm.toLowerCase()
+    const searchLower = q.toLowerCase()
     const pmId = expense.payment_method?.trim() || ''
     const pmLabel = pmId ? paymentMethodMap[pmId] || '' : ''
     return (
+      expense.id.toLowerCase().includes(searchLower) ||
       expense.paid_for?.toLowerCase().includes(searchLower) ||
       expense.paid_to?.toLowerCase().includes(searchLower) ||
       expense.tour_id?.toLowerCase().includes(searchLower) ||
@@ -281,11 +309,44 @@ export default function AllTourExpensesManager() {
       expense.products?.name_ko?.toLowerCase().includes(searchLower) ||
       expense.note?.toLowerCase().includes(searchLower) ||
       (pmId && pmId.toLowerCase().includes(searchLower)) ||
-      (pmLabel && pmLabel.toLowerCase().includes(searchLower))
+      (pmLabel && pmLabel.toLowerCase().includes(searchLower)) ||
+      matchesTourExpenseAmountSearch(expense.amount, q)
     )
   })
 
+  const paidToOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const e of expenses) {
+      const v = (e.paid_to || '').trim()
+      if (v) set.add(v)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, locale === 'en' ? 'en' : 'ko'))
+  }, [expenses, locale])
+
+  const paidForOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const e of expenses) {
+      const v = (e.paid_for || '').trim()
+      if (v) set.add(v)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, locale === 'en' ? 'en' : 'ko'))
+  }, [expenses, locale])
+
+  useEffect(() => {
+    if (paidToFilter !== 'all' && !paidToOptions.includes(paidToFilter)) {
+      setPaidToFilter('all')
+    }
+  }, [paidToFilter, paidToOptions])
+
+  useEffect(() => {
+    if (paidForFilter !== 'all' && !paidForOptions.includes(paidForFilter)) {
+      setPaidForFilter('all')
+    }
+  }, [paidForFilter, paidForOptions])
+
   const filteredExpenses = searchFilteredExpenses.filter((e) => {
+    if (paidToFilter !== 'all' && (e.paid_to || '').trim() !== paidToFilter) return false
+    if (paidForFilter !== 'all' && (e.paid_for || '').trim() !== paidForFilter) return false
     if (reimbursementFilter === 'employee_card') {
       const pm = e.payment_method?.trim()
       if (!pm || !employeeLinkedPaymentMethodIds.has(pm)) return false
@@ -525,7 +586,7 @@ export default function AllTourExpensesManager() {
         </div>
 
         {/* 필터 */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4">
           <div>
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{t('statusLabel')}</label>
             <select
@@ -537,6 +598,36 @@ export default function AllTourExpensesManager() {
               <option value="pending">{t('filterPending')}</option>
               <option value="approved">{t('filterApproved')}</option>
               <option value="rejected">{t('filterRejected')}</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{t('paidTo')}</label>
+            <select
+              value={paidToFilter}
+              onChange={(e) => setPaidToFilter(e.target.value)}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{t('filterAll')}</option>
+              {paidToOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{t('paymentDetails')}</label>
+            <select
+              value={paidForFilter}
+              onChange={(e) => setPaidForFilter(e.target.value)}
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">{t('filterAll')}</option>
+              {paidForOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -557,7 +648,7 @@ export default function AllTourExpensesManager() {
               className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="col-span-2 sm:col-span-1">
+          <div className="col-span-2 lg:col-span-1">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{t('tourId')}</label>
             <input
               type="text"

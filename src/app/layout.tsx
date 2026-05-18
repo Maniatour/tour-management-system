@@ -8,10 +8,11 @@ import AppToaster from "@/components/AppToaster";
 import SopComplianceGate from "@/components/sop/SopComplianceGate";
 import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
 
-const inter = Inter({ 
+const inter = Inter({
   subsets: ["latin"],
-  display: 'swap', // 폰트 로딩 최적화
+  display: "swap",
   preload: true,
+  fallback: ["system-ui", "arial"],
 });
 
 export const metadata: Metadata = {

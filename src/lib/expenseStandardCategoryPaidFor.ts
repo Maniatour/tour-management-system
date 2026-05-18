@@ -10,14 +10,22 @@ export type ExpenseStandardCategoryPickRow = {
   is_active?: boolean | null
 }
 
-/** DB·매핑과 맞추기 위해 name_ko 우선(카테고리 매니저와 동일 취지) */
-export function canonicalPaidForTextFromStandardCategory(cat: {
-  name: string
-  name_ko: string | null
-}): string {
+export type StandardCategoryTextLanguage = 'en' | 'ko'
+
+/** DB·매핑과 맞추기 위해 name_ko 우선(카테고리 매니저와 동일 취지). 피커·신규 입력은 en 권장 */
+export function canonicalPaidForTextFromStandardCategory(
+  cat: {
+    name: string
+    name_ko: string | null
+  },
+  options?: { language?: StandardCategoryTextLanguage }
+): string {
+  const lang = options?.language ?? 'ko'
+  const en = (cat.name ?? '').trim()
   const ko = cat.name_ko?.trim()
+  if (lang === 'en') return en || ko || ''
   if (ko) return ko
-  return (cat.name ?? '').trim()
+  return en
 }
 
 export function menuLabelForStandardCategory(

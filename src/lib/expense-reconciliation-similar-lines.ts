@@ -4,6 +4,9 @@ import { formatStatementLineDescription } from '@/lib/statement-display'
 /** 명세 대조 화면의 운영 원장 «수동 후보»와 동일한 거래일 ±일 */
 export const RECON_EXPENSE_LEDGER_DAY_WINDOW = 4
 
+/** 입장권 부킹 상세 — 체크인·등록일 기준 명세 후보 조회 ±일 */
+export const TICKET_BOOKING_STATEMENT_DAY_WINDOW = 3
+
 export type ExpenseReconSourceTable =
   | 'payment_records'
   | 'reservation_expenses'
@@ -18,6 +21,16 @@ export type ExpenseStatementReconContext = {
   dateYmd: string
   amount: number
   direction: 'inflow' | 'outflow'
+  /**
+   * 입장권 부킹: 체크인·등록일 각 ±dayWindow 구간의 명세 줄 전체(금액 필터 없음).
+   * financialAccountId가 있으면 해당 통장 계정 import만 조회.
+   */
+  ticketBookingDateProbe?: {
+    submitYmd?: string | null
+    checkInYmd?: string | null
+    dayWindow?: number
+    financialAccountId?: string | null
+  }
 }
 
 function ymdToUtcDayNumber(raw: string): number {
@@ -40,7 +53,7 @@ function dayDiffFromYmd(iso: string, ymd: string): number {
   return Math.abs(a - b)
 }
 
-function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
+export function addCalendarDaysYmd(ymd: string, deltaDays: number): string {
   const core = ymd.trim().slice(0, 10)
   const parts = core.split('-').map((x) => parseInt(x, 10))
   if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return core
@@ -190,6 +203,151 @@ async function attachExistingMatches(
  *
  * `amountOnly`: 최근 명세 파일에서 **거래일 범위를 쓰지 않고** 금액·방향만으로 후보를 찾습니다.
  */
+function ticketBookingDateAnchors(submitYmd?: string | null, checkInYmd?: string | null): string[] {
+  const out: string[] = []
+  for (const raw of [submitYmd, checkInYmd]) {
+    const y = String(raw ?? '').trim().slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(y)) out.push(y)
+  }
+  return [...new Set(out)]
+}
+
+function mergedYmdWindowForAnchors(
+  anchors: string[],
+  pad: number
+): { startYmd: string; endYmd: string } | null {
+  if (anchors.length === 0) return null
+  let startYmd = addCalendarDaysYmd(anchors[0]!, -pad)
+  let endYmd = addCalendarDaysYmd(anchors[0]!, pad)
+  for (const a of anchors.slice(1)) {
+    const s = addCalendarDaysYmd(a, -pad)
+    const e = addCalendarDaysYmd(a, pad)
+    if (s < startYmd) startYmd = s
+    if (e > endYmd) endYmd = e
+  }
+  return { startYmd, endYmd }
+}
+
+function minDayDiffToAnchors(postedYmd: string, anchors: string[]): number {
+  let best = Number.POSITIVE_INFINITY
+  for (const a of anchors) {
+    const d = dayDiffFromYmd(postedYmd, a)
+    if (d < best) best = d
+  }
+  return best
+}
+
+/**
+ * 입장권 부킹 상세: 체크인·등록일 각 ±dayWindow 일의 명세 줄을 모두 가져옵니다(금액 필터 없음).
+ */
+export async function fetchStatementLinesForTicketBookingDateProbe(
+  supabase: SupabaseClient,
+  params: {
+    submitYmd?: string | null
+    checkInYmd?: string | null
+    direction: 'inflow' | 'outflow'
+    dayWindow?: number
+    financialAccountId?: string | null
+    /** 정렬·표시용 — 후보에서 제외하지 않음 */
+    ledgerAmount?: number | null
+    limit?: number
+  }
+): Promise<SimilarStatementLineRow[]> {
+  const pad = params.dayWindow ?? TICKET_BOOKING_STATEMENT_DAY_WINDOW
+  const anchors = ticketBookingDateAnchors(params.submitYmd, params.checkInYmd)
+  const range = mergedYmdWindowForAnchors(anchors, pad)
+  if (!range) return []
+
+  const { startYmd, endYmd } = range
+  const ledgerAbs =
+    params.ledgerAmount != null && Number.isFinite(Number(params.ledgerAmount))
+      ? Math.abs(Number(params.ledgerAmount))
+      : null
+
+  const { data: rawImports, error: impErr } = await supabase
+    .from('statement_imports')
+    .select('id,financial_account_id,period_start,period_end')
+    .order('period_start', { ascending: false })
+    .limit(400)
+  if (impErr) throw impErr
+
+  const faFilter = String(params.financialAccountId ?? '').trim()
+  const imports = ((rawImports || []) as StatementImportRow[]).filter((im) => {
+    const ps = String(im.period_start ?? '').slice(0, 10)
+    const pe = String(im.period_end ?? '').slice(0, 10)
+    if (!(ps <= endYmd && pe >= startYmd)) return false
+    if (faFilter && String(im.financial_account_id ?? '') !== faFilter) return false
+    return true
+  })
+  if (imports.length === 0) return []
+
+  const accountIds = [...new Set(imports.map((i) => i.financial_account_id).filter(Boolean))]
+  const accountNameById = new Map<string, string>()
+  for (let i = 0; i < accountIds.length; i += 80) {
+    const chunk = accountIds.slice(i, i + 80)
+    const { data: accs } = await supabase.from('financial_accounts').select('id,name').in('id', chunk)
+    for (const a of (accs || []) as { id: string; name: string }[]) {
+      accountNameById.set(a.id, a.name)
+    }
+  }
+
+  const importToAccount = new Map(imports.map((im) => [im.id, im.financial_account_id]))
+  const importIds = imports.map((im) => im.id)
+  const rawLines: Record<string, unknown>[] = []
+  for (let i = 0; i < importIds.length; i += 80) {
+    const chunk = importIds.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('statement_lines')
+      .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
+      .in('statement_import_id', chunk)
+      .gte('posted_date', startYmd)
+      .lte('posted_date', endYmd)
+      .eq('direction', params.direction)
+    if (error) throw error
+    rawLines.push(...((data || []) as Record<string, unknown>[]))
+  }
+
+  const candidates: Omit<SimilarStatementLineRow, 'existing_matches' | 'allocated_sum'>[] = []
+  for (const line of rawLines) {
+    const lineAmount = Number(line.amount ?? 0)
+    const absLine = Math.abs(lineAmount)
+    const posted = String(line.posted_date ?? '').slice(0, 10)
+    const dayDiff = minDayDiffToAnchors(posted, anchors)
+    const amountDiff = ledgerAbs != null ? Math.abs(absLine - ledgerAbs) : absLine
+    const importId = String(line.statement_import_id ?? '')
+    const accountId = importToAccount.get(importId) || ''
+    candidates.push({
+      id: String(line.id),
+      financial_account_id: accountId,
+      financial_account_name: accountNameById.get(accountId) || accountId || '—',
+      posted_date: posted,
+      direction: String(line.direction ?? ''),
+      amount: lineAmount,
+      description: formatStatementLineDescription(
+        line.description == null ? null : String(line.description),
+        line.merchant == null ? null : String(line.merchant)
+      ),
+      matched_status: String(line.matched_status ?? ''),
+      amount_diff: amountDiff,
+      day_diff: dayDiff,
+      score: 100 - dayDiff * 4 - (ledgerAbs != null ? amountDiff * 2 : 0)
+    })
+  }
+
+  const out = await attachExistingMatches(supabase, candidates)
+  out.sort((a, b) => {
+    const aUn = a.matched_status === 'unmatched' ? 1 : 0
+    const bUn = b.matched_status === 'unmatched' ? 1 : 0
+    if (aUn !== bUn) return bUn - aUn
+    if (a.day_diff !== b.day_diff) return a.day_diff - b.day_diff
+    if (ledgerAbs != null && a.amount_diff !== b.amount_diff) return a.amount_diff - b.amount_diff
+    if (a.posted_date !== b.posted_date) return a.posted_date < b.posted_date ? 1 : -1
+    return b.score - a.score
+  })
+  const limit = params.limit ?? 300
+  return out.slice(0, limit)
+}
+
 export async function fetchSimilarStatementLinesForExpenseRow(
   supabase: SupabaseClient,
   params: {

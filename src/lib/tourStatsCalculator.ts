@@ -29,6 +29,12 @@ export type ReservationPricingRow = {
   prepayment_tip?: number | null
   commission_amount?: number | null
   commission_percent?: number | null
+  /** 예약 가격정보 · 가격 계산 ④ 운영 이익 (DB 저장값) */
+  operating_profit?: number | null
+}
+
+function roundUsd2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100
 }
 
 export function calculateNetPrice(
@@ -100,4 +106,48 @@ export function calculateOperatingProfit(
   const reservationExpense = reservationExpenses[reservationId] || 0
   const additionalPayment = calculateAdditionalPayment(pricing, reservationId, reservationChannels)
   return netPrice - reservationExpense + additionalPayment
+}
+
+/**
+ * 투어 통계 「수익」— DB operating_profit 우선, 미저장 시 레거시 산식.
+ */
+export function resolveOperatingProfitForTourStats(
+  pricing: ReservationPricingRow | null,
+  reservationId: string,
+  reservationExpenses: Record<string, number>,
+  reservationChannels: Record<string, { commission_base_price_only?: boolean }>
+): number {
+  if (!pricing) return 0
+  const stored = pricing.operating_profit
+  if (stored != null && Number.isFinite(Number(stored))) {
+    return roundUsd2(Number(stored))
+  }
+  return roundUsd2(
+    calculateOperatingProfit(pricing, reservationId, reservationExpenses, reservationChannels)
+  )
+}
+
+/** 투어에 속한 예약 pricing 중 정산 대상만 operating_profit 합산 */
+export function sumOperatingProfitForTourPricing(
+  pricingList: ReservationPricingRow[],
+  reservationStatusById: Map<string, string | null | undefined>,
+  reservationExpenses: Record<string, number>,
+  reservationChannels: Record<string, { commission_base_price_only?: boolean }>
+): number {
+  return pricingList
+    .filter(
+      (p) =>
+        !reservationExcludedFromTourSettlementAggregates(reservationStatusById.get(p.reservation_id))
+    )
+    .reduce(
+      (sum, pricing) =>
+        sum +
+        resolveOperatingProfitForTourStats(
+          pricing,
+          pricing.reservation_id,
+          reservationExpenses,
+          reservationChannels
+        ),
+      0
+    )
 }

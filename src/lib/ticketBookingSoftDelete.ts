@@ -23,3 +23,24 @@ export function canRequestTicketBookingSoftDelete(rawPosition: string | null | u
   if (p === 'op' || p === 'super' || p === 'admin') return true;
   return isManagerTeamPosition(rawPosition);
 }
+
+/** UI: 소프트 삭제 버튼 표시 (직책 또는 부킹 관리 권한) */
+export function canShowTicketBookingSoftDeleteUi(
+  rawPosition: string | null | undefined,
+  canManageBookings?: boolean
+): boolean {
+  return canRequestTicketBookingSoftDelete(rawPosition) || Boolean(canManageBookings);
+}
+
+/** 음수 수량·취소 완료 등 RN 조정용으로 남긴 보조 행 */
+export function isTicketBookingOffsetOrCancelRow(row: {
+  ea?: number | null;
+  status?: string | null;
+  booking_status?: string | null;
+}): boolean {
+  if (Number(row.ea) < 0) return true;
+  const legacy = String(row.status ?? '').toLowerCase();
+  if (legacy === 'cancelled' || legacy === 'canceled') return true;
+  const axis = String(row.booking_status ?? '').toLowerCase();
+  return axis === 'cancelled' || axis === 'canceled';
+}

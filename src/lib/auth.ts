@@ -95,7 +95,8 @@ export async function signInWithGoogle(locale: string = 'ko') {
       }
     }
     
-    const redirectTo = `${origin}/${locale}/auth/callback`
+    // locale 경로(/ko/auth/callback)는 dev에서 간헐적 404 — 루트 콜백 + locale 쿼리 사용
+    const redirectTo = `${origin}/auth/callback?locale=${encodeURIComponent(locale)}`
     
     console.log('Starting Google sign in...', {
       origin,

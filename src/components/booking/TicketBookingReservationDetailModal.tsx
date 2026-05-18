@@ -5,7 +5,10 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
-import { canRequestTicketBookingSoftDelete } from '@/lib/ticketBookingSoftDelete'
+import {
+  canShowTicketBookingSoftDeleteUi,
+  isTicketBookingOffsetOrCancelRow,
+} from '@/lib/ticketBookingSoftDelete'
 import {
   formatTicketBookingAxisLabel,
   getBookingAxisStatusBadgeClass,
@@ -216,6 +219,8 @@ export type TicketBookingReservationDetailModalProps = {
   renderGroupDesktopTable?: (groupRows: TicketBookingReservationDetailRow[]) => ReactNode
   /** 테이블과 함께 제공 시 상단에서 카드/테이블 전환 (TicketBookingList 전용) */
   renderGroupCardBookings?: (groupRows: TicketBookingReservationDetailRow[]) => ReactNode
+  /** 명세 대조 아이콘 (내장 요약 테이블용) */
+  renderStatementReconCell?: (booking: TicketBookingReservationDetailRow) => ReactNode
 }
 
 export default function TicketBookingReservationDetailModal({
@@ -231,18 +236,20 @@ export default function TicketBookingReservationDetailModal({
   onActionApplied,
   renderGroupDesktopTable,
   renderGroupCardBookings,
+  renderStatementReconCell,
 }: TicketBookingReservationDetailModalProps) {
+  const tStmtRecon = useTranslations('expenses.statementRecon')
   const locale = useLocale()
   const t = useTranslations('booking.calendar')
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis')
-  const { user, userPosition } = useAuth()
+  const { user, userPosition, permissions } = useAuth()
   const canHardDeleteBooking = useMemo(
     () => isSuperAdminActor(user?.email, userPosition),
     [user?.email, userPosition]
   )
   const canSoftDeleteRequest = useMemo(
-    () => canRequestTicketBookingSoftDelete(userPosition),
-    [userPosition]
+    () => canShowTicketBookingSoftDeleteUi(userPosition, permissions?.canManageBookings),
+    [userPosition, permissions?.canManageBookings]
   )
   const tourFallback = t('tour')
   const [detailListView, setDetailListView] = useState<'table' | 'card'>('card')
@@ -420,6 +427,7 @@ export default function TicketBookingReservationDetailModal({
                                   invoice: 'Invoice#',
                                   submit: 'Submitted',
                                   guest: 'Guest',
+                                  stmt: 'Stmt',
                                   actions: 'Actions',
                                 }
                               : {
@@ -442,6 +450,7 @@ export default function TicketBookingReservationDetailModal({
                                   invoice: 'Invoice#',
                                   submit: '제출일',
                                   guest: '예약자',
+                                  stmt: tStmtRecon('columnHeaderShort'),
                                   actions: '액션',
                                 }
                           const th =
@@ -471,6 +480,9 @@ export default function TicketBookingReservationDetailModal({
                                   <th className={th}>{col.invoice}</th>
                                   <th className={th}>{col.submit}</th>
                                   <th className={th}>{col.guest}</th>
+                                  {renderStatementReconCell ? (
+                                    <th className={`${th} text-center w-12`}>{col.stmt}</th>
+                                  ) : null}
                                   <th className={`${th} text-center`}>{col.actions}</th>
                                 </tr>
                               </thead>
@@ -603,6 +615,11 @@ export default function TicketBookingReservationDetailModal({
                                         <td className={`${td} max-w-[7rem]`}>
                                           <span className="line-clamp-2 break-words">{booking.reservation_name}</span>
                                         </td>
+                                        {renderStatementReconCell ? (
+                                          <td className={`${td} text-center align-middle`}>
+                                            {renderStatementReconCell(booking)}
+                                          </td>
+                                        ) : null}
                                         <td className={`${td} text-center`}>
                                           {!readOnly &&
                                           (onEdit ||
@@ -612,7 +629,11 @@ export default function TicketBookingReservationDetailModal({
                                               !booking.deletion_requested_at) ||
                                             (onHardDelete &&
                                               canHardDeleteBooking &&
-                                              !!booking.deletion_requested_at)) ? (
+                                              !!booking.deletion_requested_at) ||
+                                            (onHardDelete &&
+                                              canHardDeleteBooking &&
+                                              isTicketBookingOffsetOrCancelRow(booking) &&
+                                              !booking.deletion_requested_at)) ? (
                                             <div className="flex flex-col items-stretch gap-1">
                                               {onEdit ? (
                                                 <button
@@ -650,7 +671,6 @@ export default function TicketBookingReservationDetailModal({
                                                   type="button"
                                                   onClick={() => {
                                                     onRequestSoftDelete(booking.id)
-                                                    onOpenChange(false)
                                                   }}
                                                   className="rounded bg-amber-600 px-2 py-0.5 text-[10px] text-white hover:bg-amber-700"
                                                 >
@@ -664,9 +684,30 @@ export default function TicketBookingReservationDetailModal({
                                                   type="button"
                                                   onClick={() => {
                                                     onHardDelete(booking.id)
-                                                    onOpenChange(false)
                                                   }}
                                                   className="rounded bg-red-600 px-2 py-0.5 text-[10px] text-white hover:bg-red-700"
+                                                >
+                                                  {locale === 'en' ? 'Purge' : '영구 삭제'}
+                                                </button>
+                                              ) : null}
+                                              {onHardDelete &&
+                                              canHardDeleteBooking &&
+                                              isTicketBookingOffsetOrCancelRow(booking) &&
+                                              !booking.deletion_requested_at ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    if (
+                                                      confirm(
+                                                        locale === 'ko'
+                                                          ? '이 조정/취소 행을 바로 영구 삭제하시겠습니까? (되돌릴 수 없습니다)'
+                                                          : 'Permanently delete this adjustment/cancel row now? This cannot be undone.'
+                                                      )
+                                                    ) {
+                                                      onHardDelete(booking.id)
+                                                    }
+                                                  }}
+                                                  className="rounded bg-red-700 px-2 py-0.5 text-[10px] text-white hover:bg-red-800"
                                                 >
                                                   {locale === 'en' ? 'Purge' : '영구 삭제'}
                                                 </button>

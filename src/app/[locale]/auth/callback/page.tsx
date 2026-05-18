@@ -7,6 +7,18 @@ import { completeOAuthCallback } from '@/lib/authCallback'
 
 const CALLBACK_FAILSAFE_MS = 18_000
 
+/** 구 redirect URL(/ko/auth/callback#…) → /auth/callback?locale=ko#… (hash 유지) */
+function redirectLocaleCallbackToCanonical(validLocale: string) {
+  if (typeof window === 'undefined') return false
+  const { pathname, search, hash } = window.location
+  if (!/^\/(ko|en)\/auth\/callback\/?$/.test(pathname)) return false
+  const params = new URLSearchParams(search)
+  if (!params.get('locale')) params.set('locale', validLocale)
+  const qs = params.toString()
+  window.location.replace(`/auth/callback${qs ? `?${qs}` : ''}${hash}`)
+  return true
+}
+
 export default function AuthCallbackPage() {
   const router = useRouter()
   const params = useParams()
@@ -26,6 +38,7 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (redirectLocaleCallbackToCanonical(validLocale)) return
 
     let cancelled = false
 

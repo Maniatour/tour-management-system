@@ -18,10 +18,12 @@ const withSerwist = withSerwistInit({
 
 const nextConfig = {
 	// Next 16 dev: `app/admin` 페이지와 `app/api/admin` API가 동시에 있으면 /api/admin/* 가 404 나는 경우가 있음
+	// `[locale]/admin/team-chat` 페이지와 `app/api/team-chat/*` 가 같이 있으면 dev에서 일부 하위 API가 HTML 404가 나는 경우가 있음
 	async rewrites() {
 		return {
 			beforeFiles: [
 				{ source: '/api/admin/weather-status', destination: '/api/weather-status' },
+				{ source: '/api/team-chat/unread-count', destination: '/api/team-chat-unread-count' },
 			],
 		}
 	},
@@ -55,8 +57,6 @@ const nextConfig = {
 	env: {
 		NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
 		NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
-		// CSS preload 최적화
-		NEXT_DISABLE_CSS_PRELOAD: 'true',
 	},
 	
 	// 압축 최적화
@@ -97,17 +97,6 @@ const nextConfig = {
 			}
 		}
 
-		// CSS preload 최적화
-		if (!isServer) {
-			// CSS 파일의 불필요한 preload 방지
-			config.plugins = config.plugins || [];
-			config.plugins.push(
-				new (require('webpack')).DefinePlugin({
-					'process.env.NEXT_DISABLE_CSS_PRELOAD': JSON.stringify('true'),
-				})
-			);
-		}
-		
 		// 프로덕션 빌드 최적화
 		if (!dev) {
 			// 청크 분할 최적화

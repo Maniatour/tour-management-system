@@ -98,8 +98,16 @@ type LocalTicketBooking = {
   invoice_number?: string | null
   deletion_requested_at?: string | null
   deletion_requested_by?: string | null
-  /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
-  bookingDetails?: { time: string | null; ea: number; reservation_id: string | null; rn_number: string | null }[]
+  check_in_date?: string | null
+  /** 간단히 보기 시 회사별 하위 행 (체크인, 시간, 인원, 예약번호) */
+  bookingDetails?: {
+    check_in_date: string | null
+    time: string | null
+    ea: number
+    reservation_id: string | null
+    rn_number: string | null
+    invoice_number?: string | null
+  }[]
 }
 
 type LocalTourHotelBooking = {
@@ -1671,13 +1679,21 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
         category: null,
         time: null,
         rn_number: null,
-        bookingDetails: companyData.bookings.map(b => ({
-          time: b.time ? (typeof b.time === 'string' ? b.time.substring(0, 5) : b.time) : null,
-          ea: b.ea || 0,
-          reservation_id: b.reservation_id ?? null,
-          rn_number: b.rn_number ?? null,
-          invoice_number: b.invoice_number ?? null
-        }))
+        bookingDetails: companyData.bookings.map(b => {
+          const checkInRaw = (b as { check_in_date?: string | null }).check_in_date
+          const checkIn =
+            checkInRaw != null && String(checkInRaw).trim() !== ''
+              ? String(checkInRaw).trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? String(checkInRaw).trim()
+              : null
+          return {
+            check_in_date: checkIn,
+            time: b.time ? (typeof b.time === 'string' ? b.time.substring(0, 5) : String(b.time)) : null,
+            ea: b.ea || 0,
+            reservation_id: b.reservation_id ?? null,
+            rn_number: b.rn_number ?? null,
+            invoice_number: b.invoice_number ?? null,
+          }
+        }),
       } as LocalTicketBooking))
     }
   }, [ticketBookings, showTicketBookingDetails])

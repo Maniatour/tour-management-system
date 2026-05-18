@@ -55,6 +55,29 @@ import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
 } from '@/lib/scheduleProductColorPresets'
+import {
+  SCHEDULE_AIRPORT_PICK_DROP_ROW_ID,
+  buildScheduleAirportPickupMemberIdSet,
+  buildScheduleAirportSendingMemberIdSet,
+  buildScheduleProductPickerItems,
+  canonicalScheduleProductId,
+  expandScheduleRowProductIds,
+  getScheduleAirportMemberIdSetForRowKey,
+  getScheduleAirportPickupDisplayName,
+  getScheduleAirportPickupMemberProductIds,
+  getScheduleAirportPickupRowKey,
+  getScheduleAirportSendingDisplayName,
+  getScheduleAirportSendingMemberProductIds,
+  getScheduleAirportSendingRowKey,
+  getScheduleColorRowKeyForProductId,
+  getScheduleProductColor,
+  getScheduleProductColorForProductId,
+  getScheduleProductLabel,
+  isScheduleAirportGroupedRowKey,
+  isScheduleAirportPickupRowKey,
+  isScheduleAirportSendingRowKey,
+  normalizeScheduleSelectedProducts,
+} from '@/lib/scheduleAirportPickDropGroup'
 import ScheduleTicketBookingAxisInline from '@/components/booking/ScheduleTicketBookingAxisInline'
 import {
   TicketBookingBookingStatusIcon,
@@ -63,7 +86,7 @@ import {
 import { formatTicketBookingAxisLabel } from '@/lib/ticketBookingAxisLabels'
 import {
   filterTicketBookingsExcludedFromMainUi,
-  canRequestTicketBookingSoftDelete,
+  canShowTicketBookingSoftDeleteUi,
 } from '@/lib/ticketBookingSoftDelete'
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
 import { isSuperAdminActor } from '@/lib/superAdmin'
@@ -515,8 +538,8 @@ export default function ScheduleView() {
     [user?.email, userPosition]
   )
   const canRequestScheduleTicketSoftDelete = useMemo(
-    () => canRequestTicketBookingSoftDelete(userPosition),
-    [userPosition]
+    () => canShowTicketBookingSoftDeleteUi(userPosition, hasPermission('canManageBookings')),
+    [userPosition, hasPermission]
   )
 
   /** 투어 상세 모달·스케줄에서 상태 변경 (투어 상세 페이지 useTourDetailData와 동일 기준) */
@@ -1058,8 +1081,8 @@ export default function ScheduleView() {
       
       if (savedProducts) {
         try {
-          const products = typeof savedProducts === 'string' ? JSON.parse(savedProducts) : savedProducts
-          setSelectedProducts(products)
+          const parsed = typeof savedProducts === 'string' ? JSON.parse(savedProducts) : savedProducts
+          setSelectedProducts(Array.isArray(parsed) ? parsed : [])
         } catch (parseError) {
           console.warn('Error parsing saved products:', parseError)
         }
@@ -1161,6 +1184,89 @@ export default function ScheduleView() {
   // 기본 색상(프리셋 id) - 상품 순서별 폴백
   const defaultPresetIds = useMemo(() => SCHEDULE_COLOR_PRESETS.map(p => p.id), [])
 
+  const scheduleProductPickerItems = useMemo(
+    () => buildScheduleProductPickerItems(products),
+    [products],
+  )
+
+  const scheduleAirportHintPayload = useMemo(() => {
+    const productById = new Map(products.map((p) => [String(p.id), p] as const))
+    const resolveProductName = (productId: string | null | undefined) => {
+      const p = productById.get(String(productId || ''))
+      return p ? getScheduleProductLabel(p) : null
+    }
+    return {
+      reservationHints: reservations.map((r) => ({
+        product_id: r.product_id,
+        productName: resolveProductName(r.product_id),
+      })),
+      tourHints: tours.map((t) => ({
+        product_id: t.product_id,
+        productName:
+          (t as { products?: { name?: string | null } | null }).products?.name ??
+          resolveProductName(t.product_id),
+      })),
+    }
+  }, [products, reservations, tours])
+
+  const airportPickupMemberIdSet = useMemo(
+    () => buildScheduleAirportPickupMemberIdSet(products, scheduleAirportHintPayload),
+    [products, scheduleAirportHintPayload],
+  )
+
+  const airportSendingMemberIdSet = useMemo(
+    () => buildScheduleAirportSendingMemberIdSet(products, scheduleAirportHintPayload),
+    [products, scheduleAirportHintPayload],
+  )
+
+  useEffect(() => {
+    if (!products.length) return
+    setSelectedProducts((prev) => {
+      const normalized = normalizeScheduleSelectedProducts(prev, products)
+      if (
+        normalized.length === prev.length &&
+        normalized.every((id, i) => id === prev[i])
+      ) {
+        return prev
+      }
+      return normalized
+    })
+    setProductColors((prev) => {
+      const pickupKey = getScheduleAirportPickupRowKey(products)
+      const sendingKey = getScheduleAirportSendingRowKey(products)
+      let next: Record<string, string> = { ...prev }
+      let changed = false
+
+      const legacyColor = prev[SCHEDULE_AIRPORT_PICK_DROP_ROW_ID]
+      if (legacyColor) {
+        if (!next[pickupKey]) {
+          next[pickupKey] = legacyColor
+          changed = true
+        }
+        if (!next[sendingKey]) {
+          next[sendingKey] = legacyColor
+          changed = true
+        }
+        delete next[SCHEDULE_AIRPORT_PICK_DROP_ROW_ID]
+        changed = true
+      }
+
+      for (const id of getScheduleAirportPickupMemberProductIds(products)) {
+        if (prev[id] && !next[pickupKey]) {
+          next[pickupKey] = prev[id]
+          changed = true
+        }
+      }
+      for (const id of getScheduleAirportSendingMemberProductIds(products)) {
+        if (prev[id] && !next[sendingKey]) {
+          next[sendingKey] = prev[id]
+          changed = true
+        }
+      }
+
+      return changed ? next : prev
+    })
+  }, [products])
 
   // 상품 색상 변경 (관리자는 항상 공유 설정 DB 저장 → 모든 사용자 동일 적용)
   const changeProductColor = async (productId: string, colorClass: string) => {
@@ -2035,15 +2141,41 @@ export default function ScheduleView() {
         })
       }
 
+      const baseProducts = (productsData || []) as Product[]
+      const reservationRows = (reservationsData || []) as Array<{ product_id?: string | null }>
+      const tourRows = (toursData || []) as Array<{ product_id?: string | null }>
+      const baseProductIdSet = new Set(baseProducts.map((p) => String(p.id)))
+      const missingReferencedProductIds = [
+        ...new Set(
+          [...reservationRows, ...tourRows]
+            .map((r) => String(r.product_id || '').trim())
+            .filter((id) => id && !baseProductIdSet.has(id)),
+        ),
+      ]
+      let mergedProducts = baseProducts
+      if (missingReferencedProductIds.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: extraProductsData } = await (supabase as any)
+          .from('products' as any)
+          .select('*')
+          .in('id', missingReferencedProductIds)
+        const extraProducts = (extraProductsData || []) as Product[]
+        if (extraProducts.length > 0) {
+          mergedProducts = baseProducts.concat(
+            extraProducts.filter((p) => !baseProductIdSet.has(String(p.id))),
+          )
+        }
+      }
+
       console.log('=== ScheduleView 데이터 로딩 결과 ===')
-      console.log('Loaded products:', productsData?.length || 0, productsData)
+      console.log('Loaded products:', mergedProducts.length, mergedProducts)
       console.log('Loaded team members:', teamData?.length || 0, teamData)
       console.log('Loaded inactive team members:', inactiveTeamData?.length || 0, inactiveTeamData)
       console.log('Loaded tours:', toursData?.length || 0, toursData)
       console.log('Loaded reservations:', reservationsData?.length || 0, reservationsData)
       console.log('=====================================')
 
-      setProducts(productsData || [])
+      setProducts(mergedProducts)
       setTeamMembers(teamData || [])
       setInactiveTeamMembers(inactiveTeamData || [])
       setTours(toursWithVehicles)
@@ -2319,9 +2451,15 @@ export default function ScheduleView() {
   const productCellReservationList = useMemo(() => {
     if (!productCellReservationsModal) return [] as Reservation[]
     const { productId, dateString } = productCellReservationsModal
+    const productIdSet = getScheduleAirportMemberIdSetForRowKey(
+      productId,
+      products,
+      airportPickupMemberIdSet,
+      airportSendingMemberIdSet,
+    )
     return (reservations as Reservation[])
       .filter((r) => {
-        if (r.product_id !== productId) return false
+        if (!productIdSet.has(canonicalScheduleProductId(r.product_id))) return false
         const d = String(r.tour_date || '').slice(0, 10)
         if (d !== dateString) return false
         const st = String(r.status || '').toLowerCase()
@@ -2336,7 +2474,7 @@ export default function ScheduleView() {
         const cb = String(b.created_at || '')
         return cb.localeCompare(ca)
       })
-  }, [productCellReservationsModal, reservations, customers, locale])
+  }, [productCellReservationsModal, reservations, customers, locale, products, airportPickupMemberIdSet, airportSendingMemberIdSet])
 
   const checkScheduleTourExistsForProductDate = useCallback(async (productId: string, tourDate: string) => {
     try {
@@ -2359,7 +2497,7 @@ export default function ScheduleView() {
 
   const handleProductCellModalCreateTour = useCallback(async () => {
     if (!productCellReservationsModal) return
-    const { productId, dateString } = productCellReservationsModal
+    const { productId: rowKey, dateString } = productCellReservationsModal
     const eligible = productCellReservationList.filter((r) => {
       const st = String(r.status ?? '').toLowerCase()
       return st === 'confirmed' || st === 'recruiting'
@@ -2377,12 +2515,52 @@ export default function ScheduleView() {
 
     setProductCellCreateTourLoading(true)
     try {
-      const exists = await checkScheduleTourExistsForProductDate(productId, dateString)
+      const groupedRow = isScheduleAirportGroupedRowKey(rowKey)
+      if (groupedRow) {
+        for (const r of eligible) {
+          const actualProductId = String(r.product_id || '')
+          if (!actualProductId) continue
+          const isPriv = r.is_private_tour === true || String(r.is_private_tour ?? '').toUpperCase() === 'TRUE'
+          const exists = await checkScheduleTourExistsForProductDate(actualProductId, dateString)
+          if (!exists) {
+            const result = await autoCreateOrUpdateTour(actualProductId, dateString, String(r.id), isPriv)
+            if (!result.success) {
+              showMessage(
+                locale === 'ko' ? '오류' : 'Error',
+                result.message || (locale === 'ko' ? '투어 생성에 실패했습니다.' : 'Failed to create tour.'),
+                'error'
+              )
+              await fetchData()
+              return
+            }
+            if (result.message?.includes('자동 투어 생성 대상이 아닙니다')) {
+              showMessage(locale === 'ko' ? '안내' : 'Notice', result.message, 'error')
+              return
+            }
+          } else {
+            const entries = [{
+              id: String(r.id),
+              isPrivateTour: isPriv,
+            }]
+            const result = await createAdditionalActiveTourForReservations(actualProductId, dateString, entries)
+            if (result.message?.includes('자동 투어 생성 대상이 아닙니다')) {
+              showMessage(locale === 'ko' ? '안내' : 'Notice', result.message, 'error')
+              return
+            }
+            if (!result.success) {
+              showMessage(locale === 'ko' ? '안내' : 'Notice', result.message || (locale === 'ko' ? '투어 생성에 실패했습니다.' : 'Failed to create tour.'), 'error')
+              await fetchData()
+              return
+            }
+          }
+        }
+      } else {
+      const exists = await checkScheduleTourExistsForProductDate(rowKey, dateString)
 
       if (!exists) {
         for (const r of eligible) {
           const isPriv = r.is_private_tour === true || String(r.is_private_tour ?? '').toUpperCase() === 'TRUE'
-          const result = await autoCreateOrUpdateTour(productId, dateString, String(r.id), isPriv)
+          const result = await autoCreateOrUpdateTour(rowKey, dateString, String(r.id), isPriv)
           if (!result.success) {
             showMessage(
               locale === 'ko' ? '오류' : 'Error',
@@ -2402,7 +2580,7 @@ export default function ScheduleView() {
           id: String(r.id),
           isPrivateTour: r.is_private_tour === true || String(r.is_private_tour ?? '').toUpperCase() === 'TRUE',
         }))
-        const result = await createAdditionalActiveTourForReservations(productId, dateString, entries)
+        const result = await createAdditionalActiveTourForReservations(rowKey, dateString, entries)
         if (result.message?.includes('자동 투어 생성 대상이 아닙니다')) {
           showMessage(locale === 'ko' ? '안내' : 'Notice', result.message, 'error')
           return
@@ -2421,6 +2599,7 @@ export default function ScheduleView() {
           await fetchData()
           return
         }
+      }
       }
 
       try {
@@ -2918,7 +3097,11 @@ export default function ScheduleView() {
 
   // 상품별 스케줄 데이터 계산 (초이스별 인원 포함)
   const productScheduleData = useMemo(() => {
-    if (!tours.length || !reservations.length) return []
+    if (!selectedProducts.length) return {}
+    if (!tours.length && !reservations.length) return {}
+
+    const reservationDateYmd = (res: Reservation) => String(res.tour_date || '').slice(0, 10)
+    const reservationProductKey = (res: Reservation) => canonicalScheduleProductId(res.product_id)
 
     // 고객 언어 맵: customer_id -> isKo
     const idToIsKo = new Map<string, boolean>()
@@ -2972,12 +3155,24 @@ export default function ScheduleView() {
       }
     } = {}
 
-    // 선택된 상품별로 데이터 생성
-    selectedProducts.forEach(productId => {
-      const product = products.find(p => p.id === productId)
+    // 선택된 상품별로 데이터 생성 (공항 픽업·샌딩은 통합 product_id + 구 variant 를 한 행으로 합산)
+    selectedProducts.forEach((rowKey) => {
+      const memberProductIds = isScheduleAirportGroupedRowKey(rowKey)
+        ? [...getScheduleAirportMemberIdSetForRowKey(rowKey, products, airportPickupMemberIdSet, airportSendingMemberIdSet)]
+        : expandScheduleRowProductIds(rowKey, products)
+      if (memberProductIds.length === 0) return
+
+      const memberIdSet = new Set(memberProductIds.map((id) => canonicalScheduleProductId(id)))
+      const product = isScheduleAirportPickupRowKey(rowKey)
+        ? { id: rowKey, name: getScheduleAirportPickupDisplayName(products, rowKey) }
+        : isScheduleAirportSendingRowKey(rowKey)
+          ? { id: rowKey, name: getScheduleAirportSendingDisplayName(products, rowKey) }
+          : products.find((p) => p.id === rowKey)
       if (!product) return
 
-      const productTours = tours.filter(tour => tour.product_id === productId)
+      const productTours = tours.filter((tour) =>
+        memberIdSet.has(canonicalScheduleProductId(tour.product_id)),
+      )
       const dailyData: {
         [date: string]: {
           totalPeople: number
@@ -3029,14 +3224,15 @@ export default function ScheduleView() {
         const toursCoveringThisDate = productTours.filter(
           (t) => tourCoversScheduleDate(t, dateString) && !isTourCancelled(t.tour_status)
         )
-        const dayReservations = reservations.filter(res => 
-          res.product_id === productId && 
-          res.tour_date === dateString &&
-          (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
+        const dayReservations = reservations.filter(
+          (res) =>
+            memberIdSet.has(reservationProductKey(res)) &&
+            reservationDateYmd(res) === dateString &&
+            (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting'),
         )
 
         const dayReservationsSameDate = reservations.filter(
-          res => res.product_id === productId && res.tour_date === dateString
+          (res) => memberIdSet.has(reservationProductKey(res)) && reservationDateYmd(res) === dateString,
         )
         const dayPendingReservations = dayReservationsSameDate.filter(
           res => (res.status ?? '').toString().toLowerCase() === 'pending'
@@ -3216,7 +3412,7 @@ export default function ScheduleView() {
         }
       })
 
-      data[productId] = {
+      data[rowKey] = {
         product_name: product.name,
         dailyData,
         totalPeople,
@@ -3236,6 +3432,8 @@ export default function ScheduleView() {
     teamMembers,
     inactiveTeamMembers,
     tourCoversScheduleDate,
+    airportPickupMemberIdSet,
+    airportSendingMemberIdSet,
   ])
 
   // 가이드별 스케줄 데이터 계산
@@ -3308,7 +3506,20 @@ export default function ScheduleView() {
             totalPeople: dayTotalPeople,
             assignedPeople: dayAssignedPeople,
             tours: 1,
-            productColors: { [tour.product_id]: productColors[tour.product_id] || defaultPresetIds[0] },
+            productColors: {
+              [getScheduleColorRowKeyForProductId(
+                tour.product_id,
+                airportPickupMemberIdSet,
+                airportSendingMemberIdSet,
+              )]: getScheduleProductColorForProductId(
+                tour.product_id,
+                productColors,
+                products,
+                defaultPresetIds,
+                airportPickupMemberIdSet,
+                airportSendingMemberIdSet,
+              ),
+            },
             role: role,
             guideInitials: guideInitials,
             isMultiDay: true,
@@ -3364,10 +3575,22 @@ export default function ScheduleView() {
             
             // 상품별 색상 매핑
             singleDayTours.forEach((tour) => {
-              const productId = tour.product_id
-              if (!dailyData[dateString].productColors[productId]) {
-                const productIndex = selectedProducts.indexOf(productId)
-                dailyData[dateString].productColors[productId] = productColors[productId] || defaultPresetIds[productIndex % defaultPresetIds.length]
+              const colorRowKey = getScheduleColorRowKeyForProductId(
+                tour.product_id,
+                airportPickupMemberIdSet,
+                airportSendingMemberIdSet,
+              )
+              if (!colorRowKey) return
+              if (!dailyData[dateString].productColors[colorRowKey]) {
+                dailyData[dateString].productColors[colorRowKey] =
+                  getScheduleProductColorForProductId(
+                    tour.product_id,
+                    productColors,
+                    products,
+                    defaultPresetIds,
+                    airportPickupMemberIdSet,
+                    airportSendingMemberIdSet,
+                  )
               }
             })
             
@@ -3392,7 +3615,8 @@ export default function ScheduleView() {
     })
 
     return data
-  }, [tours, reservations, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors, currentDate, isOffDate, defaultPresetIds, scheduleGridLastDay])
+  }, [tours, reservations, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors, currentDate, isOffDate, defaultPresetIds, scheduleGridLastDay, airportPickupMemberIdSet,
+    airportSendingMemberIdSet, products])
 
   // 월 이동
   const goToPreviousMonth = () => {
@@ -3446,9 +3670,10 @@ export default function ScheduleView() {
 
   // 상품 선택 토글 (관리자는 항상 공유 설정 DB 저장 → 모든 사용자 동일 적용)
   const toggleProduct = async (productId: string) => {
-    const newSelection = selectedProducts.includes(productId) 
-      ? selectedProducts.filter(id => id !== productId)
+    const toggled = selectedProducts.includes(productId)
+      ? selectedProducts.filter((id) => id !== productId)
       : [...selectedProducts, productId]
+    const newSelection = normalizeScheduleSelectedProducts(toggled, products)
     setSelectedProducts(newSelection)
     localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
     if (isSuperAdmin) {
@@ -5292,9 +5517,17 @@ export default function ScheduleView() {
           }
           return null
         }).filter(Boolean))] as string[]
-        const productColorClass = dayTours.length > 0 && dayTours[0].product_id
-          ? (productColors[dayTours[0].product_id] || defaultPresetIds[0])
-          : defaultPresetIds[0]
+        const productColorClass =
+          dayTours.length > 0 && dayTours[0].product_id
+            ? getScheduleProductColorForProductId(
+                dayTours[0].product_id,
+                productColors,
+                products,
+                defaultPresetIds,
+                airportPickupMemberIdSet,
+                airportSendingMemberIdSet,
+              )
+            : defaultPresetIds[0]
         result[id].daily[dateString] = { count: dayTours.length, guideNames, assistantNames, driverNames, productColorClass }
         if (dayTours.length > 0) {
           result[id].hasAnyDayAssignment = true
@@ -5305,7 +5538,18 @@ export default function ScheduleView() {
       })
     })
     return result
-  }, [monthVehiclesWithColors.vehicleList, monthDays, tours, teamMembers, productColors, defaultPresetIds, tourCoversScheduleDate])
+  }, [
+    monthVehiclesWithColors.vehicleList,
+    monthDays,
+    tours,
+    teamMembers,
+    productColors,
+    products,
+    defaultPresetIds,
+    tourCoversScheduleDate,
+    airportPickupMemberIdSet,
+    airportSendingMemberIdSet,
+  ])
 
   const vehicleScheduleMonthKey = useMemo(
     () =>
@@ -5859,7 +6103,11 @@ export default function ScheduleView() {
             <tbody className="divide-y divide-gray-200">
               {/* 각 상품별 데이터 */}
               {Object.entries(productScheduleData).map(([productId, product], index) => {
-                const colorValue = productColors[productId] || defaultPresetIds[index % defaultPresetIds.length]
+                const colorValue = getScheduleProductColor(
+                  productId,
+                  productColors,
+                  defaultPresetIds[index % defaultPresetIds.length],
+                )
                 const displayProps = getProductDisplayProps(colorValue)
                 const selectedIndex = selectedProducts.indexOf(productId)
                 const canMoveUp = selectedIndex > 0
@@ -6318,7 +6566,20 @@ export default function ScheduleView() {
                             totalPeople: 0,
                             assignedPeople,
                             tours: 1,
-                            productColors: { [tour.product_id]: productColors[tour.product_id] || defaultPresetIds[0] },
+                            productColors: {
+                              [getScheduleColorRowKeyForProductId(
+                                tour.product_id,
+                                airportPickupMemberIdSet,
+                                airportSendingMemberIdSet,
+                              )]: getScheduleProductColorForProductId(
+                                tour.product_id,
+                                productColors,
+                                products,
+                                defaultPresetIds,
+                                airportPickupMemberIdSet,
+                                airportSendingMemberIdSet,
+                              ),
+                            },
                             role,
                             guideInitials,
                             isMultiDay: true,
@@ -8120,26 +8381,28 @@ export default function ScheduleView() {
                 표시할 상품을 선택하세요. ({selectedProducts.length}개 선택됨)
               </p>
               <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                {products.length > 0 ? (
-                  products.map(product => {
-                    const isSelected = selectedProducts.includes(product.id)
-                    const selectedIndex = selectedProducts.indexOf(product.id)
+                {scheduleProductPickerItems.length > 0 ? (
+                  scheduleProductPickerItems.map((item) => {
+                    const isSelected = selectedProducts.includes(item.id)
+                    const selectedIndex = selectedProducts.indexOf(item.id)
                     
                     return (
-                      <div key={product.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center space-x-3">
                           <button
-                            onClick={() => toggleProduct(product.id)}
+                            onClick={() => toggleProduct(item.id)}
                             className={`px-3 py-2 rounded-lg text-sm transition-colors ${
                               isSelected
                                 ? 'bg-blue-500 text-white'
                                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                             }`}
                           >
-                            {product.name}
+                            {item.name}
                           </button>
                           {isSelected && (() => {
-                            const previewProps = getProductDisplayProps(productColors[product.id] || defaultPresetIds[0])
+                            const previewProps = getProductDisplayProps(
+                              getScheduleProductColor(item.id, productColors, defaultPresetIds[0]),
+                            )
                             return (
                               <div
                                 className={`px-2 py-1 rounded text-xs border border-gray-300 ${previewProps.className ?? ''}`.trim()}
@@ -8174,11 +8437,13 @@ export default function ScheduleView() {
                             </div>
                             {/* 색상 선택 버튼 → 클릭 시 프리셋 모달 */}
                             {(() => {
-                              const dp = getProductDisplayProps(productColors[product.id] || defaultPresetIds[0])
+                              const dp = getProductDisplayProps(
+                                getScheduleProductColor(item.id, productColors, defaultPresetIds[0]),
+                              )
                               return (
                                 <button
                                   type="button"
-                                  onClick={() => setColorPresetModal({ productId: product.id, productName: product.name })}
+                                  onClick={() => setColorPresetModal({ productId: item.id, productName: item.name })}
                                   className={`px-3 py-1.5 rounded border-2 border-gray-300 text-sm font-medium hover:ring-2 hover:ring-gray-400 ring-offset-1 ${dp.className ?? ''}`.trim()}
                                   style={dp.style}
                                   title="색상 프리셋 선택"
@@ -8229,15 +8494,18 @@ export default function ScheduleView() {
                 </button>
                 <button
                   onClick={async () => {
+                    const productsToSave = normalizeScheduleSelectedProducts(selectedProducts, products)
+                    setSelectedProducts(productsToSave)
                     localStorage.setItem('schedule_product_colors', JSON.stringify(productColors))
-                    if (isSuperAdmin && selectedProducts.length > 0) {
-                      await saveSharedSetting('schedule_selected_products', selectedProducts)
+                    if (isSuperAdmin && productsToSave.length > 0) {
+                      await saveSharedSetting('schedule_selected_products', productsToSave)
                       await saveSharedSetting('schedule_product_colors', productColors as unknown as string[])
-                      localStorage.setItem('shared_schedule_selected_products', JSON.stringify(selectedProducts))
+                      localStorage.setItem('shared_schedule_selected_products', JSON.stringify(productsToSave))
                       localStorage.setItem('shared_schedule_product_colors', JSON.stringify(productColors))
-                    } else if (selectedProducts.length > 0) {
-                      await saveUserSetting('schedule_selected_products', selectedProducts)
+                    } else if (productsToSave.length > 0) {
+                      await saveUserSetting('schedule_selected_products', productsToSave)
                     }
+                    localStorage.setItem('schedule_selected_products', JSON.stringify(productsToSave))
                     setShowProductModal(false)
                   }}
                   className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
@@ -8272,10 +8540,10 @@ export default function ScheduleView() {
             <div className="flex flex-col gap-3 max-h-[65vh] overflow-y-auto">
               {(() => {
                 const usedByOthers = new Set(
-                  products
-                    .filter(p => p.id !== colorPresetModal.productId && selectedProducts.includes(p.id))
-                    .map(p => productColors[p.id])
-                    .filter(Boolean)
+                  selectedProducts
+                    .filter((id) => id !== colorPresetModal.productId)
+                    .map((id) => productColors[id])
+                    .filter(Boolean),
                 )
                 const groups = Array.from(new Set(SCHEDULE_COLOR_PRESETS.map(p => p.groupLabel)))
                 return groups.map(groupLabel => {
@@ -8908,6 +9176,11 @@ export default function ScheduleView() {
               productCellReservationList.map((res) => {
                 const st = String(res.status ?? '')
                 const normalizedSt = st.trim().toLowerCase()
+                const subProductLabel =
+                  productCellReservationsModal &&
+                  isScheduleAirportGroupedRowKey(productCellReservationsModal.productId)
+                    ? products.find((p) => p.id === res.product_id)?.name
+                    : null
                 const quickSet = productCellQuickStatusValues as readonly string[]
                 const statusSelectOptions =
                   normalizedSt && !quickSet.includes(normalizedSt)
@@ -8940,6 +9213,9 @@ export default function ScheduleView() {
                       >
                         {st ? getStatusLabel(st, tReservations) : '—'}
                       </span>
+                      {subProductLabel ? (
+                        <span className="text-[10px] text-gray-500 truncate">{subProductLabel}</span>
+                      ) : null}
                     </button>
                     <div
                       className="shrink-0 flex flex-col justify-center gap-0.5 border-l border-gray-100 pl-2"
@@ -8995,25 +9271,29 @@ export default function ScheduleView() {
             {pickScheduleTicketBookingIds?.map((id) => {
               const b = ticketBookings.find((t) => t.id === id)
               return (
-                <button
+                <div
                   key={id}
-                  type="button"
-                  className="text-left rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
-                  onClick={() => {
-                    setPickScheduleTicketBookingIds(null)
-                    void loadFullTicketBookingAndOpen(id)
-                  }}
+                  className="rounded-lg border border-gray-200 text-sm"
                 >
-                  <div className="font-medium text-gray-900">
-                    {[b?.company || '—', b?.time || '—'].join(' · ')}
-                    <span className="tabular-nums font-medium">
-                      {' '}
-                      · {b?.ea ?? 0}
-                      {locale === 'ko' ? '매' : ' ea'}
-                    </span>
-                  </div>
+                  <button
+                    type="button"
+                    className="w-full text-left rounded-lg px-3 py-2 hover:bg-gray-50"
+                    onClick={() => {
+                      setPickScheduleTicketBookingIds(null)
+                      void loadFullTicketBookingAndOpen(id)
+                    }}
+                  >
+                    <div className="font-medium text-gray-900">
+                      {[b?.company || '—', b?.time || '—'].join(' · ')}
+                      <span className="tabular-nums font-medium">
+                        {' '}
+                        · {b?.ea ?? 0}
+                        {locale === 'ko' ? '매' : ' ea'}
+                      </span>
+                    </div>
+                  </button>
                   {b ? (
-                    <div className="mt-2 border-t border-gray-100 pt-2">
+                    <div className="border-t border-gray-100 px-3 pb-2 pt-2">
                       <ScheduleTicketBookingAxisInline
                         booking={b}
                         instanceKey={`pick-tb-${id}`}
@@ -9025,7 +9305,7 @@ export default function ScheduleView() {
                       />
                     </div>
                   ) : null}
-                </button>
+                </div>
               )
             })}
           </div>

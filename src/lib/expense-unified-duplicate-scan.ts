@@ -1,9 +1,17 @@
+import { restoreExpenseBySourceKey as restoreExpenseBySourceKeyWithClient, softDeleteExpenseBySourceKey as softDeleteExpenseBySourceKeyWithClient } from '@/lib/expense-soft-delete'
 import { supabase } from '@/lib/supabase'
 import {
   BULK_COMPANY_DUP_AMOUNT_EPS,
   BULK_COMPANY_DUP_DAY_WINDOW,
   type LedgerDuplicateExpenseRow
 } from '@/lib/statement-bulk-company-duplicate-check'
+import {
+  canonicalReservationIdKey,
+  isReservationCancelledStatus,
+  isReservationDeletedStatus,
+  normalizeReservationIds,
+  normalizeTourDateKey
+} from '@/utils/tourUtils'
 
 const FETCH_PAGE = 1000
 const MATCH_IN_CHUNK = 200
@@ -21,13 +29,57 @@ export const UNIFIED_EXPENSE_SOURCE_LABEL: Record<UnifiedExpenseSourceTable, str
   ticket_bookings: '입장권 부킹'
 }
 
-/** 중복 점검 참고란 — 투어 배정·상태 요약 */
+/** 중복 점검 참고란 — 투어 일자·상품명·상태·배정 인원 요약 */
 export type TourReferenceSnapshot = {
+  tourDate: string | null
+  /** products.name */
+  tourName: string | null
   tourStatus: string | null
-  assignmentStatus: string | null
+  assignedPeople: number
   guideName: string
   assistantName: string
   vehicleName: string
+}
+
+type TourReservationHeadcountRow = {
+  total_people?: number | null
+  status?: string | null
+  product_id?: string | null
+  tour_date?: string | null
+}
+
+function lookupReservationRow(
+  map: Map<string, TourReservationHeadcountRow>,
+  reservationId: string
+): TourReservationHeadcountRow | undefined {
+  const trimmed = reservationId.trim()
+  return map.get(trimmed) ?? map.get(canonicalReservationIdKey(trimmed))
+}
+
+function computeAssignedPeopleForTour(
+  tour: { product_id?: string | null; tour_date?: string | null; reservation_ids?: unknown },
+  reservationById: Map<string, TourReservationHeadcountRow>
+): number {
+  const productId = String(tour.product_id ?? '').trim()
+  const tourDate = normalizeTourDateKey(tour.tour_date)
+  if (!productId || !tourDate) return 0
+
+  const counted = new Set<string>()
+  let sum = 0
+  for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+    const rid = String(rawId).trim()
+    const key = canonicalReservationIdKey(rid)
+    if (counted.has(key)) continue
+    counted.add(key)
+
+    const row = lookupReservationRow(reservationById, rid)
+    if (!row) continue
+    if (isReservationCancelledStatus(row.status) || isReservationDeletedStatus(row.status)) continue
+    if (String(row.product_id ?? '').trim() !== productId) continue
+    if (normalizeTourDateKey(row.tour_date) !== tourDate) continue
+    sum += row.total_people || 0
+  }
+  return sum
 }
 
 export type UnifiedLedgerDuplicateExpenseRow = LedgerDuplicateExpenseRow & {
@@ -40,6 +92,8 @@ export type UnifiedLedgerDuplicateExpenseRow = LedgerDuplicateExpenseRow & {
   detail_tour_id: string | null
   /** admin 예약 상세 `/[locale]/admin/reservations/[id]` */
   detail_reservation_id: string | null
+  deleted_at: string | null
+  deleted_by: string | null
 }
 
 export function expenseSourceKey(table: UnifiedExpenseSourceTable, id: string): string {
@@ -201,6 +255,14 @@ async function fetchStatementLineFinancialAccountNames(lineIds: string[]): Promi
   return out
 }
 
+function normalizeReconSourceId(id: string): string {
+  const t = id.trim()
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) {
+    return t.toLowerCase()
+  }
+  return t
+}
+
 function effectiveStatementLineId(row: {
   statement_line_id: string | null
   reconciled_statement_line_id: string | null
@@ -209,6 +271,18 @@ function effectiveStatementLineId(row: {
   if (a) return a
   const b = (row.statement_line_id ?? '').trim()
   return b || null
+}
+
+/** 교차 중복 모달·보관함 — reconciliation_matches 우선, 행의 statement_line_id 보조 */
+export function formatExpenseStatementLinkDisplay(row: {
+  reconciled_statement_line_id?: string | null
+  statement_line_id?: string | null
+}): string {
+  const recon = (row.reconciled_statement_line_id ?? '').trim()
+  if (recon) return `대조:${recon.slice(0, 8)}…`
+  const direct = (row.statement_line_id ?? '').trim()
+  if (direct) return `행:${direct.slice(0, 8)}…`
+  return '미연결'
 }
 
 function clusterKeysFromPairs(pairs: [string, string][]): string[][] {
@@ -257,8 +331,8 @@ async function fetchReconciliationLinesForSourceTable(
       .in('source_id', chunk)
     if (error) throw error
     for (const row of data || []) {
-      const sid = String((row as { source_id?: string }).source_id ?? '')
-      const lid = String((row as { statement_line_id?: string }).statement_line_id ?? '')
+      const sid = normalizeReconSourceId(String((row as { source_id?: string }).source_id ?? ''))
+      const lid = String((row as { statement_line_id?: string }).statement_line_id ?? '').trim()
       if (!sid || !lid) continue
       if (!map.has(sid)) map.set(sid, lid)
     }
@@ -268,20 +342,38 @@ async function fetchReconciliationLinesForSourceTable(
 
 type RawTagged = { _source_table: UnifiedExpenseSourceTable; _raw: Record<string, unknown> }
 
+function readDeletedMeta(r: Record<string, unknown>): { deleted_at: string | null; deleted_by: string | null } {
+  return {
+    deleted_at: r.deleted_at == null ? null : String(r.deleted_at),
+    deleted_by: r.deleted_by == null ? null : String(r.deleted_by)
+  }
+}
+
 async function fetchExpenseTableWindow(
   table: UnifiedExpenseSourceTable,
-  selectList: string
+  selectList: string,
+  options?: { deletedOnly?: boolean }
 ): Promise<Record<string, unknown>[]> {
   const sb = table === 'reservation_expenses' ? (supabase as any) : supabase
+  const deletedOnly = options?.deletedOnly === true
+  const selectWithDeleted = selectList.includes('deleted_at')
+    ? selectList
+    : `${selectList}, deleted_at, deleted_by`
   const out: Record<string, unknown>[] = []
   let from = 0
   for (;;) {
-    let q = sb.from(table).select(selectList)
-    if (table === 'ticket_bookings') {
+    let q = sb.from(table).select(selectWithDeleted)
+    if (deletedOnly) {
+      q = q.not('deleted_at', 'is', null)
+    } else {
+      q = q.is('deleted_at', null)
+    }
+    if (table === 'ticket_bookings' && !deletedOnly) {
       q = q.or('status.eq.confirmed,status.eq.Confirmed')
     }
+    const orderCol = deletedOnly ? 'deleted_at' : 'submit_on'
     const { data, error } = await q
-      .order('submit_on', { ascending: true })
+      .order(orderCol, { ascending: !deletedOnly })
       .order('id', { ascending: true })
       .range(from, from + FETCH_PAGE - 1)
     if (error) throw error
@@ -330,6 +422,19 @@ function sortUnifiedGroupRows(rows: UnifiedLedgerDuplicateExpenseRow[]): Unified
   })
 }
 
+type DuplicatePairTourLink = Pick<UnifiedLedgerDuplicateExpenseRow, 'source_table' | 'detail_tour_id'>
+
+/**
+ * 투어 지출끼리 연결 투어 ID가 둘 다 있고 서로 다르면 금액·등록일이 비슷해도 중복 쌍에서 제외합니다.
+ */
+export function tourExpenseDuplicatePairHasDifferentLinkedTours(a: DuplicatePairTourLink, b: DuplicatePairTourLink): boolean {
+  if (a.source_table !== 'tour_expenses' || b.source_table !== 'tour_expenses') return false
+  const tourA = a.detail_tour_id?.trim() || ''
+  const tourB = b.detail_tour_id?.trim() || ''
+  if (!tourA || !tourB) return false
+  return tourA !== tourB
+}
+
 function applyLedgerDisplayFields(
   row: Omit<UnifiedLedgerDuplicateExpenseRow, 'display_payment_method' | 'display_statement_status' | 'display_financial_account'>,
   pmLabels: Map<string, string>,
@@ -341,10 +446,9 @@ function applyLedgerDisplayFields(
     displayPm = pmLabels.get(pmRaw) ?? pmRaw
   }
   const lineId = effectiveStatementLineId(row)
-  let displayStmt = '미연결'
+  const displayStmt = formatExpenseStatementLinkDisplay(row)
   let displayFa: string | null = '—'
   if (lineId) {
-    displayStmt = `연결됨 (${lineId.slice(0, 8)}…)`
     displayFa = lineAccountNames.get(lineId) ?? '—'
   }
   return {
@@ -372,7 +476,7 @@ function mapCompanyRaw(
     status: r.status == null ? null : String(r.status),
     statement_line_id: r.statement_line_id == null ? null : String(r.statement_line_id),
     ledger_expense_origin: r.ledger_expense_origin == null ? null : String(r.ledger_expense_origin),
-    reconciled_statement_line_id: recon.get(id) ?? null,
+    reconciled_statement_line_id: recon.get(normalizeReconSourceId(id)) ?? null,
     standard_paid_for: r.standard_paid_for == null ? null : String(r.standard_paid_for),
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
@@ -380,7 +484,8 @@ function mapCompanyRaw(
     source_context: null,
     tour_reference: null,
     detail_tour_id: null,
-    detail_reservation_id: null
+    detail_reservation_id: null,
+    ...readDeletedMeta(r)
   }
 }
 
@@ -414,11 +519,13 @@ async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, Tou
 
   type TourRefRow = {
     id?: string
+    tour_date?: string | null
+    product_id?: string | null
+    reservation_ids?: unknown
     tour_guide_id?: string | null
     assistant_id?: string | null
     tour_car_id?: string | null
     tour_status?: string | null
-    assignment_status?: string | null
   }
 
   const tours: TourRefRow[] = []
@@ -426,7 +533,9 @@ async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, Tou
     const chunk = ids.slice(i, i + MATCH_IN_CHUNK)
     const { data, error } = await supabase
       .from('tours')
-      .select('id, tour_guide_id, assistant_id, tour_car_id, tour_status, assignment_status')
+      .select(
+        'id, tour_date, product_id, reservation_ids, tour_guide_id, assistant_id, tour_car_id, tour_status'
+      )
       .in('id', chunk)
     if (error) throw error
     tours.push(...((data as TourRefRow[]) || []))
@@ -434,6 +543,7 @@ async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, Tou
 
   const emails = new Set<string>()
   const vehicleIds = new Set<string>()
+  const productIds = new Set<string>()
   for (const t of tours) {
     const g = String(t.tour_guide_id ?? '').trim()
     const a = String(t.assistant_id ?? '').trim()
@@ -441,6 +551,8 @@ async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, Tou
     if (a) emails.add(a)
     const vid = String(t.tour_car_id ?? '').trim()
     if (vid) vehicleIds.add(vid)
+    const pid = String(t.product_id ?? '').trim()
+    if (pid) productIds.add(pid)
   }
 
   const teamByEmail = new Map<string, { nick_name?: string | null; name_ko?: string | null }>()
@@ -469,15 +581,61 @@ async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, Tou
     }
   }
 
+  const productById = new Map<string, { name?: string | null }>()
+  const pidList = [...productIds]
+  for (let i = 0; i < pidList.length; i += MATCH_IN_CHUNK) {
+    const chunk = pidList.slice(i, i + MATCH_IN_CHUNK)
+    const { data, error } = await supabase.from('products').select('id, name').in('id', chunk)
+    if (error) throw error
+    for (const row of data || []) {
+      const o = row as { id?: string; name?: string | null }
+      const id = String(o.id ?? '').trim()
+      if (id) productById.set(id, o)
+    }
+  }
+
+  const reservationIdSet = new Set<string>()
+  for (const t of tours) {
+    for (const rid of normalizeReservationIds(t.reservation_ids)) {
+      const trimmed = String(rid).trim()
+      if (trimmed) reservationIdSet.add(trimmed)
+    }
+  }
+
+  const reservationById = new Map<string, TourReservationHeadcountRow>()
+  const reservationIdList = [...reservationIdSet]
+  for (let i = 0; i < reservationIdList.length; i += MATCH_IN_CHUNK) {
+    const chunk = reservationIdList.slice(i, i + MATCH_IN_CHUNK)
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, total_people, status, product_id, tour_date')
+      .in('id', chunk)
+    if (error) throw error
+    for (const row of data || []) {
+      const o = row as TourReservationHeadcountRow & { id?: string }
+      const id = String(o.id ?? '').trim()
+      if (!id) continue
+      reservationById.set(id, o)
+      reservationById.set(canonicalReservationIdKey(id), o)
+    }
+  }
+
   for (const t of tours) {
     const tid = String(t.id ?? '').trim()
     if (!tid) continue
     const guideEmail = String(t.tour_guide_id ?? '').trim()
     const assistantEmail = String(t.assistant_id ?? '').trim()
     const carId = String(t.tour_car_id ?? '').trim()
+    const productId = String(t.product_id ?? '').trim()
+    const product = productId ? productById.get(productId) : undefined
+    const tourDateRaw = t.tour_date == null ? '' : String(t.tour_date).trim()
+    const tourDate =
+      tourDateRaw.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(tourDateRaw) ? tourDateRaw.slice(0, 10) : null
     out.set(tid, {
+      tourDate,
+      tourName: product?.name?.trim() || null,
       tourStatus: t.tour_status == null ? null : String(t.tour_status),
-      assignmentStatus: t.assignment_status == null ? null : String(t.assignment_status),
+      assignedPeople: computeAssignedPeopleForTour(t, reservationById),
       guideName: teamShortName(teamByEmail.get(guideEmail), guideEmail),
       assistantName: teamShortName(teamByEmail.get(assistantEmail), assistantEmail),
       vehicleName: carId ? vehicleShortName(vehicleById.get(carId)) : '—'
@@ -518,9 +676,9 @@ function mapTourRaw(
     description: r.note == null ? null : String(r.note),
     category: null,
     status: r.status == null ? null : String(r.status),
-    statement_line_id: null,
+    statement_line_id: r.statement_line_id == null ? null : String(r.statement_line_id),
     ledger_expense_origin: null,
-    reconciled_statement_line_id: recon.get(id) ?? null,
+    reconciled_statement_line_id: recon.get(normalizeReconSourceId(id)) ?? null,
     standard_paid_for: null,
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
@@ -528,7 +686,8 @@ function mapTourRaw(
     source_context: ctx,
     tour_reference: null,
     detail_tour_id: tid.trim() ? tid : null,
-    detail_reservation_id: null
+    detail_reservation_id: null,
+    ...readDeletedMeta(r)
   }
 }
 
@@ -550,9 +709,9 @@ function mapReservationRaw(
     description: r.note == null ? null : String(r.note),
     category: null,
     status: r.status == null ? null : String(r.status),
-    statement_line_id: null,
+    statement_line_id: r.statement_line_id == null ? null : String(r.statement_line_id),
     ledger_expense_origin: null,
-    reconciled_statement_line_id: recon.get(id) ?? null,
+    reconciled_statement_line_id: recon.get(normalizeReconSourceId(id)) ?? null,
     standard_paid_for: null,
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
@@ -560,7 +719,8 @@ function mapReservationRaw(
     source_context: ctx,
     tour_reference: null,
     detail_tour_id: tourLinkId.trim() ? tourLinkId : null,
-    detail_reservation_id: rid.trim() ? rid : null
+    detail_reservation_id: rid.trim() ? rid : null,
+    ...readDeletedMeta(r)
   }
 }
 
@@ -585,7 +745,7 @@ function mapTicketRaw(
     status: r.booking_status == null ? null : String(r.booking_status),
     statement_line_id: r.statement_line_id == null ? null : String(r.statement_line_id),
     ledger_expense_origin: null,
-    reconciled_statement_line_id: recon.get(id) ?? null,
+    reconciled_statement_line_id: recon.get(normalizeReconSourceId(id)) ?? null,
     standard_paid_for: null,
     payment_method: r.payment_method == null ? null : String(r.payment_method),
     source_table,
@@ -593,7 +753,8 @@ function mapTicketRaw(
     source_context: r.check_in_date == null ? null : `체크인 ${String(r.check_in_date).slice(0, 10)}`,
     tour_reference: null,
     detail_tour_id: tidTb.trim() ? tidTb : null,
-    detail_reservation_id: ridTb.trim() ? ridTb : null
+    detail_reservation_id: ridTb.trim() ? ridTb : null,
+    ...readDeletedMeta(r)
   }
 }
 
@@ -609,11 +770,11 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(): Promise<{ grou
     ),
     fetchExpenseTableWindow(
       'tour_expenses',
-      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, tour_date, tour_id'
+      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, statement_line_id, tour_date, tour_id'
     ),
     fetchExpenseTableWindow(
       'reservation_expenses',
-      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, reservation_id, tour_id'
+      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, statement_line_id, reservation_id, tour_id'
     ),
     fetchExpenseTableWindow(
       'ticket_bookings',
@@ -679,10 +840,8 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(): Promise<{ grou
     } else {
       row = mapTicketRaw(_raw, rTicket, _source_table)
     }
-    if (row.source_table === 'ticket_bookings') {
-      const a = row.amount
-      if (a == null || !Number.isFinite(a) || a <= 0) continue
-    }
+    const amt = row.amount
+    if (amt == null || !Number.isFinite(amt) || amt === 0) continue
     if (!isIncludedStatus(row.status)) continue
     eligibleBase.push(row)
     byKey.set(row.source_key, row)
@@ -707,6 +866,7 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(): Promise<{ grou
       const bAmt = b.amount
       if (bAmt == null || !Number.isFinite(bAmt)) continue
       if (Math.abs(aAmt - bAmt) > BULK_COMPANY_DUP_AMOUNT_EPS) continue
+      if (tourExpenseDuplicatePairHasDifferentLinkedTours(a, b)) continue
       const fp = canonPairFingerprint(a.source_key, b.source_key)
       if (pairFp.has(fp)) continue
       pairKeys.push([a.source_key, b.source_key])
@@ -758,6 +918,109 @@ export async function fetchUnifiedExpenseLedgerDuplicateGroups(): Promise<{ grou
   return { groups: enrichedGroups }
 }
 
+/** 소프트 삭제된 회사·투어·예약·입장권 지출 목록 (삭제일 최신순) */
+export async function fetchSoftDeletedUnifiedExpenseRows(): Promise<UnifiedLedgerDuplicateExpenseRow[]> {
+  const [ce, te, re, tb] = await Promise.all([
+    fetchExpenseTableWindow(
+      'company_expenses',
+      'id, amount, submit_on, paid_to, paid_for, description, category, status, statement_line_id, ledger_expense_origin, standard_paid_for, payment_method',
+      { deletedOnly: true }
+    ),
+    fetchExpenseTableWindow(
+      'tour_expenses',
+      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, statement_line_id, tour_date, tour_id',
+      { deletedOnly: true }
+    ),
+    fetchExpenseTableWindow(
+      'reservation_expenses',
+      'id, amount, submit_on, paid_to, paid_for, note, status, payment_method, statement_line_id, reservation_id, tour_id',
+      { deletedOnly: true }
+    ),
+    fetchExpenseTableWindow(
+      'ticket_bookings',
+      'id, expense, submit_on, category, company, note, booking_status, payment_method, statement_line_id, check_in_date, tour_id, reservation_id',
+      { deletedOnly: true }
+    )
+  ])
+
+  const tagged: RawTagged[] = [
+    ...ce.map((r) => ({ _source_table: 'company_expenses' as const, _raw: r })),
+    ...te.map((r) => ({ _source_table: 'tour_expenses' as const, _raw: r })),
+    ...re.map((r) => ({ _source_table: 'reservation_expenses' as const, _raw: r })),
+    ...tb.map((r) => ({ _source_table: 'ticket_bookings' as const, _raw: r }))
+  ]
+
+  const idsByTable: Record<UnifiedExpenseSourceTable, string[]> = {
+    company_expenses: [],
+    tour_expenses: [],
+    reservation_expenses: [],
+    ticket_bookings: []
+  }
+  for (const t of tagged) {
+    const id = String(t._raw.id ?? '')
+    if (id) idsByTable[t._source_table].push(id)
+  }
+
+  const [rCompany, rTour, rRes, rTicket] = await Promise.all([
+    fetchReconciliationLinesForSourceTable('company_expenses', idsByTable.company_expenses),
+    fetchReconciliationLinesForSourceTable('tour_expenses', idsByTable.tour_expenses),
+    fetchReconciliationLinesForSourceTable('reservation_expenses', idsByTable.reservation_expenses),
+    fetchReconciliationLinesForSourceTable('ticket_bookings', idsByTable.ticket_bookings)
+  ])
+
+  const baseRows: Omit<
+    UnifiedLedgerDuplicateExpenseRow,
+    'display_payment_method' | 'display_statement_status' | 'display_financial_account' | 'tour_reference'
+  >[] = []
+
+  for (const { _source_table, _raw } of tagged) {
+    let row: Omit<
+      UnifiedLedgerDuplicateExpenseRow,
+      'display_payment_method' | 'display_statement_status' | 'display_financial_account' | 'tour_reference'
+    >
+    if (_source_table === 'company_expenses') {
+      row = mapCompanyRaw(_raw, rCompany, _source_table)
+    } else if (_source_table === 'tour_expenses') {
+      row = mapTourRaw(_raw, rTour, _source_table)
+    } else if (_source_table === 'reservation_expenses') {
+      row = mapReservationRaw(_raw, rRes, _source_table)
+    } else {
+      row = mapTicketRaw(_raw, rTicket, _source_table)
+    }
+    baseRows.push(row)
+  }
+
+  baseRows.sort((a, b) => {
+    const ad = a.deleted_at ?? ''
+    const bd = b.deleted_at ?? ''
+    if (ad !== bd) return bd.localeCompare(ad)
+    return a.source_key.localeCompare(b.source_key)
+  })
+
+  const pmIds: string[] = []
+  const lineIds: string[] = []
+  for (const row of baseRows) {
+    const pm = (row.payment_method ?? '').trim()
+    if (pm) pmIds.push(pm)
+    const lid = effectiveStatementLineId(row)
+    if (lid) lineIds.push(lid)
+  }
+  const [pmLabels, lineAccounts] = await Promise.all([
+    fetchPaymentMethodLabelMap(pmIds),
+    fetchStatementLineFinancialAccountNames(lineIds)
+  ])
+
+  const withDisplay = baseRows.map((row) => applyLedgerDisplayFields(row, pmLabels, lineAccounts))
+
+  const tourIdsForRef = new Set<string>()
+  for (const row of withDisplay) {
+    const tid = row.detail_tour_id?.trim()
+    if (tid) tourIdsForRef.add(tid)
+  }
+  const tourRefs = await fetchTourReferenceMap([...tourIdsForRef])
+  return enrichRowsWithTourReference(withDisplay, tourRefs)
+}
+
 export async function insertExpenseDuplicateSuppression(input: {
   fingerprint: string
   kind: 'pair' | 'group'
@@ -777,15 +1040,12 @@ export async function insertExpenseDuplicateSuppression(input: {
   }
 }
 
-/** 명세 매칭 행을 먼저 지운 뒤 해당 출처 지출 1건을 삭제합니다. */
-export async function deleteExpenseBySourceKey(sourceKey: string): Promise<void> {
-  const parsed = parseExpenseSourceKey(sourceKey)
-  if (!parsed) throw new Error('잘못된 지출 키입니다.')
-  const { table, id } = parsed
-  const sb = table === 'reservation_expenses' ? (supabase as any) : supabase
-  const rm = supabase as any
-  const { error: e0 } = await rm.from('reconciliation_matches').delete().eq('source_table', table).eq('source_id', id)
-  if (e0) throw e0
-  const { error } = await sb.from(table).delete().eq('id', id)
-  if (error) throw error
+/** 명세 매칭 해제 후 해당 출처 지출을 소프트 삭제합니다. */
+export async function deleteExpenseBySourceKey(sourceKey: string, deletedBy?: string | null): Promise<void> {
+  await softDeleteExpenseBySourceKeyWithClient(supabase, sourceKey, deletedBy)
+}
+
+/** 소프트 삭제된 지출을 복구합니다. */
+export async function restoreExpenseBySourceKey(sourceKey: string): Promise<void> {
+  await restoreExpenseBySourceKeyWithClient(supabase, sourceKey)
 }

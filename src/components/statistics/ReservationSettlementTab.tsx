@@ -487,51 +487,51 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* 요약 통계 카드 - 2열 2행 */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-4">
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
               <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 예약 수</p>
-              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{settlementData.totalReservations}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 예약 수</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">{settlementData.totalReservations}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
               <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 수익</p>
-              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">${settlementData.totalRevenue.toLocaleString()}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 수익</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">${settlementData.totalRevenue.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-red-100 rounded-lg flex-shrink-0">
               <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-red-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 지출</p>
-              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">${settlementData.totalExpenses.toLocaleString()}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 지출</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 tabular-nums">${settlementData.totalExpenses.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
               <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">순수익</p>
-              <p className={`text-lg sm:text-2xl font-bold truncate ${settlementData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">순수익</p>
+              <p className={`text-lg sm:text-2xl font-bold tabular-nums ${settlementData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 ${settlementData.netProfit.toLocaleString()}
               </p>
             </div>

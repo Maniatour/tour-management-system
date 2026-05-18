@@ -31,7 +31,10 @@ import {
   ticketEaAsNumber,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
-import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
+import {
+  reservationExcludedFromTourSettlementAggregates,
+  sumOperatingProfitForTourPricing,
+} from '@/lib/tourStatsCalculator'
 import TourExpenseManager from '../TourExpenseManager'
 import {
   Dialog,
@@ -49,7 +52,7 @@ import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent
 import { useAuth } from '@/contexts/AuthContext'
 import {
   filterTicketBookingsExcludedFromMainUi,
-  canRequestTicketBookingSoftDelete,
+  canShowTicketBookingSoftDeleteUi,
 } from '@/lib/ticketBookingSoftDelete'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -441,7 +444,7 @@ async function getTourFinancialStats(tourId: string) {
         const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
         const { data: batchPricing, error: batchPricingError } = await supabase
           .from('reservation_pricing')
-          .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, not_included_price, card_fee, prepayment_tip, commission_amount, commission_percent')
+          .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, not_included_price, card_fee, prepayment_tip, commission_amount, commission_percent, operating_profit')
           .in('reservation_id', batchIds)
         if (batchPricingError) {
           console.error(`예약 가격 정보 조회 오류 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, batchPricingError)
@@ -495,70 +498,6 @@ async function getTourFinancialStats(tourId: string) {
     console.log('실입금 레코드:', paymentRecords)
     console.log('예약 지출:', reservationExpenses)
     console.log('예약 채널:', reservationChannels)
-
-    // Operating Profit 계산 함수들 (TourExpenseManager 로직 재사용)
-    const calculateNetPrice = (pricing: any, reservationId: string): number => {
-      if (!pricing || !pricing.total_price) return 0
-      
-      const grandTotal = pricing.total_price
-      const channel = reservationChannels[reservationId]
-      const commissionBasePriceOnly = channel?.commission_base_price_only || false
-      
-      let commissionAmount = 0
-      if (pricing.commission_amount && pricing.commission_amount > 0) {
-        commissionAmount = pricing.commission_amount
-      } else if (pricing.commission_percent && pricing.commission_percent > 0) {
-        if (commissionBasePriceOnly) {
-          // 판매가격에만 커미션 적용
-          const productPriceTotal = pricing.product_price_total || 0
-          const couponDiscount = pricing.coupon_discount || 0
-          const additionalDiscount = pricing.additional_discount || 0
-          const additionalCost = pricing.additional_cost || 0
-          const basePriceForCommission = productPriceTotal - couponDiscount - additionalDiscount + additionalCost
-          commissionAmount = basePriceForCommission * (pricing.commission_percent / 100)
-        } else {
-          // 전체 가격에 커미션 적용
-          commissionAmount = grandTotal * (pricing.commission_percent / 100)
-        }
-      }
-      
-      return grandTotal - commissionAmount
-    }
-    
-    const calculateTotalCustomerPayment = (pricing: any): number => {
-      const productPriceTotal = pricing.product_price_total || 0
-      const couponDiscount = pricing.coupon_discount || 0
-      const additionalDiscount = pricing.additional_discount || 0
-      const additionalCost = pricing.additional_cost || 0
-      const optionTotal = pricing.option_total || 0
-      const cardFee = pricing.card_fee || 0
-      const prepaymentTip = pricing.prepayment_tip || 0
-      
-      return (
-        (productPriceTotal - couponDiscount - additionalDiscount) +
-        optionTotal +
-        additionalCost +
-        cardFee +
-        prepaymentTip
-      )
-    }
-    
-    const calculateAdditionalPayment = (pricing: any, reservationId: string): number => {
-      const totalCustomerPayment = calculateTotalCustomerPayment(pricing)
-      const commissionAmount = pricing.commission_amount || 0
-      const netPrice = calculateNetPrice(pricing, reservationId)
-      
-      const additionalPayment = totalCustomerPayment - commissionAmount - netPrice
-      return Math.max(0, additionalPayment)
-    }
-    
-    const calculateOperatingProfit = (pricing: any, reservationId: string): number => {
-      const netPrice = calculateNetPrice(pricing, reservationId)
-      const reservationExpense = reservationExpenses[reservationId] || 0
-      const additionalPayment = calculateAdditionalPayment(pricing, reservationId)
-      
-      return netPrice - reservationExpense + additionalPayment
-    }
 
     // 투어 지출 가져오기 (모든 상태의 지출 포함)
     const { data: expenses, error: expensesError } = await supabase
@@ -614,10 +553,13 @@ async function getTourFinancialStats(tourId: string) {
       (p) => !reservationExcludedFromTourSettlementAggregates(reservationStatusById.get(p.reservation_id))
     )
 
-    // 총 Operating Profit — 취소·환불 완료 예약 제외 (배정은 남아 있어도 정산 매출 아님)
-    const totalOperatingProfit = pricingForSettlementTotals.reduce((sum, pricing) => {
-      return sum + calculateOperatingProfit(pricing, pricing.reservation_id)
-    }, 0)
+    // 수익 = 예약 가격정보 operating_profit 합 (미저장 시 레거시 산식)
+    const totalOperatingProfit = sumOperatingProfitForTourPricing(
+      pricingForSettlementTotals,
+      reservationStatusById,
+      reservationExpenses,
+      reservationChannels
+    )
     
     // 추가비용 ($100 단위 내림 합산) — 동일 기준으로만 집계
     const totalAdditionalCostRounded = pricingForSettlementTotals.reduce((sum, pricing) => {
@@ -772,7 +714,7 @@ async function getTourFinancialStats(tourId: string) {
 
 export default function TourStatisticsTab({ dateRange, isSuper = false }: TourStatisticsTabProps) {
   const locale = useLocale()
-  const { authUser, userPosition } = useAuth()
+  const { authUser, userPosition, permissions } = useAuth()
   const {
     reservations,
     products,
@@ -847,6 +789,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
         return
       }
       setTicketEditBooking(data as Record<string, unknown>)
+      setTicketBookingDetailModalOpen(false)
       setTicketEditFormOpen(true)
     },
     [locale]
@@ -943,8 +886,8 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
   )
 
   const canSoftDeleteFromStats = useMemo(
-    () => canRequestTicketBookingSoftDelete(userPosition),
-    [userPosition]
+    () => canShowTicketBookingSoftDeleteUi(userPosition, permissions?.canManageBookings),
+    [userPosition, permissions?.canManageBookings]
   )
   const [filters, setFilters] = useRoutePersistedState<TourStatsFiltersState>(
     'tour-filters',
@@ -1114,7 +1057,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
         const batch = resIds.slice(i, i + RES_BATCH)
         const { data: batchRes, error: reservationsError } = await supabase
           .from('reservations')
-          .select('id, customer_id, total_people, adults, child, infant')
+          .select('id, customer_id, total_people, adults, child, infant, status')
           .in('id', batch)
         if (reservationsError) {
           console.error('예약 조회 오류:', reservationsError)
@@ -1150,7 +1093,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
             const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
             const [pricingRes, expensesRes] = await Promise.all([
-              supabase.from('reservation_pricing').select('reservation_id, total_price, additional_cost').in('reservation_id', batchIds),
+              supabase.from('reservation_pricing').select('reservation_id, total_price, additional_cost, operating_profit').in('reservation_id', batchIds),
               supabase.from('reservation_expenses').select('reservation_id, amount, paid_for').in('reservation_id', batchIds)
             ])
             if (pricingRes.data?.length) reservationPricing.push(...pricingRes.data)
@@ -1433,41 +1376,41 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
     <>
     <div className="space-y-4 sm:space-y-6">
       {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-9 gap-2 sm:gap-4">
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
               <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 투어 수</p>
-              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">{tourStatisticsData.totalTours}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 투어 수</p>
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-gray-900 tabular-nums">{tourStatisticsData.totalTours}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-cyan-100 rounded-lg flex-shrink-0">
               <Users className="h-5 w-5 sm:h-6 sm:w-6 text-cyan-700" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 투어 진행 인원</p>
-              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 투어 진행 인원</p>
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-gray-900 tabular-nums">
                 {tourStatisticsData.totalTourParticipants.toLocaleString()}명
               </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-indigo-100 rounded-lg flex-shrink-0">
               <PieChart className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">투어당 평균 인원</p>
-              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">투어당 평균 인원</p>
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-gray-900 tabular-nums">
                 {tourStatisticsData.totalTours > 0
                   ? `${tourStatisticsData.averagePeoplePerTour.toFixed(1)}명`
                   : '—'}
@@ -1476,38 +1419,38 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-sky-100 rounded-lg flex-shrink-0">
               <LineChart className="h-5 w-5 sm:h-6 sm:w-6 text-sky-700" />
             </div>
-            <div className="min-w-0 sm:ml-4">
+            <div className="flex-1 min-w-0">
               <p
-                className="text-xs sm:text-sm font-medium text-gray-600 truncate"
+                className="text-xs sm:text-sm font-medium text-gray-600 leading-snug"
                 title="총 투어 진행 인원 ÷ 조회 기간 일수(시작~종료 포함)"
               >
                 일일 평균 인원
               </p>
-              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-gray-900 tabular-nums">
                 {`${tourStatisticsData.averageDailyPeople.toFixed(1)}명`}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-rose-100 rounded-lg flex-shrink-0">
               <Mountain className="h-5 w-5 sm:h-6 sm:w-6 text-rose-700" />
             </div>
-            <div className="min-w-0 sm:ml-4">
+            <div className="flex-1 min-w-0">
               <p
-                className="text-xs sm:text-sm font-medium text-gray-600 truncate"
+                className="text-xs sm:text-sm font-medium text-gray-600 leading-snug"
                 title="같은 날 운행한 투어의 참가 인원을 합한 값 중 가장 큰 날"
               >
                 일일 최대 인원
               </p>
-              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-gray-900 tabular-nums">
                 {tourStatisticsData.totalTours > 0
                   ? `${tourStatisticsData.maxDailyPeople.toLocaleString()}명`
                   : '—'}
@@ -1516,52 +1459,52 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
               <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 수익</p>
-              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">${tourStatisticsData.totalRevenue.toLocaleString()}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 수익</p>
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-gray-900 tabular-nums">${tourStatisticsData.totalRevenue.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-red-100 rounded-lg flex-shrink-0">
               <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-red-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 지출</p>
-              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">${tourStatisticsData.totalExpenses.toLocaleString()}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">총 지출</p>
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-gray-900 tabular-nums">${tourStatisticsData.totalExpenses.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
               <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">순수익</p>
-              <p className={`text-sm sm:text-base font-bold truncate ${tourStatisticsData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">순수익</p>
+              <p className={`text-sm sm:text-base xl:text-lg font-bold tabular-nums ${tourStatisticsData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 ${tourStatisticsData.netProfit.toLocaleString()}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200 col-span-2 2xl:col-span-1">
-          <div className="flex items-center gap-2 sm:gap-0">
+        <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-orange-100 rounded-lg flex-shrink-0">
               <Users className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
             </div>
-            <div className="min-w-0 sm:ml-4">
-              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">비거주자비용</p>
-              <p className="text-sm sm:text-base font-bold text-orange-600 truncate">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 leading-snug">비거주자비용</p>
+              <p className="text-sm sm:text-base xl:text-lg font-bold text-orange-600 tabular-nums">
                 ${tourStatisticsData.totalAdditionalCostRounded.toLocaleString()}
               </p>
             </div>
@@ -2177,7 +2120,12 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 </th>
                 <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">상품명</th>
                 <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight w-12">인원</th>
-                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">수익</th>
+                <th
+                  className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight"
+                  title="해당 투어 예약의 가격정보 · 가격 계산 ④ 운영 이익(operating_profit) 합계. 취소·환불·inquiry 제외."
+                >
+                  수익
+                </th>
                 <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">지출</th>
                 <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">순수익</th>
                 <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight w-12">수익률</th>
@@ -2338,9 +2286,9 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                                 <div className="space-y-2 text-sm">
                                   {/* 입금액 */}
                                   <div className="flex justify-between">
-                                    <span className="text-gray-600">입금액</span>
+                                    <span className="text-gray-600">운영이익 합계</span>
                                     <span className="font-medium text-green-600">
-                                      ${(expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0).toLocaleString()}
+                                      ${tour.revenue.toLocaleString()}
                                     </span>
                                   </div>
                                   
@@ -2396,32 +2344,15 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                                   {/* 구분선 */}
                                   <div className="border-t border-gray-300 my-2"></div>
                                   
-                                  {/* 순수익 */}
+                                  {/* 순수익 (테이블과 동일) */}
                                   <div className="flex justify-between font-semibold">
                                     <span className="text-gray-900">순수익</span>
-                                    <span className={`${(() => {
-                                      // 입금 내역 총합 사용
-                                      const totalRevenue = expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0
-                                      const totalExpenses = 
-                                        expenseDetails[tour.tourId].expenses.reduce((sum: number, expense: any) => sum + (expense.amount || 0), 0) +
-                                        expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + ticketExpenseForSettlement(booking), 0) +
-                                        expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + hotelAmountForSettlement(booking), 0) +
-                                        expenseDetails[tour.tourId].tourFees.guide_fee +
-                                        expenseDetails[tour.tourId].tourFees.assistant_fee
-                                      const netProfit = totalRevenue - totalExpenses
-                                      return netProfit >= 0 ? 'text-green-600' : 'text-red-600'
-                                    })()}`}>
-                                      ${(() => {
-                                        // 입금 내역 총합 사용
-                                        const totalRevenue = expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0
-                                        const totalExpenses = 
-                                          expenseDetails[tour.tourId].expenses.reduce((sum: number, expense: any) => sum + (expense.amount || 0), 0) +
-                                          expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + ticketExpenseForSettlement(booking), 0) +
-                                          expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + hotelAmountForSettlement(booking), 0) +
-                                          expenseDetails[tour.tourId].tourFees.guide_fee +
-                                          expenseDetails[tour.tourId].tourFees.assistant_fee
-                                        return (totalRevenue - totalExpenses).toLocaleString()
-                                      })()}
+                                    <span
+                                      className={
+                                        tour.netProfit >= 0 ? 'text-green-600' : 'text-red-600'
+                                      }
+                                    >
+                                      ${tour.netProfit.toLocaleString()}
                                     </span>
                                   </div>
                                 </div>
@@ -2803,7 +2734,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
                 onSave={handleTicketFormSave}
                 onCancel={handleTicketFormCancel}
                 isSuper={isSuper}
-                canRequestSoftDelete={canRequestTicketBookingSoftDelete(userPosition)}
+                canRequestSoftDelete={canSoftDeleteFromStats}
                 onRequestDelete={handleRequestTicketBookingDeleteFromForm}
                 onDelete={isSuper ? handleActualTicketBookingDeleteFromForm : undefined}
               />

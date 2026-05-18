@@ -1,19 +1,17 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
+import { persistSupabaseSessionToStorage } from '@/lib/authStorage'
 import { coordinatedRefreshSession, updateSupabaseToken } from '@/lib/supabase'
 
 const SESSION_BUDGET_MS = 10_000
 const EXCHANGE_BUDGET_MS = 12_000
 const AUTH_EVENT_WAIT_MS = 8_000
 
-export function persistSupabaseSessionToStorage(session: Session) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem('sb-access-token', session.access_token)
-  if (session.refresh_token) {
-    localStorage.setItem('sb-refresh-token', session.refresh_token)
-  }
-  const tokenExpiry = session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
-  localStorage.setItem('sb-expires-at', tokenExpiry.toString())
-  updateSupabaseToken(session.access_token)
+export function persistSupabaseSessionAndSync(session: Session) {
+  persistSupabaseSessionToStorage(session)
+  updateSupabaseToken(session.access_token, {
+    refreshToken: session.refresh_token,
+    forceSetSession: true,
+  })
 }
 
 export async function getSessionBounded(
@@ -125,7 +123,7 @@ export async function completeOAuthCallback(
         ),
       ])
       if (result.data.session?.user) {
-        persistSupabaseSessionToStorage(result.data.session)
+        persistSupabaseSessionAndSync(result.data.session)
         clearOAuthUrlFragments()
         return { ok: true, session: result.data.session }
       }
@@ -158,7 +156,7 @@ export async function completeOAuthCallback(
         ),
       ])
       if (data.session?.user) {
-        persistSupabaseSessionToStorage(data.session)
+        persistSupabaseSessionAndSync(data.session)
         clearOAuthUrlFragments()
         return { ok: true, session: data.session }
       }
@@ -169,7 +167,7 @@ export async function completeOAuthCallback(
     clearOAuthUrlFragments()
     const fallback = await getSessionBounded(supabase, 4_000)
     if (fallback?.user) {
-      persistSupabaseSessionToStorage(fallback)
+      persistSupabaseSessionAndSync(fallback)
       return { ok: true, session: fallback }
     }
 
@@ -187,14 +185,14 @@ export async function completeOAuthCallback(
 
   const fromEvent = await waitForAuthSessionEvent(supabase)
   if (fromEvent?.user) {
-    persistSupabaseSessionToStorage(fromEvent)
+    persistSupabaseSessionAndSync(fromEvent)
     clearOAuthUrlFragments()
     return { ok: true, session: fromEvent }
   }
 
   let session = await getSessionBounded(supabase)
   if (session?.user) {
-    persistSupabaseSessionToStorage(session)
+    persistSupabaseSessionAndSync(session)
     clearOAuthUrlFragments()
     return { ok: true, session }
   }
@@ -215,7 +213,7 @@ export async function completeOAuthCallback(
         ),
       ])
       if (refreshed.data.session?.user) {
-        persistSupabaseSessionToStorage(refreshed.data.session)
+        persistSupabaseSessionAndSync(refreshed.data.session)
         clearOAuthUrlFragments()
         return { ok: true, session: refreshed.data.session }
       }
@@ -226,7 +224,7 @@ export async function completeOAuthCallback(
 
   session = await getSessionBounded(supabase, 4_000)
   if (session?.user) {
-    persistSupabaseSessionToStorage(session)
+    persistSupabaseSessionAndSync(session)
     clearOAuthUrlFragments()
     return { ok: true, session }
   }

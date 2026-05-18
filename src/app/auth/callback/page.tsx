@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import { completeOAuthCallback } from '@/lib/authCallback'
 
@@ -17,6 +17,7 @@ function detectLocale(): string {
 
 export default function AuthCallbackPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [error, setError] = useState<string | null>(null)
   const finishedRef = useRef(false)
 
@@ -24,8 +25,17 @@ export default function AuthCallbackPage() {
     if (typeof window === 'undefined') return
 
     let cancelled = false
-    const locale = detectLocale()
-    const redirectTo = `/${locale}`
+    const localeParam = searchParams?.get('locale')
+    const locale =
+      localeParam === 'en' || localeParam === 'ko' ? localeParam : detectLocale()
+    const redirectRaw = searchParams?.get('redirectTo')
+    const redirectTo =
+      redirectRaw &&
+      redirectRaw.startsWith('/') &&
+      !redirectRaw.includes('undefined') &&
+      !redirectRaw.includes('/auth')
+        ? redirectRaw
+        : `/${locale}`
 
     const finish = (path: string) => {
       if (cancelled || finishedRef.current) return
@@ -77,7 +87,7 @@ export default function AuthCallbackPage() {
       cancelled = true
       clearTimeout(failsafe)
     }
-  }, [router])
+  }, [router, searchParams])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

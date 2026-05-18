@@ -26,7 +26,9 @@ import {
 } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
-import { supabase } from '@/lib/supabase'
+import { getStoredAccessTokenIfValid, supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
@@ -504,28 +506,21 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }, [isAbortError])
 
-  // 입금 내역 가져오기
+  // 입금 내역 가져오기 (Supabase REST — TourExpenseManager·예약 목록과 동일, API 401 회피)
   const fetchPaymentRecords = useCallback(async () => {
     if (!isStaff) return
     
     setLoadingPayments(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('인증이 필요합니다.')
-      }
+      const { data, error } = await supabase
+        .from('payment_records')
+        .select('*')
+        .eq('reservation_id', reservation.id)
+        .order('created_at', { ascending: false })
 
-      const response = await fetch(`/api/payment-records?reservation_id=${reservation.id}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
+      if (error) throw error
 
-      const data = await parseApiJsonResponse<{ paymentRecords?: PaymentRecord[] }>(
-        response,
-        '입금 내역을 불러올 수 없습니다.'
-      )
-      const list = (data.paymentRecords || []) as PaymentRecord[]
+      const list = (data || []) as PaymentRecord[]
       setPaymentRecords(list)
       const emails = [...new Set(list.map((r) => r.submit_by).filter(Boolean))] as string[]
       if (emails.length > 0) {
@@ -862,16 +857,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   // 픽업 정보 저장
   const handleSavePickupInfo = async (reservationId: string, pickupTime: string, pickupHotel: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('인증이 필요합니다.')
-      }
-
-      const response = await fetch('/api/reservations/update-pickup', {
+      const response = await fetchApiWithAuth('/api/reservations/update-pickup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           reservation_id: reservationId,
@@ -1356,31 +1345,42 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
     
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('인증이 필요합니다.')
-      }
-
-      const userEmail = session.user.email ?? ''
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const userEmail = user?.email ?? ''
       const teamDisplay = (await fetchTeamDisplayNameByEmail(supabase, userEmail)) ?? (userEmail || '관리자')
 
-      // 1. 입금 내역 생성 (현금) — 비고에 team.display_name
-      const paymentResponse = await fetch('/api/payment-records', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          reservation_id: reservation.id,
-          payment_status: 'Balance Received',
-          amount: balanceAmount,
-          payment_method: 'cash',
-          note: `Balance 수령 (${teamDisplay})`
-        })
+      const submitBy =
+        userEmail ||
+        (await supabase.auth.getSession()).data.session?.user?.email ||
+        (() => {
+          const token = getStoredAccessTokenIfValid(0)
+          if (!token) return ''
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1])) as { email?: string }
+            return typeof payload.email === 'string' ? payload.email : ''
+          } catch {
+            return ''
+          }
+        })()
+
+      const { error: paymentInsertError } = await supabase.from('payment_records').insert({
+        id: `payment_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        reservation_id: reservation.id,
+        payment_status: 'Balance Received',
+        amount: balanceAmount,
+        payment_method: 'cash',
+        note: `Balance 수령 (${teamDisplay})`,
+        submit_by: submitBy || null,
       })
 
-      await parseApiJsonResponse<Record<string, unknown>>(paymentResponse, '입금 내역 생성에 실패했습니다.')
+      if (paymentInsertError) throw paymentInsertError
+
+      const sync = await syncReservationPricingAggregates(supabase, reservation.id)
+      if (!sync.ok && sync.error) {
+        console.warn('[ReservationCard] reservation_pricing 동기화 실패:', reservation.id, sync.error)
+      }
 
       // 2. reservation_pricing: 보증금(deposit_amount)은 건드리지 않음. 잔금 수령은 payment_records만이 근거.
       //    잔액(balance_amount)은 투어 당일 잔액 필드이므로 수령 완료 후 0으로 맞춤.
@@ -1447,30 +1447,42 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('인증이 필요합니다.')
-      }
-
-      const userEmail = session.user.email ?? ''
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const userEmail = user?.email ?? ''
       const teamDisplay = (await fetchTeamDisplayNameByEmail(supabase, userEmail)) ?? (userEmail || '관리자')
 
-      const paymentResponse = await fetch('/api/payment-records', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          reservation_id: reservation.id,
-          payment_status: '환불됨 (우리)',
-          amount: refundAmount,
-          payment_method: 'cash',
-          note: `현금 환불 (${teamDisplay})`
-        })
+      const submitBy =
+        userEmail ||
+        (await supabase.auth.getSession()).data.session?.user?.email ||
+        (() => {
+          const token = getStoredAccessTokenIfValid(0)
+          if (!token) return ''
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1])) as { email?: string }
+            return typeof payload.email === 'string' ? payload.email : ''
+          } catch {
+            return ''
+          }
+        })()
+
+      const { error: paymentInsertError } = await supabase.from('payment_records').insert({
+        id: `payment_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        reservation_id: reservation.id,
+        payment_status: '환불됨 (우리)',
+        amount: refundAmount,
+        payment_method: 'cash',
+        note: `현금 환불 (${teamDisplay})`,
+        submit_by: submitBy || null,
       })
 
-      await parseApiJsonResponse<Record<string, unknown>>(paymentResponse, '입출금 기록 생성에 실패했습니다.')
+      if (paymentInsertError) throw paymentInsertError
+
+      const sync = await syncReservationPricingAggregates(supabase, reservation.id)
+      if (!sync.ok && sync.error) {
+        console.warn('[ReservationCard] reservation_pricing 동기화 실패:', reservation.id, sync.error)
+      }
 
       const { data: existingPricing, error: pricingFetchError } = await supabase
         .from('reservation_pricing')
