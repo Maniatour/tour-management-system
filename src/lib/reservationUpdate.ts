@@ -536,8 +536,8 @@ export async function updateReservation(
         /** 0으로 초기화 허용 — card_fee만 keep 제외(의도적 0 저장 시 이전 금액 복원 방지) */
         card_fee: Math.round(toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee) * 100) / 100,
         tax: keep(toNum(pricingInfo.tax), existingRow?.tax),
-        prepayment_cost: keep(toNum(pricingInfo.prepaymentCost), existingRow?.prepayment_cost),
-        prepayment_tip: keep(toNum(pricingInfo.prepaymentTip), existingRow?.prepayment_tip),
+        prepayment_cost: Math.round(toNum(pricingInfo.prepaymentCost) * 100) / 100,
+        prepayment_tip: Math.round(toNum(pricingInfo.prepaymentTip) * 100) / 100,
         selected_options: pricingInfo.selectedOptionalOptions ?? {},
         option_total: keep(newOptionTotal, existingRow?.option_total),
         total_price: keep(newTotal, existingRow?.total_price),

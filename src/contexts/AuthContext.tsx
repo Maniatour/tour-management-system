@@ -1629,7 +1629,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      const response = await fetch('/api/team-chat-unread-count', {
+      const response = await fetch('/api/team-chat/unread-count', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },

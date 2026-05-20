@@ -3323,7 +3323,11 @@ export default function PricingSection({
                         value={formData.prepaymentCost}
                         onChange={(e) => {
                           markPricingEdited('prepaymentCost', 'totalPrice', 'onSiteBalanceAmount')
-                          setFormData({ ...formData, prepaymentCost: Number(e.target.value) || 0 })
+                          const v = e.target.value === '' ? 0 : Number(e.target.value)
+                          setFormData((prev: typeof formData) => ({
+                            ...prev,
+                            prepaymentCost: Number.isFinite(v) ? v : 0,
+                          }))
                         }}
                         className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                         step="0.01"
@@ -3340,7 +3344,11 @@ export default function PricingSection({
                         value={formData.prepaymentTip}
                         onChange={(e) => {
                           markPricingEdited('prepaymentTip', 'totalPrice', 'onSiteBalanceAmount')
-                          setFormData({ ...formData, prepaymentTip: Number(e.target.value) || 0 })
+                          const v = e.target.value === '' ? 0 : Number(e.target.value)
+                          setFormData((prev: typeof formData) => ({
+                            ...prev,
+                            prepaymentTip: Number.isFinite(v) ? v : 0,
+                          }))
                         }}
                         className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                         step="0.01"

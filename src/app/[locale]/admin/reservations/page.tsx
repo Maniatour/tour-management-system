@@ -120,10 +120,8 @@ import {
   isReservationUpdatedStrictlyAfterAdded,
   reservationIdsSignature,
   statusTransitionSortIndex,
-  reservationAuditRowHasStatusFieldChange,
-  reservationStatusEventRowToAuditRow,
 } from '@/lib/reservationStatusAudit'
-import { fetchReservationStatusEventsChunked } from '@/lib/reservationStatusEventsFetch'
+import { fetchReservationStatusTransitionsChunked } from '@/lib/reservationStatusEventsFetch'
 import { aggregateStatusTransitionBucketsForReservationWindow } from '@/lib/reservationStatusTargetBuckets'
 import { describeError, serializeError } from '@/lib/errorSerialization'
 import {
@@ -2408,7 +2406,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const { rows, error } = await fetchReservationStatusEventsChunked(supabase, {
+          const { rows, error } = await fetchReservationStatusTransitionsChunked(supabase, {
             reservationIds: uniqueIds,
             rangeStartIso: range.rangeStartIso,
             rangeEndIso: range.rangeEndIso,
@@ -2417,12 +2415,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           if (cancelled) return
           const byRecord = new Map<string, ReservationStatusAuditRow[]>()
           for (const row of rows) {
-            const r = reservationStatusEventRowToAuditRow(row)
-            if (!reservationAuditRowHasStatusFieldChange(r)) continue
-            const id = String(r.record_id ?? '').trim()
+            const id = String(row.record_id ?? '').trim()
             if (!id) continue
             const arr = byRecord.get(id) ?? []
-            arr.push(r)
+            arr.push(row)
             byRecord.set(id, arr)
           }
           if (error) {
@@ -2798,20 +2794,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             return
           }
 
-          const { rows, error } = await fetchReservationStatusEventsChunked(supabase, {
+          const { rows, error } = await fetchReservationStatusTransitionsChunked(supabase, {
             reservationIds: req.uniqueIds,
             rangeStartIso: req.rangeStart,
             rangeEndIso: req.rangeEnd,
             shouldAbort: () => cancelled,
           })
           if (cancelled) return
-
-          const collected: ReservationStatusAuditRow[] = []
-          for (const row of rows) {
-            const r = reservationStatusEventRowToAuditRow(row)
-            if (!reservationAuditRowHasStatusFieldChange(r)) continue
-            collected.push(r)
-          }
 
           if (error) {
             if (!isAbortLikeError(error) && !cancelled) {
@@ -2824,7 +2813,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
 
           const rowsByRecord: Record<string, ReservationStatusAuditRow[]> = {}
-          for (const row of collected) {
+          for (const row of rows) {
             const id = String(row.record_id ?? '').trim()
             if (!id) continue
             const arr = rowsByRecord[id] ?? []
@@ -4672,9 +4661,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   simpleCardStatusScopeKey != null &&
                   simpleCardStatusTransitionDisplayScopeKey === simpleCardStatusScopeKey
 
-                const statusList = simpleCardStatusAuditReady
+                const statusListFromEvents = simpleCardStatusAuditReady
                   ? dayReservations.filter((r) => !!simpleCardStatusTransitionMap[`${r.id}|${date}`])
                   : statusListFromUpdated
+                /** events·audit 미동기화 시에도 수정일 기준 후보는 유지(빈 섹션 방지) */
+                const statusList =
+                  simpleCardStatusAuditReady && statusListFromEvents.length === 0
+                    ? statusListFromUpdated
+                    : statusListFromEvents
 
                 const statusListForSimple = statusList
 

@@ -26,6 +26,9 @@ import {
   fetchReservationExpensesForPnlReport,
   fetchTicketBookingsForPnlReport,
   fetchTourExpensesForPnlReport,
+  fetchTourHotelBookingsForPnlReport,
+  PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL,
+  tourHotelBookingAmountForPnl,
 } from '@/lib/pnlReportDataFetch'
 
 interface PnlUnifiedReportTabProps {
@@ -41,6 +44,9 @@ function mappingOriginalForExpense(
   }
   if (source === 'company_expenses') {
     return (r.paid_for || r.category || '').trim() || '기타'
+  }
+  if (source === 'tour_hotel_bookings') {
+    return PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL
   }
   return (r.category || '').trim() || '입장권'
 }
@@ -160,13 +166,14 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       }
     }
 
-    const [teRes, reRes, ceRes, tbRes] = await Promise.all([
+    const [teRes, reRes, ceRes, tbRes, thRes] = await Promise.all([
       fetchTourExpensesForPnlReport(startISO, endISO),
       fetchReservationExpensesForPnlReport(startISO, endISO),
       fetchCompanyExpensesForPnlReport(startISO, endISO),
       fetchTicketBookingsForPnlReport(startISO, endISO),
+      fetchTourHotelBookingsForPnlReport(startISO, endISO),
     ])
-    const fetchErr = teRes.error || reRes.error || ceRes.error || tbRes.error
+    const fetchErr = teRes.error || reRes.error || ceRes.error || tbRes.error || thRes.error
     if (fetchErr) {
       console.error('통합 PNL 지출 조회 오류:', fetchErr)
       setLoading(false)
@@ -176,6 +183,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     const re = reRes.data
     const ce = ceRes.data
     const tb = tbRes.data
+    const th = thRes.data
 
     const monthly = new Map<string, Map<string, number>>()
     const detailLines: PnlDetailLine[] = []
@@ -354,17 +362,55 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         exclude_from_pnl: false,
       })
     }
+    for (const x of th || []) {
+      const r = x as {
+        id: string
+        total_price: unknown
+        unit_price: unknown
+        rooms: unknown
+        hotel: string | null
+        reservation_name: string | null
+        payment_method: string | null
+        submit_on: string | null
+      }
+      const amt = tourHotelBookingAmountForPnl(r)
+      if (!r.submit_on || amt === 0) continue
+      const orig = mappingOriginalForExpense('tour_hotel_bookings', r)
+      const resolvedLeafId = mapToLeaf.get(`${orig}::tour_hotel_bookings`) ?? null
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      addMonthly(bucketKey, r.submit_on, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'tour_hotel_bookings',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        paid_to: r.hotel,
+        paid_for: r.reservation_name,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: null,
+        company: null,
+        note: null,
+        exclude_from_pnl: false,
+      })
+    }
 
     const teIds = detailLines.filter((l) => l.source === 'tour_expenses').map((l) => l.id)
     const reIds = detailLines.filter((l) => l.source === 'reservation_expenses').map((l) => l.id)
     const ceIds = detailLines.filter((l) => l.source === 'company_expenses').map((l) => l.id)
     const tbIds = detailLines.filter((l) => l.source === 'ticket_bookings').map((l) => l.id)
+    const thIds = detailLines.filter((l) => l.source === 'tour_hotel_bookings').map((l) => l.id)
 
-    const [teRe, reRe, ceRe, tbRe] = await Promise.all([
+    const [teRe, reRe, ceRe, tbRe, thRe] = await Promise.all([
       fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', teIds),
       fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reIds),
       fetchReconciledSourceIdsBatched(supabase, 'company_expenses', ceIds),
       fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', tbIds),
+      fetchReconciledSourceIdsBatched(supabase, 'tour_hotel_bookings', thIds),
     ])
 
     const detailLinesWithRecon: PnlDetailLine[] = detailLines.map((l) => ({
@@ -373,7 +419,8 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         (l.source === 'tour_expenses' && teRe.has(l.id)) ||
         (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
         (l.source === 'company_expenses' && ceRe.has(l.id)) ||
-        (l.source === 'ticket_bookings' && tbRe.has(l.id)),
+        (l.source === 'ticket_bookings' && tbRe.has(l.id)) ||
+        (l.source === 'tour_hotel_bookings' && thRe.has(l.id)),
     }))
 
     const cells: Record<string, Record<string, number>> = {}
@@ -458,7 +505,9 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               <strong>지출</strong>: <code className="text-xs bg-white px-1 rounded border">tour_expenses</code>,{' '}
               <code className="text-xs bg-white px-1 rounded border">reservation_expenses</code>,{' '}
               <code className="text-xs bg-white px-1 rounded border">company_expenses</code>,{' '}
-              <code className="text-xs bg-white px-1 rounded border">ticket_bookings</code>.
+              <code className="text-xs bg-white px-1 rounded border">ticket_bookings</code>,{' '}
+              <code className="text-xs bg-white px-1 rounded border">tour_hotel_bookings</code>(예약 지출 › 투어 호텔
+              지출 탭과 동일, <code className="text-xs">total_price</code>·취소 제외).
             </li>
             <li>
               행 구조·순서는 <strong>카테고리 매니저 › 표준 카테고리 관리</strong>에 등록된{' '}
@@ -577,7 +626,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         <p className="text-xs text-blue-900/90 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-3">
           금액·합계 셀을 누르면 <strong>상세 지출</strong> 모달이 열립니다. 모달 상단에서 원문·출처별로{' '}
           <strong>표준 카테고리(리프) 매핑</strong>을 저장할 수 있고, 하단에서 지출 금액·분류·PNL 제외 등을 수정할 수
-          있습니다(입장권 부킹은 PNL 제외 옵션 없음).
+          있습니다(입장권·투어 호텔 부킹은 PNL 제외 옵션 없음).
         </p>
         <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
           <table className="w-full min-w-[480px] text-xs sm:text-sm border-collapse">

@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase'
+import { hotelAmountForSettlement, isHotelBookingIncludedInSettlement } from '@/lib/bookingSettlement'
 import { fetchAllSupabasePages } from '@/lib/supabasePaginatedFetch'
+
+/** 통합 PNL·expense_category_mappings.original_value (tour_hotel_bookings 공통 키) */
+export const PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL = 'Tour hotel booking'
 
 export type PnlPaymentRecordRow = {
   id: string
@@ -71,6 +75,18 @@ export type PnlTicketBookingRow = {
   submit_on: string | null
 }
 
+export type PnlTourHotelBookingRow = {
+  id: string
+  total_price: unknown
+  unit_price: unknown
+  rooms: unknown
+  hotel: string | null
+  reservation_name: string | null
+  payment_method: string | null
+  status: string | null
+  submit_on: string | null
+}
+
 export async function fetchTourExpensesForPnlReport(startISO: string, endISO: string) {
   return fetchAllSupabasePages<PnlTourExpenseRow>((from, to) =>
     supabase
@@ -124,4 +140,27 @@ export async function fetchTicketBookingsForPnlReport(startISO: string, endISO: 
       .order('id', { ascending: true })
       .range(from, to)
   )
+}
+
+/** 통합 PNL 지출: 기간 내 tour_hotel_bookings (취소·삭제요청 제외, total_price 기준) */
+export async function fetchTourHotelBookingsForPnlReport(startISO: string, endISO: string) {
+  const { data, error } = await fetchAllSupabasePages<PnlTourHotelBookingRow>((from, to) =>
+    supabase
+      .from('tour_hotel_bookings')
+      .select(
+        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, submit_on'
+      )
+      .gte('submit_on', startISO)
+      .lte('submit_on', endISO)
+      .order('submit_on', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
+  if (error) return { data: [] as PnlTourHotelBookingRow[], error }
+  const filtered = data.filter((r) => isHotelBookingIncludedInSettlement(r.status))
+  return { data: filtered, error: null }
+}
+
+export function tourHotelBookingAmountForPnl(row: PnlTourHotelBookingRow): number {
+  return hotelAmountForSettlement(row)
 }

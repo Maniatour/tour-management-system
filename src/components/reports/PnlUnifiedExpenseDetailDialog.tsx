@@ -20,7 +20,12 @@ import { splitMappingIdsFromLeafId } from '@/lib/pnlStandardCategoryTable'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 
-export type PnlExpenseSource = 'tour_expenses' | 'reservation_expenses' | 'company_expenses' | 'ticket_bookings'
+export type PnlExpenseSource =
+  | 'tour_expenses'
+  | 'reservation_expenses'
+  | 'company_expenses'
+  | 'ticket_bookings'
+  | 'tour_hotel_bookings'
 
 export type PnlDetailLine = {
   id: string
@@ -78,6 +83,8 @@ function sourceLabel(s: PnlExpenseSource): string {
       return '회사 지출'
     case 'ticket_bookings':
       return '입장권 부킹'
+    case 'tour_hotel_bookings':
+      return '투어 호텔 부킹'
     default:
       return s
   }
@@ -85,6 +92,12 @@ function sourceLabel(s: PnlExpenseSource): string {
 
 function classificationText(line: PnlDetailLine): string {
   if (line.source === 'ticket_bookings') return (line.category || '').trim() || '—'
+  if (line.source === 'tour_hotel_bookings') {
+    const hotel = (line.paid_to || '').trim()
+    const res = (line.paid_for || '').trim()
+    if (hotel && res) return `${hotel} / ${res}`
+    return hotel || res || '—'
+  }
   if (line.source === 'company_expenses') {
     const pf = (line.paid_for || '').trim()
     const cat = (line.category || '').trim()
@@ -411,6 +424,25 @@ export default function PnlUnifiedExpenseDetailDialog({
             })
             .eq('id', line.id)
           if (error) throw error
+        } else if (line.source === 'tour_hotel_bookings') {
+          const hotel = draft.paid_to.trim()
+          const reservationName = draft.paid_for.trim()
+          if (!hotel || !reservationName) {
+            toast.error('호텔명과 예약명을 입력하세요.')
+            setSaving(false)
+            return
+          }
+          const { error } = await supabase
+            .from('tour_hotel_bookings')
+            .update({
+              hotel,
+              reservation_name: reservationName,
+              total_price: amt,
+              submit_on: submitIso,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', line.id)
+          if (error) throw error
         }
 
         toast.success('저장했습니다.')
@@ -546,6 +578,25 @@ export default function PnlUnifiedExpenseDetailDialog({
                                     />
                                   </div>
                                 </>
+                              ) : line.source === 'tour_hotel_bookings' ? (
+                                <>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">호텔명</Label>
+                                    <Input
+                                      className="h-9"
+                                      value={draft.paid_to}
+                                      onChange={(e) => setDraft({ ...draft, paid_to: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">예약명</Label>
+                                    <Input
+                                      className="h-9"
+                                      value={draft.paid_for}
+                                      onChange={(e) => setDraft({ ...draft, paid_for: e.target.value })}
+                                    />
+                                  </div>
+                                </>
                               ) : (
                                 <>
                                   <div className="space-y-1">
@@ -586,7 +637,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                                 />
                               </div>
 
-                              {line.source !== 'ticket_bookings' && (
+                              {line.source !== 'ticket_bookings' && line.source !== 'tour_hotel_bookings' && (
                                 <div className="flex items-center gap-2 sm:col-span-2">
                                   <Checkbox
                                     id={`pnl-excl-${key}`}

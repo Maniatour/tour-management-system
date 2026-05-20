@@ -964,9 +964,8 @@ export default function ReservationForm({
     channelProductVariantsForDisplay,
   ])
 
-  // savePricingInfo 등에서 항상 최신 formData 참조용 (제출 시 배칭 전 최신값 반영용)
+  // savePricingInfo·handleSubmit 등에서 최신 formData 참조용 (setFormData에서만 갱신 — 매 렌더 state로 덮으면 입력 직후 저장이 구값으로 돌아감)
   const formDataRef = useRef(formData)
-  formDataRef.current = formData
 
   // setFormData 호출 시 formDataRef를 동기적으로 갱신하여, 입력 직후 저장해도 불포함 가격 등이 반영되도록 함
   const setFormData = useCallback((arg: typeof formData | ((prev: typeof formData) => typeof formData)) => {
@@ -5259,7 +5258,6 @@ export default function ReservationForm({
     overrides?: { depositAmount?: number; balanceAmount?: number }
   ) => {
     try {
-      const fd = formDataRef.current
       const isPartialPaymentSync = overrides != null
       // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격·수수료·잔액 컬럼 포함)
       const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, refund_reason, refund_amount, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name'
@@ -5287,6 +5285,8 @@ export default function ReservationForm({
         )
         if (!ok) throw new Error('AUDIT_SAVE_CANCELLED')
       }
+
+      let fd = formDataRef.current
 
       // 불포함 가격 합계(인원별) = product_price_total·subtotal·total_price에 포함하여 저장 (청구 인원 = pricingAdults+아동+유아)
       const billingPax = (fd.pricingAdults ?? fd.adults) + fd.child + fd.infant
@@ -5354,6 +5354,9 @@ export default function ReservationForm({
       } catch {
         isOTAChannel = false
       }
+
+      // 입금·채널 조회 await 이후 최신 폼(선결제 지출 등) 반영
+      fd = formDataRef.current
 
       const depAmt = overrides?.depositAmount ?? toNum(fd.depositAmount)
       const storedCb =
@@ -5504,6 +5507,9 @@ export default function ReservationForm({
       const keep = (newVal: number, existingVal: unknown) =>
         existing && newVal === 0 && (toNum(existingVal) || 0) > 0 ? toNum(existingVal) : newVal
 
+      const prepaymentCostSave = Math.round(toNum(fd.prepaymentCost) * 100) / 100
+      const prepaymentTipSave = Math.round(toNum(fd.prepaymentTip) * 100) / 100
+
       // DB에 저장할 전체 컬럼을 명시적으로 구성 (타입 필터로 누락 방지)
       const pricingData = {
         id: pricingId,
@@ -5527,8 +5533,9 @@ export default function ReservationForm({
         /** 카드 수수료는 0 초기화를 허용 — `keep`으로 이전 DB값을 유지하면 사용자가 0으로 저장해도 반영되지 않음 */
         card_fee: Math.round(toNum(fd.cardFee) * 100) / 100,
         tax: keep(Number(fd.tax) || 0, (existing as any)?.tax),
-        prepayment_cost: keep(Number(fd.prepaymentCost) || 0, (existing as any)?.prepayment_cost),
-        prepayment_tip: keep(Number(fd.prepaymentTip) || 0, (existing as any)?.prepayment_tip),
+        /** 선결제 지출·팁은 0 초기화 허용 — keep 사용 시 폼이 0이면 DB 값이 유지되어 수정이 저장되지 않음 */
+        prepayment_cost: prepaymentCostSave,
+        prepayment_tip: prepaymentTipSave,
         selected_options: fd.selectedOptionalOptions,
         option_total: keep(newOptionTotal, (existing as any)?.option_total),
         total_price: cancelledSave
