@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import { completeOAuthCallback } from '@/lib/authCallback'
@@ -19,7 +19,18 @@ function redirectLocaleCallbackToCanonical(validLocale: string) {
   return true
 }
 
-export default function AuthCallbackPage() {
+function AuthCallbackLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center max-w-sm px-4">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto" />
+        <p className="mt-4 text-gray-600">로그인 처리 중...</p>
+      </div>
+    </div>
+  )
+}
+
+function AuthCallbackContent() {
   const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
@@ -102,5 +113,13 @@ export default function AuthCallbackPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<AuthCallbackLoading />}>
+      <AuthCallbackContent />
+    </Suspense>
   )
 }
