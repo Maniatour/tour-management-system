@@ -30,6 +30,11 @@ export type TicketBookingVendorEmailCopyBlockProps = {
 
 type PreviewTab = 'html' | 'text'
 
+/** React 19: dangerouslySetInnerHTML에 `<script>`가 있으면 콘솔 경고 */
+function stripScriptTagsFromHtml(html: string): string {
+  return html.replace(/<script[\s\S]*?<\/script>/gi, '')
+}
+
 async function fetchSupplierEmailByCompanyName(company: string): Promise<string | null> {
   const name = company.trim()
   if (!name) return null
@@ -82,9 +87,12 @@ export default function TicketBookingVendorEmailCopyBlock({
     [company, supplierEmailFromDb]
   )
 
-  const previewHtml = useMemo(() => wrapTicketBookingVendorEmailBodyHtml(bodyHtml), [bodyHtml])
+  const previewHtml = useMemo(
+    () => stripScriptTagsFromHtml(wrapTicketBookingVendorEmailBodyHtml(bodyHtml)),
+    [bodyHtml]
+  )
   const previewTextHtml = useMemo(
-    () => wrapTicketBookingVendorEmailBodyHtml(bodyTextHtml),
+    () => stripScriptTagsFromHtml(wrapTicketBookingVendorEmailBodyHtml(bodyTextHtml)),
     [bodyTextHtml]
   )
   const htmlDocument = useMemo(() => buildTicketBookingVendorEmailHtmlDocument(bodyHtml), [bodyHtml])

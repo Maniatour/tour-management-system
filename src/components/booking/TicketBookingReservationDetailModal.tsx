@@ -25,10 +25,12 @@ import {
 } from '@/components/booking/ticketBookingAxisStatusIcons'
 import TicketBookingActionPanel from '@/components/booking/TicketBookingActionPanel'
 import ScheduleTicketBookingAxisInline from '@/components/booking/ScheduleTicketBookingAxisInline'
+import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTourDisplay'
 
 /** 입장권 부킹 — 예약 상세 정보 모달에 필요한 행 타입 */
 export type TicketBookingReservationDetailRow = {
   id: string
+  tour_id?: string | null
   submit_on: string
   category: string
   company: string
@@ -53,6 +55,9 @@ export type TicketBookingReservationDetailRow = {
     tour_date: string
     total_people?: number
     products?: { name?: string; name_en?: string; name_ko?: string }
+    guide_display_name?: string
+    assistant_display_name?: string
+    vehicle_display_name?: string
   } | undefined
   /** 테이블 뷰와 동일 컬럼용 (선택 — 없으면 '—') */
   check_in_date?: string | undefined
@@ -592,16 +597,15 @@ export default function TicketBookingReservationDetailModal({
                                             {getCCStatusTextLocale(booking.cc, locale)}
                                           </span>
                                         </td>
-                                        <td className={`${td} max-w-[8rem]`}>
-                                          {booking.tours ? (
-                                            <div className="min-w-0">
-                                              <div className="font-medium text-green-700">
-                                                {locale === 'en' ? 'Linked' : '연결'}
-                                              </div>
-                                              <div className="truncate text-[11px] text-gray-600">
-                                                {getProductName(locale, booking.tours.products, tourFallback)}
-                                              </div>
-                                            </div>
+                                        <td className={`${td} min-w-[11rem] max-w-[16rem]`}>
+                                          {booking.tours && booking.tour_id ? (
+                                            <TicketBookingTourDisplay
+                                              locale={locale}
+                                              tours={booking.tours}
+                                              tourFallback={tourFallback}
+                                              headlineClassName="font-medium text-green-800 text-[11px]"
+                                              detailClassName="text-[10px]"
+                                            />
                                           ) : (
                                             <span className="text-red-600">{locale === 'en' ? 'Unlinked' : '미연결'}</span>
                                           )}

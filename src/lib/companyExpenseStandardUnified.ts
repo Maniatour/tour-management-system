@@ -457,6 +457,46 @@ export function matchUnifiedLeafIdFromForm(
   return '__custom__'
 }
 
+/** 통합 PNL·리포트: 회사 지출 → 표준 리프 id (standard_paid_for·폼 필드·매핑 순) */
+export function resolveCompanyExpensePnlLeafId(
+  expense: {
+    paid_for?: string | null
+    category?: string | null
+    standard_paid_for?: string | null
+    expense_type?: string | null
+  },
+  cats: ExpenseStandardCategoryPickRow[],
+  leafIdSet: Set<string>,
+  mapToLeaf: Map<string, string>,
+  locale: string
+): { leafId: string | null; mappingOriginal: string } {
+  const tryMatch = (paidFor: string, category: string, expenseType: string): string | null => {
+    const pf = paidFor.trim()
+    if (!pf) return null
+    const m = matchUnifiedLeafIdFromForm(pf, category.trim(), expenseType.trim(), cats, locale)
+    if (m !== '__custom__' && leafIdSet.has(m)) return m
+    return null
+  }
+
+  const stdPf = (expense.standard_paid_for ?? '').trim()
+  if (stdPf) {
+    const cat = (expense.category ?? '').trim()
+    const et = (expense.expense_type ?? '').trim()
+    const fromStd =
+      tryMatch(stdPf, cat, et) ?? tryMatch(stdPf, cat, '') ?? tryMatch(stdPf, '', '')
+    if (fromStd) return { leafId: fromStd, mappingOriginal: stdPf }
+  }
+
+  const pf = (expense.paid_for ?? '').trim()
+  const cat = (expense.category ?? '').trim()
+  const et = (expense.expense_type ?? '').trim()
+  const fromForm = tryMatch(pf, cat, et) ?? tryMatch(pf, cat, '') ?? tryMatch(pf, '', '')
+  if (fromForm) return { leafId: fromForm, mappingOriginal: pf || stdPf || '기타' }
+
+  const orig = (pf || cat || '').trim() || '기타'
+  return { leafId: mapToLeaf.get(`${orig}::company_expenses`) ?? null, mappingOriginal: orig }
+}
+
 export function unifiedSelectValueFromLeafId(leafId: string | '__custom__'): string {
   if (leafId === '__custom__') return '__custom__'
   return `std:${leafId}`

@@ -38,6 +38,11 @@ export function showVendorChangeActions(b: TicketBookingWorkflowSnapshot): boole
   return cs === 'requested' && vs === 'pending'
 }
 
+/** 예매 요청·변경 요청 등 벤더 응답/확정 처리가 필요한 행 (목록 필터용) */
+export function isTicketBookingPendingRequestState(b: TicketBookingWorkflowSnapshot): boolean {
+  return isWorkflowInitialPhase(b) || showVendorChangeActions(b)
+}
+
 /** 결제 완료 처리 UI (결제 전 → 결제 완료) */
 export function showPaymentCompleteButton(b: TicketBookingWorkflowSnapshot): boolean {
   const bs = (b.booking_status ?? '').toLowerCase()
@@ -63,7 +68,7 @@ export function showRefundLineManagement(b: TicketBookingWorkflowSnapshot): bool
   )
 }
 
-function formatHHMM(raw: string | null | undefined): string {
+export function formatHHMM(raw: string | null | undefined): string {
   if (!raw) return ''
   const s = String(raw).trim()
   const m = s.match(/^(\d{1,2}):(\d{2})/)
@@ -83,13 +88,13 @@ export function deriveTicketBookingUnitPriceUsd(
   return 0
 }
 
-function formatUsdExpenseChunk(n: number): string {
+export function formatUsdExpenseChunk(n: number): string {
   if (!Number.isFinite(n)) return '$—'
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 /** 목록 단일 표시는 기존 `$${expense}` 와 동일하게 유지 */
-function formatUsdExpenseCell(exp: number | null | undefined): string {
+export function formatUsdExpenseCell(exp: number | null | undefined): string {
   if (exp == null || Number.isNaN(Number(exp))) return '-'
   return `$${Number(exp)}`
 }
@@ -116,6 +121,31 @@ export function ticketBookingPendingTimeDiffers(booking: {
     return false
   }
   return formatHHMM(booking.time) !== formatHHMM(booking.pending_time)
+}
+
+/** 변경 요청 중 실제로 바뀐 항목 수 (수량·시간) */
+export function ticketBookingPendingChangeKindCount(booking: {
+  ea?: number | null
+  time?: string | null
+  change_status?: string | null
+  pending_ea?: number | null
+  pending_time?: string | null
+}): number {
+  let n = 0
+  if (ticketBookingPendingQtyDiffers(booking)) n += 1
+  if (ticketBookingPendingTimeDiffers(booking)) n += 1
+  return n
+}
+
+/** 수량·시간 등 2가지 이상 변경 요청인지 */
+export function ticketBookingHasMultiplePendingChanges(booking: {
+  ea?: number | null
+  time?: string | null
+  change_status?: string | null
+  pending_ea?: number | null
+  pending_time?: string | null
+}): boolean {
+  return ticketBookingPendingChangeKindCount(booking) >= 2
 }
 
 /** 변경 요청 중 비용(단가×수량 추정)이 실제로 바뀐 경우 — 수량 변경이 있을 때만 의미 있음 */

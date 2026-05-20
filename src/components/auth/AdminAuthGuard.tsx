@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuthOptional } from '@/contexts/AuthContext'
 
 const AUTH_GUARD_FAILSAFE_MS = 20_000
 
@@ -11,8 +11,25 @@ interface AdminAuthGuardProps {
   locale: string
 }
 
-export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps) {
-  const { user, userRole, userPosition, loading, isInitialized, isSimulating, simulatedUser } = useAuth()
+type AuthState = NonNullable<ReturnType<typeof useAuthOptional>>
+
+function AdminAuthLoadingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="mx-auto h-32 w-32 animate-spin rounded-full border-b-2 border-blue-600" />
+        <p className="mt-4 text-gray-600">인증 확인 중...</p>
+      </div>
+    </div>
+  )
+}
+
+function AdminAuthGuardContent({
+  auth,
+  children,
+  locale,
+}: AdminAuthGuardProps & { auth: AuthState }) {
+  const { user, userRole, userPosition, loading, isInitialized, isSimulating, simulatedUser } = auth
   const router = useRouter()
   const pathname = usePathname()
   const redirectToPath = pathname && pathname !== `/${locale}/auth` ? pathname : `/${locale}`
@@ -168,4 +185,16 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
   }
 
   return <>{children}</>
+}
+
+export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps) {
+  const auth = useAuthOptional()
+  if (auth === undefined) {
+    return <AdminAuthLoadingScreen />
+  }
+  return (
+    <AdminAuthGuardContent auth={auth} locale={locale}>
+      {children}
+    </AdminAuthGuardContent>
+  )
 }

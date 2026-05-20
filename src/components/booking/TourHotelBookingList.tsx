@@ -399,11 +399,11 @@ export default function TourHotelBookingList() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-6">
       {/* 헤더 - 모바일 최적화 */}
-      <div className="flex items-center justify-between px-1 sm:px-6 py-4">
-        <h2 className="text-lg sm:text-2xl font-bold">{t('tourHotelBookingManagement')}</h2>
-        <div className="flex items-center space-x-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-4 sm:px-6">
+        <h2 className="min-w-0 truncate text-lg font-bold sm:text-2xl">{t('tourHotelBookingManagement')}</h2>
+        <div className="flex flex-wrap items-center gap-2">
           {canSuperPurgeHotelBookings ? (
             <button
               type="button"

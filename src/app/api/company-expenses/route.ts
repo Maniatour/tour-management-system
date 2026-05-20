@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
       expense_type,
       tax_deductible,
       paid_for_label_id,
+      standard_paid_for: standardPaidForBody,
       reimbursed_amount: reimbursedAmountBody,
       reimbursed_on: reimbursedOnBody,
       reimbursement_note: reimbursementNoteBody,
@@ -226,6 +227,12 @@ export async function POST(request: NextRequest) {
       ...(paid_for_label_id !== undefined &&
         paid_for_label_id !== null &&
         paid_for_label_id !== '' && { paid_for_label_id: String(paid_for_label_id) }),
+      ...(standardPaidForBody !== undefined && {
+        standard_paid_for:
+          standardPaidForBody === null || standardPaidForBody === ''
+            ? null
+            : String(standardPaidForBody).trim(),
+      }),
       reimbursed_amount: amountNum > 0 ? reimbNum : 0,
       reimbursed_on: amountNum > 0 ? reimbursedOnNorm : null,
       reimbursement_note: amountNum > 0 ? reimbursementNoteNorm : null,

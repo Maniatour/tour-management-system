@@ -55,8 +55,8 @@ export default function BookingManagementPage() {
   const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component;
 
   return (
-    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
-      <div className="pt-3 sm:pt-4 lg:pt-4 pb-4 sm:pb-6 lg:pb-8 px-3 sm:px-4 lg:px-8">
+    <div className="min-h-screen w-full min-w-0 max-w-full overflow-x-hidden bg-gray-50">
+      <div className="w-full min-w-0 max-w-full px-3 pb-4 pt-3 sm:px-4 sm:pb-6 sm:pt-4 lg:pb-8 lg:pt-4">
         {/* 헤더 - 모바일 최적화 */}
         <div className="mb-4 sm:mb-6 lg:mb-8">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
@@ -66,8 +66,8 @@ export default function BookingManagementPage() {
         </div>
 
         {/* 탭 네비게이션 - 모바일 최적화 */}
-        <div className="border-b border-gray-200 mb-4 sm:mb-6 -mx-3 sm:mx-0 px-3 sm:px-0">
-          <nav className="-mb-px flex space-x-6 sm:space-x-8 overflow-x-auto scrollbar-hide">
+        <div className="mb-4 w-full min-w-0 border-b border-gray-200 sm:mb-6">
+          <nav className="-mb-px flex space-x-6 overflow-x-auto scrollbar-hide sm:space-x-8">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -85,7 +85,7 @@ export default function BookingManagementPage() {
         </div>
 
         {/* 탭 컨텐츠 - 모바일 최적화 */}
-        <div className="bg-white rounded-xl sm:rounded-lg shadow-sm border border-gray-200 overflow-hidden -mx-3 sm:mx-0">
+        <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm sm:rounded-lg">
           {ActiveComponent && <ActiveComponent />}
         </div>
 

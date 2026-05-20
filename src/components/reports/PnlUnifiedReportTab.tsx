@@ -9,6 +9,7 @@ import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fisc
 import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
+import { resolveCompanyExpensePnlLeafId } from '@/lib/companyExpenseStandardUnified'
 import { buildPnlStandardCategoryTableRows, PNL_UNMATCHED_BUCKET_KEY } from '@/lib/pnlStandardCategoryTable'
 import PnlUnifiedExpenseDetailDialog, {
   type PnlDetailLine,
@@ -16,6 +17,16 @@ import PnlUnifiedExpenseDetailDialog, {
   type PnlExpenseSource,
 } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
+import PnlUnifiedDepositSection from '@/components/reports/PnlUnifiedDepositSection'
+import PnlUnifiedNetProfitSection, {
+  type PnlDepositNetTotals,
+} from '@/components/reports/PnlUnifiedNetProfitSection'
+import {
+  fetchCompanyExpensesForPnlReport,
+  fetchReservationExpensesForPnlReport,
+  fetchTicketBookingsForPnlReport,
+  fetchTourExpensesForPnlReport,
+} from '@/lib/pnlReportDataFetch'
 
 interface PnlUnifiedReportTabProps {
   dateRange: { start: string; end: string }
@@ -85,6 +96,8 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
   const [detailDrill, setDetailDrill] = useState<PnlDrillState | null>(null)
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
   const [totalExcl, setTotalExcl] = useState(0)
+  const [depositNet, setDepositNet] = useState<PnlDepositNetTotals | null>(null)
+  const [depositLoading, setDepositLoading] = useState(true)
 
   const { rows: pnlTableRows, groups: unifiedStandardGroups } = useMemo(
     () => buildPnlStandardCategoryTableRows(standardCategoryRows, locale),
@@ -147,29 +160,22 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       }
     }
 
-    const [{ data: te }, { data: re }, { data: ce }, { data: tb }] = await Promise.all([
-      supabase
-        .from('tour_expenses')
-        .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO),
-      supabase
-        .from('reservation_expenses')
-        .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO),
-      supabase
-        .from('company_expenses')
-        .select('id, amount, paid_for, category, paid_to, notes, description, payment_method, exclude_from_pnl, submit_on')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO),
-      supabase
-        .from('ticket_bookings')
-        .select('id, expense, category, company, note, payment_method, submit_on')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-        .in('status', ['confirmed', 'paid'])
+    const [teRes, reRes, ceRes, tbRes] = await Promise.all([
+      fetchTourExpensesForPnlReport(startISO, endISO),
+      fetchReservationExpensesForPnlReport(startISO, endISO),
+      fetchCompanyExpensesForPnlReport(startISO, endISO),
+      fetchTicketBookingsForPnlReport(startISO, endISO),
     ])
+    const fetchErr = teRes.error || reRes.error || ceRes.error || tbRes.error
+    if (fetchErr) {
+      console.error('통합 PNL 지출 조회 오류:', fetchErr)
+      setLoading(false)
+      return
+    }
+    const te = teRes.data
+    const re = reRes.data
+    const ce = ceRes.data
+    const tb = tbRes.data
 
     const monthly = new Map<string, Map<string, number>>()
     const detailLines: PnlDetailLine[] = []
@@ -269,6 +275,8 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         amount: unknown
         paid_for: string | null
         category: string | null
+        standard_paid_for: string | null
+        expense_type: string | null
         paid_to: string | null
         notes: string | null
         description: string | null
@@ -282,8 +290,13 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         continue
       }
       if (!r.submit_on) continue
-      const orig = mappingOriginalForExpense('company_expenses', r)
-      const resolvedLeafId = mapToLeaf.get(`${orig}::company_expenses`) ?? null
+      const { leafId: resolvedLeafId, mappingOriginal: orig } = resolveCompanyExpensePnlLeafId(
+        r,
+        cats,
+        leafIdSet,
+        mapToLeaf,
+        locale
+      )
       const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
       addMonthly(bucketKey, r.submit_on, amt)
       const memo = [r.notes, r.description].filter(Boolean).join(' · ') || null
@@ -437,7 +450,12 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               (위쪽에서 일/월/기간 선택한 것과 동일) 안의 지출을 모읍니다.
             </li>
             <li>
-              출처: <code className="text-xs bg-white px-1 rounded border">tour_expenses</code>,{' '}
+              <strong>입금</strong>: <code className="text-xs bg-white px-1 rounded border">payment_records</code>{' '}
+              (예약금·잔금·파트너 입금·환불·현금 결제수단 등, submit_on 기준). DB 1000행 제한을 넘으면 자동으로
+              페이지를 이어 받아 기간 전체를 집계합니다.
+            </li>
+            <li>
+              <strong>지출</strong>: <code className="text-xs bg-white px-1 rounded border">tour_expenses</code>,{' '}
               <code className="text-xs bg-white px-1 rounded border">reservation_expenses</code>,{' '}
               <code className="text-xs bg-white px-1 rounded border">company_expenses</code>,{' '}
               <code className="text-xs bg-white px-1 rounded border">ticket_bookings</code>.
@@ -448,6 +466,10 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               상위 그룹 헤더 + 들여쓰기된 하위 리프). 집계는{' '}
               <code className="text-xs bg-white px-1 rounded border">expense_category_mappings</code>의 리프(또는 상위만
               있을 때) 기준이며, 트리에 없는 매핑·미매칭은 맨 아래 <strong>매칭되지 않은 지출</strong> 행에 모읍니다.
+            </li>
+            <li>
+              <strong>순수익</strong>: 입금 표 <strong>순합계(상태별)</strong> − 지출 표 <strong>월 합계</strong> (현금
+              결제수단 입금 행은 순합계에 미포함).
             </li>
             <li>
               <strong>exclude_from_pnl</strong>이 켜진 행(
@@ -522,6 +544,12 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           <span className="text-xs text-gray-500">적용값: {ledgerBase}</span>
         </div>
       </div>
+
+      <PnlUnifiedDepositSection
+        dateRange={dateRange}
+        onLoadingChange={setDepositLoading}
+        onNetTotalsReady={setDepositNet}
+      />
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
@@ -713,6 +741,14 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           </table>
         </div>
       </div>
+
+      <PnlUnifiedNetProfitSection
+        months={months}
+        depositNet={depositNet}
+        depositLoading={depositLoading}
+        expenseColTotals={colTotals}
+        expenseGrandTotal={grandTotal}
+      />
 
       <CategoryManagerModal
         isOpen={categoryManagerOpen}

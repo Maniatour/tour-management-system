@@ -1,6 +1,7 @@
 import React from 'react'
 import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
+import AdminAuthBoundary from '@/components/auth/AdminAuthBoundary'
 import AdminAuthGuard from '@/components/auth/AdminAuthGuard'
 import AdminChrome from '@/components/admin/AdminChrome'
 import ReservationPricingAuditNotificationListener from '@/components/admin/ReservationPricingAuditNotificationListener'
@@ -24,16 +25,18 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
 
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
-      <AudioPlayerProvider>
-        <AdminAuthGuard locale={locale}>
+      <AdminAuthBoundary>
+        <AudioPlayerProvider>
+          <AdminAuthGuard locale={locale}>
           <GmailReservationImportSyncProvider>
             <AdminChrome locale={locale}>
               {children}
               <ReservationPricingAuditNotificationListener locale={locale} />
             </AdminChrome>
           </GmailReservationImportSyncProvider>
-        </AdminAuthGuard>
-      </AudioPlayerProvider>
+          </AdminAuthGuard>
+        </AudioPlayerProvider>
+      </AdminAuthBoundary>
     </NextIntlClientProvider>
   )
 }

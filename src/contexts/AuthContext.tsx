@@ -1732,6 +1732,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+/** Provider 밖이면 `undefined` (가드·경계 컴포넌트용) */
+export function useAuthOptional() {
+  return useContext(AuthContext)
+}
+
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {

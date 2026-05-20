@@ -125,6 +125,21 @@ function saveHourlyRateToStorage(email: string, rate: string) {
   localStorage.setItem(HOURLY_RATES_STORAGE_KEY, JSON.stringify(rates))
 }
 
+type CompanyExpenseViewMode = 'latest' | 'period'
+
+function companyExpenseDateYmd(value: string | null | undefined): string | null {
+  if (value == null || String(value).trim() === '') return null
+  const trimmed = String(value).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+  const d = new Date(trimmed)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+}
+
+function companyExpenseRowYmd(row: CompanyExpenseRow): string | null {
+  return companyExpenseDateYmd(row.paid_on || row.submit_on)
+}
+
 export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko' }: BiweeklyCalculatorModalProps) {
   const [hourlyRate, setHourlyRate] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
@@ -150,6 +165,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [employeeRatePeriods, setEmployeeRatePeriods] = useState<EmployeeRatePeriod[]>([])
   const [tourFees, setTourFees] = useState<TourFee[]>([])
   const [companyExpensesForEmployee, setCompanyExpensesForEmployee] = useState<CompanyExpenseRow[]>([])
+  const [companyExpenseViewMode, setCompanyExpenseViewMode] = useState<CompanyExpenseViewMode>('period')
+  const [companyExpenseFilterStart, setCompanyExpenseFilterStart] = useState('')
+  const [companyExpenseFilterEnd, setCompanyExpenseFilterEnd] = useState('')
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; tourName: string } | null>(null)
   const [tipsShareTourId, setTipsShareTourId] = useState<string | null>(null)
@@ -703,6 +721,35 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       setCompanyExpensesForEmployee([])
     }
   }, [selectedEmployee])
+
+  // 기간 필터 모드: 상단 시작일·종료일을 기본값으로 동기화
+  useEffect(() => {
+    if (companyExpenseViewMode !== 'period') return
+    if (startDate) setCompanyExpenseFilterStart(startDate)
+    if (endDate) setCompanyExpenseFilterEnd(endDate)
+  }, [startDate, endDate, companyExpenseViewMode])
+
+  const displayedCompanyExpenses = useMemo(() => {
+    const sorted = [...companyExpensesForEmployee].sort((a, b) => {
+      const da = companyExpenseRowYmd(a) ?? ''
+      const db = companyExpenseRowYmd(b) ?? ''
+      return db.localeCompare(da)
+    })
+    if (companyExpenseViewMode === 'latest') return sorted
+    const filterStart = companyExpenseFilterStart
+    const filterEnd = companyExpenseFilterEnd
+    if (!filterStart || !filterEnd) return sorted
+    return sorted.filter((row) => {
+      const ymd = companyExpenseRowYmd(row)
+      if (!ymd) return false
+      return ymd >= filterStart && ymd <= filterEnd
+    })
+  }, [
+    companyExpensesForEmployee,
+    companyExpenseViewMode,
+    companyExpenseFilterStart,
+    companyExpenseFilterEnd,
+  ])
 
   // 팁 쉐어 데이터 조회
   const fetchTipShares = async () => {
@@ -2999,11 +3046,95 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
           {/* 회사 지출: 선택된 직원(가이드 이름/닉네임 매칭)에게 Guide Fee, Wage 등으로 지불한 내역 */}
           {selectedEmployee && (
             <div className="mt-6 sm:mt-8">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">
-                회사 지출 지불 내역 (Guide Fee, Wage 등)
-              </h3>
+              <div className="flex flex-col gap-3 sm:gap-4 mb-3 sm:mb-4">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                  회사 지출 지불 내역 (Guide Fee, Wage 등)
+                </h3>
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+                  <div className="inline-flex rounded-md border border-gray-300 p-0.5 bg-gray-50 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCompanyExpenseViewMode('latest')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded transition-colors touch-manipulation ${
+                        companyExpenseViewMode === 'latest'
+                          ? 'bg-white text-blue-700 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      최신순
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompanyExpenseViewMode('period')
+                        if (startDate) setCompanyExpenseFilterStart(startDate)
+                        if (endDate) setCompanyExpenseFilterEnd(endDate)
+                      }}
+                      className={`px-3 py-1.5 text-xs font-medium rounded transition-colors touch-manipulation ${
+                        companyExpenseViewMode === 'period'
+                          ? 'bg-white text-blue-700 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      기간 필터
+                    </button>
+                  </div>
+                  {companyExpenseViewMode === 'period' && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="sr-only" htmlFor="company-expense-filter-start">
+                        지불 내역 시작일
+                      </label>
+                      <input
+                        id="company-expense-filter-start"
+                        type="date"
+                        value={companyExpenseFilterStart}
+                        onChange={(e) => setCompanyExpenseFilterStart(e.target.value)}
+                        className="px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <span className="text-xs text-gray-500">~</span>
+                      <label className="sr-only" htmlFor="company-expense-filter-end">
+                        지불 내역 종료일
+                      </label>
+                      <input
+                        id="company-expense-filter-end"
+                        type="date"
+                        value={companyExpenseFilterEnd}
+                        onChange={(e) => setCompanyExpenseFilterEnd(e.target.value)}
+                        className="px-2 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {(startDate || endDate) &&
+                        (companyExpenseFilterStart !== startDate ||
+                          companyExpenseFilterEnd !== endDate) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (startDate) setCompanyExpenseFilterStart(startDate)
+                              if (endDate) setCompanyExpenseFilterEnd(endDate)
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 hover:underline touch-manipulation"
+                          >
+                            위 기간과 동일
+                          </button>
+                        )}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 sm:ml-auto">
+                    {companyExpenseViewMode === 'latest'
+                      ? `전체 ${companyExpensesForEmployee.length}건 · 최신순`
+                      : companyExpenseFilterStart && companyExpenseFilterEnd
+                        ? `${companyExpenseFilterStart} ~ ${companyExpenseFilterEnd} · ${displayedCompanyExpenses.length}건`
+                        : '시작일·종료일을 선택하세요'}
+                  </p>
+                </div>
+              </div>
               {companyExpensesForEmployee.length === 0 ? (
                 <p className="text-sm text-gray-500 py-2">정규화된 지불 내역이 없습니다. 지출 관리 → 회사 지출에서 직원(이메일)을 지정해 주세요.</p>
+              ) : displayedCompanyExpenses.length === 0 ? (
+                <p className="text-sm text-gray-500 py-2">
+                  {companyExpenseViewMode === 'period'
+                    ? '선택한 기간에 해당하는 지불 내역이 없습니다.'
+                    : '표시할 지불 내역이 없습니다.'}
+                </p>
               ) : (
                 <div className="overflow-x-auto border border-gray-200 rounded-lg">
                   <table className="min-w-full bg-white text-sm">
@@ -3018,7 +3149,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {companyExpensesForEmployee.map((row) => (
+                      {displayedCompanyExpenses.map((row) => (
                         <tr key={row.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                             {formatCompanyExpenseTableDate(row.paid_on || row.submit_on)}
@@ -3035,7 +3166,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       <tr>
                         <td colSpan={3} className="px-3 py-2 text-right text-xs font-medium text-gray-900">소계</td>
                         <td className="px-3 py-2 text-right text-xs font-bold text-green-600">
-                          ${formatCurrency(companyExpensesForEmployee.reduce((sum, r) => sum + Number(r.amount), 0))}
+                          ${formatCurrency(displayedCompanyExpenses.reduce((sum, r) => sum + Number(r.amount), 0))}
                         </td>
                         <td colSpan={1} />
                       </tr>

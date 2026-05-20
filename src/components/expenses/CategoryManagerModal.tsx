@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { X, Plus, Trash2, Settings, RefreshCw, Search, AlertCircle, Pencil, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import CategoryMappingExpenseDetailDialog, {
+  type CategoryMappingSourceTable,
+} from '@/components/expenses/CategoryMappingExpenseDetailDialog'
 
 interface StandardCategory {
   id: string
@@ -163,6 +166,10 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
     is_active: true,
   })
   const [categorySelectModalOpen, setCategorySelectModalOpen] = useState<number | null>(null) // 현재 카테고리 선택 모달이 열린 행의 인덱스
+  const [expenseDetailTarget, setExpenseDetailTarget] = useState<{
+    originalValue: string
+    sourceTable: CategoryMappingSourceTable
+  } | null>(null)
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null) // 수정 중인 매핑 ID
   const [editMainCat, setEditMainCat] = useState<string>('')
   const [editSubCat, setEditSubCat] = useState<string | null>(null)
@@ -1171,10 +1178,13 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
               {/* 미매핑 항목 */}
               {filteredUnmapped.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
                     <AlertCircle className="text-orange-500" size={20} />
                     매핑되지 않은 항목 ({filteredUnmapped.length})
                   </h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    원본 값을 클릭하면 개별 지출 목록에서 항목별로 분류·표준 카테고리를 지정할 수 있습니다.
+                  </p>
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full">
                       <thead className="bg-orange-50">
@@ -1190,7 +1200,19 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                         {filteredUnmapped.map((item, idx) => (
                           <tr key={idx} className="hover:bg-gray-50">
                             <td className="px-4 py-3">
-                              <div className="text-sm font-medium">{item.paid_for}</div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpenseDetailTarget({
+                                    originalValue: item.paid_for,
+                                    sourceTable: item.source_table as CategoryMappingSourceTable,
+                                  })
+                                }
+                                className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline text-left"
+                                title="지출 상세 보기 · 개별 카테고리 지정"
+                              >
+                                {item.paid_for}
+                              </button>
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-500">{getSourceLabel(item.source_table)}</td>
                             <td className="px-4 py-3 text-sm">{item.count}건</td>
@@ -1232,7 +1254,21 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
                       <tbody className="divide-y">
                         {filteredMappings.map((mapping) => (
                           <tr key={mapping.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium">{mapping.original_value}</td>
+                            <td className="px-4 py-3 text-sm font-medium">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpenseDetailTarget({
+                                    originalValue: mapping.original_value,
+                                    sourceTable: mapping.source_table as CategoryMappingSourceTable,
+                                  })
+                                }
+                                className="text-blue-600 hover:text-blue-800 hover:underline text-left"
+                                title="지출 상세 보기 · 개별 카테고리 지정"
+                              >
+                                {mapping.original_value}
+                              </button>
+                            </td>
                             <td className="px-4 py-3 text-sm text-gray-500">{getSourceLabel(mapping.source_table)}</td>
                             <td className="px-4 py-3">
                               <div className="space-y-1">
@@ -2240,6 +2276,27 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
           </div>
         )
       })()}
+
+      {expenseDetailTarget && (
+        <CategoryMappingExpenseDetailDialog
+          open={!!expenseDetailTarget}
+          onOpenChange={(open) => {
+            if (!open) setExpenseDetailTarget(null)
+          }}
+          originalValue={expenseDetailTarget.originalValue}
+          sourceTable={expenseDetailTarget.sourceTable}
+          standardCategories={standardCategories.map((c) => ({
+            id: c.id,
+            name: c.name,
+            name_ko: c.name_ko,
+            parent_id: c.parent_id ?? null,
+            tax_deductible: c.tax_deductible,
+            display_order: c.display_order,
+            is_active: c.is_active,
+          }))}
+          onSaved={loadData}
+        />
+      )}
     </div>
   )
 }

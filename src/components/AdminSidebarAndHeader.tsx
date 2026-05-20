@@ -1026,8 +1026,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         }`}
       >
         {/* 페이지 콘텐츠 */}
-        <main className="pt-2 sm:pt-4 lg:pt-6 main-safe-area">
-          <div className="max-w-none mx-auto px-1.5 sm:px-2 lg:px-3">
+        <main className="main-safe-area min-w-0 max-w-full overflow-x-hidden pt-2 sm:pt-4 lg:pt-6">
+          <div className="mx-auto w-full min-w-0 max-w-full px-1.5 sm:px-2 lg:px-3">
             {children}
           </div>
         </main>

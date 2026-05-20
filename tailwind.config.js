@@ -7,6 +7,10 @@ module.exports = {
   ],
   theme: {
     extend: {
+      screens: {
+        /** 입장권 부킹 테이블 — 1920 뷰포트에서 보조 열 표시 */
+        '3xl': '1920px',
+      },
       keyframes: {
         'schedule-health-cell-blink': {
           '0%, 49%': { backgroundColor: '#dc2626', color: '#fde047' },

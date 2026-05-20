@@ -10,6 +10,14 @@ import {
   canShowTicketBookingSoftDeleteUi,
   isTicketBookingOffsetOrCancelRow,
 } from '@/lib/ticketBookingSoftDelete';
+import {
+  countTicketBookingMultiRnGroups,
+  isTicketBookingLegacyOffsetRnGroup,
+  legacyOffsetRowIdsToSoftDelete,
+  pickPrimaryRowForLegacyOffsetMerge,
+  ticketBookingIdsInMultiRnGroups,
+  ticketBookingRnGroupKey,
+} from '@/lib/ticketBookingLegacyOffsetGroup';
 import TicketBookingDeletionReviewModal from '@/components/booking/TicketBookingDeletionReviewModal';
 import { supabase, isAbortLikeError } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
@@ -21,13 +29,22 @@ import TicketBookingReservationDetailModal, {
   type TicketBookingReservationDetailRow,
 } from './TicketBookingReservationDetailModal';
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal';
-import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon';
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries';
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines';
 import {
   buildTicketBookingStatementReconContextResolved,
+  fetchTicketBookingStatementReconDisplayByBookingId,
   isTicketBookingStatementReconDisabled,
+  type TicketBookingStatementReconDisplay,
 } from '@/lib/ticket-booking-statement-recon';
+import { TicketBookingStatementReconCell } from '@/components/booking/TicketBookingStatementReconCell';
+import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTourDisplay';
+import { TicketBookingChangeStack } from '@/components/booking/TicketBookingChangeStack';
+import {
+  getTicketBookingExpenseStack,
+  getTicketBookingQtyStack,
+  getTicketBookingTimeStack,
+} from '@/lib/ticket-booking-change-display';
 import {
   Grid,
   Calendar as CalendarIcon,
@@ -48,6 +65,8 @@ import {
   AlertTriangle,
   PencilLine,
   Check,
+  ListChecks,
+  Merge,
   X,
 } from 'lucide-react';
 import TicketBookingsNeedCheckModal from './TicketBookingsNeedCheckModal';
@@ -59,6 +78,12 @@ import {
 import TicketBookingQtyTimeChangeModal from './TicketBookingQtyTimeChangeModal';
 import TicketBookingPaymentCompleteModal from './TicketBookingPaymentCompleteModal';
 import TicketBookingVendorConfirmModal from './TicketBookingVendorConfirmModal';
+import TicketBookingVendorPartialChangeConfirmModal from './TicketBookingVendorPartialChangeConfirmModal';
+import TicketBookingStatusMultiFilter from './TicketBookingStatusMultiFilter';
+import {
+  ticketBookingMatchesStatusFilters,
+  type TicketBookingStatusFilterKey,
+} from '@/lib/ticketBookingStatusFilter';
 import TicketBookingLinkTourModal from './TicketBookingLinkTourModal';
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent';
 import {
@@ -80,7 +105,6 @@ import {
   TICKET_BOOKING_STATUS_VALUES,
   formatTicketBookingStatusLabel,
   getTicketBookingStatusBadgeClass,
-  normalizeTicketBookingStatusFromDb,
 } from '@/lib/ticketBookingStatus';
 import {
   applyTicketBookingSetAxes,
@@ -103,12 +127,14 @@ import {
   formatExpenseArrow,
   formatQtyArrow,
   formatTimeArrow,
+  isTicketBookingPendingRequestState,
   isWorkflowInitialPhase,
   showChangeRequestButton,
   showPaymentCompleteButton,
   showRefundLineManagement,
   showVendorChangeActions,
   showVendorInitialActions,
+  ticketBookingHasMultiplePendingChanges,
   ticketBookingPendingExpenseDiffers,
   ticketBookingPendingQtyDiffers,
   ticketBookingPendingTimeDiffers,
@@ -309,6 +335,9 @@ interface TicketBooking {
       name_ko?: string;
       name_en?: string;
     };
+    guide_display_name?: string;
+    assistant_display_name?: string;
+    vehicle_display_name?: string;
   };
   deletion_requested_at?: string | null;
   deletion_requested_by?: string | null;
@@ -363,8 +392,13 @@ function invoiceCompanyNorm(company: string | null | undefined): string {
   return (company ?? '').trim();
 }
 
-/** RN 그룹 헤더·구분선 colSpan (예약·벤더·결제·환불 + 나머지 고정 열 수) */
-const TICKET_DESKTOP_TABLE_COL_COUNT = 24
+/** RN 그룹 헤더·구분선 colSpan (명세 열 없음) */
+const TICKET_DESKTOP_TABLE_COL_COUNT = 15
+const TICKET_TABLE_TH =
+  'px-2 py-2 text-left text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap'
+const TICKET_TABLE_TD = 'align-middle px-2 py-2 text-[11px] text-gray-900'
+const TICKET_TABLE_CELL = TICKET_TABLE_TD
+const TICKET_TABLE_CLIP = 'block min-w-0 max-w-full truncate'
 
 /** 데스크톱 행 Cancel Due 날짜별 배경·호버 (테이블·상세 모달 공통) */
 const TICKET_TABLE_CANCEL_DUE_BG = [
@@ -492,8 +526,7 @@ function buildTicketRnGroups(bookings: TicketBooking[]): { key: string; label: s
 
   const map = new Map<string, TicketBooking[]>();
   for (const b of dateSorted) {
-    const trimmed = b.rn_number?.trim();
-    const k = trimmed ? trimmed : `__empty_rn__:${b.id}`;
+    const k = ticketBookingRnGroupKey(b);
     if (!map.has(k)) map.set(k, []);
     map.get(k)!.push(b);
   }
@@ -536,6 +569,21 @@ interface TourEvent {
 /** 수량·시간 변경 요청 진행 중(`change_status === requested`) */
 function isTicketBookingChangeRequestPending(booking: Pick<TicketBooking, 'change_status'>): boolean {
   return String(booking.change_status ?? 'none').toLowerCase().trim() === 'requested';
+}
+
+/** 변경 요청 중이면 예약(확정) 뱃지 대신 변경 축만 표시 */
+function showChangeAxisInsteadOfBookingStatus(
+  booking: Pick<TicketBooking, 'change_status' | 'booking_status' | 'vendor_status'>
+): boolean {
+  return isTicketBookingChangeRequestPending(booking);
+}
+
+function hasSecondaryChangeAxisBadge(
+  booking: Pick<TicketBooking, 'change_status' | 'booking_status' | 'vendor_status'>
+): boolean {
+  if (showChangeAxisInsteadOfBookingStatus(booking)) return false;
+  if (isWorkflowInitialPhase(booking)) return false;
+  return String(booking.change_status ?? 'none').toLowerCase() !== 'none';
 }
 
 function ticketCalendarProductKey(tour: TourEvent): string {
@@ -848,43 +896,52 @@ function TicketCalendarRnBookingChipTooltip({
                     className="space-y-1.5 border-b border-gray-100 pb-2 last:border-0 last:pb-0"
                   >
                     <div className="flex flex-wrap items-center gap-1">
-                      <span
-                        className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBookingAxisStatusBadgeClass(b.booking_status)}`}
-                      >
-                        <TicketBookingBookingStatusIcon
-                          status={b.booking_status}
-                          className="h-3 w-3 shrink-0"
-                          title={formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
-                        />
-                        <span className="truncate">
-                          {formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
-                        </span>
-                      </span>
-                      <span
-                        className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getVendorAxisStatusBadgeClass(b.vendor_status)}`}
-                      >
-                        <TicketBookingVendorStatusIcon
-                          status={b.vendor_status}
-                          className="h-3 w-3 shrink-0"
-                          title={formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
-                        />
-                        <span className="truncate">
-                          {formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
-                        </span>
-                      </span>
-                      {showChangeBadge ? (
+                      {changePending ? (
                         <span
                           className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getChangeAxisStatusBadgeClass(b.change_status)}`}
                         >
                           {formatTicketBookingAxisLabel(tAxis, 'change', b.change_status)}
                         </span>
-                      ) : null}
+                      ) : (
+                        <>
+                          <span
+                            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBookingAxisStatusBadgeClass(b.booking_status)}`}
+                          >
+                            <TicketBookingBookingStatusIcon
+                              status={b.booking_status}
+                              className="h-3 w-3 shrink-0"
+                              title={formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
+                            />
+                            <span className="truncate">
+                              {formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
+                            </span>
+                          </span>
+                          <span
+                            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getVendorAxisStatusBadgeClass(b.vendor_status)}`}
+                          >
+                            <TicketBookingVendorStatusIcon
+                              status={b.vendor_status}
+                              className="h-3 w-3 shrink-0"
+                              title={formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
+                            />
+                            <span className="truncate">
+                              {formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
+                            </span>
+                          </span>
+                          {showChangeBadge ? (
+                            <span
+                              className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getChangeAxisStatusBadgeClass(b.change_status)}`}
+                            >
+                              {formatTicketBookingAxisLabel(tAxis, 'change', b.change_status)}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                     {changePending ? (
                       <div className="space-y-1 rounded-md bg-red-50 px-2 py-1.5 ring-1 ring-red-200">
-                        <div className="flex items-center gap-1 text-[10px] font-bold text-red-800">
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
+                        <div className="text-[10px] font-semibold text-red-800">
+                          {locale.startsWith('en') ? 'Pending changes' : '변경 내용'}
                         </div>
                         <div className="text-[10px] font-medium text-gray-900">
                           <span className="text-red-700">
@@ -967,12 +1024,18 @@ export default function TicketBookingList() {
   const [showBulkAddModal, setShowBulkAddModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<TicketBooking | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [selectedStatusFilters, setSelectedStatusFilters] = useState<
+    Set<TicketBookingStatusFilterKey>
+  >(() => new Set());
   const [checkInDateFrom, setCheckInDateFrom] = useState('');
   const [checkInDateTo, setCheckInDateTo] = useState('');
   const [tourFilter, setTourFilter] = useState('all'); // 'all', 'connected', 'unconnected'
   const [futureEventFilter, setFutureEventFilter] = useState(false);
   const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
+  /** 예매 요청·변경 요청 등 벤더 응답 대기 행만 */
+  const [pendingRequestOnlyFilter, setPendingRequestOnlyFilter] = useState(false);
+  /** 동일 RN#에 부킹 행이 2건 이상인 것만 */
+  const [multiRnOnlyFilter, setMultiRnOnlyFilter] = useState(false);
   /** 테이블 뷰 전용: 확정이면서 티켓 EA ≠ 연결 투어 총 인원 */
   const [needsReviewEaMismatch, setNeedsReviewEaMismatch] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -1001,7 +1064,12 @@ export default function TicketBookingList() {
   const [vendorConfirmModalBooking, setVendorConfirmModalBooking] = useState<TicketBooking | null>(
     null
   );
+  const [vendorPartialChangeModalBooking, setVendorPartialChangeModalBooking] =
+    useState<TicketBooking | null>(null);
   const [linkTourModalBooking, setLinkTourModalBooking] = useState<TicketBooking | null>(null);
+  const [legacyOffsetConsolidatingKey, setLegacyOffsetConsolidatingKey] = useState<string | null>(
+    null
+  );
   const [workflowActionSavingId, setWorkflowActionSavingId] = useState<string | null>(null);
   const [openAxisDropdown, setOpenAxisDropdown] = useState<
     null | { bookingId: string; axis: 'booking' | 'vendor' }
@@ -1156,13 +1224,16 @@ export default function TicketBookingList() {
       return koreanToEnglish[product.name || ''] || product.name || t('tour');
     } else {
       // 한국어 로케일인 경우
-      return product.name_ko || product.name || t('tour');
+      return product.name || product.name_ko || t('tour');
     }
   };
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
   const [detailReconciledIds, setDetailReconciledIds] = useState<Set<string>>(() => new Set());
+  const [detailStatementReconDisplay, setDetailStatementReconDisplay] = useState<
+    Map<string, TicketBookingStatementReconDisplay[]>
+  >(() => new Map());
   const [detailStmtOpen, setDetailStmtOpen] = useState(false);
   const [detailStmtCtx, setDetailStmtCtx] = useState<ExpenseStatementReconContext | null>(null);
   const tStmtRecon = useTranslations('expenses.statementRecon');
@@ -1192,16 +1263,24 @@ export default function TicketBookingList() {
   useEffect(() => {
     if (!showBookingModal) {
       setDetailReconciledIds(new Set())
+      setDetailStatementReconDisplay(new Map())
       return
     }
     const ids = selectedBookings.map((b) => b.id).filter(Boolean)
     if (ids.length === 0) {
       setDetailReconciledIds(new Set())
+      setDetailStatementReconDisplay(new Map())
       return
     }
     let cancelled = false
-    void fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids).then((s) => {
-      if (!cancelled) setDetailReconciledIds(s)
+    void Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids),
+      fetchTicketBookingStatementReconDisplayByBookingId(supabase, ids),
+    ]).then(([reconciled, displayMap]) => {
+      if (!cancelled) {
+        setDetailReconciledIds(reconciled)
+        setDetailStatementReconDisplay(displayMap)
+      }
     })
     return () => {
       cancelled = true
@@ -1216,18 +1295,35 @@ export default function TicketBookingList() {
     setDetailStmtOpen(true)
   }, [])
 
+  const refreshDetailStatementReconDisplay = useCallback(async (bookingIds: string[]) => {
+    const ids = bookingIds.filter(Boolean)
+    if (ids.length === 0) return
+    const [reconciled, displayMap] = await Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids),
+      fetchTicketBookingStatementReconDisplayByBookingId(supabase, ids),
+    ])
+    setDetailReconciledIds(reconciled)
+    setDetailStatementReconDisplay(displayMap)
+  }, [])
+
   const renderDetailStatementReconCell = useCallback(
     (booking: TicketBooking) => (
-      <ExpenseStatementReconIcon
+      <TicketBookingStatementReconCell
         matched={detailReconciledIds.has(booking.id)}
         disabled={isTicketBookingStatementReconDisabled(booking)}
+        lines={detailStatementReconDisplay.get(booking.id) ?? []}
         titleMatched={tStmtRecon('matchedTitle')}
         titleUnmatched={tStmtRecon('unmatchedTitle')}
         titleDisabled={tStmtRecon('disabledTitle')}
-        onClick={() => void openDetailStatementRecon(booking)}
+        onOpenPicker={() => void openDetailStatementRecon(booking)}
       />
     ),
-    [detailReconciledIds, openDetailStatementRecon, tStmtRecon]
+    [
+      detailReconciledIds,
+      detailStatementReconDisplay,
+      openDetailStatementRecon,
+      tStmtRecon,
+    ]
   )
 
   const refreshInvoiceAttachmentMapForBookings = useCallback(
@@ -1613,9 +1709,13 @@ export default function TicketBookingList() {
             tour_date,
             tour_status,
             reservation_ids,
+            tour_guide_id,
+            assistant_id,
+            tour_car_id,
             products (
               name,
-              name_en
+              name_en,
+              name_ko
             )
           `)
             .in('id', batch);
@@ -1627,12 +1727,81 @@ export default function TicketBookingList() {
             const activeOnly = batchTours.filter(
               (t: { tour_status?: string | null }) => !isTourCancelled(t.tour_status)
             );
-            toursData = toursData.concat(activeOnly as TourEvent[]);
+            toursData = toursData.concat(activeOnly as unknown as TourEvent[]);
           }
         }
-        const toursMap = new Map<string, TourEvent>();
+        type TourEnrichRow = TourEvent & {
+          tour_car_id?: string | null;
+        };
+        const toursMap = new Map<string, TourEnrichRow>();
         for (const tour of toursData) {
-          toursMap.set(tour.id, tour);
+          toursMap.set(tour.id, tour as TourEnrichRow);
+        }
+
+        const staffEmailSet = new Set<string>();
+        const vehicleIdSet = new Set<string>();
+        for (const tour of toursData) {
+          const tr = tour as TourEnrichRow & {
+            tour_guide_id?: string | null;
+            assistant_id?: string | null;
+            tour_car_id?: string | null;
+          };
+          const g = tr.tour_guide_id?.trim();
+          const a = tr.assistant_id?.trim();
+          if (g) staffEmailSet.add(g);
+          if (a) staffEmailSet.add(a);
+          const vid = tr.tour_car_id?.trim();
+          if (vid) vehicleIdSet.add(vid);
+        }
+        const staffDisplayByEmailLower = new Map<string, string>();
+        const staffEmails = [...staffEmailSet];
+        const TEAM_STAFF_BATCH = 80;
+        for (let si = 0; si < staffEmails.length; si += TEAM_STAFF_BATCH) {
+          const chunk = staffEmails.slice(si, si + TEAM_STAFF_BATCH);
+          const { data: teamRows, error: teamStaffErr } = await supabase
+            .from('team')
+            .select('email, name_ko, nick_name')
+            .in('email', chunk);
+          if (teamStaffErr) {
+            console.warn('입장권 투어 staff(team) 조회:', teamStaffErr);
+            continue;
+          }
+          for (const m of teamRows || []) {
+            const em = m.email?.trim();
+            if (!em) continue;
+            const label = String(m.nick_name || m.name_ko || em).trim();
+            staffDisplayByEmailLower.set(em.toLowerCase(), label || em);
+          }
+        }
+        const resolveStaffDisplay = (raw: string | null | undefined): string => {
+          const s = raw?.trim();
+          if (!s) return '';
+          return staffDisplayByEmailLower.get(s.toLowerCase()) || s;
+        };
+
+        const vehicleDisplayById = new Map<string, string>();
+        const vehicleIds = [...vehicleIdSet];
+        const VEHICLE_BATCH = 80;
+        for (let vi = 0; vi < vehicleIds.length; vi += VEHICLE_BATCH) {
+          const chunk = vehicleIds.slice(vi, vi + VEHICLE_BATCH);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: vehiclesData, error: vehErr } = await (supabase as any)
+            .from('vehicles')
+            .select('id, vehicle_number, nick')
+            .in('id', chunk);
+          if (vehErr) {
+            console.warn('입장권 투어 vehicles 조회:', vehErr);
+            continue;
+          }
+          for (const v of (vehiclesData || []) as {
+            id: string;
+            vehicle_number: string | null;
+            nick?: string | null;
+          }[]) {
+            if (!v.id) continue;
+            const label = (v.nick && String(v.nick).trim()) || v.vehicle_number || '';
+            if (label) vehicleDisplayById.set(v.id, label);
+          }
         }
         const allResIds = new Set<string>();
         for (const tour of toursData) {
@@ -1683,15 +1852,32 @@ export default function TicketBookingList() {
           });
           if (booking.tour_id && toursMap.has(booking.tour_id)) {
             const tour = toursMap.get(booking.tour_id);
+            const tr = tour as TourEnrichRow & {
+              tour_guide_id?: string | null;
+              assistant_id?: string | null;
+              tour_car_id?: string | null;
+            };
             const toursPart: NonNullable<TicketBooking['tours']> = {
               tour_date: tour?.tour_date || '',
               total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
             };
+            const guide = resolveStaffDisplay(tr.tour_guide_id);
+            const asst = resolveStaffDisplay(tr.assistant_id);
+            const carId = tr.tour_car_id?.trim();
+            if (guide) toursPart.guide_display_name = guide;
+            if (asst) toursPart.assistant_display_name = asst;
+            if (carId) {
+              const veh = vehicleDisplayById.get(carId);
+              if (veh) toursPart.vehicle_display_name = veh;
+            }
             if (tour?.products != null) {
               const p = tour.products;
               toursPart.products = {
                 name: p.name,
                 ...(typeof p.name_en === 'string' ? { name_en: p.name_en } : {}),
+                ...(typeof (p as { name_ko?: string }).name_ko === 'string'
+                  ? { name_ko: (p as { name_ko?: string }).name_ko }
+                  : {}),
               };
             }
             return { ...baseBooking, tours: toursPart };
@@ -2253,6 +2439,130 @@ export default function TicketBookingList() {
   const handleViewHistory = (bookingId: string) => {
     setSelectedBookingId(bookingId);
     setShowHistory(true);
+  };
+
+  const handleConsolidateLegacyOffsetGroup = async (
+    groupKey: string,
+    groupRows: TicketBooking[]
+  ) => {
+    if (!canBookingMgmtSoftDeleteUi) {
+      alert(
+        locale === 'ko'
+          ? '조정 행 정리는 부킹 관리 권한이 있는 직원만 할 수 있습니다.'
+          : 'You need booking management permission to consolidate adjustment rows.'
+      );
+      return;
+    }
+    if (!isTicketBookingLegacyOffsetRnGroup(groupRows)) return;
+
+    const primary = pickPrimaryRowForLegacyOffsetMerge(groupRows);
+    if (!primary) return;
+    const otherIds = legacyOffsetRowIdsToSoftDelete(groupRows, primary.id);
+    const rnLabel = primary.rn_number?.trim() || groupRows[0]?.rn_number?.trim() || '—';
+
+    const confirmMsg =
+      locale === 'ko'
+        ? `RN# ${rnLabel}\n\n· 본 행(수량 ${primary.ea ?? 0}개)을 0개로 바꿉니다.\n· 나머지 조정·취소 행 ${otherIds.length}건은 삭제 요청(목록에서 숨김)합니다.\n\n계속할까요?`
+        : `RN# ${rnLabel}\n\nSet the main row (qty ${primary.ea ?? 0}) to 0 and soft-delete ${otherIds.length} adjustment/cancel row(s).\n\nContinue?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setLegacyOffsetConsolidatingKey(groupKey);
+    const now = new Date().toISOString();
+    const email = user?.email ?? null;
+
+    try {
+      const { error: updateErr } = await supabase
+        .from('ticket_bookings')
+        .update({
+          ea: 0,
+          expense: 0,
+          updated_at: now,
+        })
+        .eq('id', primary.id);
+      if (updateErr) throw updateErr;
+
+      if (otherIds.length > 0) {
+        const { error: hideErr } = await supabase
+          .from('ticket_bookings')
+          .update({
+            deletion_requested_at: now,
+            deletion_requested_by: email,
+          })
+          .in('id', otherIds);
+        if (hideErr) throw hideErr;
+      }
+
+      setBookings((prev) =>
+        prev
+          .map((b) =>
+            b.id === primary.id ? { ...b, ea: 0, expense: 0, updated_at: now } : b
+          )
+          .filter((b) => !otherIds.includes(b.id))
+      );
+      setSelectedBookings((prev) => prev.filter((b) => !otherIds.includes(b.id)));
+
+      alert(
+        locale === 'ko'
+          ? `정리했습니다. 본 행 수량 0개, 조정 행 ${otherIds.length}건 삭제 요청됨.`
+          : `Done. Main row set to qty 0; ${otherIds.length} adjustment row(s) hidden.`
+      );
+    } catch (err) {
+      console.error('[TicketBookingList] legacy offset consolidate', err);
+      alert(
+        locale === 'ko'
+          ? '조정 행 정리 중 오류가 발생했습니다.'
+          : 'Failed to consolidate adjustment rows.'
+      );
+    } finally {
+      setLegacyOffsetConsolidatingKey(null);
+    }
+  };
+
+  const renderLegacyOffsetConsolidateButton = (
+    groupKey: string,
+    groupRows: TicketBooking[],
+    variant: 'mobile' | 'desktop'
+  ) => {
+    if (!canBookingMgmtSoftDeleteUi || !isTicketBookingLegacyOffsetRnGroup(groupRows)) {
+      return null;
+    }
+    const busy = legacyOffsetConsolidatingKey === groupKey;
+    const otherCount = legacyOffsetRowIdsToSoftDelete(
+      groupRows,
+      pickPrimaryRowForLegacyOffsetMerge(groupRows)?.id ?? ''
+    ).length;
+
+    const btnClass =
+      variant === 'desktop'
+        ? 'ml-3 inline-flex items-center gap-1 rounded-md border border-violet-600 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-900 hover:bg-violet-100 disabled:opacity-50'
+        : 'mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-violet-600 bg-violet-50 px-2 py-1.5 text-xs font-semibold text-violet-900 hover:bg-violet-100 disabled:opacity-50';
+
+    return (
+      <button
+        type="button"
+        className={btnClass}
+        disabled={busy}
+        title={
+          locale === 'ko'
+            ? '본 행 수량 0개로 맞추고, +/− 조정·취소 행을 삭제 요청(숨김)합니다.'
+            : 'Set main row to qty 0 and soft-delete offset/cancel rows.'
+        }
+        onClick={(e) => {
+          e.stopPropagation();
+          void handleConsolidateLegacyOffsetGroup(groupKey, groupRows);
+        }}
+      >
+        <Merge className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {busy
+          ? locale === 'ko'
+            ? '처리 중…'
+            : 'Working…'
+          : locale === 'ko'
+            ? `0개로 통합 (${otherCount}건 숨김)`
+            : `Merge to 0 (${otherCount} hide)`}
+      </button>
+    );
   };
 
   const renderTicketBookingActionButtons = useCallback(
@@ -2965,6 +3275,11 @@ export default function TicketBookingList() {
     return cancelDueColorMap;
   }, [getCancelDueDate]);
 
+  const pendingRequestCount = useMemo(
+    () => bookings.filter((b) => isTicketBookingPendingRequestState(b)).length,
+    [bookings]
+  );
+
   const ticketNeedCheckUnionCount = useMemo(() => {
     const ids = new Set<string>();
     for (const b of bookings) {
@@ -3035,20 +3350,7 @@ export default function TicketBookingList() {
     );
   };
 
-  // 상태 필터
-  const matchesStatus = (booking: TicketBooking): boolean => {
-    if (statusFilter === 'all') return true;
-
-    const bookingStatus = String(normalizeTicketBookingStatusFromDb(booking.status)).toLowerCase();
-    if (statusFilter === 'cancelled') {
-      return bookingStatus === 'cancelled' || bookingStatus === 'canceled';
-    }
-    if (statusFilter === 'confirmed') {
-      return bookingStatus === 'confirmed';
-    }
-
-    return bookingStatus === statusFilter.toLowerCase();
-  };
+  const hasStatusFilter = selectedStatusFilters.size > 0;
 
   /** 확정 + 투어 연결 + 티켓 수량과 투어 예약 총원 불일치 */
   const isConfirmedEaHeadcountMismatch = (booking: TicketBooking): boolean => {
@@ -3079,36 +3381,57 @@ export default function TicketBookingList() {
     return true;
   };
 
-  // 모든 필터를 적용한 부킹 목록 (입력/필터/뷰 변경 시에만 재계산)
-  const filteredBookings = useMemo(() => {
-    return bookings.filter((booking) => {
-      const base =
+  const bookingsPassingBaseFilters = useMemo(() => {
+    return bookings.filter(
+      (booking) =>
         matchesSearch(booking) &&
         matchesDate(booking) &&
         matchesTour(booking) &&
         matchesFutureEvent(booking) &&
-        matchesCancelDeadline(booking);
-      if (!base) return false;
-      if (viewMode === 'table' && needsReviewEaMismatch) {
-        return isConfirmedEaHeadcountMismatch(booking);
-      }
-      return matchesStatus(booking);
-    });
-    // matchesXxx 헬퍼들은 컴포넌트 내부 함수라 매 렌더링마다 새로 만들어지지만
-    // 실제 동작은 아래 의존성 값들에만 영향을 받으므로 의존성에 명시적으로 나열한다.
+        matchesCancelDeadline(booking)
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     bookings,
-    searchTerm,
-    statusFilter,
+    searchTermLower,
     checkInDateFrom,
     checkInDateTo,
     tourFilter,
     futureEventFilter,
     cancelDeadlineFilter,
+    supplierProductsMap,
+  ]);
+
+  const multiRnBookingIdSet = useMemo(
+    () => ticketBookingIdsInMultiRnGroups(bookingsPassingBaseFilters),
+    [bookingsPassingBaseFilters]
+  );
+
+  const multiRnGroupCount = useMemo(
+    () => countTicketBookingMultiRnGroups(bookingsPassingBaseFilters),
+    [bookingsPassingBaseFilters]
+  );
+
+  // 모든 필터를 적용한 부킹 목록 (입력/필터/뷰 변경 시에만 재계산)
+  const filteredBookings = useMemo(() => {
+    return bookingsPassingBaseFilters.filter((booking) => {
+      if (multiRnOnlyFilter && !multiRnBookingIdSet.has(booking.id)) return false;
+      if (viewMode === 'table' && needsReviewEaMismatch) {
+        return isConfirmedEaHeadcountMismatch(booking);
+      }
+      if (pendingRequestOnlyFilter) {
+        return isTicketBookingPendingRequestState(booking);
+      }
+      return ticketBookingMatchesStatusFilters(booking, selectedStatusFilters);
+    });
+  }, [
+    bookingsPassingBaseFilters,
+    multiRnOnlyFilter,
+    multiRnBookingIdSet,
+    selectedStatusFilters,
+    pendingRequestOnlyFilter,
     needsReviewEaMismatch,
     viewMode,
-    supplierProductsMap,
   ]);
 
   // 정렬된 부킹 목록 (정렬 필드/방향 변경 시에만 재계산)
@@ -3140,7 +3463,19 @@ export default function TicketBookingList() {
 
   useEffect(() => {
     setListPage(1);
-  }, [searchTerm, statusFilter, checkInDateFrom, checkInDateTo, tourFilter, futureEventFilter, cancelDeadlineFilter, needsReviewEaMismatch, viewMode]);
+  }, [
+    searchTerm,
+    selectedStatusFilters,
+    checkInDateFrom,
+    checkInDateTo,
+    tourFilter,
+    futureEventFilter,
+    cancelDeadlineFilter,
+    pendingRequestOnlyFilter,
+    multiRnOnlyFilter,
+    needsReviewEaMismatch,
+    viewMode,
+  ]);
 
   useEffect(() => {
     if (viewMode !== 'table') setNeedsReviewEaMismatch(false);
@@ -3479,6 +3814,73 @@ export default function TicketBookingList() {
     setShowBookingModal(true);
   };
 
+  const buildVendorConfirmChangePayload = (booking: TicketBooking) => ({
+    apply_qty: ticketBookingPendingQtyDiffers(booking),
+    apply_time: ticketBookingPendingTimeDiffers(booking),
+  });
+
+  const renderVendorChangeActionButtons = (
+    booking: TicketBooking,
+    size: 'card' | 'row'
+  ) => {
+    if (!showVendorChangeActions(booking)) return null;
+    const btnClass =
+      size === 'card'
+        ? 'inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full disabled:opacity-50'
+        : 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full disabled:opacity-50';
+    const iconClass = size === 'card' ? 'h-4 w-4' : 'h-4 w-4';
+    const showPartial = ticketBookingHasMultiplePendingChanges(booking);
+    return (
+      <div className={`flex flex-wrap items-center gap-1 ${size === 'row' ? 'mt-1' : ''}`}>
+        <button
+          type="button"
+          className={`${btnClass} bg-slate-800 text-white hover:bg-slate-900`}
+          disabled={workflowActionSavingId === booking.id}
+          title={locale === 'ko' ? '벤더 확정 (변경 전체)' : 'Confirm all vendor changes'}
+          aria-label={locale === 'ko' ? '벤더 확정 (변경 전체)' : 'Confirm all vendor changes'}
+          onClick={(e) => {
+            e.stopPropagation();
+            void runWorkflowRpc(
+              booking,
+              'workflow_vendor_confirm_change',
+              buildVendorConfirmChangePayload(booking)
+            );
+          }}
+        >
+          <Check className={iconClass} strokeWidth={2.5} aria-hidden />
+        </button>
+        {showPartial ? (
+          <button
+            type="button"
+            className={`${btnClass} border border-amber-500 bg-amber-50 text-amber-950 hover:bg-amber-100`}
+            disabled={workflowActionSavingId === booking.id}
+            title={locale === 'ko' ? '부분 확정' : 'Partial confirm'}
+            aria-label={locale === 'ko' ? '부분 확정' : 'Partial confirm'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setVendorPartialChangeModalBooking(booking);
+            }}
+          >
+            <ListChecks className={iconClass} strokeWidth={2.25} aria-hidden />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={`${btnClass} border border-red-300 bg-red-50 text-red-900 hover:bg-red-100`}
+          disabled={workflowActionSavingId === booking.id}
+          title={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
+          aria-label={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
+          onClick={(e) => {
+            e.stopPropagation();
+            void runWorkflowRpc(booking, 'workflow_vendor_reject_change');
+          }}
+        >
+          <X className={iconClass} strokeWidth={2.5} aria-hidden />
+        </button>
+      </div>
+    );
+  };
+
   const renderTicketMobileCard = (
     booking: TicketBooking,
     opts?: { variant?: 'default' | 'modalForm' }
@@ -3526,86 +3928,88 @@ export default function TicketBookingList() {
         }
         style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
       >
-        {changePending ? (
-          <div className="flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-1.5 text-[11px] font-bold text-red-800 ring-1 ring-red-300">
-            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-            {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
-          </div>
-        ) : null}
         {isModalForm ? (
           <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
+            {showChangeAxisInsteadOfBookingStatus(booking) ? (
               <span
-                ref={(el) => {
-                  const key = `${booking.id}:booking`;
-                  if (el) axisBadgeRefs.current.set(key, el);
-                  else axisBadgeRefs.current.delete(key);
-                }}
-                role="button"
-                tabIndex={0}
-                className={`${axisChipClassModal} ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleAxisDropdown(booking.id, 'booking');
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+                className={`${axisChipClassModal} w-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
+              >
+                {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
+              </span>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <span
+                  ref={(el) => {
+                    const key = `${booking.id}:booking`;
+                    if (el) axisBadgeRefs.current.set(key, el);
+                    else axisBadgeRefs.current.delete(key);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`${axisChipClassModal} ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
+                  onClick={(e) => {
                     e.stopPropagation();
                     toggleAxisDropdown(booking.id, 'booking');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleAxisDropdown(booking.id, 'booking');
+                    }
+                  }}
+                  title={
+                    locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
                   }
-                }}
-                title={
-                  locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
-                }
-              >
-                <TicketBookingBookingStatusIcon
-                  status={booking.booking_status}
-                  className={axisIconClassModal}
-                  title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-                />
-                <span className="min-w-0 truncate text-center">
-                  {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                >
+                  <TicketBookingBookingStatusIcon
+                    status={booking.booking_status}
+                    className={axisIconClassModal}
+                    title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                  />
+                  <span className="min-w-0 truncate text-center">
+                    {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
+                  </span>
                 </span>
-              </span>
-              <span
-                ref={(el) => {
-                  const key = `${booking.id}:vendor`;
-                  if (el) axisBadgeRefs.current.set(key, el);
-                  else axisBadgeRefs.current.delete(key);
-                }}
-                role="button"
-                tabIndex={0}
-                className={`${axisChipClassModal} ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleAxisDropdown(booking.id, 'vendor');
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+                <span
+                  ref={(el) => {
+                    const key = `${booking.id}:vendor`;
+                    if (el) axisBadgeRefs.current.set(key, el);
+                    else axisBadgeRefs.current.delete(key);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`${axisChipClassModal} ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
+                  onClick={(e) => {
                     e.stopPropagation();
                     toggleAxisDropdown(booking.id, 'vendor');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleAxisDropdown(booking.id, 'vendor');
+                    }
+                  }}
+                  title={
+                    locale === 'ko'
+                      ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
+                      : 'Change vendor status'
                   }
-                }}
-                title={
-                  locale === 'ko'
-                    ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
-                    : 'Change vendor status'
-                }
-              >
-                <TicketBookingVendorStatusIcon
-                  status={booking.vendor_status}
-                  className={axisIconClassModal}
-                  title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-                />
-                <span className="min-w-0 truncate text-center">
-                  {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+                >
+                  <TicketBookingVendorStatusIcon
+                    status={booking.vendor_status}
+                    className={axisIconClassModal}
+                    title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+                  />
+                  <span className="min-w-0 truncate text-center">
+                    {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
+                  </span>
                 </span>
-              </span>
-            </div>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
-              {showChangeRequestButton(booking) ? (
+              {showChangeRequestButton(booking) && !showChangeAxisInsteadOfBookingStatus(booking) ? (
                 <button
                   type="button"
                   className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full border border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 disabled:opacity-50"
@@ -3651,38 +4055,8 @@ export default function TicketBookingList() {
                 </button>
               </div>
             ) : null}
-            {showVendorChangeActions(booking) ? (
-              <div className="flex flex-wrap items-center gap-1">
-                <button
-                  type="button"
-                  className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
-                  disabled={workflowActionSavingId === booking.id}
-                  title={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
-                  aria-label={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void runWorkflowRpc(booking, 'workflow_vendor_confirm_change');
-                  }}
-                >
-                  <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
-                  disabled={workflowActionSavingId === booking.id}
-                  title={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
-                  aria-label={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void runWorkflowRpc(booking, 'workflow_vendor_reject_change');
-                  }}
-                >
-                  <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-                </button>
-              </div>
-            ) : null}
-            {!isWorkflowInitialPhase(booking) &&
-            String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
+            {renderVendorChangeActionButtons(booking, 'card')}
+            {hasSecondaryChangeAxisBadge(booking) ? (
               <span
                 className={`inline-flex w-full max-w-full items-center justify-center rounded-full px-2.5 py-1.5 text-[11px] font-semibold ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
               >
@@ -3694,6 +4068,14 @@ export default function TicketBookingList() {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex flex-wrap items-center gap-1.5">
+                {showChangeAxisInsteadOfBookingStatus(booking) ? (
+                  <span
+                    className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
+                  >
+                    {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
+                  </span>
+                ) : (
+                  <>
                 <span
                   ref={(el) => {
                     const key = `${booking.id}:booking`;
@@ -3762,14 +4144,15 @@ export default function TicketBookingList() {
                     {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
                   </span>
                 </span>
-                {!isWorkflowInitialPhase(booking) &&
-                String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
+                {hasSecondaryChangeAxisBadge(booking) ? (
                   <span
                     className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
                   >
                     {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
                   </span>
                 ) : null}
+                  </>
+                )}
               </div>
               <button
                 type="button"
@@ -3858,9 +4241,11 @@ export default function TicketBookingList() {
             <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-3">
               <FormField label={formLabel('투어', 'Tour')}>
                 {booking.tours && booking.tour_id ? (
-                  <span className="font-medium break-words text-gray-900">
-                    {getProductName(booking.tours.products)} {booking.tours.tour_date || ''}
-                  </span>
+                  <TicketBookingTourDisplay
+                    locale={locale}
+                    tours={booking.tours}
+                    tourFallback={t('tour')}
+                  />
                 ) : (
                   <button
                     type="button"
@@ -3925,9 +4310,11 @@ export default function TicketBookingList() {
           <span className="font-medium">{booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}</span>
           <span className="text-gray-500">투어</span>
           {booking.tours && booking.tour_id ? (
-            <span className="font-medium truncate text-gray-900">
-              {getProductName(booking.tours.products)} {booking.tours.tour_date || ''}
-            </span>
+            <TicketBookingTourDisplay
+              locale={locale}
+              tours={booking.tours}
+              tourFallback={t('tour')}
+            />
           ) : (
             <button
               type="button"
@@ -3987,96 +4374,55 @@ export default function TicketBookingList() {
     (opts?: { interactiveSort?: boolean; showStatementRecon?: boolean }) => {
       const interactive = opts?.interactiveSort !== false;
       const showStmt = opts?.showStatementRecon === true;
-      const sortableTh =
-        'px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ' +
-        (interactive ? 'cursor-pointer hover:bg-gray-100 select-none' : '');
+      const sortable = () =>
+        `${TICKET_TABLE_TH}${interactive ? ' cursor-pointer hover:bg-gray-100 select-none' : ''}`;
       return (
-        <thead className="bg-gray-50">
-          <tr className="align-middle">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
             <th
-              className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10"
+              className={`${TICKET_TABLE_TH} sticky left-0 z-10 min-w-[8.5rem] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]`}
               title={t('ticketTableStatusThHintSummary')}
             >
               상태
             </th>
-            <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[7rem] leading-tight">
-              벤더
-            </th>
-            <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[6rem] leading-tight">
-              결제
-            </th>
-            <th className="px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wide text-gray-500 max-w-[14rem] leading-tight">
-              환불·크레딧
-            </th>
-            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              공급업체
-            </th>
-            <th className={sortableTh} onClick={interactive ? () => handleSort('date') : undefined}>
-              <div className="flex items-center space-x-1">
-                <span>날짜</span>
-                {interactive && sortField === 'date' && (
-                  <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                )}
-              </div>
-            </th>
-            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">시간</th>
-            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">수량</th>
-            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Cancel Due
-            </th>
+            <th className={TICKET_TABLE_TH}>벤더</th>
+            <th className={TICKET_TABLE_TH}>결제</th>
+            <th className={`${TICKET_TABLE_TH} hidden xl:table-cell max-w-[6rem]`}>환불</th>
+            <th className={TICKET_TABLE_TH}>공급</th>
             <th
-              className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              title="(비용 − 수입) ÷ 수량"
+              className={sortable()}
+              onClick={interactive ? () => handleSort('date') : undefined}
             >
-              EA 금액
+              <span className="inline-flex items-center gap-1">
+                체크인
+                {interactive && sortField === 'date' ? (
+                  <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                ) : null}
+              </span>
             </th>
-            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              비용(USD)
-            </th>
-            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              수입(USD)
-            </th>
-            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              RN#
-            </th>
-            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              결제방법
-            </th>
-            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Zelle 확인#
-            </th>
-            <th className="hidden lg:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Zelle 첨부
-            </th>
-            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CC</th>
-            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              투어연결
-            </th>
-            <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              투어총인원
-            </th>
-            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Invoice#
-            </th>
-            <th className="hidden md:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              첨부
-            </th>
+            <th className={TICKET_TABLE_TH}>시간</th>
+            <th className={TICKET_TABLE_TH}>수량</th>
+            <th className={`${TICKET_TABLE_TH} hidden md:table-cell`}>Cancel</th>
+            <th className={`${TICKET_TABLE_TH} hidden lg:table-cell`}>비용</th>
+            <th className={`${TICKET_TABLE_TH} hidden md:table-cell`}>RN#</th>
+            <th className={`${TICKET_TABLE_TH} hidden lg:table-cell min-w-[9rem]`}>투어</th>
+            <th className={`${TICKET_TABLE_TH} hidden md:table-cell`}>Inv#</th>
+            <th className={`${TICKET_TABLE_TH} hidden md:table-cell text-center`}>첨부</th>
             {showStmt ? (
-              <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+              <th className={`${TICKET_TABLE_TH} text-center min-w-[8rem]`}>
                 {tStmtRecon('columnHeaderShort')}
               </th>
             ) : null}
-            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
-            <th className={sortableTh} onClick={interactive ? () => handleSort('submit_on') : undefined}>
-              <div className="flex items-center space-x-1">
-                <span>제출일</span>
-                {interactive && sortField === 'submit_on' && (
+            <th
+              className={sortable()}
+              onClick={interactive ? () => handleSort('submit_on') : undefined}
+            >
+              <span className="inline-flex items-center gap-1">
+                제출일
+                {interactive && sortField === 'submit_on' ? (
                   <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                )}
-              </div>
-            </th>
-            <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              예약자
+                ) : null}
+              </span>
             </th>
           </tr>
         </thead>
@@ -4166,27 +4512,37 @@ export default function TicketBookingList() {
 
     const axisDropdownPortal = renderTicketBookingAxisDropdownPortal(booking);
 
+    const openEditFromRow = !opts?.inDetailModal;
+
     return (
       <tr
         key={booking.id}
-        className={`align-middle ${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''} ${changePending ? 'outline outline-2 outline-red-600 -outline-offset-2' : ''}`}
+        className={`align-middle ${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''} ${changePending ? 'outline outline-2 outline-red-600 -outline-offset-2' : ''} ${openEditFromRow ? 'cursor-pointer' : ''}`}
         style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
+        onClick={
+          openEditFromRow
+            ? () => {
+                handleEdit(booking);
+              }
+            : undefined
+        }
+        title={openEditFromRow ? (locale === 'ko' ? '클릭하여 편집' : 'Click to edit') : undefined}
       >
     <td
-      className={`align-middle px-2.5 py-2 text-xs sticky left-0 ${bgColor} z-10 ${rnRowStripe} max-w-[12rem]`}
+      className={`${TICKET_TABLE_CELL} sticky left-0 z-10 min-w-[9rem] w-[9rem] ${bgColor} ${rnRowStripe}`}
     >
       <div className="relative z-50 space-y-1.5 px-0.5 py-0.5">
-        {changePending ? (
-          <div className="flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-1 text-[10px] font-bold text-red-800 ring-1 ring-red-400">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span>
-              {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
-            </span>
-          </div>
-        ) : null}
         <div className="flex flex-wrap items-center gap-1.5">
-          {bookingStatusBadge}
-          {showChangeRequestButton(booking) ? (
+          {showChangeAxisInsteadOfBookingStatus(booking) ? (
+            <span
+              className={`inline-flex max-w-full min-h-[1.625rem] items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
+            >
+              {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
+            </span>
+          ) : (
+            bookingStatusBadge
+          )}
+          {showChangeRequestButton(booking) && !showChangeAxisInsteadOfBookingStatus(booking) ? (
             <button
               type="button"
               className="inline-flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-full border border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 disabled:opacity-50"
@@ -4206,8 +4562,7 @@ export default function TicketBookingList() {
             </button>
           ) : null}
         </div>
-        {!isWorkflowInitialPhase(booking) &&
-        String(booking.change_status ?? 'none').toLowerCase() !== 'none' ? (
+        {hasSecondaryChangeAxisBadge(booking) ? (
           <div className="px-0.5">
             <span
               className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
@@ -4255,36 +4610,7 @@ export default function TicketBookingList() {
           </button>
         </div>
       ) : null}
-      {showVendorChangeActions(booking) ? (
-        <div className="mt-1 flex flex-wrap items-center gap-1">
-          <button
-            type="button"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
-            disabled={workflowActionSavingId === booking.id}
-            title={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
-            aria-label={locale === 'ko' ? '벤더 확정 (변경)' : 'Confirm vendor (change)'}
-            onClick={(e) => {
-              e.stopPropagation();
-              void runWorkflowRpc(booking, 'workflow_vendor_confirm_change');
-            }}
-          >
-            <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
-            disabled={workflowActionSavingId === booking.id}
-            title={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
-            aria-label={locale === 'ko' ? '벤더 거절 (변경)' : 'Reject vendor (change)'}
-            onClick={(e) => {
-              e.stopPropagation();
-              void runWorkflowRpc(booking, 'workflow_vendor_reject_change');
-            }}
-          >
-            <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-          </button>
-        </div>
-      ) : null}
+      {renderVendorChangeActionButtons(booking, 'row')}
     </td>
     <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[7rem]">
       {isWorkflowInitialPhase(booking) ? (
@@ -4319,7 +4645,7 @@ export default function TicketBookingList() {
         </span>
       )}
     </td>
-    <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[14rem]">
+    <td className={`${TICKET_TABLE_CELL} hidden xl:table-cell max-w-[6rem]`} onClick={(e) => e.stopPropagation()}>
       {isWorkflowInitialPhase(booking) ? (
         <span className="text-gray-400">—</span>
       ) : (
@@ -4367,45 +4693,30 @@ export default function TicketBookingList() {
         </div>
       )}
     </td>
-    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
+    <td className={`${TICKET_TABLE_CELL} whitespace-nowrap`}>
       <span
-        className="inline-block max-w-[12rem] truncate rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-black/10"
+        className={`${TICKET_TABLE_CLIP} inline-block max-w-[7rem] rounded px-1.5 py-0.5 font-medium ring-1 ring-black/10`}
         style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+        title={booking.company}
       >
         {booking.company}
       </span>
     </td>
-    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900">
-        {booking.check_in_date 
+    <td className={`${TICKET_TABLE_CELL} min-w-[5.5rem] whitespace-nowrap`}>
+      <span className={`${TICKET_TABLE_CLIP} text-gray-900`} title={booking.check_in_date ?? ''}>
+        {booking.check_in_date
           ? new Date(booking.check_in_date).toISOString().split('T')[0]
           : '-'}
-      </div>
+      </span>
     </td>
-    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-      <div
-        className={
-          ticketBookingPendingTimeDiffers(booking)
-            ? 'font-semibold text-red-600'
-            : 'text-gray-900'
-        }
-      >
-        {formatTimeArrow(booking)}
-      </div>
+    <td className={`${TICKET_TABLE_CELL} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+      <TicketBookingChangeStack model={getTicketBookingTimeStack(booking)} />
     </td>
-    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-      <div
-        className={
-          ticketBookingPendingQtyDiffers(booking)
-            ? 'font-semibold text-red-600'
-            : 'font-medium text-gray-900'
-        }
-      >
-        {formatQtyArrow(booking)}
-      </div>
+    <td className={`${TICKET_TABLE_CELL} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+      <TicketBookingChangeStack model={getTicketBookingQtyStack(booking)} />
     </td>
-    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900">
+    <td className={`${TICKET_TABLE_CELL} hidden md:table-cell min-w-[5rem] whitespace-nowrap`}>
+      <span className={`${TICKET_TABLE_CLIP} text-gray-900`}>
         {(() => {
           const cancelDueDate = getCancelDueDate(booking);
           if (!cancelDueDate) return '-';
@@ -4424,85 +4735,30 @@ export default function TicketBookingList() {
             </span>
           );
         })()}
-      </div>
-    </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div
-        className={
-          ticketBookingPendingExpenseDiffers(booking)
-            ? 'font-semibold text-red-600 tabular-nums'
-            : 'text-gray-900 tabular-nums'
-        }
-        title="(비용 − 수입) ÷ 수량"
-      >
-        {formatEaMarginUsdArrow(booking)}
-      </div>
-    </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div
-        className={
-          ticketBookingPendingExpenseDiffers(booking)
-            ? 'font-semibold text-red-600'
-            : 'text-gray-900'
-        }
-      >
-        {formatExpenseArrow(booking)}
-      </div>
-    </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900">${booking.income || '-'}</div>
-    </td>
-    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900">{booking.rn_number || '-'}</div>
-    </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900">{getPaymentMethodText(booking.payment_method) || '-'}</div>
-    </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs max-w-[10rem]">
-      <div className="truncate text-gray-900" title={booking.zelle_confirmation_number?.trim() || ''}>
-        {booking.zelle_confirmation_number?.trim() || '—'}
-      </div>
-    </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          openZelleAttachmentView(booking);
-        }}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-emerald-700"
-        title="Zelle 확인 스크린샷"
-      >
-        {(() => {
-          const inv = booking.invoice_number?.trim();
-          const has =
-            inv &&
-            (zelleAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
-          return has ? (
-            <Paperclip className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
-          ) : (
-            <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
-          );
-        })()}
-      </button>
-    </td>
-    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc ?? '')}`}>
-        {getCCStatusText(booking.cc ?? '')}
       </span>
     </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+    <td className={`${TICKET_TABLE_CELL} hidden lg:table-cell whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+      <TicketBookingChangeStack model={getTicketBookingExpenseStack(booking)} />
+    </td>
+    <td className={`${TICKET_TABLE_CELL} hidden md:table-cell min-w-[5.5rem] whitespace-nowrap`}>
+      <span className={`${TICKET_TABLE_CLIP} text-gray-900`} title={booking.rn_number ?? ''}>
+        {booking.rn_number || '-'}
+      </span>
+    </td>
+    <td
+      className={`${TICKET_TABLE_CELL} hidden lg:table-cell min-w-[9rem] max-w-[12rem]`}
+      onClick={(e) => e.stopPropagation()}
+    >
       {booking.tours && booking.tour_id ? (
-        <div 
-          className="text-gray-900 text-xs cursor-pointer hover:text-blue-600 hover:underline transition-colors"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleTourClick(booking.tour_id!);
-          }}
-          title="투어 상세 보기"
-        >
-          {getProductName(booking.tours.products)} {booking.tours.tour_date || ''}
-        </div>
+        <TicketBookingTourDisplay
+          locale={locale}
+          tours={booking.tours}
+          tourFallback={t('tour')}
+          layout={opts?.inDetailModal ? 'default' : 'table'}
+          showDetails={opts?.inDetailModal === true}
+          headlineClassName="font-medium text-gray-900 leading-snug"
+          onTourClick={() => handleTourClick(booking.tour_id!)}
+        />
       ) : (
         <button
           type="button"
@@ -4517,14 +4773,7 @@ export default function TicketBookingList() {
         </button>
       )}
     </td>
-    <td className="align-middle hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900 tabular-nums">
-        {booking.tours && booking.tour_id
-          ? `${booking.tours.total_people ?? 0}명`
-          : '-'}
-      </div>
-    </td>
-    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+    <td className={`${TICKET_TABLE_CELL} hidden md:table-cell whitespace-nowrap`}>
       <button
         type="button"
         onClick={(e) => {
@@ -4539,14 +4788,14 @@ export default function TicketBookingList() {
         {booking.invoice_number?.trim() || '-'}
       </button>
     </td>
-    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+    <td className={`${TICKET_TABLE_CELL} hidden md:table-cell whitespace-nowrap`}>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           openInvoiceAttachmentView(booking);
         }}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-blue-700"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-blue-700"
         title="Invoice 인보이스 사진"
       >
         {(() => {
@@ -4563,27 +4812,15 @@ export default function TicketBookingList() {
       </button>
     </td>
     {opts?.inDetailModal ? (
-      <td className="align-middle px-1 py-1.5 text-center text-xs">
+      <td
+        className={`${TICKET_TABLE_CELL} min-w-[8rem] max-w-[12rem]`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {renderDetailStatementReconCell(booking)}
       </td>
     ) : null}
-    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-      {renderTicketBookingActionButtons(booking, { fromDetailModal: opts?.inDetailModal })}
-    </td>
-    <td className="align-middle px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900">
-        {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
-      </div>
-    </td>
-    <td className="align-middle hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
-      <div className="text-gray-900">
-        {(() => {
-          const submittedByEmail = booking.submitted_by?.toLowerCase() || '';
-          const nameKo = teamMemberMap.get(submittedByEmail);
-          // team 테이블에서 name_ko를 찾으면 표시, 없으면 submitted_by 이메일 표시
-          return nameKo || booking.submitted_by || '-';
-        })()}
-      </div>
+    <td className={`${TICKET_TABLE_CELL} whitespace-nowrap tabular-nums text-gray-600`}>
+      {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
     </td>
       </tr>
     );
@@ -4599,7 +4836,7 @@ export default function TicketBookingList() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-4 sm:space-y-6">
       {enriching && (
         <div
           className="fixed top-2 right-2 z-[1200] flex items-center gap-2 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm px-3 py-1.5 text-xs text-gray-600"
@@ -4611,9 +4848,9 @@ export default function TicketBookingList() {
         </div>
       )}
       {/* 헤더 - 모바일: 세로 배치, 데스크톱: 가로 */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4">
-        <h2 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{t('ticketBookingManagement')}</h2>
-        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0">
+      <div className="flex min-w-0 flex-col gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-4 sm:py-4">
+        <h2 className="min-w-0 truncate text-lg font-bold text-gray-900 sm:text-2xl">{t('ticketBookingManagement')}</h2>
+        <div className="flex min-w-0 w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
           {/* 뷰 전환 버튼 */}
           <div className="flex bg-gray-100 rounded-lg p-0.5 sm:p-1">
             <button
@@ -4708,7 +4945,7 @@ export default function TicketBookingList() {
       </div>
 
       {/* 필터 - 모바일: 2열/스택, 데스크톱: 그리드 */}
-      <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-gray-100">
+      <div className="min-w-0 border-t border-gray-100 px-3 py-3 sm:px-4 sm:py-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
@@ -4730,26 +4967,26 @@ export default function TicketBookingList() {
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               {t('status')}
             </label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              disabled={viewMode === 'table' && needsReviewEaMismatch}
-              title={
-                viewMode === 'table' && needsReviewEaMismatch
-                  ? locale === 'ko'
-                    ? '확인 필요 모드에서는 확정·인원 불일치 부킹만 표시됩니다.'
-                    : 'Needs review mode shows only confirmed bookings with headcount mismatch.'
-                  : undefined
+            <TicketBookingStatusMultiFilter
+              locale={locale}
+              t={t}
+              selected={selectedStatusFilters}
+              onChange={setSelectedStatusFilters}
+              disabled={
+                pendingRequestOnlyFilter || (viewMode === 'table' && needsReviewEaMismatch)
               }
-              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm disabled:bg-gray-100 disabled:text-gray-500"
-            >
-              <option value="all">{t('allStatus')}</option>
-              {TICKET_BOOKING_STATUS_VALUES.map((sv) => (
-                <option key={sv} value={sv}>
-                  {formatTicketBookingStatusLabel(sv, t, locale)}
-                </option>
-              ))}
-            </select>
+              disabledTitle={
+                pendingRequestOnlyFilter
+                  ? locale === 'ko'
+                    ? '요청 중 필터에서는 상태 선택이 적용되지 않습니다.'
+                    : 'Status filter is disabled while “Pending” filter is on.'
+                  : viewMode === 'table' && needsReviewEaMismatch
+                    ? locale === 'ko'
+                      ? '확인 필요 모드에서는 확정·인원 불일치 부킹만 표시됩니다.'
+                      : 'Needs review mode shows only confirmed bookings with headcount mismatch.'
+                    : undefined
+              }
+            />
           </div>
 
           <div className="flex-1 min-w-0">
@@ -4767,7 +5004,7 @@ export default function TicketBookingList() {
             </select>
           </div>
 
-          <div className="flex-1 min-w-0 sm:min-w-[14rem]">
+          <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               {t('checkInDateRange')}
             </label>
@@ -4820,10 +5057,10 @@ export default function TicketBookingList() {
                 Future Event
               </button>
               <button
+                type="button"
                 onClick={() => {
                   const newValue = !cancelDeadlineFilter;
                   setCancelDeadlineFilter(newValue);
-                  // 필터 활성화 시 자동으로 날짜순 정렬
                   if (newValue) {
                     setSortField('date');
                     setSortDirection('asc');
@@ -4837,13 +5074,58 @@ export default function TicketBookingList() {
               >
                 취소 기한
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingRequestOnlyFilter((v) => !v);
+                  if (viewMode === 'table' && needsReviewEaMismatch) {
+                    setNeedsReviewEaMismatch(false);
+                  }
+                }}
+                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  pendingRequestOnlyFilter
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title={
+                  locale === 'ko'
+                    ? '예매 요청·변경 요청 중(벤더 응답 대기) 부킹만 표시합니다.'
+                    : 'Show only bookings awaiting vendor response (initial or change request).'
+                }
+              >
+                {locale === 'ko' ? '요청 중' : 'Pending'}
+                {pendingRequestCount > 0 ? ` (${pendingRequestCount})` : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !multiRnOnlyFilter;
+                  setMultiRnOnlyFilter(next);
+                  if (next && viewMode === 'table') {
+                    setTicketTableLayout('byRn');
+                  }
+                }}
+                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  multiRnOnlyFilter
+                    ? 'bg-violet-600 text-white hover:bg-violet-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title={
+                  locale === 'ko'
+                    ? '같은 RN#에 부킹이 2건 이상인 그룹만 표시합니다. (RN# 없음 단일 행은 제외)'
+                    : 'Show only RN# groups with two or more booking rows (excludes rows without RN#).'
+                }
+              >
+                {locale === 'ko' ? 'RN# 다중' : 'Multi RN#'}
+                {multiRnGroupCount > 0 ? ` (${multiRnGroupCount})` : ''}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       {/* 데이터 표시 영역 */}
-      <div className="px-3 sm:px-6 pb-4">
+      <div className="min-w-0 max-w-full px-3 pb-4 sm:px-4">
         {viewMode === 'table' ? (
           <>
             <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -4874,7 +5156,13 @@ export default function TicketBookingList() {
               </div>
               <button
                 type="button"
-                onClick={() => setNeedsReviewEaMismatch((v) => !v)}
+                onClick={() => {
+                  setNeedsReviewEaMismatch((v) => {
+                    const next = !v;
+                    if (next) setPendingRequestOnlyFilter(false);
+                    return next;
+                  });
+                }}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
                   needsReviewEaMismatch
                     ? 'border-amber-500 bg-amber-100 text-amber-950 shadow-sm'
@@ -4890,14 +5178,21 @@ export default function TicketBookingList() {
               </button>
             </div>
             {/* 상태 설명: 6축 다이어그램 */}
-            <TicketBookingAxisDiagram />
+            <div className="min-w-0 max-w-full overflow-hidden">
+              <TicketBookingAxisDiagram className="min-w-0" />
+            </div>
             {/* 테이블 뷰 - 모바일: 카드형 리스트, 데스크톱: 테이블 */}
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+            <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
               {/* 모바일 카드형 리스트 */}
-              <div className="block sm:hidden space-y-3">
+              <div className="block space-y-3 sm:hidden">
                 {sortedBookings.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">
-                    {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || needsReviewEaMismatch
+                    {searchTerm ||
+                    hasStatusFilter ||
+                    hasCheckInDateRangeFilter ||
+                    needsReviewEaMismatch ||
+                    pendingRequestOnlyFilter ||
+                    multiRnOnlyFilter
                       ? '검색 조건에 맞는 부킹이 없습니다.'
                       : '등록된 입장권 부킹이 없습니다.'}
                   </div>
@@ -4918,6 +5213,7 @@ export default function TicketBookingList() {
                             <div className="mt-1 text-neutral-700 font-medium">
                               {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
                             </div>
+                            {renderLegacyOffsetConsolidateButton(g.key, g.rows, 'mobile')}
                           </div>
                           <div className="space-y-2.5 p-2.5 bg-white/80">
                             {g.rows.map((booking) => renderTicketMobileCard(booking))}
@@ -4930,9 +5226,9 @@ export default function TicketBookingList() {
                   pagedSortedBookings.map((booking) => renderTicketMobileCard(booking))
                 )}
               </div>
-              {/* 데스크톱 테이블 */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full min-w-full divide-y divide-gray-200">
+              {/* 데스크톱 테이블 — 페이지는 넘치지 않고, 카드 안에서만 가로 스크롤 */}
+              <div className="hidden min-w-0 w-full max-w-full overflow-x-auto sm:block">
+                <table className="w-full min-w-[960px] border-collapse text-[11px]">
                 {renderTicketDesktopTableThead()}
                 <tbody className="bg-white divide-y divide-gray-200">
                   {(() => {
@@ -4963,6 +5259,7 @@ export default function TicketBookingList() {
                                 <span className="text-neutral-800 font-medium ml-3">
                                   {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
                                 </span>
+                                {renderLegacyOffsetConsolidateButton(g.key, g.rows, 'desktop')}
                               </td>
                             </tr>
                             {g.rows.map((b) => renderDesktopRow(b, palette.rowStripe, cancelDueColorMap))}
@@ -4979,12 +5276,23 @@ export default function TicketBookingList() {
             {sortedBookings.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <div className="text-lg font-medium mb-2">
-                  {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || needsReviewEaMismatch
+                  {searchTerm ||
+                  hasStatusFilter ||
+                  hasCheckInDateRangeFilter ||
+                  needsReviewEaMismatch ||
+                  pendingRequestOnlyFilter ||
+                  multiRnOnlyFilter
                     ? '검색 조건에 맞는 부킹이 없습니다.'
                     : '등록된 입장권 부킹이 없습니다.'}
                 </div>
                 <p className="text-sm text-gray-400">
-                  {!searchTerm && statusFilter === 'all' && !hasCheckInDateRangeFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
+                  {!searchTerm &&
+                    !hasStatusFilter &&
+                    !hasCheckInDateRangeFilter &&
+                    !needsReviewEaMismatch &&
+                    !pendingRequestOnlyFilter &&
+                    !multiRnOnlyFilter &&
+                    '새 부킹을 추가해보세요.'}
                 </p>
               </div>
             )}
@@ -4992,8 +5300,8 @@ export default function TicketBookingList() {
           </>
         ) : viewMode === 'calendar' ? (
           /* 달력 뷰 - 실제 달력 UI에 라벨로 표시 */
-          <div>
-                        <div>
+          <div className="min-w-0 max-w-full">
+            <div className="min-w-0">
               {(() => {
                 // 체크인 날짜별로 그룹화 (달력 칸의 로컬 YMD와 일치)
                 const groupedByDate = filteredBookings.reduce((groups, booking) => {
@@ -5552,12 +5860,6 @@ export default function TicketBookingList() {
                 style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
               >
                 <div className="p-3 sm:p-4 lg:p-6">
-                  {changePending ? (
-                    <div className="mb-3 flex items-center gap-2 rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-800 ring-1 ring-red-400">
-                      <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-                      {locale.startsWith('en') ? 'Change request in progress' : '변경 요청 진행 중'}
-                    </div>
-                  ) : null}
                   {/* 카드 헤더 - 모바일 컴팩트 */}
                   <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
                     <div className="flex-1 min-w-0">
@@ -5659,12 +5961,9 @@ export default function TicketBookingList() {
                       <div className="text-xs sm:text-sm">
                         <span className="text-gray-500">투어 연결</span>
                         <div className="mt-0.5 sm:mt-1">
-                          {booking.tours ? (
+                          {booking.tours && booking.tour_id ? (
                             <div>
-                              <div className="font-medium text-xs sm:text-sm truncate">{booking.tours.tour_date}</div>
-                              <div className="text-xs text-gray-500 truncate">
-                                {getProductName(booking.tours.products)}
-                              </div>
+                              <TicketBookingTourDisplay locale={locale} tours={booking.tours} tourFallback={t('tour')} showDetails={false} />
                               <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
                                 연결됨
                               </span>
@@ -5785,12 +6084,23 @@ export default function TicketBookingList() {
         {filteredBookings.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             <div className="text-lg font-medium mb-2">
-              {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || needsReviewEaMismatch
+              {searchTerm ||
+              hasStatusFilter ||
+              hasCheckInDateRangeFilter ||
+              needsReviewEaMismatch ||
+              pendingRequestOnlyFilter ||
+              multiRnOnlyFilter
                 ? '검색 조건에 맞는 부킹이 없습니다.'
                 : '등록된 입장권 부킹이 없습니다.'}
             </div>
             <p className="text-sm text-gray-400">
-              {!searchTerm && statusFilter === 'all' && !hasCheckInDateRangeFilter && !needsReviewEaMismatch && '새 부킹을 추가해보세요.'}
+              {!searchTerm &&
+                !hasStatusFilter &&
+                !hasCheckInDateRangeFilter &&
+                !needsReviewEaMismatch &&
+                !pendingRequestOnlyFilter &&
+                !multiRnOnlyFilter &&
+                '새 부킹을 추가해보세요.'}
             </p>
           </div>
         )}
@@ -5844,6 +6154,61 @@ export default function TicketBookingList() {
                   setEditingBooking(null);
                 }}
               />
+              {editingBooking ? (
+                <div className="mt-6 flex flex-wrap gap-2 border-t border-gray-200 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => handleViewHistory(editingBooking.id)}
+                    className="inline-flex items-center rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                  >
+                    {locale === 'ko' ? '히스토리' : 'History'}
+                  </button>
+                  {canBookingMgmtSoftDeleteUi && !editingBooking.deletion_requested_at ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleRequestSoftDelete(editingBooking.id)}
+                      className="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                    >
+                      {locale === 'ko' ? '삭제 요청' : 'Request delete'}
+                    </button>
+                  ) : null}
+                  {canSuperDeleteTicketBooking && editingBooking.deletion_requested_at ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(editingBooking.id)}
+                      className="inline-flex items-center rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
+                    >
+                      {locale === 'ko' ? '영구 삭제' : 'Permanent delete'}
+                    </button>
+                  ) : null}
+                  {canSuperDeleteTicketBooking &&
+                  isTicketBookingOffsetOrCancelRow(editingBooking) &&
+                  !editingBooking.deletion_requested_at ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          confirm(
+                            locale === 'ko'
+                              ? '이 조정/취소 행을 바로 영구 삭제하시겠습니까?'
+                              : 'Permanently delete this row now?'
+                          )
+                        ) {
+                          void handleDelete(editingBooking.id);
+                        }
+                      }}
+                      className="inline-flex items-center rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
+                    >
+                      {locale === 'ko' ? '영구 삭제' : 'Permanent delete'}
+                    </button>
+                  ) : null}
+                  {editingBooking.deletion_requested_at && !canSuperDeleteTicketBooking ? (
+                    <span className="self-center text-sm text-amber-700">
+                      {locale === 'ko' ? '삭제 요청됨' : 'Deletion requested'}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -5918,7 +6283,7 @@ export default function TicketBookingList() {
           const dueMap = buildCancelDueColorMapFor(rb);
           return (
             <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-              <table className="w-full min-w-[1100px] divide-y divide-gray-200">
+              <table className="w-full min-w-[1280px] divide-y divide-gray-200">
                 {renderTicketDesktopTableThead({ interactiveSort: false, showStatementRecon: true })}
                 <tbody className="bg-white divide-y divide-gray-200">
                   {rb.map((b) => renderDesktopRow(b, '', dueMap, { inDetailModal: true }))}
@@ -5944,8 +6309,38 @@ export default function TicketBookingList() {
         context={detailStmtCtx}
         onApplied={() => {
           const ids = selectedBookings.map((b) => b.id).filter(Boolean);
-          void fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids).then(setDetailReconciledIds);
+          void refreshDetailStatementReconDisplay(ids);
           void fetchBookings();
+        }}
+      />
+
+      <TicketBookingVendorPartialChangeConfirmModal
+        open={vendorPartialChangeModalBooking !== null}
+        locale={locale}
+        company={vendorPartialChangeModalBooking?.company}
+        booking={
+          vendorPartialChangeModalBooking ?? {
+            ea: 0,
+            time: null,
+            change_status: 'none',
+            pending_ea: null,
+            pending_time: null,
+          }
+        }
+        saving={
+          vendorPartialChangeModalBooking
+            ? workflowActionSavingId === vendorPartialChangeModalBooking.id
+            : false
+        }
+        onClose={() => setVendorPartialChangeModalBooking(null)}
+        onConfirm={async (payload) => {
+          if (!vendorPartialChangeModalBooking) return;
+          const ok = await runWorkflowRpc(
+            vendorPartialChangeModalBooking,
+            'workflow_vendor_confirm_change',
+            payload
+          );
+          if (ok) setVendorPartialChangeModalBooking(null);
         }}
       />
 

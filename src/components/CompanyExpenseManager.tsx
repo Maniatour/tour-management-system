@@ -907,9 +907,19 @@ export default function CompanyExpenseManager({
               : null
             : null
 
+      const stdLeaf = standardHierarchyLeafId.trim()
+      const stdApplied = stdLeaf
+        ? applyStandardLeafToCompanyExpense(
+            stdLeaf,
+            new Map(expenseStandardCategories.map((c) => [c.id, c])),
+            { paidForLanguage: 'ko' }
+          )
+        : null
+
       const submitData = {
         ...formData,
         paid_for: (formData.paid_for ?? '').trim(),
+        standard_paid_for: stdApplied?.paid_for ?? null,
         submit_on: submitOnIsoFromYmd(formData.submit_on),
         photo_url: formData.photo_url || uploadedFileUrls[0] || '', // 첫 번째 파일을 메인 이미지로
         attachments: attachmentsPayload,
@@ -1000,8 +1010,10 @@ export default function CompanyExpenseManager({
     const groups = buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, { includeInactive: true })
     setStandardHierarchyLeafId('')
     if (groups.length > 0) {
+      const matchPaidFor =
+        (expense.standard_paid_for ?? '').trim() || (expense.paid_for ?? '').trim()
       const m = matchUnifiedLeafIdFromForm(
-        expense.paid_for ?? '',
+        matchPaidFor,
         expense.category ?? '',
         expense.expense_type ?? '',
         expenseStandardCategories,
