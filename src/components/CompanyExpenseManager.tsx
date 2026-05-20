@@ -188,6 +188,8 @@ export default function CompanyExpenseManager({
   const [paidForFilter, setPaidForFilter] = useState('all')
   /** 표준 결제내용(standard_paid_for) 저장 여부: all | set | unset */
   const [standardPaidForFilter, setStandardPaidForFilter] = useState<'all' | 'set' | 'unset'>('all')
+  /** 카테고리 매니저 표준 리프 id — all 이면 미적용 */
+  const [standardLeafFilter, setStandardLeafFilter] = useState('all')
   /** 환급 목록 필터 — API `reimbursement` 쿼리와 동일 */
   const [reimbursementFilter, setReimbursementFilter] = useState<'all' | 'employee_card' | 'outstanding'>('all')
   /** 지출 등록·수정 모달: 환급 입력란 표시 여부 */
@@ -259,6 +261,8 @@ export default function CompanyExpenseManager({
   const [listSelectedIds, setListSelectedIds] = useState<Set<string>>(() => new Set())
   const [listBatchLeafId, setListBatchLeafId] = useState('')
   const [listBatchApplying, setListBatchApplying] = useState(false)
+  const [listBatchDeleting, setListBatchDeleting] = useState(false)
+  const [listBatchDeleteConfirmOpen, setListBatchDeleteConfirmOpen] = useState(false)
   /** 표준 리프 재확인 다이얼로그: 폼 vs 목록 일괄 */
   const [standardLeafConfirmSource, setStandardLeafConfirmSource] = useState<
     'form' | 'listBatch' | 'listQuickStandard'
@@ -329,6 +333,9 @@ export default function CompanyExpenseManager({
       if (statementMatchFilter === 'unmatched') {
         params.append('statement_match', 'unmatched')
       }
+      if (standardLeafFilter && standardLeafFilter !== 'all') {
+        params.append('standard_leaf_id', standardLeafFilter)
+      }
       if (dateFrom) params.append('date_from', dateFrom)
       if (dateTo) params.append('date_to', dateTo)
       
@@ -357,6 +364,7 @@ export default function CompanyExpenseManager({
     vehicleFilter,
     paidForFilter,
     standardPaidForFilter,
+    standardLeafFilter,
     reimbursementFilter,
     statementMatchFilter,
     dateFrom,
@@ -443,6 +451,7 @@ export default function CompanyExpenseManager({
     vehicleFilter,
     paidForFilter,
     standardPaidForFilter,
+    standardLeafFilter,
     reimbursementFilter,
     statementMatchFilter,
     dateFrom,
@@ -545,7 +554,6 @@ export default function CompanyExpenseManager({
     () =>
       buildUnifiedStandardLeafGroups(expenseStandardCategories, locale, {
         includeInactive: true,
-        labelLanguage: 'en',
       }),
     [expenseStandardCategories, locale]
   )
@@ -691,6 +699,46 @@ export default function CompanyExpenseManager({
     }
     void executeListBatchStandardApply(listBatchLeafId)
   }, [listBatchLeafId, listSelectedIds, executeListBatchStandardApply, t])
+
+  const executeListBatchDelete = useCallback(async () => {
+    const expenseIds = [...listSelectedIds]
+    if (expenseIds.length === 0) return
+    setListBatchDeleting(true)
+    try {
+      const res = await fetch('/api/company-expenses/batch-delete', {
+        method: 'POST',
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expenseIds }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(typeof json.error === 'string' ? json.error : t('listBatchDelete.deleteError'))
+        return
+      }
+      const deleted = typeof json.deletedCount === 'number' ? json.deletedCount : 0
+      const requested = typeof json.requestedCount === 'number' ? json.requestedCount : expenseIds.length
+      if (deleted < requested) {
+        toast.message(t('listBatchDelete.deletePartial', { deleted, requested }))
+      } else {
+        toast.success(t('listBatchDelete.deleteSuccess', { count: deleted }))
+      }
+      setListSelectedIds(new Set())
+      setListBatchDeleteConfirmOpen(false)
+      await loadExpenses()
+    } catch {
+      toast.error(t('listBatchDelete.deleteError'))
+    } finally {
+      setListBatchDeleting(false)
+    }
+  }, [listSelectedIds, loadExpenses, t])
+
+  const openListBatchDeleteConfirm = useCallback(() => {
+    if (listSelectedIds.size === 0) {
+      toast.error(t('listBatchDelete.noSelectionToast'))
+      return
+    }
+    setListBatchDeleteConfirmOpen(true)
+  }, [listSelectedIds.size, t])
 
   useEffect(() => {
     if (!isDialogOpen || unifiedStandardGroups.length === 0) return
@@ -1187,6 +1235,7 @@ export default function CompanyExpenseManager({
     setVehicleFilter('all')
     setPaidForFilter('all')
     setStandardPaidForFilter('all')
+    setStandardLeafFilter('all')
     setReimbursementFilter('all')
     setStatementMatchFilter('all')
     setDateFrom('')
@@ -2341,6 +2390,24 @@ export default function CompanyExpenseManager({
           </div>
         </div>
 
+        <div className="max-w-xl pt-1">
+          <label
+            className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1"
+            htmlFor="co-filter-standard-category"
+          >
+            {t('filters.standardCategory')}
+          </label>
+          <UnifiedStandardLeafPicker
+            groups={unifiedStandardGroups}
+            value={standardLeafFilter === 'all' ? '' : standardLeafFilter}
+            onPick={(leafId) => setStandardLeafFilter(leafId || 'all')}
+            allowClear
+            compact
+            placeholderWhenEmpty={t('filters.all')}
+            clearOptionLabel={t('filters.all')}
+          />
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 max-w-2xl pt-1">
           <div>
             <label
@@ -2467,6 +2534,7 @@ export default function CompanyExpenseManager({
                 onClick={submitListBatchStandardApply}
                 disabled={
                   listBatchApplying ||
+                  listBatchDeleting ||
                   listSelectedIds.size === 0 ||
                   !listBatchLeafId.trim() ||
                   unifiedStandardGroups.length === 0
@@ -2474,6 +2542,39 @@ export default function CompanyExpenseManager({
               >
                 {listBatchApplying ? t('listBatchStandard.applying') : t('listBatchStandard.apply')}
               </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={listBatchApplying || listBatchDeleting || listSelectedIds.size === 0}
+                onClick={openListBatchDeleteConfirm}
+              >
+                <Trash2 className="h-4 w-4 mr-1.5 shrink-0" aria-hidden />
+                {listBatchDeleting ? t('listBatchDelete.deleting') : t('listBatchDelete.deleteButton')}
+              </Button>
+              <AlertDialog open={listBatchDeleteConfirmOpen} onOpenChange={setListBatchDeleteConfirmOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t('listBatchDelete.confirmTitle')}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t('listBatchDelete.confirmDescription', { count: listSelectedIds.size })}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={listBatchDeleting}>{t('listBatchDelete.cancel')}</AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={listBatchDeleting}
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        void executeListBatchDelete()
+                      }}
+                    >
+                      {listBatchDeleting ? t('listBatchDelete.deleting') : t('listBatchDelete.confirm')}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         )}

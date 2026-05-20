@@ -6041,6 +6041,7 @@ export type Database = {
           child: number | null
           choices: Json | null
           created_at: string | null
+          customer_communication_channel: string | null
           customer_id: string | null
           event_note: string | null
           id: string
@@ -6071,6 +6072,7 @@ export type Database = {
           child?: number | null
           choices?: Json | null
           created_at?: string | null
+          customer_communication_channel?: string | null
           customer_id?: string | null
           event_note?: string | null
           id?: string
@@ -6101,6 +6103,7 @@ export type Database = {
           child?: number | null
           choices?: Json | null
           created_at?: string | null
+          customer_communication_channel?: string | null
           customer_id?: string | null
           event_note?: string | null
           id?: string
@@ -6147,6 +6150,7 @@ export type Database = {
           channel_rn: string | null
           child: number | null
           created_at: string | null
+          customer_communication_channel: string | null
           customer_id: string | null
           event_note: string | null
           id: string | null

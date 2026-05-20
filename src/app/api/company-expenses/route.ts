@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
+import { buildCompanyExpenseStandardLeafOrClause } from '@/lib/companyExpenseStandardLeafFilter'
 import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
+import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import { Database } from '@/lib/database.types'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
@@ -25,6 +27,8 @@ export async function GET(request: NextRequest) {
     const reimbursement = (searchParams.get('reimbursement') || 'all').toLowerCase()
     /** all | unmatched — unmatched: reconciliation_matches에 없는 지출만(뷰) */
     const statementMatch = (searchParams.get('statement_match') || 'all').toLowerCase()
+    /** 카테고리 매니저 표준 리프 id — 매핑·standard_paid_for·폼 역매칭과 일치하는 지출만 */
+    const standardLeafId = (searchParams.get('standard_leaf_id') || '').trim()
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
     const from = (page - 1) * limit
@@ -112,6 +116,39 @@ export async function GET(request: NextRequest) {
       query = query.in('payment_method', pmIds)
     } else if (reimbursement === 'outstanding') {
       query = query.gt('reimbursement_outstanding', 0.009)
+    }
+
+    if (standardLeafId) {
+      const [{ data: catRows, error: catErr }, { data: mappingRows, error: mapErr }] = await Promise.all([
+        supabase
+          .from('expense_standard_categories')
+          .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
+          .order('display_order', { ascending: true }),
+        supabase
+          .from('expense_category_mappings')
+          .select('original_value, source_table, standard_category_id, sub_category_id')
+          .eq('source_table', 'company_expenses'),
+      ])
+
+      if (catErr || mapErr) {
+        console.error('표준 카테고리 필터 로드 오류:', catErr || mapErr)
+        return NextResponse.json({ error: '표준 카테고리 필터를 적용할 수 없습니다.' }, { status: 500 })
+      }
+
+      const orClause = buildCompanyExpenseStandardLeafOrClause(
+        standardLeafId,
+        (catRows ?? []) as ExpenseStandardCategoryPickRow[],
+        mappingRows ?? []
+      )
+
+      if (!orClause) {
+        return NextResponse.json({
+          data: [],
+          pagination: { page, limit, total: 0, totalPages: 1 },
+        })
+      }
+
+      query = query.or(orClause)
     }
     
     const { data, error, count } = await query

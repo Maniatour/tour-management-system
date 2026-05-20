@@ -1,3 +1,4 @@
+import { browserLocalWeekRangeFromOffset } from '@/lib/browserLocalWeek'
 import { isoToLocalCalendarDateKey } from '@/utils/reservationUtils'
 
 export type ReservationStatusAuditRow = {
@@ -109,6 +110,109 @@ export type SimpleCardStatusChangeAuditRequest = {
   rangeEnd: string
   targets: { key: string; reservationId: string; dateKey: string }[]
   uniqueIds: string[]
+}
+
+/** 필터·목록이 바뀌었는지 감사 캐시와 대조할 때 사용 */
+export function reservationIdsSignature(ids: Iterable<string | null | undefined>): string {
+  return [...new Set([...ids].map((x) => String(x ?? '').trim()).filter(Boolean))].sort().join('\0')
+}
+
+/** 당일 등록 직후에도 수정이 한 번이라도 더 있으면 true (등록 시각과 동일한 updated_at은 false) */
+export function isReservationUpdatedStrictlyAfterAdded(r: {
+  addedTime?: string | null
+  updated_at?: string | null
+}): boolean {
+  const a = r.addedTime?.trim() ? new Date(r.addedTime).getTime() : NaN
+  const u = r.updated_at?.trim() ? new Date(r.updated_at).getTime() : NaN
+  return Number.isFinite(a) && Number.isFinite(u) && u > a
+}
+
+/** 날짜 그룹·심플 카드 감사 대상과 동일: 등록일·수정일·(선택) 상태 이벤트 로컬일 */
+export function collectReservationActivityDateKeys(
+  r: { addedTime?: string | null; updated_at?: string | null },
+  auditRows?: ReservationStatusAuditRow[]
+): string[] {
+  const activityDates = new Set<string>()
+  const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+  const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+  if (createdKey) activityDates.add(createdKey)
+  if (updatedKey) activityDates.add(updatedKey)
+  if (auditRows?.length) {
+    for (const row of auditRows) {
+      const dk = isoToLocalCalendarDateKey(row.created_at)
+      if (dk) activityDates.add(dk)
+    }
+  }
+  return [...activityDates]
+}
+
+/**
+ * 심플 카드 「상태 변경」에 해당 날짜를 조회·표시할지.
+ * `updated_at`만 보면 이벤트(occurred_at) 일자와 어긋나는 경우가 있다.
+ */
+export function shouldIncludeSimpleCardStatusChangeTargetDate(
+  r: { addedTime?: string | null; updated_at?: string | null },
+  dateKey: string,
+  auditRows?: ReservationStatusAuditRow[]
+): boolean {
+  const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+  const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
+  if (
+    dateKey === updatedKey &&
+    (createdKey !== dateKey || isReservationUpdatedStrictlyAfterAdded(r))
+  ) {
+    return true
+  }
+  if (dateKey !== createdKey && dateKey !== updatedKey) {
+    return true
+  }
+  if (auditRows?.length) {
+    for (const row of auditRows) {
+      if (isoToLocalCalendarDateKey(row.created_at) !== dateKey) continue
+      if (!reservationAuditRowHasStatusFieldChange(row)) continue
+      const to = statusFromReservationAuditJson(row.new_values)
+      const from = statusFromReservationAuditJson(row.old_values)
+      if (to && from && from !== to && isSimpleCardListedReservationStatusTransition({ from, to })) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * 필터된 목록 + (선택) 이미 로드된 상태 이벤트로 심플 카드 상태변경 감사 요청을 만든다.
+ * `groupedReservations`의 활동일 집합과 맞춘다.
+ */
+export function buildSimpleCardStatusChangeAuditRequestFromFiltered(
+  filteredReservations: Array<{ id?: string | null; addedTime?: string | null; updated_at?: string | null }>,
+  cardsWeekPage: number,
+  auditRowsByRecordId?: Record<string, ReservationStatusAuditRow[]>
+): SimpleCardStatusChangeAuditRequest {
+  const { startYmd, endYmd, rangeStartIso, rangeEndIso } = browserLocalWeekRangeFromOffset(cardsWeekPage)
+  const targets: { key: string; reservationId: string; dateKey: string }[] = []
+  const uniqueIdSet = new Set<string>()
+
+  for (const r of filteredReservations) {
+    const reservationId = String(r.id ?? '').trim()
+    if (!reservationId) continue
+    const auditRows = auditRowsByRecordId?.[reservationId]
+    const activityDates = collectReservationActivityDateKeys(r, auditRows)
+
+    for (const dateKey of activityDates) {
+      if (dateKey < startYmd || dateKey > endYmd) continue
+      if (!shouldIncludeSimpleCardStatusChangeTargetDate(r, dateKey, auditRows)) continue
+      targets.push({ key: `${reservationId}|${dateKey}`, reservationId, dateKey })
+      uniqueIdSet.add(reservationId)
+    }
+  }
+
+  return {
+    rangeStart: rangeStartIso,
+    rangeEnd: rangeEndIso,
+    targets,
+    uniqueIds: [...uniqueIdSet],
+  }
 }
 
 /**

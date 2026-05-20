@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { useLocale } from 'next-intl'
-import { X, Printer } from 'lucide-react'
+import { X, Printer, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
@@ -101,6 +101,12 @@ const labels = {
     notIncludedPrice: '불포함 가격',
     notIncludedEntrance: '불포함 가격 (입장료)',
     grandTotal: '총 결제 금액',
+    transferEquivalent: '송금 환산',
+    exchangeRatePerUsd: '1 USD =',
+    showExchangeRate: '환율 추가',
+    hideExchangeRate: '환율 숨기기',
+    transferExchangeRate: '송금보낼때 환율 (1 USD =',
+    refreshExchangeRate: '환율 새로고침',
     tipSuggest: '팁 안내',
     tipSectionTitle: '팁 안내',
     tipAboutUS: '미국에서는 팁이 좋은 서비스에 대한 감사의 표시로 널리 통용됩니다. 투어 가이드에게 주는 팁은 투어 요금에 포함되어 있지 않으며, 만족도에 따라 자유롭게 결정하시면 됩니다.',
@@ -118,6 +124,10 @@ const labels = {
     printLayout: '인쇄 형식',
     printOptionLetter: 'Letter (1장당 1매)',
     printOptionHalf: '가로 절반 (1장당 2매)',
+    showExchangeRate: '환율 추가',
+    hideExchangeRate: '환율 숨기기',
+    transferExchangeRate: '송금보낼때 환율 (1 USD =',
+    refreshExchangeRate: '환율 새로고침',
     selectCustomers: '인쇄할 고객 선택',
     selectAll: '전체 선택',
     deselectAll: '전체 해제',
@@ -165,6 +175,12 @@ const labels = {
     notIncludedPrice: 'Not included price',
     notIncludedEntrance: 'Not Included Price (Entrance fee)',
     grandTotal: 'Grand Total',
+    transferEquivalent: 'Transfer equivalent',
+    exchangeRatePerUsd: '1 USD =',
+    showExchangeRate: 'Show Exchange Rate',
+    hideExchangeRate: 'Hide Exchange Rate',
+    transferExchangeRate: 'Transfer Exchange Rate (1 USD =',
+    refreshExchangeRate: 'Refresh exchange rate',
     tipSuggest: 'Tip guide',
     tipSectionTitle: 'Suggested Tips',
     tipAboutUS: 'In the U.S., tipping is a customary way to show appreciation for good service. Tour guide gratuity is not included in the tour price and is voluntary, based on your satisfaction.',
@@ -182,6 +198,10 @@ const labels = {
     printLayout: 'Print layout',
     printOptionLetter: 'Letter (1 per page)',
     printOptionHalf: 'Half width (2 per page)',
+    showExchangeRate: 'Show Exchange Rate',
+    hideExchangeRate: 'Hide Exchange Rate',
+    transferExchangeRate: 'Transfer Exchange Rate (1 USD =',
+    refreshExchangeRate: 'Refresh exchange rate',
     selectCustomers: 'Select customers to print',
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
@@ -229,6 +249,12 @@ const labels = {
     notIncludedPrice: '料金に含まれない項目',
     notIncludedEntrance: '含まれない料金（入場料）',
     grandTotal: 'ご請求合計',
+    transferEquivalent: '送金換算',
+    exchangeRatePerUsd: '1 USD =',
+    showExchangeRate: '為替レートを表示',
+    hideExchangeRate: '為替レートを非表示',
+    transferExchangeRate: '送金時為替レート (1 USD =',
+    refreshExchangeRate: '為替レートを更新',
     tipSuggest: 'チップのご案内',
     tipSectionTitle: 'チップのご案内',
     tipAboutUS: 'アメリカでは、チップは良いサービスへの感謝の気持ちを表す慣習となっております。ツアーガイドへのチップはツアー料金に含まれておらず、お客様のご満足度に応じて任意でお渡しください。',
@@ -304,6 +330,14 @@ function getReceiptLabels(lang: string | null | undefined): typeof labels.ko {
 function formatMoney(amount: number, currency: string): string {
   if (currency === 'KRW') return `₩${Math.round(amount).toLocaleString()}`
   return `$${amount.toFixed(2)}`
+}
+
+function formatKRW(krw: number): string {
+  return `₩${Math.round(krw).toLocaleString('ko-KR')}`
+}
+
+function convertToKRW(usd: number, rate: number): number {
+  return usd * rate
 }
 
 /**
@@ -473,12 +507,35 @@ export default function CustomerReceiptModal({
   const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set())
   /** 인쇄 형식: 'letter' = Letter 1장당 1매, 'half' = 가로 Letter 절반(1장당 2매) */
   const [printLayout, setPrintLayout] = useState<'letter' | 'half'>('letter')
+  const [showKRW, setShowKRW] = useState(false)
+  const [exchangeRate, setExchangeRate] = useState(1300)
+  const [rateRefreshing, setRateRefreshing] = useState(false)
   const isBatch = Boolean(reservationIds && reservationIds.length > 0)
   const rawIds = isBatch ? reservationIds! : [reservationId]
   const ids = rawIds.map((id) => String(id).trim()).filter((id) => id.length > 0)
   /** 모달 UI(제목·버튼·인쇄 형식 등)는 앱 언어(한/영)로만 표시. 인쇄되는 영수증 내용만 고객 언어(한/영/일 등) 사용 */
   const locale = useLocale()
   const modalLabels = locale === 'ko' ? labels.ko : labels.en
+
+  const refreshExchangeRate = async (withLoading = true) => {
+    if (withLoading) setRateRefreshing(true)
+    try {
+      const response = await fetch('/api/exchange-rate')
+      const data = await response.json()
+      if (data.rate) {
+        setExchangeRate(Math.round(data.rate * 100) / 100)
+      }
+    } catch (error) {
+      console.error('환율 조회 실패:', error)
+    } finally {
+      if (withLoading) setRateRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen) return
+    void refreshExchangeRate(false)
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -1186,6 +1243,25 @@ export default function CustomerReceiptModal({
                               {formatMoney(customerTotalPayment, cur)}
                             </td>
                           </tr>
+                          {showKRW && (
+                            <tr className="border-b border-gray-100">
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-600 text-[10px] leading-tight">
+                                {L.transferEquivalent}
+                                <br />
+                                <span className="text-gray-500">
+                                  ({L.exchangeRatePerUsd}{' '}
+                                  {Number(exchangeRate).toLocaleString(isEn || isJa ? 'en-US' : 'ko-KR', {
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  KRW)
+                                </span>
+                              </td>
+                              <td className="px-1.5 py-1 text-right text-blue-600 font-semibold whitespace-nowrap" colSpan={3}>
+                                {formatKRW(convertToKRW(customerTotalPayment, exchangeRate))}
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
 
@@ -1240,6 +1316,46 @@ export default function CustomerReceiptModal({
                   <span className="text-sm">{headerLabel.printOptionHalf}</span>
                 </label>
               </div>
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowKRW(!showKRW)}
+                    className="self-start px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm transition-colors"
+                  >
+                    {showKRW ? headerLabel.hideExchangeRate : headerLabel.showExchangeRate}
+                  </button>
+                  {showKRW && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="text-sm text-gray-700 whitespace-nowrap">
+                        {headerLabel.transferExchangeRate}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={exchangeRate}
+                        onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1300)}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                        placeholder="1300"
+                        title={
+                          locale === 'ko'
+                            ? '실시간 환율이 자동으로 로드됩니다. 수동으로 수정할 수 있습니다.'
+                            : 'Real-time exchange rate is loaded automatically. You can manually adjust it.'
+                        }
+                      />
+                      <span className="text-sm text-gray-700 whitespace-nowrap">KRW)</span>
+                      <button
+                        type="button"
+                        onClick={() => void refreshExchangeRate(true)}
+                        disabled={rateRefreshing}
+                        className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                        title={headerLabel.refreshExchangeRate}
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${rateRefreshing ? 'animate-spin' : ''}`} />
+                      </button>
+                    </div>
+                  )}
+                </div>
             </div>
             <div className="flex justify-end gap-2">
               <button

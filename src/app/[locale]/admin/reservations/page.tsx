@@ -40,6 +40,7 @@ import { DateGroupHeader } from '@/components/reservation/DateGroupHeader'
 import ReservationsEmptyState from '@/components/reservation/ReservationsEmptyState'
 import ReservationsPagination from '@/components/reservation/ReservationsPagination'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import ReservationFollowUpQueueModal, {
   type CancelFollowUpManualKind,
 } from '@/components/reservation/ReservationFollowUpQueueModal'
@@ -111,10 +112,13 @@ import {
 } from '@/lib/browserLocalWeek'
 import {
   type ReservationStatusAuditRow,
-  type SimpleCardStatusChangeAuditRequest,
+  buildSimpleCardStatusChangeAuditRequestFromFiltered,
   buildSimpleCardStatusTransitionMapFromCachedAuditRows,
+  collectReservationActivityDateKeys,
   localYmdSetWhereBecameCancelledFromAuditRows,
   isIntoCancelledLikeTransition,
+  isReservationUpdatedStrictlyAfterAdded,
+  reservationIdsSignature,
   statusTransitionSortIndex,
   reservationAuditRowHasStatusFieldChange,
   reservationStatusEventRowToAuditRow,
@@ -216,13 +220,6 @@ function computeAvgDailyRegisteredByMonthForCalendarYear(
   return out
 }
 
-/** 당일 등록 직후에도 수정이 한 번이라도 더 있으면 true (등록 시각과 동일한 updated_at은 false) */
-function isReservationUpdatedStrictlyAfterAdded(r: Reservation): boolean {
-  const a = r.addedTime?.trim() ? new Date(r.addedTime).getTime() : NaN
-  const u = r.updated_at?.trim() ? new Date(r.updated_at).getTime() : NaN
-  return Number.isFinite(a) && Number.isFinite(u) && u > a
-}
-
 /** 그룹 날짜 기준: 해당일 등록(addedTime) vs 해당일 수정(updated_at) — 당일 등록+당일 상태변경은 둘 다에 포함 */
 function splitReservationsByActivityForDate(date: string, reservations: Reservation[]) {
   const registration: Reservation[] = []
@@ -248,39 +245,20 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
   return { registration, statusChange }
 }
 
-/**
- * `groupedReservations` + `splitReservationsByActivityForDate`와 동일한 status-change 감사 대상을
- * 필터된 목록만으로 구성한다. (그룹 객체 참조가 바뀔 때마다 effect가 돌지 않도록 키 계산에 사용)
- */
-function buildSimpleCardStatusChangeAuditRequestFromFiltered(
-  filteredReservations: Reservation[],
-  cardsWeekPage: number
-): SimpleCardStatusChangeAuditRequest {
-  const { startYmd, endYmd, rangeStartIso, rangeEndIso } = browserLocalWeekRangeFromOffset(cardsWeekPage)
-  const targets: { key: string; reservationId: string; dateKey: string }[] = []
-  for (const r of filteredReservations) {
-    const createdKey = isoToLocalCalendarDateKey(r.addedTime)
-    const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
-    if (!updatedKey || updatedKey < startYmd || updatedKey > endYmd) continue
-    if (createdKey === updatedKey && !isReservationUpdatedStrictlyAfterAdded(r)) continue
-    const reservationId = String(r.id ?? '').trim()
-    if (!reservationId) continue
-    const dateKey = updatedKey
-    targets.push({ key: `${reservationId}|${dateKey}`, reservationId, dateKey })
-  }
-  const uniqueIds = [...new Set(targets.map((x) => x.reservationId))]
-  return { rangeStart: rangeStartIso, rangeEnd: rangeEndIso, targets, uniqueIds }
-}
-
 /** 심플 카드 상태 감사: effect 의존 키 + 네트워크 조회 필요 여부(첫 프레임부터 로딩 UI로 맞춤) */
 function computeSimpleCardStatusAuditPlan(
   groupByDate: boolean,
   cardLayout: string,
   filteredReservations: Reservation[],
-  cardsWeekPage: number
+  cardsWeekPage: number,
+  auditRowsByRecordId?: Record<string, ReservationStatusAuditRow[]>
 ): null | { contentKey: string; needsNetworkFetch: boolean } {
   if (!groupByDate || cardLayout !== 'simple') return null
-  const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+  const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
+    filteredReservations,
+    cardsWeekPage,
+    auditRowsByRecordId
+  )
   const { startYmd, endYmd } = browserLocalWeekRangeFromOffset(cardsWeekPage)
   const keys = req.targets.map((t) => t.key).sort().join(',')
   /** ISO 대신 달력 주간 키 — 목록 폴링 시각이 바뀌어도 동일 주·동일 대상이면 키가 안정적 */
@@ -902,6 +880,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     Record<string, ReservationStatusAuditRow[]>
   >({})
   const [regCancelChartAuditLoaded, setRegCancelChartAuditLoaded] = useState(false)
+  /** `regCancelChartAuditRowsByRecordId`가 반영된 목록 id 집합 — 필터 변경 직후 stale 캐시 방지 */
+  const [regCancelChartAuditLoadedSignature, setRegCancelChartAuditLoadedSignature] = useState<
+    string | null
+  >(null)
   /**
    * 심플 카드 아코디언: 맵에만 사용자 오버라이드 저장.
    * 키 없음 → defaultOpen (등록·상태변경 상위=열림, 소그룹=대기→취소만 열림·그 외=접힘).
@@ -1616,6 +1598,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   
   const filteredReservations = filteredAndSortedReservations
 
+  const regCancelChartAuditIdsSignature = useMemo(
+    () => reservationIdsSignature(filteredReservations.map((r) => r.id)),
+    [filteredReservations]
+  )
+  const regCancelChartAuditReady =
+    regCancelChartAuditLoaded &&
+    regCancelChartAuditLoadedSignature === regCancelChartAuditIdsSignature
+  const simpleCardStatusAuditRowsForRequest = regCancelChartAuditReady
+    ? regCancelChartAuditRowsByRecordId
+    : undefined
+
   /** Follow-up 큐 모달·배지: 운영 큐(실제 데이터)가 있으면 그 범위, 없으면 필터된 목록 */
   const reservationsForFollowUpPipeline = useMemo(
     () => pickReservationsForOperationalQueue(operationalQueueSnapshot, filteredReservations),
@@ -2320,21 +2313,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const { startYmd: weekStartStr, endYmd: weekEndStr } = browserLocalWeekRangeFromOffset(cardsWeekPage)
 
     filteredReservations.forEach((reservation) => {
-      const activityDates = new Set<string>()
-      const createdKey = isoToLocalCalendarDateKey(reservation.addedTime)
-      const updatedKey = isoToLocalCalendarDateKey(reservation.updated_at ?? null)
-      if (createdKey) activityDates.add(createdKey)
-      if (updatedKey) activityDates.add(updatedKey)
-      if (regCancelChartAuditLoaded) {
-        const auditRows = regCancelChartAuditRowsByRecordId[String(reservation.id ?? '').trim()]
-        if (auditRows?.length) {
-          for (const row of auditRows) {
-            const dk = isoToLocalCalendarDateKey(row.created_at)
-            if (dk) activityDates.add(dk)
-          }
-        }
-      }
-      if (activityDates.size === 0) return
+      const auditRows = regCancelChartAuditReady
+        ? regCancelChartAuditRowsByRecordId[String(reservation.id ?? '').trim()]
+        : undefined
+      const activityDates = collectReservationActivityDateKeys(reservation, auditRows)
+      if (activityDates.length === 0) return
 
       activityDates.forEach((ymd) => {
         if (ymd < weekStartStr || ymd > weekEndStr) return
@@ -2360,7 +2343,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       })
     
     return sortedGroups
-  }, [filteredReservations, groupByDate, cardsWeekPage, regCancelChartAuditLoaded, regCancelChartAuditRowsByRecordId])
+  }, [filteredReservations, groupByDate, cardsWeekPage, regCancelChartAuditReady, regCancelChartAuditRowsByRecordId])
 
   /** 목록 조회와 동일하게 주·월·연 차트 구간을 합친 ISO 범위 — 감사(취소 전환) 조회에 사용 */
   const regCancelChartAuditIsoRange = useMemo(() => {
@@ -2384,22 +2367,37 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     if (!groupByDate || cardLayout !== 'simple') return false
     const range = regCancelChartAuditIsoRange
     if (!range) return false
-    const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+    const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
+      filteredReservations,
+      cardsWeekPage,
+      simpleCardStatusAuditRowsForRequest
+    )
     return req.rangeStart >= range.rangeStartIso && req.rangeEnd <= range.rangeEndIso
-  }, [groupByDate, cardLayout, filteredReservations, cardsWeekPage, regCancelChartAuditIsoRange])
+  }, [
+    groupByDate,
+    cardLayout,
+    filteredReservations,
+    cardsWeekPage,
+    regCancelChartAuditIsoRange,
+    simpleCardStatusAuditRowsForRequest,
+  ])
 
   useEffect(() => {
     if (!groupByDate) {
       setRegCancelChartAuditRowsByRecordId({})
       setRegCancelChartAuditLoaded(false)
+      setRegCancelChartAuditLoadedSignature(null)
       return
     }
     const range = regCancelChartAuditIsoRange
     if (!range) return
     const uniqueIds = [...new Set(filteredReservations.map((r) => r.id).filter(Boolean))]
+    const idsSignature = regCancelChartAuditIdsSignature
+    setRegCancelChartAuditLoaded(false)
     if (uniqueIds.length === 0) {
       setRegCancelChartAuditRowsByRecordId({})
       setRegCancelChartAuditLoaded(true)
+      setRegCancelChartAuditLoadedSignature(idsSignature)
       return
     }
 
@@ -2440,6 +2438,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
         if (cancelled) return
         setRegCancelChartAuditLoaded(true)
+        setRegCancelChartAuditLoadedSignature(idsSignature)
       })()
     }, debounceMs)
 
@@ -2447,7 +2446,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [groupByDate, regCancelChartAuditIsoRange, filteredReservations])
+  }, [groupByDate, regCancelChartAuditIsoRange, filteredReservations, regCancelChartAuditIdsSignature])
 
   /** 일별·월별·연별 등록/취소 차트 행 — WeeklyStatsPanel */
   const regCancelChartRows = useMemo(() => {
@@ -2463,7 +2462,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const isCancelledLike = (status: string | undefined) =>
       isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
 
-    const useAuditCancel = groupByDate && regCancelChartAuditLoaded
+    const useAuditCancel = groupByDate && regCancelChartAuditReady
     const cancelYmdByResId = new Map<string, Set<string>>()
     if (useAuditCancel) {
       for (const r of filteredReservations) {
@@ -2602,7 +2601,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     regCancelMonthOffset,
     regCancelYearOffset,
     groupByDate,
-    regCancelChartAuditLoaded,
+    regCancelChartAuditReady,
     regCancelChartAuditRowsByRecordId,
   ])
 
@@ -2656,8 +2655,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   /** 참조가 아닌 감사 대상 식별 — 목록이 같은 내용으로 자주 갱신돼도 로딩 문구가 깜빡이지 않게 함 */
   const simpleCardStatusAuditPlan = useMemo(
-    () => computeSimpleCardStatusAuditPlan(groupByDate, cardLayout, filteredReservations, cardsWeekPage),
-    [groupByDate, cardLayout, filteredReservations, cardsWeekPage]
+    () =>
+      computeSimpleCardStatusAuditPlan(
+        groupByDate,
+        cardLayout,
+        filteredReservations,
+        cardsWeekPage,
+        simpleCardStatusAuditRowsForRequest
+      ),
+    [groupByDate, cardLayout, filteredReservations, cardsWeekPage, simpleCardStatusAuditRowsForRequest]
   )
   /** 심플 카드 상태 전환 집계 UI 안정용 — contentKey(대상 목록)와 무관하게 «같은 7일 카드 주» */
   const simpleCardStatusScopeKey = useMemo(() => {
@@ -2729,7 +2735,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     if (simpleCardStatusTransitionInFlightKeyRef.current === runKey) {
       return
     }
-    const reqSync = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+    const reqSync = buildSimpleCardStatusChangeAuditRequestFromFiltered(
+      filteredReservations,
+      cardsWeekPage,
+      simpleCardStatusAuditRowsForRequest
+    )
     if (reqSync.targets.length === 0) {
       setSimpleCardStatusTransitionMap({})
       if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
@@ -2761,7 +2771,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       void (async () => {
         try {
           if (cancelled) return
-          const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(filteredReservations, cardsWeekPage)
+          const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
+            filteredReservations,
+            cardsWeekPage,
+            simpleCardStatusAuditRowsForRequest
+          )
           if (req.targets.length === 0 || req.uniqueIds.length === 0) {
             setSimpleCardStatusTransitionMap({})
             if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
@@ -2771,7 +2785,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             return
           }
 
-          if (regCancelChartAuditLoaded && chartAuditRangeCoversSimpleCardWeek) {
+          if (regCancelChartAuditReady && chartAuditRangeCoversSimpleCardWeek) {
             const next = buildSimpleCardStatusTransitionMapFromCachedAuditRows(
               req,
               regCancelChartAuditRowsByRecordId
@@ -2843,7 +2857,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         simpleCardStatusTransitionInFlightKeyRef.current = null
       }
     }
-  }, [simpleCardAuditContentKey, regCancelChartAuditLoaded, chartAuditRangeCoversSimpleCardWeek])
+  }, [simpleCardAuditContentKey, regCancelChartAuditReady, chartAuditRangeCoversSimpleCardWeek])
 
   const statisticsWeekBoundary = useMemo(
     () => browserLocalWeekRangeFromOffset(statisticsWeekOffset),
@@ -2887,7 +2901,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
     let cancelBookings = 0
     let cancelPeople = 0
-    const useAuditCancel = groupByDate && regCancelChartAuditLoaded
+    const useAuditCancel = groupByDate && regCancelChartAuditReady
     if (useAuditCancel) {
       for (const r of filteredReservations) {
         const id = String(r.id ?? '').trim()
@@ -2933,7 +2947,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     filteredReservations,
     statisticsWeekBoundary,
     groupByDate,
-    regCancelChartAuditLoaded,
+    regCancelChartAuditReady,
     regCancelChartAuditRowsByRecordId,
   ])
 
@@ -2941,7 +2955,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const weeklyStats = useMemo(() => {
     const allReservations = statisticsWeekReservations
     const { startYmd, endYmd } = statisticsWeekBoundary
-    const useAuditCancel = groupByDate && regCancelChartAuditLoaded
+    const useAuditCancel = groupByDate && regCancelChartAuditReady
     const party = (r: Reservation) => getReservationPartySize(r as unknown as Record<string, unknown>)
 
     type FlowPair = { reg: number; cancel: number; regBookings: number; cancelBookings: number }
@@ -3085,7 +3099,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     products,
     channels,
     groupByDate,
-    regCancelChartAuditLoaded,
+    regCancelChartAuditReady,
     regCancelChartAuditRowsByRecordId,
   ])
   
@@ -4120,6 +4134,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     await refreshReservations()
   }, [refreshReservations, requestCancellationReason, user?.email])
 
+  const handleCommunicationChannelChange = useCallback(
+    async (reservationId: string, channel: CustomerCommunicationChannel) => {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ customer_communication_channel: channel })
+        .eq('id', reservationId)
+      if (error) throw error
+      await refreshReservations()
+    },
+    [refreshReservations]
+  )
+
   const handleEmailLogsClick = useCallback((reservationId: string) => {
     setSelectedReservationForEmailLogs(reservationId)
     setShowEmailLogs(true)
@@ -4688,6 +4714,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       ? {
                           onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
                           onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
+                          onCommunicationChannelChange: handleCommunicationChannelChange,
                         }
                       : {})}
                   />
@@ -4759,10 +4786,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       products={(products as Array<{ id: string; name: string }>) || []}
                       channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
                       cancellationStats={cancellationStatsForHeader}
-                      {...(groupByDate && regCancelChartAuditLoaded
+                      {...(groupByDate && regCancelChartAuditReady
                         ? { auditRowsByReservationId: regCancelChartAuditRowsByRecordId }
                         : {})}
-                      {...(groupByDate ? { statusAuditLoading: !regCancelChartAuditLoaded } : {})}
+                      {...(groupByDate ? { statusAuditLoading: !regCancelChartAuditReady } : {})}
                     />
 
                     {cardLayout === 'simple' ? (
@@ -4989,6 +5016,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       ? {
                           onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
                           onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
+                          onCommunicationChannelChange: handleCommunicationChannelChange,
                         }
                       : {})}
                   />
@@ -5299,6 +5327,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
             onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
+            onCommunicationChannelChange={handleCommunicationChannelChange}
           />
         )}
       />
@@ -5571,6 +5600,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             followUpPipelineSnapshot={followUpSnapshotsByReservationId.get(reservation.id) ?? null}
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
             onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
+            onCommunicationChannelChange={handleCommunicationChannelChange}
           />
         )}
       />

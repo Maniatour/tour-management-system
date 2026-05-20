@@ -89,6 +89,8 @@ export interface Reservation {
   isPrivateTour?: boolean
   pricingInfo?: PricingInfo
   hasExistingTour?: boolean // 투어 존재 여부
+  /** reservations.customer_communication_channel — 고객 소통 채널(간단 카드) */
+  customerCommunicationChannel?: string | null
   
   // 가격 관련 속성들 (formData에서 사용)
   adultProductPrice?: number

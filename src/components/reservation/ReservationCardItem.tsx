@@ -30,6 +30,8 @@ import type { CancelFollowUpManualKind } from '@/components/reservation/Reservat
 import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
 import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
+import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
+import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
   if (!language) return 'US'
@@ -209,6 +211,11 @@ interface ReservationCardItemProps {
   onReshowPickupSummaryConsumed?: () => void
   /** 예약 관리: 목록 로드 시 배치로 채운 reservation_customers (카드별 GET 감소) */
   residentCustomerBatchMap?: Map<string, { resident_status: string | null }[]>
+  /** 간단 카드: 고객 소통 채널 변경 */
+  onCommunicationChannelChange?: (
+    reservationId: string,
+    channel: CustomerCommunicationChannel
+  ) => void | Promise<void>
 }
 
 function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
@@ -272,6 +279,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onFollowUpPipelineManualChange,
   onCancelFollowUpManualChange,
   residentCustomerBatchMap,
+  onCommunicationChannelChange,
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -495,6 +503,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               </button>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              {onCommunicationChannelChange ? (
+                <CustomerCommunicationChannelPicker
+                  compact
+                  align="right"
+                  value={reservation.customerCommunicationChannel}
+                  channelId={reservation.channelId}
+                  channelName={
+                    reservation.channelNameSnapshot ??
+                    getChannelName(reservation.channelId, channels || [])
+                  }
+                  onChange={(channel) => onCommunicationChannelChange(reservation.id, channel)}
+                />
+              ) : null}
               {showResidentStatusUi && (
                 <ResidentStatusIcon
                   reservationId={reservation.id}

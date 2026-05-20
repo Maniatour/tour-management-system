@@ -2508,6 +2508,18 @@
       "reservationOptionsShort": "Options",
       "changeStatusModalTitle": "Change reservation status",
       "simpleActionsToggle": "Expand or collapse action buttons",
+      "communicationChannel": {
+        "pickerAria": "Customer communication channel: {channel}. Click to change",
+        "pickerListAria": "Select communication channel",
+        "no_reply": "No reply",
+        "platform": "Platform",
+        "email": "Email",
+        "whatsapp": "WhatsApp",
+        "text_message": "Text message",
+        "kakaotalk": "KakaoTalk",
+        "phone_call": "Phone call",
+        "chatroom": "Chat room"
+      },
       "pickupHotelIconTitle": "Pickup time & hotel",
       "pickupSummaryModalTitle": "Pickup time & hotel",
       "pickupSummaryTimeLabel": "Pickup time",
@@ -4576,6 +4588,7 @@
       "standardPaidFor": "Standard payment for",
       "standardPaidForSet": "Saved",
       "standardPaidForUnset": "Not saved",
+      "standardCategory": "Standard category",
       "all": "All",
       "statementMatch": "Statement reconciliation",
       "statementMatchAll": "All",
@@ -4598,6 +4611,18 @@
       "selectAllPageAria": "Select all on this page",
       "selectPage": "Select all on this page",
       "deselectPage": "Clear selection on this page"
+    },
+    "listBatchDelete": {
+      "deleteButton": "Delete selected",
+      "deleting": "Deleting…",
+      "confirmTitle": "Delete selected expenses",
+      "confirmDescription": "Move {count} selected company expense(s) to the deletion archive. Continue?",
+      "cancel": "Cancel",
+      "confirm": "Delete",
+      "noSelectionToast": "Select one or more expenses in the list.",
+      "deleteSuccess": "Deleted {count} expense(s).",
+      "deletePartial": "Only {deleted} of {requested} selected expense(s) were deleted. Permissions or other rules may have blocked the rest.",
+      "deleteError": "Bulk delete failed."
     },
     "listStandardPaidFor": {
       "column": "Standard payment for",

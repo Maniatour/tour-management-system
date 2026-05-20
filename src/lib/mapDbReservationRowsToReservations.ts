@@ -64,6 +64,7 @@ export function mapDbReservationRowsToReservations(
           : (item.selected_option_prices as { [k: string]: number }) || {},
       choices: (item.choices as Reservation['choices']) || null,
       hasExistingTour,
+      customerCommunicationChannel: (item.customer_communication_channel as string | null) ?? null,
     }
   })
 }

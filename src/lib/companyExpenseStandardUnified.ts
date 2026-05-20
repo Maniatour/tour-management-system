@@ -86,7 +86,7 @@ function makeUnifiedLeafItem(
   root: ExpenseStandardCategoryPickRow,
   labelLanguage: 'en' | 'ko'
 ): UnifiedStandardLeafItem {
-  const display = standardPickerLabel(cat.name, cat.name_ko, labelLanguage)
+  const display = bilingualStandardLabel(cat.name, cat.name_ko)
   return {
     id: cat.id,
     menuLabel: display,
@@ -113,7 +113,7 @@ function buildSubtreeRows(
     {
       type: 'branch',
       id: cat.id,
-      label: standardPickerLabel(cat.name, cat.name_ko, labelLanguage),
+      label: bilingualStandardLabel(cat.name, cat.name_ko),
       depth,
     },
   ]
@@ -184,7 +184,7 @@ export function buildUnifiedStandardLeafGroups(
 
   for (const r of roots) {
     const subs = pool.filter((c) => c.parent_id === r.id).sort(sortFn)
-    const gLabel = standardPickerLabel(r.name, r.name_ko, labelLanguage)
+    const gLabel = bilingualStandardLabel(r.name, r.name_ko)
     if (subs.length === 0) {
       const item = makeUnifiedLeafItem(r, r, labelLanguage)
       groups.push({
@@ -217,7 +217,7 @@ export function buildUnifiedStandardLeafGroups(
   }
   for (const c of [...pool].sort(sortFn)) {
     if (seen.has(c.id)) continue
-    const display = standardPickerLabel(c.name, c.name_ko, labelLanguage)
+    const display = bilingualStandardLabel(c.name, c.name_ko)
     const parent = c.parent_id ? pool.find((x) => x.id === c.parent_id) ?? null : null
     const rootForBlob = parent ?? c
     const item = makeUnifiedLeafItem(c, rootForBlob, labelLanguage)

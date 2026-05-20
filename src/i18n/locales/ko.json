@@ -2517,6 +2517,18 @@
       "reservationOptionsShort": "옵션",
       "changeStatusModalTitle": "예약 상태 변경",
       "simpleActionsToggle": "버튼 영역 펼치기·접기",
+      "communicationChannel": {
+        "pickerAria": "고객 소통 채널: {channel}. 클릭하여 변경",
+        "pickerListAria": "소통 채널 선택",
+        "no_reply": "답변없음",
+        "platform": "플랫폼",
+        "email": "이메일",
+        "whatsapp": "WhatsApp",
+        "text_message": "문자",
+        "kakaotalk": "카카오톡",
+        "phone_call": "전화",
+        "chatroom": "채팅방"
+      },
       "pickupHotelIconTitle": "픽업 시간·호텔",
       "pickupSummaryModalTitle": "픽업 시간·호텔",
       "pickupSummaryTimeLabel": "픽업 시간",
@@ -4456,6 +4468,7 @@
       "standardPaidFor": "표준 결제내용",
       "standardPaidForSet": "저장됨",
       "standardPaidForUnset": "미저장",
+      "standardCategory": "표준 카테고리",
       "all": "전체",
       "statementMatch": "명세 대조",
       "statementMatchAll": "전체",
@@ -4478,6 +4491,18 @@
       "selectAllPageAria": "현재 페이지 전체 선택",
       "selectPage": "이 페이지 모두 선택",
       "deselectPage": "이 페이지 선택 해제"
+    },
+    "listBatchDelete": {
+      "deleteButton": "선택 삭제",
+      "deleting": "삭제 중…",
+      "confirmTitle": "선택한 지출 삭제",
+      "confirmDescription": "선택한 {count}건의 회사 지출을 삭제 보관함으로 옮깁니다. 계속하시겠습니까?",
+      "cancel": "취소",
+      "confirm": "삭제",
+      "noSelectionToast": "삭제할 지출을 목록에서 선택하세요.",
+      "deleteSuccess": "{count}건을 삭제했습니다.",
+      "deletePartial": "요청 {requested}건 중 {deleted}건만 삭제되었습니다. 권한이나 다른 제약으로 나머지는 삭제되지 않았을 수 있습니다.",
+      "deleteError": "일괄 삭제에 실패했습니다."
     },
     "listStandardPaidFor": {
       "column": "표준 결제내용",

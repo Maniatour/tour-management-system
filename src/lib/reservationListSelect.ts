@@ -26,4 +26,5 @@ export const RESERVATION_LIST_SELECT = [
   'selected_options',
   'selected_option_prices',
   'choices',
+  'customer_communication_channel',
 ].join(',') + ',channels(name)'
