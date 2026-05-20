@@ -86,6 +86,18 @@ function payeeDisplay(
   return ''
 }
 
+function lineMatchesBulkSearch(
+  line: ExpenseLine,
+  sourceTable: CategoryMappingSourceTable,
+  term: string
+): boolean {
+  const q = term.trim().toLowerCase()
+  if (!q) return true
+  const payee = payeeDisplay(line, sourceTable).toLowerCase()
+  const desc = descriptionDisplay(line, sourceTable).toLowerCase()
+  return payee.includes(q) || desc.includes(q)
+}
+
 function descriptionDisplay(
   line: ExpenseLine,
   sourceTable: CategoryMappingSourceTable
@@ -278,6 +290,7 @@ export default function CategoryMappingExpenseDetailDialog({
   const [pageSize, setPageSize] = useState(25)
   const [bulkClassification, setBulkClassification] = useState('')
   const [bulkLeafId, setBulkLeafId] = useState('')
+  const [bulkLineSearch, setBulkLineSearch] = useState('')
 
   const pickRows = useMemo(
     () =>
@@ -300,9 +313,15 @@ export default function CategoryMappingExpenseDetailDialog({
     [pickRows]
   )
 
+  const displayLines = useMemo(() => {
+    const q = bulkLineSearch.trim()
+    if (!q) return lines
+    return lines.filter((l) => lineMatchesBulkSearch(l, sourceTable, q))
+  }, [lines, bulkLineSearch, sourceTable])
+
   const totalPages = useMemo(
-    () => reservationExpenseTotalPages(lines.length, pageSize),
-    [lines.length, pageSize]
+    () => reservationExpenseTotalPages(displayLines.length, pageSize),
+    [displayLines.length, pageSize]
   )
   const safePage = Math.min(Math.max(1, page), totalPages)
 
@@ -310,10 +329,14 @@ export default function CategoryMappingExpenseDetailDialog({
     if (page !== safePage) setPage(safePage)
   }, [page, safePage])
 
+  useEffect(() => {
+    setPage(1)
+  }, [bulkLineSearch])
+
   const pageLines = useMemo(() => {
     const start = (safePage - 1) * pageSize
-    return lines.slice(start, start + pageSize)
-  }, [lines, safePage, pageSize])
+    return displayLines.slice(start, start + pageSize)
+  }, [displayLines, safePage, pageSize])
 
   const lineById = useMemo(() => new Map(lines.map((l) => [l.id, l])), [lines])
 
@@ -336,6 +359,7 @@ export default function CategoryMappingExpenseDetailDialog({
       setPage(1)
       setBulkClassification('')
       setBulkLeafId('')
+      setBulkLineSearch('')
     } catch (e) {
       console.error(e)
       toast.error(e instanceof Error ? e.message : L.errLoadList)
@@ -415,6 +439,20 @@ export default function CategoryMappingExpenseDetailDialog({
   }
 
   const clearSelection = () => setSelectedIds(new Set())
+
+  const selectSearchMatches = () => {
+    const q = bulkLineSearch.trim()
+    if (!q) return
+    const ids = lines
+      .filter((l) => lineMatchesBulkSearch(l, sourceTable, q))
+      .map((l) => l.id)
+    if (ids.length === 0) {
+      toast.error(L.errNoSearchMatches)
+      return
+    }
+    setSelectedIds(new Set(ids))
+    toast.success(fmt(L.msgSearchSelected, { count: ids.length }))
+  }
 
   const resolveDraftForSave = (lineId: string, draft: RowDraft): RowDraft => {
     let row = { ...draft }
@@ -619,6 +657,37 @@ export default function CategoryMappingExpenseDetailDialog({
               </Button>
             </div>
 
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{L.bulkLineSearch}</Label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  className="h-8 text-xs flex-1"
+                  value={bulkLineSearch}
+                  onChange={(e) => setBulkLineSearch(e.target.value)}
+                  placeholder={L.bulkLineSearchPlaceholder}
+                  disabled={busy}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs shrink-0"
+                  disabled={busy || !bulkLineSearch.trim()}
+                  onClick={selectSearchMatches}
+                >
+                  {L.selectSearchMatches}
+                </Button>
+              </div>
+              {bulkLineSearch.trim() ? (
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  {fmt(L.searchFilterHint, {
+                    shown: displayLines.length,
+                    total: lines.length,
+                  })}
+                </p>
+              ) : null}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">
@@ -678,13 +747,15 @@ export default function CategoryMappingExpenseDetailDialog({
             </div>
           ) : lines.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">{L.noExpenses}</p>
+          ) : displayLines.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">{L.noSearchResults}</p>
           ) : (
             <>
               <ReservationExpenseTabPager
                 page={safePage}
                 totalPages={totalPages}
                 pageSize={pageSize}
-                totalFiltered={lines.length}
+                totalFiltered={displayLines.length}
                 onPageChange={setPage}
                 onPageSizeChange={setPageSize}
               />
@@ -794,7 +865,7 @@ export default function CategoryMappingExpenseDetailDialog({
                 page={safePage}
                 totalPages={totalPages}
                 pageSize={pageSize}
-                totalFiltered={lines.length}
+                totalFiltered={displayLines.length}
                 onPageChange={setPage}
                 onPageSizeChange={setPageSize}
               />
