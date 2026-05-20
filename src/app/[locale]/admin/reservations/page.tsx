@@ -562,6 +562,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     reservationsAggregateReady,
     replaceReservationsFromQueryResult,
     mergeMoreReservationsFromQueryResult,
+    patchReservationInList,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
     refreshCustomers,
@@ -4134,16 +4135,37 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     await refreshReservations()
   }, [refreshReservations, requestCancellationReason, user?.email])
 
+  const patchOperationalQueueReservation = useCallback(
+    (reservationId: string, patch: Partial<Reservation>) => {
+      setOperationalQueueSnapshot((prev) => {
+        if (!prev) return prev
+        const idx = prev.reservations.findIndex((r) => r.id === reservationId)
+        if (idx < 0) return prev
+        const nextReservations = [...prev.reservations]
+        nextReservations[idx] = { ...nextReservations[idx], ...patch }
+        return { ...prev, reservations: nextReservations }
+      })
+    },
+    []
+  )
+
   const handleCommunicationChannelChange = useCallback(
     async (reservationId: string, channel: CustomerCommunicationChannel) => {
+      const previous =
+        reservations.find((r) => r.id === reservationId)?.customerCommunicationChannel ?? null
+      patchReservationInList(reservationId, { customerCommunicationChannel: channel })
+      patchOperationalQueueReservation(reservationId, { customerCommunicationChannel: channel })
       const { error } = await supabase
         .from('reservations')
         .update({ customer_communication_channel: channel })
         .eq('id', reservationId)
-      if (error) throw error
-      await refreshReservations()
+      if (error) {
+        patchReservationInList(reservationId, { customerCommunicationChannel: previous })
+        patchOperationalQueueReservation(reservationId, { customerCommunicationChannel: previous })
+        throw error
+      }
     },
-    [refreshReservations]
+    [reservations, patchReservationInList, patchOperationalQueueReservation]
   )
 
   const handleEmailLogsClick = useCallback((reservationId: string) => {

@@ -1036,6 +1036,13 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
    * 예약 관리 목록 쿼리 raw 행 → Reservation + pricing/tours 맵 (메인 `reservations` 상태는 건드리지 않음).
    * 운영 큐(처리 필요 / Follow up) 전량 로드에 사용.
    */
+  /** 목록 전체 재조회 없이 예약 카드 필드만 반영 (소통 채널 등) */
+  const patchReservationInList = useCallback((reservationId: string, patch: Partial<Reservation>) => {
+    setReservations((prev) =>
+      prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
+    )
+  }, [])
+
   const hydrateAdminListRawRows = useCallback(
     async (raw: Record<string, unknown>[]): Promise<AdminListHydratedSnapshot> => {
       if (raw.length === 0) {
@@ -1137,6 +1144,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
     refreshReservations: fetchReservations,
     replaceReservationsFromQueryResult,
     mergeMoreReservationsFromQueryResult,
+    patchReservationInList,
     hydrateAdminListRawRows,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
