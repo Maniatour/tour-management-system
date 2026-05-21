@@ -1,4 +1,5 @@
 import { createClientSupabase } from './supabase'
+import { getSunriseSunsetForLocation } from '@/lib/sunriseSunsetFetch'
 
 // Goblin tour locations
 const GOBLIN_TOUR_LOCATIONS = [
@@ -28,31 +29,6 @@ export interface LocationWeather {
   sunrise: string
   sunset: string
   weather: WeatherData
-}
-
-// Convert UTC time to Arizona local time (MST/MDT)
-function convertToArizonaTime(utcTimeString: string): string {
-  try {
-    // Parse UTC time string (format: "HH:MM:SS")
-    const [hours, minutes, seconds] = utcTimeString.split(':').map(Number)
-    
-    // Create a date object for today with the UTC time
-    const today = new Date()
-    const utcDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, seconds)
-    
-    // Convert to Arizona time (UTC-7, no daylight saving time)
-    const arizonaTime = new Date(utcDate.getTime() - 7 * 60 * 60 * 1000)
-    
-    // Format as HH:MM
-    return arizonaTime.toLocaleTimeString('ko-KR', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false
-    })
-  } catch (error) {
-    console.error('Error converting time to Arizona time:', error)
-    return utcTimeString // Return original if conversion fails
-  }
 }
 
 // Get cached sunrise/sunset data from database
@@ -122,67 +98,45 @@ async function getCachedWeatherData(locationName: string, date: string) {
   }
 }
 
-// Fallback: Get sunrise/sunset data from API (only if cache miss). Retries on 429/503 (rate limit / overload).
+// Fallback: 일출·일몰 (캐시 미스). 브라우저는 /api/sunrise-sunset, 서버는 lib 직접 호출.
 async function getSunriseSunsetDataFromAPI(lat: number, lng: number, date: string) {
-  const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&date=${date}&formatted=0`
-  const maxAttempts = 4
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000)
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          Accept: 'application/json',
-        },
-      })
-
-      if (response.status === 429 || response.status === 503) {
-        clearTimeout(timeoutId)
-        if (attempt < maxAttempts) {
-          const waitMs = 900 * 2 ** (attempt - 1)
-          console.warn(`Sunrise/sunset API status ${response.status}, retrying in ${waitMs}ms`)
-          await new Promise((r) => setTimeout(r, waitMs))
-          continue
-        }
-        console.warn(`Sunrise/sunset API responded with status ${response.status}`)
-        return null
-      }
-
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 10000)
+  try {
+    if (typeof window !== 'undefined') {
+      const response = await fetch(
+        `/api/sunrise-sunset?lat=${lat}&lng=${lng}&date=${date}`,
+        { signal: controller.signal, headers: { Accept: 'application/json' } }
+      )
+      clearTimeout(timeoutId)
       if (!response.ok) {
-        clearTimeout(timeoutId)
-        console.warn(`Sunrise/sunset API responded with status ${response.status}`)
+        console.warn(`Sunrise/sunset proxy responded with status ${response.status}`)
         return null
       }
-
-      clearTimeout(timeoutId)
-
-      const data = await response.json()
-
-      if (data.status === 'OK' && data.results) {
-        const sunriseUTC = data.results.sunrise.split('T')[1].split('+')[0]
-        const sunsetUTC = data.results.sunset.split('T')[1].split('+')[0]
-
-        return {
-          sunrise: convertToArizonaTime(sunriseUTC),
-          sunset: convertToArizonaTime(sunsetUTC),
-        }
-      }
-      return null
-    } catch (error: any) {
-      clearTimeout(timeoutId)
-      if (error.name === 'AbortError') {
-        console.warn('Sunrise/sunset API request timed out')
-      } else if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        console.warn('Sunrise/sunset API request failed (network error)')
-      } else {
-        console.error('Error fetching sunrise/sunset data from API:', error)
+      const data = (await response.json()) as { sunrise?: string; sunset?: string }
+      if (data.sunrise && data.sunset) {
+        return { sunrise: data.sunrise, sunset: data.sunset }
       }
       return null
     }
+
+    const result = await getSunriseSunsetForLocation(lat, lng, date, {
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    return { sunrise: result.sunrise, sunset: result.sunset }
+  } catch (error: unknown) {
+    clearTimeout(timeoutId)
+    const err = error as { name?: string; message?: string }
+    if (err.name === 'AbortError') {
+      console.warn('Sunrise/sunset request timed out')
+    } else if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+      console.warn('Sunrise/sunset request failed (network error)')
+    } else {
+      console.error('Error fetching sunrise/sunset data:', error)
+    }
+    return null
   }
-  return null
 }
 
 // 요청한 날짜를 YYYY-MM-DD로 통일 (캐시/API 일치용). 투어 상세·이메일 미리보기 동일 데이터 보장.

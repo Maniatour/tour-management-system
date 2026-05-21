@@ -39,6 +39,7 @@ import {
   AlertCircle,
   BookOpen,
   GripVertical,
+  ListChecks,
   ListPlus,
   Loader2,
   X,
@@ -80,7 +81,10 @@ import {
 } from '@/components/ui/dialog'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import StatementAdjustmentExpenseModal from '@/components/reconciliation/StatementAdjustmentExpenseModal'
-import StatementBulkExpenseModal from '@/components/reconciliation/StatementBulkExpenseModal'
+import StatementBulkExpenseModal, {
+  type BulkExpenseCandidateLine
+} from '@/components/reconciliation/StatementBulkExpenseModal'
+import StatementSelectedBulkExpenseModal from '@/components/reconciliation/StatementSelectedBulkExpenseModal'
 import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
 import FinancialAccountLinkedCardsModal from '@/components/reconciliation/FinancialAccountLinkedCardsModal'
@@ -1690,6 +1694,8 @@ export default function StatementReconciliationTab() {
   const [autoMatchPreviewBusy, setAutoMatchPreviewBusy] = useState(false)
   const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
   const [bulkCompanyExpenseModalOpen, setBulkCompanyExpenseModalOpen] = useState(false)
+  const [selectedBulkExpenseModalOpen, setSelectedBulkExpenseModalOpen] = useState(false)
+  const [selectedBulkLineIds, setSelectedBulkLineIds] = useState<Set<string>>(() => new Set())
   const [standaloneCompanyDupModalOpen, setStandaloneCompanyDupModalOpen] = useState(false)
   const [resetAllMatchesOpen, setResetAllMatchesOpen] = useState(false)
   const [resettingAllMatches, setResettingAllMatches] = useState(false)
@@ -2637,7 +2643,57 @@ export default function StatementReconciliationTab() {
     })
   }, [reconciliationLinesBeforeSearch, reconciliationSearchQuery])
 
-  /** 일괄 회사 지출: 표의 출금·미대조·아직 매칭 없음 — 최대 200건 */
+  const isStatementLineBulkSelectable = useCallback(
+    (line: StatementLine) =>
+      line.direction === 'outflow' &&
+      line.matched_status === 'unmatched' &&
+      (matchesByLine.get(line.id) || []).length === 0 &&
+      Number(line.amount) > 0,
+    [matchesByLine]
+  )
+
+  useEffect(() => {
+    setSelectedBulkLineIds(new Set())
+  }, [filterAccountId])
+
+  useEffect(() => {
+    setSelectedBulkLineIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set<string>()
+      for (const id of prev) {
+        const line = reconciliationTableLines.find((l) => l.id === id)
+        if (line && isStatementLineBulkSelectable(line)) next.add(id)
+      }
+      return next.size === prev.size ? prev : next
+    })
+  }, [reconciliationTableLines, isStatementLineBulkSelectable])
+
+  const selectedBulkExpenseLines = useMemo((): BulkExpenseCandidateLine[] => {
+    if (selectedBulkLineIds.size === 0) return []
+    return reconciliationTableLines
+      .filter((l) => selectedBulkLineIds.has(l.id) && isStatementLineBulkSelectable(l))
+      .map((l) => ({
+        id: l.id,
+        posted_date: l.posted_date,
+        amount: l.amount,
+        direction: l.direction,
+        description: l.description,
+        merchant: l.merchant,
+        matched_status: l.matched_status,
+        exclude_from_pnl: Boolean(l.exclude_from_pnl)
+      }))
+  }, [reconciliationTableLines, selectedBulkLineIds, isStatementLineBulkSelectable])
+
+  const toggleBulkLineSelection = useCallback((lineId: string, checked: boolean) => {
+    setSelectedBulkLineIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(lineId)
+      else next.delete(lineId)
+      return next
+    })
+  }, [])
+
+  /** 중복 점검: 표의 출금·미대조·아직 매칭 없음 — 최대 200건 */
   const bulkCompanyExpenseCandidates = useMemo(() => {
     return reconciliationTableLines
       .filter(
@@ -2697,6 +2753,29 @@ export default function StatementReconciliationTab() {
     const start = (reconciliationPage - 1) * reconciliationPageSize
     return reconciliationTableLines.slice(start, start + reconciliationPageSize)
   }, [reconciliationTableLines, reconciliationPage, reconciliationPageSize])
+
+  const pagedBulkSelectableLines = useMemo(
+    () => pagedReconciliationLines.filter((l) => isStatementLineBulkSelectable(l)),
+    [pagedReconciliationLines, isStatementLineBulkSelectable]
+  )
+
+  const pageAllBulkSelected =
+    pagedBulkSelectableLines.length > 0 &&
+    pagedBulkSelectableLines.every((l) => selectedBulkLineIds.has(l.id))
+
+  const togglePageBulkSelection = useCallback(
+    (checked: boolean) => {
+      setSelectedBulkLineIds((prev) => {
+        const next = new Set(prev)
+        for (const l of pagedBulkSelectableLines) {
+          if (checked) next.add(l.id)
+          else next.delete(l.id)
+        }
+        return next
+      })
+    },
+    [pagedBulkSelectableLines]
+  )
 
   /** 자동 매칭 미리보기: 명세 대조 표에 현재 표시 중인 페이지의 출금·미연결 줄만 */
   const autoMatchEligibleStatementLines = useMemo(
@@ -5778,6 +5857,23 @@ export default function StatementReconciliationTab() {
         }}
       />
 
+      <StatementSelectedBulkExpenseModal
+        open={selectedBulkExpenseModalOpen}
+        onOpenChange={setSelectedBulkExpenseModalOpen}
+        selectedLines={selectedBulkExpenseLines}
+        financialAccountId={filterAccountId}
+        defaultPaymentMethodId={defaultPaymentMethodIdForAccount}
+        email={email}
+        onCompleted={async () => {
+          setSelectedBulkLineIds(new Set())
+          setMessage('선택한 명세 줄에 지출을 생성·연결했습니다.')
+          if (filterAccountId) {
+            await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
+            await refreshUnmatchedExpenseKeys()
+          }
+        }}
+      />
+
       <CompanyExpenseDuplicateCheckModal
         open={standaloneCompanyDupModalOpen}
         onOpenChange={setStandaloneCompanyDupModalOpen}
@@ -7461,6 +7557,26 @@ export default function StatementReconciliationTab() {
           </Button>
           <Button
             type="button"
+            variant="secondary"
+            onClick={() => setSelectedBulkExpenseModalOpen(true)}
+            disabled={
+              loading ||
+              reconciliationLinesLoading ||
+              !filterAccountId ||
+              !accountExpenseWindow ||
+              !canMutateStatementUploads ||
+              selectedBulkLineIds.size === 0
+            }
+            title="표에서 체크한 출금·미연결 줄에 paid for·paid to·표준 카테고리(회사·투어 지출)를 일괄 적용합니다."
+          >
+            <ListChecks className="h-4 w-4 mr-1 shrink-0" />
+            선택 일괄 입력
+            {selectedBulkLineIds.size > 0 ? (
+              <span className="ml-1 text-[11px] font-normal text-slate-600">({selectedBulkLineIds.size}건)</span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
             variant="outline"
             onClick={() => setStandaloneCompanyDupModalOpen(true)}
             disabled={
@@ -7555,6 +7671,17 @@ export default function StatementReconciliationTab() {
           <table className="w-full min-w-[42rem] md:min-w-[56rem] xl:min-w-[84.375rem] text-[10px] leading-snug sm:text-[11px] md:text-xs sm:leading-snug table-fixed">
             <thead>
               <tr className="border-b text-left text-gray-500">
+                <th className="px-0.5 py-1 sm:px-1 sm:py-1.5 align-middle w-7 min-w-[1.75rem] max-w-[1.75rem] text-center">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300"
+                    checked={pageAllBulkSelected}
+                    disabled={pagedBulkSelectableLines.length === 0 || !canMutateStatementUploads}
+                    title="이 페이지에서 일괄 입력 가능한 출금 줄 전체 선택"
+                    aria-label="현재 페이지 일괄 입력 대상 전체 선택"
+                    onChange={(e) => togglePageBulkSelection(e.target.checked)}
+                  />
+                </th>
                 <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                   일자
                 </th>
@@ -7584,11 +7711,15 @@ export default function StatementReconciliationTab() {
                 )
                 const payMatches = lineMs.filter((m) => m.source_table === 'payment_records')
                 const isOut = line.direction === 'outflow'
+                const bulkSelectable = isStatementLineBulkSelectable(line)
+                const bulkSelected = selectedBulkLineIds.has(line.id)
                 const descShown = formatStatementLineDescription(line.description, line.merchant)
                 return (
                   <tr
                     key={line.id}
                     className={`border-b border-gray-100 ${
+                      bulkSelected ? 'bg-violet-50/70' : ''
+                    } ${
                       isOut && dropTargetLineId === line.id ? 'bg-sky-50 ring-1 ring-inset ring-sky-300/80' : ''
                     }`}
                     onDragOver={
@@ -7622,6 +7753,22 @@ export default function StatementReconciliationTab() {
                         : undefined
                     }
                   >
+                    <td className="px-0.5 py-1 sm:px-1 sm:py-1.5 align-middle w-7 min-w-[1.75rem] max-w-[1.75rem] text-center">
+                      {bulkSelectable ? (
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300"
+                          checked={bulkSelected}
+                          disabled={!canMutateStatementUploads}
+                          aria-label={`일괄 입력 대상 선택 ${line.posted_date}`}
+                          onChange={(e) => toggleBulkLineSelection(line.id, e.target.checked)}
+                        />
+                      ) : (
+                        <span className="text-slate-300" aria-hidden>
+                          —
+                        </span>
+                      )}
+                    </td>
                     <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 whitespace-nowrap tabular-nums align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                       {line.posted_date}
                     </td>

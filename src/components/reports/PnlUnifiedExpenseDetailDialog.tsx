@@ -16,7 +16,8 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import type { UnifiedStandardLeafGroup } from '@/lib/companyExpenseStandardUnified'
-import { splitMappingIdsFromLeafId } from '@/lib/pnlStandardCategoryTable'
+import { PNL_UNMATCHED_BUCKET_KEY, splitMappingIdsFromLeafId } from '@/lib/pnlStandardCategoryTable'
+import { PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL } from '@/lib/pnlReportDataFetch'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { StatementReconciledBadge } from '@/components/reconciliation/StatementReconciledBadge'
 
@@ -117,6 +118,17 @@ function paymentMethodDisplay(line: PnlDetailLine, map: Record<string, string>):
   return map[raw] || raw
 }
 
+/** 메모·notes·description 등 지출 설명(표시 전용) */
+function descriptionText(line: PnlDetailLine): string {
+  const note = (line.note || '').trim()
+  if (note) return note
+  if (line.source === 'ticket_bookings') {
+    const company = (line.company || '').trim()
+    if (company) return company
+  }
+  return '—'
+}
+
 function filterLines(lines: PnlDetailLine[], drill: PnlDrillState | null): PnlDetailLine[] {
   if (!drill) return []
   switch (drill.mode) {
@@ -142,6 +154,27 @@ type Draft = {
   company: string
   note: string
   exclude_from_pnl: boolean
+  /** 표준 리프 id — 비우면 매핑 저장 생략(미매칭 유지) */
+  standardLeafId: string
+}
+
+function lineToStandardLeafId(line: PnlDetailLine): string {
+  if (line.resolvedLeafId) return line.resolvedLeafId
+  if (line.bucketKey && line.bucketKey !== PNL_UNMATCHED_BUCKET_KEY) return line.bucketKey
+  return ''
+}
+
+function mappingOriginalFromDraft(source: PnlExpenseSource, draft: Draft): string {
+  if (source === 'tour_expenses' || source === 'reservation_expenses') {
+    return (draft.paid_for || '').trim() || '기타'
+  }
+  if (source === 'company_expenses') {
+    return (draft.paid_for || '').trim() || (draft.category || '').trim() || '기타'
+  }
+  if (source === 'tour_hotel_bookings') {
+    return PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL
+  }
+  return (draft.category || '').trim() || '입장권'
 }
 
 function lineToDraft(line: PnlDetailLine): Draft {
@@ -154,7 +187,29 @@ function lineToDraft(line: PnlDetailLine): Draft {
     company: line.company ?? '',
     note: line.note ?? '',
     exclude_from_pnl: line.exclude_from_pnl,
+    standardLeafId: lineToStandardLeafId(line),
   }
+}
+
+async function upsertExpenseCategoryMapping(
+  original: string,
+  source: PnlExpenseSource,
+  leafId: string,
+  byId: Map<string, ExpenseStandardCategoryPickRow>
+): Promise<void> {
+  const { standard_category_id, sub_category_id } = splitMappingIdsFromLeafId(leafId, byId)
+  const { error } = await supabase.from('expense_category_mappings').upsert(
+    {
+      original_value: original,
+      source_table: source,
+      standard_category_id,
+      sub_category_id,
+      match_count: 1,
+      last_matched_at: new Date().toISOString(),
+    },
+    { onConflict: 'original_value,source_table' }
+  )
+  if (error) throw error
 }
 
 function drillDialogTitle(drill: PnlDrillState | null, formatMonthLabel: (ym: string) => string): string {
@@ -213,21 +268,9 @@ function PnlMappingAssignBlock({
       toast.error('표준 카테고리를 선택하세요.')
       return
     }
-    const { standard_category_id, sub_category_id } = splitMappingIdsFromLeafId(leafId, byId)
     setSavingKey(k)
     try {
-      const { error } = await supabase.from('expense_category_mappings').upsert(
-        {
-          original_value: original,
-          source_table: source,
-          standard_category_id,
-          sub_category_id,
-          match_count: 1,
-          last_matched_at: new Date().toISOString(),
-        },
-        { onConflict: 'original_value,source_table' }
-      )
-      if (error) throw error
+      await upsertExpenseCategoryMapping(original, source, leafId, byId)
       toast.success('표준 카테고리 매핑을 저장했습니다.')
       await onMapped()
     } catch (e) {
@@ -321,6 +364,11 @@ export default function PnlUnifiedExpenseDetailDialog({
   const [saving, setSaving] = useState(false)
 
   const visible = useMemo(() => filterLines(lines, drill), [lines, drill])
+
+  const categoryById = useMemo(
+    () => new Map(expenseStandardCategories.map((c) => [c.id, c])),
+    [expenseStandardCategories]
+  )
 
   useEffect(() => {
     if (!open) {
@@ -445,6 +493,16 @@ export default function PnlUnifiedExpenseDetailDialog({
           if (error) throw error
         }
 
+        const mappingOriginal = mappingOriginalFromDraft(line.source, draft)
+        if (draft.standardLeafId) {
+          await upsertExpenseCategoryMapping(
+            mappingOriginal,
+            line.source,
+            draft.standardLeafId,
+            categoryById
+          )
+        }
+
         toast.success('저장했습니다.')
         cancelEdit()
         await onSaved()
@@ -455,14 +513,14 @@ export default function PnlUnifiedExpenseDetailDialog({
         setSaving(false)
       }
     },
-    [draft, cancelEdit, onSaved]
+    [draft, cancelEdit, onSaved, categoryById]
   )
 
   const title = drillDialogTitle(drill, formatMonthLabel)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[min(100vw-1.5rem,56rem)] max-h-[min(90vh,720px)] flex flex-col p-0 gap-0 z-[1200]">
+      <DialogContent className="w-[min(100vw-1rem,80rem)] max-w-[min(100vw-1rem,80rem)] max-h-[min(92vh,820px)] flex flex-col p-0 gap-0 z-[1200]">
         <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b shrink-0">
           <DialogTitle className="text-base leading-snug">지출 상세 — {title}</DialogTitle>
           <p className="text-xs text-muted-foreground font-normal pt-1">
@@ -484,15 +542,16 @@ export default function PnlUnifiedExpenseDetailDialog({
           {visible.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">이 구간에 해당하는 지출이 없습니다.</p>
           ) : (
-            <table className="w-full text-xs sm:text-sm border-collapse">
+            <table className="w-full min-w-[960px] text-xs sm:text-sm border-collapse">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="py-2 pr-2 font-medium whitespace-nowrap">출처</th>
                   <th className="py-2 pr-2 font-medium whitespace-nowrap">지출일</th>
-                  <th className="py-2 pr-2 font-medium">결제처</th>
-                  <th className="py-2 pr-2 font-medium min-w-[100px] max-w-[160px]">결제 방법</th>
+                  <th className="py-2 pr-2 font-medium min-w-[88px]">결제처</th>
+                  <th className="py-2 pr-2 font-medium min-w-[100px] max-w-[180px]">결제 방법</th>
                   <th className="py-2 pr-2 font-medium whitespace-nowrap">명세 대조</th>
-                  <th className="py-2 pr-2 font-medium min-w-[120px]">분류(원문)</th>
+                  <th className="py-2 pr-2 font-medium min-w-[100px]">분류(원문)</th>
+                  <th className="py-2 pr-2 font-medium min-w-[140px] max-w-[280px]">설명</th>
                   <th className="py-2 pr-2 font-medium text-right whitespace-nowrap">금액</th>
                   <th className="py-2 pl-1 font-medium whitespace-nowrap w-[72px]"> </th>
                 </tr>
@@ -501,6 +560,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                 {visible.map((line) => {
                   const key = `${line.source}:${line.id}`
                   const isEditing = editingId === key
+                  const desc = descriptionText(line)
                   return (
                     <React.Fragment key={key}>
                       <tr className="border-b border-border/60 align-top">
@@ -527,6 +587,12 @@ export default function PnlUnifiedExpenseDetailDialog({
                           )}
                         </td>
                         <td className="py-2 pr-2 break-words">{classificationText(line)}</td>
+                        <td
+                          className="py-2 pr-2 break-words text-muted-foreground min-w-[140px] max-w-[280px]"
+                          title={desc !== '—' ? desc : undefined}
+                        >
+                          {desc}
+                        </td>
                         <td className="py-2 pr-2 text-right tabular-nums font-medium">{formatMoney(line.amount)}</td>
                         <td className="py-2 pl-1">
                           {!isEditing && (
@@ -538,8 +604,8 @@ export default function PnlUnifiedExpenseDetailDialog({
                       </tr>
                       {isEditing && draft && (
                         <tr className="bg-muted/40 border-b">
-                          <td colSpan={8} className="p-3 sm:p-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl">
+                          <td colSpan={9} className="p-3 sm:p-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl">
                               <div className="space-y-1">
                                 <Label className="text-xs">금액</Label>
                                 <Input
@@ -635,6 +701,33 @@ export default function PnlUnifiedExpenseDetailDialog({
                                   value={draft.note}
                                   onChange={(e) => setDraft({ ...draft, note: e.target.value })}
                                 />
+                              </div>
+
+                              <div className="space-y-1 sm:col-span-2">
+                                <Label className="text-xs">표준 카테고리 (통합 PNL 분류)</Label>
+                                <select
+                                  className="h-9 w-full rounded-md border bg-background px-2 text-xs"
+                                  value={draft.standardLeafId}
+                                  onChange={(e) =>
+                                    setDraft({ ...draft, standardLeafId: e.target.value })
+                                  }
+                                >
+                                  <option value="">— 선택 안 함 (매핑 변경 없음) —</option>
+                                  {unifiedStandardGroups.map((gr) => (
+                                    <optgroup key={gr.rootId} label={gr.groupLabel}>
+                                      {gr.items.map((it) => (
+                                        <option key={it.id} value={it.id}>
+                                          {it.displayLabel}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                </select>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                  저장 시 <code className="text-[10px] bg-muted px-1 rounded">expense_category_mappings</code>
+                                  에 반영됩니다. 동일한 결제내용(원문)·출처를 쓰는 다른 지출도 같은 표준 분류로
+                                  묶입니다. 분류만 바꿀 때는 결제내용을 그대로 두고 여기서 리프만 바꾸면 됩니다.
+                                </p>
                               </div>
 
                               {line.source !== 'ticket_bookings' && line.source !== 'tour_hotel_bookings' && (

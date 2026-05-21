@@ -1,4 +1,5 @@
 import { createClientSupabase, supabaseAdmin } from '@/lib/supabase'
+import { getSunriseSunsetForLocation } from '@/lib/sunriseSunsetFetch'
 import { addTourLocalCalendarDays, getTourLocalToday } from '@/lib/tourWeatherDates'
 
 function dbForWeatherJob() {
@@ -11,39 +12,13 @@ const GOBLIN_TOUR_LOCATIONS = [
   { name: 'Page City', lat: 36.9147, lng: -111.4558 },
 ]
 
-function convertToArizonaTime(utcTimeString: string): string {
-  try {
-    const [hours, minutes, seconds] = utcTimeString.split(':').map(Number)
-    const today = new Date()
-    const utcDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, seconds)
-    const arizonaTime = new Date(utcDate.getTime() - 7 * 60 * 60 * 1000)
-    return arizonaTime.toLocaleTimeString('ko-KR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    })
-  } catch (error) {
-    console.error('Error converting time to Arizona time:', error)
-    return utcTimeString
-  }
-}
-
 async function getSunriseSunsetData(lat: number, lng: number, date: string) {
   try {
-    const response = await fetch(
-      `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&date=${date}&formatted=0`
-    )
-    const data = await response.json()
-    if (data.status === 'OK') {
-      const sunriseUTC = data.results.sunrise.split('T')[1].split('+')[0]
-      const sunsetUTC = data.results.sunset.split('T')[1].split('+')[0]
-      return {
-        sunrise: convertToArizonaTime(sunriseUTC),
-        sunset: convertToArizonaTime(sunsetUTC),
-      }
+    const result = await getSunriseSunsetForLocation(lat, lng, date)
+    return {
+      sunrise: result.sunrise,
+      sunset: result.sunset,
     }
-    throw new Error('Sunrise-sunset API error')
   } catch (error) {
     console.error('Error fetching sunrise/sunset data:', error)
     return null

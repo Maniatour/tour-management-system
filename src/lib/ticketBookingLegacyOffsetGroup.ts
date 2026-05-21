@@ -1,3 +1,4 @@
+import { normalizeTicketBookingStatusFromDb } from '@/lib/ticketBookingStatus'
 import { isTicketBookingOffsetOrCancelRow } from '@/lib/ticketBookingSoftDelete'
 
 export type TicketBookingRnGroupRow = {
@@ -47,6 +48,28 @@ export function legacyOffsetRowIdsToSoftDelete(
 ): string[] {
   return activeRows(rows)
     .filter((r) => r.id !== primaryId)
+    .map((r) => r.id)
+}
+
+/** 예약(부킹) 축 또는 레거시 status 기준 확정 여부 */
+export function isTicketBookingRowBookingConfirmed(row: TicketBookingRnGroupRow): boolean {
+  const axis = String(row.booking_status ?? '').trim().toLowerCase()
+  if (axis) return axis === 'confirmed'
+  const legacy = String(normalizeTicketBookingStatusFromDb(row.status)).toLowerCase()
+  return legacy === 'confirmed'
+}
+
+/** 소프트 삭제(삭제 요청) 후보 id — `excludeConfirmed`·`onlyIds` 로 범위 제한 */
+export function ticketBookingRnGroupSoftDeleteCandidateIds(
+  rows: readonly TicketBookingRnGroupRow[],
+  opts?: { excludeConfirmed?: boolean; onlyIds?: ReadonlySet<string> }
+): string[] {
+  return activeRows(rows)
+    .filter((r) => {
+      if (opts?.onlyIds && !opts.onlyIds.has(r.id)) return false
+      if (opts?.excludeConfirmed && isTicketBookingRowBookingConfirmed(r)) return false
+      return true
+    })
     .map((r) => r.id)
 }
 

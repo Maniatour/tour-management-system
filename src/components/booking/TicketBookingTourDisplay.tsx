@@ -6,9 +6,31 @@ import {
   ticketBookingTourDetailBadges,
   type TicketBookingTourEnrichment,
 } from '@/lib/ticket-booking-tour-display'
+import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
 
 const badgeBase =
   'inline-flex max-w-full shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-tight'
+
+function TourChoiceCountBadgeRow({ counts }: { counts: NonNullable<TicketBookingTourEnrichment['choice_counts']> }) {
+  const keys = tourChoiceCountsDisplayKeys(counts)
+  if (keys.length === 0) return null
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {keys.map((k) => (
+        <span
+          key={k}
+          className={`${badgeBase} bg-teal-50 text-teal-950 ring-1 ring-teal-200/80 tabular-nums`}
+          title={`${k} : ${counts[k]}`}
+        >
+          <span aria-hidden>🏜️</span>
+          <span>
+            {k} : {counts[k]}
+          </span>
+        </span>
+      ))}
+    </span>
+  )
+}
 
 function TourStaffBadgeRow({
   tours,
@@ -92,14 +114,18 @@ export function TicketBookingTourDisplay({
     tours && (isTable || (showDetails && !isTable))
       ? ticketBookingTourDetailBadges(tours, { omitPeople: isTable }).length > 0
       : false
+  const showChoiceBadges = isTable && tours?.choice_counts
 
-  if (!headline && !showStaffRow) return null
+  if (!headline && !showStaffRow && !showChoiceBadges) return null
 
   const inner = (
     <>
-      {headline ? (
-        <div className={`${headlineClassName} ${isTable ? 'text-[11px] leading-snug' : ''}`}>
-          {headline}
+      {headline || showChoiceBadges ? (
+        <div
+          className={`flex flex-wrap items-center gap-1 ${isTable ? 'text-[11px] leading-snug' : ''}`}
+        >
+          {headline ? <span className={headlineClassName}>{headline}</span> : null}
+          {showChoiceBadges ? <TourChoiceCountBadgeRow counts={tours!.choice_counts!} /> : null}
         </div>
       ) : null}
       {showStaffRow && tours ? (

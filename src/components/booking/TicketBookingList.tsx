@@ -17,6 +17,8 @@ import {
   pickPrimaryRowForLegacyOffsetMerge,
   ticketBookingIdsInMultiRnGroups,
   ticketBookingRnGroupKey,
+  ticketBookingRnGroupSoftDeleteCandidateIds,
+  isTicketBookingRowBookingConfirmed,
 } from '@/lib/ticketBookingLegacyOffsetGroup';
 import TicketBookingDeletionReviewModal from '@/components/booking/TicketBookingDeletionReviewModal';
 import { supabase, isAbortLikeError } from '@/lib/supabase';
@@ -39,6 +41,7 @@ import {
 } from '@/lib/ticket-booking-statement-recon';
 import { TicketBookingStatementReconCell } from '@/components/booking/TicketBookingStatementReconCell';
 import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTourDisplay';
+import { formatTicketBookingTourHeadline } from '@/lib/ticket-booking-tour-display';
 import { TicketBookingChangeStack } from '@/components/booking/TicketBookingChangeStack';
 import {
   getTicketBookingExpenseStack,
@@ -94,6 +97,13 @@ import {
 } from '@/lib/ticketBookingCancelDue';
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
 import { isTourCancelled } from '@/utils/tourStatusUtils';
+import {
+  aggregateTourChoiceCounts,
+  choiceLabelToTourCountKey,
+  tourChoiceCountsHasDisplayable,
+  type ReservationChoiceRow,
+  type TourChoiceCounts,
+} from '@/lib/tourChoiceCounts';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import type { TicketBookingLike } from '@/utils/ticketInvoiceParse';
@@ -338,6 +348,7 @@ interface TicketBooking {
     guide_display_name?: string;
     assistant_display_name?: string;
     vehicle_display_name?: string;
+    choice_counts?: TourChoiceCounts;
   };
   deletion_requested_at?: string | null;
   deletion_requested_by?: string | null;
@@ -538,6 +549,53 @@ function buildTicketRnGroups(bookings: TicketBooking[]): { key: string; label: s
     const groupSortKey = `${first.check_in_date || ''}\0${first.time || ''}\0${first.id}\0${key}`;
     return { key, label, rows: rowsSorted, groupSortKey };
   });
+
+  groups.sort((a, b) => a.groupSortKey.localeCompare(b.groupSortKey));
+  return groups.map(({ key, label, rows }) => ({ key, label, rows }));
+}
+
+/** 투어별 테이블: `tour_id`로 묶음. 미연결 행은 한 그룹으로 표시 */
+function buildTicketTourGroups(
+  bookings: TicketBooking[],
+  locale: string,
+  tourFallback: string
+): { key: string; label: string; rows: TicketBooking[] }[] {
+  const dateSorted = [...bookings].sort(sortBookingsByCheckInThenTime);
+  const linked = new Map<string, TicketBooking[]>();
+  const unlinked: TicketBooking[] = [];
+
+  for (const b of dateSorted) {
+    const tid = b.tour_id?.trim();
+    if (!tid) {
+      unlinked.push(b);
+      continue;
+    }
+    if (!linked.has(tid)) linked.set(tid, []);
+    linked.get(tid)!.push(b);
+  }
+
+  const groups: { key: string; label: string; rows: TicketBooking[]; groupSortKey: string }[] = [];
+
+  for (const [tid, rows] of linked.entries()) {
+    const rowsSorted = [...rows].sort(sortBookingsByCheckInThenTime);
+    const first = rowsSorted[0]!;
+    const headline =
+      formatTicketBookingTourHeadline(locale, first.tours, tourFallback, { appendPeople: true }) ||
+      (locale.startsWith('ko') ? `투어 (${tid.slice(0, 8)}…)` : `Tour (${tid.slice(0, 8)}…)`);
+    const groupSortKey = `${first.tours?.tour_date || first.check_in_date || ''}\0${headline}\0${tid}`;
+    groups.push({ key: `tour:${tid}`, label: headline, rows: rowsSorted, groupSortKey });
+  }
+
+  if (unlinked.length > 0) {
+    const rowsSorted = [...unlinked].sort(sortBookingsByCheckInThenTime);
+    const label = locale.startsWith('ko') ? '투어 미연결' : 'Tour not linked';
+    groups.push({
+      key: '__unlinked__',
+      label,
+      rows: rowsSorted,
+      groupSortKey: `\uffff${label}`,
+    });
+  }
 
   groups.sort((a, b) => a.groupSortKey.localeCompare(b.groupSortKey));
   return groups.map(({ key, label, rows }) => ({ key, label, rows }));
@@ -1044,11 +1102,15 @@ export default function TicketBookingList() {
     'ticket-bookings-view',
     'calendar'
   );
-  /** 테이블 뷰 전용: 전체 행 / RN# 그룹 */
-  const [ticketTableLayout, setTicketTableLayout] = useRoutePersistedState<'flat' | 'byRn'>(
-    'ticket-bookings-table-layout',
-    'flat'
-  );
+  /** 테이블 뷰 전용: 전체 행 / RN# 그룹 / 투어 그룹 */
+  const [ticketTableLayout, setTicketTableLayout] = useRoutePersistedState<
+    'flat' | 'byRn' | 'byTour'
+  >('ticket-bookings-table-layout', 'flat');
+  const isGroupedTableLayout = ticketTableLayout === 'byRn' || ticketTableLayout === 'byTour';
+  const showRnRowSelection =
+    viewMode === 'table' && isGroupedTableLayout && canBookingMgmtSoftDeleteUi;
+  const ticketDesktopColCount =
+    TICKET_DESKTOP_TABLE_COL_COUNT + (showRnRowSelection ? 1 : 0);
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState(50);
   const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
@@ -1070,6 +1132,8 @@ export default function TicketBookingList() {
   const [legacyOffsetConsolidatingKey, setLegacyOffsetConsolidatingKey] = useState<string | null>(
     null
   );
+  const [rnGroupBulkDeletingKey, setRnGroupBulkDeletingKey] = useState<string | null>(null);
+  const [rnGroupSelectedIds, setRnGroupSelectedIds] = useState<Set<string>>(() => new Set());
   const [workflowActionSavingId, setWorkflowActionSavingId] = useState<string | null>(null);
   const [openAxisDropdown, setOpenAxisDropdown] = useState<
     null | { bookingId: string; axis: 'booking' | 'vendor' }
@@ -1845,6 +1909,57 @@ export default function TicketBookingList() {
           }
           tourTotalPeopleByTourId.set(tour.id, sum);
         }
+
+        const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>();
+        if (resIdList.length > 0) {
+          for (let i = 0; i < resIdList.length; i += RES_BATCH) {
+            const batchIds = resIdList.slice(i, i + RES_BATCH);
+            const { data: rcData, error: rcErr } = await supabase
+              .from('reservation_choices')
+              .select(
+                'reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)'
+              )
+              .in('reservation_id', batchIds);
+            if (rcErr) {
+              console.warn('입장권 투어 초이스 조회:', rcErr);
+              break;
+            }
+            for (const row of (rcData || []) as Array<{
+              reservation_id: string | null;
+              quantity?: number | null;
+              choice_options?: {
+                option_key?: string | null;
+                option_name_ko?: string | null;
+                option_name?: string | null;
+              } | null;
+            }>) {
+              const rid = row.reservation_id?.trim();
+              if (!rid) continue;
+              const opt = row.choice_options;
+              const choiceKey = choiceLabelToTourCountKey(
+                opt?.option_name_ko ?? null,
+                opt?.option_name ?? null,
+                opt?.option_key ?? null
+              );
+              const list = choiceRowsByResId.get(rid) || [];
+              list.push({ choiceKey, quantity: Number(row.quantity) || 1 });
+              choiceRowsByResId.set(rid, list);
+            }
+          }
+        }
+        const tourChoiceCountsByTourId = new Map<string, TourChoiceCounts>();
+        for (const tour of toursData) {
+          const assignedResList: Array<{ id: string; total_people?: number | null }> = [];
+          for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
+            const r = resById.get(rid);
+            if (!r || isReservationCancelledStatus(r.status)) continue;
+            assignedResList.push(r);
+          }
+          const counts = aggregateTourChoiceCounts(assignedResList, choiceRowsByResId);
+          if (tourChoiceCountsHasDisplayable(counts)) {
+            tourChoiceCountsByTourId.set(tour.id, counts);
+          }
+        }
         const rows = list.map((booking) => {
           const baseBooking = attachReservationName({
             ...booking,
@@ -1880,6 +1995,8 @@ export default function TicketBookingList() {
                   : {}),
               };
             }
+            const choiceCounts = tourChoiceCountsByTourId.get(booking.tour_id);
+            if (choiceCounts) toursPart.choice_counts = choiceCounts;
             return { ...baseBooking, tours: toursPart };
           }
           return baseBooking;
@@ -2362,10 +2479,28 @@ export default function TicketBookingList() {
     setShowForm(true);
   };
 
-  const removeBookingFromUi = useCallback((id: string) => {
-    setBookings((prev) => prev.filter((b) => b.id !== id));
-    setSelectedBookings((prev) => prev.filter((b) => b.id !== id));
+  const removeBookingsFromUi = useCallback((ids: readonly string[]) => {
+    const idSet = new Set(ids);
+    setBookings((prev) => prev.filter((b) => !idSet.has(b.id)));
+    setSelectedBookings((prev) => prev.filter((b) => !idSet.has(b.id)));
+    setRnGroupSelectedIds((prev) => {
+      if (!ids.some((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
   }, []);
+
+  const removeBookingFromUi = useCallback(
+    (id: string) => {
+      removeBookingsFromUi([id]);
+    },
+    [removeBookingsFromUi]
+  );
+
+  useEffect(() => {
+    setRnGroupSelectedIds(new Set());
+  }, [ticketTableLayout, viewMode, listPage, multiRnOnlyFilter]);
 
   const handleDelete = async (id: string, opts?: { fromDetailModal?: boolean }) => {
     if (!canSuperDeleteTicketBooking) {
@@ -2562,6 +2697,208 @@ export default function TicketBookingList() {
             ? `0개로 통합 (${otherCount}건 숨김)`
             : `Merge to 0 (${otherCount} hide)`}
       </button>
+    );
+  };
+
+  const toggleRnGroupRowSelected = useCallback((id: string, selected: boolean) => {
+    setRnGroupSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (selected) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleSoftDeleteTicketBookingIds = async (
+    groupKey: string,
+    ids: string[],
+    confirmMsg: string
+  ) => {
+    if (!canBookingMgmtSoftDeleteUi || ids.length === 0) return;
+    if (!confirm(confirmMsg)) return;
+
+    setRnGroupBulkDeletingKey(groupKey);
+    const now = new Date().toISOString();
+    const email = user?.email ?? null;
+
+    try {
+      const { error } = await supabase
+        .from('ticket_bookings')
+        .update({
+          deletion_requested_at: now,
+          deletion_requested_by: email,
+        })
+        .in('id', ids);
+      if (error) throw error;
+
+      removeBookingsFromUi(ids);
+      alert(
+        locale === 'ko'
+          ? `삭제 요청 ${ids.length}건 — 목록에서 숨겨집니다. SUPER가 확인 후 영구 삭제합니다.`
+          : `${ids.length} row(s) marked for deletion and hidden from the list.`
+      );
+    } catch (err) {
+      console.error('[TicketBookingList] RN group bulk soft delete', err);
+      alert(
+        locale === 'ko' ? '일괄 삭제 요청 중 오류가 발생했습니다.' : 'Failed to request bulk deletion.'
+      );
+    } finally {
+      setRnGroupBulkDeletingKey(null);
+    }
+  };
+
+  const handleSoftDeleteNonConfirmedInRnGroup = async (
+    groupKey: string,
+    groupRows: TicketBooking[],
+    groupLabel: string
+  ) => {
+    const ids = ticketBookingRnGroupSoftDeleteCandidateIds(groupRows, { excludeConfirmed: true });
+    if (ids.length === 0) {
+      alert(
+        locale === 'ko'
+          ? '확정이 아닌 삭제 가능한 행이 없습니다.'
+          : 'No non-confirmed rows available to delete.'
+      );
+      return;
+    }
+    const confirmMsg =
+      locale === 'ko'
+        ? `${groupLabel}\n\n확정(예약) 상태가 아닌 ${ids.length}건을 삭제 요청(목록에서 숨김)합니다.\n확정된 행은 유지됩니다.\n\n계속할까요?`
+        : `${groupLabel}\n\nSoft-delete ${ids.length} non-confirmed row(s); confirmed rows stay.\n\nContinue?`;
+    await handleSoftDeleteTicketBookingIds(groupKey, ids, confirmMsg);
+  };
+
+  const handleSoftDeleteSelectedInRnGroup = async (
+    groupKey: string,
+    groupRows: TicketBooking[],
+    groupLabel: string
+  ) => {
+    const ids = ticketBookingRnGroupSoftDeleteCandidateIds(groupRows, {
+      onlyIds: rnGroupSelectedIds,
+    });
+    if (ids.length === 0) {
+      alert(
+        locale === 'ko'
+          ? '선택한 삭제 가능한 행이 없습니다. (확정 행은 선택·삭제할 수 없습니다)'
+          : 'No deletable rows in your selection (confirmed rows cannot be deleted).'
+      );
+      return;
+    }
+    const confirmMsg =
+      locale === 'ko'
+        ? `${groupLabel}\n\n선택한 ${ids.length}건을 삭제 요청(목록에서 숨김)합니다.\n\n계속할까요?`
+        : `${groupLabel}\n\nSoft-delete ${ids.length} selected row(s).\n\nContinue?`;
+    await handleSoftDeleteTicketBookingIds(groupKey, ids, confirmMsg);
+  };
+
+  const renderRnGroupBulkDeleteButtons = (
+    groupKey: string,
+    groupRows: TicketBooking[],
+    variant: 'mobile' | 'desktop',
+    groupLabel: string
+  ) => {
+    if (!canBookingMgmtSoftDeleteUi || groupRows.length < 2) return null;
+
+    const busy = rnGroupBulkDeletingKey === groupKey;
+    const nonConfirmedIds = ticketBookingRnGroupSoftDeleteCandidateIds(groupRows, {
+      excludeConfirmed: true,
+    });
+    const selectedInGroupIds = ticketBookingRnGroupSoftDeleteCandidateIds(groupRows, {
+      onlyIds: rnGroupSelectedIds,
+    });
+    const wrapClass =
+      variant === 'desktop'
+        ? 'ml-2 inline-flex flex-wrap items-center gap-1.5'
+        : 'mt-2 flex flex-wrap items-center gap-1.5';
+
+    const btnBase =
+      variant === 'desktop'
+        ? 'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold disabled:opacity-50'
+        : 'inline-flex flex-1 min-w-[8.5rem] items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-xs font-semibold disabled:opacity-50';
+
+    if (nonConfirmedIds.length === 0 && selectedInGroupIds.length === 0) return null;
+
+    return (
+      <span className={wrapClass}>
+        {showRnRowSelection && selectedInGroupIds.length > 0 ? (
+          <button
+            type="button"
+            className={`${btnBase} border-amber-700 bg-amber-50 text-amber-950 hover:bg-amber-100`}
+            disabled={busy}
+            title={
+              locale === 'ko'
+                ? '선택한 행 삭제 요청(목록에서 숨김). 확정 행은 선택할 수 없습니다.'
+                : 'Soft-delete selected rows (confirmed rows cannot be selected).'
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleSoftDeleteSelectedInRnGroup(groupKey, groupRows, groupLabel);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {busy
+              ? locale === 'ko'
+                ? '처리 중…'
+                : 'Working…'
+              : locale === 'ko'
+                ? `선택 삭제 (${selectedInGroupIds.length})`
+                : `Delete selected (${selectedInGroupIds.length})`}
+          </button>
+        ) : null}
+        {nonConfirmedIds.length > 0 ? (
+          <button
+            type="button"
+            className={`${btnBase} border-red-700 bg-red-50 text-red-900 hover:bg-red-100`}
+            disabled={busy}
+            title={
+              locale === 'ko'
+                ? '확정(예약)이 아닌 행만 삭제 요청(목록에서 숨김)합니다.'
+                : 'Soft-delete all non-confirmed rows in this RN# group.'
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleSoftDeleteNonConfirmedInRnGroup(groupKey, groupRows, groupLabel);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {busy
+              ? locale === 'ko'
+                ? '처리 중…'
+                : 'Working…'
+              : locale === 'ko'
+                ? `확정 제외 삭제 (${nonConfirmedIds.length})`
+                : `Delete non-confirmed (${nonConfirmedIds.length})`}
+          </button>
+        ) : null}
+      </span>
+    );
+  };
+
+  const renderRnGroupRowSelectCheckbox = (booking: TicketBooking) => {
+    if (!showRnRowSelection) return null;
+    const confirmed = isTicketBookingRowBookingConfirmed(booking);
+    const checked = rnGroupSelectedIds.has(booking.id);
+    return (
+      <input
+        type="checkbox"
+        className="h-4 w-4 shrink-0 rounded border-gray-300 text-violet-600 focus:ring-violet-500 disabled:opacity-40"
+        checked={checked}
+        disabled={confirmed || Boolean(booking.deletion_requested_at)}
+        title={
+          confirmed
+            ? locale === 'ko'
+              ? '확정된 행은 일괄 선택 삭제 대상이 아닙니다'
+              : 'Confirmed rows cannot be bulk-deleted'
+            : locale === 'ko'
+              ? '선택 삭제 대상'
+              : 'Select for bulk delete'
+        }
+        onChange={(e) => {
+          e.stopPropagation();
+          toggleRnGroupRowSelected(booking.id, e.target.checked);
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
     );
   };
 
@@ -3461,6 +3798,14 @@ export default function TicketBookingList() {
     return sortedBookings.slice(start, start + listPageSize);
   }, [sortedBookings, listPageEffective, listPageSize]);
 
+  const ticketTableGroups = useMemo(() => {
+    if (ticketTableLayout === 'byRn') return buildTicketRnGroups(pagedSortedBookings);
+    if (ticketTableLayout === 'byTour') {
+      return buildTicketTourGroups(pagedSortedBookings, locale, t('tour'));
+    }
+    return null;
+  }, [ticketTableLayout, pagedSortedBookings, locale, t]);
+
   useEffect(() => {
     setListPage(1);
   }, [
@@ -3928,6 +4273,14 @@ export default function TicketBookingList() {
         }
         style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
       >
+        {showRnRowSelection && !isModalForm ? (
+          <div className="flex items-center gap-2 pb-1 border-b border-gray-100">
+            {renderRnGroupRowSelectCheckbox(booking)}
+            <span className="text-[10px] text-gray-500">
+              {locale === 'ko' ? '선택 삭제 대상' : 'Bulk delete selection'}
+            </span>
+          </div>
+        ) : null}
         {isModalForm ? (
           <div className="space-y-2">
             {showChangeAxisInsteadOfBookingStatus(booking) ? (
@@ -4379,8 +4732,13 @@ export default function TicketBookingList() {
       return (
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
+            {showRnRowSelection ? (
+              <th className={`${TICKET_TABLE_TH} w-9 px-1 text-center`}>
+                <span className="sr-only">{locale === 'ko' ? '선택' : 'Select'}</span>
+              </th>
+            ) : null}
             <th
-              className={`${TICKET_TABLE_TH} sticky left-0 z-10 min-w-[8.5rem] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]`}
+              className={`${TICKET_TABLE_TH} sticky left-0 z-10 min-w-[8.5rem] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]${showRnRowSelection ? ' left-9' : ''}`}
               title={t('ticketTableStatusThHintSummary')}
             >
               상태
@@ -4428,7 +4786,7 @@ export default function TicketBookingList() {
         </thead>
       );
     },
-    [t, sortField, sortDirection, handleSort, tStmtRecon]
+    [t, sortField, sortDirection, handleSort, tStmtRecon, showRnRowSelection, locale]
   );
 
   const renderDesktopRow = (
@@ -4528,8 +4886,16 @@ export default function TicketBookingList() {
         }
         title={openEditFromRow ? (locale === 'ko' ? '클릭하여 편집' : 'Click to edit') : undefined}
       >
+        {showRnRowSelection ? (
+          <td
+            className={`${TICKET_TABLE_CELL} w-9 px-1 text-center align-middle ${bgColor}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {renderRnGroupRowSelectCheckbox(booking)}
+          </td>
+        ) : null}
     <td
-      className={`${TICKET_TABLE_CELL} sticky left-0 z-10 min-w-[9rem] w-[9rem] ${bgColor} ${rnRowStripe}`}
+      className={`${TICKET_TABLE_CELL} sticky z-10 min-w-[9rem] w-[9rem] ${bgColor} ${rnRowStripe} ${showRnRowSelection ? 'left-9' : 'left-0'}`}
     >
       <div className="relative z-50 space-y-1.5 px-0.5 py-0.5">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -5153,6 +5519,17 @@ export default function TicketBookingList() {
                 >
                   RN#별
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setTicketTableLayout('byTour')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    ticketTableLayout === 'byTour'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {locale === 'ko' ? '투어별' : 'By tour'}
+                </button>
               </div>
               <button
                 type="button"
@@ -5196,24 +5573,38 @@ export default function TicketBookingList() {
                       ? '검색 조건에 맞는 부킹이 없습니다.'
                       : '등록된 입장권 부킹이 없습니다.'}
                   </div>
-                ) : ticketTableLayout === 'byRn' ? (
+                ) : ticketTableGroups ? (
                   <div className="space-y-5">
-                    {buildTicketRnGroups(pagedSortedBookings).map((g, gi) => {
+                    {ticketTableGroups.map((g, gi) => {
                       const totalEa = g.rows.reduce((s, b) => s + b.ea, 0);
                       const totalPrice = g.rows.reduce((s, b) => s + (Number(b.total_price) || 0), 0);
                       const palette = RN_TABLE_GROUP_STYLES[gi % RN_TABLE_GROUP_STYLES.length];
                       const anyChangePending = g.rows.some(isTicketBookingChangeRequestPending);
+                      const groupHeaderTitle =
+                        ticketTableLayout === 'byRn' ? `RN# ${g.label}` : g.label;
                       return (
                         <div
                           key={g.key}
                           className={`${palette.mobileSection} ${anyChangePending ? 'ring-2 ring-red-600 ring-offset-2' : ''}`}
                         >
                           <div className={`${palette.mobileHeader} text-xs`}>
-                            <div className="text-sm font-bold text-neutral-900 tracking-tight">RN# {g.label}</div>
+                            <div className="text-sm font-bold text-neutral-900 tracking-tight leading-snug">
+                              {groupHeaderTitle}
+                            </div>
                             <div className="mt-1 text-neutral-700 font-medium">
                               {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
                             </div>
-                            {renderLegacyOffsetConsolidateButton(g.key, g.rows, 'mobile')}
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              {ticketTableLayout === 'byRn'
+                                ? renderLegacyOffsetConsolidateButton(g.key, g.rows, 'mobile')
+                                : null}
+                              {renderRnGroupBulkDeleteButtons(
+                                g.key,
+                                g.rows,
+                                'mobile',
+                                groupHeaderTitle
+                              )}
+                            </div>
                           </div>
                           <div className="space-y-2.5 p-2.5 bg-white/80">
                             {g.rows.map((booking) => renderTicketMobileCard(booking))}
@@ -5235,17 +5626,19 @@ export default function TicketBookingList() {
                     // Cancel Due 날짜별로 그룹화하여 배경색 매핑 생성
                     const cancelDueColorMap = buildCancelDueColorMapFor(sortedBookings);
 
-                    if (ticketTableLayout === 'byRn') {
-                      return buildTicketRnGroups(pagedSortedBookings).flatMap((g, gi) => {
+                    if (ticketTableGroups) {
+                      return ticketTableGroups.flatMap((g, gi) => {
                         const totalEa = g.rows.reduce((s, b) => s + b.ea, 0);
                         const totalPrice = g.rows.reduce((s, b) => s + (Number(b.total_price) || 0), 0);
                         const palette = RN_TABLE_GROUP_STYLES[gi % RN_TABLE_GROUP_STYLES.length];
+                        const groupHeaderTitle =
+                          ticketTableLayout === 'byRn' ? `RN# ${g.label}` : g.label;
                         const nodes: React.ReactNode[] = [];
                         if (gi > 0) {
                           nodes.push(
-                            <tr key={`rn-gap-${g.key}`} className="pointer-events-none" aria-hidden>
+                            <tr key={`tbl-gap-${g.key}`} className="pointer-events-none" aria-hidden>
                               <td
-                                colSpan={TICKET_DESKTOP_TABLE_COL_COUNT}
+                                colSpan={ticketDesktopColCount}
                                 className="h-3 bg-neutral-300 p-0 border-y-2 border-neutral-400"
                               />
                             </tr>
@@ -5254,12 +5647,22 @@ export default function TicketBookingList() {
                         nodes.push(
                           <Fragment key={g.key}>
                             <tr className={`align-middle ${palette.headerRow}`}>
-                              <td colSpan={TICKET_DESKTOP_TABLE_COL_COUNT} className="align-middle px-3 py-2.5 text-xs border-0">
-                                <span className="text-sm font-bold text-neutral-900 tracking-tight">RN# {g.label}</span>
+                              <td colSpan={ticketDesktopColCount} className="align-middle px-3 py-2.5 text-xs border-0">
+                                <span className="text-sm font-bold text-neutral-900 tracking-tight leading-snug">
+                                  {groupHeaderTitle}
+                                </span>
                                 <span className="text-neutral-800 font-medium ml-3">
                                   {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
                                 </span>
-                                {renderLegacyOffsetConsolidateButton(g.key, g.rows, 'desktop')}
+                                {ticketTableLayout === 'byRn'
+                                  ? renderLegacyOffsetConsolidateButton(g.key, g.rows, 'desktop')
+                                  : null}
+                                {renderRnGroupBulkDeleteButtons(
+                                  g.key,
+                                  g.rows,
+                                  'desktop',
+                                  groupHeaderTitle
+                                )}
                               </td>
                             </tr>
                             {g.rows.map((b) => renderDesktopRow(b, palette.rowStripe, cancelDueColorMap))}

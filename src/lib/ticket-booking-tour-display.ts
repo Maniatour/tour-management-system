@@ -1,5 +1,7 @@
 /** 입장권 목록·상세 모달 — 연결 투어 표시용 */
 
+import type { TourChoiceCounts } from '@/lib/tourChoiceCounts'
+
 export type TicketBookingTourEnrichment = {
   tour_date?: string | null
   total_people?: number | null
@@ -7,6 +9,8 @@ export type TicketBookingTourEnrichment = {
   guide_display_name?: string | null
   assistant_display_name?: string | null
   vehicle_display_name?: string | null
+  /** 연결 투어 예약 초이스 합계 (X / L / U) */
+  choice_counts?: TourChoiceCounts
 }
 
 export function formatTourDateYmd(raw: string | null | undefined): string {
