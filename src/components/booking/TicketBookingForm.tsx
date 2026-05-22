@@ -968,7 +968,7 @@ export default function TicketBookingForm({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${authSession.access_token}`,
+            Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify(dbPayloadInsert),
         });
