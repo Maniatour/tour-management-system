@@ -104,6 +104,13 @@ import {
   type ReservationChoiceRow,
   type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts';
+import {
+  buildTicketDateViewGroups,
+  formatCanyonCountsInline,
+  type TicketDateViewBookingRow,
+  type TicketDateViewGroup,
+} from '@/lib/ticketBookingDateView';
+import { ticketBookingLineTotalUsd } from '@/lib/bookingSettlement';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import type { TicketBookingLike } from '@/utils/ticketInvoiceParse';
@@ -369,14 +376,10 @@ function deriveTicketBookingListFields(row: TicketBooking): TicketBooking {
     return Number.isFinite(x) ? x : null;
   };
   const eaNum = Math.max(1, n(row.ea) ?? 1);
-  const income = n(row.income);
-  const paid = n(row.paid_amount);
-  const expense = n(row.expense);
   let total = n(row.total_price);
   if (total == null) {
-    if (income != null) total = income;
-    else if (paid != null) total = paid;
-    else if (expense != null) total = expense * eaNum;
+    const line = ticketBookingLineTotalUsd(row);
+    if (line !== 0) total = line;
   }
   let unit = n(row.unit_price);
   if (unit == null && total != null) unit = total / eaNum;
@@ -1102,11 +1105,16 @@ export default function TicketBookingList() {
     'ticket-bookings-view',
     'calendar'
   );
-  /** 테이블 뷰 전용: 전체 행 / RN# 그룹 / 투어 그룹 */
+  /** 테이블 뷰 전용: 전체 행 / RN# / 투어 / 날짜 그룹 */
   const [ticketTableLayout, setTicketTableLayout] = useRoutePersistedState<
-    'flat' | 'byRn' | 'byTour'
+    'flat' | 'byRn' | 'byTour' | 'byDate'
   >('ticket-bookings-table-layout', 'flat');
-  const isGroupedTableLayout = ticketTableLayout === 'byRn' || ticketTableLayout === 'byTour';
+  const isGroupedTableLayout =
+    ticketTableLayout === 'byRn' ||
+    ticketTableLayout === 'byTour' ||
+    ticketTableLayout === 'byDate';
+  /** 날짜별: 투어 초이스 L/X 합 ≠ 티켓 EA L/X 합인 날짜만 */
+  const [lxMismatchOnlyFilter, setLxMismatchOnlyFilter] = useState(false);
   const showRnRowSelection =
     viewMode === 'table' && isGroupedTableLayout && canBookingMgmtSoftDeleteUi;
   const ticketDesktopColCount =
@@ -2500,7 +2508,7 @@ export default function TicketBookingList() {
 
   useEffect(() => {
     setRnGroupSelectedIds(new Set());
-  }, [ticketTableLayout, viewMode, listPage, multiRnOnlyFilter]);
+  }, [ticketTableLayout, viewMode, listPage, multiRnOnlyFilter, lxMismatchOnlyFilter]);
 
   const handleDelete = async (id: string, opts?: { fromDetailModal?: boolean }) => {
     if (!canSuperDeleteTicketBooking) {
@@ -2789,6 +2797,63 @@ export default function TicketBookingList() {
         ? `${groupLabel}\n\n선택한 ${ids.length}건을 삭제 요청(목록에서 숨김)합니다.\n\n계속할까요?`
         : `${groupLabel}\n\nSoft-delete ${ids.length} selected row(s).\n\nContinue?`;
     await handleSoftDeleteTicketBookingIds(groupKey, ids, confirmMsg);
+  };
+
+  const renderDateViewGroupSummary = (dv: TicketDateViewGroup, variant: 'mobile' | 'desktop') => {
+    const tourLine = formatCanyonCountsInline(dv.tourChoiceTotals);
+    const ticketLine = formatCanyonCountsInline(dv.ticketChoiceTotals);
+    const mismatch = dv.hasMismatch;
+    const wrap =
+      variant === 'desktop'
+        ? 'mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]'
+        : 'mt-1.5 space-y-1 text-[11px]';
+
+    return (
+      <div className={wrap}>
+        <span className={mismatch ? 'text-red-800 font-semibold' : 'text-neutral-700'}>
+          {locale === 'ko' ? '투어' : 'Tour'}: {tourLine}
+        </span>
+        <span className={mismatch ? 'text-red-800 font-semibold' : 'text-neutral-700'}>
+          {locale === 'ko' ? '티켓' : 'Ticket'}: {ticketLine}
+        </span>
+        {mismatch ? (
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-800 ring-1 ring-red-300">
+            {locale === 'ko' ? 'L/X 불일치' : 'L/X mismatch'}
+          </span>
+        ) : (
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200">
+            {locale === 'ko' ? 'L/X 일치' : 'L/X match'}
+          </span>
+        )}
+        {dv.unlinkedTicketCount > 0 ? (
+          <span className="text-amber-800 font-medium">
+            {locale === 'ko'
+              ? `미연결 티켓 ${dv.unlinkedTicketCount}건`
+              : `${dv.unlinkedTicketCount} unlinked ticket(s)`}
+          </span>
+        ) : null}
+        {dv.tours.length > 0 ? (
+          <div
+            className={`w-full ${variant === 'desktop' ? 'basis-full' : ''} rounded-md border border-slate-200/90 bg-white/70 px-2 py-1.5 text-[10px] text-slate-800`}
+          >
+            <div className="font-semibold text-slate-600 mb-0.5">
+              {locale === 'ko' ? '이 날짜 투어' : 'Tours this day'}
+            </div>
+            <ul className="space-y-0.5">
+              {dv.tours.map((tr) => (
+                <li key={tr.tourId} className="leading-snug">
+                  <span className="font-medium">{tr.label}</span>
+                  <span className="text-slate-600 tabular-nums">
+                    {' '}
+                    — {formatCanyonCountsInline(tr.choiceCounts)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const renderRnGroupBulkDeleteButtons = (
@@ -3791,20 +3856,62 @@ export default function TicketBookingList() {
     return arr;
   }, [filteredBookings, sortField, sortDirection]);
 
-  const listTotalPages = Math.max(1, Math.ceil(sortedBookings.length / listPageSize) || 1);
+  const dateViewGroupsAll = useMemo(() => {
+    if (ticketTableLayout !== 'byDate') return null;
+    return buildTicketDateViewGroups(sortedBookings as TicketDateViewBookingRow[], tourEvents, locale, t('tour'), {
+      bookingCheckInYmd: (b) => bookingCheckInYmd(b as TicketBooking),
+      tourOverlapsDate: tourOverlapsCalendarYmd,
+      getProductName: (products) =>
+        getProductName(products as TourEvent['products']),
+    });
+  }, [ticketTableLayout, sortedBookings, tourEvents, locale, t]);
+
+  const dateViewGroups = useMemo(() => {
+    if (!dateViewGroupsAll) return null;
+    if (!lxMismatchOnlyFilter) return dateViewGroupsAll;
+    return dateViewGroupsAll.filter((g) => g.hasMismatch);
+  }, [dateViewGroupsAll, lxMismatchOnlyFilter]);
+
+  const listTotalPages = useMemo(() => {
+    if (ticketTableLayout === 'byDate' && dateViewGroups) {
+      return Math.max(1, Math.ceil(dateViewGroups.length / listPageSize) || 1);
+    }
+    return Math.max(1, Math.ceil(sortedBookings.length / listPageSize) || 1);
+  }, [ticketTableLayout, dateViewGroups, sortedBookings.length, listPageSize]);
+
   const listPageEffective = Math.min(listPage, listTotalPages);
+
   const pagedSortedBookings = useMemo(() => {
     const start = (listPageEffective - 1) * listPageSize;
     return sortedBookings.slice(start, start + listPageSize);
   }, [sortedBookings, listPageEffective, listPageSize]);
 
-  const ticketTableGroups = useMemo(() => {
+  const pagedDateViewGroups = useMemo(() => {
+    if (!dateViewGroups) return null;
+    const start = (listPageEffective - 1) * listPageSize;
+    return dateViewGroups.slice(start, start + listPageSize);
+  }, [dateViewGroups, listPageEffective, listPageSize]);
+
+  const ticketTableGroups = useMemo((): Array<{
+    key: string;
+    label: string;
+    rows: TicketBooking[];
+    dateView?: TicketDateViewGroup;
+  }> | null => {
     if (ticketTableLayout === 'byRn') return buildTicketRnGroups(pagedSortedBookings);
     if (ticketTableLayout === 'byTour') {
       return buildTicketTourGroups(pagedSortedBookings, locale, t('tour'));
     }
+    if (ticketTableLayout === 'byDate' && pagedDateViewGroups) {
+      return pagedDateViewGroups.map((g) => ({
+        key: g.key,
+        label: g.label,
+        rows: sortedBookings.filter((b) => bookingCheckInYmd(b) === g.dateYmd),
+        dateView: g,
+      }));
+    }
     return null;
-  }, [ticketTableLayout, pagedSortedBookings, locale, t]);
+  }, [ticketTableLayout, pagedSortedBookings, sortedBookings, locale, t, pagedDateViewGroups]);
 
   useEffect(() => {
     setListPage(1);
@@ -3819,12 +3926,18 @@ export default function TicketBookingList() {
     pendingRequestOnlyFilter,
     multiRnOnlyFilter,
     needsReviewEaMismatch,
+    lxMismatchOnlyFilter,
+    ticketTableLayout,
     viewMode,
   ]);
 
   useEffect(() => {
     if (viewMode !== 'table') setNeedsReviewEaMismatch(false);
   }, [viewMode]);
+
+  useEffect(() => {
+    if (ticketTableLayout !== 'byDate') setLxMismatchOnlyFilter(false);
+  }, [ticketTableLayout]);
 
   useEffect(() => {
     setListPage((p) => Math.min(Math.max(1, p), listTotalPages));
@@ -4159,10 +4272,14 @@ export default function TicketBookingList() {
     setShowBookingModal(true);
   };
 
-  const buildVendorConfirmChangePayload = (booking: TicketBooking) => ({
-    apply_qty: ticketBookingPendingQtyDiffers(booking),
-    apply_time: ticketBookingPendingTimeDiffers(booking),
-  });
+  const buildVendorConfirmChangePayload = (booking: TicketBooking) => {
+    const apply_qty = ticketBookingPendingQtyDiffers(booking);
+    const apply_time = ticketBookingPendingTimeDiffers(booking);
+    if (booking.pending_ea === 0) {
+      return { apply_qty: true, apply_time: apply_time };
+    }
+    return { apply_qty, apply_time };
+  };
 
   const renderVendorChangeActionButtons = (
     booking: TicketBooking,
@@ -5530,7 +5647,42 @@ export default function TicketBookingList() {
                 >
                   {locale === 'ko' ? '투어별' : 'By tour'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTicketTableLayout('byDate');
+                    setLxMismatchOnlyFilter(false);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    ticketTableLayout === 'byDate'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {locale === 'ko' ? '날짜별' : 'By date'}
+                </button>
               </div>
+              {ticketTableLayout === 'byDate' ? (
+                <button
+                  type="button"
+                  onClick={() => setLxMismatchOnlyFilter((v) => !v)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                    lxMismatchOnlyFilter
+                      ? 'border-red-500 bg-red-100 text-red-950 shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                  title={
+                    locale === 'ko'
+                      ? '투어 초이스 L/X 합과 티켓 EA L/X 합이 다른 날짜만 표시합니다. 미연결 티켓 배정·수정용.'
+                      : 'Show only dates where tour choice L/X totals differ from ticket L/X EA totals.'
+                  }
+                >
+                  {locale === 'ko' ? 'L/X 불일치만' : 'L/X mismatch only'}
+                  {dateViewGroupsAll
+                    ? ` (${dateViewGroupsAll.filter((g) => g.hasMismatch).length})`
+                    : ''}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -5568,6 +5720,7 @@ export default function TicketBookingList() {
                     hasStatusFilter ||
                     hasCheckInDateRangeFilter ||
                     needsReviewEaMismatch ||
+                    lxMismatchOnlyFilter ||
                     pendingRequestOnlyFilter ||
                     multiRnOnlyFilter
                       ? '검색 조건에 맞는 부킹이 없습니다.'
@@ -5576,23 +5729,34 @@ export default function TicketBookingList() {
                 ) : ticketTableGroups ? (
                   <div className="space-y-5">
                     {ticketTableGroups.map((g, gi) => {
-                      const totalEa = g.rows.reduce((s, b) => s + b.ea, 0);
-                      const totalPrice = g.rows.reduce((s, b) => s + (Number(b.total_price) || 0), 0);
+                      const totalEa = g.rows.reduce((s, b) => s + (isTicketBookingCountingStatus(b) ? b.ea : 0), 0);
+                      const totalPrice = g.rows.reduce(
+                        (s, b) => s + (isTicketBookingCountingStatus(b) ? ticketBookingLineTotalUsd(b) : 0),
+                        0
+                      );
                       const palette = RN_TABLE_GROUP_STYLES[gi % RN_TABLE_GROUP_STYLES.length];
                       const anyChangePending = g.rows.some(isTicketBookingChangeRequestPending);
                       const groupHeaderTitle =
                         ticketTableLayout === 'byRn' ? `RN# ${g.label}` : g.label;
+                      const dateMismatchRing =
+                        g.dateView?.hasMismatch ? 'ring-2 ring-red-500 ring-offset-1' : '';
                       return (
                         <div
                           key={g.key}
-                          className={`${palette.mobileSection} ${anyChangePending ? 'ring-2 ring-red-600 ring-offset-2' : ''}`}
+                          className={`${palette.mobileSection} ${anyChangePending ? 'ring-2 ring-red-600 ring-offset-2' : dateMismatchRing}`}
                         >
                           <div className={`${palette.mobileHeader} text-xs`}>
                             <div className="text-sm font-bold text-neutral-900 tracking-tight leading-snug">
-                              {groupHeaderTitle}
+                              {ticketTableLayout === 'byDate'
+                                ? locale === 'ko'
+                                  ? `체크인 ${groupHeaderTitle}`
+                                  : `Check-in ${groupHeaderTitle}`
+                                : groupHeaderTitle}
                             </div>
+                            {g.dateView ? renderDateViewGroupSummary(g.dateView, 'mobile') : null}
                             <div className="mt-1 text-neutral-700 font-medium">
-                              {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
+                              {locale === 'ko' ? '티켓' : 'Tickets'}: {g.rows.length}건 · 수량 합 {totalEa}
+                              {locale === 'ko' ? '개' : ''} · ${totalPrice}
                             </div>
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                               {ticketTableLayout === 'byRn'
@@ -5628,8 +5792,15 @@ export default function TicketBookingList() {
 
                     if (ticketTableGroups) {
                       return ticketTableGroups.flatMap((g, gi) => {
-                        const totalEa = g.rows.reduce((s, b) => s + b.ea, 0);
-                        const totalPrice = g.rows.reduce((s, b) => s + (Number(b.total_price) || 0), 0);
+                        const totalEa = g.rows.reduce(
+                          (s, b) => s + (isTicketBookingCountingStatus(b) ? b.ea : 0),
+                          0
+                        );
+                        const totalPrice = g.rows.reduce(
+                          (s, b) =>
+                            s + (isTicketBookingCountingStatus(b) ? ticketBookingLineTotalUsd(b) : 0),
+                          0
+                        );
                         const palette = RN_TABLE_GROUP_STYLES[gi % RN_TABLE_GROUP_STYLES.length];
                         const groupHeaderTitle =
                           ticketTableLayout === 'byRn' ? `RN# ${g.label}` : g.label;
@@ -5644,15 +5815,24 @@ export default function TicketBookingList() {
                             </tr>
                           );
                         }
+                        const dateHeaderClass = g.dateView?.hasMismatch
+                          ? 'bg-red-100 border-y border-red-300 shadow-sm'
+                          : palette.headerRow;
                         nodes.push(
                           <Fragment key={g.key}>
-                            <tr className={`align-middle ${palette.headerRow}`}>
+                            <tr className={`align-middle ${dateHeaderClass}`}>
                               <td colSpan={ticketDesktopColCount} className="align-middle px-3 py-2.5 text-xs border-0">
                                 <span className="text-sm font-bold text-neutral-900 tracking-tight leading-snug">
-                                  {groupHeaderTitle}
+                                  {ticketTableLayout === 'byDate'
+                                    ? locale === 'ko'
+                                      ? `체크인 ${groupHeaderTitle}`
+                                      : `Check-in ${groupHeaderTitle}`
+                                    : groupHeaderTitle}
                                 </span>
-                                <span className="text-neutral-800 font-medium ml-3">
-                                  {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
+                                {g.dateView ? renderDateViewGroupSummary(g.dateView, 'desktop') : null}
+                                <span className="text-neutral-800 font-medium ml-3 block sm:inline mt-1 sm:mt-0">
+                                  {locale === 'ko' ? '티켓' : 'Tickets'}: {g.rows.length}건 · 수량 합{' '}
+                                  {totalEa}개 · 총액 ${totalPrice}
                                 </span>
                                 {ticketTableLayout === 'byRn'
                                   ? renderLegacyOffsetConsolidateButton(g.key, g.rows, 'desktop')
@@ -5683,6 +5863,7 @@ export default function TicketBookingList() {
                   hasStatusFilter ||
                   hasCheckInDateRangeFilter ||
                   needsReviewEaMismatch ||
+                  lxMismatchOnlyFilter ||
                   pendingRequestOnlyFilter ||
                   multiRnOnlyFilter
                     ? '검색 조건에 맞는 부킹이 없습니다.'
@@ -5693,6 +5874,7 @@ export default function TicketBookingList() {
                     !hasStatusFilter &&
                     !hasCheckInDateRangeFilter &&
                     !needsReviewEaMismatch &&
+                    !lxMismatchOnlyFilter &&
                     !pendingRequestOnlyFilter &&
                     !multiRnOnlyFilter &&
                     '새 부킹을 추가해보세요.'}
@@ -6402,19 +6584,37 @@ export default function TicketBookingList() {
         {sortedBookings.length > 0 && viewMode !== 'calendar' && (
           <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/90 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <p className="text-xs text-gray-600 sm:text-sm">
-              전체 <span className="font-semibold text-gray-800">{sortedBookings.length}</span>건 중{' '}
-              <span className="font-semibold text-gray-800">
-                {(listPageEffective - 1) * listPageSize + 1}
-              </span>
-              –
-              <span className="font-semibold text-gray-800">
-                {Math.min(listPageEffective * listPageSize, sortedBookings.length)}
-              </span>
-              번째
+              {ticketTableLayout === 'byDate' && dateViewGroups ? (
+                <>
+                  전체 <span className="font-semibold text-gray-800">{dateViewGroups.length}</span>일 중{' '}
+                  <span className="font-semibold text-gray-800">
+                    {(listPageEffective - 1) * listPageSize + 1}
+                  </span>
+                  –
+                  <span className="font-semibold text-gray-800">
+                    {Math.min(listPageEffective * listPageSize, dateViewGroups.length)}
+                  </span>
+                  일째
+                </>
+              ) : (
+                <>
+                  전체 <span className="font-semibold text-gray-800">{sortedBookings.length}</span>건 중{' '}
+                  <span className="font-semibold text-gray-800">
+                    {(listPageEffective - 1) * listPageSize + 1}
+                  </span>
+                  –
+                  <span className="font-semibold text-gray-800">
+                    {Math.min(listPageEffective * listPageSize, sortedBookings.length)}
+                  </span>
+                  번째
+                </>
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <label className="flex items-center gap-1.5 text-xs text-gray-600 sm:text-sm">
-                <span className="whitespace-nowrap">페이지당</span>
+                <span className="whitespace-nowrap">
+                  {ticketTableLayout === 'byDate' ? '페이지당(날짜)' : '페이지당'}
+                </span>
                 <select
                   value={listPageSize}
                   onChange={(e) => {
@@ -6423,10 +6623,10 @@ export default function TicketBookingList() {
                   }}
                   className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
                 >
-                  <option value={25}>25건</option>
-                  <option value={50}>50건</option>
-                  <option value={100}>100건</option>
-                  <option value={200}>200건</option>
+                  <option value={25}>{ticketTableLayout === 'byDate' ? '25일' : '25건'}</option>
+                  <option value={50}>{ticketTableLayout === 'byDate' ? '50일' : '50건'}</option>
+                  <option value={100}>{ticketTableLayout === 'byDate' ? '100일' : '100건'}</option>
+                  <option value={200}>{ticketTableLayout === 'byDate' ? '200일' : '200건'}</option>
                 </select>
               </label>
               <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">

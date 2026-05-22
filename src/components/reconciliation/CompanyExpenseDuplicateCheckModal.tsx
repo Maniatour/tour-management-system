@@ -52,7 +52,66 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 
+const LEDGER_GROUP_PAGE_SIZES = [5, 10, 20, 30] as const
+const DEFAULT_LEDGER_GROUP_PAGE_SIZE = 10
+
 export type CompanyExpenseDuplicateCheckMode = 'statement' | 'ledger'
+
+function ledgerGroupKey(group: UnifiedLedgerDuplicateExpenseRow[]): string {
+  return canonGroupFingerprint(group.map((r) => r.source_key))
+}
+
+function rowSearchBlob(row: UnifiedLedgerDuplicateExpenseRow): string {
+  const parts = [
+    UNIFIED_EXPENSE_SOURCE_LABEL[row.source_table],
+    row.id,
+    row.paid_to,
+    row.paid_for,
+    row.description,
+    row.category,
+    row.standard_paid_for,
+    row.display_payment_method,
+    row.display_statement_status,
+    row.display_financial_account,
+    row.source_context,
+    row.source_key,
+    row.amount != null ? String(row.amount) : '',
+    row.submit_on,
+    row.tour_reference?.tourName,
+    row.tour_reference?.tourDate,
+    row.detail_tour_id,
+    row.detail_reservation_id
+  ]
+  return parts
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function ledgerGroupMatchesSearch(group: UnifiedLedgerDuplicateExpenseRow[], q: string): boolean {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return true
+  return group.some((row) => rowSearchBlob(row).includes(needle))
+}
+
+function ledgerGroupMatchesDateRange(
+  group: UnifiedLedgerDuplicateExpenseRow[],
+  dateFrom: string,
+  dateTo: string
+): boolean {
+  if (!dateFrom && !dateTo) return true
+  return group.some((row) => {
+    const ymd = String(row.submit_on ?? '').slice(0, 10)
+    if (!ymd || ymd.length !== 10) return false
+    if (dateFrom && ymd < dateFrom) return false
+    if (dateTo && ymd > dateTo) return false
+    return true
+  })
+}
+
+function ledgerGroupTotalPages(totalFiltered: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(Math.max(0, totalFiltered) / pageSize))
+}
 
 type Props = {
   open: boolean
@@ -326,7 +385,12 @@ export default function CompanyExpenseDuplicateCheckModal({
   const [err, setErr] = useState<string | null>(null)
   const [statementRows, setStatementRows] = useState<BulkCompanyDuplicateRow[] | null>(null)
   const [ledgerGroups, setLedgerGroups] = useState<UnifiedLedgerDuplicateExpenseRow[][] | null>(null)
-  const [deleteKeysByGroup, setDeleteKeysByGroup] = useState<Record<number, string[]>>({})
+  const [ledgerDateFrom, setLedgerDateFrom] = useState('')
+  const [ledgerDateTo, setLedgerDateTo] = useState('')
+  const [ledgerSearch, setLedgerSearch] = useState('')
+  const [ledgerPage, setLedgerPage] = useState(1)
+  const [ledgerPageSize, setLedgerPageSize] = useState(DEFAULT_LEDGER_GROUP_PAGE_SIZE)
+  const [deleteKeysByGroup, setDeleteKeysByGroup] = useState<Record<string, string[]>>({})
   const [deleteConfirm, setDeleteConfirm] = useState<{ deleteKeys: string[] } | null>(null)
   const [tourDetailModalId, setTourDetailModalId] = useState<string | null>(null)
   const [reservationDetailModalId, setReservationDetailModalId] = useState<string | null>(null)
@@ -351,11 +415,46 @@ export default function CompanyExpenseDuplicateCheckModal({
     setDeleteKeysByGroup({})
   }, [])
 
+  const filteredLedgerGroups = useMemo(() => {
+    if (!ledgerGroups) return null
+    return ledgerGroups.filter(
+      (group) =>
+        ledgerGroupMatchesDateRange(group, ledgerDateFrom, ledgerDateTo) &&
+        ledgerGroupMatchesSearch(group, ledgerSearch)
+    )
+  }, [ledgerGroups, ledgerDateFrom, ledgerDateTo, ledgerSearch])
+
+  const ledgerTotalPages = useMemo(
+    () => ledgerGroupTotalPages(filteredLedgerGroups?.length ?? 0, ledgerPageSize),
+    [filteredLedgerGroups?.length, ledgerPageSize]
+  )
+
+  const safeLedgerPage = Math.min(Math.max(1, ledgerPage), ledgerTotalPages)
+
+  const paginatedLedgerGroups = useMemo(() => {
+    if (!filteredLedgerGroups) return null
+    const start = (safeLedgerPage - 1) * ledgerPageSize
+    return filteredLedgerGroups.slice(start, start + ledgerPageSize)
+  }, [filteredLedgerGroups, safeLedgerPage, ledgerPageSize])
+
+  useEffect(() => {
+    if (ledgerPage !== safeLedgerPage) setLedgerPage(safeLedgerPage)
+  }, [ledgerPage, safeLedgerPage])
+
+  useEffect(() => {
+    setLedgerPage(1)
+  }, [ledgerDateFrom, ledgerDateTo, ledgerSearch, ledgerPageSize])
+
   useEffect(() => {
     if (!open) {
       setErr(null)
       setStatementRows(null)
       setLedgerGroups(null)
+      setLedgerDateFrom('')
+      setLedgerDateTo('')
+      setLedgerSearch('')
+      setLedgerPage(1)
+      setLedgerPageSize(DEFAULT_LEDGER_GROUP_PAGE_SIZE)
       setDeleteKeysByGroup({})
       setDeleteConfirm(null)
       setTourDetailModalId(null)
@@ -409,11 +508,11 @@ export default function CompanyExpenseDuplicateCheckModal({
     setDeleteKeysByGroup({})
   }
 
-  function toggleDeleteKey(groupIndex: number, sourceKey: string, checked: boolean) {
+  function toggleDeleteKey(groupKey: string, sourceKey: string, checked: boolean) {
     setDeleteKeysByGroup((prev) => {
-      const cur = prev[groupIndex] ?? []
+      const cur = prev[groupKey] ?? []
       const next = checked ? [...new Set([...cur, sourceKey])] : cur.filter((k) => k !== sourceKey)
-      return { ...prev, [groupIndex]: next }
+      return { ...prev, [groupKey]: next }
     })
   }
 
@@ -563,8 +662,8 @@ export default function CompanyExpenseDuplicateCheckModal({
                   <span className="inline-block ml-1 transition group-open:rotate-180">▾</span>
                 </summary>
                 <p className="mt-2 leading-relaxed">
-                  전체 지출을 금액(±{BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)로 묶습니다. 투어
-                  지출끼리 연결 투어가 다르면 제외합니다. 금액 0은 제외합니다.
+                  전체 지출을 스캔해 금액(±{BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)로 묶습니다.
+                  투어 지출끼리 연결 투어가 다르면 제외합니다. 상단에서 등록일·검색·페이지로 목록을 좁힐 수 있습니다.
                 </p>
               </details>
             ) : null}
@@ -577,18 +676,83 @@ export default function CompanyExpenseDuplicateCheckModal({
                 </>
               ) : (
                 <>
-                  날짜 필터와 상관없이 <strong>전체 데이터</strong>를 조회합니다. <strong>회사·투어·예약·입장권(확정)</strong> 네
-                  종류 지출을 한 풀에 넣어 비교하며,{' '}
-                  <strong>같은 테이블 안끼리만이 아니라</strong> 출처가 달라도(예: 회사 지출 ↔ 투어 지출) 금액(±
+                  승인·대기·입장권 확정 지출 <strong>전체</strong>를 스캔해 중복 의심 그룹을 찾습니다.{' '}
+                  <strong>회사·투어·예약·입장권</strong>을 한 풀에 넣어, 출처가 달라도(예: 회사 ↔ 투어) 금액(±
                   {BULK_COMPANY_DUP_AMOUNT_EPS})·등록일(±{BULK_COMPANY_DUP_DAY_WINDOW}일)이 비슷하면 한 그룹으로 묶습니다.{' '}
-                  <strong>투어 지출끼리</strong>는 연결된 투어가 다르면 같은 금액·등록일이어도 묶지 않습니다. 우연히 겹친 경우{' '}
-                  <strong>다른 지출로 숨김</strong>을 남기거나, 동일 거래 중복이면{' '}
-                  <strong>삭제할 지출을 선택해 삭제 보관함으로 옮기세요</strong>. 삭제한 지출은{' '}
-                  <strong>삭제된 지출 보관함</strong>에서 복구할 수 있습니다.
+                  <strong>투어 지출끼리</strong> 연결 투어가 다르면 제외합니다. 아래 <strong>등록일·검색·페이지</strong>로
+                  목록을 좁힐 수 있습니다(그룹 안 <strong>한 건이라도</strong> 등록일이 기간 안이면 표시). 우연히 겹친 경우{' '}
+                  <strong>다른 지출로 숨김</strong>, 동일 거래면 <strong>삭제 보관함</strong>으로 옮기세요.
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
+
+          {mode === 'ledger' && !loading ? (
+            <div className="px-3 sm:px-4 py-2.5 border-b border-slate-100 shrink-0 space-y-2 bg-slate-50/80">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                <label className="flex flex-col gap-0.5 text-[11px] text-slate-600 min-w-[8.5rem]">
+                  <span className="font-medium text-slate-700">등록일 시작</span>
+                  <input
+                    type="date"
+                    value={ledgerDateFrom}
+                    onChange={(e) => setLedgerDateFrom(e.target.value)}
+                    className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
+                  />
+                </label>
+                <label className="flex flex-col gap-0.5 text-[11px] text-slate-600 min-w-[8.5rem]">
+                  <span className="font-medium text-slate-700">등록일 끝</span>
+                  <input
+                    type="date"
+                    value={ledgerDateTo}
+                    onChange={(e) => setLedgerDateTo(e.target.value)}
+                    className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
+                  />
+                </label>
+                <label className="flex flex-col gap-0.5 text-[11px] text-slate-600 flex-1 min-w-[12rem]">
+                  <span className="font-medium text-slate-700">검색</span>
+                  <input
+                    type="search"
+                    value={ledgerSearch}
+                    onChange={(e) => setLedgerSearch(e.target.value)}
+                    placeholder="지출 ID, Paid to/for, 금액, 투어명…"
+                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
+                  />
+                </label>
+                {(ledgerDateFrom || ledgerDateTo || ledgerSearch.trim()) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 text-xs shrink-0"
+                    onClick={() => {
+                      setLedgerDateFrom('')
+                      setLedgerDateTo('')
+                      setLedgerSearch('')
+                    }}
+                  >
+                    필터 초기화
+                  </Button>
+                ) : null}
+              </div>
+              {ledgerGroups ? (
+                <p className="text-[11px] text-slate-600 tabular-nums">
+                  중복 의심 그룹{' '}
+                  <strong className="text-slate-900">{filteredLedgerGroups?.length ?? 0}</strong>
+                  {filteredLedgerGroups && ledgerGroups.length !== filteredLedgerGroups.length ? (
+                    <span> / 전체 {ledgerGroups.length}</span>
+                  ) : null}
+                  건
+                  {(filteredLedgerGroups?.length ?? 0) > 0 ? (
+                    <span>
+                      {' '}
+                      · {(safeLedgerPage - 1) * ledgerPageSize + 1}–
+                      {Math.min(safeLedgerPage * ledgerPageSize, filteredLedgerGroups?.length ?? 0)}번째 그룹 표시
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="px-3 sm:px-4 py-3 overflow-y-auto flex-1 min-h-0 text-[11px] sm:text-xs space-y-2">
             {err ? <p className="text-red-700 text-sm">{err}</p> : null}
@@ -612,8 +776,32 @@ export default function CompanyExpenseDuplicateCheckModal({
 
             {!loading && !err && mode === 'ledger' && ledgerGroups && ledgerGroups.length === 0 ? (
               <p className="text-emerald-800">
-                해당 기간·기준에서 중복 의심 그룹이 없습니다. (금액 ±{BULK_COMPANY_DUP_AMOUNT_EPS}, 등록일 ±
-                {BULK_COMPANY_DUP_DAY_WINDOW}일, 승인·대기·입장권 확정)
+                중복 의심 그룹이 없습니다. (금액 ±{BULK_COMPANY_DUP_AMOUNT_EPS}, 등록일 ±{BULK_COMPANY_DUP_DAY_WINDOW}일,
+                승인·대기·입장권 확정)
+              </p>
+            ) : null}
+
+            {!loading &&
+            !err &&
+            mode === 'ledger' &&
+            ledgerGroups &&
+            ledgerGroups.length > 0 &&
+            filteredLedgerGroups &&
+            filteredLedgerGroups.length === 0 ? (
+              <p className="text-slate-700">
+                조건에 맞는 중복 의심 그룹이 없습니다. 등록일·검색을 바꾸거나{' '}
+                <button
+                  type="button"
+                  className="text-blue-700 underline font-medium"
+                  onClick={() => {
+                    setLedgerDateFrom('')
+                    setLedgerDateTo('')
+                    setLedgerSearch('')
+                  }}
+                >
+                  필터 초기화
+                </button>
+                를 눌러 보세요.
               </p>
             ) : null}
 
@@ -701,28 +889,30 @@ export default function CompanyExpenseDuplicateCheckModal({
               </>
             ) : null}
 
-            {!loading && !err && mode === 'ledger' && ledgerGroups && ledgerGroups.length > 0 ? (
+            {!loading && !err && mode === 'ledger' && paginatedLedgerGroups && paginatedLedgerGroups.length > 0 ? (
               <div className="space-y-4">
-                {ledgerGroups.map((group, gi) => {
+                {paginatedLedgerGroups.map((group, pageGi) => {
+                  const groupKey = ledgerGroupKey(group)
+                  const displayGroupNo = (safeLedgerPage - 1) * ledgerPageSize + pageGi + 1
                   const refAmt = group[0]?.amount
                   const amtLabel =
                     refAmt != null && Number.isFinite(refAmt)
                       ? `$${refAmt.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
                       : '—'
-                  const selectedDeleteKeys = deleteKeysByGroup[gi] ?? []
+                  const selectedDeleteKeys = deleteKeysByGroup[groupKey] ?? []
                   const selectedDeleteKeySet = new Set(selectedDeleteKeys)
                   return (
                     <div
-                      key={`ledger-group-${gi}-${group.map((r) => r.source_key).join('-')}`}
+                      key={`ledger-group-${groupKey}`}
                       className="rounded-lg border-2 border-amber-400/90 bg-gradient-to-b from-amber-50/90 to-white overflow-hidden shadow-sm ring-1 ring-amber-200/60"
                     >
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center px-2 sm:px-3 py-2 bg-amber-100/90 border-b border-amber-300/80 text-xs text-amber-950">
                         <div className="flex items-center gap-2 min-w-0 flex-wrap">
                           <span
                             className="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-full bg-amber-600 px-2 text-[11px] font-bold text-white shrink-0"
-                            title={`중복 의심 그룹 ${gi + 1}`}
+                            title={`중복 의심 그룹 ${displayGroupNo}`}
                           >
-                            {gi + 1}
+                            {displayGroupNo}
                           </span>
                           <span className="font-semibold">중복 의심 그룹</span>
                           <span className="text-slate-700 text-[11px] sm:text-xs">
@@ -757,13 +947,13 @@ export default function CompanyExpenseDuplicateCheckModal({
                             key={`${row.source_key}-m`}
                             row={row}
                             rowIndex={ri}
-                            groupIndex={gi}
+                            groupIndex={displayGroupNo - 1}
                             locale={locale}
                             selected={selectedDeleteKeySet.has(row.source_key)}
                             editing={editingSourceKey === row.source_key}
                             editDraft={editingSourceKey === row.source_key ? editDraft : null}
                             editSaving={editSaving}
-                            onToggleDelete={(checked) => toggleDeleteKey(gi, row.source_key, checked)}
+                            onToggleDelete={(checked) => toggleDeleteKey(groupKey, row.source_key, checked)}
                             onStartEdit={() => startExpenseEdit(row)}
                             onCancelEdit={cancelExpenseEdit}
                             onDraftChange={setEditDraft}
@@ -806,8 +996,8 @@ export default function CompanyExpenseDuplicateCheckModal({
                                     type="checkbox"
                                     className="h-3.5 w-3.5 accent-red-600"
                                     checked={selectedDeleteKeySet.has(row.source_key)}
-                                    onChange={(e) => toggleDeleteKey(gi, row.source_key, e.target.checked)}
-                                    aria-label={`그룹 ${gi + 1}에서 삭제할 지출 선택`}
+                                    onChange={(e) => toggleDeleteKey(groupKey, row.source_key, e.target.checked)}
+                                    aria-label={`그룹 ${displayGroupNo}에서 삭제할 지출 선택`}
                                   />
                                 </td>
                                 <td className="py-2 px-2 whitespace-nowrap text-slate-800 font-medium">
@@ -905,6 +1095,57 @@ export default function CompanyExpenseDuplicateCheckModal({
                     </div>
                   )
                 })}
+                {(filteredLedgerGroups?.length ?? 0) > ledgerPageSize ? (
+                  <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-2 pt-1 pb-2 text-xs text-slate-700 border-t border-slate-100">
+                    <p className="tabular-nums text-slate-600">
+                      그룹 {(safeLedgerPage - 1) * ledgerPageSize + 1}–
+                      {Math.min(safeLedgerPage * ledgerPageSize, filteredLedgerGroups?.length ?? 0)} /{' '}
+                      {filteredLedgerGroups?.length ?? 0}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-1.5 text-slate-600 whitespace-nowrap">
+                        <span>페이지당</span>
+                        <select
+                          value={ledgerPageSize}
+                          onChange={(e) => setLedgerPageSize(Number(e.target.value))}
+                          className="border border-slate-300 rounded-md px-2 py-1 text-xs bg-white"
+                        >
+                          {LEDGER_GROUP_PAGE_SIZES.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                        <span>그룹</span>
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs px-2.5"
+                          disabled={safeLedgerPage <= 1}
+                          onClick={() => setLedgerPage(safeLedgerPage - 1)}
+                        >
+                          이전
+                        </Button>
+                        <span className="tabular-nums font-medium text-slate-800 min-w-[5.5rem] text-center px-1">
+                          {safeLedgerPage} / {ledgerTotalPages}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs px-2.5"
+                          disabled={safeLedgerPage >= ledgerTotalPages}
+                          onClick={() => setLedgerPage(safeLedgerPage + 1)}
+                        >
+                          다음
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

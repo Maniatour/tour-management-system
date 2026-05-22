@@ -12,6 +12,7 @@ import React, {
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
+  ArrowLeftRight,
   Building2,
   CalendarDays,
   ChevronDown,
@@ -52,6 +53,14 @@ import {
   type ExpenseReconSourceTable
 } from '@/lib/expense-reconciliation-similar-lines'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
+import {
+  deleteStatementLinePair,
+  fetchStatementLinePairsForLineIds,
+  insertStatementLinePair,
+  normalizeStatementLinePairEndpoints,
+  type StatementLinePairRow,
+} from '@/lib/statement-line-pairs'
+import StatementLinePairPickerDialog from '@/components/reconciliation/StatementLinePairPickerDialog'
 
 /** getSession()은 세션 갱신·Strict Mode 등으로 Abort 되어 "signal is aborted"가 날 수 있음 — 저장된 JWT 우선 */
 function getStoredAccessToken(): string | null {
@@ -147,6 +156,13 @@ const PERSONAL_PARTNER_OPTIONS: { value: string; label: string }[] = [
 
 /** CSV 가져오기 모달 — 미리보기 행 수 */
 const CSV_IMPORT_PREVIEW_MAX = 5
+
+/** 명세 대조 «전체» 탭 — 활성 금융 계정 전부 합산·검색 */
+export const RECONCILIATION_ALL_ACCOUNTS_ID = '__all__'
+
+export function isReconciliationAllAccountsFilter(accountId: string): boolean {
+  return accountId === RECONCILIATION_ALL_ACCOUNTS_ID
+}
 
 function describeCsvImportInvertRule(account: FinancialAccount): {
   ruleLabel: string
@@ -598,6 +614,89 @@ async function fetchAllStatementLinesForImportChunk(importChunk: string[]): Prom
     from += STATEMENT_LINES_FETCH_PAGE
   }
   return out
+}
+
+/** 한 금융 계정의 명세 import·줄·매칭 로드(중첩 자식 계정 dedupe 포함) */
+async function fetchLinesAndMatchesForFinancialAccount(
+  accountId: string,
+  imports: StatementImport[],
+  accounts: FinancialAccount[]
+): Promise<{ lines: StatementLine[]; matches: ReconciliationMatchRow[] }> {
+  const importIds = imports
+    .filter((im) => im.financial_account_id === accountId)
+    .map((im) => im.id)
+    .sort()
+  if (importIds.length === 0) return { lines: [], matches: [] }
+
+  const parentAcc = accounts.find((a) => a.id === accountId)
+  const nestedChildId =
+    parentAcc != null ? resolveNestedStatementChildAccountId(parentAcc, accounts) : null
+  const nestedChildImportIds =
+    nestedChildId == null
+      ? []
+      : imports
+          .filter((im) => im.financial_account_id === nestedChildId)
+          .map((im) => im.id)
+          .sort()
+
+  const perImportTasks: Promise<{ lines: StatementLine[]; matches: ReconciliationMatchRow[] }>[] = []
+  for (let i = 0; i < importIds.length; i += STATEMENT_IMPORT_LINE_CHUNK) {
+    const slice = importIds.slice(i, i + STATEMENT_IMPORT_LINE_CHUNK)
+    perImportTasks.push(
+      (async () => {
+        const partLines = await fetchAllStatementLinesForImportChunk(slice)
+        const partIds = partLines.map((l) => l.id)
+        let partMatches: ReconciliationMatchRow[] = []
+        if (partIds.length > 0) {
+          try {
+            partMatches = await fetchReconciliationMatchesForLineIds(partIds)
+          } catch (e) {
+            if (!isAbortLikeError(e)) console.error(e)
+          }
+        }
+        return { lines: partLines, matches: partMatches }
+      })()
+    )
+  }
+  const settled = await Promise.allSettled(perImportTasks)
+  const linesArr: StatementLine[] = []
+  let matchRows: ReconciliationMatchRow[] = []
+  for (const s of settled) {
+    if (s.status === 'fulfilled') {
+      linesArr.push(...s.value.lines)
+      matchRows.push(...s.value.matches)
+    } else if (!isAbortLikeError(s.reason)) {
+      console.error(s.reason)
+    }
+  }
+  linesArr.sort((a, b) => {
+    const da = a.posted_date || ''
+    const db = b.posted_date || ''
+    if (da !== db) return da.localeCompare(db)
+    return String(a.id).localeCompare(String(b.id))
+  })
+  matchRows = dedupeReconciliationMatchRows(matchRows)
+
+  if (nestedChildImportIds.length > 0) {
+    const childTasks: Promise<StatementLine[]>[] = []
+    for (let i = 0; i < nestedChildImportIds.length; i += STATEMENT_IMPORT_LINE_CHUNK) {
+      const slice = nestedChildImportIds.slice(i, i + STATEMENT_IMPORT_LINE_CHUNK)
+      childTasks.push(fetchAllStatementLinesForImportChunk(slice))
+    }
+    const childSettled = await Promise.allSettled(childTasks)
+    const childLines: StatementLine[] = []
+    for (const s of childSettled) {
+      if (s.status === 'fulfilled') childLines.push(...s.value)
+      else if (!isAbortLikeError(s.reason)) console.error(s.reason)
+    }
+    if (childLines.length > 0) {
+      linesArr.splice(0, linesArr.length, ...filterParentLinesRemovingNestedChildDuplicates(linesArr, childLines))
+      const kept = new Set(linesArr.map((l) => l.id))
+      matchRows = matchRows.filter((m) => kept.has(m.statement_line_id))
+    }
+  }
+
+  return { lines: linesArr, matches: matchRows }
 }
 
 /** 자동 매칭: PostgREST max-rows(1000) 회피 — submit_on 창 안 지출(입장권·호텔은 별도 병합 조회) */
@@ -1589,6 +1688,7 @@ export default function StatementReconciliationTab() {
   const [imports, setImports] = useState<StatementImport[]>([])
   const [lines, setLines] = useState<StatementLine[]>([])
   const [matches, setMatches] = useState<ReconciliationMatchRow[]>([])
+  const [linePairs, setLinePairs] = useState<StatementLinePairRow[]>([])
   const [teamDisplayNamesByEmail, setTeamDisplayNamesByEmail] = useState<Record<string, string>>({})
   /** 아래 명세 대조 표: 줄·매칭 Supabase 로드 중 */
   const [reconciliationLinesLoading, setReconciliationLinesLoading] = useState(false)
@@ -1734,6 +1834,8 @@ export default function StatementReconciliationTab() {
   const [matchedExpenseDetails, setMatchedExpenseDetails] = useState<Record<string, ExpenseOption>>({})
   const [paymentPickerLineId, setPaymentPickerLineId] = useState<string | null>(null)
   const [paymentPickerQuery, setPaymentPickerQuery] = useState('')
+  const [linePairPickerAnchorId, setLinePairPickerAnchorId] = useState<string | null>(null)
+  const [linePairPickerSaving, setLinePairPickerSaving] = useState(false)
   /** payment_records.reservation_id → customers.name (입금 연결 모달 표시용) */
   const [paymentPickerReservationCustomerNames, setPaymentPickerReservationCustomerNames] = useState<
     Record<string, string>
@@ -1948,7 +2050,15 @@ export default function StatementReconciliationTab() {
   const accountsRef = useRef(accounts)
   accountsRef.current = accounts
   const linesMatchesCacheRef = useRef<
-    Map<string, { loadedAt: number; lines: StatementLine[]; matches: ReconciliationMatchRow[] }>
+    Map<
+      string,
+      {
+        loadedAt: number
+        lines: StatementLine[]
+        matches: ReconciliationMatchRow[]
+        linePairs: StatementLinePairRow[]
+      }
+    >
   >(new Map())
 
   /** 명세 줄 로드 경합 시 이전 요청의 finally 가 로딩을 끄지 않도록 */
@@ -1958,7 +2068,7 @@ export default function StatementReconciliationTab() {
   /** 매칭 지출 상세 hydrate — 빈 응답·실패 후 expenseOptions 갱신마다 무한 재조회 방지 */
   const matchedExpenseHydrateAttemptedRef = useRef<Set<string>>(new Set())
 
-  /** 선택 금융 계정에 연결된 모든 명세 업로드의 줄·매칭을 합쳐 로드 */
+  /** 선택 금융 계정(또는 «전체»)에 연결된 명세 줄·매칭 로드 */
   const loadLinesAndMatchesForAccount = useCallback(async (accountId: string, options?: { force?: boolean }) => {
     const force = Boolean(options?.force)
     if (!accountId) {
@@ -1967,118 +2077,124 @@ export default function StatementReconciliationTab() {
       startTransition(() => {
         setLines([])
         setMatches([])
+        setLinePairs([])
       })
       return
     }
-    const importIds = importsRef.current
-      .filter((im) => im.financial_account_id === accountId)
-      .map((im) => im.id)
-      .sort()
+
+    const importsSnap = importsRef.current
+    const accountsSnap = accountsRef.current
+    const activeAccountIds = accountsSnap.filter((a) => a.is_active).map((a) => a.id).sort()
+    const activeAccountIdSet = new Set(activeAccountIds)
+
+    let cacheKey: string
+    let importIds: string[]
+
+    if (isReconciliationAllAccountsFilter(accountId)) {
+      importIds = importsSnap
+        .filter((im) => activeAccountIdSet.has(im.financial_account_id))
+        .map((im) => im.id)
+        .sort()
+      cacheKey = `${RECONCILIATION_ALL_ACCOUNTS_ID}|${importIds.join(',')}`
+    } else {
+      importIds = importsSnap
+        .filter((im) => im.financial_account_id === accountId)
+        .map((im) => im.id)
+        .sort()
+      const parentAcc = accountsSnap.find((a) => a.id === accountId)
+      const nestedChildId =
+        parentAcc != null ? resolveNestedStatementChildAccountId(parentAcc, accountsSnap) : null
+      const nestedChildImportIds =
+        nestedChildId == null
+          ? []
+          : importsSnap
+              .filter((im) => im.financial_account_id === nestedChildId)
+              .map((im) => im.id)
+              .sort()
+      cacheKey = `${accountId}|${importIds.join(',')}|n:${nestedChildImportIds.join(',')}`
+    }
+
     if (importIds.length === 0) {
       loadLinesGenRef.current += 1
       setReconciliationLinesLoading(false)
       startTransition(() => {
         setLines([])
         setMatches([])
+        setLinePairs([])
       })
       return
     }
-    const parentAcc = accountsRef.current.find((a) => a.id === accountId)
-    const nestedChildId =
-      parentAcc != null ? resolveNestedStatementChildAccountId(parentAcc, accountsRef.current) : null
-    const nestedChildImportIds =
-      nestedChildId == null
-        ? []
-        : importsRef.current
-            .filter((im) => im.financial_account_id === nestedChildId)
-            .map((im) => im.id)
-            .sort()
-    const cacheKey = `${accountId}|${importIds.join(',')}|n:${nestedChildImportIds.join(',')}`
+
     if (!force) {
       const cached = linesMatchesCacheRef.current.get(cacheKey)
       if (cached && Date.now() - cached.loadedAt < RECONCILIATION_LOAD_CACHE_TTL_MS) {
         startTransition(() => {
           setLines(cached.lines)
           setMatches(cached.matches)
+          setLinePairs(cached.linePairs)
         })
         setReconciliationLinesLoading(false)
         return
       }
     }
+
     const gen = ++loadLinesGenRef.current
     loadLinesInFlightRef.current += 1
     setReconciliationLinesLoading(true)
     try {
-      const perImportTasks: Promise<{
-        lines: StatementLine[]
-        matches: ReconciliationMatchRow[]
-      }>[] = []
-      for (let i = 0; i < importIds.length; i += STATEMENT_IMPORT_LINE_CHUNK) {
-        const slice = importIds.slice(i, i + STATEMENT_IMPORT_LINE_CHUNK)
-        perImportTasks.push(
-          (async () => {
-            const partLines = await fetchAllStatementLinesForImportChunk(slice)
-            const partIds = partLines.map((l) => l.id)
-            let partMatches: ReconciliationMatchRow[] = []
-            if (partIds.length > 0) {
-              try {
-                partMatches = await fetchReconciliationMatchesForLineIds(partIds)
-              } catch (e) {
-                /** 매칭만 실패해도 명세 줄은 반드시 유지 (이전엔 전 청크 reject 로 줄이 통째로 사라짐) */
-                if (!isAbortLikeError(e)) console.error(e)
-              }
-            }
-            return { lines: partLines, matches: partMatches }
-          })()
-        )
-      }
-      const settled = await Promise.allSettled(perImportTasks)
-      const linesArr: StatementLine[] = []
+      let linesArr: StatementLine[] = []
       let matchRows: ReconciliationMatchRow[] = []
-      for (const s of settled) {
-        if (s.status === 'fulfilled') {
-          linesArr.push(...s.value.lines)
-          matchRows.push(...s.value.matches)
-        } else if (!isAbortLikeError(s.reason)) {
-          console.error(s.reason)
-        }
-      }
-      linesArr.sort((a, b) => {
-        const da = a.posted_date || ''
-        const db = b.posted_date || ''
-        if (da !== db) return da.localeCompare(db)
-        return String(a.id).localeCompare(String(b.id))
-      })
-      matchRows = dedupeReconciliationMatchRows(matchRows)
 
-      if (nestedChildImportIds.length > 0) {
-        const childTasks: Promise<StatementLine[]>[] = []
-        for (let i = 0; i < nestedChildImportIds.length; i += STATEMENT_IMPORT_LINE_CHUNK) {
-          const slice = nestedChildImportIds.slice(i, i + STATEMENT_IMPORT_LINE_CHUNK)
-          childTasks.push(fetchAllStatementLinesForImportChunk(slice))
+      if (isReconciliationAllAccountsFilter(accountId)) {
+        const perAccount = await Promise.allSettled(
+          activeAccountIds.map((accId) =>
+            fetchLinesAndMatchesForFinancialAccount(accId, importsSnap, accountsSnap)
+          )
+        )
+        for (const s of perAccount) {
+          if (s.status === 'fulfilled') {
+            linesArr.push(...s.value.lines)
+            matchRows.push(...s.value.matches)
+          } else if (!isAbortLikeError(s.reason)) {
+            console.error(s.reason)
+          }
         }
-        const childSettled = await Promise.allSettled(childTasks)
-        const childLines: StatementLine[] = []
-        for (const s of childSettled) {
-          if (s.status === 'fulfilled') childLines.push(...s.value)
-          else if (!isAbortLikeError(s.reason)) console.error(s.reason)
-        }
-        if (childLines.length > 0) {
-          linesArr.splice(0, linesArr.length, ...filterParentLinesRemovingNestedChildDuplicates(linesArr, childLines))
-          const kept = new Set(linesArr.map((l) => l.id))
-          matchRows = matchRows.filter((m) => kept.has(m.statement_line_id))
+        linesArr.sort((a, b) => {
+          const da = a.posted_date || ''
+          const db = b.posted_date || ''
+          if (da !== db) return da.localeCompare(db)
+          return String(a.id).localeCompare(String(b.id))
+        })
+        matchRows = dedupeReconciliationMatchRows(matchRows)
+      } else {
+        const one = await fetchLinesAndMatchesForFinancialAccount(accountId, importsSnap, accountsSnap)
+        linesArr = one.lines
+        matchRows = one.matches
+      }
+
+      let pairRows: StatementLinePairRow[] = []
+      if (linesArr.length > 0) {
+        try {
+          pairRows = await fetchStatementLinePairsForLineIds(
+            supabase,
+            linesArr.map((l) => l.id)
+          )
+        } catch (e) {
+          if (!isAbortLikeError(e)) console.error(e)
         }
       }
 
       linesMatchesCacheRef.current.set(cacheKey, {
         loadedAt: Date.now(),
         lines: linesArr,
-        matches: matchRows
+        matches: matchRows,
+        linePairs: pairRows,
       })
       if (gen === loadLinesGenRef.current) {
         startTransition(() => {
           setLines(linesArr)
           setMatches(matchRows)
+          setLinePairs(pairRows)
         })
       }
     } finally {
@@ -2104,15 +2220,27 @@ export default function StatementReconciliationTab() {
     }
   }, [authUser?.email, loadAccounts])
 
-  const importIdsFingerprintForAccount = useMemo(
-    () =>
-      imports
-        .filter((im) => im.financial_account_id === filterAccountId)
+  const activeReconciliationAccountIdSet = useMemo(
+    () => new Set(accounts.filter((a) => a.is_active).map((a) => a.id)),
+    [accounts]
+  )
+
+  const isAllAccountsFilter = isReconciliationAllAccountsFilter(filterAccountId)
+
+  const importIdsFingerprintForAccount = useMemo(() => {
+    if (isAllAccountsFilter) {
+      return imports
+        .filter((im) => activeReconciliationAccountIdSet.has(im.financial_account_id))
         .map((im) => im.id)
         .sort()
-        .join(','),
-    [imports, filterAccountId]
-  )
+        .join(',')
+    }
+    return imports
+      .filter((im) => im.financial_account_id === filterAccountId)
+      .map((im) => im.id)
+      .sort()
+      .join(',')
+  }, [imports, filterAccountId, isAllAccountsFilter, activeReconciliationAccountIdSet])
 
   useEffect(() => {
     void loadLinesAndMatchesForAccount(filterAccountId)
@@ -2123,6 +2251,7 @@ export default function StatementReconciliationTab() {
     setExpensePickerQuery('')
     setPaymentPickerLineId(null)
     setPaymentPickerQuery('')
+    setLinePairPickerAnchorId(null)
   }, [filterAccountId])
 
   useEffect(() => {
@@ -2139,17 +2268,61 @@ export default function StatementReconciliationTab() {
     }
   }, [paymentPickerLineId, lines])
 
+  useEffect(() => {
+    if (linePairPickerAnchorId && !lines.some((l) => l.id === linePairPickerAnchorId)) {
+      setLinePairPickerAnchorId(null)
+    }
+  }, [linePairPickerAnchorId, lines])
+
   const paymentMethodFinancialAccountById = useMemo(() => {
     return new Map(paymentMethods.map((pm) => [pm.id, pm.financial_account_id ?? null]))
   }, [paymentMethods])
 
+  const importToFinancialAccountId = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const im of imports) {
+      if (im.financial_account_id) m.set(im.id, im.financial_account_id)
+    }
+    return m
+  }, [imports])
+
+  const financialAccountNameById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name])),
+    [accounts]
+  )
+
+  const accountNameForStatementLine = useCallback(
+    (line: StatementLine) => {
+      const accId = importToFinancialAccountId.get(line.statement_import_id)
+      if (!accId) return '—'
+      return financialAccountNameById.get(accId) ?? `${accId.slice(0, 8)}…`
+    },
+    [importToFinancialAccountId, financialAccountNameById]
+  )
+
+  const paymentMethodIdForFinancialAccount = useCallback(
+    (accountId: string | null | undefined) => {
+      if (!accountId) return null
+      return paymentMethods.find((p) => p.financial_account_id === accountId)?.id ?? null
+    },
+    [paymentMethods]
+  )
+
+  const expensePickerContextAccountId = useMemo(() => {
+    if (!isAllAccountsFilter) return filterAccountId
+    if (!expensePickerLineId) return null
+    const line = lines.find((l) => l.id === expensePickerLineId)
+    return line ? importToFinancialAccountId.get(line.statement_import_id) ?? null : null
+  }, [isAllAccountsFilter, filterAccountId, expensePickerLineId, lines, importToFinancialAccountId])
+
   const expenseMatchesSelectedFinancialAccount = useCallback(
     (o: Pick<ExpenseOption, 'payment_method'>) => {
       const pm = o.payment_method?.trim()
-      if (!pm || !filterAccountId) return false
-      return paymentMethodFinancialAccountById.get(pm) === filterAccountId
+      const targetAccountId = isAllAccountsFilter ? expensePickerContextAccountId : filterAccountId
+      if (!pm || !targetAccountId) return false
+      return paymentMethodFinancialAccountById.get(pm) === targetAccountId
     },
-    [paymentMethodFinancialAccountById, filterAccountId]
+    [paymentMethodFinancialAccountById, filterAccountId, isAllAccountsFilter, expensePickerContextAccountId]
   )
 
   const compareExpenseFinancialAccountPriority = useCallback(
@@ -2162,10 +2335,12 @@ export default function StatementReconciliationTab() {
     [expenseMatchesSelectedFinancialAccount]
   )
 
-  const importsForAccount = useMemo(
-    () => imports.filter((im) => im.financial_account_id === filterAccountId),
-    [imports, filterAccountId]
-  )
+  const importsForAccount = useMemo(() => {
+    if (isAllAccountsFilter) {
+      return imports.filter((im) => activeReconciliationAccountIdSet.has(im.financial_account_id))
+    }
+    return imports.filter((im) => im.financial_account_id === filterAccountId)
+  }, [imports, filterAccountId, isAllAccountsFilter, activeReconciliationAccountIdSet])
 
   const coverageImportIdSet = useMemo(
     () => new Set(importsForAccount.map((im) => im.id)),
@@ -2216,6 +2391,24 @@ export default function StatementReconciliationTab() {
     }
     return m
   }, [matches])
+
+  const pairsByLine = useMemo(() => {
+    const m = new Map<string, StatementLinePairRow[]>()
+    for (const p of linePairs) {
+      for (const lid of [p.outflow_line_id, p.inflow_line_id]) {
+        const arr = m.get(lid) || []
+        arr.push(p)
+        m.set(lid, arr)
+      }
+    }
+    return m
+  }, [linePairs])
+
+  const lineById = useMemo(() => {
+    const m = new Map<string, StatementLine>()
+    for (const l of lines) m.set(l.id, l)
+    return m
+  }, [lines])
 
   /** 지출 키 → 그 지출을 잡고 있는 명세 줄 id 집합 (드롭다운·행마다 matches.some 반복 제거) */
   const expenseKeyToLineIds = useMemo(() => {
@@ -2545,7 +2738,9 @@ export default function StatementReconciliationTab() {
 
   useEffect(() => {
     setFilterAccountId((prev) => {
-      if (prev && accountsForReconciliation.some((a) => a.id === prev)) return prev
+      if (prev && (isReconciliationAllAccountsFilter(prev) || accountsForReconciliation.some((a) => a.id === prev))) {
+        return prev
+      }
       const withData = accountsForReconciliation.find((a) =>
         imports.some((im) => im.financial_account_id === a.id)
       )
@@ -2628,11 +2823,13 @@ export default function StatementReconciliationTab() {
               : ''
       const amtHit =
         Boolean(amtNorm && qAmt !== '' && amtNorm.includes(qAmt)) || amtRaw.includes(q)
+      const accountName = accountNameForStatementLine(line).toLowerCase()
       return (
         shown.includes(q) ||
         desc.includes(q) ||
         merchant.includes(q) ||
         posted.includes(q) ||
+        accountName.includes(q) ||
         amtHit ||
         dir.includes(q) ||
         status.includes(q) ||
@@ -2641,7 +2838,7 @@ export default function StatementReconciliationTab() {
         statusKo.toLowerCase().includes(q)
       )
     })
-  }, [reconciliationLinesBeforeSearch, reconciliationSearchQuery])
+  }, [reconciliationLinesBeforeSearch, reconciliationSearchQuery, accountNameForStatementLine])
 
   const isStatementLineBulkSelectable = useCallback(
     (line: StatementLine) =>
@@ -4387,8 +4584,79 @@ export default function StatementReconciliationTab() {
     }
   }
 
+  const ticketBookingIdHintForLine = useCallback(
+    (lineId: string): string | null => {
+      const ms = matchesByLine.get(lineId) || []
+      const tb = ms.find((m) => m.source_table === 'ticket_bookings')
+      return tb?.source_id ?? null
+    },
+    [matchesByLine]
+  )
+
+  const addStatementLinePairLink = async (anchorLine: StatementLine, counterpartLineId: string) => {
+    if (!email) {
+      setMessage('로그인이 필요합니다.')
+      return
+    }
+    if (!filterAccountId) return
+    const counterpart = lineById.get(counterpartLineId)
+    if (!counterpart) {
+      setMessage('상대 명세 줄을 찾을 수 없습니다.')
+      return
+    }
+    setLinePairPickerSaving(true)
+    setMessage(null)
+    try {
+      const { outflowLineId, inflowLineId } = normalizeStatementLinePairEndpoints(
+        anchorLine.direction,
+        anchorLine.id,
+        counterpartLineId
+      )
+      const ticketHint =
+        ticketBookingIdHintForLine(outflowLineId) ?? ticketBookingIdHintForLine(inflowLineId)
+      await insertStatementLinePair(supabase, {
+        outflowLineId,
+        inflowLineId,
+        linkedBy: email,
+        ticketBookingId: ticketHint,
+      })
+      setLinePairPickerAnchorId(null)
+      setMessage('출금·수입 명세 상계를 연결했습니다.')
+      await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : '상계 연결 저장 실패')
+    } finally {
+      setLinePairPickerSaving(false)
+    }
+  }
+
+  const removeStatementLinePairLink = async (pairId: string) => {
+    if (!filterAccountId) return
+    setLoading(true)
+    setMessage(null)
+    try {
+      await deleteStatementLinePair(supabase, pairId)
+      setMessage('상계 연결을 해제했습니다.')
+      await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : '상계 연결 해제 실패')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const deferredExpensePickerQuery = useDeferredValue(expensePickerQuery)
   const deferredPaymentPickerQuery = useDeferredValue(paymentPickerQuery)
+
+  const linePairPickerAnchor = useMemo(
+    () => (linePairPickerAnchorId ? lineById.get(linePairPickerAnchorId) ?? null : null),
+    [linePairPickerAnchorId, lineById]
+  )
+
+  const linePairPickerAnchorPairs = useMemo(() => {
+    if (!linePairPickerAnchorId) return [] as StatementLinePairRow[]
+    return pairsByLine.get(linePairPickerAnchorId) || []
+  }, [linePairPickerAnchorId, pairsByLine])
 
   const expensePickerLine = useMemo(
     () => (expensePickerLineId ? lines.find((l) => l.id === expensePickerLineId) ?? null : null),
@@ -5594,10 +5862,16 @@ export default function StatementReconciliationTab() {
     operationalLedgerBulkAutoPagedProposals.length > 0 &&
     operationalLedgerBulkAutoPagedProposals.every((p) => operationalLedgerBulkAutoSelectedKeys.has(p.row.key))
 
-  const selectedAccountLabel = useMemo(
-    () => accountsForReconciliation.find((a) => a.id === filterAccountId)?.name ?? '—',
-    [accountsForReconciliation, filterAccountId]
-  )
+  const selectedAccountLabel = useMemo(() => {
+    if (isAllAccountsFilter) {
+      const n = accountsForReconciliation.length
+      return n > 0 ? `전체 (${n}개 계정)` : '전체'
+    }
+    return accountsForReconciliation.find((a) => a.id === filterAccountId)?.name ?? '—'
+  }, [accountsForReconciliation, filterAccountId, isAllAccountsFilter])
+
+  const singleAccountActionHint =
+    '단일 금융 계정 탭을 선택하면 사용할 수 있습니다. 전체 탭에서는 표 조회·검색·행별 연결만 가능합니다.'
 
   const displayNameForEmail = useCallback(
     (value: string | null | undefined) => {
@@ -5644,6 +5918,26 @@ export default function StatementReconciliationTab() {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-sm font-semibold text-slate-900 shrink-0">금융 계정</span>
           <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 min-w-0 flex-1">
+          {accountsForReconciliation.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setFilterAccountId(RECONCILIATION_ALL_ACCOUNTS_ID)}
+              className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium border transition-colors ${
+                isAllAccountsFilter
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span>전체</span>
+              <span
+                className={`text-[10px] shrink-0 ${
+                  isAllAccountsFilter ? 'text-slate-300' : 'text-slate-400'
+                }`}
+              >
+                검색
+              </span>
+            </button>
+          ) : null}
           {accountsForReconciliation.map((a) => (
             <button
               key={a.id}
@@ -5675,7 +5969,8 @@ export default function StatementReconciliationTab() {
           </div>
         </div>
         <p className="text-xs text-slate-600 w-full">
-          계정별로 업로드된 명세를 고릅니다. 탭을 바꾸면 해당 레지스터로 가져온 명세·거래가 불러와집니다.
+          <strong>전체</strong> 탭에서는 활성 금융 계정의 명세를 한꺼번에 불러와 검색할 수 있습니다. 개별 계정 탭에서는
+          해당 레지스터의 명세·자동 매칭·일괄 입력 등을 사용합니다.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -5831,7 +6126,13 @@ export default function StatementReconciliationTab() {
         }}
         line={adjustModalLine}
         email={email}
-        defaultPaymentMethodId={defaultPaymentMethodIdForAccount}
+        defaultPaymentMethodId={
+          adjustModalLine && isAllAccountsFilter
+            ? paymentMethodIdForFinancialAccount(
+                importToFinancialAccountId.get(adjustModalLine.statement_import_id)
+              )
+            : defaultPaymentMethodIdForAccount
+        }
         onCompleted={async () => {
           setMessage('보정 지출이 생성·연결되었습니다.')
           if (filterAccountId) {
@@ -6780,6 +7081,18 @@ export default function StatementReconciliationTab() {
             </div>
 
             <div className="border-t border-slate-200 pt-4 space-y-2">
+              <h3 className="font-semibold text-slate-900">출금·수입 상계 (티켓 환불 등)</h3>
+              <p className="leading-relaxed">
+                업체에 티켓비를 <strong>출금</strong>했다가 취소·환불로 <strong>수입</strong>이 들어오면, 한 줄에 지출·입금
+                기록을 동시에 넣지 않습니다. <strong>출금</strong> 줄은 <code className="text-xs bg-slate-100 px-1 rounded border">ticket_bookings</code> 등
+                으로 <AccountingTerm termKey="매칭">매칭</AccountingTerm>하고, <strong>수입</strong> 줄은 같은 행의{' '}
+                <strong>+ 상계 연결…</strong>로 짝이 되는 반대 방향 명세를 고릅니다.{' '}
+                <code className="text-xs bg-slate-100 px-1 rounded border">reconciliation_matches</code>와 별도이며, 순현금·대조
+                추적용입니다.
+              </p>
+            </div>
+
+            <div className="border-t border-slate-200 pt-4 space-y-2">
               <h3 className="font-semibold text-slate-900">CSV 형식 안내</h3>
               <p className="leading-relaxed">
                 첫 줄에 <strong>헤더</strong>가 있어야 합니다. 날짜 컬럼은 <code className="text-xs">Date</code>,{' '}
@@ -7341,6 +7654,11 @@ export default function StatementReconciliationTab() {
                   value={reconciliationSearchQuery}
                   onChange={(e) => setReconciliationSearchQuery(e.target.value)}
                   autoComplete="off"
+                  placeholder={
+                    isAllAccountsFilter
+                      ? '전체 계정 — 설명·금액·계정명…'
+                      : '설명·금액·일자…'
+                  }
                   aria-label="명세 대조 표 검색"
                 />
                 {reconciliationSearchQuery ? (
@@ -7513,13 +7831,18 @@ export default function StatementReconciliationTab() {
               loading ||
               reconciliationLinesLoading ||
               !filterAccountId ||
+              isAllAccountsFilter ||
               !accountExpenseWindow ||
               autoMatchEligibleStatementLines.length === 0 ||
               autoMatchPreviewOpen ||
               autoMatchApplying ||
               autoMatchModeDialogOpen
             }
-            title="조건(정확 금액·비슷한 금액·금액만)을 고른 뒤 미리보기를 실행합니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다."
+            title={
+              isAllAccountsFilter
+                ? singleAccountActionHint
+                : '조건(정확 금액·비슷한 금액·금액만)을 고른 뒤 미리보기를 실행합니다. 표에 보이는 페이지의 출금·미연결 줄만 대상입니다.'
+            }
           >
             <Wand2 className="h-4 w-4 mr-1 shrink-0" />
             <AccountingTerm termKey="자동매칭">자동 매칭</AccountingTerm>
@@ -7543,11 +7866,16 @@ export default function StatementReconciliationTab() {
               loading ||
               reconciliationLinesLoading ||
               !filterAccountId ||
+              isAllAccountsFilter ||
               !accountExpenseWindow ||
               !canMutateStatementUploads ||
               bulkCompanyExpenseCandidates.length === 0
             }
-            title="회사·투어·예약·입장권 지출을 미리보기에서 고른 뒤 일괄 저장합니다. 회사 지출은 규칙·과거 설명으로 제안됩니다. 대상은 표의 출금·미연결 줄 최대 200건입니다."
+            title={
+              isAllAccountsFilter
+                ? singleAccountActionHint
+                : '회사·투어·예약·입장권 지출을 미리보기에서 고른 뒤 일괄 저장합니다. 회사 지출은 규칙·과거 설명으로 제안됩니다. 대상은 표의 출금·미연결 줄 최대 200건입니다.'
+            }
           >
             <ListPlus className="h-4 w-4 mr-1 shrink-0" />
             지출 일괄 입력
@@ -7563,11 +7891,16 @@ export default function StatementReconciliationTab() {
               loading ||
               reconciliationLinesLoading ||
               !filterAccountId ||
+              isAllAccountsFilter ||
               !accountExpenseWindow ||
               !canMutateStatementUploads ||
               selectedBulkLineIds.size === 0
             }
-            title="표에서 체크한 출금·미연결 줄에 paid for·paid to·표준 카테고리(회사·투어 지출)를 일괄 적용합니다."
+            title={
+              isAllAccountsFilter
+                ? singleAccountActionHint
+                : '표에서 체크한 출금·미연결 줄에 paid for·paid to·표준 카테고리(회사·투어 지출)를 일괄 적용합니다.'
+            }
           >
             <ListChecks className="h-4 w-4 mr-1 shrink-0" />
             선택 일괄 입력
@@ -7595,13 +7928,15 @@ export default function StatementReconciliationTab() {
             type="button"
             variant="outline"
             onClick={lockImport}
-            disabled={loading || !lockTargetImport || !canMutateStatementUploads}
+            disabled={loading || isAllAccountsFilter || !lockTargetImport || !canMutateStatementUploads}
             title={
-              !canMutateStatementUploads
-                ? 'info@maniatour.com 또는 team 직책 super만 잠글 수 있습니다.'
-                : importsForAccount.length > 1
-                  ? '가장 최근 명세 업로드(기간 종료일 기준) 한 건을 잠급니다.'
-                  : undefined
+              isAllAccountsFilter
+                ? singleAccountActionHint
+                : !canMutateStatementUploads
+                  ? 'info@maniatour.com 또는 team 직책 super만 잠글 수 있습니다.'
+                  : importsForAccount.length > 1
+                    ? '가장 최근 명세 업로드(기간 종료일 기준) 한 건을 잠급니다.'
+                    : undefined
             }
           >
             <Lock className="h-4 w-4 mr-1" />
@@ -7676,12 +8011,25 @@ export default function StatementReconciliationTab() {
                     type="checkbox"
                     className="rounded border-slate-300"
                     checked={pageAllBulkSelected}
-                    disabled={pagedBulkSelectableLines.length === 0 || !canMutateStatementUploads}
-                    title="이 페이지에서 일괄 입력 가능한 출금 줄 전체 선택"
+                    disabled={
+                      pagedBulkSelectableLines.length === 0 ||
+                      !canMutateStatementUploads ||
+                      isAllAccountsFilter
+                    }
+                    title={
+                      isAllAccountsFilter
+                        ? singleAccountActionHint
+                        : '이 페이지에서 일괄 입력 가능한 출금 줄 전체 선택'
+                    }
                     aria-label="현재 페이지 일괄 입력 대상 전체 선택"
                     onChange={(e) => togglePageBulkSelection(e.target.checked)}
                   />
                 </th>
+                {isAllAccountsFilter ? (
+                  <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-middle min-w-[5rem] max-w-[8rem] w-[6rem]">
+                    계정
+                  </th>
+                ) : null}
                 <th className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                   일자
                 </th>
@@ -7710,6 +8058,7 @@ export default function StatementReconciliationTab() {
                   EXPENSE_TABLES.includes(m.source_table as (typeof EXPENSE_TABLES)[number])
                 )
                 const payMatches = lineMs.filter((m) => m.source_table === 'payment_records')
+                const linePairRows = pairsByLine.get(line.id) || []
                 const isOut = line.direction === 'outflow'
                 const bulkSelectable = isStatementLineBulkSelectable(line)
                 const bulkSelected = selectedBulkLineIds.has(line.id)
@@ -7759,8 +8108,9 @@ export default function StatementReconciliationTab() {
                           type="checkbox"
                           className="rounded border-slate-300"
                           checked={bulkSelected}
-                          disabled={!canMutateStatementUploads}
+                          disabled={!canMutateStatementUploads || isAllAccountsFilter}
                           aria-label={`일괄 입력 대상 선택 ${line.posted_date}`}
+                          title={isAllAccountsFilter ? singleAccountActionHint : undefined}
                           onChange={(e) => toggleBulkLineSelection(line.id, e.target.checked)}
                         />
                       ) : (
@@ -7769,6 +8119,14 @@ export default function StatementReconciliationTab() {
                         </span>
                       )}
                     </td>
+                    {isAllAccountsFilter ? (
+                      <td
+                        className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-middle min-w-[5rem] max-w-[8rem] w-[6rem] text-[10px] text-slate-700"
+                        title={accountNameForStatementLine(line)}
+                      >
+                        <span className="line-clamp-2 break-words leading-snug">{accountNameForStatementLine(line)}</span>
+                      </td>
+                    ) : null}
                     <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 whitespace-nowrap tabular-nums align-middle w-[4.25rem] min-w-[4.25rem] max-w-[4.25rem] sm:w-[6.75rem] sm:min-w-[6.75rem] sm:max-w-[6.75rem]">
                       {line.posted_date}
                     </td>
@@ -7964,6 +8322,70 @@ export default function StatementReconciliationTab() {
                           </Button>
                         </div>
                       )}
+                      <div className="mt-1 border-t border-violet-200/70 pt-1 space-y-0.5 w-full min-w-0">
+                        {linePairRows.map((pair) => {
+                          const otherId =
+                            pair.outflow_line_id === line.id
+                              ? pair.inflow_line_id
+                              : pair.outflow_line_id
+                          const other = lineById.get(otherId)
+                          const otherIsInflow = pair.inflow_line_id === otherId
+                          return (
+                            <div
+                              key={pair.id}
+                              className="flex min-w-0 max-w-full items-center justify-between gap-1 rounded border border-violet-200/90 bg-violet-50/90 px-1.5 py-0.5"
+                            >
+                              <div
+                                className="min-w-0 flex-1 text-[10px] sm:text-[11px] text-violet-950 leading-snug"
+                                title={
+                                  other
+                                    ? formatStatementLineDescription(other.description, other.merchant)
+                                    : otherId
+                                }
+                              >
+                                <span className="inline-flex items-center gap-0.5 font-medium">
+                                  <ArrowLeftRight className="h-3 w-3 shrink-0" aria-hidden />
+                                  {otherIsInflow ? '수입' : '출금'}
+                                </span>
+                                <span className="tabular-nums ml-1">
+                                  {other?.posted_date ?? '—'} · $
+                                  {other ? Number(other.amount).toFixed(2) : '—'}
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 shrink-0 p-0 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                disabled={loading || linePairPickerSaving}
+                                title="상계 연결 해제"
+                                aria-label="상계 연결 해제"
+                                onClick={() => void removeStatementLinePairLink(pair.id)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )
+                        })}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-6 sm:h-7 w-auto max-w-full shrink-0 self-start text-[10px] sm:text-xs py-0.5 px-1.5 sm:py-1 sm:px-2 border-violet-300 text-violet-900 hover:bg-violet-50"
+                          disabled={loading || linePairPickerSaving || isAllAccountsFilter}
+                          title={
+                            isAllAccountsFilter
+                              ? singleAccountActionHint
+                              : isOut
+                                ? '환불·크레딧 등 수입 명세 줄과 짝 지음'
+                                : '원 지출(티켓 결제 등) 출금 줄과 짝 지음'
+                          }
+                          onClick={() => setLinePairPickerAnchorId(line.id)}
+                        >
+                          <span className="sm:hidden">+ 상계</span>
+                          <span className="hidden sm:inline">+ 상계 연결…</span>
+                        </Button>
+                      </div>
                     </td>
                     <td className="px-1 py-1 sm:px-1.5 sm:py-1.5 align-top min-w-[5.25rem] w-[5.25rem] sm:min-w-0 sm:w-auto">
                       <label className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-xs mb-0.5">
@@ -9848,6 +10270,21 @@ export default function StatementReconciliationTab() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <StatementLinePairPickerDialog
+        open={Boolean(linePairPickerAnchor)}
+        onOpenChange={(open) => {
+          if (!open) setLinePairPickerAnchorId(null)
+        }}
+        anchor={linePairPickerAnchor}
+        poolLines={lines}
+        existingPairs={linePairPickerAnchorPairs}
+        saving={linePairPickerSaving}
+        onSelectCounterpart={(counterpartLineId) => {
+          if (!linePairPickerAnchor) return
+          void addStatementLinePairLink(linePairPickerAnchor, counterpartLineId)
+        }}
+      />
 
       <Dialog
         open={Boolean(matchHistoryTarget)}

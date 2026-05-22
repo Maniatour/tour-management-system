@@ -1,4 +1,5 @@
--- workflow_vendor_confirm_change: apply_qty / apply_time 로 수량·시간 부분 확정 지원
+-- workflow_vendor_confirm_change: apply_qty/apply_time 둘 다 false일 때 400 방지
+-- (pending_ea=0 취소, 차이 재계산, 동일값이면 변경 요청만 정리)
 
 CREATE OR REPLACE FUNCTION public.apply_ticket_booking_action(
   p_booking_id text,
@@ -605,6 +606,6 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.apply_ticket_booking_action(text, text, jsonb, text) IS
-  '단일 진입점: 액션·set_axes·워크플로우(벤더 응답·변경·결제 완료). 변경 확정 시 apply_qty/apply_time 으로 부분 확정 가능.';
+  '단일 진입점: 액션·set_axes·워크플로우. 변경 확정: apply_qty/apply_time 부분 확정·pending_ea=0 취소·동일값 변경 정리.';
 
 GRANT EXECUTE ON FUNCTION public.apply_ticket_booking_action(text, text, jsonb, text) TO anon, authenticated, service_role;

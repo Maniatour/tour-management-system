@@ -92,6 +92,20 @@ export type ApplyTicketBookingActionResult = {
   data?: Json
 }
 
+/** PostgREST / Supabase RPC 오류 본문을 alert·로그에 쓸 수 있는 문자열로 */
+export function formatTicketBookingRpcError(error: {
+  message?: string
+  details?: string
+  hint?: string
+  code?: string
+}): string {
+  const parts = [error.message, error.details, error.hint].filter(
+    (s): s is string => typeof s === 'string' && s.trim().length > 0
+  )
+  const body = parts.join(' — ')
+  return error.code ? `[${error.code}] ${body}` : body || 'Unknown error'
+}
+
 /**
  * DB RPC `apply_ticket_booking_action` 호출
  */
@@ -109,7 +123,13 @@ export async function applyTicketBookingAction(
   })
 
   if (error) {
-    return { ok: false, error: error.message }
+    console.error('apply_ticket_booking_action failed', {
+      action,
+      bookingId,
+      payload,
+      error,
+    })
+    return { ok: false, error: formatTicketBookingRpcError(error) }
   }
   return { ok: true, data: data as Json }
 }

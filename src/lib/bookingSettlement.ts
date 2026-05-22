@@ -72,6 +72,21 @@ export function ticketExpenseForSettlement(booking: { expense?: number | string 
   return Number.isFinite(e) ? e : 0
 }
 
+/** 입장권 한 줄 금액 — `expense`는 이미 수량 반영된 행 총액(×ea 하지 않음) */
+export function ticketBookingLineTotalUsd(booking: {
+  expense?: number | string | null
+  income?: number | string | null
+  paid_amount?: number | string | null
+}): number {
+  const expense = Number(booking.expense ?? 0)
+  if (Number.isFinite(expense) && expense !== 0) return expense
+  const income = Number(booking.income ?? 0)
+  if (Number.isFinite(income) && income !== 0) return income
+  const paid = Number(booking.paid_amount ?? 0)
+  if (Number.isFinite(paid) && paid !== 0) return paid
+  return 0
+}
+
 /**
  * 호텔 부킹 금액: DB의 `total_price` 합산이 목표.
  * `total_price`가 NULL/빈 값일 때만 레거시로 `unit_price * rooms` 보정.

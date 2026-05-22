@@ -92,6 +92,7 @@ export async function fetchTourExpensesForPnlReport(startISO: string, endISO: st
     supabase
       .from('tour_expenses')
       .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
+      .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
       .order('submit_on', { ascending: true })
@@ -105,6 +106,7 @@ export async function fetchReservationExpensesForPnlReport(startISO: string, end
     supabase
       .from('reservation_expenses')
       .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
+      .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
       .order('submit_on', { ascending: true })
@@ -120,6 +122,7 @@ export async function fetchCompanyExpensesForPnlReport(startISO: string, endISO:
       .select(
         'id, amount, paid_for, category, standard_paid_for, expense_type, paid_to, notes, description, payment_method, exclude_from_pnl, submit_on'
       )
+      .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
       .order('submit_on', { ascending: true })
@@ -133,6 +136,7 @@ export async function fetchTicketBookingsForPnlReport(startISO: string, endISO: 
     supabase
       .from('ticket_bookings')
       .select('id, expense, category, company, note, payment_method, submit_on')
+      .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
       .in('status', ['confirmed', 'paid'])
