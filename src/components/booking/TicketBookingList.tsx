@@ -32,12 +32,15 @@ import TicketBookingReservationDetailModal, {
 } from './TicketBookingReservationDetailModal';
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal';
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries';
-import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines';
+import {
+  unlinkExpenseReconciliationMatch,
+  type ExpenseStatementReconContext,
+} from '@/lib/expense-reconciliation-similar-lines';
+import type { TicketBookingStatementReconDisplay } from '@/lib/ticket-booking-statement-recon';
 import {
   buildTicketBookingStatementReconContextResolved,
   fetchTicketBookingStatementReconDisplayByBookingId,
   isTicketBookingStatementReconDisabled,
-  type TicketBookingStatementReconDisplay,
 } from '@/lib/ticket-booking-statement-recon';
 import { TicketBookingStatementReconCell } from '@/components/booking/TicketBookingStatementReconCell';
 import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTourDisplay';
@@ -110,6 +113,13 @@ import {
   type TicketDateViewBookingRow,
   type TicketDateViewGroup,
 } from '@/lib/ticketBookingDateView';
+import { TICKET_BOOKING_STATEMENT_DAY_WINDOW } from '@/lib/expense-reconciliation-similar-lines';
+import {
+  fetchTicketDateViewReconForDates,
+  type DateViewLedgerRow,
+  type TicketDateViewReconBundle,
+} from '@/lib/ticketBookingDateViewRecon';
+import { TicketBookingDateViewReconPanel } from '@/components/booking/TicketBookingDateViewReconPanel';
 import { ticketBookingLineTotalUsd } from '@/lib/bookingSettlement';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
@@ -369,6 +379,18 @@ function bookingCheckInYmd(booking: TicketBooking): string {
   return localYmdFromDate(d);
 }
 
+/** 체크인 기간 필터 — 연도 프리셋 (입장권 부킹 관리) */
+const TICKET_CHECK_IN_YEAR_PRESETS = [2025, 2026] as const;
+
+function ticketCheckInYearRange(year: number): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}
+
+function isTicketCheckInYearPresetActive(from: string, to: string, year: number): boolean {
+  const { from: yFrom, to: yTo } = ticketCheckInYearRange(year);
+  return from === yFrom && to === yTo;
+}
+
 /** ticket_bookings에는 unit_price/total_price 컬럼 없음 — 목록·합계용으로 파생 */
 function deriveTicketBookingListFields(row: TicketBooking): TicketBooking {
   const n = (v: unknown): number | null => {
@@ -406,8 +428,8 @@ function invoiceCompanyNorm(company: string | null | undefined): string {
   return (company ?? '').trim();
 }
 
-/** RN 그룹 헤더·구분선 colSpan (명세 열 없음) */
-const TICKET_DESKTOP_TABLE_COL_COUNT = 15
+/** RN 그룹 헤더·구분선 colSpan (명세 열 포함) */
+const TICKET_DESKTOP_TABLE_COL_COUNT = 16
 const TICKET_TABLE_TH =
   'px-2 py-2 text-left text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap'
 const TICKET_TABLE_TD = 'align-middle px-2 py-2 text-[11px] text-gray-900'
@@ -1071,6 +1093,8 @@ export default function TicketBookingList() {
   const t = useTranslations('booking.calendar');
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis');
   const tTbActUi = useTranslations('booking.calendar.ticketBookingActions');
+  /** useMemo 의존성용 — `t` 함수 참조는 렌더마다 바뀌어 무한 effect를 유발할 수 있음 */
+  const tourFallbackLabel = locale.startsWith('ko') ? '투어' : 'Tour';
   const [bookings, setBookings] = useState<TicketBooking[]>([]);
   const bookingsRef = useRef<TicketBooking[]>([]);
   bookingsRef.current = bookings;
@@ -1115,6 +1139,11 @@ export default function TicketBookingList() {
     ticketTableLayout === 'byDate';
   /** 날짜별: 투어 초이스 L/X 합 ≠ 티켓 EA L/X 합인 날짜만 */
   const [lxMismatchOnlyFilter, setLxMismatchOnlyFilter] = useState(false);
+  /** 날짜별 뷰 — 앤텔롭 지출·명세 대조 (체크인일 키) */
+  const [dateViewReconByDate, setDateViewReconByDate] = useState<
+    Map<string, TicketDateViewReconBundle>
+  >(() => new Map());
+  const [dateViewReconLoading, setDateViewReconLoading] = useState(false);
   const showRnRowSelection =
     viewMode === 'table' && isGroupedTableLayout && canBookingMgmtSoftDeleteUi;
   const ticketDesktopColCount =
@@ -1302,12 +1331,14 @@ export default function TicketBookingList() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
-  const [detailReconciledIds, setDetailReconciledIds] = useState<Set<string>>(() => new Set());
-  const [detailStatementReconDisplay, setDetailStatementReconDisplay] = useState<
+  const [statementReconciledIds, setStatementReconciledIds] = useState<Set<string>>(() => new Set());
+  const [statementReconDisplay, setStatementReconDisplay] = useState<
     Map<string, TicketBookingStatementReconDisplay[]>
   >(() => new Map());
-  const [detailStmtOpen, setDetailStmtOpen] = useState(false);
-  const [detailStmtCtx, setDetailStmtCtx] = useState<ExpenseStatementReconContext | null>(null);
+  const [stmtReconOpen, setStmtReconOpen] = useState(false);
+  const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null);
+  const [stmtReconUnlinkingId, setStmtReconUnlinkingId] = useState<string | null>(null);
+  const statementReconScrollRef = useRef<{ x: number; y: number } | null>(null);
   const tStmtRecon = useTranslations('expenses.statementRecon');
   const [showInvoiceUploadModal, setShowInvoiceUploadModal] = useState(false);
   const [showNeedCheckModal, setShowNeedCheckModal] = useState(false);
@@ -1327,73 +1358,126 @@ export default function TicketBookingList() {
     })
   }, [bookings, showBookingModal])
 
-  const detailReconKey = useMemo(
-    () => selectedBookings.map((b) => b.id).sort().join('|'),
-    [selectedBookings]
-  )
-
-  useEffect(() => {
-    if (!showBookingModal) {
-      setDetailReconciledIds(new Set())
-      setDetailStatementReconDisplay(new Map())
-      return
-    }
-    const ids = selectedBookings.map((b) => b.id).filter(Boolean)
-    if (ids.length === 0) {
-      setDetailReconciledIds(new Set())
-      setDetailStatementReconDisplay(new Map())
-      return
-    }
-    let cancelled = false
-    void Promise.all([
-      fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids),
-      fetchTicketBookingStatementReconDisplayByBookingId(supabase, ids),
-    ]).then(([reconciled, displayMap]) => {
-      if (!cancelled) {
-        setDetailReconciledIds(reconciled)
-        setDetailStatementReconDisplay(displayMap)
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [showBookingModal, detailReconKey, selectedBookings])
-
-  const openDetailStatementRecon = useCallback(async (booking: TicketBooking) => {
+  const openStatementRecon = useCallback(async (booking: TicketBooking) => {
     if (isTicketBookingStatementReconDisabled(booking)) return
+    statementReconScrollRef.current = { x: window.scrollX, y: window.scrollY }
     const ctx = await buildTicketBookingStatementReconContextResolved(supabase, booking)
     if (!ctx) return
-    setDetailStmtCtx(ctx)
-    setDetailStmtOpen(true)
+    setStmtReconCtx(ctx)
+    setStmtReconOpen(true)
   }, [])
 
-  const refreshDetailStatementReconDisplay = useCallback(async (bookingIds: string[]) => {
-    const ids = bookingIds.filter(Boolean)
+  const restoreStatementReconScroll = useCallback(() => {
+    const saved = statementReconScrollRef.current
+    if (!saved) return
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo(saved.x, saved.y)
+      })
+    })
+  }, [])
+
+  const refreshStatementReconDisplay = useCallback(async (bookingIds: string[]) => {
+    const ids = [...new Set(bookingIds.filter(Boolean))]
     if (ids.length === 0) return
     const [reconciled, displayMap] = await Promise.all([
       fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids),
       fetchTicketBookingStatementReconDisplayByBookingId(supabase, ids),
     ])
-    setDetailReconciledIds(reconciled)
-    setDetailStatementReconDisplay(displayMap)
+    setStatementReconciledIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) {
+        if (reconciled.has(id)) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
+    setStatementReconDisplay((prev) => {
+      const next = new Map(prev)
+      for (const id of ids) {
+        const lines = displayMap.get(id)
+        if (lines && lines.length > 0) next.set(id, lines)
+        else next.delete(id)
+      }
+      return next
+    })
   }, [])
 
-  const renderDetailStatementReconCell = useCallback(
-    (booking: TicketBooking) => (
+  const patchTicketBookingAfterStatementRecon = useCallback(async (bookingId: string) => {
+    const { data, error } = await supabase
+      .from('ticket_bookings')
+      .select('id, expense, statement_line_id')
+      .eq('id', bookingId)
+      .maybeSingle()
+    if (error || !data) return
+    setBookings((prev) => {
+      const idx = prev.findIndex((b) => b.id === bookingId)
+      if (idx < 0) return prev
+      const next = prev.slice()
+      next[idx] = deriveTicketBookingListFields({
+        ...next[idx]!,
+        expense: data.expense,
+        statement_line_id: data.statement_line_id,
+      } as TicketBooking)
+      return next
+    })
+  }, [])
+
+  const unlinkStatementRecon = useCallback(
+    async (booking: TicketBooking, line: TicketBookingStatementReconDisplay) => {
+      const key = line.match_id || `${booking.id}:${line.statement_line_id}`
+      if (stmtReconUnlinkingId) return
+      const ok = window.confirm(tStmtRecon('unlinkStatementMatchConfirm'))
+      if (!ok) return
+      setStmtReconUnlinkingId(key)
+      try {
+        await unlinkExpenseReconciliationMatch(supabase, {
+          sourceTable: 'ticket_bookings',
+          sourceId: booking.id,
+          matchId: line.match_id,
+          statementLineId: line.statement_line_id,
+        })
+        await refreshStatementReconDisplay([booking.id])
+        await patchTicketBookingAfterStatementRecon(booking.id)
+      } catch (e) {
+        console.error('명세 연결 해제 오류:', e)
+        alert(e instanceof Error ? e.message : tStmtRecon('unlinkStatementMatchError'))
+      } finally {
+        setStmtReconUnlinkingId(null)
+      }
+    },
+    [stmtReconUnlinkingId, tStmtRecon, refreshStatementReconDisplay, patchTicketBookingAfterStatementRecon]
+  )
+
+  const renderStatementReconCell = useCallback(
+    (booking: TicketBooking, opts?: { compact?: boolean }) => (
       <TicketBookingStatementReconCell
-        matched={detailReconciledIds.has(booking.id)}
+        matched={statementReconciledIds.has(booking.id)}
         disabled={isTicketBookingStatementReconDisabled(booking)}
-        lines={detailStatementReconDisplay.get(booking.id) ?? []}
+        lines={statementReconDisplay.get(booking.id) ?? []}
         titleMatched={tStmtRecon('matchedTitle')}
         titleUnmatched={tStmtRecon('unmatchedTitle')}
         titleDisabled={tStmtRecon('disabledTitle')}
-        onOpenPicker={() => void openDetailStatementRecon(booking)}
+        onOpenPicker={() => void openStatementRecon(booking)}
+        onUnlink={(line) => void unlinkStatementRecon(booking, line)}
+        unlinking={Boolean(
+          stmtReconUnlinkingId &&
+            (statementReconDisplay.get(booking.id) ?? []).some(
+              (l) =>
+                stmtReconUnlinkingId === (l.match_id || `${booking.id}:${l.statement_line_id}`)
+            )
+        )}
+        unlinkTitle={tStmtRecon('unlinkStatementMatch')}
+        unlinkAriaLabel={tStmtRecon('unlinkStatementMatchAria')}
+        compact={opts?.compact === true}
       />
     ),
     [
-      detailReconciledIds,
-      detailStatementReconDisplay,
-      openDetailStatementRecon,
+      statementReconciledIds,
+      statementReconDisplay,
+      openStatementRecon,
+      unlinkStatementRecon,
+      stmtReconUnlinkingId,
       tStmtRecon,
     ]
   )
@@ -2803,6 +2887,9 @@ export default function TicketBookingList() {
     const tourLine = formatCanyonCountsInline(dv.tourChoiceTotals);
     const ticketLine = formatCanyonCountsInline(dv.ticketChoiceTotals);
     const mismatch = dv.hasMismatch;
+    const reconBundle = dateViewReconByDate.get(dv.dateYmd);
+    const reconLoading =
+      dateViewReconLoading && ticketTableLayout === 'byDate' && !dateViewReconByDate.has(dv.dateYmd);
     const wrap =
       variant === 'desktop'
         ? 'mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]'
@@ -2852,6 +2939,17 @@ export default function TicketBookingList() {
             </ul>
           </div>
         ) : null}
+        <div className={variant === 'desktop' ? 'basis-full w-full' : 'w-full'}>
+          <TicketBookingDateViewReconPanel
+            bundle={reconBundle}
+            loading={reconLoading}
+            locale={locale}
+            dayWindow={TICKET_BOOKING_STATEMENT_DAY_WINDOW}
+            canDelete={canBookingMgmtSoftDeleteUi}
+            onDataChanged={refreshDateViewReconForDate}
+            onOpenLedgerRow={(row) => void openDateViewLedgerRow(row)}
+          />
+        </div>
       </div>
     );
   };
@@ -3858,13 +3956,19 @@ export default function TicketBookingList() {
 
   const dateViewGroupsAll = useMemo(() => {
     if (ticketTableLayout !== 'byDate') return null;
-    return buildTicketDateViewGroups(sortedBookings as TicketDateViewBookingRow[], tourEvents, locale, t('tour'), {
-      bookingCheckInYmd: (b) => bookingCheckInYmd(b as TicketBooking),
-      tourOverlapsDate: tourOverlapsCalendarYmd,
-      getProductName: (products) =>
-        getProductName(products as TourEvent['products']),
-    });
-  }, [ticketTableLayout, sortedBookings, tourEvents, locale, t]);
+    return buildTicketDateViewGroups(
+      sortedBookings as TicketDateViewBookingRow[],
+      tourEvents,
+      locale,
+      tourFallbackLabel,
+      {
+        bookingCheckInYmd: (b) => bookingCheckInYmd(b as TicketBooking),
+        tourOverlapsDate: tourOverlapsCalendarYmd,
+        getProductName: (products) =>
+          getProductName(products as TourEvent['products']),
+      }
+    );
+  }, [ticketTableLayout, sortedBookings, tourEvents, locale, tourFallbackLabel]);
 
   const dateViewGroups = useMemo(() => {
     if (!dateViewGroupsAll) return null;
@@ -3892,6 +3996,138 @@ export default function TicketBookingList() {
     return dateViewGroups.slice(start, start + listPageSize);
   }, [dateViewGroups, listPageEffective, listPageSize]);
 
+  /** 날짜별 앤텔롭 대조 — 안정 문자열 키(배열 참조 변경만으로 effect 재실행 방지) */
+  const dateViewReconDatesKey = useMemo(() => {
+    if (ticketTableLayout !== 'byDate' || !dateViewGroups?.length) return '';
+    const start = (listPageEffective - 1) * listPageSize;
+    return dateViewGroups
+      .slice(start, start + listPageSize)
+      .map((g) => g.dateYmd)
+      .join('|');
+  }, [ticketTableLayout, dateViewGroups, listPageEffective, listPageSize]);
+
+  const dateViewReconFetchGenRef = useRef(0);
+
+  useEffect(() => {
+    if (!dateViewReconDatesKey) {
+      setDateViewReconByDate(new Map());
+      setDateViewReconLoading(false);
+      return;
+    }
+    const dates = dateViewReconDatesKey.split('|').filter(Boolean);
+    const bookingRows = bookingsRef.current;
+    const tbByDate = new Map<string, Array<Record<string, unknown>>>();
+    for (const dateYmd of dates) {
+      tbByDate.set(
+        dateYmd,
+        bookingRows
+          .filter((b) => bookingCheckInYmd(b) === dateYmd)
+          .map((b) => ({
+            id: b.id,
+            company: b.company,
+            category: b.category,
+            expense: b.expense,
+            time: b.time,
+            ea: b.ea,
+          }))
+      );
+    }
+    const gen = ++dateViewReconFetchGenRef.current;
+    let cancelled = false;
+    setDateViewReconLoading(true);
+    void (async () => {
+      try {
+        const map = await fetchTicketDateViewReconForDates(supabase, dates, tbByDate, locale, {
+          dayWindow: TICKET_BOOKING_STATEMENT_DAY_WINDOW,
+        });
+        if (!cancelled && gen === dateViewReconFetchGenRef.current) setDateViewReconByDate(map);
+      } catch (e) {
+        if (!cancelled && gen === dateViewReconFetchGenRef.current && !isAbortLikeError(e)) {
+          console.error('[TicketBookingList] date view recon:', e);
+          setDateViewReconByDate(new Map());
+        }
+      } finally {
+        if (!cancelled && gen === dateViewReconFetchGenRef.current) setDateViewReconLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dateViewReconDatesKey, locale]);
+
+  const refreshDateViewReconForDate = useCallback(
+    async (dateYmd: string, opts?: { reloadBookings?: boolean }) => {
+      const bookingRows = bookingsRef.current;
+      const tbByDate = new Map<string, Array<Record<string, unknown>>>();
+      tbByDate.set(
+        dateYmd,
+        bookingRows
+          .filter((b) => bookingCheckInYmd(b) === dateYmd)
+          .map((b) => ({
+            id: b.id,
+            company: b.company,
+            category: b.category,
+            expense: b.expense,
+            time: b.time,
+            ea: b.ea,
+            check_in_date: b.check_in_date,
+            submit_on: b.submit_on,
+          }))
+      );
+      try {
+        const map = await fetchTicketDateViewReconForDates(supabase, [dateYmd], tbByDate, locale, {
+          dayWindow: TICKET_BOOKING_STATEMENT_DAY_WINDOW,
+        });
+        const bundle = map.get(dateYmd);
+        if (bundle) {
+          setDateViewReconByDate((prev) => {
+            const next = new Map(prev);
+            next.set(dateYmd, bundle);
+            return next;
+          });
+        }
+        if (opts?.reloadBookings !== false) {
+          await fetchBookingsRef.current();
+        }
+      } catch (e) {
+        if (!isAbortLikeError(e)) console.error('[TicketBookingList] refresh date view recon:', e);
+      }
+    },
+    [locale]
+  );
+
+  const openDateViewLedgerRow = useCallback(
+    async (row: DateViewLedgerRow) => {
+      if (row.sourceTable === 'ticket_bookings') {
+        const booking =
+          bookings.find((b) => b.id === row.sourceId) ??
+          bookingsRef.current.find((b) => b.id === row.sourceId) ??
+          null;
+        if (!booking) {
+          alert(
+            locale === 'ko'
+              ? '목록에 없는 부킹입니다. 필터를 확인하거나 새로고침 후 다시 시도하세요.'
+              : 'Booking not in the current list. Refresh or adjust filters and try again.'
+          );
+          return;
+        }
+        setSelectedBookings([booking]);
+        setShowBookingModal(true);
+        return;
+      }
+      if (!row.dateYmd) return;
+      setStmtReconCtx({
+        sourceTable: row.sourceTable,
+        sourceId: row.sourceId,
+        dateYmd: row.dateYmd,
+        amount: row.amount,
+        direction: 'outflow',
+      });
+      setStmtReconOpen(true);
+    },
+    [bookings, locale]
+  );
+
   const ticketTableGroups = useMemo((): Array<{
     key: string;
     label: string;
@@ -3900,7 +4136,7 @@ export default function TicketBookingList() {
   }> | null => {
     if (ticketTableLayout === 'byRn') return buildTicketRnGroups(pagedSortedBookings);
     if (ticketTableLayout === 'byTour') {
-      return buildTicketTourGroups(pagedSortedBookings, locale, t('tour'));
+      return buildTicketTourGroups(pagedSortedBookings, locale, tourFallbackLabel);
     }
     if (ticketTableLayout === 'byDate' && pagedDateViewGroups) {
       return pagedDateViewGroups.map((g) => ({
@@ -3911,7 +4147,113 @@ export default function TicketBookingList() {
       }));
     }
     return null;
-  }, [ticketTableLayout, pagedSortedBookings, sortedBookings, locale, t, pagedDateViewGroups]);
+  }, [ticketTableLayout, pagedSortedBookings, sortedBookings, locale, tourFallbackLabel, pagedDateViewGroups]);
+
+  /** 테이블 뷰 현재 페이지 부킹 id (정렬·조인 문자열 — effect 의존용) */
+  const tableVisibleBookingIdsKey = useMemo(() => {
+    if (viewMode !== 'table') return '';
+    const ids: string[] = [];
+    if (ticketTableLayout === 'byDate' && dateViewReconDatesKey) {
+      for (const dateYmd of dateViewReconDatesKey.split('|').filter(Boolean)) {
+        for (const b of sortedBookings) {
+          if (bookingCheckInYmd(b) === dateYmd && b.id) ids.push(b.id);
+        }
+      }
+    } else if (ticketTableGroups) {
+      for (const g of ticketTableGroups) {
+        for (const row of g.rows) {
+          if (row.id) ids.push(row.id);
+        }
+      }
+    } else {
+      for (const b of pagedSortedBookings) {
+        if (b.id) ids.push(b.id);
+      }
+    }
+    return [...new Set(ids)].sort().join('|');
+  }, [
+    viewMode,
+    ticketTableLayout,
+    ticketTableGroups,
+    pagedSortedBookings,
+    dateViewReconDatesKey,
+    sortedBookings,
+  ]);
+
+  const selectedBookingIdsKey = showBookingModal
+    ? selectedBookings
+        .map((b) => b.id)
+        .filter(Boolean)
+        .sort()
+        .join('|')
+    : '';
+
+  const statementReconLoadKey = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of selectedBookingIdsKey.split('|').filter(Boolean)) ids.add(id);
+    for (const id of tableVisibleBookingIdsKey.split('|').filter(Boolean)) ids.add(id);
+    return [...ids].sort().join('|');
+  }, [selectedBookingIdsKey, tableVisibleBookingIdsKey]);
+
+  const statementReconFetchGenRef = useRef(0);
+
+  useEffect(() => {
+    if (!statementReconLoadKey) {
+      setStatementReconciledIds(new Set());
+      setStatementReconDisplay(new Map());
+      return;
+    }
+    const ids = statementReconLoadKey.split('|').filter(Boolean);
+    const gen = ++statementReconFetchGenRef.current;
+    let cancelled = false;
+    void Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', ids),
+      fetchTicketBookingStatementReconDisplayByBookingId(supabase, ids),
+    ]).then(([reconciled, displayMap]) => {
+      if (!cancelled && gen === statementReconFetchGenRef.current) {
+        setStatementReconciledIds(reconciled);
+        setStatementReconDisplay(displayMap);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [statementReconLoadKey]);
+
+  const refreshAfterStatementReconApply = useCallback(async () => {
+    const ctx = stmtReconCtx
+    const ids = new Set<string>()
+    if (ctx?.sourceTable === 'ticket_bookings' && ctx.sourceId) ids.add(ctx.sourceId)
+    if (showBookingModal) {
+      for (const b of selectedBookings) {
+        if (b.id) ids.add(b.id)
+      }
+    }
+    for (const id of statementReconLoadKey.split('|').filter(Boolean)) ids.add(id)
+
+    await refreshStatementReconDisplay([...ids])
+
+    if (ctx?.sourceTable === 'ticket_bookings' && ctx.sourceId) {
+      await patchTicketBookingAfterStatementRecon(ctx.sourceId)
+      const booking = bookingsRef.current.find((b) => b.id === ctx.sourceId) ?? null
+      const checkInYmd = booking ? bookingCheckInYmd(booking) : ''
+      if (checkInYmd && ticketTableLayout === 'byDate') {
+        await refreshDateViewReconForDate(checkInYmd, { reloadBookings: false })
+      }
+    }
+
+    restoreStatementReconScroll()
+  }, [
+    stmtReconCtx,
+    showBookingModal,
+    selectedBookings,
+    statementReconLoadKey,
+    refreshStatementReconDisplay,
+    patchTicketBookingAfterStatementRecon,
+    ticketTableLayout,
+    refreshDateViewReconForDate,
+    restoreStatementReconScroll,
+  ])
 
   useEffect(() => {
     setListPage(1);
@@ -4827,7 +5169,14 @@ export default function TicketBookingList() {
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
               {tStmtRecon('columnHeaderShort')}
             </span>
-            {renderDetailStatementReconCell(booking)}
+            {renderStatementReconCell(booking)}
+          </div>
+        ) : viewMode === 'table' ? (
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 shrink-0">
+              {tStmtRecon('columnHeaderShort')}
+            </span>
+            <div className="min-w-0 flex-1">{renderStatementReconCell(booking)}</div>
           </div>
         ) : null}
         <div className="pt-2 border-t border-gray-100">
@@ -5294,14 +5643,12 @@ export default function TicketBookingList() {
         })()}
       </button>
     </td>
-    {opts?.inDetailModal ? (
-      <td
-        className={`${TICKET_TABLE_CELL} min-w-[8rem] max-w-[12rem]`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {renderDetailStatementReconCell(booking)}
-      </td>
-    ) : null}
+    <td
+      className={`${TICKET_TABLE_CELL} min-w-[7rem] max-w-[11rem]`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {renderStatementReconCell(booking, { compact: !opts?.inDetailModal })}
+    </td>
     <td className={`${TICKET_TABLE_CELL} whitespace-nowrap tabular-nums text-gray-600`}>
       {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
     </td>
@@ -5513,6 +5860,36 @@ export default function TicketBookingList() {
                   className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
                 />
               </div>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {TICKET_CHECK_IN_YEAR_PRESETS.map((year) => {
+                const active = isTicketCheckInYearPresetActive(checkInDateFrom, checkInDateTo, year);
+                return (
+                  <button
+                    key={year}
+                    type="button"
+                    onClick={() => {
+                      if (active) {
+                        setCheckInDateFrom('');
+                        setCheckInDateTo('');
+                      } else {
+                        const { from, to } = ticketCheckInYearRange(year);
+                        setCheckInDateFrom(from);
+                        setCheckInDateTo(to);
+                      }
+                    }}
+                    aria-pressed={active}
+                    aria-label={t('checkInYearPresetAria', { year })}
+                    className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                      active
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {year}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -5784,7 +6161,7 @@ export default function TicketBookingList() {
               {/* 데스크톱 테이블 — 페이지는 넘치지 않고, 카드 안에서만 가로 스크롤 */}
               <div className="hidden min-w-0 w-full max-w-full overflow-x-auto sm:block">
                 <table className="w-full min-w-[960px] border-collapse text-[11px]">
-                {renderTicketDesktopTableThead()}
+                {renderTicketDesktopTableThead({ showStatementRecon: true })}
                 <tbody className="bg-white divide-y divide-gray-200">
                   {(() => {
                     // Cancel Due 날짜별로 그룹화하여 배경색 매핑 생성
@@ -6903,18 +7280,17 @@ export default function TicketBookingList() {
             </div>
           );
         }}
-        renderStatementReconCell={(b) => renderDetailStatementReconCell(b as TicketBooking)}
+        renderStatementReconCell={(b) => renderStatementReconCell(b as TicketBooking)}
       />
 
       <ExpenseStatementSimilarLinesModal
-        open={detailStmtOpen}
-        onOpenChange={setDetailStmtOpen}
-        context={detailStmtCtx}
-        onApplied={() => {
-          const ids = selectedBookings.map((b) => b.id).filter(Boolean);
-          void refreshDetailStatementReconDisplay(ids);
-          void fetchBookings();
+        open={stmtReconOpen}
+        onOpenChange={(open) => {
+          setStmtReconOpen(open)
+          if (!open) restoreStatementReconScroll()
         }}
+        context={stmtReconCtx}
+        onApplied={() => void refreshAfterStatementReconApply()}
       />
 
       <TicketBookingVendorPartialChangeConfirmModal

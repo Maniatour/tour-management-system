@@ -298,10 +298,10 @@ export default function TourHotelBookingList() {
     return bookings.filter((booking) => {
       const matchesSearch =
         !q ||
-        booking.hotel.toLowerCase().includes(q) ||
-        booking.city.toLowerCase().includes(q) ||
-        booking.reservation_name.toLowerCase().includes(q) ||
-        booking.rn_number.toLowerCase().includes(q);
+        (booking.hotel ?? '').toLowerCase().includes(q) ||
+        (booking.city ?? '').toLowerCase().includes(q) ||
+        (booking.reservation_name ?? '').toLowerCase().includes(q) ||
+        (booking.rn_number ?? '').toLowerCase().includes(q);
 
       const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
       let matchesDate = true;

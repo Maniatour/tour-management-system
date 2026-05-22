@@ -1,5 +1,6 @@
 import {
   isBalanceReceivedPaymentStatus,
+  isPaymentRequestedStatus,
   isRefundedPaymentStatus,
   isReturnedPaymentStatus,
   paymentRecordAmountToNumber,
@@ -254,8 +255,9 @@ export function aggregatePnlPaymentRecords(
 
   for (const r of rows) {
     if (!r.submit_on) continue
-    const ym = yearMonthFromSubmitOn(r.submit_on)
     const status = r.payment_status
+    if (isPaymentRequestedStatus(status)) continue
+    const ym = yearMonthFromSubmitOn(r.submit_on)
     const signed = signedPaymentRecordAmount(r.amount, status)
     if (Math.abs(signed) < 0.005) continue
 

@@ -1,19 +1,45 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Archive, Search, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { toast } from 'sonner'
+import { useAuth } from '@/contexts/AuthContext'
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { deleteExpenseBySourceKey } from '@/lib/expense-unified-duplicate-scan'
+import {
+  BULK_COMPANY_DUP_AMOUNT_EPS,
+  BULK_COMPANY_DUP_DAY_WINDOW,
+} from '@/lib/statement-bulk-company-duplicate-check'
+import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import {
+  buildDuplicateGroupStyleByKey,
+  duplicateExtraKeysToSelect,
+  findPnlDetailDuplicateGroups,
+  pnlDetailLineKey,
+} from '@/lib/pnl-expense-detail-duplicates'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import type { UnifiedStandardLeafGroup } from '@/lib/companyExpenseStandardUnified'
 import { PNL_UNMATCHED_BUCKET_KEY, splitMappingIdsFromLeafId } from '@/lib/pnlStandardCategoryTable'
@@ -127,6 +153,49 @@ function descriptionText(line: PnlDetailLine): string {
     if (company) return company
   }
   return '—'
+}
+
+function normalizePnlDetailSearchText(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function pnlDetailLineSearchHaystack(
+  line: PnlDetailLine,
+  paymentMethodMap: Record<string, string>
+): string {
+  const parts = [
+    sourceLabel(line.source),
+    line.source,
+    line.id,
+    isoToYmd(line.submit_on),
+    line.submit_on,
+    line.paid_to,
+    line.paid_for,
+    line.category,
+    line.company,
+    line.note,
+    line.payment_method,
+    paymentMethodDisplay(line, paymentMethodMap),
+    classificationText(line),
+    descriptionText(line),
+    line.mappingOriginalValue,
+    line.statementReconciled ? '연결됨 명세대조' : '미연결',
+    String(line.amount),
+    line.amount.toFixed(2),
+  ]
+  return normalizePnlDetailSearchText(parts.filter(Boolean).join(' '))
+}
+
+function pnlDetailLineMatchesSearch(
+  line: PnlDetailLine,
+  query: string,
+  paymentMethodMap: Record<string, string>
+): boolean {
+  const q = normalizePnlDetailSearchText(query)
+  if (!q) return true
+  const hay = pnlDetailLineSearchHaystack(line, paymentMethodMap)
+  const tokens = q.split(' ').filter(Boolean)
+  return tokens.every((t) => hay.includes(t))
 }
 
 function filterLines(lines: PnlDetailLine[], drill: PnlDrillState | null): PnlDetailLine[] {
@@ -348,6 +417,37 @@ type PnlUnifiedExpenseDetailDialogProps = {
   unifiedStandardGroups: UnifiedStandardLeafGroup[]
 }
 
+async function archivePnlDetailLine(
+  line: PnlDetailLine,
+  deletedBy: string | null
+): Promise<void> {
+  const key = pnlDetailLineKey(line)
+  if (line.source === 'tour_hotel_bookings') {
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('tour_hotel_bookings')
+      .update({
+        deletion_requested_at: now,
+        deletion_requested_by: deletedBy,
+        updated_at: now,
+      })
+      .eq('id', line.id)
+      .is('deletion_requested_at', null)
+    if (error) throw error
+    return
+  }
+  if (
+    line.source === 'company_expenses' ||
+    line.source === 'tour_expenses' ||
+    line.source === 'reservation_expenses' ||
+    line.source === 'ticket_bookings'
+  ) {
+    await deleteExpenseBySourceKey(key, deletedBy)
+    return
+  }
+  throw new Error(`삭제를 지원하지 않는 출처입니다: ${line.source}`)
+}
+
 export default function PnlUnifiedExpenseDetailDialog({
   open,
   onOpenChange,
@@ -358,12 +458,59 @@ export default function PnlUnifiedExpenseDetailDialog({
   expenseStandardCategories,
   unifiedStandardGroups,
 }: PnlUnifiedExpenseDetailDialogProps) {
+  const { user } = useAuth()
+  const deletedByEmail = user?.email ?? null
   const { paymentMethodMap } = usePaymentMethodOptions()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [deleteConfirmKeys, setDeleteConfirmKeys] = useState<string[] | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [submitDateSortDir, setSubmitDateSortDir] = useState<SortDir>('asc')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const visible = useMemo(() => filterLines(lines, drill), [lines, drill])
+  const searchTrim = searchQuery.trim()
+  const filteredRows = useMemo(() => {
+    if (!searchTrim) return visible
+    return visible.filter((l) => pnlDetailLineMatchesSearch(l, searchTrim, paymentMethodMap))
+  }, [visible, searchTrim, paymentMethodMap])
+  const displayRows = useMemo(() => {
+    const rows = [...filteredRows]
+    rows.sort((a, b) => {
+      const cmp = compareSortValues(isoToYmd(a.submit_on), isoToYmd(b.submit_on), submitDateSortDir)
+      if (cmp !== 0) return cmp
+      return pnlDetailLineKey(a).localeCompare(pnlDetailLineKey(b))
+    })
+    return rows
+  }, [filteredRows, submitDateSortDir])
+  const visibleByKey = useMemo(
+    () => new Map(visible.map((l) => [pnlDetailLineKey(l), l])),
+    [visible]
+  )
+
+  const duplicateGroups = useMemo(() => findPnlDetailDuplicateGroups(visible), [visible])
+  const duplicateExtraKeys = useMemo(
+    () => duplicateExtraKeysToSelect(visible, duplicateGroups),
+    [visible, duplicateGroups]
+  )
+  const duplicateStyleByKey = useMemo(
+    () => buildDuplicateGroupStyleByKey(duplicateGroups),
+    [duplicateGroups]
+  )
+
+  const selectedLines = useMemo(
+    () =>
+      [...selectedKeys]
+        .map((k) => visibleByKey.get(k))
+        .filter((x): x is PnlDetailLine => Boolean(x)),
+    [selectedKeys, visibleByKey]
+  )
+  const selectedSum = useMemo(
+    () => selectedLines.reduce((s, l) => s + l.amount, 0),
+    [selectedLines]
+  )
 
   const categoryById = useMemo(
     () => new Map(expenseStandardCategories.map((c) => [c.id, c])),
@@ -374,8 +521,38 @@ export default function PnlUnifiedExpenseDetailDialog({
     if (!open) {
       setEditingId(null)
       setDraft(null)
+      setSelectedKeys(new Set())
+      setDeleteConfirmKeys(null)
+      setSearchQuery('')
     }
   }, [open])
+
+  useEffect(() => {
+    setSelectedKeys(new Set())
+    setDeleteConfirmKeys(null)
+    setSearchQuery('')
+  }, [drill, visible.length])
+
+  const toggleSelected = useCallback((key: string, checked: boolean) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
+
+  const selectAllVisible = useCallback(() => {
+    setSelectedKeys(new Set(displayRows.map((l) => pnlDetailLineKey(l))))
+  }, [displayRows])
+
+  const clearSelection = useCallback(() => {
+    setSelectedKeys(new Set())
+  }, [])
+
+  const selectDuplicateExtras = useCallback(() => {
+    setSelectedKeys(new Set(duplicateExtraKeys))
+  }, [duplicateExtraKeys])
 
   const startEdit = useCallback((line: PnlDetailLine) => {
     setEditingId(`${line.source}:${line.id}`)
@@ -386,6 +563,33 @@ export default function PnlUnifiedExpenseDetailDialog({
     setEditingId(null)
     setDraft(null)
   }, [])
+
+  const runDeleteSelected = useCallback(
+    async (keys: string[]) => {
+      setDeleteConfirmKeys(null)
+      const toDelete = keys
+        .map((k) => visibleByKey.get(k))
+        .filter((x): x is PnlDetailLine => Boolean(x))
+      if (toDelete.length === 0) return
+
+      setDeleting(true)
+      try {
+        for (const line of toDelete) {
+          await archivePnlDetailLine(line, deletedByEmail)
+        }
+        toast.success(`${toDelete.length}건을 삭제 보관함(또는 삭제 요청)으로 옮겼습니다.`)
+        setSelectedKeys(new Set())
+        cancelEdit()
+        await onSaved()
+      } catch (e) {
+        console.error(e)
+        toast.error(e instanceof Error ? e.message : '삭제 중 오류가 발생했습니다.')
+      } finally {
+        setDeleting(false)
+      }
+    },
+    [visibleByKey, deletedByEmail, onSaved, cancelEdit]
+  )
 
   const saveEdit = useCallback(
     async (line: PnlDetailLine) => {
@@ -517,18 +721,169 @@ export default function PnlUnifiedExpenseDetailDialog({
   )
 
   const title = drillDialogTitle(drill, formatMonthLabel)
+  const allVisibleSelected =
+    displayRows.length > 0 && displayRows.every((l) => selectedKeys.has(pnlDetailLineKey(l)))
+  const someSelected = selectedKeys.size > 0
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <AlertDialog open={deleteConfirmKeys != null} onOpenChange={(v) => !v && setDeleteConfirmKeys(null)}>
+        <AlertDialogContent className="w-[calc(100vw-1.5rem)] max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-left text-base">선택한 지출 삭제</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="text-left text-sm text-muted-foreground space-y-2">
+                <p>
+                  선택한 {deleteConfirmKeys?.length ?? 0}건을 <strong>삭제 보관함</strong>으로 옮깁니다(복구 가능).
+                  회사·투어·예약·입장권은 명세 대조 연결도 해제됩니다. 투어 호텔 부킹은 삭제 요청 상태로 숨깁니다.
+                </p>
+                {deleteConfirmKeys && deleteConfirmKeys.length > 0 ? (
+                  <p className="tabular-nums font-medium text-foreground">
+                    합계 {formatMoney(
+                      deleteConfirmKeys.reduce((s, k) => s + (visibleByKey.get(k)?.amount ?? 0), 0)
+                    )}
+                  </p>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deleting}
+              onClick={(ev) => {
+                ev.preventDefault()
+                if (!deleteConfirmKeys?.length) return
+                void runDeleteSelected(deleteConfirmKeys)
+              }}
+            >
+              삭제 보관함으로
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(100vw-1rem,80rem)] max-w-[min(100vw-1rem,80rem)] max-h-[min(92vh,820px)] flex flex-col p-0 gap-0 z-[1200]">
         <DialogHeader className="px-4 pt-4 pb-2 pr-12 border-b shrink-0">
           <DialogTitle className="text-base leading-snug">지출 상세 — {title}</DialogTitle>
           <p className="text-xs text-muted-foreground font-normal pt-1">
             상단에서 원문·출처별 <strong>표준 리프</strong>를 지정·저장하면 카테고리 매니저와 동일하게{' '}
             <code className="text-[10px] bg-muted px-1 rounded">expense_category_mappings</code>가 갱신됩니다. 개별
-            지출은 아래에서 금액·결제내용 등을 수정할 수 있습니다.
+            지출은 아래에서 금액·결제내용을 수정하거나, 행을 선택해 중복·불필요 지출을 삭제 보관함으로 옮길 수
+            있습니다.
           </p>
         </DialogHeader>
+
+        {visible.length > 0 ? (
+          <div className="px-3 sm:px-4 py-2 border-b bg-white shrink-0 flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="relative flex-1 min-w-[12rem] max-w-xl">
+              <Search
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+                aria-hidden
+              />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="출처·지출일·결제처·분류·금액·메모·ID 검색"
+                className="h-9 pl-9 pr-9 text-sm"
+                aria-label="지출 상세 검색"
+                disabled={deleting}
+              />
+              {searchTrim ? (
+                <button
+                  type="button"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:bg-muted"
+                  aria-label="검색어 지우기"
+                  onClick={() => setSearchQuery('')}
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </button>
+              ) : null}
+            </div>
+            {searchTrim ? (
+              <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                검색 <strong className="text-foreground font-medium">{displayRows.length}</strong> / {visible.length}건
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground shrink-0">{visible.length}건</span>
+            )}
+          </div>
+        ) : null}
+
+        {visible.length > 0 ? (
+          <div className="px-3 sm:px-4 py-2 border-b bg-slate-50/90 shrink-0 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+            <div className="text-xs text-slate-700 min-w-0">
+              {someSelected ? (
+                <span className="font-medium tabular-nums">
+                  {selectedKeys.size}건 선택 · 합계 {formatMoney(selectedSum)}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">행을 선택하면 합계가 표시됩니다.</span>
+              )}
+              {duplicateGroups.length > 0 ? (
+                <span className="block sm:inline sm:ml-2 text-slate-700">
+                  중복 의심 {duplicateGroups.length}그룹
+                  {duplicateExtraKeys.length > 0 ? ` · 삭제 후보 ${duplicateExtraKeys.length}건` : ''}
+                  <span className="flex flex-wrap gap-1 mt-1 sm:mt-0 sm:inline-flex sm:ml-1 sm:align-middle">
+                    {duplicateGroups.map((g, i) => {
+                      const sampleKey = g[0]
+                      const style = sampleKey ? duplicateStyleByKey.get(sampleKey) : null
+                      return (
+                        <span
+                          key={`dup-leg-${i}`}
+                          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border ${
+                            style?.badgeClass ?? 'bg-amber-100 text-amber-950 border-amber-300'
+                          }`}
+                          title={g.join(', ')}
+                        >
+                          {style?.groupLabel ?? `중복 ${i + 1}`} · {g.length}건
+                        </span>
+                      )
+                    })}
+                  </span>
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={deleting || visible.length === 0}
+                onClick={() => (allVisibleSelected ? clearSelection() : selectAllVisible())}
+              >
+                {allVisibleSelected ? '선택 해제' : '전체 선택'}
+              </Button>
+              {duplicateExtraKeys.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs border-amber-300 text-amber-950 hover:bg-amber-50"
+                  disabled={deleting}
+                  onClick={selectDuplicateExtras}
+                  title={`금액 ±$${BULK_COMPANY_DUP_AMOUNT_EPS}, 등록일 ±${BULK_COMPANY_DUP_DAY_WINDOW}일 — 그룹당 1건(명세 연결·가장 이른 등록일 우선) 유지`}
+                >
+                  중복 의심 {duplicateExtraKeys.length}건 선택
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-8 text-xs gap-1"
+                disabled={deleting || !someSelected}
+                onClick={() => setDeleteConfirmKeys([...selectedKeys])}
+              >
+                <Archive className="h-3.5 w-3.5" aria-hidden />
+                삭제 보관함으로
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="overflow-auto flex-1 min-h-0 px-2 sm:px-4 py-3 flex flex-col">
           {visible.length > 0 && (
@@ -541,12 +896,36 @@ export default function PnlUnifiedExpenseDetailDialog({
           )}
           {visible.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">이 구간에 해당하는 지출이 없습니다.</p>
+          ) : displayRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              검색 결과가 없습니다. 검색어를 바꾸거나 지워 보세요.
+            </p>
           ) : (
-            <table className="w-full min-w-[960px] text-xs sm:text-sm border-collapse">
+            <table className="w-full min-w-[1000px] text-xs sm:text-sm border-collapse">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 pl-1 pr-1 w-9 font-medium">
+                    <Checkbox
+                      aria-label="현재 목록 전체 선택"
+                      checked={allVisibleSelected && displayRows.length > 0}
+                      onCheckedChange={(c) => {
+                        if (c === true) selectAllVisible()
+                        else clearSelection()
+                      }}
+                      disabled={deleting || displayRows.length === 0}
+                    />
+                  </th>
                   <th className="py-2 pr-2 font-medium whitespace-nowrap">출처</th>
-                  <th className="py-2 pr-2 font-medium whitespace-nowrap">지출일</th>
+                  <th className="py-2 pr-2 font-medium whitespace-nowrap">
+                    <TableSortHeaderButton
+                      label="지출일"
+                      active
+                      dir={submitDateSortDir}
+                      onClick={() =>
+                        setSubmitDateSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                      }
+                    />
+                  </th>
                   <th className="py-2 pr-2 font-medium min-w-[88px]">결제처</th>
                   <th className="py-2 pr-2 font-medium min-w-[100px] max-w-[180px]">결제 방법</th>
                   <th className="py-2 pr-2 font-medium whitespace-nowrap">명세 대조</th>
@@ -557,14 +936,41 @@ export default function PnlUnifiedExpenseDetailDialog({
                 </tr>
               </thead>
               <tbody>
-                {visible.map((line) => {
-                  const key = `${line.source}:${line.id}`
+                {displayRows.map((line) => {
+                  const key = pnlDetailLineKey(line)
                   const isEditing = editingId === key
                   const desc = descriptionText(line)
+                  const isSelected = selectedKeys.has(key)
+                  const dupStyle = duplicateStyleByKey.get(key)
                   return (
                     <React.Fragment key={key}>
-                      <tr className="border-b border-border/60 align-top">
-                        <td className="py-2 pr-2 whitespace-nowrap">{sourceLabel(line.source)}</td>
+                      <tr
+                        className={`border-b border-border/60 align-top ${
+                          isSelected
+                            ? 'bg-red-50/90 ring-1 ring-inset ring-red-200'
+                            : dupStyle?.rowClass ?? ''
+                        }`}
+                      >
+                        <td className="py-2 pl-1 pr-1 align-middle">
+                          <Checkbox
+                            aria-label={`${sourceLabel(line.source)} ${formatMoney(line.amount)} 선택`}
+                            checked={isSelected}
+                            disabled={deleting}
+                            onCheckedChange={(c) => toggleSelected(key, c === true)}
+                          />
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          <span className="inline-flex flex-col gap-0.5">
+                            <span>{sourceLabel(line.source)}</span>
+                            {dupStyle ? (
+                              <span
+                                className={`inline-flex w-fit rounded px-1 py-0.5 text-[10px] font-semibold ${dupStyle.badgeClass}`}
+                              >
+                                {dupStyle.groupLabel}
+                              </span>
+                            ) : null}
+                          </span>
+                        </td>
                         <td className="py-2 pr-2 whitespace-nowrap tabular-nums">
                           {isoToYmd(line.submit_on) || '—'}
                         </td>
@@ -596,7 +1002,14 @@ export default function PnlUnifiedExpenseDetailDialog({
                         <td className="py-2 pr-2 text-right tabular-nums font-medium">{formatMoney(line.amount)}</td>
                         <td className="py-2 pl-1">
                           {!isEditing && (
-                            <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => startEdit(line)}>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2"
+                              disabled={deleting}
+                              onClick={() => startEdit(line)}
+                            >
                               수정
                             </Button>
                           )}
@@ -604,7 +1017,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                       </tr>
                       {isEditing && draft && (
                         <tr className="bg-muted/40 border-b">
-                          <td colSpan={9} className="p-3 sm:p-4">
+                          <td colSpan={10} className="p-3 sm:p-4">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl">
                               <div className="space-y-1">
                                 <Label className="text-xs">금액</Label>
@@ -764,7 +1177,38 @@ export default function PnlUnifiedExpenseDetailDialog({
             </table>
           )}
         </div>
+
+        {visible.length > 0 ? (
+          <DialogFooter className="px-3 sm:px-4 py-2 border-t bg-slate-50/80 shrink-0 flex-row flex-wrap justify-between gap-2">
+            <span className="text-xs text-muted-foreground self-center">
+              {searchTrim
+                ? `검색 ${displayRows.length} / ${visible.length}건`
+                : `${displayRows.length}건 표시`}
+              {duplicateGroups.length > 0
+                ? ` · 중복 점검: 금액 ±$${BULK_COMPANY_DUP_AMOUNT_EPS}, 등록일 ±${BULK_COMPANY_DUP_DAY_WINDOW}일`
+                : ''}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {someSelected ? (
+                <span className="text-xs font-medium tabular-nums text-slate-800">
+                  선택 {selectedKeys.size}건 · {formatMoney(selectedSum)}
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-8"
+                disabled={deleting || !someSelected}
+                onClick={() => setDeleteConfirmKeys([...selectedKeys])}
+              >
+                삭제 보관함으로
+              </Button>
+            </div>
+          </DialogFooter>
+        ) : null}
       </DialogContent>
     </Dialog>
+    </>
   )
 }

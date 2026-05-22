@@ -168,6 +168,28 @@ export function isReturnedPaymentStatus(paymentStatus: string): boolean {
   return false
 }
 
+/** 보증금·잔금·환불 요청 등 — 실제 수령·환불 명세가 아님 (통합 PNL 입금·현금 거래 집계에서 제외) */
+export function isPaymentRequestedStatus(paymentStatus: string | null | undefined): boolean {
+  const raw = (paymentStatus ?? '').trim()
+  if (!raw) return false
+  if (
+    raw === 'Deposit Requested' ||
+    raw === 'Balance Requested' ||
+    raw === 'Refund Requested' ||
+    raw === 'pending' ||
+    raw === 'Pending'
+  ) {
+    return true
+  }
+  const st = raw.normalize('NFKC').toLowerCase()
+  if (!/\brequested\b/.test(st) && !raw.includes('요청')) return false
+  if (isBalanceReceivedPaymentStatus(raw)) return false
+  if (raw === 'Deposit Received' || st.startsWith('deposit received')) return false
+  if (raw === 'Partner Received' || st.startsWith('partner received')) return false
+  if (isRefundedPaymentStatus(raw) || isReturnedPaymentStatus(raw)) return false
+  return true
+}
+
 export function summarizePaymentRecordsForBalance(records: PaymentRecordLike[]): {
   depositTotalNet: number
   /** 보증금/파트너/CC 청구 라인 합(환불·Returned 차감 전) */

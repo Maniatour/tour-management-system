@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -14,9 +14,17 @@ import {
   fetchSimilarStatementLinesForExpenseRow,
   fetchStatementLinesForTicketBookingDateProbe,
   replaceExpenseReconciliationMatch,
+  resolveStatementLineConflictsBeforeLink,
   searchStatementLinesAcrossImports,
-  sumMatchedAmountAllocatedToSource
+  sumMatchedAmountAllocatedToSource,
+  type StatementLineConflictResolution
 } from '@/lib/expense-reconciliation-similar-lines'
+import {
+  fetchLedgerMatchDetails,
+  formatLedgerMatchDetailLines,
+  sourceTableLabelKey,
+  type LedgerMatchDetail,
+} from '@/lib/expense-ledger-match-display'
 
 const ACCOUNT_TAB_ALL = '__all__'
 const UNKNOWN_ACCOUNT_TAB_ID = '__unknown_account__'
@@ -36,31 +44,11 @@ function dedupeStatementLineIdsPreserveOrder(ids: string[]): string[] {
   return out
 }
 
-function sourceTableLabelKey(
-  table: string
-): 'paymentRecords' | 'reservation' | 'company' | 'tour' | 'ticketBookings' | 'tourHotelBookings' | 'unknown' {
-  switch (table) {
-    case 'payment_records':
-      return 'paymentRecords'
-    case 'reservation_expenses':
-      return 'reservation'
-    case 'company_expenses':
-      return 'company'
-    case 'tour_expenses':
-      return 'tour'
-    case 'ticket_bookings':
-      return 'ticketBookings'
-    case 'tour_hotel_bookings':
-      return 'tourHotelBookings'
-    default:
-      return 'unknown'
-  }
-}
-
 type SourceSummaryInfo = {
   paymentMethod: string | null
   primaryDetail: string | null
   secondaryDetail: string | null
+  rnNumber?: string | null
   /** 투어 호텔 부킹 등 — YYYY-MM-DD 표시용 */
   checkInDate?: string | null
   checkOutDate?: string | null
@@ -117,27 +105,31 @@ async function fetchSourceSummaryInfo(context: ExpenseStatementReconContext): Pr
     case 'ticket_bookings': {
       const { data } = await supabase
         .from('ticket_bookings')
-        .select('payment_method, category, company, note')
+        .select('payment_method, category, company, note, rn_number')
         .eq('id', context.sourceId)
         .maybeSingle()
       if (!data) return null
+      const rn = data.rn_number == null ? null : String(data.rn_number).trim() || null
       return {
         paymentMethod: data.payment_method ?? null,
         primaryDetail: data.category ?? data.note ?? null,
-        secondaryDetail: data.company ?? null
+        secondaryDetail: data.company ?? null,
+        rnNumber: rn
       }
     }
     case 'tour_hotel_bookings': {
       const { data } = await supabase
         .from('tour_hotel_bookings')
-        .select('payment_method, hotel, reservation_name, city, check_in_date, check_out_date')
+        .select('payment_method, hotel, reservation_name, city, check_in_date, check_out_date, rn_number')
         .eq('id', context.sourceId)
         .maybeSingle()
       if (!data) return null
+      const rn = data.rn_number == null ? null : String(data.rn_number).trim() || null
       return {
         paymentMethod: data.payment_method ?? null,
         primaryDetail: data.hotel ?? data.reservation_name ?? null,
         secondaryDetail: data.city ?? null,
+        rnNumber: rn,
         checkInDate: formatYmdForDisplay(data.check_in_date),
         checkOutDate: formatYmdForDisplay(data.check_out_date)
       }
@@ -196,6 +188,8 @@ export default function ExpenseStatementSimilarLinesModal({
   const appendAmountUserEditedRef = useRef(false)
   const headerSelectAllRef = useRef<HTMLInputElement>(null)
   const [activeAccountTab, setActiveAccountTab] = useState(ACCOUNT_TAB_ALL)
+  const [conflictDetails, setConflictDetails] = useState<LedgerMatchDetail[]>([])
+  const [conflictDetailsLoading, setConflictDetailsLoading] = useState(false)
 
   const ticketDateProbe = context?.ticketBookingDateProbe
 
@@ -388,6 +382,72 @@ export default function ExpenseStatementSimilarLinesModal({
     [rowById, primarySelectedId]
   )
 
+  const conflictingOnSelectedLine = useMemo(() => {
+    if (!selectedRow || !context) return []
+    return selectedRow.existing_matches.filter(
+      (m) => !(m.source_table === context.sourceTable && m.source_id === context.sourceId)
+    )
+  }, [selectedRow, context])
+
+  const hasLineConflict =
+    !appendLink &&
+    selectedIdsOrdered.length === 1 &&
+    conflictingOnSelectedLine.length > 0
+
+  const lineFullyAllocatedByOthers = useMemo(() => {
+    if (!selectedRow || conflictingOnSelectedLine.length === 0) return false
+    const lineAbs = Math.abs(selectedRow.amount)
+    const tol = Math.max(0.5, lineAbs * 0.001)
+    return selectedRow.allocated_sum >= lineAbs - tol
+  }, [selectedRow, conflictingOnSelectedLine.length])
+
+  const conflictDetailsKey = useMemo(() => {
+    if (!selectedRow || conflictingOnSelectedLine.length === 0) return ''
+    return `${selectedRow.id}|${conflictingOnSelectedLine
+      .map((m) => `${m.source_table}:${m.source_id}`)
+      .sort()
+      .join(',')}`
+  }, [selectedRow, conflictingOnSelectedLine])
+
+  useEffect(() => {
+    if (!open || !conflictDetailsKey || !selectedRow) {
+      setConflictDetails([])
+      setConflictDetailsLoading(false)
+      return
+    }
+    let cancelled = false
+    setConflictDetailsLoading(true)
+    void fetchLedgerMatchDetails(supabase, selectedRow.id, conflictingOnSelectedLine)
+      .then((list) => {
+        if (!cancelled) setConflictDetails(list)
+      })
+      .catch(() => {
+        if (!cancelled) setConflictDetails([])
+      })
+      .finally(() => {
+        if (!cancelled) setConflictDetailsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, conflictDetailsKey, selectedRow, conflictingOnSelectedLine])
+
+  const detailLabelBundle = {
+    sourceType: t('lineConflictDetailSourceType'),
+    allocatedOnStatement: t('lineConflictDetailAllocated'),
+    ledgerAmount: t('lineConflictDetailLedgerAmount'),
+    paidTo: t('lineConflictDetailPaidTo'),
+    paidFor: t('lineConflictDetailPaidFor'),
+    submitDate: t('lineConflictDetailDate'),
+    checkInDate: t('lineConflictDetailCheckIn'),
+    tourDate: t('lineConflictDetailTourDate'),
+    rn: t('lineConflictDetailRn'),
+    description: t('lineConflictDetailDescription'),
+    paymentMethod: t('sourcePaymentMethod'),
+    recordId: t('lineConflictDetailRecordId'),
+    notFound: t('lineConflictDetailNotFound'),
+  }
+
   const ledgerTotalAbs = context ? Math.abs(context.amount) : 0
   const remainingOnLedger =
     sourceAllocatedSum == null ? null : Math.max(0, ledgerTotalAbs - sourceAllocatedSum)
@@ -416,7 +476,7 @@ export default function ExpenseStatementSimilarLinesModal({
     selectedAmountDiff > 0.009 &&
     selectedAmountDiff <= syncTol
 
-  const apply = async () => {
+  const apply = async (conflictResolution?: StatementLineConflictResolution) => {
     if (!context || !user?.email) {
       setMessage(t('needLogin'))
       return
@@ -428,6 +488,10 @@ export default function ExpenseStatementSimilarLinesModal({
     }
     if (!appendLink && ordered.length > 1) {
       setMessage(t('replaceSelectSingleOnly'))
+      return
+    }
+    if (hasLineConflict && !conflictResolution) {
+      setMessage(t('lineConflictNeedChoice'))
       return
     }
 
@@ -443,10 +507,29 @@ export default function ExpenseStatementSimilarLinesModal({
           setMessage(t('saveError'))
           return
         }
+        if (conflictResolution) {
+          const result = await resolveStatementLineConflictsBeforeLink(supabase, {
+            statementLineId: row.id,
+            keepSourceTable: context.sourceTable,
+            keepSourceId: context.sourceId,
+            resolution: conflictResolution,
+            actorEmail: email
+          })
+          if (
+            conflictResolution === 'unlinkAndDeleteOthers' &&
+            result.skippedDeleteCount > 0
+          ) {
+            setMessage(t('lineConflictDeleteSkipped', { n: result.skippedDeleteCount }))
+          }
+        }
         const diff = Math.abs(Math.abs(row.amount) - ledgerCap)
         const stol = expenseReconciliationAmountTolerance(ledgerCap)
         const canSync =
           context.sourceTable !== 'payment_records' && diff > 0.009 && diff <= stol
+        const lineAbs = Math.abs(row.amount)
+        const lineRoom = Math.max(0, lineAbs - row.allocated_sum)
+        const matchedAmount =
+          lineRoom > 0.009 ? Math.min(ledgerCap, lineRoom) : ledgerCap
 
         await replaceExpenseReconciliationMatch(supabase, {
           actorEmail: email,
@@ -454,7 +537,7 @@ export default function ExpenseStatementSimilarLinesModal({
           sourceId: context.sourceId,
           statementLineId: row.id,
           statementLineAmount: row.amount,
-          matchedAmount: ledgerCap,
+          matchedAmount,
           linkMode: 'replace',
           ledgerCapAmount: ledgerCap,
           syncSourceAmountToStatement: canSync && syncAmountToStatement
@@ -585,8 +668,8 @@ export default function ExpenseStatementSimilarLinesModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] w-full max-w-[min(96vw,72rem)] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-h-[85vh] w-full max-w-[min(96vw,72rem)] flex flex-col gap-0 overflow-hidden p-4 sm:p-6">
+        <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>{t('modalTitle')}</DialogTitle>
           <p className="text-sm text-muted-foreground pt-1">{t('modalHint')}</p>
           <p className="text-xs text-muted-foreground pt-0.5">{t('modalSplitHint')}</p>
@@ -594,7 +677,7 @@ export default function ExpenseStatementSimilarLinesModal({
         </DialogHeader>
 
         {context ? (
-          <div className="space-y-1.5 border-b pb-2 mb-2">
+          <div className="shrink-0 max-h-[min(30vh,11rem)] overflow-y-auto space-y-1.5 border-b pb-2 mb-2">
             <p className="text-xs text-muted-foreground tabular-nums">
               {t('ledgerSummary', {
                 table: tableName,
@@ -611,6 +694,11 @@ export default function ExpenseStatementSimilarLinesModal({
             {sourceSummary?.secondaryDetail ? (
               <p className="text-[11px] text-muted-foreground leading-snug truncate" title={sourceSummary.secondaryDetail}>
                 {t('sourceSecondaryDetail')}: {sourceSummary.secondaryDetail}
+              </p>
+            ) : null}
+            {sourceSummary?.rnNumber ? (
+              <p className="text-[11px] text-muted-foreground leading-snug tabular-nums" title={sourceSummary.rnNumber}>
+                {t('sourceRnNumber')}: {sourceSummary.rnNumber}
               </p>
             ) : null}
             {sourceSummary?.checkInDate ? (
@@ -698,111 +786,114 @@ export default function ExpenseStatementSimilarLinesModal({
           </div>
         ) : null}
 
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between mb-2">
-          <div className="flex flex-wrap gap-2">
-            {!ticketDateProbe ? (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={matchMode === 'dateProximity' ? 'default' : 'outline'}
-                  disabled={loading || !context}
-                  onClick={() => {
-                    setMatchMode('dateProximity')
-                  }}
-                >
-                  {t('matchModeDateProximity')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={matchMode === 'amountOnly' ? 'default' : 'outline'}
-                  disabled={loading || !context}
-                  onClick={() => {
-                    setMatchMode('amountOnly')
-                  }}
-                >
-                  {t('matchModeAmountOnly')}
-                </Button>
-              </>
-            ) : null}
+        <div className="shrink-0 z-10 bg-white border-b mb-2 space-y-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {!ticketDateProbe ? (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={matchMode === 'dateProximity' ? 'default' : 'outline'}
+                    disabled={loading || !context}
+                    onClick={() => {
+                      setMatchMode('dateProximity')
+                    }}
+                  >
+                    {t('matchModeDateProximity')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={matchMode === 'amountOnly' ? 'default' : 'outline'}
+                    disabled={loading || !context}
+                    onClick={() => {
+                      setMatchMode('amountOnly')
+                    }}
+                  >
+                    {t('matchModeAmountOnly')}
+                  </Button>
+                </>
+              ) : null}
+            </div>
+            <div className="w-full sm:flex-1 sm:min-w-[10rem] sm:max-w-md">
+              <Input
+                type="search"
+                value={rowSearch}
+                onChange={(e) => setRowSearch(e.target.value)}
+                placeholder={t('searchRowsPlaceholder')}
+                className="h-9 text-sm"
+                disabled={!context}
+              />
+            </div>
           </div>
-          <div className="flex-1 min-w-[10rem] max-w-md">
-            <Input
-              type="search"
-              value={rowSearch}
-              onChange={(e) => setRowSearch(e.target.value)}
-              placeholder={t('searchRowsPlaceholder')}
-              className="h-9 text-sm"
-              disabled={!context}
-            />
-          </div>
-        </div>
-        {showAccountTabs ? (
-          <div
-            className="mb-2 flex gap-1 overflow-x-auto border-b border-gray-200 pb-0.5"
-            role="tablist"
-            aria-label={t('accountTabsLabel')}
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeAccountTab === ACCOUNT_TAB_ALL}
-              onClick={() => setActiveAccountTab(ACCOUNT_TAB_ALL)}
-              className={`shrink-0 rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeAccountTab === ACCOUNT_TAB_ALL
-                  ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px'
-                  : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
+          {showAccountTabs ? (
+            <div
+              className="flex gap-1 overflow-x-auto overscroll-x-contain border-b border-gray-200 pb-px -mx-0.5 px-0.5"
+              role="tablist"
+              aria-label={t('accountTabsLabel')}
             >
-              {t('accountTabAll', { count: sourceRows.length })}
-            </button>
-            {accountTabs.map((tab) => (
               <button
-                key={tab.id}
                 type="button"
                 role="tab"
-                aria-selected={activeAccountTab === tab.id}
-                onClick={() => setActiveAccountTab(tab.id)}
-                className={`shrink-0 max-w-[14rem] truncate rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeAccountTab === tab.id
-                    ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px'
+                aria-selected={activeAccountTab === ACCOUNT_TAB_ALL}
+                onClick={() => setActiveAccountTab(ACCOUNT_TAB_ALL)}
+                className={`shrink-0 rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeAccountTab === ACCOUNT_TAB_ALL
+                    ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px z-[1]'
                     : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
-                title={tab.name}
               >
-                {t('accountTabNamed', { name: tab.name, count: tab.count })}
+                {t('accountTabAll', { count: sourceRows.length })}
               </button>
-            ))}
-          </div>
-        ) : null}
-        {!loading && !isSearchActive && rows.length > 0 ? (
-          <p className="text-[11px] text-muted-foreground mb-1.5 tabular-nums">
-            {t('similarCandidatesCount', { count: visibleRows.length })}
-            {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
-              ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
-              : ''}
-          </p>
-        ) : null}
-        {isSearchActive && !searchLoading ? (
-          <p className="text-[11px] text-muted-foreground mb-1.5 tabular-nums">
-            {t('searchResultsCount', { count: visibleRows.length })}
-            {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
-              ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
-              : ''}
-          </p>
-        ) : null}
+              {accountTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeAccountTab === tab.id}
+                  onClick={() => setActiveAccountTab(tab.id)}
+                  className={`shrink-0 max-w-[14rem] truncate rounded-t-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    activeAccountTab === tab.id
+                      ? 'border-gray-200 border-b-white bg-white text-blue-700 shadow-sm -mb-px z-[1]'
+                      : 'border-transparent bg-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                  title={tab.name}
+                >
+                  {t('accountTabNamed', { name: tab.name, count: tab.count })}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {!loading && !isSearchActive && rows.length > 0 ? (
+            <p className="text-[11px] text-muted-foreground tabular-nums">
+              {t('similarCandidatesCount', { count: visibleRows.length })}
+              {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
+                ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
+                : ''}
+            </p>
+          ) : null}
+          {isSearchActive && !searchLoading ? (
+            <p className="text-[11px] text-muted-foreground tabular-nums">
+              {t('searchResultsCount', { count: visibleRows.length })}
+              {activeAccountTab !== ACCOUNT_TAB_ALL && sourceRows.length !== visibleRows.length
+                ? ` · ${t('accountTabFilteredFrom', { total: sourceRows.length })}`
+                : ''}
+            </p>
+          ) : null}
+        </div>
 
-        {message ? <div className="text-sm text-red-600 mb-2">{message}</div> : null}
+        <div className="shrink-0 space-y-2 mb-2 max-h-[min(24vh,10rem)] overflow-y-auto">
+        {message ? <div className="text-sm text-red-600">{message}</div> : null}
 
         {selectedIdsOrdered.length > 0 ? (
-          <p className="text-[11px] text-muted-foreground tabular-nums mb-1">
+          <p className="text-[11px] text-muted-foreground tabular-nums">
             {t('selectedLinesCount', { n: selectedIdsOrdered.length })}
           </p>
         ) : null}
 
         {canSyncAmount ? (
-          <label className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             <input
               type="checkbox"
               className="mt-0.5"
@@ -818,7 +909,72 @@ export default function ExpenseStatementSimilarLinesModal({
           </label>
         ) : null}
 
-        <div className="flex-1 min-h-0 overflow-auto rounded-md border">
+        {hasLineConflict ? (
+          <div className="space-y-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-950">
+            <p className="font-semibold leading-snug">{t('lineConflictTitle')}</p>
+            {lineFullyAllocatedByOthers ? (
+              <p className="leading-snug">{t('lineConflictFullyAllocated')}</p>
+            ) : null}
+            {conflictDetailsLoading ? (
+              <p className="text-[11px] text-red-900/80">{t('lineConflictDetailLoading')}</p>
+            ) : null}
+            <div className="space-y-2">
+              {(conflictDetails.length > 0
+                ? conflictDetails
+                : conflictingOnSelectedLine.map((m) => ({
+                    source_table: m.source_table,
+                    source_id: m.source_id,
+                    matched_amount: null,
+                    ledger_amount: 0,
+                    date_primary_ymd: '',
+                    date_secondary_ymd: null,
+                    paid_to: '—',
+                    paid_for: '—',
+                    description: null,
+                    payment_method: null,
+                    rn_number: null,
+                    check_in_date_ymd: null,
+                    tour_date_ymd: null,
+                  }))
+              ).map((d) => {
+                const pmKey = d.payment_method?.trim() ?? ''
+                const pmLabel = pmKey
+                  ? paymentMethodMap[pmKey] ??
+                    paymentMethodFinancialAccountNameByPmId[pmKey] ??
+                    pmKey
+                  : null
+                const typeName = t(
+                  `sourceTypes.${sourceTableLabelKey(d.source_table)}`
+                )
+                const { headline, rows } = formatLedgerMatchDetailLines(
+                  d,
+                  { ...detailLabelBundle, sourceType: typeName },
+                  pmLabel
+                )
+                return (
+                  <div
+                    key={`${d.source_table}:${d.source_id}`}
+                    className="rounded-md border border-red-300/80 bg-white/90 px-2.5 py-2 text-[11px] leading-snug text-gray-900 shadow-sm"
+                  >
+                    <p className="font-semibold text-red-950 tabular-nums">{headline}</p>
+                    <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                      {rows.map((row) => (
+                        <Fragment key={`${row.label}-${row.value}`}>
+                          <dt className="text-gray-500 shrink-0">{row.label}</dt>
+                          <dd className="min-w-0 break-words font-medium">{row.value}</dd>
+                        </Fragment>
+                      ))}
+                    </dl>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-[11px] leading-snug text-red-900/90">{t('lineConflictHint')}</p>
+          </div>
+        ) : null}
+        </div>
+
+        <div className="flex-1 min-h-[10rem] overflow-auto rounded-md border">
           {loading || (isSearchActive && searchLoading) ? (
             <div className="p-6 text-center text-sm text-muted-foreground">{t('loading')}</div>
           ) : !isSearchActive && rows.length === 0 ? (
@@ -905,27 +1061,50 @@ export default function ExpenseStatementSimilarLinesModal({
           )}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="shrink-0 flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2 pt-2 border-t mt-2">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="sm:mr-auto">
             {t('close')}
           </Button>
-          <Button
-            type="button"
-            disabled={
-              selectedIdsOrdered.length === 0 ||
-              saving ||
-              (appendLink && remainingOnLedger != null && remainingOnLedger < 0.01)
-            }
-            onClick={() => void apply()}
-          >
-            {saving
-              ? t('saving')
-              : appendLink && selectedIdsOrdered.length > 1
-                ? t('connectAppendN', { n: dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered).length })
-                : appendLink
-                  ? t('connectAppend')
-                  : t('connect')}
-          </Button>
+          {hasLineConflict ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={selectedIdsOrdered.length === 0 || saving}
+                onClick={() => void apply('unlinkOthers')}
+              >
+                {saving ? t('saving') : t('connectUnlinkOthers')}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={selectedIdsOrdered.length === 0 || saving}
+                onClick={() => void apply('unlinkAndDeleteOthers')}
+              >
+                {saving ? t('saving') : t('connectDeleteOthers')}
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              disabled={
+                selectedIdsOrdered.length === 0 ||
+                saving ||
+                (appendLink && remainingOnLedger != null && remainingOnLedger < 0.01)
+              }
+              onClick={() => void apply()}
+            >
+              {saving
+                ? t('saving')
+                : appendLink && selectedIdsOrdered.length > 1
+                  ? t('connectAppendN', {
+                      n: dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered).length
+                    })
+                  : appendLink
+                    ? t('connectAppend')
+                    : t('connect')}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatStatementLineDescription } from '@/lib/statement-display'
+import { softDeleteExpenseRecord, type ExpenseSoftDeleteTable } from '@/lib/expense-soft-delete'
 
 /** 명세 대조 화면의 운영 원장 «수동 후보»와 동일한 거래일 ±일 */
 export const RECON_EXPENSE_LEDGER_DAY_WINDOW = 4
@@ -711,6 +712,247 @@ function normalizeLedgerAmountForSource(sourceTable: ExpenseReconSourceTable, st
   return Math.abs(statementLineAmount)
 }
 
+const EXPENSE_TABLES_WITH_STATEMENT_LINE_ID: ExpenseReconSourceTable[] = [
+  'company_expenses',
+  'tour_expenses',
+  'reservation_expenses',
+  'ticket_bookings',
+]
+
+function isSoftDeletableExpenseSource(table: string): table is ExpenseSoftDeleteTable {
+  return (
+    table === 'company_expenses' ||
+    table === 'tour_expenses' ||
+    table === 'reservation_expenses' ||
+    table === 'ticket_bookings'
+  )
+}
+
+async function clearLegacyStatementLineIdOnSource(
+  supabase: SupabaseClient,
+  sourceTable: string,
+  sourceId: string,
+  statementLineId: string
+): Promise<void> {
+  if (!EXPENSE_TABLES_WITH_STATEMENT_LINE_ID.includes(sourceTable as ExpenseReconSourceTable)) return
+  await supabase
+    .from(sourceTable)
+    .update({ statement_line_id: null })
+    .eq('id', sourceId)
+    .eq('statement_line_id', statementLineId)
+}
+
+export type StatementLineConflictResolution = 'unlinkOthers' | 'unlinkAndDeleteOthers'
+
+/**
+ * 선택한 명세 줄에 다른 원장이 연결되어 있을 때: 기존 연결만 해제하거나, 지출 행을 삭제(soft)한 뒤 이 원장 연결을 진행합니다.
+ */
+export async function resolveStatementLineConflictsBeforeLink(
+  supabase: SupabaseClient,
+  params: {
+    statementLineId: string
+    keepSourceTable: ExpenseReconSourceTable
+    keepSourceId: string
+    resolution: StatementLineConflictResolution
+    actorEmail?: string | null
+  }
+): Promise<{ unlinkedCount: number; deletedCount: number; skippedDeleteCount: number }> {
+  const { statementLineId, keepSourceTable, keepSourceId, resolution, actorEmail } = params
+
+  const { data: matches, error } = await supabase
+    .from('reconciliation_matches')
+    .select('id, source_table, source_id')
+    .eq('statement_line_id', statementLineId)
+  if (error) throw error
+
+  const others = (matches || []).filter(
+    (m) =>
+      !(
+        String(m.source_table) === keepSourceTable &&
+        String(m.source_id) === keepSourceId
+      )
+  )
+
+  let unlinkedCount = 0
+  let deletedCount = 0
+  let skippedDeleteCount = 0
+
+  for (const m of others) {
+    const table = String(m.source_table ?? '')
+    const sourceId = String(m.source_id ?? '')
+    if (!table || !sourceId) continue
+
+    if (resolution === 'unlinkAndDeleteOthers' && isSoftDeletableExpenseSource(table)) {
+      await softDeleteExpenseRecord(supabase, table, sourceId, actorEmail ?? null)
+      deletedCount += 1
+    } else {
+      const { error: delErr } = await supabase.from('reconciliation_matches').delete().eq('id', m.id)
+      if (delErr) throw delErr
+      await clearLegacyStatementLineIdOnSource(supabase, table, sourceId, statementLineId)
+      unlinkedCount += 1
+      if (resolution === 'unlinkAndDeleteOthers' && !isSoftDeletableExpenseSource(table)) {
+        skippedDeleteCount += 1
+      }
+    }
+  }
+
+  await syncStatementLineMatchedStatus(supabase, statementLineId)
+  return { unlinkedCount, deletedCount, skippedDeleteCount }
+}
+
+/** 명세 줄에 이미 배정된 금액(레거시 null·단일 연결 규칙은 attachExistingMatches와 동일) */
+export function sumAllocatedOnStatementLine(
+  matches: { matched_amount: number | string | null }[],
+  lineAbs: number
+): number {
+  if (matches.length === 0) return 0
+  let allocated = 0
+  for (const x of matches) {
+    if (x.matched_amount != null && x.matched_amount !== '') {
+      allocated += Math.abs(Number(x.matched_amount))
+    } else if (matches.length === 1) {
+      allocated += lineAbs
+    }
+  }
+  return allocated
+}
+
+/** 한 원장 행(지출·부킹 등)에 걸린 모든 명세 대조 연결 해제 */
+export async function unlinkExpenseReconciliationMatchesForSource(
+  supabase: SupabaseClient,
+  sourceTable: ExpenseReconSourceTable,
+  sourceId: string
+): Promise<{ unlinkedCount: number }> {
+  const { data: oldForSource, error } = await supabase
+    .from('reconciliation_matches')
+    .select('id, statement_line_id')
+    .eq('source_table', sourceTable)
+    .eq('source_id', sourceId)
+  if (error) throw error
+
+  const rows = (oldForSource || []) as { id: string; statement_line_id: string }[]
+  const lineIds = new Set<string>()
+
+  for (const row of rows) {
+    const { error: delErr } = await supabase.from('reconciliation_matches').delete().eq('id', row.id)
+    if (delErr) throw delErr
+    const lid = String(row.statement_line_id ?? '').trim()
+    if (lid) {
+      lineIds.add(lid)
+      await clearLegacyStatementLineIdOnSource(supabase, sourceTable, sourceId, lid)
+    }
+  }
+
+  for (const lineId of lineIds) {
+    await syncStatementLineMatchedStatus(supabase, lineId)
+  }
+
+  if (EXPENSE_TABLES_WITH_STATEMENT_LINE_ID.includes(sourceTable)) {
+    await supabase.from(sourceTable).update({ statement_line_id: null }).eq('id', sourceId)
+  }
+
+  return { unlinkedCount: rows.length }
+}
+
+/**
+ * 원장 행의 명세 연결 한 건 해제. `matchId`가 있으면 해당 행만, 없으면 `statementLineId`로 찾거나 전체 해제.
+ */
+export async function unlinkExpenseReconciliationMatch(
+  supabase: SupabaseClient,
+  params: {
+    sourceTable: ExpenseReconSourceTable
+    sourceId: string
+    matchId?: string | null
+    statementLineId?: string | null
+  }
+): Promise<{ unlinkedCount: number }> {
+  const { sourceTable, sourceId, matchId, statementLineId } = params
+  const mid = String(matchId ?? '').trim()
+  if (mid) {
+    const { data: row, error } = await supabase
+      .from('reconciliation_matches')
+      .select('id, statement_line_id, source_table, source_id')
+      .eq('id', mid)
+      .maybeSingle()
+    if (error) throw error
+    if (!row) return { unlinkedCount: 0 }
+    const lineId = String(row.statement_line_id ?? '').trim()
+    const { error: delErr } = await supabase.from('reconciliation_matches').delete().eq('id', mid)
+    if (delErr) throw delErr
+    if (lineId) {
+      await clearLegacyStatementLineIdOnSource(
+        supabase,
+        String(row.source_table ?? sourceTable),
+        String(row.source_id ?? sourceId),
+        lineId
+      )
+      await syncStatementLineMatchedStatus(supabase, lineId)
+    }
+    return { unlinkedCount: 1 }
+  }
+
+  const lid = String(statementLineId ?? '').trim()
+  if (lid) {
+    const { data: rows, error } = await supabase
+      .from('reconciliation_matches')
+      .select('id')
+      .eq('source_table', sourceTable)
+      .eq('source_id', sourceId)
+      .eq('statement_line_id', lid)
+    if (error) throw error
+    let count = 0
+    for (const r of rows || []) {
+      const id = String((r as { id: string }).id ?? '').trim()
+      if (!id) continue
+      const { error: delErr } = await supabase.from('reconciliation_matches').delete().eq('id', id)
+      if (delErr) throw delErr
+      count += 1
+    }
+    await clearLegacyStatementLineIdOnSource(supabase, sourceTable, sourceId, lid)
+    await syncStatementLineMatchedStatus(supabase, lid)
+    if (count === 0 && EXPENSE_TABLES_WITH_STATEMENT_LINE_ID.includes(sourceTable)) {
+      await supabase
+        .from(sourceTable)
+        .update({ statement_line_id: null })
+        .eq('id', sourceId)
+        .eq('statement_line_id', lid)
+      count = 1
+    }
+    return { unlinkedCount: count }
+  }
+
+  return unlinkExpenseReconciliationMatchesForSource(supabase, sourceTable, sourceId)
+}
+
+/** 선택한 명세 줄들의 모든 대조 연결 해제(명세 줄 자체는 삭제하지 않음) */
+export async function unlinkAllMatchesOnStatementLines(
+  supabase: SupabaseClient,
+  lineIds: string[]
+): Promise<{ unlinkedCount: number }> {
+  const unique = [...new Set(lineIds.map((id) => id.trim()).filter(Boolean))]
+  let unlinkedCount = 0
+  for (const lineId of unique) {
+    const { data: matches, error } = await supabase
+      .from('reconciliation_matches')
+      .select('id, source_table, source_id')
+      .eq('statement_line_id', lineId)
+    if (error) throw error
+    for (const m of matches || []) {
+      const { error: delErr } = await supabase.from('reconciliation_matches').delete().eq('id', m.id)
+      if (delErr) throw delErr
+      await clearLegacyStatementLineIdOnSource(
+        supabase,
+        String(m.source_table ?? ''),
+        String(m.source_id ?? ''),
+        lineId
+      )
+      unlinkedCount += 1
+    }
+    await syncStatementLineMatchedStatus(supabase, lineId)
+  }
+  return { unlinkedCount }
+}
+
 /**
  * 한 지출(원장) 행에 이미 명세에 배정된 금액 합계. `matched_amount`가 null인 레거시 행은 해당 명세 줄 절대금액으로 간주합니다.
  */
@@ -829,11 +1071,15 @@ export async function replaceExpenseReconciliationMatch(
     .select('matched_amount')
     .eq('statement_line_id', statementLineId)
 
-  let existingSum = 0
-  for (const r of (existingOnLine || []) as { matched_amount: number | string | null }[]) {
-    existingSum += r.matched_amount != null && r.matched_amount !== '' ? Number(r.matched_amount) : 0
-  }
+  const existingRows = (existingOnLine || []) as { matched_amount: number | string | null }[]
+  const existingSum = sumAllocatedOnStatementLine(existingRows, lineAbs)
   const allocTol = Math.max(0.5, lineAbs * 0.001)
+  const lineRoom = Math.max(0, lineAbs - existingSum)
+
+  if (linkMode === 'replace' && lineRoom > allocTol && ledgerShare > lineRoom + allocTol) {
+    ledgerShare = lineRoom
+  }
+
   if (lineAbs > 0 && existingSum + ledgerShare > lineAbs + allocTol) {
     throw new Error(
       `명세 금액($${lineAbs.toFixed(2)})에 이미 $${existingSum.toFixed(2)}가 배정되어 있어, 이 원장 $${ledgerShare.toFixed(2)}를 더하면 초과합니다. 기존 연결을 확인하거나 명세 대조 화면에서 조정하세요.`

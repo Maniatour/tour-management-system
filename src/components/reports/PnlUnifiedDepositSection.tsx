@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { ArrowDownCircle } from 'lucide-react'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
+import { isPaymentRequestedStatus } from '@/utils/reservationPricingBalance'
 import { fetchPaymentRecordsForPnlReport } from '@/lib/pnlReportDataFetch'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import {
@@ -88,7 +89,9 @@ export default function PnlUnifiedDepositSection({
 
     setMonthlyCells(mergePnlDepositMonthlyCells(statusMonthly, cashMonthly))
     setDetailLines([...statusLines, ...cashLines])
-    setRecordCount(rows.filter((r) => r.submit_on).length)
+    setRecordCount(
+      rows.filter((r) => r.submit_on && !isPaymentRequestedStatus(r.payment_status)).length
+    )
     setLoading(false)
   }, [dateRange])
 
@@ -155,7 +158,8 @@ export default function PnlUnifiedDepositSection({
         </h3>
         <p className="text-xs sm:text-sm text-gray-600 mb-3 break-words">
           기간 {dateRange.start} ~ {dateRange.end} · 제출일(submit_on) 기준 {recordCount.toLocaleString()}건 ·
-          환불·Returned는 음수로 표시합니다.
+          환불·Returned는 음수로 표시합니다. 보증금·잔금·환불 <strong>요청</strong> 상태(Deposit Requested 등)는 실입금이
+          아니므로 집계·기타 입금에서 제외합니다.
         </p>
         <p className="text-xs text-emerald-900/90 bg-emerald-50 border border-emerald-100 rounded-md px-3 py-2 mb-3">
           금액·합계 셀을 누르면 상세 목록이 열립니다. <strong>현금 결제수단</strong> 행은 현금 리포트 참고용이며{' '}
