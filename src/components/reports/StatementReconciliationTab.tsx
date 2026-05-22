@@ -1830,6 +1830,11 @@ export default function StatementReconciliationTab() {
   const [expensePickerPendingReconnectKeys, setExpensePickerPendingReconnectKeys] = useState<Set<string>>(
     () => new Set()
   )
+  /** `toggleExpensePickerPending`에서 pending·reconnect를 한 번에 맞추기 위한 동기 스냅샷 */
+  const expensePickerPendingReconnectRef = useRef(expensePickerPendingReconnectKeys)
+  useEffect(() => {
+    expensePickerPendingReconnectRef.current = expensePickerPendingReconnectKeys
+  }, [expensePickerPendingReconnectKeys])
   const [expensePickerSaving, setExpensePickerSaving] = useState(false)
   const [matchedExpenseDetails, setMatchedExpenseDetails] = useState<Record<string, ExpenseOption>>({})
   const [paymentPickerLineId, setPaymentPickerLineId] = useState<string | null>(null)
@@ -4951,6 +4956,7 @@ export default function StatementReconciliationTab() {
       setExpensePickerPendingReconnectKeys((s) => {
         const next = new Set(s)
         next.delete(rawKey)
+        expensePickerPendingReconnectRef.current = next
         return next
       })
     })
@@ -4959,28 +4965,28 @@ export default function StatementReconciliationTab() {
   const toggleExpensePickerPending = useCallback((rawKey: string, reconnect = false) => {
     startTransition(() => {
       setExpensePickerPendingKeys((pending) => {
-        setExpensePickerPendingReconnectKeys((reconnectSet) => {
-          const already = pending.includes(rawKey)
-          const wasReconnect = reconnectSet.has(rawKey)
-          const nextReconnect = new Set(reconnectSet)
+        const reconnectSet = expensePickerPendingReconnectRef.current
+        const already = pending.includes(rawKey)
+        const wasReconnect = reconnectSet.has(rawKey)
+        const nextReconnect = new Set(reconnectSet)
 
-          if (!already) {
-            if (reconnect) nextReconnect.add(rawKey)
-            setExpensePickerPendingKeys([...pending, rawKey])
-            return nextReconnect
-          }
+        let nextPending: string[]
 
-          if (reconnect === wasReconnect) {
-            nextReconnect.delete(rawKey)
-            setExpensePickerPendingKeys(pending.filter((k) => k !== rawKey))
-            return nextReconnect
-          }
-
+        if (!already) {
+          if (reconnect) nextReconnect.add(rawKey)
+          nextPending = [...pending, rawKey]
+        } else if (reconnect === wasReconnect) {
+          nextReconnect.delete(rawKey)
+          nextPending = pending.filter((k) => k !== rawKey)
+        } else {
           if (reconnect) nextReconnect.add(rawKey)
           else nextReconnect.delete(rawKey)
-          return nextReconnect
-        })
-        return pending
+          nextPending = pending
+        }
+
+        expensePickerPendingReconnectRef.current = nextReconnect
+        setExpensePickerPendingReconnectKeys(nextReconnect)
+        return nextPending
       })
     })
   }, [])
