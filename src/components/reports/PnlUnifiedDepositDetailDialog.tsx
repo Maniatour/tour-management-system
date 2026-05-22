@@ -11,12 +11,16 @@ import type { PnlDepositBucketKey, PnlPaymentRecordLine } from '@/lib/pnlPayment
 import { formatPnlMoney } from '@/lib/pnlPaymentRecords'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 
+const CASH_PAYMENT_BUCKETS = new Set<PnlDepositBucketKey>(['cash_deposit', 'cash_refund'])
+
 export type PnlDepositDrillState =
   | { mode: 'cell'; bucketKey: PnlDepositBucketKey; month: string; rowTitle?: string }
   | { mode: 'row'; bucketKey: PnlDepositBucketKey; rowTitle?: string }
   | { mode: 'col'; month: string }
   | { mode: 'grand' }
   | { mode: 'net' }
+  | { mode: 'cash_net'; scope: 'cell'; month: string; rowTitle?: string }
+  | { mode: 'cash_net'; scope: 'grand'; rowTitle?: string }
 
 type Props = {
   open: boolean
@@ -47,9 +51,13 @@ export default function PnlUnifiedDepositDetailDialog({
 
   const filtered = useMemo(() => {
     if (!drill) return []
-    const cashBuckets = new Set<PnlDepositBucketKey>(['cash_deposit', 'cash_refund'])
     if (drill.mode === 'grand') return lines
-    if (drill.mode === 'net') return lines.filter((l) => !cashBuckets.has(l.bucketKey))
+    if (drill.mode === 'net') return lines.filter((l) => !CASH_PAYMENT_BUCKETS.has(l.bucketKey))
+    if (drill.mode === 'cash_net') {
+      const cashLines = lines.filter((l) => CASH_PAYMENT_BUCKETS.has(l.bucketKey))
+      if (drill.scope === 'grand') return cashLines
+      return cashLines.filter((l) => l.yearMonth === drill.month)
+    }
     if (drill.mode === 'col') return lines.filter((l) => l.yearMonth === drill.month)
     if (drill.mode === 'row') return lines.filter((l) => l.bucketKey === drill.bucketKey)
     return lines.filter((l) => l.bucketKey === drill.bucketKey && l.yearMonth === drill.month)
@@ -59,6 +67,10 @@ export default function PnlUnifiedDepositDetailDialog({
     if (!drill) return '입금 상세'
     if (drill.mode === 'grand') return '기간 전체 · 입금·환불 상세'
     if (drill.mode === 'net') return '순합계 상세 (상태별 · 현금 행 제외)'
+    if (drill.mode === 'cash_net') {
+      if (drill.scope === 'grand') return drill.rowTitle ?? '기간 전체 · 현금 입금·환불'
+      return `${drill.rowTitle ?? '현금 입금·환불'} · ${formatMonthLabel(drill.month)}`
+    }
     if (drill.mode === 'col') return `${formatMonthLabel(drill.month)} · 전체`
     if (drill.mode === 'row') return drill.rowTitle ?? '행 상세'
     return `${drill.rowTitle ?? ''} · ${formatMonthLabel(drill.month)}`

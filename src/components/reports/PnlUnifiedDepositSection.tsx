@@ -5,7 +5,16 @@ import { useLocale } from 'next-intl'
 import { ArrowDownCircle } from 'lucide-react'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import { isPaymentRequestedStatus } from '@/utils/reservationPricingBalance'
-import { fetchPaymentRecordsForPnlReport } from '@/lib/pnlReportDataFetch'
+import {
+  aggregatePnlStatementInflows,
+  buildPnlStatementInflowDetailLines,
+  fetchPaymentRecordsForPnlReport,
+  fetchStatementInflowsForPnlReport,
+  type PnlStatementInflowLine,
+} from '@/lib/pnlReportDataFetch'
+import PnlStatementInflowDetailDialog, {
+  type PnlStatementInflowDrillState,
+} from '@/components/reports/PnlStatementInflowDetailDialog'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import {
   aggregatePnlPaymentRecords,
@@ -21,12 +30,23 @@ import {
 import PnlUnifiedDepositDetailDialog, {
   type PnlDepositDrillState,
 } from '@/components/reports/PnlUnifiedDepositDetailDialog'
-import type { PnlDepositNetTotals } from '@/components/reports/PnlUnifiedNetProfitSection'
+import type {
+  PnlCashBucketTotals,
+  PnlCashPaymentDrill,
+  PnlDepositNetTotals,
+  PnlStatementInflowTotals,
+} from '@/components/reports/PnlUnifiedNetProfitSection'
 
 interface PnlUnifiedDepositSectionProps {
   dateRange: { start: string; end: string }
   onLoadingChange?: (loading: boolean) => void
   onNetTotalsReady?: (totals: PnlDepositNetTotals) => void
+  onStatementInflowReady?: (totals: PnlStatementInflowTotals) => void
+  onStatementInflowDetailLinesReady?: (lines: PnlStatementInflowLine[]) => void
+  onRegisterReloadStatementInflows?: (fn: () => Promise<void>) => void
+  onCashDepositTotalsReady?: (totals: PnlCashBucketTotals) => void
+  onCashRefundTotalsReady?: (totals: PnlCashBucketTotals) => void
+  onRegisterOpenCashPaymentDetail?: (fn: (drill: PnlCashPaymentDrill) => void) => void
 }
 
 function bucketKeysInGroup(tableRows: PnlDepositTableRow[], groupIndex: number): PnlDepositBucketKey[] {
@@ -43,6 +63,12 @@ export default function PnlUnifiedDepositSection({
   dateRange,
   onLoadingChange,
   onNetTotalsReady,
+  onStatementInflowReady,
+  onStatementInflowDetailLinesReady,
+  onRegisterReloadStatementInflows,
+  onCashDepositTotalsReady,
+  onCashRefundTotalsReady,
+  onRegisterOpenCashPaymentDetail,
 }: PnlUnifiedDepositSectionProps) {
   const locale = useLocale()
   const [loading, setLoading] = useState(true)
@@ -51,6 +77,12 @@ export default function PnlUnifiedDepositSection({
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailDrill, setDetailDrill] = useState<PnlDepositDrillState | null>(null)
   const [recordCount, setRecordCount] = useState(0)
+  const [statementInflowMonthly, setStatementInflowMonthly] = useState<Record<string, number>>({})
+  const [statementInflowTotal, setStatementInflowTotal] = useState(0)
+  const [statementInflowLineCount, setStatementInflowLineCount] = useState(0)
+  const [statementInflowDetailLines, setStatementInflowDetailLines] = useState<PnlStatementInflowLine[]>([])
+  const [statementDetailOpen, setStatementDetailOpen] = useState(false)
+  const [statementDetailDrill, setStatementDetailDrill] = useState<PnlStatementInflowDrillState | null>(null)
 
   const tableRows = useMemo(() => buildPnlDepositTableRows(locale), [locale])
   const months = useMemo(
@@ -62,15 +94,75 @@ export default function PnlUnifiedDepositSection({
     onLoadingChange?.(loading)
   }, [loading, onLoadingChange])
 
+  const applyStatementInflowData = useCallback(async (rawRows: Awaited<ReturnType<typeof fetchStatementInflowsForPnlReport>>['data']) => {
+    const agg = aggregatePnlStatementInflows(rawRows)
+    setStatementInflowMonthly(agg.monthly)
+    setStatementInflowTotal(agg.total)
+    setStatementInflowLineCount(agg.lineCount)
+    try {
+      const detail = await buildPnlStatementInflowDetailLines(rawRows)
+      setStatementInflowDetailLines(detail)
+    } catch (e) {
+      console.error('통합 PNL 명세 입금 상세 구성 오류:', e)
+      setStatementInflowDetailLines([])
+    }
+  }, [])
+
+  const reloadStatementInflows = useCallback(async () => {
+    const statementRes = await fetchStatementInflowsForPnlReport(dateRange.start, dateRange.end)
+    if (statementRes.error) {
+      console.error('통합 PNL 명세 입금 조회 오류:', statementRes.error)
+      setStatementInflowMonthly({})
+      setStatementInflowTotal(0)
+      setStatementInflowLineCount(0)
+      setStatementInflowDetailLines([])
+      return
+    }
+    await applyStatementInflowData(statementRes.data)
+  }, [dateRange.start, dateRange.end, applyStatementInflowData])
+
+  useEffect(() => {
+    onRegisterReloadStatementInflows?.(reloadStatementInflows)
+  }, [onRegisterReloadStatementInflows, reloadStatementInflows])
+
+  const openCashPaymentDetail = useCallback((drill: PnlCashPaymentDrill) => {
+    if (drill.mode === 'grand') {
+      setDetailDrill({ mode: 'cash_net', scope: 'grand', rowTitle: '현금 입금·환불 · 기간 합계' })
+    } else {
+      setDetailDrill({
+        mode: 'cash_net',
+        scope: 'cell',
+        month: drill.month,
+        rowTitle: '현금 입금·환불',
+      })
+    }
+    setDetailOpen(true)
+  }, [])
+
+  useEffect(() => {
+    onRegisterOpenCashPaymentDetail?.(openCashPaymentDetail)
+  }, [onRegisterOpenCashPaymentDetail, openCashPaymentDetail])
+
   const loadDeposits = useCallback(async () => {
     setLoading(true)
     const startISO = new Date(dateRange.start + 'T00:00:00').toISOString()
     const endISO = new Date(dateRange.end + 'T23:59:59.999').toISOString()
 
-    const [cashMethods, { data: rows, error }] = await Promise.all([
+    const [cashMethods, { data: rows, error }, statementRes] = await Promise.all([
       getCashPaymentMethodFilterValues(),
       fetchPaymentRecordsForPnlReport(startISO, endISO),
+      fetchStatementInflowsForPnlReport(dateRange.start, dateRange.end),
     ])
+
+    if (statementRes.error) {
+      console.error('통합 PNL 명세 입금 조회 오류:', statementRes.error)
+      setStatementInflowMonthly({})
+      setStatementInflowTotal(0)
+      setStatementInflowLineCount(0)
+      setStatementInflowDetailLines([])
+    } else {
+      await applyStatementInflowData(statementRes.data)
+    }
 
     if (error) {
       console.error('통합 PNL payment_records 조회 오류:', error)
@@ -93,7 +185,7 @@ export default function PnlUnifiedDepositSection({
       rows.filter((r) => r.submit_on && !isPaymentRequestedStatus(r.payment_status)).length
     )
     setLoading(false)
-  }, [dateRange])
+  }, [dateRange, applyStatementInflowData])
 
   useEffect(() => {
     void loadDeposits()
@@ -138,6 +230,40 @@ export default function PnlUnifiedDepositSection({
     onNetTotalsReady({ netColTotals, netTotal })
   }, [loading, netColTotals, netTotal, onNetTotalsReady])
 
+  useEffect(() => {
+    if (loading) return
+    if (onCashDepositTotalsReady) {
+      const cashCells = monthlyCells.cash_deposit ?? {}
+      const total = Object.values(cashCells).reduce((s, v) => s + v, 0)
+      onCashDepositTotalsReady({ monthly: { ...cashCells }, total })
+    }
+    if (onCashRefundTotalsReady) {
+      const refundCells = monthlyCells.cash_refund ?? {}
+      const total = Object.values(refundCells).reduce((s, v) => s + v, 0)
+      onCashRefundTotalsReady({ monthly: { ...refundCells }, total })
+    }
+  }, [loading, monthlyCells, onCashDepositTotalsReady, onCashRefundTotalsReady])
+
+  useEffect(() => {
+    if (loading || !onStatementInflowReady) return
+    onStatementInflowReady({
+      monthly: statementInflowMonthly,
+      total: statementInflowTotal,
+      lineCount: statementInflowLineCount,
+    })
+  }, [
+    loading,
+    statementInflowMonthly,
+    statementInflowTotal,
+    statementInflowLineCount,
+    onStatementInflowReady,
+  ])
+
+  useEffect(() => {
+    if (loading) return
+    onStatementInflowDetailLinesReady?.(statementInflowDetailLines)
+  }, [loading, statementInflowDetailLines, onStatementInflowDetailLinesReady])
+
   if (loading) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-6 flex justify-center">
@@ -161,9 +287,10 @@ export default function PnlUnifiedDepositSection({
           환불·Returned는 음수로 표시합니다. 보증금·잔금·환불 <strong>요청</strong> 상태(Deposit Requested 등)는 실입금이
           아니므로 집계·기타 입금에서 제외합니다.
         </p>
-        <p className="text-xs text-emerald-900/90 bg-emerald-50 border border-emerald-100 rounded-md px-3 py-2 mb-3">
-          금액·합계 셀을 누르면 상세 목록이 열립니다. <strong>현금 결제수단</strong> 행은 현금 리포트 참고용이며{' '}
-          <strong>순합계</strong>에는 넣지 않습니다(상태별 합계와 중복).
+            <p className="text-xs text-emerald-900/90 bg-emerald-50 border border-emerald-100 rounded-md px-3 py-2 mb-3">
+          금액·합계 셀을 누르면 상세 목록이 열립니다. 하단 <strong>참고 › 명세 입금</strong> 셀도 클릭하면 명세 줄
+          내역을 볼 수 있습니다. <strong>현금 결제수단</strong> 행은 현금 리포트 참고용이며 <strong>순합계</strong>에는
+          넣지 않습니다(상태별 합계와 중복).
         </p>
         <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
           <table className="w-full min-w-[480px] text-xs sm:text-sm border-collapse">
@@ -327,6 +454,82 @@ export default function PnlUnifiedDepositSection({
             )}
           </table>
         </div>
+
+        {months.length > 0 ? (
+          <div className="mt-4 pt-3 border-t border-slate-200">
+            <p className="text-xs font-semibold text-slate-700 mb-2">참고</p>
+            <p className="text-xs text-slate-600 mb-2 break-words">
+              <AccountingTerm termKey="명세대조">명세 대조</AccountingTerm>에 업로드한 은행·카드 명세의{' '}
+              <strong>수입(입금)</strong> 줄 합계입니다. 거래일(posted_date) 기준 ·{' '}
+              {statementInflowLineCount.toLocaleString()}건 ·{' '}
+              <AccountingTerm termKey="PNL제외">PNL 제외</AccountingTerm>·개인(use) 처리한 줄은 빼었습니다. 금액
+              셀을 누르면 줄별로 제외·개인을 바꿀 수 있습니다. 위 <strong>통합 입금</strong>·<strong>순합계</strong>에는
+              포함되지 않습니다.
+            </p>
+            <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
+              <table className="w-full min-w-[480px] text-xs sm:text-sm border-collapse">
+                <thead>
+                  <tr className="border-b text-left text-gray-500 bg-slate-50/90">
+                    <th className="py-2 pl-2 pr-3 font-medium sticky left-0 z-20 bg-slate-50/95 min-w-[220px]">
+                      구분
+                    </th>
+                    {months.map((ym) => (
+                      <th key={ym} className="py-2 px-2 text-right font-medium whitespace-nowrap min-w-[88px]">
+                        {formatPnlMonthLabel(ym)}
+                      </th>
+                    ))}
+                    <th className="py-2 pl-2 pr-2 text-right font-semibold min-w-[100px] bg-slate-100/80">
+                      합계
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-slate-200 bg-slate-50/50">
+                    <td className="py-2 pl-2 pr-3 sticky left-0 z-10 bg-slate-50/95 text-[11px] sm:text-xs font-medium text-slate-800">
+                      명세 입금
+                      <span className="block font-normal text-slate-500 text-[10px] sm:text-[11px] mt-0.5">
+                        (statement_lines · inflow)
+                      </span>
+                    </td>
+                    {months.map((ym) => {
+                      const v = statementInflowMonthly[ym] ?? 0
+                      return (
+                        <td key={ym} className="py-1 px-2 text-right tabular-nums text-[11px] sm:text-xs">
+                          <button
+                            type="button"
+                            className={`w-full min-h-[36px] rounded px-1 py-1 -mx-1 ${
+                              v !== 0
+                                ? 'text-slate-900 hover:bg-slate-100 hover:underline font-medium'
+                                : 'text-gray-400 hover:bg-slate-50'
+                            }`}
+                            onClick={() => {
+                              setStatementDetailDrill({ mode: 'cell', month: ym })
+                              setStatementDetailOpen(true)
+                            }}
+                          >
+                            {v !== 0 ? formatPnlMoney(v) : '—'}
+                          </button>
+                        </td>
+                      )
+                    })}
+                    <td className="py-1 pl-2 pr-2 text-right tabular-nums font-semibold bg-slate-100/60 text-[11px] sm:text-xs">
+                      <button
+                        type="button"
+                        className="w-full min-h-[36px] text-slate-900 hover:bg-slate-100 hover:underline"
+                        onClick={() => {
+                          setStatementDetailDrill({ mode: 'grand' })
+                          setStatementDetailOpen(true)
+                        }}
+                      >
+                        {statementInflowTotal !== 0 ? formatPnlMoney(statementInflowTotal) : '—'}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <PnlUnifiedDepositDetailDialog
@@ -335,6 +538,15 @@ export default function PnlUnifiedDepositSection({
         drill={detailDrill}
         lines={detailLines}
         formatMonthLabel={formatPnlMonthLabel}
+      />
+
+      <PnlStatementInflowDetailDialog
+        open={statementDetailOpen}
+        onOpenChange={setStatementDetailOpen}
+        drill={statementDetailDrill}
+        lines={statementInflowDetailLines}
+        formatMonthLabel={formatPnlMonthLabel}
+        onChanged={reloadStatementInflows}
       />
     </>
   )

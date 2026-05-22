@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
@@ -11,6 +11,13 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import { useAuth } from '@/contexts/AuthContext';
 import { isSuperAdminActor } from '@/lib/superAdmin';
 import { canRequestTicketBookingSoftDelete } from '@/lib/ticketBookingSoftDelete';
+import { BookingAuditCell } from '@/components/booking/BookingAuditCell';
+import {
+  buildBookingAuditPatch,
+  fetchTeamAuditProfile,
+  updateBookingAudit,
+  type TeamAuditProfile,
+} from '@/lib/bookingAudit';
 
 interface TourHotelBooking {
   id: string;
@@ -35,6 +42,11 @@ interface TourHotelBooking {
   updated_at: string;
   deletion_requested_at?: string | null;
   deletion_requested_by?: string | null;
+  audited?: boolean | null;
+  audited_at?: string | null;
+  audited_by_email?: string | null;
+  audited_by_name?: string | null;
+  audited_by_nick_name?: string | null;
   tours?: {
     tour_date: string;
     products?: {
@@ -47,7 +59,10 @@ interface TourHotelBooking {
 export default function TourHotelBookingList() {
   const locale = useLocale();
   const t = useTranslations('booking.calendar');
+  const tAudit = useTranslations('booking.audit');
   const { user, userPosition } = useAuth();
+  const teamAuditProfileRef = useRef<TeamAuditProfile | null>(null);
+  const [bookingAuditSavingId, setBookingAuditSavingId] = useState<string | null>(null);
   const canBookingMgmtSoftDelete = useMemo(
     () => canRequestTicketBookingSoftDelete(userPosition),
     [userPosition]
@@ -128,6 +143,70 @@ export default function TourHotelBookingList() {
     fetchBookings();
   }, []);
 
+  useEffect(() => {
+    if (!user?.email) {
+      teamAuditProfileRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const profile = await fetchTeamAuditProfile(supabase, user.email!, user.name);
+      if (!cancelled) teamAuditProfileRef.current = profile;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email, user?.name]);
+
+  const patchHotelBookingAuditInList = useCallback(
+    (bookingId: string, patch: ReturnType<typeof buildBookingAuditPatch>) => {
+      const merge = <T extends { id: string }>(b: T): T =>
+        b.id === bookingId ? { ...b, ...patch } : b;
+      setBookings((prev) => prev.map(merge));
+      setEditingBooking((prev) => (prev ? merge(prev) : prev));
+      setSelectedBookings((prev) => prev.map(merge));
+    },
+    []
+  );
+
+  const handleToggleHotelBookingAudit = useCallback(
+    async (booking: TourHotelBooking, nextAudited: boolean) => {
+      if (!user?.email) {
+        alert(tAudit('loginRequired'));
+        return;
+      }
+      setBookingAuditSavingId(booking.id);
+      try {
+        let actor = teamAuditProfileRef.current;
+        if (!actor) {
+          actor = await fetchTeamAuditProfile(supabase, user.email, user.name);
+          teamAuditProfileRef.current = actor;
+        }
+        const patch = buildBookingAuditPatch(nextAudited, actor);
+        patchHotelBookingAuditInList(booking.id, patch);
+        const { error } = await updateBookingAudit(
+          supabase,
+          'tour_hotel_bookings',
+          booking.id,
+          patch
+        );
+        if (error) {
+          patchHotelBookingAuditInList(booking.id, {
+            audited: Boolean(booking.audited),
+            audited_at: booking.audited_at ?? null,
+            audited_by_email: booking.audited_by_email ?? null,
+            audited_by_name: booking.audited_by_name ?? null,
+            audited_by_nick_name: booking.audited_by_nick_name ?? null,
+          });
+          alert(tAudit('toggleFailed'));
+        }
+      } finally {
+        setBookingAuditSavingId(null);
+      }
+    },
+    [patchHotelBookingAuditInList, tAudit, user?.email, user?.name]
+  );
+
   const fetchBookings = async () => {
     try {
       setLoading(true);
@@ -160,6 +239,11 @@ export default function TourHotelBookingList() {
             'updated_at',
             'deletion_requested_at',
             'deletion_requested_by',
+            'audited',
+            'audited_at',
+            'audited_by_email',
+            'audited_by_name',
+            'audited_by_nick_name',
           ].join(', ')
         )
         .is('deletion_requested_at', null)
@@ -850,6 +934,15 @@ export default function TourHotelBookingList() {
                         </div>
                       </div>
                     )}
+
+                    <div className="border-t pt-3">
+                      <BookingAuditCell
+                        audit={booking}
+                        disabled={!user?.email}
+                        saving={bookingAuditSavingId === booking.id}
+                        onToggle={(next) => void handleToggleHotelBookingAudit(booking, next)}
+                      />
+                    </div>
                   </div>
 
                   {/* 액션 버튼들 */}
@@ -1029,6 +1122,15 @@ export default function TourHotelBookingList() {
                           </div>
                         </div>
                       )}
+
+                      <div className="border-t pt-2 mt-2">
+                        <BookingAuditCell
+                          audit={booking}
+                          disabled={!user?.email}
+                          saving={bookingAuditSavingId === booking.id}
+                          onToggle={(next) => void handleToggleHotelBookingAudit(booking, next)}
+                        />
+                      </div>
                     </div>
 
                     <div className="mt-4 pt-3 border-t">

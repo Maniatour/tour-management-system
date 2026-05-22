@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { PieChart, Save, BookOpen, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -19,8 +19,12 @@ import PnlUnifiedExpenseDetailDialog, {
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import PnlUnifiedDepositSection from '@/components/reports/PnlUnifiedDepositSection'
 import PnlUnifiedNetProfitSection, {
+  type PnlCashBucketTotals,
+  type PnlCashPaymentDrill,
   type PnlDepositNetTotals,
+  type PnlStatementInflowTotals,
 } from '@/components/reports/PnlUnifiedNetProfitSection'
+import type { PnlStatementInflowLine } from '@/lib/pnlReportDataFetch'
 import {
   fetchCompanyExpensesForPnlReport,
   fetchReservationExpensesForPnlReport,
@@ -103,7 +107,13 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
   const [totalExcl, setTotalExcl] = useState(0)
   const [depositNet, setDepositNet] = useState<PnlDepositNetTotals | null>(null)
+  const [statementInflow, setStatementInflow] = useState<PnlStatementInflowTotals | null>(null)
+  const [statementInflowDetailLines, setStatementInflowDetailLines] = useState<PnlStatementInflowLine[]>([])
   const [depositLoading, setDepositLoading] = useState(true)
+  const reloadStatementInflowsRef = useRef<(() => Promise<void>) | null>(null)
+  const [cashDeposit, setCashDeposit] = useState<PnlCashBucketTotals | null>(null)
+  const [cashRefund, setCashRefund] = useState<PnlCashBucketTotals | null>(null)
+  const openCashPaymentDetailRef = useRef<((drill: PnlCashPaymentDrill) => void) | null>(null)
 
   const { rows: pnlTableRows, groups: unifiedStandardGroups } = useMemo(
     () => buildPnlStandardCategoryTableRows(standardCategoryRows, locale),
@@ -207,6 +217,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         payment_method: string | null
         exclude_from_pnl: boolean | null
         submit_on: string | null
+        created_at: string | null
       }
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
@@ -227,6 +238,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         yearMonth: yearMonthFromSubmitOn(r.submit_on),
         amount: amt,
         submit_on: r.submit_on,
+        created_at: r.created_at,
         paid_to: r.paid_to,
         paid_for: r.paid_for,
         payment_method: r.payment_method,
@@ -247,6 +259,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         payment_method: string | null
         exclude_from_pnl: boolean | null
         submit_on: string | null
+        created_at: string | null
       }
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
@@ -267,6 +280,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         yearMonth: yearMonthFromSubmitOn(r.submit_on),
         amount: amt,
         submit_on: r.submit_on,
+        created_at: r.created_at,
         paid_to: r.paid_to,
         paid_for: r.paid_for,
         payment_method: r.payment_method,
@@ -291,6 +305,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         payment_method: string | null
         exclude_from_pnl: boolean | null
         submit_on: string | null
+        created_at: string | null
       }
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
@@ -317,6 +332,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         yearMonth: yearMonthFromSubmitOn(r.submit_on),
         amount: amt,
         submit_on: r.submit_on,
+        created_at: r.created_at,
         paid_to: r.paid_to,
         paid_for: r.paid_for,
         payment_method: r.payment_method,
@@ -336,6 +352,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         note: string | null
         payment_method: string | null
         submit_on: string | null
+        created_at: string | null
       }
       const amt = Number(r.expense) || 0
       if (!r.submit_on) continue
@@ -352,6 +369,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         yearMonth: yearMonthFromSubmitOn(r.submit_on),
         amount: amt,
         submit_on: r.submit_on,
+        created_at: r.created_at,
         paid_to: null,
         paid_for: null,
         payment_method: r.payment_method,
@@ -372,6 +390,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         reservation_name: string | null
         payment_method: string | null
         submit_on: string | null
+        created_at: string | null
       }
       const amt = tourHotelBookingAmountForPnl(r)
       if (!r.submit_on || amt === 0) continue
@@ -388,6 +407,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         yearMonth: yearMonthFromSubmitOn(r.submit_on),
         amount: amt,
         submit_on: r.submit_on,
+        created_at: r.created_at,
         paid_to: r.hotel,
         paid_for: r.reservation_name,
         payment_method: r.payment_method,
@@ -498,8 +518,9 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
             </li>
             <li>
               <strong>입금</strong>: <code className="text-xs bg-white px-1 rounded border">payment_records</code>{' '}
-              (예약금·잔금·파트너 입금·환불·현금 결제수단 등, submit_on 기준). DB 1000행 제한을 넘으면 자동으로
-              페이지를 이어 받아 기간 전체를 집계합니다.
+              (예약금·잔금·파트너 입금·환불·현금 결제수단 등, submit_on 기준). 입금 표 하단 <strong>참고 › 명세 입금</strong>
+              은 <code className="text-xs bg-white px-1 rounded border">statement_lines</code> 수입(입금) 합계(거래일
+              기준, 순합계·순수익에 미포함). DB 1000행 제한을 넘으면 자동으로 페이지를 이어 받습니다.
             </li>
             <li>
               <strong>지출</strong>: <code className="text-xs bg-white px-1 rounded border">tour_expenses</code>,{' '}
@@ -518,7 +539,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
             </li>
             <li>
               <strong>순수익</strong>: 입금 표 <strong>순합계(상태별)</strong> − 지출 표 <strong>월 합계</strong> (현금
-              결제수단 입금 행은 순합계에 미포함).
+              결제수단 입금 행은 순합계에 미포함). 순수익 표 하단 <strong>참고</strong>는 명세 입금 + 현금(입금·환불 합계) − 지출(대조용).
             </li>
             <li>
               <strong>exclude_from_pnl</strong>이 켜진 행(
@@ -598,6 +619,16 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         dateRange={dateRange}
         onLoadingChange={setDepositLoading}
         onNetTotalsReady={setDepositNet}
+        onStatementInflowReady={setStatementInflow}
+        onStatementInflowDetailLinesReady={setStatementInflowDetailLines}
+        onRegisterReloadStatementInflows={(fn) => {
+          reloadStatementInflowsRef.current = fn
+        }}
+        onCashDepositTotalsReady={setCashDeposit}
+        onCashRefundTotalsReady={setCashRefund}
+        onRegisterOpenCashPaymentDetail={(fn) => {
+          openCashPaymentDetailRef.current = fn
+        }}
       />
 
       <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -624,9 +655,9 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           {totalExcl.toLocaleString(undefined, { maximumFractionDigits: 2 })})
         </p>
         <p className="text-xs text-blue-900/90 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-3">
-          금액·합계 셀을 누르면 <strong>상세 지출</strong> 모달이 열립니다. 모달 상단에서 원문·출처별로{' '}
-          <strong>표준 카테고리(리프) 매핑</strong>을 저장할 수 있고, 하단에서 지출 금액·분류·PNL 제외 등을 수정할 수
-          있습니다(입장권·투어 호텔 부킹은 PNL 제외 옵션 없음).
+          금액·합계 셀을 누르면 <strong>상세 지출</strong> 모달이 열립니다. 모달에서 출처를 다중 선택해 목록을
+          좁힐 수 있고, 원문·출처별로 <strong>표준 카테고리(리프) 매핑</strong>을 저장할 수 있습니다. 하단에서 지출
+          금액·분류·PNL 제외 등을 수정할 수 있습니다(입장권·투어 호텔 부킹은 PNL 제외 옵션 없음).
         </p>
         <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
           <table className="w-full min-w-[480px] text-xs sm:text-sm border-collapse">
@@ -797,6 +828,12 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         depositLoading={depositLoading}
         expenseColTotals={colTotals}
         expenseGrandTotal={grandTotal}
+        statementInflow={statementInflow}
+        statementInflowDetailLines={statementInflowDetailLines}
+        cashDeposit={cashDeposit}
+        cashRefund={cashRefund}
+        onStatementInflowChanged={() => reloadStatementInflowsRef.current?.()}
+        onOpenCashPaymentDetail={(drill) => openCashPaymentDetailRef.current?.(drill)}
       />
 
       <CategoryManagerModal

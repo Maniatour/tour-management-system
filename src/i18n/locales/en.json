@@ -2952,6 +2952,16 @@
       "tickets": "Ticket Booking",
       "hotels": "Tour Hotel Booking"
     },
+    "audit": {
+      "label": "Reviewed",
+      "columnHeader": "Review",
+      "checkboxTitle": "Mark booking as reviewed",
+      "notYet": "Not reviewed",
+      "auditedBy": "By {name}",
+      "saving": "Saving…",
+      "toggleFailed": "Could not save review status.",
+      "loginRequired": "Sign in to mark as reviewed."
+    },
     "ticketBooking": {
       "newTitle": "New Ticket Booking",
       "editTitle": "Edit Ticket Booking",

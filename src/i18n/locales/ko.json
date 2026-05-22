@@ -2971,6 +2971,16 @@
       "tickets": "입장권 부킹",
       "hotels": "투어 호텔 부킹"
     },
+    "audit": {
+      "label": "검수",
+      "columnHeader": "검수",
+      "checkboxTitle": "부킹 내용 확인 완료",
+      "notYet": "미확인",
+      "auditedBy": "확인: {name}",
+      "saving": "저장 중…",
+      "toggleFailed": "검수 상태 저장에 실패했습니다.",
+      "loginRequired": "로그인 후 검수할 수 있습니다."
+    },
     "ticketBooking": {
       "newTitle": "새 입장권 부킹",
       "editTitle": "입장권 부킹 수정",

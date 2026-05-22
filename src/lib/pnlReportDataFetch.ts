@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { hotelAmountForSettlement, isHotelBookingIncludedInSettlement } from '@/lib/bookingSettlement'
+import { formatStatementLineDescription } from '@/lib/statement-display'
 import { fetchAllSupabasePages } from '@/lib/supabasePaginatedFetch'
 
 /** 통합 PNL·expense_category_mappings.original_value (tour_hotel_bookings 공통 키) */
@@ -46,6 +47,7 @@ export type PnlTourExpenseRow = {
   payment_method: string | null
   exclude_from_pnl: boolean | null
   submit_on: string | null
+  created_at: string | null
 }
 
 export type PnlReservationExpenseRow = PnlTourExpenseRow
@@ -63,6 +65,7 @@ export type PnlCompanyExpenseRow = {
   payment_method: string | null
   exclude_from_pnl: boolean | null
   submit_on: string | null
+  created_at: string | null
 }
 
 export type PnlTicketBookingRow = {
@@ -73,6 +76,7 @@ export type PnlTicketBookingRow = {
   note: string | null
   payment_method: string | null
   submit_on: string | null
+  created_at: string | null
 }
 
 export type PnlTourHotelBookingRow = {
@@ -85,13 +89,16 @@ export type PnlTourHotelBookingRow = {
   payment_method: string | null
   status: string | null
   submit_on: string | null
+  created_at: string | null
 }
 
 export async function fetchTourExpensesForPnlReport(startISO: string, endISO: string) {
   return fetchAllSupabasePages<PnlTourExpenseRow>((from, to) =>
     supabase
       .from('tour_expenses')
-      .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
+      .select(
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on, created_at'
+      )
       .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
@@ -105,7 +112,9 @@ export async function fetchReservationExpensesForPnlReport(startISO: string, end
   return fetchAllSupabasePages<PnlReservationExpenseRow>((from, to) =>
     supabase
       .from('reservation_expenses')
-      .select('id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on')
+      .select(
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on, created_at'
+      )
       .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
@@ -120,7 +129,7 @@ export async function fetchCompanyExpensesForPnlReport(startISO: string, endISO:
     supabase
       .from('company_expenses')
       .select(
-        'id, amount, paid_for, category, standard_paid_for, expense_type, paid_to, notes, description, payment_method, exclude_from_pnl, submit_on'
+        'id, amount, paid_for, category, standard_paid_for, expense_type, paid_to, notes, description, payment_method, exclude_from_pnl, submit_on, created_at'
       )
       .is('deleted_at', null)
       .gte('submit_on', startISO)
@@ -135,7 +144,7 @@ export async function fetchTicketBookingsForPnlReport(startISO: string, endISO: 
   return fetchAllSupabasePages<PnlTicketBookingRow>((from, to) =>
     supabase
       .from('ticket_bookings')
-      .select('id, expense, category, company, note, payment_method, submit_on')
+      .select('id, expense, category, company, note, payment_method, submit_on, created_at')
       .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
@@ -152,7 +161,7 @@ export async function fetchTourHotelBookingsForPnlReport(startISO: string, endIS
     supabase
       .from('tour_hotel_bookings')
       .select(
-        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, submit_on'
+        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, submit_on, created_at'
       )
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
@@ -167,4 +176,170 @@ export async function fetchTourHotelBookingsForPnlReport(startISO: string, endIS
 
 export function tourHotelBookingAmountForPnl(row: PnlTourHotelBookingRow): number {
   return hotelAmountForSettlement(row)
+}
+
+export type PnlStatementInflowRow = {
+  id: string
+  posted_date: string
+  amount: unknown
+  direction: string
+  description: string | null
+  merchant: string | null
+  matched_status: string | null
+  exclude_from_pnl: boolean | null
+  is_personal: boolean | null
+  statement_import_id: string | null
+}
+
+export type PnlStatementInflowLine = {
+  id: string
+  yearMonth: string
+  posted_date: string
+  amount: number
+  description: string
+  matched_status: string | null
+  financial_account_name: string | null
+  exclude_from_pnl: boolean
+  is_personal: boolean
+  /** 명세 입금·참고 순익 집계 포함 여부 */
+  pnlIncluded: boolean
+}
+
+/** 집계 제외 여부와 무관 — 기간·금액·방향만 맞는 inflow */
+function isPnlStatementInflowEligible(r: PnlStatementInflowRow): boolean {
+  if (r.direction !== 'inflow') return false
+  const amt = Number(r.amount) || 0
+  if (amt === 0) return false
+  if (!yearMonthFromPostedDate(r.posted_date)) return false
+  return true
+}
+
+/** 통합 PNL 참고 — 기간 내 명세 수입(입금) 줄 (posted_date 기준) */
+export async function fetchStatementInflowsForPnlReport(startYmd: string, endYmd: string) {
+  return fetchAllSupabasePages<PnlStatementInflowRow>((from, to) =>
+    supabase
+      .from('statement_lines')
+      .select(
+        'id, posted_date, amount, direction, description, merchant, matched_status, exclude_from_pnl, is_personal, statement_import_id'
+      )
+      .eq('direction', 'inflow')
+      .gte('posted_date', startYmd)
+      .lte('posted_date', endYmd)
+      .order('posted_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
+}
+
+function isPnlStatementInflowIncluded(r: PnlStatementInflowRow): boolean {
+  if (!isPnlStatementInflowEligible(r)) return false
+  if (r.exclude_from_pnl) return false
+  if (r.is_personal) return false
+  return true
+}
+
+async function fetchFinancialAccountNameByImportId(
+  importIds: string[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const uniq = [...new Set(importIds.filter(Boolean))]
+  if (uniq.length === 0) return out
+
+  const importToAccount = new Map<string, string>()
+  for (let i = 0; i < uniq.length; i += 200) {
+    const chunk = uniq.slice(i, i + 200)
+    const { data, error } = await supabase
+      .from('statement_imports')
+      .select('id, financial_account_id')
+      .in('id', chunk)
+    if (error) throw error
+    for (const row of data || []) {
+      const id = String((row as { id: string }).id ?? '').trim()
+      const fa = String((row as { financial_account_id: string | null }).financial_account_id ?? '').trim()
+      if (id && fa) importToAccount.set(id, fa)
+    }
+  }
+
+  const accountIds = [...new Set(importToAccount.values())]
+  const accountNameById = new Map<string, string>()
+  for (let i = 0; i < accountIds.length; i += 200) {
+    const chunk = accountIds.slice(i, i + 200)
+    const { data, error } = await supabase.from('financial_accounts').select('id, name').in('id', chunk)
+    if (error) throw error
+    for (const row of data || []) {
+      const id = String((row as { id: string }).id ?? '').trim()
+      const name = String((row as { name: string }).name ?? '').trim()
+      if (id && name) accountNameById.set(id, name)
+    }
+  }
+
+  for (const [importId, accountId] of importToAccount) {
+    const name = accountNameById.get(accountId)
+    if (name) out.set(importId, name)
+  }
+  return out
+}
+
+export function yearMonthFromPostedDate(postedDate: string): string {
+  const ymd = String(postedDate ?? '').trim()
+  if (ymd.length >= 7 && /^\d{4}-\d{2}/.test(ymd)) return ymd.slice(0, 7)
+  return ''
+}
+
+/** 명세 입금 — exclude_from_pnl·개인(use) 제외, amount 합산 */
+export function aggregatePnlStatementInflows(rows: PnlStatementInflowRow[]): {
+  monthly: Record<string, number>
+  total: number
+  lineCount: number
+} {
+  const monthly: Record<string, number> = {}
+  let total = 0
+  let lineCount = 0
+  for (const r of rows) {
+    if (!isPnlStatementInflowIncluded(r)) continue
+    const amt = Number(r.amount) || 0
+    const ym = yearMonthFromPostedDate(r.posted_date)!
+    monthly[ym] = (monthly[ym] || 0) + amt
+    total += amt
+    lineCount += 1
+  }
+  return { monthly, total, lineCount }
+}
+
+/** 명세 입금 상세 모달용 줄 (금융 계정명 해석 포함) */
+export async function buildPnlStatementInflowDetailLines(
+  rows: PnlStatementInflowRow[]
+): Promise<PnlStatementInflowLine[]> {
+  const eligible = rows.filter(isPnlStatementInflowEligible)
+  const importIds = eligible
+    .map((r) => r.statement_import_id)
+    .filter((x): x is string => Boolean(x?.trim()))
+  const accountByImport = await fetchFinancialAccountNameByImportId(importIds)
+
+  const lines: PnlStatementInflowLine[] = []
+  for (const r of eligible) {
+    const amt = Number(r.amount) || 0
+    const ym = yearMonthFromPostedDate(r.posted_date)!
+    const importId = (r.statement_import_id || '').trim()
+    const exclude = Boolean(r.exclude_from_pnl)
+    const personal = Boolean(r.is_personal)
+    lines.push({
+      id: r.id,
+      yearMonth: ym,
+      posted_date: r.posted_date,
+      amount: amt,
+      description: formatStatementLineDescription(r.description, r.merchant),
+      matched_status: r.matched_status,
+      financial_account_name: importId ? accountByImport.get(importId) ?? null : null,
+      exclude_from_pnl: exclude,
+      is_personal: personal,
+      pnlIncluded: !exclude && !personal,
+    })
+  }
+  lines.sort((a, b) => {
+    const d = a.posted_date.localeCompare(b.posted_date)
+    if (d !== 0) return d
+    return a.id.localeCompare(b.id)
+  })
+  return lines
 }

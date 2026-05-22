@@ -7202,6 +7202,11 @@ export type Database = {
       }
       ticket_bookings: {
         Row: {
+          audited: boolean
+          audited_at: string | null
+          audited_by_email: string | null
+          audited_by_name: string | null
+          audited_by_nick_name: string | null
           booking_status: string
           booking_status_before_change: string | null
           category: string
@@ -7244,6 +7249,11 @@ export type Database = {
           zelle_confirmation_number: string | null
         }
         Insert: {
+          audited?: boolean
+          audited_at?: string | null
+          audited_by_email?: string | null
+          audited_by_name?: string | null
+          audited_by_nick_name?: string | null
           booking_status?: string
           booking_status_before_change?: string | null
           category: string
@@ -7286,6 +7296,11 @@ export type Database = {
           zelle_confirmation_number?: string | null
         }
         Update: {
+          audited?: boolean
+          audited_at?: string | null
+          audited_by_email?: string | null
+          audited_by_name?: string | null
+          audited_by_nick_name?: string | null
           booking_status?: string
           booking_status_before_change?: string | null
           category?: string
@@ -8385,6 +8400,11 @@ export type Database = {
       }
       tour_hotel_bookings: {
         Row: {
+          audited: boolean
+          audited_at: string | null
+          audited_by_email: string | null
+          audited_by_name: string | null
+          audited_by_nick_name: string | null
           cc: string | null
           check_in_date: string
           check_out_date: string
@@ -8411,6 +8431,11 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          audited?: boolean
+          audited_at?: string | null
+          audited_by_email?: string | null
+          audited_by_name?: string | null
+          audited_by_nick_name?: string | null
           cc?: string | null
           check_in_date: string
           check_out_date: string
@@ -8437,6 +8462,11 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          audited?: boolean
+          audited_at?: string | null
+          audited_by_email?: string | null
+          audited_by_name?: string | null
+          audited_by_nick_name?: string | null
           cc?: string | null
           check_in_date?: string
           check_out_date?: string

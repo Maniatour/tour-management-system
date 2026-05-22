@@ -43,6 +43,13 @@ import {
   isTicketBookingStatementReconDisabled,
 } from '@/lib/ticket-booking-statement-recon';
 import { TicketBookingStatementReconCell } from '@/components/booking/TicketBookingStatementReconCell';
+import { BookingAuditCell } from '@/components/booking/BookingAuditCell';
+import {
+  buildBookingAuditPatch,
+  fetchTeamAuditProfile,
+  updateBookingAudit,
+  type TeamAuditProfile,
+} from '@/lib/bookingAudit';
 import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTourDisplay';
 import { formatTicketBookingTourHeadline } from '@/lib/ticket-booking-tour-display';
 import { TicketBookingChangeStack } from '@/components/booking/TicketBookingChangeStack';
@@ -369,6 +376,11 @@ interface TicketBooking {
   };
   deletion_requested_at?: string | null;
   deletion_requested_by?: string | null;
+  audited?: boolean | null;
+  audited_at?: string | null;
+  audited_by_email?: string | null;
+  audited_by_name?: string | null;
+  audited_by_nick_name?: string | null;
 }
 
 function bookingCheckInYmd(booking: TicketBooking): string {
@@ -429,7 +441,7 @@ function invoiceCompanyNorm(company: string | null | undefined): string {
 }
 
 /** RN 그룹 헤더·구분선 colSpan (명세 열 포함) */
-const TICKET_DESKTOP_TABLE_COL_COUNT = 16
+const TICKET_DESKTOP_TABLE_COL_COUNT = 17
 const TICKET_TABLE_TH =
   'px-2 py-2 text-left text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap'
 const TICKET_TABLE_TD = 'align-middle px-2 py-2 text-[11px] text-gray-900'
@@ -1091,6 +1103,7 @@ export default function TicketBookingList() {
     [userPosition, permissions?.canManageBookings]
   );
   const t = useTranslations('booking.calendar');
+  const tAudit = useTranslations('booking.audit');
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis');
   const tTbActUi = useTranslations('booking.calendar.ticketBookingActions');
   /** useMemo 의존성용 — `t` 함수 참조는 렌더마다 바뀌어 무한 effect를 유발할 수 있음 */
@@ -1153,6 +1166,8 @@ export default function TicketBookingList() {
   const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
+  const teamAuditProfileRef = useRef<TeamAuditProfile | null>(null);
+  const [bookingAuditSavingId, setBookingAuditSavingId] = useState<string | null>(null);
   const [supplierProductsMap, setSupplierProductsMap] = useState<Map<string, { season_dates: SeasonDate[] | null }>>(new Map());
   const [axesDialogBooking, setAxesDialogBooking] = useState<TicketBooking | null>(null);
   const [refundLinesByBookingId, setRefundLinesByBookingId] = useState<
@@ -1625,6 +1640,11 @@ export default function TicketBookingList() {
         'season',
         'statement_line_id',
         'vendor_confirmation_number',
+        'audited',
+        'audited_at',
+        'audited_by_email',
+        'audited_by_name',
+        'audited_by_nick_name',
       ].join(', ');
 
       const PAGE_SIZE = 1000;
@@ -2199,6 +2219,70 @@ export default function TicketBookingList() {
   };
 
   fetchBookingsRef.current = fetchBookings;
+
+  useEffect(() => {
+    if (!user?.email) {
+      teamAuditProfileRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const profile = await fetchTeamAuditProfile(supabase, user.email!, user.name);
+      if (!cancelled) teamAuditProfileRef.current = profile;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email, user?.name]);
+
+  const patchTicketBookingAuditInList = useCallback(
+    (bookingId: string, patch: ReturnType<typeof buildBookingAuditPatch>) => {
+      const merge = <T extends { id: string }>(b: T): T =>
+        b.id === bookingId ? { ...b, ...patch } : b;
+      setBookings((prev) => prev.map(merge));
+      setEditingBooking((prev) => (prev ? merge(prev) : prev));
+      setSelectedBookings((prev) => prev.map(merge));
+    },
+    []
+  );
+
+  const handleToggleTicketBookingAudit = useCallback(
+    async (booking: TicketBooking, nextAudited: boolean) => {
+      if (!user?.email) {
+        alert(tAudit('loginRequired'));
+        return;
+      }
+      setBookingAuditSavingId(booking.id);
+      try {
+        let actor = teamAuditProfileRef.current;
+        if (!actor) {
+          actor = await fetchTeamAuditProfile(supabase, user.email, user.name);
+          teamAuditProfileRef.current = actor;
+        }
+        const patch = buildBookingAuditPatch(nextAudited, actor);
+        patchTicketBookingAuditInList(booking.id, patch);
+        const { error } = await updateBookingAudit(
+          supabase,
+          'ticket_bookings',
+          booking.id,
+          patch
+        );
+        if (error) {
+          patchTicketBookingAuditInList(booking.id, {
+            audited: Boolean(booking.audited),
+            audited_at: booking.audited_at ?? null,
+            audited_by_email: booking.audited_by_email ?? null,
+            audited_by_name: booking.audited_by_name ?? null,
+            audited_by_nick_name: booking.audited_by_nick_name ?? null,
+          });
+          alert(tAudit('toggleFailed'));
+        }
+      } finally {
+        setBookingAuditSavingId(null);
+      }
+    },
+    [patchTicketBookingAuditInList, tAudit, user?.email, user?.name]
+  );
 
   const performTableAxesUndo = useCallback(async () => {
     const stack = tableAxesUndoStackRef.current;
@@ -5141,6 +5225,14 @@ export default function TicketBookingList() {
           )}
         </div>
         )}
+        <div className="pt-2 border-t border-gray-100">
+          <BookingAuditCell
+            audit={booking}
+            disabled={!user?.email}
+            saving={bookingAuditSavingId === booking.id}
+            onToggle={(next) => void handleToggleTicketBookingAudit(booking, next)}
+          />
+        </div>
         <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
           <button
             type="button"
@@ -5165,12 +5257,22 @@ export default function TicketBookingList() {
         </div>
         {renderTicketBookingAxisDropdownPortal(booking)}
         {isModalForm ? (
-          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-              {tStmtRecon('columnHeaderShort')}
-            </span>
-            {renderStatementReconCell(booking)}
-          </div>
+          <>
+            <div className="pt-2 border-t border-gray-100">
+              <BookingAuditCell
+                audit={booking}
+                disabled={!user?.email}
+                saving={bookingAuditSavingId === booking.id}
+                onToggle={(next) => void handleToggleTicketBookingAudit(booking, next)}
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                {tStmtRecon('columnHeaderShort')}
+              </span>
+              {renderStatementReconCell(booking)}
+            </div>
+          </>
         ) : viewMode === 'table' ? (
           <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 shrink-0">
@@ -5248,11 +5350,12 @@ export default function TicketBookingList() {
                 ) : null}
               </span>
             </th>
+            <th className={`${TICKET_TABLE_TH} min-w-[7.5rem]`}>{tAudit('columnHeader')}</th>
           </tr>
         </thead>
       );
     },
-    [t, sortField, sortDirection, handleSort, tStmtRecon, showRnRowSelection, locale]
+    [t, tAudit, sortField, sortDirection, handleSort, tStmtRecon, showRnRowSelection, locale]
   );
 
   const renderDesktopRow = (
@@ -5651,6 +5754,15 @@ export default function TicketBookingList() {
     </td>
     <td className={`${TICKET_TABLE_CELL} whitespace-nowrap tabular-nums text-gray-600`}>
       {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
+    </td>
+    <td className={`${TICKET_TABLE_CELL} min-w-[7.5rem] max-w-[11rem]`}>
+      <BookingAuditCell
+        audit={booking}
+        compact
+        disabled={!user?.email}
+        saving={bookingAuditSavingId === booking.id}
+        onToggle={(next) => void handleToggleTicketBookingAudit(booking, next)}
+      />
     </td>
       </tr>
     );

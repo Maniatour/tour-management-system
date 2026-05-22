@@ -54,6 +54,14 @@ export type PnlExpenseSource =
   | 'ticket_bookings'
   | 'tour_hotel_bookings'
 
+const PNL_EXPENSE_SOURCES: PnlExpenseSource[] = [
+  'tour_expenses',
+  'reservation_expenses',
+  'company_expenses',
+  'ticket_bookings',
+  'tour_hotel_bookings',
+]
+
 export type PnlDetailLine = {
   id: string
   source: PnlExpenseSource
@@ -66,6 +74,8 @@ export type PnlDetailLine = {
   yearMonth: string
   amount: number
   submit_on: string | null
+  /** 시스템 등록(입력) 시각 */
+  created_at: string | null
   paid_to: string | null
   paid_for: string | null
   /** payment_methods.id 등 — 표시는 paymentMethodMap으로 해석 */
@@ -77,6 +87,8 @@ export type PnlDetailLine = {
   note: string | null
   exclude_from_pnl: boolean
 }
+
+type PnlDetailSortKey = 'submit_on' | 'created_at' | 'amount'
 
 export type PnlDrillMode = 'cell' | 'row' | 'col' | 'grand'
 
@@ -169,6 +181,9 @@ function pnlDetailLineSearchHaystack(
     line.id,
     isoToYmd(line.submit_on),
     line.submit_on,
+    isoToYmd(line.created_at),
+    line.created_at,
+    '입력일',
     line.paid_to,
     line.paid_for,
     line.category,
@@ -196,6 +211,24 @@ function pnlDetailLineMatchesSearch(
   const hay = pnlDetailLineSearchHaystack(line, paymentMethodMap)
   const tokens = q.split(' ').filter(Boolean)
   return tokens.every((t) => hay.includes(t))
+}
+
+function comparePnlDetailLines(
+  a: PnlDetailLine,
+  b: PnlDetailLine,
+  sortKey: PnlDetailSortKey,
+  sortDir: SortDir
+): number {
+  let cmp = 0
+  if (sortKey === 'submit_on') {
+    cmp = compareSortValues(isoToYmd(a.submit_on), isoToYmd(b.submit_on), sortDir)
+  } else if (sortKey === 'created_at') {
+    cmp = compareSortValues(isoToYmd(a.created_at), isoToYmd(b.created_at), sortDir)
+  } else {
+    cmp = compareSortValues(a.amount, b.amount, sortDir)
+  }
+  if (cmp !== 0) return cmp
+  return pnlDetailLineKey(a).localeCompare(pnlDetailLineKey(b))
 }
 
 function filterLines(lines: PnlDetailLine[], drill: PnlDrillState | null): PnlDetailLine[] {
@@ -467,33 +500,54 @@ export default function PnlUnifiedExpenseDetailDialog({
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [deleteConfirmKeys, setDeleteConfirmKeys] = useState<string[] | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [submitDateSortDir, setSubmitDateSortDir] = useState<SortDir>('asc')
+  const [sortKey, setSortKey] = useState<PnlDetailSortKey>('submit_on')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [searchQuery, setSearchQuery] = useState('')
+  /** 비어 있으면 전체 출처 — 하나 이상이면 해당 출처만 표시 */
+  const [sourceTablesFilter, setSourceTablesFilter] = useState<PnlExpenseSource[]>([])
 
   const visible = useMemo(() => filterLines(lines, drill), [lines, drill])
+  const sourcesInVisible = useMemo(() => {
+    const present = new Set<PnlExpenseSource>()
+    for (const l of visible) present.add(l.source)
+    return PNL_EXPENSE_SOURCES.filter((s) => present.has(s))
+  }, [visible])
+  const sourceFilterActive = sourceTablesFilter.length > 0
+  const sourceFiltered = useMemo(() => {
+    if (!sourceFilterActive) return visible
+    const allowed = new Set(sourceTablesFilter)
+    return visible.filter((l) => allowed.has(l.source))
+  }, [visible, sourceTablesFilter, sourceFilterActive])
   const searchTrim = searchQuery.trim()
   const filteredRows = useMemo(() => {
-    if (!searchTrim) return visible
-    return visible.filter((l) => pnlDetailLineMatchesSearch(l, searchTrim, paymentMethodMap))
-  }, [visible, searchTrim, paymentMethodMap])
+    if (!searchTrim) return sourceFiltered
+    return sourceFiltered.filter((l) => pnlDetailLineMatchesSearch(l, searchTrim, paymentMethodMap))
+  }, [sourceFiltered, searchTrim, paymentMethodMap])
   const displayRows = useMemo(() => {
     const rows = [...filteredRows]
-    rows.sort((a, b) => {
-      const cmp = compareSortValues(isoToYmd(a.submit_on), isoToYmd(b.submit_on), submitDateSortDir)
-      if (cmp !== 0) return cmp
-      return pnlDetailLineKey(a).localeCompare(pnlDetailLineKey(b))
-    })
+    rows.sort((a, b) => comparePnlDetailLines(a, b, sortKey, sortDir))
     return rows
-  }, [filteredRows, submitDateSortDir])
+  }, [filteredRows, sortKey, sortDir])
+
+  const toggleSort = useCallback((key: PnlDetailSortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+        return key
+      }
+      setSortDir('asc')
+      return key
+    })
+  }, [])
   const visibleByKey = useMemo(
-    () => new Map(visible.map((l) => [pnlDetailLineKey(l), l])),
-    [visible]
+    () => new Map(sourceFiltered.map((l) => [pnlDetailLineKey(l), l])),
+    [sourceFiltered]
   )
 
-  const duplicateGroups = useMemo(() => findPnlDetailDuplicateGroups(visible), [visible])
+  const duplicateGroups = useMemo(() => findPnlDetailDuplicateGroups(sourceFiltered), [sourceFiltered])
   const duplicateExtraKeys = useMemo(
-    () => duplicateExtraKeysToSelect(visible, duplicateGroups),
-    [visible, duplicateGroups]
+    () => duplicateExtraKeysToSelect(sourceFiltered, duplicateGroups),
+    [sourceFiltered, duplicateGroups]
   )
   const duplicateStyleByKey = useMemo(
     () => buildDuplicateGroupStyleByKey(duplicateGroups),
@@ -524,6 +578,9 @@ export default function PnlUnifiedExpenseDetailDialog({
       setSelectedKeys(new Set())
       setDeleteConfirmKeys(null)
       setSearchQuery('')
+      setSourceTablesFilter([])
+      setSortKey('submit_on')
+      setSortDir('asc')
     }
   }, [open])
 
@@ -531,6 +588,9 @@ export default function PnlUnifiedExpenseDetailDialog({
     setSelectedKeys(new Set())
     setDeleteConfirmKeys(null)
     setSearchQuery('')
+    setSourceTablesFilter([])
+    setSortKey('submit_on')
+    setSortDir('asc')
   }, [drill, visible.length])
 
   const toggleSelected = useCallback((key: string, checked: boolean) => {
@@ -777,38 +837,100 @@ export default function PnlUnifiedExpenseDetailDialog({
         </DialogHeader>
 
         {visible.length > 0 ? (
-          <div className="px-3 sm:px-4 py-2 border-b bg-white shrink-0 flex flex-col sm:flex-row sm:items-center gap-2">
-            <div className="relative flex-1 min-w-[12rem] max-w-xl">
-              <Search
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
-                aria-hidden
-              />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="출처·지출일·결제처·분류·금액·메모·ID 검색"
-                className="h-9 pl-9 pr-9 text-sm"
-                aria-label="지출 상세 검색"
-                disabled={deleting}
-              />
-              {searchTrim ? (
-                <button
-                  type="button"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:bg-muted"
-                  aria-label="검색어 지우기"
-                  onClick={() => setSearchQuery('')}
-                >
-                  <X className="h-4 w-4" aria-hidden />
-                </button>
-              ) : null}
-            </div>
-            {searchTrim ? (
+          <div className="px-3 sm:px-4 py-2 border-b bg-white shrink-0 flex flex-col gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="relative flex-1 min-w-[12rem] max-w-xl">
+                <Search
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+                  aria-hidden
+                />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="출처·지출일·입력일·결제처·분류·금액·메모·ID 검색"
+                  className="h-9 pl-9 pr-9 text-sm"
+                  aria-label="지출 상세 검색"
+                  disabled={deleting}
+                />
+                {searchTrim ? (
+                  <button
+                    type="button"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:bg-muted"
+                    aria-label="검색어 지우기"
+                    onClick={() => setSearchQuery('')}
+                  >
+                    <X className="h-4 w-4" aria-hidden />
+                  </button>
+                ) : null}
+              </div>
               <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
-                검색 <strong className="text-foreground font-medium">{displayRows.length}</strong> / {visible.length}건
+                {searchTrim ? (
+                  <>
+                    검색 <strong className="text-foreground font-medium">{displayRows.length}</strong>
+                    {sourceFilterActive ? (
+                      <>
+                        {' '}
+                        / 출처 {sourceFiltered.length}
+                      </>
+                    ) : null}{' '}
+                    / {visible.length}건
+                  </>
+                ) : sourceFilterActive ? (
+                  <>
+                    표시 <strong className="text-foreground font-medium">{sourceFiltered.length}</strong> /{' '}
+                    {visible.length}건
+                  </>
+                ) : (
+                  <>{visible.length}건</>
+                )}
               </span>
-            ) : (
-              <span className="text-xs text-muted-foreground shrink-0">{visible.length}건</span>
-            )}
+            </div>
+            {sourcesInVisible.length > 1 ? (
+              <div className="flex min-w-0 flex-col gap-1 rounded border border-slate-200 bg-slate-50/80 px-2 py-1.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-xs text-slate-600 shrink-0 font-medium">출처</span>
+                  <button
+                    type="button"
+                    className="text-[10px] text-slate-600 underline hover:text-slate-900 shrink-0"
+                    disabled={deleting}
+                    onClick={() => setSourceTablesFilter([])}
+                  >
+                    전체
+                  </button>
+                  <span className="text-slate-400 hidden sm:inline">|</span>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {sourcesInVisible.map((value) => {
+                      const active = sourceFilterActive && sourceTablesFilter.includes(value)
+                      return (
+                        <label
+                          key={value}
+                          className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-slate-700 whitespace-nowrap"
+                        >
+                          <Checkbox
+                            checked={active}
+                            disabled={deleting}
+                            onCheckedChange={() => {
+                              setSourceTablesFilter((prev) => {
+                                const next = prev.includes(value)
+                                  ? prev.filter((x) => x !== value)
+                                  : [...prev, value]
+                                return next
+                              })
+                              setSelectedKeys(new Set())
+                            }}
+                          />
+                          <span>{sourceLabel(value)}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  체크를 모두 해제하거나 «전체»를 누르면 모든 출처를 표시합니다. 여러 개를 선택하면 해당 출처만
+                  목록·중복 점검·선택에 반영됩니다.
+                </p>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -898,10 +1020,14 @@ export default function PnlUnifiedExpenseDetailDialog({
             <p className="text-sm text-muted-foreground py-8 text-center">이 구간에 해당하는 지출이 없습니다.</p>
           ) : displayRows.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
-              검색 결과가 없습니다. 검색어를 바꾸거나 지워 보세요.
+              {searchTrim
+                ? '검색 결과가 없습니다. 검색어를 바꾸거나 지워 보세요.'
+                : sourceFilterActive
+                  ? '선택한 출처에 해당하는 지출이 없습니다. 출처 필터를 바꾸거나 «전체»를 눌러 보세요.'
+                  : '표시할 지출이 없습니다.'}
             </p>
           ) : (
-            <table className="w-full min-w-[1000px] text-xs sm:text-sm border-collapse">
+            <table className="w-full min-w-[1080px] text-xs sm:text-sm border-collapse">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="py-2 pl-1 pr-1 w-9 font-medium">
@@ -919,11 +1045,17 @@ export default function PnlUnifiedExpenseDetailDialog({
                   <th className="py-2 pr-2 font-medium whitespace-nowrap">
                     <TableSortHeaderButton
                       label="지출일"
-                      active
-                      dir={submitDateSortDir}
-                      onClick={() =>
-                        setSubmitDateSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-                      }
+                      active={sortKey === 'submit_on'}
+                      dir={sortDir}
+                      onClick={() => toggleSort('submit_on')}
+                    />
+                  </th>
+                  <th className="py-2 pr-2 font-medium whitespace-nowrap">
+                    <TableSortHeaderButton
+                      label="입력일"
+                      active={sortKey === 'created_at'}
+                      dir={sortDir}
+                      onClick={() => toggleSort('created_at')}
                     />
                   </th>
                   <th className="py-2 pr-2 font-medium min-w-[88px]">결제처</th>
@@ -931,7 +1063,16 @@ export default function PnlUnifiedExpenseDetailDialog({
                   <th className="py-2 pr-2 font-medium whitespace-nowrap">명세 대조</th>
                   <th className="py-2 pr-2 font-medium min-w-[100px]">분류(원문)</th>
                   <th className="py-2 pr-2 font-medium min-w-[140px] max-w-[280px]">설명</th>
-                  <th className="py-2 pr-2 font-medium text-right whitespace-nowrap">금액</th>
+                  <th className="py-2 pr-2 font-medium text-right whitespace-nowrap">
+                    <div className="flex justify-end">
+                      <TableSortHeaderButton
+                        label="금액"
+                        active={sortKey === 'amount'}
+                        dir={sortDir}
+                        onClick={() => toggleSort('amount')}
+                      />
+                    </div>
+                  </th>
                   <th className="py-2 pl-1 font-medium whitespace-nowrap w-[72px]"> </th>
                 </tr>
               </thead>
@@ -973,6 +1114,9 @@ export default function PnlUnifiedExpenseDetailDialog({
                         </td>
                         <td className="py-2 pr-2 whitespace-nowrap tabular-nums">
                           {isoToYmd(line.submit_on) || '—'}
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap tabular-nums text-muted-foreground">
+                          {isoToYmd(line.created_at) || '—'}
                         </td>
                         <td className="py-2 pr-2 break-all max-w-[140px]">
                           {(line.paid_to || '').trim() || (line.company || '').trim() || '—'}
@@ -1017,7 +1161,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                       </tr>
                       {isEditing && draft && (
                         <tr className="bg-muted/40 border-b">
-                          <td colSpan={10} className="p-3 sm:p-4">
+                          <td colSpan={11} className="p-3 sm:p-4">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl">
                               <div className="space-y-1">
                                 <Label className="text-xs">금액</Label>
@@ -1182,8 +1326,10 @@ export default function PnlUnifiedExpenseDetailDialog({
           <DialogFooter className="px-3 sm:px-4 py-2 border-t bg-slate-50/80 shrink-0 flex-row flex-wrap justify-between gap-2">
             <span className="text-xs text-muted-foreground self-center">
               {searchTrim
-                ? `검색 ${displayRows.length} / ${visible.length}건`
-                : `${displayRows.length}건 표시`}
+                ? `검색 ${displayRows.length}${sourceFilterActive ? ` / 출처 ${sourceFiltered.length}` : ''} / ${visible.length}건`
+                : sourceFilterActive
+                  ? `표시 ${sourceFiltered.length} / ${visible.length}건`
+                  : `${displayRows.length}건 표시`}
               {duplicateGroups.length > 0
                 ? ` · 중복 점검: 금액 ±$${BULK_COMPANY_DUP_AMOUNT_EPS}, 등록일 ±${BULK_COMPANY_DUP_DAY_WINDOW}일`
                 : ''}
