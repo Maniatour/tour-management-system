@@ -1638,6 +1638,13 @@
     "tabTourDesc": "Manage tour-related expenses",
     "tabCash": "Cash Management",
     "tabCashDesc": "Manage cash in/out and balance",
+    "listPager": {
+      "pageSizeLabel": "Per page",
+      "pagerPrev": "Previous",
+      "pagerNext": "Next",
+      "pagerPageOf": "Page {current} / {total}",
+      "pagerShowing": "{from}–{to} of {total}"
+    },
     "reservationSubTabs": {
       "tab": {
         "expenses": "Reservation expenses",
@@ -1651,7 +1658,7 @@
       "empty": "No rows to show.",
       "filterDateFrom": "Submitted from",
       "filterDateTo": "Submitted to",
-      "searchPlaceholder": "Category, company, note, tour ID…",
+      "searchPlaceholder": "Category, company, note, tour ID, amount…",
       "ticketsColRecon": "Stmt",
       "ticketsColExpense": "Expense",
       "ticketsColSubmitOn": "Submitted",
@@ -1724,7 +1731,7 @@
       "empty": "No payment records to display.",
       "emptyFiltered": "No rows match your search or filters.",
       "loadError": "Could not load payment records. Check permissions or your connection.",
-      "searchPlaceholder": "Reservation ID, customer, tour date, channel, note, submitter, status, method…",
+      "searchPlaceholder": "Reservation ID, customer, tour date, channel, note, submitter, status, method, amount (USD/KRW)…",
       "filterStatus": "Status",
       "filterMethod": "Payment method",
       "filterDateFrom": "Submitted from",
@@ -1816,7 +1823,7 @@
       "colLinked": "Current links",
       "matchModeDateProximity": "Date window",
       "matchModeAmountOnly": "Amount only",
-      "ticketBookingDateProbeHint": "Shows all outflow lines within ±{window} days of submit ({submit}) and check-in ({checkIn}). {account}",
+      "ticketBookingDateProbeHint": "Shows all outflow and inflow lines within ±{window} days of submit ({submit}) and check-in ({checkIn}). {account}",
       "ticketBookingDateProbeAccountLinked": "Filtered to the bank account linked to the payment method.",
       "ticketBookingDateProbeAccountAll": "No linked account — searching all uploaded statements.",
       "dateProximityModeHint": "Uses statement imports overlapping the ledger date ±4 days, then similar amounts.",
@@ -2960,7 +2967,9 @@
       "auditedBy": "By {name}",
       "saving": "Saving…",
       "toggleFailed": "Could not save review status.",
-      "loginRequired": "Sign in to mark as reviewed."
+      "loginRequired": "Sign in to mark as reviewed.",
+      "hideAudited": "Hide reviewed",
+      "hideAuditedTitle": "Hide bookings that have been marked as reviewed."
     },
     "ticketBooking": {
       "newTitle": "New Ticket Booking",
@@ -3546,7 +3555,7 @@
       "cancelledPeople": "Cancelled",
       "peopleUnit": "people",
       "noStaffInfo": "No staff assigned",
-      "searchPlaceholder": "Search by Tour ID, Product ID, Tour Guide...",
+      "searchPlaceholder": "Search by Tour ID, Product ID, Tour Guide, tour date...",
       "allStatus": "All Status",
       "allGuides": "All Guides",
       "clear": "Clear",

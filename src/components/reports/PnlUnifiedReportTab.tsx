@@ -18,6 +18,10 @@ import PnlUnifiedExpenseDetailDialog, {
 } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import PnlUnifiedDepositSection from '@/components/reports/PnlUnifiedDepositSection'
+import PnlExcludedFromReportSection from '@/components/reports/PnlExcludedFromReportSection'
+import PnlStatementInflowDetailDialog, {
+  type PnlStatementInflowDrillState,
+} from '@/components/reports/PnlStatementInflowDetailDialog'
 import PnlUnifiedNetProfitSection, {
   type PnlCashBucketTotals,
   type PnlCashPaymentDrill,
@@ -102,8 +106,14 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
   const [monthlyCells, setMonthlyCells] = useState<Record<string, Record<string, number>>>({})
   const [standardCategoryRows, setStandardCategoryRows] = useState<ExpenseStandardCategoryPickRow[]>([])
   const [pnlDetailLines, setPnlDetailLines] = useState<PnlDetailLine[]>([])
+  const [pnlExcludedExpenseLines, setPnlExcludedExpenseLines] = useState<PnlDetailLine[]>([])
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailDrill, setDetailDrill] = useState<PnlDrillState | null>(null)
+  const [excludedExpenseDetailOpen, setExcludedExpenseDetailOpen] = useState(false)
+  const [excludedInflowDetailOpen, setExcludedInflowDetailOpen] = useState(false)
+  const [excludedInflowDrill, setExcludedInflowDrill] = useState<PnlStatementInflowDrillState | null>(
+    null
+  )
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
   const [totalExcl, setTotalExcl] = useState(0)
   const [depositNet, setDepositNet] = useState<PnlDepositNetTotals | null>(null)
@@ -197,6 +207,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
 
     const monthly = new Map<string, Map<string, number>>()
     const detailLines: PnlDetailLine[] = []
+    const excludedDetailLines: PnlDetailLine[] = []
     let excluded = 0
 
     const addMonthly = (bucketKey: string, submitOn: string | null, amount: number) => {
@@ -222,6 +233,30 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
         excluded += amt
+        if (r.submit_on) {
+          const orig = mappingOriginalForExpense('tour_expenses', r)
+          const resolvedLeafId = mapToLeaf.get(`${orig}::tour_expenses`) ?? null
+          const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+          excludedDetailLines.push({
+            id: r.id,
+            source: 'tour_expenses',
+            bucketKey,
+            resolvedLeafId,
+            mappingOriginalValue: orig,
+            yearMonth: yearMonthFromSubmitOn(r.submit_on),
+            amount: amt,
+            submit_on: r.submit_on,
+            created_at: r.created_at,
+            paid_to: r.paid_to,
+            paid_for: r.paid_for,
+            payment_method: r.payment_method,
+            statementReconciled: false,
+            category: null,
+            company: null,
+            note: r.note,
+            exclude_from_pnl: true,
+          })
+        }
         continue
       }
       if (!r.submit_on) continue
@@ -264,6 +299,30 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
         excluded += amt
+        if (r.submit_on) {
+          const orig = mappingOriginalForExpense('reservation_expenses', r)
+          const resolvedLeafId = mapToLeaf.get(`${orig}::reservation_expenses`) ?? null
+          const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+          excludedDetailLines.push({
+            id: r.id,
+            source: 'reservation_expenses',
+            bucketKey,
+            resolvedLeafId,
+            mappingOriginalValue: orig,
+            yearMonth: yearMonthFromSubmitOn(r.submit_on),
+            amount: amt,
+            submit_on: r.submit_on,
+            created_at: r.created_at,
+            paid_to: r.paid_to,
+            paid_for: r.paid_for,
+            payment_method: r.payment_method,
+            statementReconciled: false,
+            category: null,
+            company: null,
+            note: r.note,
+            exclude_from_pnl: true,
+          })
+        }
         continue
       }
       if (!r.submit_on) continue
@@ -308,8 +367,38 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         created_at: string | null
       }
       const amt = Number(r.amount) || 0
+      const memo = [r.notes, r.description].filter(Boolean).join(' · ') || null
       if (r.exclude_from_pnl) {
         excluded += amt
+        if (r.submit_on) {
+          const { leafId: resolvedLeafId, mappingOriginal: orig } = resolveCompanyExpensePnlLeafId(
+            r,
+            cats,
+            leafIdSet,
+            mapToLeaf,
+            locale
+          )
+          const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+          excludedDetailLines.push({
+            id: r.id,
+            source: 'company_expenses',
+            bucketKey,
+            resolvedLeafId,
+            mappingOriginalValue: orig,
+            yearMonth: yearMonthFromSubmitOn(r.submit_on),
+            amount: amt,
+            submit_on: r.submit_on,
+            created_at: r.created_at,
+            paid_to: r.paid_to,
+            paid_for: r.paid_for,
+            payment_method: r.payment_method,
+            statementReconciled: false,
+            category: r.category,
+            company: null,
+            note: memo,
+            exclude_from_pnl: true,
+          })
+        }
         continue
       }
       if (!r.submit_on) continue
@@ -322,7 +411,6 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       )
       const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
       addMonthly(bucketKey, r.submit_on, amt)
-      const memo = [r.notes, r.description].filter(Boolean).join(' · ') || null
       detailLines.push({
         id: r.id,
         source: 'company_expenses',
@@ -419,9 +507,10 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       })
     }
 
-    const teIds = detailLines.filter((l) => l.source === 'tour_expenses').map((l) => l.id)
-    const reIds = detailLines.filter((l) => l.source === 'reservation_expenses').map((l) => l.id)
-    const ceIds = detailLines.filter((l) => l.source === 'company_expenses').map((l) => l.id)
+    const allExpenseLines = [...detailLines, ...excludedDetailLines]
+    const teIds = allExpenseLines.filter((l) => l.source === 'tour_expenses').map((l) => l.id)
+    const reIds = allExpenseLines.filter((l) => l.source === 'reservation_expenses').map((l) => l.id)
+    const ceIds = allExpenseLines.filter((l) => l.source === 'company_expenses').map((l) => l.id)
     const tbIds = detailLines.filter((l) => l.source === 'ticket_bookings').map((l) => l.id)
     const thIds = detailLines.filter((l) => l.source === 'tour_hotel_bookings').map((l) => l.id)
 
@@ -448,8 +537,17 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       cells[cat] = Object.fromEntries(mmap)
     }
 
+    const excludedWithRecon: PnlDetailLine[] = excludedDetailLines.map((l) => ({
+      ...l,
+      statementReconciled:
+        (l.source === 'tour_expenses' && teRe.has(l.id)) ||
+        (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
+        (l.source === 'company_expenses' && ceRe.has(l.id)),
+    }))
+
     setMonthlyCells(cells)
     setPnlDetailLines(detailLinesWithRecon)
+    setPnlExcludedExpenseLines(excludedWithRecon)
     setTotalExcl(excluded)
     setLoading(false)
   }, [dateRange, locale])
@@ -462,6 +560,29 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     () => enumerateMonthsInclusive(dateRange.start, dateRange.end),
     [dateRange.start, dateRange.end]
   )
+
+  const excludedExpenseStats = useMemo(() => {
+    const monthly: Record<string, number> = {}
+    let total = 0
+    for (const l of pnlExcludedExpenseLines) {
+      total += l.amount
+      monthly[l.yearMonth] = (monthly[l.yearMonth] || 0) + l.amount
+    }
+    return { monthly, total, count: pnlExcludedExpenseLines.length }
+  }, [pnlExcludedExpenseLines])
+
+  const excludedInflowStats = useMemo(() => {
+    const monthly: Record<string, number> = {}
+    let total = 0
+    let count = 0
+    for (const l of statementInflowDetailLines) {
+      if (l.pnlIncluded) continue
+      count += 1
+      total += l.amount
+      monthly[l.yearMonth] = (monthly[l.yearMonth] || 0) + l.amount
+    }
+    return { monthly, total, count }
+  }, [statementInflowDetailLines])
 
   const { rowTotals, colTotals, grandTotal } = useMemo(() => {
     const bucketKeys = Object.keys(monthlyCells)
@@ -542,9 +663,8 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               결제수단 입금 행은 순합계에 미포함). 순수익 표 하단 <strong>참고</strong>는 명세 입금 + 현금(입금·환불 합계) − 지출(대조용).
             </li>
             <li>
-              <strong>exclude_from_pnl</strong>이 켜진 행(
-              <AccountingTerm termKey="명세대조">명세 대조</AccountingTerm> 탭에서 개인·
-              <AccountingTerm termKey="PNL제외">PNL 제외</AccountingTerm> 처리한 회사 지출/투어/예약 지출 등)은 합계에서 빼고, 하단에 “제외된 금액 합계”로만 보여 줍니다.
+              <strong>exclude_from_pnl</strong>·명세 입금의 PNL 제외·개인(use) 행은 통합 표 합계에서 빼며, 화면 하단{' '}
+              <strong>PNL 제외 지출·입금</strong>에서 월별·건별로 따로 볼 수 있습니다.
             </li>
           </ul>
         </div>
@@ -651,8 +771,18 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
           </Button>
         </div>
         <p className="text-xs sm:text-sm text-gray-600 mb-4 break-words">
-          기간 {dateRange.start} ~ {dateRange.end} · exclude_from_pnl 인 건은 제외했습니다 (합계: $
-          {totalExcl.toLocaleString(undefined, { maximumFractionDigits: 2 })})
+          기간 {dateRange.start} ~ {dateRange.end} · exclude_from_pnl 인 건은 합계에서 제외했습니다 (합계:{' '}
+          {formatMoney(totalExcl)}). 아래{' '}
+          <button
+            type="button"
+            className="text-blue-800 font-medium hover:underline underline-offset-2"
+            onClick={() => {
+              document.getElementById('pnl-excluded-section')?.scrollIntoView({ behavior: 'smooth' })
+            }}
+          >
+            PNL 제외 지출·입금
+          </button>
+          에서 건별로 볼 수 있습니다.
         </p>
         <p className="text-xs text-blue-900/90 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-3">
           금액·합계 셀을 누르면 <strong>상세 지출</strong> 모달이 열립니다. 모달에서 출처를 다중 선택해 목록을
@@ -836,6 +966,29 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         onOpenCashPaymentDetail={(drill) => openCashPaymentDetailRef.current?.(drill)}
       />
 
+      <div id="pnl-excluded-section">
+        <PnlExcludedFromReportSection
+          months={months}
+          formatMonthLabel={formatMonthLabel}
+          dateRangeLabel={`${dateRange.start} ~ ${dateRange.end}`}
+          excludedExpenseCount={excludedExpenseStats.count}
+          excludedExpenseByMonth={excludedExpenseStats.monthly}
+          excludedExpenseTotal={excludedExpenseStats.total}
+          excludedInflowCount={excludedInflowStats.count}
+          excludedInflowByMonth={excludedInflowStats.monthly}
+          excludedInflowTotal={excludedInflowStats.total}
+          onOpenExcludedExpenses={() => setExcludedExpenseDetailOpen(true)}
+          onOpenExcludedInflows={() => {
+            setExcludedInflowDrill({ mode: 'excluded' })
+            setExcludedInflowDetailOpen(true)
+          }}
+          onOpenExcludedInflowsMonth={(ym) => {
+            setExcludedInflowDrill({ mode: 'excluded-cell', month: ym })
+            setExcludedInflowDetailOpen(true)
+          }}
+        />
+      </div>
+
       <CategoryManagerModal
         isOpen={categoryManagerOpen}
         onClose={() => {
@@ -856,6 +1009,29 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         onSaved={loadPnl}
         expenseStandardCategories={standardCategoryRows}
         unifiedStandardGroups={unifiedStandardGroups}
+      />
+
+      <PnlUnifiedExpenseDetailDialog
+        open={excludedExpenseDetailOpen}
+        onOpenChange={setExcludedExpenseDetailOpen}
+        drill={{ mode: 'excluded' }}
+        lines={pnlExcludedExpenseLines}
+        formatMonthLabel={formatMonthLabel}
+        onSaved={loadPnl}
+        expenseStandardCategories={standardCategoryRows}
+        unifiedStandardGroups={unifiedStandardGroups}
+      />
+
+      <PnlStatementInflowDetailDialog
+        open={excludedInflowDetailOpen}
+        onOpenChange={(open) => {
+          setExcludedInflowDetailOpen(open)
+          if (!open) setExcludedInflowDrill(null)
+        }}
+        drill={excludedInflowDrill}
+        lines={statementInflowDetailLines}
+        formatMonthLabel={formatMonthLabel}
+        onChanged={() => reloadStatementInflowsRef.current?.()}
       />
     </div>
   )

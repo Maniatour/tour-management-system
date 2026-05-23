@@ -48,7 +48,11 @@ import {
 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import {
+  findStaleStatementLineMatchedStatusIds,
+  isStatementLineShownAsUnmatched,
+  patchStatementLinesUnmatchedStatus,
   replaceExpenseReconciliationMatch,
+  repairStaleStatementLineMatchedStatuses,
   syncStatementLineMatchedStatus,
   type ExpenseReconSourceTable
 } from '@/lib/expense-reconciliation-similar-lines'
@@ -399,6 +403,37 @@ const AUTO_MATCH_SOURCE_LABEL: Record<ExpenseCandidate['source_table'], string> 
   tour_hotel_bookings: '호텔 부킹'
 }
 
+const AUTO_MATCH_ALL_SOURCE_TABLES: readonly ExpenseCandidate['source_table'][] = [
+  'company_expenses',
+  'tour_expenses',
+  'reservation_expenses',
+  'ticket_bookings',
+  'tour_hotel_bookings'
+]
+
+function bestAutoMatchCandidateForSource(
+  candidates: AutoMatchCandidateOption[],
+  sourceTable: ExpenseCandidate['source_table']
+): AutoMatchCandidateOption | null {
+  const list = candidates.filter((c) => c.source_table === sourceTable)
+  if (list.length === 0) return null
+  return [...list].sort((a, b) => b.score - a.score)[0] ?? null
+}
+
+function uniqueAutoMatchSourceTables(
+  candidates: AutoMatchCandidateOption[]
+): ExpenseCandidate['source_table'][] {
+  const seen = new Set<ExpenseCandidate['source_table']>()
+  const out: ExpenseCandidate['source_table'][] = []
+  for (const c of candidates) {
+    if (seen.has(c.source_table)) continue
+    seen.add(c.source_table)
+    out.push(c.source_table)
+  }
+  out.sort((a, b) => autoMatchSourceTableTieOrder(a) - autoMatchSourceTableTieOrder(b))
+  return out
+}
+
 const OPERATIONAL_LEDGER_SOURCE_LABEL: Record<OperationalLedgerSourceTable, string> = {
   reservation_expenses: '예약',
   company_expenses: '회사',
@@ -596,6 +631,16 @@ type ExpensePickerBrowseTable =
   | 'reservation_expenses'
   | 'ticket_bookings'
 
+/** 지출 연결 모달·후보 조회 — 소프트 삭제 제외 */
+type ExpensePickerSoftDeleteTable = ExpensePickerBrowseTable
+
+function withActiveExpenseRowsOnly<Q extends { is: (column: string, value: null) => Q }>(
+  query: Q,
+  _table: ExpensePickerSoftDeleteTable
+): Q {
+  return query.is('deleted_at', null)
+}
+
 /** 명세 import id 묶음에 대해 statement_lines 전부 로드 (1000행 초과 대응) */
 async function fetchAllStatementLinesForImportChunk(importChunk: string[]): Promise<StatementLine[]> {
   const out: StatementLine[] = []
@@ -721,7 +766,12 @@ async function fetchAllExpenseRowsForAutoMatch(
   const out: Record<string, unknown>[] = []
   let from = 0
   for (;;) {
-    const q = sb.from(table).select(selectList).gte('submit_on', startIso).lte('submit_on', endIso)
+    const q = sb
+      .from(table)
+      .select(selectList)
+      .gte('submit_on', startIso)
+      .lte('submit_on', endIso)
+      .is('deleted_at', null)
     const { data, error } = await q
       .order('submit_on', { ascending: true })
       .order('id', { ascending: true })
@@ -752,6 +802,7 @@ async function fetchTicketBookingsBySubmitOnForAutoMatch(
       .select('id,expense,submit_on,check_in_date,category,company')
       .gte('submit_on', startIso)
       .lte('submit_on', endIso)
+      .is('deleted_at', null)
       .or('status.eq.confirmed,status.eq.Confirmed')
       .order('submit_on', { ascending: true })
       .order('id', { ascending: true })
@@ -782,6 +833,7 @@ async function fetchTicketBookingsByCheckInForAutoMatch(
       .select('id,expense,submit_on,check_in_date,category,company')
       .gte('check_in_date', startYmd)
       .lte('check_in_date', endYmd)
+      .is('deleted_at', null)
       .or('status.eq.confirmed,status.eq.Confirmed')
       .order('check_in_date', { ascending: true })
       .order('id', { ascending: true })
@@ -859,11 +911,14 @@ async function fetchTicketBookingsForExpensePickerMerged(
     const out: Record<string, unknown>[] = []
     let from = 0
     for (;;) {
-      const q = supabase
-        .from('ticket_bookings')
-        .select(sel)
-        .gte(column, start)
-        .lte(column, end)
+      const q = withActiveExpenseRowsOnly(
+        supabase
+          .from('ticket_bookings')
+          .select(sel)
+          .gte(column, start)
+          .lte(column, end),
+        'ticket_bookings'
+      )
         .order(column, { ascending: true })
         .order('id', { ascending: true })
         .range(from, from + STATEMENT_LINES_FETCH_PAGE - 1)
@@ -910,22 +965,32 @@ async function fetchExpenseOptionsForYmdWindow(
   const end = new Date(`${e}T23:59:59.999`)
   const startIso = start.toISOString()
   const endIso = end.toISOString()
+  const sbRe = supabase as any
   const [{ data: ce }, { data: te }, { data: re }, tb] = await Promise.all([
-    supabase
-      .from('company_expenses')
-      .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
-      .gte('submit_on', startIso)
-      .lte('submit_on', endIso),
-    supabase
-      .from('tour_expenses')
-      .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
-      .gte('submit_on', startIso)
-      .lte('submit_on', endIso),
-    supabase
-      .from('reservation_expenses')
-      .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
-      .gte('submit_on', startIso)
-      .lte('submit_on', endIso),
+    withActiveExpenseRowsOnly(
+      supabase
+        .from('company_expenses')
+        .select('id,amount,submit_on,paid_for,paid_to,description,payment_method')
+        .gte('submit_on', startIso)
+        .lte('submit_on', endIso),
+      'company_expenses'
+    ),
+    withActiveExpenseRowsOnly(
+      supabase
+        .from('tour_expenses')
+        .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
+        .gte('submit_on', startIso)
+        .lte('submit_on', endIso),
+      'tour_expenses'
+    ),
+    withActiveExpenseRowsOnly(
+      sbRe
+        .from('reservation_expenses')
+        .select('id,amount,submit_on,paid_for,paid_to,note,payment_method')
+        .gte('submit_on', startIso)
+        .lte('submit_on', endIso),
+      'reservation_expenses'
+    ),
     fetchTicketBookingsForExpensePickerMerged(startIso, endIso, s, e)
   ])
   const ex: ExpenseOption[] = [
@@ -1696,6 +1761,8 @@ export default function StatementReconciliationTab() {
   const [filterAccountId, setFilterAccountId] = useState('')
   /** true면 matched_status가 unmatched·partial인 명세 줄만 표시(완전 대조 제외) */
   const [showOnlyUnmatchedLines, setShowOnlyUnmatchedLines] = useState(true)
+  /** true면 exclude_from_pnl인 명세 줄을 표에서 숨김 */
+  const [hidePnlExcludedLines, setHidePnlExcludedLines] = useState(true)
   /** 표 테이블: 설명·가맹점·금액·일자·방향 등 부분 문자열 검색 */
   const [reconciliationSearchQuery, setReconciliationSearchQuery] = useState('')
   /** 명세 대조 표: 페이지 인덱스(1-based) */
@@ -1790,6 +1857,10 @@ export default function StatementReconciliationTab() {
   /** 명세 표 상단: 자동 매칭 실행 전 정확/비슷/금액만 조건 선택 */
   const [autoMatchModeDialogOpen, setAutoMatchModeDialogOpen] = useState(false)
   const [autoMatchModeChoice, setAutoMatchModeChoice] = useState<AutoMatchAmountMode>('exact')
+  /** 자동 매칭 미리보기·조회에 포함할 연결 출처(1개 이상) */
+  const [autoMatchIncludedSources, setAutoMatchIncludedSources] = useState<
+    Set<ExpenseCandidate['source_table']>
+  >(() => new Set(AUTO_MATCH_ALL_SOURCE_TABLES))
   /** 미리보기 모달 안에서 조건만 바꿔 재계산할 때(전체 탭 loading 대신) */
   const [autoMatchPreviewBusy, setAutoMatchPreviewBusy] = useState(false)
   const autoMatchSelectAllRef = useRef<HTMLInputElement>(null)
@@ -2133,8 +2204,16 @@ export default function StatementReconciliationTab() {
     if (!force) {
       const cached = linesMatchesCacheRef.current.get(cacheKey)
       if (cached && Date.now() - cached.loadedAt < RECONCILIATION_LOAD_CACHE_TTL_MS) {
+        const staleIds = findStaleStatementLineMatchedStatusIds(cached.lines, cached.matches)
+        const linesForUi = patchStatementLinesUnmatchedStatus(cached.lines, staleIds)
+        if (staleIds.length > 0) {
+          linesMatchesCacheRef.current.set(cacheKey, { ...cached, lines: linesForUi })
+          void repairStaleStatementLineMatchedStatuses(supabase, cached.lines, cached.matches).catch((e) => {
+            if (!isAbortLikeError(e)) console.error('repairStaleStatementLineMatchedStatuses', e)
+          })
+        }
         startTransition(() => {
-          setLines(cached.lines)
+          setLines(linesForUi)
           setMatches(cached.matches)
           setLinePairs(cached.linePairs)
         })
@@ -2189,12 +2268,22 @@ export default function StatementReconciliationTab() {
         }
       }
 
+      try {
+        const staleIds = await repairStaleStatementLineMatchedStatuses(supabase, linesArr, matchRows)
+        if (staleIds.length > 0) {
+          linesArr = patchStatementLinesUnmatchedStatus(linesArr, staleIds)
+        }
+      } catch (e) {
+        if (!isAbortLikeError(e)) console.error('repairStaleStatementLineMatchedStatuses', e)
+      }
+
       linesMatchesCacheRef.current.set(cacheKey, {
         loadedAt: Date.now(),
         lines: linesArr,
         matches: matchRows,
         linePairs: pairRows,
       })
+
       if (gen === loadLinesGenRef.current) {
         startTransition(() => {
           setLines(linesArr)
@@ -2795,11 +2884,22 @@ export default function StatementReconciliationTab() {
     return s.length >= 10 || e.length >= 10
   }, [statementTableDateStart, statementTableDateEnd])
 
-  /** 월·거래일 범위·미대조만 필터 적용 후 (검색 전) — 빈 화면 메시지 구분용 */
+  /** 월·거래일 범위·PnL 제외 숨김·미대조만 필터 적용 후 (검색 전) — 빈 화면 메시지 구분용 */
   const reconciliationLinesBeforeSearch = useMemo(() => {
-    if (!showOnlyUnmatchedLines) return displayLines
-    return displayLines.filter((l) => l.matched_status === 'unmatched' || l.matched_status === 'partial')
-  }, [displayLines, showOnlyUnmatchedLines])
+    let rows = displayLines
+    if (hidePnlExcludedLines) {
+      rows = rows.filter((l) => !l.exclude_from_pnl)
+    }
+    if (!showOnlyUnmatchedLines) return rows
+    return rows.filter((l) =>
+      isStatementLineShownAsUnmatched(l.matched_status, (matchesByLine.get(l.id) || []).length)
+    )
+  }, [displayLines, hidePnlExcludedLines, showOnlyUnmatchedLines, matchesByLine])
+
+  const pnlExcludedLinesHiddenCount = useMemo(() => {
+    if (!hidePnlExcludedLines) return 0
+    return displayLines.filter((l) => l.exclude_from_pnl).length
+  }, [displayLines, hidePnlExcludedLines])
 
   const reconciliationTableLines = useMemo(() => {
     let rows = reconciliationLinesBeforeSearch
@@ -2846,11 +2946,15 @@ export default function StatementReconciliationTab() {
   }, [reconciliationLinesBeforeSearch, reconciliationSearchQuery, accountNameForStatementLine])
 
   const isStatementLineBulkSelectable = useCallback(
-    (line: StatementLine) =>
-      line.direction === 'outflow' &&
-      line.matched_status === 'unmatched' &&
-      (matchesByLine.get(line.id) || []).length === 0 &&
-      Number(line.amount) > 0,
+    (line: StatementLine) => {
+      const lineMs = matchesByLine.get(line.id) || []
+      return (
+        line.direction === 'outflow' &&
+        lineMs.length === 0 &&
+        isStatementLineShownAsUnmatched(line.matched_status, lineMs.length) &&
+        Number(line.amount) > 0
+      )
+    },
     [matchesByLine]
   )
 
@@ -2898,13 +3002,15 @@ export default function StatementReconciliationTab() {
   /** 중복 점검: 표의 출금·미대조·아직 매칭 없음 — 최대 200건 */
   const bulkCompanyExpenseCandidates = useMemo(() => {
     return reconciliationTableLines
-      .filter(
-        (l) =>
+      .filter((l) => {
+        const lineMs = matchesByLine.get(l.id) || []
+        return (
           l.direction === 'outflow' &&
-          l.matched_status === 'unmatched' &&
-          (matchesByLine.get(l.id) || []).length === 0 &&
+          lineMs.length === 0 &&
+          isStatementLineShownAsUnmatched(l.matched_status, lineMs.length) &&
           Number(l.amount) > 0
-      )
+        )
+      })
       .slice(0, 200)
   }, [reconciliationTableLines, matchesByLine])
 
@@ -2982,13 +3088,15 @@ export default function StatementReconciliationTab() {
   /** 자동 매칭 미리보기: 명세 대조 표에 현재 표시 중인 페이지의 출금·미연결 줄만 */
   const autoMatchEligibleStatementLines = useMemo(
     () =>
-      pagedReconciliationLines.filter(
-        (l) =>
+      pagedReconciliationLines.filter((l) => {
+        const lineMs = matchesByLine.get(l.id) || []
+        return (
           l.direction === 'outflow' &&
-          l.matched_status === 'unmatched' &&
-          (matchesByLine.get(l.id) || []).length === 0 &&
+          lineMs.length === 0 &&
+          isStatementLineShownAsUnmatched(l.matched_status, lineMs.length) &&
           Number(l.amount) > 0
-      ),
+        )
+      }),
     [pagedReconciliationLines, matchesByLine]
   )
 
@@ -3144,6 +3252,7 @@ export default function StatementReconciliationTab() {
     statementTableDateStart,
     statementTableDateEnd,
     showOnlyUnmatchedLines,
+    hidePnlExcludedLines,
     reconciliationSearchQuery
   ])
 
@@ -3407,7 +3516,8 @@ export default function StatementReconciliationTab() {
                 ? 'id,amount,submit_on,paid_for,paid_to,description,payment_method'
                 : 'id,amount,submit_on,paid_for,paid_to,note,payment_method'
 
-        let query = supabase.from(table).select(sel)
+        const sb = table === 'reservation_expenses' ? (supabase as any) : supabase
+        let query = withActiveExpenseRowsOnly(sb.from(table).select(sel), table)
         if (table === 'ticket_bookings') {
           query = query
             .gte('check_in_date', startYmd)
@@ -3957,7 +4067,11 @@ export default function StatementReconciliationTab() {
 
   const prepareAutoMatch = async (
     amountMode: AutoMatchAmountMode,
-    opts?: { invokedFromPreview?: boolean }
+    opts?: {
+      invokedFromPreview?: boolean
+      /** 상태 반영 전 미리보기 헤더에서 출처를 바꿀 때 */
+      includedSources?: Set<ExpenseCandidate['source_table']>
+    }
   ) => {
     const fromPreview = opts?.invokedFromPreview ?? false
     if (!filterAccountId || !accountExpenseWindow) return
@@ -4021,33 +4135,50 @@ export default function StatementReconciliationTab() {
     let hb: Record<string, unknown>[] = []
     let used: Set<string> = new Set()
 
+    const includedSources = opts?.includedSources ?? autoMatchIncludedSources
+
     try {
       ;[ce, te, re, tb, hb, used] = await Promise.all([
-        fetchAllExpenseRowsForAutoMatch(
-          'company_expenses',
-          'id, amount, submit_on, paid_for, paid_to, standard_paid_for',
-          startIso,
-          endIso
-        ),
-        fetchAllExpenseRowsForAutoMatch('tour_expenses', 'id, amount, submit_on, paid_for, paid_to', startIso, endIso),
-        fetchAllExpenseRowsForAutoMatch(
-          'reservation_expenses',
-          'id, amount, submit_on, paid_for, paid_to',
-          startIso,
-          endIso
-        ),
-        fetchAllTicketBookingsForAutoMatchMerged(
-          startIso,
-          endIso,
-          ticketCheckInRange.startYmd,
-          ticketCheckInRange.endYmd
-        ),
-        fetchAllTourHotelBookingsForAutoMatchMerged(
-          startIso,
-          endIso,
-          hotelCheckInStartYmd,
-          hotelCheckInEndYmd
-        ),
+        includedSources.has('company_expenses')
+          ? fetchAllExpenseRowsForAutoMatch(
+              'company_expenses',
+              'id, amount, submit_on, paid_for, paid_to, standard_paid_for',
+              startIso,
+              endIso
+            )
+          : Promise.resolve([]),
+        includedSources.has('tour_expenses')
+          ? fetchAllExpenseRowsForAutoMatch(
+              'tour_expenses',
+              'id, amount, submit_on, paid_for, paid_to',
+              startIso,
+              endIso
+            )
+          : Promise.resolve([]),
+        includedSources.has('reservation_expenses')
+          ? fetchAllExpenseRowsForAutoMatch(
+              'reservation_expenses',
+              'id, amount, submit_on, paid_for, paid_to',
+              startIso,
+              endIso
+            )
+          : Promise.resolve([]),
+        includedSources.has('ticket_bookings')
+          ? fetchAllTicketBookingsForAutoMatchMerged(
+              startIso,
+              endIso,
+              ticketCheckInRange.startYmd,
+              ticketCheckInRange.endYmd
+            )
+          : Promise.resolve([]),
+        includedSources.has('tour_hotel_bookings')
+          ? fetchAllTourHotelBookingsForAutoMatchMerged(
+              startIso,
+              endIso,
+              hotelCheckInStartYmd,
+              hotelCheckInEndYmd
+            )
+          : Promise.resolve([]),
         fetchAllUsedExpenseKeysForAutoMatch()
       ])
 
@@ -4126,6 +4257,7 @@ export default function StatementReconciliationTab() {
       const amt = Number(line.amount)
       const options = candidates
         .map((expense) => {
+          if (!includedSources.has(expense.source_table)) return null
           const key = `${expense.source_table}:${expense.source_id}`
           if (used.has(key)) return null
           const score = autoMatchCandidateScore(amt, line.posted_date, expense, matchRule)
@@ -4296,10 +4428,7 @@ export default function StatementReconciliationTab() {
           before_matched_amount: null,
           after_matched_amount: p.line_amount
         })
-        await supabase
-          .from('statement_lines')
-          .update({ matched_status: 'matched' })
-          .eq('id', p.statement_line_id)
+        await syncStatementLineMatchedStatus(supabase, p.statement_line_id)
         n += 1
       }
     } finally {
@@ -5625,7 +5754,7 @@ export default function StatementReconciliationTab() {
         before_matched_amount: null,
         after_matched_amount: candidate.amount
       })
-      await (supabase as any).from('statement_lines').update({ matched_status: 'matched' }).eq('id', candidate.id)
+      await syncStatementLineMatchedStatus(supabase, candidate.id)
     },
     [email, logReconciliationMatchEvent]
   )
@@ -5691,7 +5820,7 @@ export default function StatementReconciliationTab() {
         const proposals: OperationalLedgerBulkAutoProposalRow[] = []
         for (const row of rows) {
           const list = await fetchStatementCandidatesForLedgerRow(row, candidateMode)
-          const matchable = list.filter((c) => c.matched_status === 'unmatched')
+          const matchable = list.filter((c) => c.matched_status !== 'matched')
           if (matchable.length === 0) continue
           proposals.push({
             row,
@@ -5794,7 +5923,7 @@ export default function StatementReconciliationTab() {
           continue
         }
         const cand = p.candidates.find((c) => c.id === chosenId)
-        if (!cand || cand.matched_status !== 'unmatched') {
+        if (!cand || cand.matched_status === 'matched') {
           skippedInvalid += 1
           continue
         }
@@ -6197,7 +6326,38 @@ export default function StatementReconciliationTab() {
               미리보기에 사용할 필터입니다. 실행 후 목록을 확인하고, 저장할 때만 DB에 반영됩니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-1 text-sm text-slate-800">
+          <div className="space-y-3 py-1 text-sm text-slate-800">
+            <div className="rounded-md border border-slate-200 p-3 space-y-2">
+              <p className="font-medium text-slate-800">연결 출처</p>
+              <p className="text-xs text-slate-600">
+                후보로 불러올 원장·부킹 종류입니다. 미리보기에서도 행마다 출처를 바꿀 수 있습니다. 소프트 삭제된 지출·부킹은
+                제외됩니다.
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {AUTO_MATCH_ALL_SOURCE_TABLES.map((st) => (
+                  <label key={st} className="inline-flex items-center gap-1.5 cursor-pointer text-xs">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300"
+                      checked={autoMatchIncludedSources.has(st)}
+                      onChange={() => {
+                        setAutoMatchIncludedSources((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(st)) {
+                            if (next.size <= 1) return prev
+                            next.delete(st)
+                          } else {
+                            next.add(st)
+                          }
+                          return next
+                        })
+                      }}
+                    />
+                    {AUTO_MATCH_SOURCE_LABEL[st]}
+                  </label>
+                ))}
+              </div>
+            </div>
             <label
               className={`flex cursor-pointer gap-2.5 rounded-md border p-3 ${
                 autoMatchModeChoice === 'exact' ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200'
@@ -6446,16 +6606,44 @@ export default function StatementReconciliationTab() {
                   다시 계산 중…
                 </span>
               ) : null}
+              <span className="text-slate-600 font-medium shrink-0 w-full sm:w-auto mt-1 sm:mt-0">연결 출처</span>
+              {AUTO_MATCH_ALL_SOURCE_TABLES.map((st) => (
+                <label key={st} className="inline-flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300"
+                    disabled={autoMatchApplying || autoMatchPreviewBusy}
+                    checked={autoMatchIncludedSources.has(st)}
+                    onChange={() => {
+                      const next = new Set(autoMatchIncludedSources)
+                      if (next.has(st)) {
+                        if (next.size <= 1) return
+                        next.delete(st)
+                      } else {
+                        next.add(st)
+                      }
+                      setAutoMatchIncludedSources(next)
+                      void prepareAutoMatch(autoMatchModeChoice, {
+                        invokedFromPreview: true,
+                        includedSources: next
+                      })
+                    }}
+                  />
+                  <span>{AUTO_MATCH_SOURCE_LABEL[st]}</span>
+                </label>
+              ))}
             </div>
             <DialogDescription className="text-xs sm:text-sm text-slate-600">
               체크한 행만 저장됩니다. 저장하지 않을 행은 선택을 해제하세요. 취소하면 아무 것도 저장되지 않습니다. 위{' '}
-              <strong>조건</strong>은 언제든지 바꿀 수 있으며, 바꾸면 같은 명세 줄에 대해 후보가 다시 계산됩니다.
+              <strong>조건·연결 출처</strong>는 언제든지 바꿀 수 있으며, 바꾸면 같은 명세 줄에 대해 후보가 다시 계산됩니다.
+              표의 <strong>연결 출처</strong>·<strong>후보 선택</strong>으로 행마다 다른 원장을 고를 수 있습니다.
               후보는 <code className="text-[11px] bg-slate-100 px-1 rounded">company_expenses</code>·
               <code className="text-[11px] bg-slate-100 px-1 rounded">tour_expenses</code>·
               <code className="text-[11px] bg-slate-100 px-1 rounded">reservation_expenses</code>·
               <code className="text-[11px] bg-slate-100 px-1 rounded">ticket_bookings</code>는 기간 내{' '}
-              <strong>status=확정(confirmed)</strong>만 불러오며 금액은 <code className="text-[11px] bg-slate-100 px-1 rounded">expense</code>만 씁니다. 네
-              테이블 모두 <strong>1000행씩 순회</strong>하며, 이미{' '}
+              <strong>status=확정(confirmed)</strong>·<strong>삭제되지 않음</strong>만 불러오며 금액은{' '}
+              <code className="text-[11px] bg-slate-100 px-1 rounded">expense</code>만 씁니다. 회사·투어·예약·입장권은{' '}
+              <strong>deleted_at이 비어 있는</strong> 행만 후보에 넣습니다. 선택한 출처만 <strong>1000행씩 순회</strong>하며, 이미{' '}
               <code className="text-[11px] bg-slate-100 px-1 rounded">reconciliation_matches</code>에 연결된 동일 출처 지출은 후보에서 제외합니다.
               후보가 없는 명세 줄은 목록에 넣지 않습니다.
               {autoMatchRuleNarrative ? (
@@ -6524,6 +6712,10 @@ export default function StatementReconciliationTab() {
                 {autoMatchPagedProposals.map((p) => {
                   const selectedKey = autoMatchCandidateSelection[p.statement_line_id] || p.candidates[0]!.key
                   const selected = p.candidates.find((c) => c.key === selectedKey) ?? p.candidates[0]!
+                  const sourceTablesInRow = uniqueAutoMatchSourceTables(p.candidates)
+                  const candidatesForSource = p.candidates.filter(
+                    (c) => c.source_table === selected.source_table
+                  )
                   const amountDiff = Math.abs(selected.expense_amount - p.line_amount)
                   const amountMismatch = amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS
                   const lineYmd = autoMatchComparableYmd(p.posted_date)
@@ -6569,12 +6761,13 @@ export default function StatementReconciliationTab() {
                         }}
                         className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px]"
                         aria-label="자동 매칭 후보 선택"
+                        disabled={candidatesForSource.length === 0}
                       >
-                        {p.candidates.map((c, idx) => {
+                        {candidatesForSource.map((c, idx) => {
                           const diff = Math.abs(c.expense_amount - p.line_amount)
                           return (
                             <option key={c.key} value={c.key}>
-                              {idx + 1}. {AUTO_MATCH_SOURCE_LABEL[c.source_table]} · $
+                              {idx + 1}. $
                               {c.expense_amount.toFixed(2)}
                               {diff >= 0.015 ? ` (차이 $${diff.toFixed(2)})` : ''} ·{' '}
                               {formatAutoMatchCandidateDates(c.expense_submit_ymd, c.expense_check_in_ymd)} ·{' '}
@@ -6583,14 +6776,37 @@ export default function StatementReconciliationTab() {
                           )
                         })}
                       </select>
-                      {p.candidates.length > 1 ? (
+                      {candidatesForSource.length > 1 ? (
                         <p className="mt-1 text-[10px] text-slate-500">
-                          후보 {p.candidates.length}개 중 선택
+                          같은 출처 후보 {candidatesForSource.length}개 중 선택
+                        </p>
+                      ) : p.candidates.length > 1 ? (
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          전체 후보 {p.candidates.length}개 · 출처 {sourceTablesInRow.length}종
                         </p>
                       ) : null}
                     </td>
                     <td className="py-1.5 pr-2 text-slate-700 whitespace-nowrap">
-                      {AUTO_MATCH_SOURCE_LABEL[selected.source_table]}
+                      <select
+                        value={selected.source_table}
+                        onChange={(e) => {
+                          const st = e.target.value as ExpenseCandidate['source_table']
+                          const best = bestAutoMatchCandidateForSource(p.candidates, st)
+                          if (!best) return
+                          setAutoMatchCandidateSelection((prev) => ({
+                            ...prev,
+                            [p.statement_line_id]: best.key
+                          }))
+                        }}
+                        className="w-full min-w-[6.5rem] rounded border border-slate-300 bg-white px-2 py-1 text-[11px]"
+                        aria-label="연결 출처 선택"
+                      >
+                        {sourceTablesInRow.map((st) => (
+                          <option key={st} value={st}>
+                            {AUTO_MATCH_SOURCE_LABEL[st]}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className={`py-1.5 pr-2 whitespace-nowrap tabular-nums text-[10px] sm:text-[11px] leading-snug ${dateMismatchClassMuted}`}>
                       {formatAutoMatchCandidateDates(
@@ -7707,6 +7923,15 @@ export default function StatementReconciliationTab() {
                 <input
                   type="checkbox"
                   className="shrink-0"
+                  checked={hidePnlExcludedLines}
+                  onChange={(e) => setHidePnlExcludedLines(e.target.checked)}
+                />
+                PnL 제외 숨기기
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer shrink-0 border rounded px-2.5 bg-slate-50 h-9 whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  className="shrink-0"
                   checked={showOnlyUnmatchedLines}
                   onChange={(e) => setShowOnlyUnmatchedLines(e.target.checked)}
                 />
@@ -7795,6 +8020,14 @@ export default function StatementReconciliationTab() {
                     {statementTableDateStart.trim().slice(0, 10) || '…'} ~{' '}
                     {statementTableDateEnd.trim().slice(0, 10) || '…'}
                   </strong>
+                </span>
+              </>
+            ) : null}
+            {hidePnlExcludedLines && pnlExcludedLinesHiddenCount > 0 ? (
+              <>
+                <span>·</span>
+                <span className="text-violet-800 font-medium">
+                  PnL 제외 {pnlExcludedLinesHiddenCount}건 숨김
                 </span>
               </>
             ) : null}
@@ -8516,9 +8749,13 @@ export default function StatementReconciliationTab() {
               {lines.length === 0
                 ? '라인 없음'
                 : reconciliationLinesBeforeSearch.length === 0
-                  ? showOnlyUnmatchedLines
-                    ? '이 조건에서 미대조 거래가 없습니다. 필터를 끄거나 월·거래일 범위를 바꿔 보세요.'
-                    : selectedMonth !== 'all'
+                  ? hidePnlExcludedLines &&
+                    pnlExcludedLinesHiddenCount > 0 &&
+                    displayLines.length > 0
+                    ? `PnL 제외로 표시하지 않는 거래 ${pnlExcludedLinesHiddenCount}건이 숨겨져 있습니다. «PnL 제외 숨기기»를 끄면 볼 수 있습니다.`
+                    : showOnlyUnmatchedLines
+                      ? '이 조건에서 미대조 거래가 없습니다. 필터를 끄거나 월·거래일 범위를 바꿔 보세요.'
+                      : selectedMonth !== 'all'
                       ? '선택한 월에 해당하는 거래가 없습니다.'
                       : statementTableDateRangeActive
                         ? '선택한 거래일 범위에 해당하는 거래가 없습니다. 날짜를 바꾸거나 «범위 지우기»를 눌러 보세요.'

@@ -8,6 +8,7 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
+import { matchesAmountSearch } from '@/lib/amountSearch'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
@@ -15,6 +16,10 @@ import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseSt
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import ReservationExpenseTabPager, {
+  RESERVATION_EXPENSE_PAGE_SIZES,
+  reservationExpenseTotalPages
+} from '@/components/expenses/ReservationExpenseTabPager'
 
 /** Radix Dialog가 body에 pointer-events:none을 둘 때도 영수증 오버레이가 동작하도록 body 포털 + 명시적 hit-target */
 const RESERVATION_RECEIPT_VIEW_PORTAL_CLASS =
@@ -219,6 +224,8 @@ export default function ReservationExpenseManager({
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
   const [tableSortKey, setTableSortKey] = useState<string>('submit_on')
   const [tableSortDir, setTableSortDir] = useState<SortDir>('desc')
+  const [adminListPage, setAdminListPage] = useState(1)
+  const [adminListPageSize, setAdminListPageSize] = useState(25)
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -741,7 +748,9 @@ export default function ReservationExpenseManager({
         if (reimbursementOutstanding(e.amount, e.reimbursed_amount) <= 0.009) return false
       }
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase()
+        const qRaw = searchTerm.trim()
+        if (matchesAmountSearch(e.amount, qRaw)) return true
+        const q = qRaw.toLowerCase()
         const pmId = e.payment_method?.trim() || ''
         const pmLabel = pmId ? paymentMethodMap[pmId] || '' : ''
         const blob = [
@@ -884,6 +893,33 @@ export default function ReservationExpenseManager({
     })
     return rows
   }, [displayExpenses, tableSortKey, tableSortDir, sortLocale, teamMembers, reservationCustomerLabel])
+
+  const adminListTotalPages = useMemo(
+    () => reservationExpenseTotalPages(sortedDisplayExpenses.length, adminListPageSize),
+    [sortedDisplayExpenses.length, adminListPageSize]
+  )
+  const adminListSafePage = Math.min(Math.max(1, adminListPage), adminListTotalPages)
+  const expensesForList = useMemo(() => {
+    if (!adminList) return sortedDisplayExpenses
+    const start = (adminListSafePage - 1) * adminListPageSize
+    return sortedDisplayExpenses.slice(start, start + adminListPageSize)
+  }, [adminList, sortedDisplayExpenses, adminListSafePage, adminListPageSize])
+
+  useEffect(() => {
+    if (!adminList) return
+    setAdminListPage(1)
+  }, [
+    adminList,
+    searchTerm,
+    statusFilter,
+    dateFrom,
+    dateTo,
+    reimbursementFilter,
+    statementMatchFilter,
+    adminListPageSize,
+    tableSortKey,
+    tableSortDir
+  ])
 
   const reconcilableReservationIds = useMemo(
     () => (adminList ? filteredExpenses : expenses).map((e) => e.id).filter(Boolean),
@@ -1465,7 +1501,7 @@ export default function ReservationExpenseManager({
         adminList ? (
           <>
             <div className="md:hidden space-y-3">
-              {sortedDisplayExpenses.map((expense) => (
+              {expensesForList.map((expense) => (
                 <div
                   key={expense.id}
                   className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
@@ -1617,7 +1653,7 @@ export default function ReservationExpenseManager({
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {sortedDisplayExpenses.map((expense) => (
+                  {expensesForList.map((expense) => (
                     <tr key={expense.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
                         <ExpenseStatementReconIcon
@@ -1690,6 +1726,22 @@ export default function ReservationExpenseManager({
                 </tbody>
               </table>
             </div>
+            {sortedDisplayExpenses.length > 0 && (
+              <div className="mt-4 border-t border-gray-200 pt-4">
+                <ReservationExpenseTabPager
+                  page={adminListSafePage}
+                  totalPages={adminListTotalPages}
+                  pageSize={adminListPageSize}
+                  totalFiltered={sortedDisplayExpenses.length}
+                  onPageChange={setAdminListPage}
+                  onPageSizeChange={(size) => {
+                    if (!(RESERVATION_EXPENSE_PAGE_SIZES as readonly number[]).includes(size)) return
+                    setAdminListPageSize(size)
+                    setAdminListPage(1)
+                  }}
+                />
+              </div>
+            )}
           </>
         ) : (
         <div
@@ -1701,7 +1753,7 @@ export default function ReservationExpenseManager({
                 : 'space-y-1.5'
           }
         >
-                  {sortedDisplayExpenses.map((expense) => (
+                  {expensesForList.map((expense) => (
             <div
               key={expense.id}
               className={

@@ -1647,6 +1647,13 @@
     "tabTourDesc": "투어 관련 지출 관리",
     "tabCash": "현금 관리",
     "tabCashDesc": "현금 입출금 및 잔액 관리",
+    "listPager": {
+      "pageSizeLabel": "페이지당",
+      "pagerPrev": "이전",
+      "pagerNext": "다음",
+      "pagerPageOf": "{current} / {total} 페이지",
+      "pagerShowing": "{from}–{to} / 전체 {total}건"
+    },
     "reservationSubTabs": {
       "tab": {
         "expenses": "예약 지출",
@@ -1660,7 +1667,7 @@
       "empty": "표시할 행이 없습니다.",
       "filterDateFrom": "등록일(부터)",
       "filterDateTo": "등록일(까지)",
-      "searchPlaceholder": "카테고리, 업체, 메모, 투어 ID…",
+      "searchPlaceholder": "카테고리, 업체, 메모, 투어 ID, 금액…",
       "ticketsColRecon": "명세",
       "ticketsColExpense": "지출",
       "ticketsColSubmitOn": "등록일",
@@ -1733,7 +1740,7 @@
       "empty": "표시할 입금 내역이 없습니다.",
       "emptyFiltered": "조건에 맞는 입금 내역이 없습니다. 검색·필터를 조정해 보세요.",
       "loadError": "입금 내역을 불러오지 못했습니다. 권한·네트워크를 확인해 주세요.",
-      "searchPlaceholder": "예약 ID, 고객명, 투어일, 채널, 메모, 등록자, 상태, 결제 수단…",
+      "searchPlaceholder": "예약 ID, 고객명, 투어일, 채널, 메모, 등록자, 상태, 결제 수단, 금액(USD·KRW)…",
       "filterStatus": "상태",
       "filterMethod": "결제 수단",
       "filterDateFrom": "등록일(부터)",
@@ -1825,7 +1832,7 @@
       "colLinked": "현재 연결",
       "matchModeDateProximity": "날짜·근접",
       "matchModeAmountOnly": "금액만 대조",
-      "ticketBookingDateProbeHint": "등록일({submit})·체크인({checkIn}) 각 ±{window}일 구간의 출금 명세를 모두 표시합니다. {account}",
+      "ticketBookingDateProbeHint": "등록일({submit})·체크인({checkIn}) 각 ±{window}일 구간의 출금·입금 명세를 모두 표시합니다. {account}",
       "ticketBookingDateProbeAccountLinked": "결제 방법에 연결된 통장 계정만 조회합니다.",
       "ticketBookingDateProbeAccountAll": "연결된 통장이 없어 업로드된 명세 전체에서 조회합니다.",
       "dateProximityModeHint": "원장일 ±4일과 겹치는 명세 기간에서 금액이 비슷한 줄을 찾습니다.",
@@ -2979,7 +2986,9 @@
       "auditedBy": "확인: {name}",
       "saving": "저장 중…",
       "toggleFailed": "검수 상태 저장에 실패했습니다.",
-      "loginRequired": "로그인 후 검수할 수 있습니다."
+      "loginRequired": "로그인 후 검수할 수 있습니다.",
+      "hideAudited": "검수 숨김",
+      "hideAuditedTitle": "검수(확인) 완료된 부킹을 목록에서 숨깁니다."
     },
     "ticketBooking": {
       "newTitle": "새 입장권 부킹",
@@ -3544,7 +3553,7 @@
       "cancelledPeople": "취소",
       "peopleUnit": "명",
       "noStaffInfo": "직원 배정 없음",
-      "searchPlaceholder": "투어 ID, 상품 ID, 투어 가이드로 검색...",
+      "searchPlaceholder": "투어 ID, 상품 ID, 투어 가이드, 투어일(날짜)로 검색...",
       "allStatus": "모든 상태",
       "allGuides": "모든 가이드",
       "clear": "지우기",

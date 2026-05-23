@@ -25,7 +25,7 @@ export default function ReservationExpenseTabPager({
   onPageChange,
   onPageSizeChange
 }: Props) {
-  const t = useTranslations('expenses.reservationSubTabs')
+  const t = useTranslations('expenses.listPager')
   const safePage = Math.min(Math.max(1, page), totalPages)
   const from = totalFiltered === 0 ? 0 : (safePage - 1) * pageSize + 1
   const to = Math.min(safePage * pageSize, totalFiltered)

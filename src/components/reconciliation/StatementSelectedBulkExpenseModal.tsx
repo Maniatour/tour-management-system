@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { AlertTriangle, ListChecks } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
@@ -210,11 +211,7 @@ export default function StatementSelectedBulkExpenseModal({
       matched_by: email || null
     })
     if (mErr) throw mErr
-    const { error: uErr } = await supabase
-      .from('statement_lines')
-      .update({ matched_status: 'matched' })
-      .eq('id', lineId)
-    if (uErr) throw uErr
+    await syncStatementLineMatchedStatus(supabase, lineId)
   }
 
   const buildCompanyValid = () => {

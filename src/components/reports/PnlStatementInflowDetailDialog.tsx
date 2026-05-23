@@ -15,7 +15,11 @@ import { toast } from 'sonner'
 import type { PnlStatementInflowLine } from '@/lib/pnlReportDataFetch'
 import { formatPnlMoney } from '@/lib/pnlPaymentRecords'
 
-export type PnlStatementInflowDrillState = { mode: 'cell'; month: string } | { mode: 'grand' }
+export type PnlStatementInflowDrillState =
+  | { mode: 'cell'; month: string }
+  | { mode: 'grand' }
+  | { mode: 'excluded' }
+  | { mode: 'excluded-cell'; month: string }
 
 type Props = {
   open: boolean
@@ -56,12 +60,21 @@ export default function PnlStatementInflowDetailDialog({
 
   const filtered = useMemo(() => {
     if (!drill) return []
+    const excludedOnly = (rows: PnlStatementInflowLine[]) => rows.filter((l) => !l.pnlIncluded)
+    if (drill.mode === 'excluded') return excludedOnly(localLines)
+    if (drill.mode === 'excluded-cell') {
+      return excludedOnly(localLines).filter((l) => l.yearMonth === drill.month)
+    }
     if (drill.mode === 'grand') return localLines
     return localLines.filter((l) => l.yearMonth === drill.month)
   }, [drill, localLines])
 
   const title = useMemo(() => {
     if (!drill) return '명세 입금 상세'
+    if (drill.mode === 'excluded') return '기간 전체 · PNL 제외·개인 명세 입금'
+    if (drill.mode === 'excluded-cell') {
+      return `${formatMonthLabel(drill.month)} · PNL 제외·개인 명세 입금`
+    }
     if (drill.mode === 'grand') return '기간 전체 · 명세 입금 상세'
     return `${formatMonthLabel(drill.month)} · 명세 입금`
   }, [drill, formatMonthLabel])

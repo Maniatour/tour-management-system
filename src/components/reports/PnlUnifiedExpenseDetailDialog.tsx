@@ -41,7 +41,10 @@ import {
   pnlDetailLineKey,
 } from '@/lib/pnl-expense-detail-duplicates'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
-import type { UnifiedStandardLeafGroup } from '@/lib/companyExpenseStandardUnified'
+import {
+  applyStandardLeafToCompanyExpense,
+  type UnifiedStandardLeafGroup,
+} from '@/lib/companyExpenseStandardUnified'
 import { PNL_UNMATCHED_BUCKET_KEY, splitMappingIdsFromLeafId } from '@/lib/pnlStandardCategoryTable'
 import { PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL } from '@/lib/pnlReportDataFetch'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
@@ -90,13 +93,14 @@ export type PnlDetailLine = {
 
 type PnlDetailSortKey = 'submit_on' | 'created_at' | 'amount'
 
-export type PnlDrillMode = 'cell' | 'row' | 'col' | 'grand'
+export type PnlDrillMode = 'cell' | 'row' | 'col' | 'grand' | 'excluded'
 
 export type PnlDrillState =
   | { mode: 'cell'; rowId: string; month: string; rowTitle?: string }
   | { mode: 'row'; rowId: string; rowTitle?: string }
   | { mode: 'col'; month: string }
   | { mode: 'grand' }
+  | { mode: 'excluded' }
 
 function isoToYmd(iso: string | null): string {
   if (!iso) return ''
@@ -242,6 +246,8 @@ function filterLines(lines: PnlDetailLine[], drill: PnlDrillState | null): PnlDe
       return lines.filter((l) => l.yearMonth === drill.month)
     case 'grand':
       return [...lines]
+    case 'excluded':
+      return lines.filter((l) => l.exclude_from_pnl)
     default:
       return []
   }
@@ -277,6 +283,31 @@ function mappingOriginalFromDraft(source: PnlExpenseSource, draft: Draft): strin
     return PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL
   }
   return (draft.category || '').trim() || '입장권'
+}
+
+function pnlClassificationChanged(line: PnlDetailLine, draft: Draft): boolean {
+  switch (line.source) {
+    case 'tour_expenses':
+    case 'reservation_expenses':
+      return draft.paid_for.trim() !== (line.paid_for ?? '').trim()
+    case 'company_expenses':
+      return (
+        draft.paid_for.trim() !== (line.paid_for ?? '').trim() ||
+        draft.category.trim() !== (line.category ?? '').trim()
+      )
+    case 'ticket_bookings':
+      return draft.category.trim() !== (line.category ?? '').trim()
+    case 'tour_hotel_bookings':
+      return false
+  }
+}
+
+/** PNL 집계·매핑에 쓰는 original_value — 분류 필드가 바뀌지 않으면 기존 키 유지 */
+function mappingOriginalForSave(line: PnlDetailLine, draft: Draft): string {
+  if (!pnlClassificationChanged(line, draft)) {
+    return line.mappingOriginalValue
+  }
+  return mappingOriginalFromDraft(line.source, draft)
 }
 
 function lineToDraft(line: PnlDetailLine): Draft {
@@ -325,6 +356,8 @@ function drillDialogTitle(drill: PnlDrillState | null, formatMonthLabel: (ym: st
       return `${formatMonthLabel(drill.month)} · 전체 카테고리`
     case 'grand':
       return '전체 지출'
+    case 'excluded':
+      return 'PNL 제외 지출 (exclude_from_pnl)'
     default:
       return '지출 내역'
   }
@@ -699,19 +732,29 @@ export default function PnlUnifiedExpenseDetailDialog({
             throw new Error(json.message || json.error || '예약 지출 수정 실패')
           }
         } else if (line.source === 'company_expenses') {
+          const companyPayload: Record<string, unknown> = {
+            id: line.id,
+            paid_for: draft.paid_for.trim(),
+            category: draft.category.trim(),
+            paid_to: draft.paid_to.trim() || null,
+            amount: amt,
+            submit_on: submitIso,
+            exclude_from_pnl: draft.exclude_from_pnl,
+            notes: draft.note.trim() || null,
+          }
+          if (draft.standardLeafId) {
+            const applied = applyStandardLeafToCompanyExpense(draft.standardLeafId, categoryById)
+            if (applied) {
+              companyPayload.standard_paid_for = applied.paid_for
+              companyPayload.category = applied.category
+              companyPayload.expense_type = applied.expense_type
+              companyPayload.tax_deductible = applied.tax_deductible
+            }
+          }
           const res = await fetch('/api/company-expenses', {
             method: 'PUT',
             headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: line.id,
-              paid_for: draft.paid_for.trim(),
-              category: draft.category.trim(),
-              paid_to: draft.paid_to.trim() || null,
-              amount: amt,
-              submit_on: submitIso,
-              exclude_from_pnl: draft.exclude_from_pnl,
-              notes: draft.note.trim() || null,
-            }),
+            body: JSON.stringify(companyPayload),
           })
           const json = await res.json()
           if (!res.ok) {
@@ -757,7 +800,7 @@ export default function PnlUnifiedExpenseDetailDialog({
           if (error) throw error
         }
 
-        const mappingOriginal = mappingOriginalFromDraft(line.source, draft)
+        const mappingOriginal = mappingOriginalForSave(line, draft)
         if (draft.standardLeafId) {
           await upsertExpenseCategoryMapping(
             mappingOriginal,

@@ -556,6 +556,68 @@ function TicketInvoiceDraftInput({
   );
 }
 
+type TicketInvoiceInlineCellProps = {
+  bookingId: string;
+  initialInvoice: string;
+  saving?: boolean;
+  onSave: (bookingId: string, invoiceNumber: string) => void | Promise<void>;
+};
+
+/** 테이블 Inv# 셀 — 클릭 시 편집 모달 없이 숫자만 바로 입력 */
+function TicketInvoiceInlineCell({
+  bookingId,
+  initialInvoice,
+  saving,
+  onSave,
+}: TicketInvoiceInlineCellProps) {
+  const inv0 = initialInvoice?.trim() || '';
+  const [value, setValue] = useState(inv0);
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setValue(inv0);
+  }, [inv0, focused]);
+
+  const commit = () => {
+    const trimmed = value.trim();
+    if (trimmed === inv0) return;
+    void onSave(bookingId, trimmed);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={value}
+      disabled={saving}
+      onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))}
+      onClick={(e) => e.stopPropagation()}
+      onFocus={(e) => {
+        e.stopPropagation();
+        setFocused(true);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        commit();
+      }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      className={`w-full min-w-[3.5rem] max-w-[6.5rem] rounded border px-1.5 py-0.5 tabular-nums text-[11px] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60 ${
+        value.trim() ? 'border-gray-200 text-gray-900' : 'border-gray-200 text-gray-400'
+      }`}
+      placeholder="—"
+      title="Invoice # (숫자 입력 · Enter 또는 포커스 아웃 시 저장)"
+      aria-label="Invoice number"
+    />
+  );
+}
+
 function sortBookingsByCheckInThenTime(a: TicketBooking, b: TicketBooking): number {
   const da = a.check_in_date ? new Date(a.check_in_date).getTime() : 0;
   const db = b.check_in_date ? new Date(b.check_in_date).getTime() : 0;
@@ -1134,6 +1196,8 @@ export default function TicketBookingList() {
   const [pendingRequestOnlyFilter, setPendingRequestOnlyFilter] = useState(false);
   /** 동일 RN#에 부킹 행이 2건 이상인 것만 */
   const [multiRnOnlyFilter, setMultiRnOnlyFilter] = useState(false);
+  /** 검수(확인) 완료된 부킹 숨김 */
+  const [hideAuditedFilter, setHideAuditedFilter] = useState(false);
   /** 테이블 뷰 전용: 확정이면서 티켓 EA ≠ 연결 투어 총 인원 */
   const [needsReviewEaMismatch, setNeedsReviewEaMismatch] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -1197,6 +1261,7 @@ export default function TicketBookingList() {
   /** 모달 Invoice# — ref로 두어 타이핑 시 부모(TicketBookingList) 전체 리렌더를 막음 */
   const invoiceQuickDraftRef = useRef('');
   const [invoiceQuickSaving, setInvoiceQuickSaving] = useState(false);
+  const [invoiceInlineSavingId, setInvoiceInlineSavingId] = useState<string | null>(null);
   /** company\\0invoice_number → 공개 URL 목록 */
   const [invoiceAttachmentMap, setInvoiceAttachmentMap] = useState<Map<string, string[]>>(
     () => new Map()
@@ -3280,6 +3345,42 @@ export default function TicketBookingList() {
     [loadInvoicePhotosForDraft]
   );
 
+  const saveInvoiceInline = useCallback(
+    async (bookingId: string, invoiceNumber: string) => {
+      const v = invoiceNumber.trim();
+      const booking = bookingsRef.current.find((b) => b.id === bookingId);
+      if (!booking) return;
+      const prev = booking.invoice_number?.trim() || '';
+      if (v === prev) return;
+
+      setInvoiceInlineSavingId(bookingId);
+      try {
+        const { error } = await supabase
+          .from('ticket_bookings')
+          .update({ invoice_number: v || null })
+          .eq('id', bookingId);
+        if (error) throw error;
+        setBookings((prevBookings) => {
+          const next = prevBookings.map((b) =>
+            b.id === bookingId ? { ...b, invoice_number: v } : b
+          );
+          void refreshInvoiceAttachmentMapForBookings(next);
+          return next;
+        });
+      } catch (err) {
+        console.error(err);
+        alert(
+          locale === 'ko'
+            ? 'Invoice 번호 저장에 실패했습니다.'
+            : 'Failed to save invoice number.'
+        );
+      } finally {
+        setInvoiceInlineSavingId(null);
+      }
+    },
+    [locale, refreshInvoiceAttachmentMapForBookings]
+  );
+
   const saveInvoiceQuick = async () => {
     if (!invoiceQuickBooking) return;
     const v = invoiceQuickDraftRef.current.trim();
@@ -3864,6 +3965,11 @@ export default function TicketBookingList() {
     [bookings]
   );
 
+  const auditedCount = useMemo(
+    () => bookings.filter((b) => Boolean(b.audited)).length,
+    [bookings]
+  );
+
   const ticketNeedCheckUnionCount = useMemo(() => {
     const ids = new Set<string>();
     for (const b of bookings) {
@@ -3999,6 +4105,7 @@ export default function TicketBookingList() {
   // 모든 필터를 적용한 부킹 목록 (입력/필터/뷰 변경 시에만 재계산)
   const filteredBookings = useMemo(() => {
     return bookingsPassingBaseFilters.filter((booking) => {
+      if (hideAuditedFilter && Boolean(booking.audited)) return false;
       if (multiRnOnlyFilter && !multiRnBookingIdSet.has(booking.id)) return false;
       if (viewMode === 'table' && needsReviewEaMismatch) {
         return isConfirmedEaHeadcountMismatch(booking);
@@ -4010,6 +4117,7 @@ export default function TicketBookingList() {
     });
   }, [
     bookingsPassingBaseFilters,
+    hideAuditedFilter,
     multiRnOnlyFilter,
     multiRnBookingIdSet,
     selectedStatusFilters,
@@ -4351,6 +4459,7 @@ export default function TicketBookingList() {
     cancelDeadlineFilter,
     pendingRequestOnlyFilter,
     multiRnOnlyFilter,
+    hideAuditedFilter,
     needsReviewEaMismatch,
     lxMismatchOnlyFilter,
     ticketTableLayout,
@@ -5708,20 +5817,16 @@ export default function TicketBookingList() {
         </button>
       )}
     </td>
-    <td className={`${TICKET_TABLE_CELL} hidden md:table-cell whitespace-nowrap`}>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          openInvoiceQuickModal(booking);
-        }}
-        className={`text-left w-full min-w-[3rem] rounded px-1 py-0.5 hover:bg-gray-100 ${
-          booking.invoice_number?.trim() ? 'text-gray-900' : 'text-gray-400'
-        }`}
-        title="Invoice # 입력·수정"
-      >
-        {booking.invoice_number?.trim() || '-'}
-      </button>
+    <td
+      className={`${TICKET_TABLE_CELL} hidden md:table-cell whitespace-nowrap`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <TicketInvoiceInlineCell
+        bookingId={booking.id}
+        initialInvoice={booking.invoice_number?.trim() || ''}
+        saving={invoiceInlineSavingId === booking.id}
+        onSave={saveInvoiceInline}
+      />
     </td>
     <td className={`${TICKET_TABLE_CELL} hidden md:table-cell whitespace-nowrap`}>
       <button
@@ -6091,6 +6196,19 @@ export default function TicketBookingList() {
                 {locale === 'ko' ? 'RN# 다중' : 'Multi RN#'}
                 {multiRnGroupCount > 0 ? ` (${multiRnGroupCount})` : ''}
               </button>
+              <button
+                type="button"
+                onClick={() => setHideAuditedFilter((v) => !v)}
+                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  hideAuditedFilter
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title={tAudit('hideAuditedTitle')}
+              >
+                {tAudit('hideAudited')}
+                {auditedCount > 0 ? ` (${auditedCount})` : ''}
+              </button>
             </div>
           </div>
         </div>
@@ -6211,7 +6329,8 @@ export default function TicketBookingList() {
                     needsReviewEaMismatch ||
                     lxMismatchOnlyFilter ||
                     pendingRequestOnlyFilter ||
-                    multiRnOnlyFilter
+                    multiRnOnlyFilter ||
+                    hideAuditedFilter
                       ? '검색 조건에 맞는 부킹이 없습니다.'
                       : '등록된 입장권 부킹이 없습니다.'}
                   </div>
@@ -6354,7 +6473,8 @@ export default function TicketBookingList() {
                   needsReviewEaMismatch ||
                   lxMismatchOnlyFilter ||
                   pendingRequestOnlyFilter ||
-                  multiRnOnlyFilter
+                  multiRnOnlyFilter ||
+                  hideAuditedFilter
                     ? '검색 조건에 맞는 부킹이 없습니다.'
                     : '등록된 입장권 부킹이 없습니다.'}
                 </div>
@@ -6366,6 +6486,7 @@ export default function TicketBookingList() {
                     !lxMismatchOnlyFilter &&
                     !pendingRequestOnlyFilter &&
                     !multiRnOnlyFilter &&
+                    !hideAuditedFilter &&
                     '새 부킹을 추가해보세요.'}
                 </p>
               </div>
@@ -7181,7 +7302,8 @@ export default function TicketBookingList() {
               hasCheckInDateRangeFilter ||
               needsReviewEaMismatch ||
               pendingRequestOnlyFilter ||
-              multiRnOnlyFilter
+              multiRnOnlyFilter ||
+              hideAuditedFilter
                 ? '검색 조건에 맞는 부킹이 없습니다.'
                 : '등록된 입장권 부킹이 없습니다.'}
             </div>
@@ -7192,6 +7314,7 @@ export default function TicketBookingList() {
                 !needsReviewEaMismatch &&
                 !pendingRequestOnlyFilter &&
                 !multiRnOnlyFilter &&
+                !hideAuditedFilter &&
                 '새 부킹을 추가해보세요.'}
             </p>
           </div>

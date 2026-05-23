@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { RefreshCw } from 'lucide-react'
+import { matchesAmountSearch } from '@/lib/amountSearch'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
@@ -127,6 +128,7 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
       if (dateFrom && (!ymd || ymd < dateFrom)) return false
       if (dateTo && (!ymd || ymd > dateTo)) return false
       if (!q) return true
+      if (matchesAmountSearch(r.total_price, search.trim())) return true
       const blob = [
         r.hotel,
         r.reservation_name,

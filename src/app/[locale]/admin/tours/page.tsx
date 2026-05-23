@@ -12,7 +12,13 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
-import { isReservationCancelledStatus, isReservationDeletedStatus, isTourDeletedStatus } from '@/utils/tourUtils'
+import {
+  isDateLikeSearchTerm,
+  isReservationCancelledStatus,
+  isReservationDeletedStatus,
+  isTourDeletedStatus,
+  tourDateMatchesSearchTerm,
+} from '@/utils/tourUtils'
 import { DeletedToursTableModal } from '@/components/shared/DeletedToursTableModal'
 import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal'
 import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier'
@@ -795,7 +801,9 @@ export default function AdminTours() {
     const term = searchTerm.trim()
     const termLower = term.toLowerCase()
 
-    /** id·상품·가이드·상품 고객명(ko/en) — archive 구분 없이 항상 1순위 검색 */
+    const dateLocale = locale === 'en' ? 'en' : 'ko'
+
+    /** id·상품·가이드·상품 고객명(ko/en)·투어일 — archive 구분 없이 항상 1순위 검색 */
     const alwaysActiveSearchFields = (tour: ExtendedTour): boolean => {
       if (!term) return false
       return (
@@ -804,7 +812,8 @@ export default function AdminTours() {
         (tour.guide_name || '').toString().toLowerCase().includes(termLower) ||
         (tour.assistant_name || '').toString().toLowerCase().includes(termLower) ||
         (tour.customer_name_ko || '').toString().toLowerCase().includes(termLower) ||
-        (tour.customer_name_en || '').toString().toLowerCase().includes(termLower)
+        (tour.customer_name_en || '').toString().toLowerCase().includes(termLower) ||
+        tourDateMatchesSearchTerm(tour.tour_date, term, dateLocale)
       )
     }
 
@@ -876,7 +885,7 @@ export default function AdminTours() {
     const active = base.filter((tour) => tourActiveSearchTier(tour))
     if (active.length > 0) return active
     return base.filter((tour) => tourArchiveOnlySearchTier(tour))
-  }, [tours, searchTerm, selectedStatuses, asGuideEmail, allReservations, tourCustomerLookup])
+  }, [tours, searchTerm, selectedStatuses, asGuideEmail, allReservations, tourCustomerLookup, locale])
 
   // 리스트(카드) 뷰 전용: 날짜 필터 + 날짜 오름차순 정렬
   const listMonthPrefix = `${gridMonth.getFullYear()}-${String(gridMonth.getMonth() + 1).padStart(2, '0')}-`
@@ -884,17 +893,21 @@ export default function AdminTours() {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }, [])
+  const listViewDateSearchActive = useMemo(
+    () => Boolean(searchTerm.trim()) && isDateLikeSearchTerm(searchTerm),
+    [searchTerm]
+  )
   const listViewTours = useMemo(() => {
     let list: ExtendedTour[] = []
-    if (listViewDateFilter === 'month') {
+    if (listViewDateFilter === 'month' && !listViewDateSearchActive) {
       list = filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
-    } else if (listViewDateFilter === 'scheduled') {
+    } else if (listViewDateFilter === 'scheduled' && !listViewDateSearchActive) {
       list = filteredTours.filter(t => (t.tour_date || '') >= todayStr)
     } else {
       list = [...filteredTours]
     }
     return list.sort((a, b) => (a.tour_date || '').localeCompare(b.tour_date || ''))
-  }, [filteredTours, listViewDateFilter, listMonthPrefix, todayStr])
+  }, [filteredTours, listViewDateFilter, listMonthPrefix, todayStr, listViewDateSearchActive])
 
   const [navigatingToTour, setNavigatingToTour] = useState<string | null>(null)
   const [updatingAssignment, setUpdatingAssignment] = useState<string | null>(null)

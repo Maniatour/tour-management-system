@@ -1,11 +1,103 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
+import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
 import { buildCompanyExpenseStandardLeafOrClause } from '@/lib/companyExpenseStandardLeafFilter'
+import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
 import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import { Database } from '@/lib/database.types'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
+
+const AMOUNT_SEARCH_SCAN_LIMIT = 10_000
+
+type CompanyExpenseListFilterParams = {
+  category: string | null
+  status: string | null
+  vehicleId: string | null
+  dateFrom: string | null
+  dateTo: string | null
+  paidFor: string | null
+  standardPaidFor: string | null
+  reimbursement: string
+  standardLeafId: string
+}
+
+/** 검색·페이지 제외 목록 필터 (금액 스캔·본 조회 공통) */
+async function applyCompanyExpenseListFilters(
+  supabase: SupabaseClient,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: any,
+  params: CompanyExpenseListFilterParams
+): Promise<{ query: typeof query; empty?: boolean }> {
+  let q = query
+
+  if (params.category && params.category !== 'all') {
+    q = q.eq('category', params.category)
+  }
+  if (params.status && params.status !== 'all') {
+    q = q.eq('status', params.status)
+  }
+  if (params.vehicleId && params.vehicleId !== 'all') {
+    q = q.eq('vehicle_id', params.vehicleId)
+  }
+  if (params.paidFor && params.paidFor.trim() !== '' && params.paidFor !== 'all') {
+    q = q.eq('paid_for', params.paidFor.trim())
+  }
+  if (params.standardPaidFor === 'set') {
+    q = q.not('standard_paid_for', 'is', null)
+  } else if (params.standardPaidFor === 'unset') {
+    q = q.is('standard_paid_for', null)
+  }
+  const submitOnBounds = lvSubmitOnBoundsFromYmdFilter(params.dateFrom, params.dateTo)
+  if (submitOnBounds.gte) {
+    q = q.gte('submit_on', submitOnBounds.gte)
+  }
+  if (submitOnBounds.lte) {
+    q = q.lte('submit_on', submitOnBounds.lte)
+  }
+
+  if (params.reimbursement === 'employee_card') {
+    const { data: pmRows } = await supabase
+      .from('payment_methods')
+      .select('id')
+      .not('user_email', 'is', null)
+    const pmIds = [...new Set((pmRows || []).map((r: { id: string }) => r.id).filter(Boolean))]
+    if (pmIds.length === 0) return { query: q, empty: true }
+    q = q.in('payment_method', pmIds)
+  } else if (params.reimbursement === 'outstanding') {
+    q = q.gt('reimbursement_outstanding', 0.009)
+  }
+
+  if (params.standardLeafId) {
+    const [{ data: catRows, error: catErr }, { data: mappingRows, error: mapErr }] = await Promise.all([
+      supabase
+        .from('expense_standard_categories')
+        .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
+        .order('display_order', { ascending: true }),
+      supabase
+        .from('expense_category_mappings')
+        .select('original_value, source_table, standard_category_id, sub_category_id')
+        .eq('source_table', 'company_expenses'),
+    ])
+
+    if (catErr || mapErr) {
+      throw new Error('표준 카테고리 필터를 적용할 수 없습니다.')
+    }
+
+    const orClause = buildCompanyExpenseStandardLeafOrClause(
+      params.standardLeafId,
+      (catRows ?? []) as ExpenseStandardCategoryPickRow[],
+      mappingRows ?? []
+    )
+
+    if (!orClause) return { query: q, empty: true }
+    q = q.or(orClause)
+  }
+
+  return { query: q }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,15 +129,40 @@ export async function GET(request: NextRequest) {
     const expenseTable =
       statementMatch === 'unmatched' ? 'company_expenses_no_statement_match' : 'company_expenses'
 
-    // 기본 쿼리 생성 (count 포함)
+    const listFilterParams: CompanyExpenseListFilterParams = {
+      category,
+      status,
+      vehicleId,
+      dateFrom,
+      dateTo,
+      paidFor,
+      standardPaidFor,
+      reimbursement,
+      standardLeafId,
+    }
+
     let query = supabase
       .from(expenseTable)
       .select('*', { count: 'exact' })
       .is('deleted_at', null)
-      .order('submit_on', { ascending: false })
-      .range(from, to)
-    
-    // 검색 필터: 결제처·내용·설명·결제방법 ID 부분일치 + payment_methods 표시명/방법명/ID 일치 시 해당 ID 행 포함
+
+    try {
+      const filtered = await applyCompanyExpenseListFilters(supabase, query, listFilterParams)
+      if (filtered.empty) {
+        return NextResponse.json({
+          data: [],
+          pagination: { page, limit, total: 0, totalPages: 1 },
+        })
+      }
+      query = filtered.query
+    } catch (filterErr) {
+      console.error('표준 카테고리 필터 로드 오류:', filterErr)
+      return NextResponse.json({ error: '표준 카테고리 필터를 적용할 수 없습니다.' }, { status: 500 })
+    }
+
+    query = query.order('submit_on', { ascending: false }).range(from, to)
+
+    // 검색: 텍스트 + 금액(숫자 검색어일 때 amount 부분일치·동일 금액)
     if (search && search.trim()) {
       const raw = search.trim()
       const like = `%${raw}%`
@@ -63,94 +180,31 @@ export async function GET(request: NextRequest) {
       if (pmIds.length > 0) {
         orParts.push(`payment_method.in.(${pmIds.join(',')})`)
       }
+
+      if (isAmountSearchQuery(raw)) {
+        let scanQ = supabase.from(expenseTable).select('id, amount').is('deleted_at', null)
+        try {
+          const scanFiltered = await applyCompanyExpenseListFilters(supabase, scanQ, listFilterParams)
+          if (!scanFiltered.empty) {
+            const { data: scanRows } = await scanFiltered.query.limit(AMOUNT_SEARCH_SCAN_LIMIT)
+            const amountIds = (scanRows || [])
+              .filter((r: { id: string; amount: unknown }) =>
+                matchesAmountSearch(Number(r.amount), raw)
+              )
+              .map((r: { id: string }) => r.id)
+              .slice(0, 200)
+            if (amountIds.length > 0) {
+              orParts.push(`id.in.(${amountIds.join(',')})`)
+            }
+          }
+        } catch (scanErr) {
+          console.error('금액 검색 스캔 오류:', scanErr)
+        }
+      }
+
       query = query.or(orParts.join(','))
     }
-    
-    // 카테고리 필터
-    if (category && category !== 'all') {
-      query = query.eq('category', category)
-    }
-    
-    // 상태 필터
-    if (status && status !== 'all') {
-      query = query.eq('status', status)
-    }
-    
-    // 차량 필터
-    if (vehicleId && vehicleId !== 'all') {
-      query = query.eq('vehicle_id', vehicleId)
-    }
 
-    // 결제 내용(정확 일치)
-    if (paidFor && paidFor.trim() !== '' && paidFor !== 'all') {
-      query = query.eq('paid_for', paidFor.trim())
-    }
-
-    // 표준 결제내용(standard_paid_for) 저장 여부
-    if (standardPaidFor === 'set') {
-      query = query.not('standard_paid_for', 'is', null)
-    } else if (standardPaidFor === 'unset') {
-      query = query.is('standard_paid_for', null)
-    }
-
-    // 지출일(submit_on) 구간 — YYYY-MM-DD
-    if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
-      query = query.gte('submit_on', `${dateFrom}T00:00:00.000Z`)
-    }
-    if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
-      query = query.lte('submit_on', `${dateTo}T23:59:59.999Z`)
-    }
-
-    if (reimbursement === 'employee_card') {
-      const { data: pmRows } = await supabase
-        .from('payment_methods')
-        .select('id')
-        .not('user_email', 'is', null)
-      const pmIds = [...new Set((pmRows || []).map((r: { id: string }) => r.id).filter(Boolean))]
-      if (pmIds.length === 0) {
-        return NextResponse.json({
-          data: [],
-          pagination: { page, limit, total: 0, totalPages: 1 },
-        })
-      }
-      query = query.in('payment_method', pmIds)
-    } else if (reimbursement === 'outstanding') {
-      query = query.gt('reimbursement_outstanding', 0.009)
-    }
-
-    if (standardLeafId) {
-      const [{ data: catRows, error: catErr }, { data: mappingRows, error: mapErr }] = await Promise.all([
-        supabase
-          .from('expense_standard_categories')
-          .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
-          .order('display_order', { ascending: true }),
-        supabase
-          .from('expense_category_mappings')
-          .select('original_value, source_table, standard_category_id, sub_category_id')
-          .eq('source_table', 'company_expenses'),
-      ])
-
-      if (catErr || mapErr) {
-        console.error('표준 카테고리 필터 로드 오류:', catErr || mapErr)
-        return NextResponse.json({ error: '표준 카테고리 필터를 적용할 수 없습니다.' }, { status: 500 })
-      }
-
-      const orClause = buildCompanyExpenseStandardLeafOrClause(
-        standardLeafId,
-        (catRows ?? []) as ExpenseStandardCategoryPickRow[],
-        mappingRows ?? []
-      )
-
-      if (!orClause) {
-        return NextResponse.json({
-          data: [],
-          pagination: { page, limit, total: 0, totalPages: 1 },
-        })
-      }
-
-      query = query.or(orClause)
-    }
-    
     const { data, error, count } = await query
     
     if (error) {

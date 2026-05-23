@@ -34,8 +34,6 @@ import {
   XCircle,
   Clock,
   DollarSign,
-  ChevronLeft,
-  ChevronRight,
   Receipt,
   Wrench,
   BarChart3,
@@ -76,6 +74,11 @@ import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import { paidForComboboxHelpWhenStandardUnset } from '@/lib/companyExpenseFormCopy'
 import { collectPaidForFromStandardUnsetExpenses } from '@/lib/companyExpensePaidForSuggestions'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import ReservationExpenseTabPager, {
+  RESERVATION_EXPENSE_PAGE_SIZES,
+  reservationExpenseTotalPages
+} from '@/components/expenses/ReservationExpenseTabPager'
+import { lvYmdFromSubmitOnIso } from '@/lib/lasVegasCalendar'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
@@ -88,12 +91,9 @@ function ymdFromLocalDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-/** DB submit_on(ISO) → date input 값 (로컬 달력 기준) */
+/** DB submit_on(ISO) → date input 값 (LV 달력 — API 날짜 필터와 동일) */
 function ymdFromSubmitOnIso(iso: string | null | undefined): string {
-  if (!iso) return ymdFromLocalDate(new Date())
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ymdFromLocalDate(new Date())
-  return ymdFromLocalDate(d)
+  return lvYmdFromSubmitOnIso(iso)
 }
 
 /** date input(YYYY-MM-DD) → 명세·회사지출과 동일하게 정오 UTC ISO */
@@ -199,6 +199,7 @@ export default function CompanyExpenseManager({
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
+  const [pageLimit, setPageLimit] = useState(20)
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -300,7 +301,7 @@ export default function CompanyExpenseManager({
   }
 
   const openStmtReconForExpense = useCallback((expense: CompanyExpense) => {
-    const ymd = expense.submit_on ? new Date(expense.submit_on).toISOString().slice(0, 10) : ''
+    const ymd = lvYmdFromSubmitOnIso(expense.submit_on)
     if (!ymd) return
     setStmtReconCtx({
       sourceTable: 'company_expenses',
@@ -312,13 +313,12 @@ export default function CompanyExpenseManager({
     setStmtReconOpen(true)
   }, [])
 
-  const limit = 20
   const loadExpenses = useCallback(async () => {
     try {
       setLoading(true)
       const params = new URLSearchParams()
       params.set('page', String(page))
-      params.set('limit', String(limit))
+      params.set('limit', String(pageLimit))
       if (searchTerm) params.append('search', searchTerm)
       if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
       if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
@@ -346,7 +346,7 @@ export default function CompanyExpenseManager({
       
       if (response.ok) {
         setExpenses(result.data || [])
-        setPagination(result.pagination || { page: 1, limit, total: 0, totalPages: 1 })
+        setPagination(result.pagination || { page: 1, limit: pageLimit, total: 0, totalPages: 1 })
       } else {
         toast.error(result.error || '지출 목록을 불러올 수 없습니다.')
       }
@@ -370,6 +370,7 @@ export default function CompanyExpenseManager({
     dateFrom,
     dateTo,
     page,
+    pageLimit,
   ])
 
   useEffect(() => {
@@ -456,6 +457,7 @@ export default function CompanyExpenseManager({
     statementMatchFilter,
     dateFrom,
     dateTo,
+    pageLimit,
   ])
 
   const loadExpenseStandardCategories = useCallback(async () => {
@@ -2647,7 +2649,7 @@ export default function CompanyExpenseManager({
                     </div>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
                       <span className="text-gray-400">제출일</span>
-                      <span>{expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}</span>
+                      <span>{expense.submit_on ? lvYmdFromSubmitOnIso(expense.submit_on) : '-'}</span>
                       <span className="text-gray-400">결제처</span>
                       <span className="truncate">{expense.paid_to}</span>
                       <span className="text-gray-400">{t('listStandardPaidFor.column')}</span>
@@ -2881,37 +2883,20 @@ export default function CompanyExpenseManager({
               </Table>
               </div>
               </div>
-              {/* 페이지 네비게이션 */}
-              {pagination.totalPages > 1 && (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-4">
-                  <p className="text-xs text-muted-foreground">
-                    {pagination.total}건 중 {(page - 1) * pagination.limit + 1}–{Math.min(page * pagination.limit, pagination.total)} 표시
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page <= 1 || loading}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      className="h-8"
-                    >
-                      <ChevronLeft className="w-4 h-4 mr-0.5" />
-                      이전
-                    </Button>
-                    <span className="text-sm text-gray-600 px-2">
-                      {page} / {pagination.totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= pagination.totalPages || loading}
-                      onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
-                      className="h-8"
-                    >
-                      다음
-                      <ChevronRight className="w-4 h-4 ml-0.5" />
-                    </Button>
-                  </div>
+              {pagination.total > 0 && (
+                <div className="mt-4 border-t border-gray-200 pt-4">
+                  <ReservationExpenseTabPager
+                    page={page}
+                    totalPages={pagination.totalPages}
+                    pageSize={pageLimit}
+                    totalFiltered={pagination.total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                      if (!(RESERVATION_EXPENSE_PAGE_SIZES as readonly number[]).includes(size)) return
+                      setPageLimit(size)
+                      setPage(1)
+                    }}
+                  />
                 </div>
               )}
             </>

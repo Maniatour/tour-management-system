@@ -71,6 +71,77 @@ export function normalizeTourDateKey(value: unknown): string {
   return s.length >= 10 ? s.slice(0, 10) : s
 }
 
+/** 검색어가 날짜 형태인지 (리스트 뷰 월 필터 우회 등) */
+export function isDateLikeSearchTerm(term: string): boolean {
+  const t = term.trim()
+  if (!t) return false
+  if (/^\d{4}([./-]\d{1,2}([./-]\d{1,2})?)?$/.test(t)) return true
+  if (/^\d{1,2}[./-]\d{1,2}([./-]\d{2,4})?$/.test(t)) return true
+  if (/\d\s*년|\d\s*월|\d\s*일/.test(t)) return true
+  return false
+}
+
+/** 검색어를 YYYY-MM-DD / YYYY-MM / YYYY 프리픽스로 정규화 시도 */
+function parseSearchTermToDatePrefix(term: string): string | null {
+  const t = term.trim().replace(/\s+/g, '')
+  let m = t.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/)
+  if (m) {
+    return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  }
+  m = t.match(/^(\d{4})[-./](\d{1,2})$/)
+  if (m) {
+    return `${m[1]}-${m[2].padStart(2, '0')}`
+  }
+  m = t.match(/^(\d{4})$/)
+  if (m) return m[1]
+  m = t.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})$/)
+  if (m) {
+    let y = m[3]
+    if (y.length === 2) y = `20${y}`
+    return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`
+  }
+  m = t.match(/^(\d{1,2})[-./](\d{1,2})$/)
+  if (m) {
+    return `-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`
+  }
+  return null
+}
+
+/** 투어일(tour_date)이 검색어와 일치하는지 — ISO·로케일 표기·부분 일치 */
+export function tourDateMatchesSearchTerm(
+  tourDate: string | null | undefined,
+  term: string,
+  locale: 'ko' | 'en' = 'ko'
+): boolean {
+  if (!term.trim()) return false
+  const dateKey = normalizeTourDateKey(tourDate)
+  if (!dateKey) return false
+  const qRaw = term.trim()
+  const q = qRaw.toLowerCase()
+  const qCompact = q.replace(/\s/g, '')
+
+  if (dateKey.includes(q) || dateKey.includes(qCompact)) return true
+
+  const prefix = parseSearchTermToDatePrefix(qRaw)
+  if (prefix) {
+    if (prefix.startsWith('-')) return dateKey.includes(prefix)
+    if (prefix.length === 10) return dateKey === prefix
+    return dateKey.startsWith(prefix)
+  }
+
+  try {
+    const d = new Date(`${dateKey}T12:00:00`)
+    if (Number.isNaN(d.getTime())) return false
+    const loc = locale === 'en' ? 'en-US' : 'ko-KR'
+    const formatted = d.toLocaleDateString(loc).toLowerCase()
+    if (formatted.includes(q)) return true
+    if (formatted.replace(/\s/g, '').includes(qCompact)) return true
+  } catch {
+    /* ignore */
+  }
+  return false
+}
+
 /** 같은 상품·같은 투어일(날짜만)인지 */
 export function sameTourProductAndDate(
   a: { product_id?: string | null; tour_date?: string | null },

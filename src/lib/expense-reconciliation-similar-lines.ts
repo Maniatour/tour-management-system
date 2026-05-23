@@ -23,7 +23,7 @@ export type ExpenseStatementReconContext = {
   amount: number
   direction: 'inflow' | 'outflow'
   /**
-   * 입장권 부킹: 체크인·등록일 각 ±dayWindow 구간의 명세 줄 전체(금액 필터 없음).
+   * 입장권 부킹: 체크인·등록일 각 ±dayWindow 구간의 명세 줄 전체(출금·입금, 금액 필터 없음).
    * financialAccountId가 있으면 해당 통장 계정 import만 조회.
    */
   ticketBookingDateProbe?: {
@@ -135,6 +135,66 @@ export async function syncStatementLineMatchedStatus(supabase: SupabaseClient, l
   await supabase.from('statement_lines').update({ matched_status: status }).eq('id', lineId)
 }
 
+/** 명세 대조 «미대조만» 필터·후보: DB status와 실제 매칭 행 수가 어긋나면 매칭 없음을 우선 */
+export function isStatementLineShownAsUnmatched(
+  matchedStatus: string | null | undefined,
+  activeMatchCount: number
+): boolean {
+  if (activeMatchCount <= 0) return true
+  const s = String(matchedStatus ?? '')
+  return s === 'unmatched' || s === 'partial'
+}
+
+/** 매칭은 없는데 matched/partial로 남은 명세 줄 id */
+export function findStaleStatementLineMatchedStatusIds(
+  lines: { id: string; matched_status: string }[],
+  matches: { statement_line_id: string }[]
+): string[] {
+  const matchCountByLine = new Map<string, number>()
+  for (const m of matches) {
+    const lid = String(m.statement_line_id ?? '').trim()
+    if (!lid) continue
+    matchCountByLine.set(lid, (matchCountByLine.get(lid) ?? 0) + 1)
+  }
+  const staleIds: string[] = []
+  for (const line of lines) {
+    const n = matchCountByLine.get(line.id) ?? 0
+    if (n === 0 && (line.matched_status === 'matched' || line.matched_status === 'partial')) {
+      staleIds.push(line.id)
+    }
+  }
+  return staleIds
+}
+
+export function patchStatementLinesUnmatchedStatus<T extends { id: string; matched_status: string }>(
+  lines: T[],
+  staleIds: string[]
+): T[] {
+  if (staleIds.length === 0) return lines
+  const staleSet = new Set(staleIds)
+  return lines.map((l) => (staleSet.has(l.id) ? { ...l, matched_status: 'unmatched' } : l))
+}
+
+/** 매칭은 없는데 matched/partial로 남은 명세 줄 — DB·메모리 복구용 */
+export async function repairStaleStatementLineMatchedStatuses(
+  supabase: SupabaseClient,
+  lines: { id: string; matched_status: string }[],
+  matches: { statement_line_id: string }[]
+): Promise<string[]> {
+  const staleIds = findStaleStatementLineMatchedStatusIds(lines, matches)
+  if (staleIds.length === 0) return []
+  const CHUNK = 100
+  for (let i = 0; i < staleIds.length; i += CHUNK) {
+    const chunk = staleIds.slice(i, i + CHUNK)
+    const { error } = await supabase
+      .from('statement_lines')
+      .update({ matched_status: 'unmatched' })
+      .in('id', chunk)
+    if (error) throw error
+  }
+  return staleIds
+}
+
 export type SimilarStatementLinesMatchMode = 'dateProximity' | 'amountOnly'
 
 const AMOUNT_ONLY_IMPORT_LIMIT = 120
@@ -238,15 +298,31 @@ function minDayDiffToAnchors(postedYmd: string, anchors: string[]): number {
   return best
 }
 
+/** 입금(환불) 후보: 동일 기간 출금 중 «출금 − 입금 ≈ 원장 지출»이 성립하면 우선 */
+function ticketBookingInflowAmountDiff(
+  inflowAbs: number,
+  ledgerAbs: number | null,
+  outflowAbsAmounts: number[],
+  tol: number
+): number {
+  if (ledgerAbs == null || inflowAbs <= 0) return inflowAbs
+  for (const outAbs of outflowAbsAmounts) {
+    if (Math.abs(outAbs - inflowAbs - ledgerAbs) <= tol) return 0
+  }
+  return Math.min(inflowAbs, Math.abs(inflowAbs - ledgerAbs))
+}
+
 /**
  * 입장권 부킹 상세: 체크인·등록일 각 ±dayWindow 일의 명세 줄을 모두 가져옵니다(금액 필터 없음).
+ * direction 생략 시 출금·입금 모두 포함(부분 환불 입금액 매칭용).
  */
 export async function fetchStatementLinesForTicketBookingDateProbe(
   supabase: SupabaseClient,
   params: {
     submitYmd?: string | null
     checkInYmd?: string | null
-    direction: 'inflow' | 'outflow'
+    /** 생략 시 출금·입금 모두 조회 */
+    direction?: 'inflow' | 'outflow' | null
     dayWindow?: number
     financialAccountId?: string | null
     /** 정렬·표시용 — 후보에서 제외하지 않음 */
@@ -264,6 +340,8 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
     params.ledgerAmount != null && Number.isFinite(Number(params.ledgerAmount))
       ? Math.abs(Number(params.ledgerAmount))
       : null
+  const ledgerTol = ledgerAbs != null ? amountTolerance(ledgerAbs) : 0
+  const directionFilter = params.direction ?? null
 
   const { data: rawImports, error: impErr } = await supabase
     .from('statement_imports')
@@ -297,16 +375,22 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
   const rawLines: Record<string, unknown>[] = []
   for (let i = 0; i < importIds.length; i += 80) {
     const chunk = importIds.slice(i, i + 80)
-    const { data, error } = await supabase
+    let query = supabase
       .from('statement_lines')
       .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
       .in('statement_import_id', chunk)
       .gte('posted_date', startYmd)
       .lte('posted_date', endYmd)
-      .eq('direction', params.direction)
+    if (directionFilter) query = query.eq('direction', directionFilter)
+    const { data, error } = await query
     if (error) throw error
     rawLines.push(...((data || []) as Record<string, unknown>[]))
   }
+
+  const outflowAbsAmounts = rawLines
+    .filter((line) => String(line.direction ?? '').toLowerCase() === 'outflow')
+    .map((line) => Math.abs(Number(line.amount ?? 0)))
+    .filter((n) => n > 0)
 
   const candidates: Omit<SimilarStatementLineRow, 'existing_matches' | 'allocated_sum'>[] = []
   for (const line of rawLines) {
@@ -314,9 +398,16 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
     const absLine = Math.abs(lineAmount)
     const posted = String(line.posted_date ?? '').slice(0, 10)
     const dayDiff = minDayDiffToAnchors(posted, anchors)
-    const amountDiff = ledgerAbs != null ? Math.abs(absLine - ledgerAbs) : absLine
+    const isInflow = String(line.direction ?? '').toLowerCase() === 'inflow'
+    const amountDiff =
+      ledgerAbs != null
+        ? isInflow
+          ? ticketBookingInflowAmountDiff(absLine, ledgerAbs, outflowAbsAmounts, ledgerTol)
+          : Math.abs(absLine - ledgerAbs)
+        : absLine
     const importId = String(line.statement_import_id ?? '')
     const accountId = importToAccount.get(importId) || ''
+    const scoreBase = isInflow ? 92 : 100
     candidates.push({
       id: String(line.id),
       financial_account_id: accountId,
@@ -331,7 +422,7 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
       matched_status: String(line.matched_status ?? ''),
       amount_diff: amountDiff,
       day_diff: dayDiff,
-      score: 100 - dayDiff * 4 - (ledgerAbs != null ? amountDiff * 2 : 0)
+      score: scoreBase - dayDiff * 4 - (ledgerAbs != null ? amountDiff * 2 : 0)
     })
   }
 
@@ -583,7 +674,8 @@ export async function searchStatementLinesAcrossImports(
   supabase: SupabaseClient,
   params: {
     query: string
-    direction: 'inflow' | 'outflow'
+    /** 생략 시 출금·입금 모두 검색 */
+    direction?: 'inflow' | 'outflow' | null
     limit?: number
   }
 ): Promise<SimilarStatementLineRow[]> {
@@ -626,12 +718,13 @@ export async function searchStatementLinesAcrossImports(
   for (let i = 0; i < importIds.length; i += STATEMENT_SEARCH_IMPORT_CHUNK) {
     if (seen.size >= limit) break
     const chunk = importIds.slice(i, i + STATEMENT_SEARCH_IMPORT_CHUNK)
-    const { data, error } = await supabase
+    let query = supabase
       .from('statement_lines')
       .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
       .in('statement_import_id', chunk)
-      .eq('direction', params.direction)
       .or(orClause)
+    if (params.direction) query = query.eq('direction', params.direction)
+    const { data, error } = await query
     if (error) throw error
     for (const line of (data || []) as Record<string, unknown>[]) {
       const id = String(line.id ?? '')
@@ -651,12 +744,13 @@ export async function searchStatementLinesAcrossImports(
     for (let i = 0; i < importIdsByAccountName.length; i += STATEMENT_SEARCH_IMPORT_CHUNK) {
       if (seen.size >= limit) break
       const chunk = importIdsByAccountName.slice(i, i + STATEMENT_SEARCH_IMPORT_CHUNK)
-      const { data, error } = await supabase
+      let accountQuery = supabase
         .from('statement_lines')
         .select('id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status')
         .in('statement_import_id', chunk)
-        .eq('direction', params.direction)
         .limit(120)
+      if (params.direction) accountQuery = accountQuery.eq('direction', params.direction)
+      const { data, error } = await accountQuery
       if (error) throw error
       for (const line of (data || []) as Record<string, unknown>[]) {
         const id = String(line.id ?? '')

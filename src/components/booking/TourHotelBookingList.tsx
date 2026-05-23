@@ -80,6 +80,8 @@ export default function TourHotelBookingList() {
   const [checkInDateFrom, setCheckInDateFrom] = useState('');
   const [checkInDateTo, setCheckInDateTo] = useState('');
   const hasCheckInDateRangeFilter = Boolean(checkInDateFrom || checkInDateTo);
+  /** 검수(확인) 완료된 부킹 숨김 */
+  const [hideAuditedFilter, setHideAuditedFilter] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [viewMode, setViewMode] = useRoutePersistedState<'card' | 'calendar'>(
@@ -377,9 +379,16 @@ export default function TourHotelBookingList() {
     setEditingBooking(null);
   };
 
+  const auditedCount = useMemo(
+    () => bookings.filter((b) => Boolean(b.audited)).length,
+    [bookings]
+  );
+
   const filteredBookings = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return bookings.filter((booking) => {
+      if (hideAuditedFilter && Boolean(booking.audited)) return false;
+
       const matchesSearch =
         !q ||
         (booking.hotel ?? '').toLowerCase().includes(q) ||
@@ -398,7 +407,7 @@ export default function TourHotelBookingList() {
 
       return matchesSearch && matchesStatus && matchesDate;
     });
-  }, [bookings, searchTerm, statusFilter, checkInDateFrom, checkInDateTo, hasCheckInDateRangeFilter]);
+  }, [bookings, hideAuditedFilter, searchTerm, statusFilter, checkInDateFrom, checkInDateTo, hasCheckInDateRangeFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -596,6 +605,27 @@ export default function TourHotelBookingList() {
                   className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              {locale === 'ko' ? '필터' : 'Filters'}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setHideAuditedFilter((v) => !v)}
+                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  hideAuditedFilter
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title={tAudit('hideAuditedTitle')}
+              >
+                {tAudit('hideAudited')}
+                {auditedCount > 0 ? ` (${auditedCount})` : ''}
+              </button>
             </div>
           </div>
         </div>
@@ -980,13 +1010,13 @@ export default function TourHotelBookingList() {
         {filteredBookings.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             <div className="text-lg font-medium mb-2">
-              {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter 
+              {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || hideAuditedFilter
                 ? '검색 조건에 맞는 부킹이 없습니다.' 
                 : '등록된 투어 호텔 부킹이 없습니다.'
               }
             </div>
             <p className="text-sm text-gray-400">
-              {!searchTerm && statusFilter === 'all' && !hasCheckInDateRangeFilter && '새 부킹을 추가해보세요.'}
+              {!searchTerm && statusFilter === 'all' && !hasCheckInDateRangeFilter && !hideAuditedFilter && '새 부킹을 추가해보세요.'}
             </p>
           </div>
         )}

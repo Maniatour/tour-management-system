@@ -13,8 +13,13 @@ import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-quer
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import { matchesAmountSearch } from '@/lib/amountSearch'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import ReservationExpenseTabPager, {
+  RESERVATION_EXPENSE_PAGE_SIZES,
+  reservationExpenseTotalPages
+} from '@/components/expenses/ReservationExpenseTabPager'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 
 const ALL_TOURS_RECEIPT_VIEW_PORTAL_CLASS =
@@ -58,30 +63,6 @@ interface TourExpense {
     name_en: string | null
     name_ko: string | null
   }
-}
-
-function normalizeAmountSearchQuery(raw: string): string {
-  return raw.trim().replace(/[$,\s]/g, '')
-}
-
-/** 금액 검색: 숫자·소수 포함 문자열 일치 또는 동일 금액 */
-function matchesTourExpenseAmountSearch(amount: number | null | undefined, searchRaw: string): boolean {
-  const q = normalizeAmountSearchQuery(searchRaw)
-  if (!q || !/^-?\d+(\.\d+)?$/.test(q)) return false
-  if (amount == null || !Number.isFinite(amount)) return false
-
-  const absAmt = Math.abs(amount)
-  const amountStrings = new Set(
-    [String(amount), String(absAmt), amount.toFixed(2), absAmt.toFixed(2)].map((s) =>
-      s.replace(/,/g, '')
-    )
-  )
-  for (const s of amountStrings) {
-    if (s.includes(q)) return true
-  }
-
-  const qNum = Number(q)
-  return Number.isFinite(qNum) && Math.abs(absAmt - Math.abs(qNum)) < 0.005
 }
 
 export default function AllTourExpensesManager() {
@@ -157,6 +138,8 @@ export default function AllTourExpensesManager() {
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
   const [tourTableSortKey, setTourTableSortKey] = useState<string>('tour_date')
   const [tourTableSortDir, setTourTableSortDir] = useState<SortDir>('desc')
+  const [listPage, setListPage] = useState(1)
+  const [listPageSize, setListPageSize] = useState(25)
 
   // 팀 멤버 정보 로드
   const loadTeamMembers = async () => {
@@ -310,7 +293,7 @@ export default function AllTourExpensesManager() {
       expense.note?.toLowerCase().includes(searchLower) ||
       (pmId && pmId.toLowerCase().includes(searchLower)) ||
       (pmLabel && pmLabel.toLowerCase().includes(searchLower)) ||
-      matchesTourExpenseAmountSearch(expense.amount, q)
+      matchesAmountSearch(expense.amount, q)
     )
   })
 
@@ -434,6 +417,32 @@ export default function AllTourExpensesManager() {
     })
     return rows
   }, [filteredExpenses, tourTableSortKey, tourTableSortDir, tourSortLocale, teamMembers, getProductDisplayName])
+
+  const listTotalPages = useMemo(
+    () => reservationExpenseTotalPages(sortedFilteredExpenses.length, listPageSize),
+    [sortedFilteredExpenses.length, listPageSize]
+  )
+  const listSafePage = Math.min(Math.max(1, listPage), listTotalPages)
+  const pagedSortedFilteredExpenses = useMemo(() => {
+    const start = (listSafePage - 1) * listPageSize
+    return sortedFilteredExpenses.slice(start, start + listPageSize)
+  }, [sortedFilteredExpenses, listSafePage, listPageSize])
+
+  useEffect(() => {
+    setListPage(1)
+  }, [
+    searchTerm,
+    statusFilter,
+    dateFrom,
+    dateTo,
+    tourIdFilter,
+    paidToFilter,
+    paidForFilter,
+    reimbursementFilter,
+    listPageSize,
+    tourTableSortKey,
+    tourTableSortDir
+  ])
 
   const tourReconIds = useMemo(() => filteredExpenses.map((e) => e.id), [filteredExpenses])
   const tourReconIdKey = useMemo(() => [...tourReconIds].sort().join('|'), [tourReconIds])
@@ -726,7 +735,7 @@ export default function AllTourExpensesManager() {
         <>
           {/* 모바일: 카드 리스트 - 라벨/값 구조 */}
           <div className="md:hidden space-y-3">
-            {sortedFilteredExpenses.map((expense) => (
+            {pagedSortedFilteredExpenses.map((expense) => (
               <div key={expense.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-start gap-1 min-w-0 flex-1">
@@ -907,7 +916,7 @@ export default function AllTourExpensesManager() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {sortedFilteredExpenses.map((expense) => (
+              {pagedSortedFilteredExpenses.map((expense) => (
                 <tr key={expense.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-center align-middle">
                     <ExpenseStatementReconIcon
@@ -1006,6 +1015,20 @@ export default function AllTourExpensesManager() {
               ))}
             </tbody>
           </table>
+          </div>
+          <div className="mt-4 border-t border-gray-200 pt-4">
+            <ReservationExpenseTabPager
+              page={listSafePage}
+              totalPages={listTotalPages}
+              pageSize={listPageSize}
+              totalFiltered={sortedFilteredExpenses.length}
+              onPageChange={setListPage}
+              onPageSizeChange={(size) => {
+                if (!(RESERVATION_EXPENSE_PAGE_SIZES as readonly number[]).includes(size)) return
+                setListPageSize(size)
+                setListPage(1)
+              }}
+            />
           </div>
         </>
       ) : (

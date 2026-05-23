@@ -11,6 +11,7 @@ import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
+import { matchesPaymentRecordAmountSearch } from '@/lib/amountSearch'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 
@@ -432,6 +433,9 @@ export default function PaymentRecordsHistoryTab() {
       }
 
       if (!q) return true
+      if (matchesPaymentRecordAmountSearch(r.amount, r.amount_krw, searchTerm.trim())) {
+        return true
+      }
       const cust = customerLabel(r.reservation_id)
       const pmLabel = methodLabel(r.payment_method)
       const ch = channelLabel(r.reservation_id)

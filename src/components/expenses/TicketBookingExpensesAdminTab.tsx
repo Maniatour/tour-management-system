@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { RefreshCw } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
+import { matchesAmountSearch } from '@/lib/amountSearch'
 import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
 import {
   canRequestTicketBookingSoftDelete,
@@ -145,6 +146,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
       if (dateFrom && (!ymd || ymd < dateFrom)) return false
       if (dateTo && (!ymd || ymd > dateTo)) return false
       if (!q) return true
+      if (matchesAmountSearch(r.expense, search.trim())) return true
       const blob = [
         r.category,
         r.company,

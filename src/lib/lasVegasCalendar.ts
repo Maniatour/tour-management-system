@@ -66,3 +66,26 @@ export function lvInclusiveDateKeys(startYmd: string, endYmd: string): string[] 
   }
   return keys
 }
+
+/** submit_on(timestamptz) → LV 달력 YYYY-MM-DD — 지출 목록·필터·폼 date input 공통 */
+export function lvYmdFromSubmitOnIso(iso: string | null | undefined): string {
+  if (!iso) return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  const d = dayjs(iso)
+  if (!d.isValid()) return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return d.tz(LV_TZ).format('YYYY-MM-DD')
+}
+
+/** 지출 목록 API: LV 달력 시작·종료일 → submit_on gte/lte ISO */
+export function lvSubmitOnBoundsFromYmdFilter(
+  dateFrom: string | null | undefined,
+  dateTo: string | null | undefined
+): { gte?: string; lte?: string } {
+  const bounds: { gte?: string; lte?: string } = {}
+  if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
+    bounds.gte = dayjs.tz(dateFrom, LV_TZ).startOf('day').toISOString()
+  }
+  if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+    bounds.lte = dayjs.tz(dateTo, LV_TZ).endOf('day').toISOString()
+  }
+  return bounds
+}

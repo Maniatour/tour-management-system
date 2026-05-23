@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { AlertTriangle, ListPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { syncStatementLineMatchedStatus } from '@/lib/expense-reconciliation-similar-lines'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import {
@@ -762,11 +763,7 @@ export default function StatementBulkExpenseModal({
       matched_by: email || null
     })
     if (mErr) throw mErr
-    const { error: uErr } = await supabase
-      .from('statement_lines')
-      .update({ matched_status: 'matched' })
-      .eq('id', lineId)
-    if (uErr) throw uErr
+    await syncStatementLineMatchedStatus(supabase, lineId)
   }
 
   const applyCompanyBulkInner = async (valid: BulkCompanyExpenseProposalRow[]) => {

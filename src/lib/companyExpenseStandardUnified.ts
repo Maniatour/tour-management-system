@@ -457,7 +457,25 @@ export function matchUnifiedLeafIdFromForm(
   return '__custom__'
 }
 
-/** 통합 PNL·리포트: 회사 지출 → 표준 리프 id (standard_paid_for·폼 필드·매핑 순) */
+function resolveCompanyExpenseMappedLeafId(
+  mapToLeaf: Map<string, string>,
+  leafIdSet: Set<string>,
+  candidates: string[]
+): { leafId: string; mappingOriginal: string } | null {
+  const seen = new Set<string>()
+  for (const raw of candidates) {
+    const candidate = raw.trim()
+    if (!candidate || seen.has(candidate)) continue
+    seen.add(candidate)
+    const mapped = mapToLeaf.get(`${candidate}::company_expenses`)
+    if (mapped && leafIdSet.has(mapped)) {
+      return { leafId: mapped, mappingOriginal: candidate }
+    }
+  }
+  return null
+}
+
+/** 통합 PNL·리포트: 회사 지출 → 표준 리프 id (명시적 매핑 → standard_paid_for·폼 필드·매핑 fallback) */
 export function resolveCompanyExpensePnlLeafId(
   expense: {
     paid_for?: string | null
@@ -479,22 +497,29 @@ export function resolveCompanyExpensePnlLeafId(
   }
 
   const stdPf = (expense.standard_paid_for ?? '').trim()
+  const pf = (expense.paid_for ?? '').trim()
+  const cat = (expense.category ?? '').trim()
+  const et = (expense.expense_type ?? '').trim()
+  const origFallback = (pf || cat || '').trim() || '기타'
+
+  const fromMapping = resolveCompanyExpenseMappedLeafId(mapToLeaf, leafIdSet, [
+    stdPf,
+    pf,
+    origFallback,
+    cat,
+  ])
+  if (fromMapping) return fromMapping
+
   if (stdPf) {
-    const cat = (expense.category ?? '').trim()
-    const et = (expense.expense_type ?? '').trim()
     const fromStd =
       tryMatch(stdPf, cat, et) ?? tryMatch(stdPf, cat, '') ?? tryMatch(stdPf, '', '')
     if (fromStd) return { leafId: fromStd, mappingOriginal: stdPf }
   }
 
-  const pf = (expense.paid_for ?? '').trim()
-  const cat = (expense.category ?? '').trim()
-  const et = (expense.expense_type ?? '').trim()
   const fromForm = tryMatch(pf, cat, et) ?? tryMatch(pf, cat, '') ?? tryMatch(pf, '', '')
   if (fromForm) return { leafId: fromForm, mappingOriginal: pf || stdPf || '기타' }
 
-  const orig = (pf || cat || '').trim() || '기타'
-  return { leafId: mapToLeaf.get(`${orig}::company_expenses`) ?? null, mappingOriginal: orig }
+  return { leafId: mapToLeaf.get(`${origFallback}::company_expenses`) ?? null, mappingOriginal: origFallback }
 }
 
 export function unifiedSelectValueFromLeafId(leafId: string | '__custom__'): string {

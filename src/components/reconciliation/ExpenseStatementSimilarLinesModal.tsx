@@ -205,7 +205,6 @@ export default function ExpenseStatementSimilarLinesModal({
             checkInYmd: ticketDateProbe.checkInYmd,
             dayWindow: ticketDateProbe.dayWindow,
             financialAccountId: ticketDateProbe.financialAccountId,
-            direction: context.direction,
             ledgerAmount: context.amount,
             limit: 300
           })
@@ -320,7 +319,7 @@ export default function ExpenseStatementSimilarLinesModal({
     const timer = setTimeout(() => {
       void searchStatementLinesAcrossImports(supabase, {
         query: searchQueryTrimmed,
-        direction: context.direction,
+        direction: ticketDateProbe ? null : context.direction,
         limit: 250
       })
         .then((list) => {
@@ -343,7 +342,7 @@ export default function ExpenseStatementSimilarLinesModal({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [rowSearch, open, context, t])
+  }, [rowSearch, open, context, t, ticketDateProbe, isSearchActive, searchQueryTrimmed])
 
   useEffect(() => {
     setSelectedIdsOrdered((prev) => prev.filter((id) => visibleRows.some((r) => r.id === id)))
