@@ -2714,10 +2714,65 @@ export default function TicketBookingList() {
     fetchTourEvents();
   }, [fetchTourEvents]);
 
+  const TICKET_BOOKING_EDIT_FORM_COLUMNS = [
+    'id',
+    'category',
+    'submitted_by',
+    'check_in_date',
+    'time',
+    'company',
+    'ea',
+    'expense',
+    'income',
+    'payment_method',
+    'rn_number',
+    'invoice_number',
+    'zelle_confirmation_number',
+    'tour_id',
+    'reservation_id',
+    'note',
+    'status',
+    'season',
+    'uploaded_file_urls',
+    'booking_status',
+    'vendor_status',
+    'change_status',
+    'payment_status',
+    'refund_status',
+    'operation_status',
+    'submit_on',
+    'updated_at',
+  ].join(', ');
+
   const handleEdit = (booking: TicketBooking) => {
-    setEditingBooking(booking);
-    setShowBookingModal(false);
-    setShowForm(true);
+    void (async () => {
+      setShowBookingModal(false);
+      const listRow = bookingsRef.current.find((b) => b.id === booking.id) ?? booking;
+      try {
+        const { data, error } = await supabase
+          .from('ticket_bookings')
+          .select(TICKET_BOOKING_EDIT_FORM_COLUMNS)
+          .eq('id', booking.id)
+          .maybeSingle();
+        if (error) throw error;
+        setEditingBooking(
+          data
+            ? ({
+                ...listRow,
+                ...(data as unknown as TicketBooking),
+                tours: listRow.tours,
+                reservation_name: listRow.reservation_name,
+                total_price: listRow.total_price,
+                unit_price: listRow.unit_price,
+              } as TicketBooking)
+            : listRow
+        );
+      } catch (e) {
+        console.error('입장권 부킹 편집 로드 오류:', e);
+        setEditingBooking(listRow);
+      }
+      setShowForm(true);
+    })();
   };
 
   const removeBookingsFromUi = useCallback((ids: readonly string[]) => {
@@ -3367,6 +3422,9 @@ export default function TicketBookingList() {
           void refreshInvoiceAttachmentMapForBookings(next);
           return next;
         });
+        setEditingBooking((prev) =>
+          prev?.id === bookingId ? { ...prev, invoice_number: v } : prev
+        );
       } catch (err) {
         console.error(err);
         alert(
@@ -3419,6 +3477,7 @@ export default function TicketBookingList() {
         void refreshInvoiceAttachmentMapForBookings(next);
         return next;
       });
+      setEditingBooking((prev) => (prev?.id === id ? { ...prev, invoice_number: v } : prev));
       invoicePhotoLoadGenRef.current += 1;
       setInvoiceQuickBooking(null);
     } catch (err) {
@@ -3920,6 +3979,11 @@ export default function TicketBookingList() {
         });
         void refreshInvoiceAttachmentMapForBookings(next);
         return next;
+      });
+      setEditingBooking((prev) => {
+        if (!prev) return prev;
+        const u = updates.find((x) => x.id === prev.id);
+        return u ? { ...prev, invoice_number: u.invoice_number } : prev;
       });
     },
     [refreshInvoiceAttachmentMapForBookings]

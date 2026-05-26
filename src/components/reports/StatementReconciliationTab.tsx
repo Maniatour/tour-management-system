@@ -1733,7 +1733,7 @@ async function fetchMatchedExpenseKeysForOptions(
           continue
         }
         for (const row of data || []) {
-          matched.add(`${table}:${row.source_id}`)
+          matched.add(`${table}:${String(row.source_id ?? '').trim()}`)
         }
       }
     }
@@ -2624,7 +2624,9 @@ export default function StatementReconciliationTab() {
       unmatchedPanelListScope === 'all'
         ? expenseOptions.filter(nonZero)
         : expenseOptions.filter((o) => {
-            if (matchedExpenseKeysInDb.has(expenseKey(o.source_table, o.source_id))) return false
+            const k = expenseKey(o.source_table, o.source_id)
+            if (matchedExpenseKeysInDb.has(k)) return false
+            if (expenseKeyToLineIds.has(k)) return false
             return nonZero(o)
           })
     rows.sort((a, b) => {
@@ -2644,6 +2646,7 @@ export default function StatementReconciliationTab() {
   }, [
     expenseOptions,
     matchedExpenseKeysInDb,
+    expenseKeyToLineIds,
     compareExpenseFinancialAccountPriority,
     unmatchedPanelSortDate,
     unmatchedPanelListScope

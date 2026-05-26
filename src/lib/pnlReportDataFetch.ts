@@ -1,10 +1,17 @@
 import { supabase } from '@/lib/supabase'
-import { hotelAmountForSettlement, isHotelBookingIncludedInSettlement } from '@/lib/bookingSettlement'
+import {
+  hotelAmountForSettlement,
+  isHotelBookingActiveForReports,
+  isTicketBookingIncludedInSettlement,
+} from '@/lib/bookingSettlement'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import { fetchAllSupabasePages } from '@/lib/supabasePaginatedFetch'
 
 /** 통합 PNL·expense_category_mappings.original_value (tour_hotel_bookings 공통 키) */
 export const PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL = 'Tour hotel booking'
+
+/** Antelope Canyon admission (tour COGS) — 입장권·투어지출은 투어일(체크인·tour_date) 기준 집계 */
+export const PNL_ANTELOPE_CANYON_ADMISSION_LEAF_ID = 'CAT024-003'
 
 export type PnlPaymentRecordRow = {
   id: string
@@ -46,6 +53,7 @@ export type PnlTourExpenseRow = {
   note: string | null
   payment_method: string | null
   exclude_from_pnl: boolean | null
+  tour_date?: string | null
   submit_on: string | null
   created_at: string | null
 }
@@ -75,6 +83,8 @@ export type PnlTicketBookingRow = {
   company: string | null
   note: string | null
   payment_method: string | null
+  status?: string | null
+  check_in_date?: string | null
   submit_on: string | null
   created_at: string | null
 }
@@ -97,12 +107,29 @@ export async function fetchTourExpensesForPnlReport(startISO: string, endISO: st
     supabase
       .from('tour_expenses')
       .select(
-        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, submit_on, created_at'
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, submit_on, created_at'
       )
       .is('deleted_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
       .order('submit_on', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
+}
+
+/** 통합 PNL — 앤텔롭 입장(CAT024-003) 투어지출: tour_date 기준(리포트 기간과 겹치는 행) */
+export async function fetchTourExpensesForPnlByTourDate(startYmd: string, endYmd: string) {
+  return fetchAllSupabasePages<PnlTourExpenseRow>((from, to) =>
+    supabase
+      .from('tour_expenses')
+      .select(
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, submit_on, created_at'
+      )
+      .is('deleted_at', null)
+      .gte('tour_date', startYmd)
+      .lte('tour_date', endYmd)
+      .order('tour_date', { ascending: true })
       .order('id', { ascending: true })
       .range(from, to)
   )
@@ -140,19 +167,25 @@ export async function fetchCompanyExpensesForPnlReport(startISO: string, endISO:
   )
 }
 
-export async function fetchTicketBookingsForPnlReport(startISO: string, endISO: string) {
-  return fetchAllSupabasePages<PnlTicketBookingRow>((from, to) =>
+/** 통합 PNL 입장권 — check_in_date(투어일) 기준. 취소만 제외(정산·부킹 목록과 동일) */
+export async function fetchTicketBookingsForPnlReport(startYmd: string, endYmd: string) {
+  const { data, error } = await fetchAllSupabasePages<PnlTicketBookingRow>((from, to) =>
     supabase
       .from('ticket_bookings')
-      .select('id, expense, category, company, note, payment_method, submit_on, created_at')
+      .select(
+        'id, expense, category, company, note, payment_method, status, check_in_date, submit_on, created_at'
+      )
       .is('deleted_at', null)
-      .gte('submit_on', startISO)
-      .lte('submit_on', endISO)
-      .in('status', ['confirmed', 'paid'])
-      .order('submit_on', { ascending: true })
+      .is('deletion_requested_at', null)
+      .gte('check_in_date', startYmd)
+      .lte('check_in_date', endYmd)
+      .order('check_in_date', { ascending: true })
       .order('id', { ascending: true })
       .range(from, to)
   )
+  if (error) return { data: [] as PnlTicketBookingRow[], error }
+  const filtered = data.filter((r) => isTicketBookingIncludedInSettlement(r.status))
+  return { data: filtered, error: null }
 }
 
 /** 통합 PNL 지출: 기간 내 tour_hotel_bookings (취소·삭제요청 제외, total_price 기준) */
@@ -161,8 +194,9 @@ export async function fetchTourHotelBookingsForPnlReport(startISO: string, endIS
     supabase
       .from('tour_hotel_bookings')
       .select(
-        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, submit_on, created_at'
+        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, submit_on, created_at, deletion_requested_at'
       )
+      .is('deletion_requested_at', null)
       .gte('submit_on', startISO)
       .lte('submit_on', endISO)
       .order('submit_on', { ascending: true })
@@ -170,7 +204,7 @@ export async function fetchTourHotelBookingsForPnlReport(startISO: string, endIS
       .range(from, to)
   )
   if (error) return { data: [] as PnlTourHotelBookingRow[], error }
-  const filtered = data.filter((r) => isHotelBookingIncludedInSettlement(r.status))
+  const filtered = data.filter((r) => isHotelBookingActiveForReports(r))
   return { data: filtered, error: null }
 }
 

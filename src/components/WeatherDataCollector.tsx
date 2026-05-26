@@ -11,7 +11,7 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [selectedMonth, setSelectedMonth] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().split('T')[0])
 
   const collectDataForDate = async (date: string) => {
     try {
@@ -96,7 +96,7 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
     }
   }
 
-  const collect1MonthSunriseSunset = async (startDate: string) => {
+  const seedSunriseSunsetYear = async (startDate: string, dayCount: number) => {
     try {
       setLoading(true)
       setError('')
@@ -107,15 +107,16 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          collect1MonthSunriseSunset: true,
-          startDate: startDate
-        })
+        body: JSON.stringify({
+          seedSunriseSunsetYear: true,
+          startDate,
+          dayCount,
+        }),
       })
 
       if (response.ok) {
         const result = await response.json()
-        setMessage(`✅ 1개월 일출/일몰 데이터 수집 완료: ${result.message}`)
+        setMessage(`✅ ${result.message}`)
       } else {
         const errorData = await response.json()
         setError(`❌ 오류: ${errorData.error}`)
@@ -151,13 +152,15 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
       </div>
 
       <div className="space-y-4">
-        {/* 1개월 일출/일몰 데이터 수집 */}
+        {/* 1년 일출/일몰 근사값 (suncalc, 3지역) */}
         <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
           <div className="flex items-center flex-1">
             <Sun className="h-4 w-4 text-yellow-600 mr-2" />
             <div className="flex-1">
-              <span className="text-sm font-medium text-yellow-800">1개월 일출/일몰 데이터 수집</span>
-              <p className="text-xs text-yellow-600">그랜드캐년 사우스림만</p>
+              <span className="text-sm font-medium text-yellow-800">1년 일출/일몰 근사값 생성</span>
+              <p className="text-xs text-yellow-600">
+                그랜드캐년·Page·Zion — 외부 API 없이 Arizona 현지 계산(분 단위 근사). 기존 잘못된 행도 덮어씁니다.
+              </p>
               <div className="mt-2">
                 <input
                   type="date"
@@ -170,16 +173,16 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
             </div>
           </div>
           <button
-            onClick={() => collect1MonthSunriseSunset(selectedMonth || getToday())}
+            onClick={() => seedSunriseSunsetYear(selectedMonth || getToday(), 365)}
             disabled={loading || !selectedMonth}
-            className="px-4 py-2 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center ml-4"
+            className="px-4 py-2 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center ml-4 shrink-0"
           >
             {loading ? (
               <RefreshCw className="h-4 w-4 animate-spin mr-2" />
             ) : (
               <Download className="h-4 w-4 mr-2" />
             )}
-            수집
+            1년 생성
           </button>
         </div>
 

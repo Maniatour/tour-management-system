@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { collectDataForDate, collect1MonthSunriseSunset } from '@/lib/weatherCollectorService'
+import {
+  collect1MonthSunriseSunset,
+  collectDataForDate,
+  collectSunriseSunsetComputedYear,
+} from '@/lib/weatherCollectorService'
 
 export const maxDuration = 300
 
@@ -7,20 +11,30 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    // Check if this is a 1-month sunrise/sunset collection request
-    if (body.collect1MonthSunriseSunset) {
+  if (body.collect1MonthSunriseSunset) {
       const { startDate } = body
-      
       if (!startDate) {
         return NextResponse.json({ error: 'Start date is required for 1-month collection' }, { status: 400 })
       }
-      
       const result = await collect1MonthSunriseSunset(startDate)
-      
-      return NextResponse.json({ 
-        success: true, 
-        message: `1개월 일출/일몰 데이터 수집 완료 (${result.startDate} ~ ${result.endDate}). 성공: ${result.successCount}개, 실패: ${result.errorCount}개`,
-        details: result
+      return NextResponse.json({
+        success: true,
+        message: `1개월 일출/일몰 근사값 저장 (${result.startDate} ~ ${result.endDate}). ${result.successCount}건`,
+        details: result,
+      })
+    }
+
+    if (body.seedSunriseSunsetYear) {
+      const { startDate, dayCount } = body
+      if (!startDate) {
+        return NextResponse.json({ error: 'Start date is required' }, { status: 400 })
+      }
+      const days = typeof dayCount === 'number' ? dayCount : 365
+      const result = await collectSunriseSunsetComputedYear(startDate, days)
+      return NextResponse.json({
+        success: true,
+        message: `일출/일몰 근사값 ${result.dayCount}일 × ${result.locationCount}지역 저장 (${result.startDate} ~ ${result.endDate}, suncalc). 총 ${result.successCount}건`,
+        details: result,
       })
     }
     

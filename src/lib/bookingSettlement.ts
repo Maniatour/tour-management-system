@@ -67,6 +67,53 @@ export function isHotelBookingIncludedInSettlement(status: string | null | undef
   return !EXCLUDED_HOTEL_STATUSES.has(s)
 }
 
+/** 통합 PNL·투어 통계·예약 정산 — 지출 보관함(deleted_at) 여부 */
+export function isExpenseDeletedForReports(deletedAt: string | null | undefined): boolean {
+  return deletedAt != null && String(deletedAt).trim() !== ''
+}
+
+/** 통합 PNL·투어 통계·예약 정산 — 부킹 삭제 요청(deletion_requested_at) 여부 */
+export function isBookingDeletionRequestedForReports(
+  deletionRequestedAt: string | null | undefined
+): boolean {
+  return deletionRequestedAt != null && String(deletionRequestedAt).trim() !== ''
+}
+
+export function isExpenseRowActiveForReports(row: { deleted_at?: string | null }): boolean {
+  return !isExpenseDeletedForReports(row.deleted_at)
+}
+
+/** 입장권 — 취소·보관함·삭제 요청 제외 */
+export function isTicketBookingActiveForReports(booking: {
+  status?: string | null
+  deleted_at?: string | null
+  deletion_requested_at?: string | null
+}): boolean {
+  if (!isExpenseRowActiveForReports(booking)) return false
+  if (isBookingDeletionRequestedForReports(booking.deletion_requested_at)) return false
+  return isTicketBookingIncludedInSettlement(booking.status)
+}
+
+/** 호텔 부킹 — 취소·삭제 요청 제외 */
+export function isHotelBookingActiveForReports(booking: {
+  status?: string | null
+  deletion_requested_at?: string | null
+}): boolean {
+  if (isBookingDeletionRequestedForReports(booking.deletion_requested_at)) return false
+  return isHotelBookingIncludedInSettlement(booking.status)
+}
+
+/** 입장권 ea 순수량 — 취소·보관함·삭제 요청 제외 (크레딧 음수 ea는 유지) */
+export function isTicketBookingEaActiveForReports(booking: {
+  status?: string | null
+  deleted_at?: string | null
+  deletion_requested_at?: string | null
+}): boolean {
+  if (!isExpenseRowActiveForReports(booking)) return false
+  if (isBookingDeletionRequestedForReports(booking.deletion_requested_at)) return false
+  return isTicketBookingEaIncludedInNetCount(booking.status)
+}
+
 export function ticketExpenseForSettlement(booking: { expense?: number | string | null }): number {
   const e = Number(booking.expense ?? 0)
   return Number.isFinite(e) ? e : 0

@@ -9,9 +9,9 @@ import {
 } from '@/lib/tourStatsCalculator'
 import {
   hotelAmountForSettlement,
-  isHotelBookingIncludedInSettlement,
-  isTicketBookingEaIncludedInNetCount,
-  isTicketBookingIncludedInSettlement,
+  isHotelBookingActiveForReports,
+  isTicketBookingActiveForReports,
+  isTicketBookingEaActiveForReports,
   ticketEaAsNumber,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
@@ -167,6 +167,7 @@ export async function GET(request: NextRequest) {
       const { data } = await supabase
         .from('reservation_expenses')
         .select('reservation_id, amount')
+        .is('deleted_at', null)
         .in('reservation_id', batch)
       if (data?.length) {
         data.forEach((row: { reservation_id: string; amount?: number }) => {
@@ -200,16 +201,17 @@ export async function GET(request: NextRequest) {
     const { data: tourExpensesAll } = await supabase
       .from('tour_expenses')
       .select('tour_id, amount')
+      .is('deleted_at', null)
       .in('tour_id', tourIds)
 
     const { data: ticketBookingsAll } = await supabase
       .from('ticket_bookings')
-      .select('tour_id, expense, ea, status')
+      .select('tour_id, expense, ea, status, deleted_at, deletion_requested_at')
       .in('tour_id', tourIds)
 
     const { data: hotelBookingsAll } = await supabase
       .from('tour_hotel_bookings')
-      .select('tour_id, total_price, unit_price, rooms, status')
+      .select('tour_id, total_price, unit_price, rooms, status, deletion_requested_at')
       .in('tour_id', tourIds)
 
     // 7) 상품명
@@ -312,13 +314,20 @@ export async function GET(request: NextRequest) {
     })
     const ticketByTour: Record<string, { cost: number; ea: number }> = {}
     ;(ticketBookingsAll || []).forEach(
-      (row: { tour_id: string; expense?: number; ea?: number | string | null; status?: string }) => {
+      (row: {
+        tour_id: string
+        expense?: number
+        ea?: number | string | null
+        status?: string
+        deleted_at?: string | null
+        deletion_requested_at?: string | null
+      }) => {
         const tid = row.tour_id
         if (!ticketByTour[tid]) ticketByTour[tid] = { cost: 0, ea: 0 }
-        if (isTicketBookingIncludedInSettlement(row.status)) {
+        if (isTicketBookingActiveForReports(row)) {
           ticketByTour[tid].cost += ticketExpenseForSettlement(row)
         }
-        if (isTicketBookingEaIncludedInNetCount(row.status)) {
+        if (isTicketBookingEaActiveForReports(row)) {
           ticketByTour[tid].ea += ticketEaAsNumber(row.ea)
         }
       }
@@ -331,8 +340,9 @@ export async function GET(request: NextRequest) {
         unit_price?: number
         rooms?: number
         status?: string
+        deletion_requested_at?: string | null
       }) => {
-        if (!isHotelBookingIncludedInSettlement(row.status)) return
+        if (!isHotelBookingActiveForReports(row)) return
         if (!hotelByTour[row.tour_id]) hotelByTour[row.tour_id] = 0
         hotelByTour[row.tour_id] += hotelAmountForSettlement(row)
       }

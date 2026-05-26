@@ -22,6 +22,7 @@ import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import AdvancedCharts from './AdvancedCharts'
 import { generateTourStatisticsPDF, generateChartPDF } from '@/utils/pdfExport'
 import { supabase } from '@/lib/supabase'
+import { isTicketBookingActiveForReports } from '@/lib/bookingSettlement'
 
 interface ReservationSettlementData {
   totalReservations: number
@@ -135,6 +136,7 @@ async function getReservationFinancialStats(reservationId: string) {
       .from('reservation_expenses')
       .select('amount, status')
       .eq('reservation_id', reservationId)
+      .is('deleted_at', null)
 
     if (expensesError) {
       console.error('예약 지출 조회 오류:', expensesError)
@@ -288,6 +290,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
         .from('reservation_expenses')
         .select('*')
         .eq('reservation_id', reservationId)
+        .is('deleted_at', null)
 
       return {
         reservation,
@@ -376,10 +379,12 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
         for (const tourId of tourIds) {
           const { data: tickets } = await supabase
             .from('ticket_bookings')
-            .select('expense')
+            .select('expense, status, deleted_at, deletion_requested_at')
             .eq('tour_id', tourId)
             .in('status', TICKET_STATUSES)
-          const sum = (tickets || []).reduce((s: number, t: { expense?: number }) => s + (t.expense || 0), 0)
+          const sum = (tickets || [])
+            .filter((t) => isTicketBookingActiveForReports(t))
+            .reduce((s: number, t: { expense?: number }) => s + (t.expense || 0), 0)
           ticketCostByTour.set(tourId, sum)
         }
         const reservationCountByTour = tourIds.reduce((acc, tid) => {

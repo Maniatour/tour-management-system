@@ -2,32 +2,21 @@ import SunCalc from 'suncalc'
 
 const ARIZONA_TZ = 'America/Phoenix'
 
-/** sunrise-sunset.org 응답을 Arizona(Phoenix, DST 없음) 시각 문자열로 변환 */
-export function convertUtcTimeStringToArizona(utcTimeString: string): string {
-  try {
-    const [hours, minutes, seconds] = utcTimeString.split(':').map(Number)
-    const today = new Date()
-    const utcDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-      hours,
-      minutes,
-      seconds ?? 0
-    )
-    const arizonaTime = new Date(utcDate.getTime() - 7 * 60 * 60 * 1000)
-    return formatTimeInArizona(arizonaTime)
-  } catch (error) {
-    console.error('Error converting time to Arizona time:', error)
-    return utcTimeString
+/** ISO 8601 UTC 시각 → Arizona(Phoenix) HH:MM:SS */
+export function formatIsoInstantInArizona(isoUtc: string): string {
+  const instant = new Date(isoUtc)
+  if (Number.isNaN(instant.getTime())) {
+    return isoUtc
   }
+  return formatTimeInArizona(instant)
 }
 
 function formatTimeInArizona(instant: Date): string {
-  return new Intl.DateTimeFormat('ko-KR', {
+  return new Intl.DateTimeFormat('en-US', {
     timeZone: ARIZONA_TZ,
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   }).format(instant)
 }
@@ -79,13 +68,9 @@ export async function fetchSunriseSunsetExternal(
     return null
   }
 
-  const sunriseUTC = data.results.sunrise.split('T')[1]?.split('+')[0]
-  const sunsetUTC = data.results.sunset.split('T')[1]?.split('+')[0]
-  if (!sunriseUTC || !sunsetUTC) return null
-
   return {
-    sunrise: convertUtcTimeStringToArizona(sunriseUTC),
-    sunset: convertUtcTimeStringToArizona(sunsetUTC),
+    sunrise: formatIsoInstantInArizona(data.results.sunrise),
+    sunset: formatIsoInstantInArizona(data.results.sunset),
   }
 }
 
@@ -96,20 +81,25 @@ export type SunriseSunsetResult = {
   source: 'api' | 'computed'
 }
 
-/** API 우선, 실패 시 suncalc 로 계산 (항상 값 반환) */
+/**
+ * 일출·일몰 — 기본은 suncalc(Arizona)만 사용(근사값·서버 TZ 무관).
+ * 외부 API는 `preferExternalApi: true` 일 때만 시도.
+ */
 export async function getSunriseSunsetForLocation(
   lat: number,
   lng: number,
   date: string,
-  init?: { signal?: AbortSignal }
+  init?: { signal?: AbortSignal; preferExternalApi?: boolean }
 ): Promise<SunriseSunsetResult> {
-  try {
-    const fromApi = await fetchSunriseSunsetExternal(lat, lng, date, init)
-    if (fromApi) {
-      return { ...fromApi, source: 'api' }
+  if (init?.preferExternalApi) {
+    try {
+      const fromApi = await fetchSunriseSunsetExternal(lat, lng, date, init)
+      if (fromApi) {
+        return { ...fromApi, source: 'api' }
+      }
+    } catch (error) {
+      console.warn('[sunriseSunset] external API failed, using computed:', error)
     }
-  } catch (error) {
-    console.warn('[sunriseSunset] external API failed, using computed fallback:', error)
   }
 
   const computed = computeSunriseSunsetArizona(lat, lng, date)

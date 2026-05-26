@@ -84,6 +84,57 @@ interface TicketBooking {
   operation_status?: string | null;
 }
 
+function buildTicketBookingFormState(
+  booking: TicketBooking | undefined,
+  tourId?: string | null
+): TicketBooking {
+  const initialData: TicketBooking = {
+    category: DEFAULT_NEW_TICKET_BOOKING_CATEGORY,
+    submitted_by: '',
+    check_in_date: '',
+    time: '',
+    company: DEFAULT_NEW_TICKET_BOOKING_COMPANY,
+    ea: 1,
+    expense: 0,
+    income: 0,
+    payment_method: '',
+    rn_number: '',
+    invoice_number: '',
+    zelle_confirmation_number: '',
+    tour_id: tourId || null,
+    reservation_id: '',
+    note: '',
+    status: 'tentative',
+    season: 'no',
+    uploaded_files: [],
+    uploaded_file_urls: [],
+  };
+
+  if (!booking) return initialData;
+
+  return {
+    ...initialData,
+    ...booking,
+    category: booking.category ?? initialData.category,
+    check_in_date: booking.check_in_date ?? initialData.check_in_date,
+    time: normalizeDbTimeToTicketSelectSlot(booking.time) || initialData.time,
+    company: booking.company ?? initialData.company,
+    ea: booking.ea ?? initialData.ea,
+    expense: booking.expense ?? initialData.expense,
+    income: booking.income ?? initialData.income,
+    payment_method: booking.payment_method ?? initialData.payment_method,
+    rn_number: booking.rn_number ?? initialData.rn_number,
+    invoice_number: String(booking.invoice_number ?? '').trim(),
+    zelle_confirmation_number: String(booking.zelle_confirmation_number ?? '').trim(),
+    tour_id: booking.tour_id ?? tourId ?? initialData.tour_id,
+    reservation_id: booking.reservation_id ?? initialData.reservation_id ?? '',
+    note: booking.note ?? initialData.note,
+    status: String(normalizeTicketBookingStatusFromDb(booking.status ?? '')),
+    season: booking.season ?? initialData.season,
+    uploaded_file_urls: booking.uploaded_file_urls ?? [],
+  };
+}
+
 function initialAxesForTicketBookingEdit(b?: TicketBooking): TicketBookingAxisSnapshotRequired | null {
   if (!b?.id) return null;
   const bs = b.booking_status;
@@ -159,63 +210,32 @@ export default function TicketBookingForm({
   const t = useTranslations('booking.ticketBooking');
   const tCal = useTranslations('booking.calendar');
   const locale = useLocale();
-  const [formData, setFormData] = useState<TicketBooking>(() => {
-    console.log('편집 모드 - 전달받은 booking 데이터:', booking);
-    
-    const initialData = {
-      category: DEFAULT_NEW_TICKET_BOOKING_CATEGORY,
-      submitted_by: '',
-      check_in_date: '',
-      time: '',
-      company: DEFAULT_NEW_TICKET_BOOKING_COMPANY,
-      ea: 1,
-      expense: 0,
-      income: 0,
-      payment_method: '',
-      rn_number: '',
-      invoice_number: '',
-      zelle_confirmation_number: '',
-      tour_id: tourId || null,
-      reservation_id: '',
-      note: '',
-      status: 'tentative',
-      season: 'no', // 시즌 아님으로 기본값 변경
-      uploaded_files: [], // 파일 업로드 필드 추가
-      uploaded_file_urls: [] // 업로드된 파일 URL들
-    };
+  const [formData, setFormData] = useState<TicketBooking>(() =>
+    buildTicketBookingFormState(booking, tourId)
+  );
 
-    if (booking) {
-      const mergedData = {
-        ...initialData,
-        ...booking,
-        // 명시적으로 각 필드를 설정하여 undefined 값 처리
-        category: booking.category ?? initialData.category,
-        check_in_date: booking.check_in_date ?? initialData.check_in_date,
-        time: normalizeDbTimeToTicketSelectSlot(booking.time) || initialData.time,
-        company: booking.company ?? initialData.company,
-        ea: booking.ea ?? initialData.ea,
-        expense: booking.expense ?? initialData.expense,
-        income: booking.income ?? initialData.income,
-        payment_method: booking.payment_method ?? initialData.payment_method,
-        rn_number: booking.rn_number ?? initialData.rn_number,
-        invoice_number: (booking as { invoice_number?: string }).invoice_number ?? initialData.invoice_number ?? '',
-        zelle_confirmation_number:
-          (booking as { zelle_confirmation_number?: string | null }).zelle_confirmation_number ??
-          initialData.zelle_confirmation_number ??
-          '',
-        tour_id: booking.tour_id ?? tourId ?? initialData.tour_id,
-        reservation_id: booking.reservation_id ?? initialData.reservation_id,
-        note: booking.note ?? initialData.note,
-        status: String(normalizeTicketBookingStatusFromDb(booking.status ?? '')),
-        season: booking.season ?? initialData.season,
+  /** DB 재조회·인라인 저장 등으로 booking 의 Invoice#/RN# 이 바뀌면 폼에 반영 (다른 입력값은 유지) */
+  useEffect(() => {
+    if (!booking?.id) return;
+    const inv = String(booking.invoice_number ?? '').trim();
+    const rn = String(booking.rn_number ?? '').trim();
+    const zelle = String(booking.zelle_confirmation_number ?? '').trim();
+    setFormData((prev) => {
+      if (
+        prev.invoice_number === inv &&
+        prev.rn_number === rn &&
+        String(prev.zelle_confirmation_number ?? '').trim() === zelle
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        invoice_number: inv,
+        rn_number: rn,
+        zelle_confirmation_number: zelle,
       };
-      
-      console.log('편집 모드 - 최종 formData:', mergedData);
-      return mergedData;
-    }
-    
-    return initialData;
-  });
+    });
+  }, [booking?.id, booking?.invoice_number, booking?.rn_number, booking?.zelle_confirmation_number]);
 
   const [axisSnapshot, setAxisSnapshot] = useState<TicketBookingAxisSnapshotRequired | null>(() =>
     initialAxesForTicketBookingEdit(booking)

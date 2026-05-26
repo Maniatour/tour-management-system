@@ -135,14 +135,13 @@ export async function syncStatementLineMatchedStatus(supabase: SupabaseClient, l
   await supabase.from('statement_lines').update({ matched_status: status }).eq('id', lineId)
 }
 
-/** 명세 대조 «미대조만» 필터·후보: DB status와 실제 매칭 행 수가 어긋나면 매칭 없음을 우선 */
+/** 명세 대조 «미대조만» 필터·후보: reconciliation_matches 없으면 미대조, 있으면 partial만 미대조 */
 export function isStatementLineShownAsUnmatched(
   matchedStatus: string | null | undefined,
   activeMatchCount: number
 ): boolean {
   if (activeMatchCount <= 0) return true
-  const s = String(matchedStatus ?? '')
-  return s === 'unmatched' || s === 'partial'
+  return String(matchedStatus ?? '') === 'partial'
 }
 
 /** 매칭은 없는데 matched/partial로 남은 명세 줄 id */

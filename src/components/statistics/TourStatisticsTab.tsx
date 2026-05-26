@@ -25,9 +25,9 @@ import { generateTourStatisticsPDF, generateChartPDF } from '@/utils/pdfExport'
 import { supabase } from '@/lib/supabase'
 import {
   hotelAmountForSettlement,
-  isHotelBookingIncludedInSettlement,
-  isTicketBookingEaIncludedInNetCount,
-  isTicketBookingIncludedInSettlement,
+  isHotelBookingActiveForReports,
+  isTicketBookingActiveForReports,
+  isTicketBookingEaActiveForReports,
   ticketEaAsNumber,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
@@ -354,6 +354,7 @@ async function getTourFinancialStats(tourId: string) {
       .from('tour_expenses')
       .select('amount, status, paid_for')
       .eq('tour_id', tourId)
+      .is('deleted_at', null)
 
     if (allExpensesError) {
       console.error('전체 투어 지출 조회 오류:', allExpensesError)
@@ -459,6 +460,7 @@ async function getTourFinancialStats(tourId: string) {
         const { data: batchExpenses, error: batchExpensesError } = await supabase
           .from('reservation_expenses')
           .select('reservation_id, amount')
+          .is('deleted_at', null)
           .in('reservation_id', batchIds)
         if (batchExpensesError) {
           console.error(`예약 지출 정보 조회 오류 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, batchExpensesError)
@@ -504,6 +506,7 @@ async function getTourFinancialStats(tourId: string) {
       .from('tour_expenses')
       .select('amount, paid_for, status')
       .eq('tour_id', tourId)
+      .is('deleted_at', null)
 
     if (expensesError) {
       console.error('투어 지출 조회 오류:', expensesError)
@@ -515,21 +518,17 @@ async function getTourFinancialStats(tourId: string) {
 
     const { data: ticketBookingsRaw, error: ticketError } = await supabase
       .from('ticket_bookings')
-      .select('id, expense, ea, status')
+      .select('id, expense, ea, status, deleted_at, deletion_requested_at')
       .eq('tour_id', tourId)
-    const ticketBookings = (ticketBookingsRaw || []).filter((b) =>
-      isTicketBookingIncludedInSettlement(b.status)
-    )
+    const ticketBookings = (ticketBookingsRaw || []).filter((b) => isTicketBookingActiveForReports(b))
     if (ticketError) console.error('입장권 부킹 조회 오류:', ticketError)
     if (ticketBookings.length > 0) console.log('입장권 부킹:', ticketBookings.length, '건')
 
     const { data: hotelBookingsRaw, error: hotelError } = await supabase
       .from('tour_hotel_bookings')
-      .select('total_price, unit_price, rooms, status')
+      .select('total_price, unit_price, rooms, status, deletion_requested_at')
       .eq('tour_id', tourId)
-    const hotelBookings = (hotelBookingsRaw || []).filter((b) =>
-      isHotelBookingIncludedInSettlement(b.status)
-    )
+    const hotelBookings = (hotelBookingsRaw || []).filter((b) => isHotelBookingActiveForReports(b))
 
     if (hotelError) {
       console.error('호텔 부킹 조회 오류:', hotelError)
@@ -633,7 +632,7 @@ async function getTourFinancialStats(tourId: string) {
       ticketBookings?.reduce((sum, booking) => sum + ticketExpenseForSettlement(booking), 0) || 0
     const totalTicketEa =
       (ticketBookingsRaw || []).reduce((sum, booking) => {
-        if (!isTicketBookingEaIncludedInNetCount(booking.status)) return sum
+        if (!isTicketBookingEaActiveForReports(booking)) return sum
         return sum + ticketEaAsNumber(booking.ea)
       }, 0) || 0
     const totalHotelCosts =
@@ -952,23 +951,20 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
         .from('tour_expenses')
         .select('*')
         .eq('tour_id', tourId)
+        .is('deleted_at', null)
 
       // 입장권 부킹 상세 (expense 합 — 정산 기준과 동일)
       const { data: ticketBookingsRaw, error: ticketError } = await supabase
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId)
-      const ticketBookings = (ticketBookingsRaw || []).filter((b) =>
-        isTicketBookingIncludedInSettlement(b.status)
-      )
+      const ticketBookings = (ticketBookingsRaw || []).filter((b) => isTicketBookingActiveForReports(b))
 
       const { data: hotelBookingsRaw, error: hotelError } = await supabase
         .from('tour_hotel_bookings')
         .select('*')
         .eq('tour_id', tourId)
-      const hotelBookings = (hotelBookingsRaw || []).filter((b) =>
-        isHotelBookingIncludedInSettlement(b.status)
-      )
+      const hotelBookings = (hotelBookingsRaw || []).filter((b) => isHotelBookingActiveForReports(b))
 
       // 투어 수수료 조회 (가이드/어시스턴트 이름 포함)
       const { data: tour, error: tourError } = await supabase
@@ -1094,7 +1090,11 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
             const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
             const [pricingRes, expensesRes] = await Promise.all([
               supabase.from('reservation_pricing').select('reservation_id, total_price, additional_cost, operating_profit').in('reservation_id', batchIds),
-              supabase.from('reservation_expenses').select('reservation_id, amount, paid_for').in('reservation_id', batchIds)
+              supabase
+                .from('reservation_expenses')
+                .select('reservation_id, amount, paid_for')
+                .is('deleted_at', null)
+                .in('reservation_id', batchIds)
             ])
             if (pricingRes.data?.length) reservationPricing.push(...pricingRes.data)
             if (!expensesRes.error && expensesRes.data?.length) reservationExpenses.push(...expensesRes.data)
