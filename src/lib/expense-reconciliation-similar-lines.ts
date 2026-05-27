@@ -436,7 +436,24 @@ export async function fetchStatementLinesForTicketBookingDateProbe(
     return b.score - a.score
   })
   const limit = params.limit ?? 300
-  return out.slice(0, limit)
+  return sliceTicketBookingProbeCandidates(out, limit)
+}
+
+/** 입장권 날짜 탐색: 상한 적용 시 입금(환불) 후보가 출금에 밀려 빠지지 않도록 분할 */
+function sliceTicketBookingProbeCandidates(
+  sorted: SimilarStatementLineRow[],
+  limit: number
+): SimilarStatementLineRow[] {
+  if (sorted.length <= limit) return sorted
+  const inflows = sorted.filter((r) => String(r.direction).toLowerCase() === 'inflow')
+  const outflows = sorted.filter((r) => String(r.direction).toLowerCase() !== 'inflow')
+  const inflowCap = Math.min(inflows.length, Math.max(60, Math.floor(limit * 0.35)))
+  const outflowCap = Math.min(outflows.length, limit - inflowCap)
+  const keepIds = new Set<string>([
+    ...outflows.slice(0, outflowCap).map((r) => r.id),
+    ...inflows.slice(0, inflowCap).map((r) => r.id),
+  ])
+  return sorted.filter((r) => keepIds.has(r.id))
 }
 
 export async function fetchSimilarStatementLinesForExpenseRow(

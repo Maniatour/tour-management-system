@@ -93,23 +93,25 @@ type RawStatementLine = {
   matched_status: string | null
 }
 
-/** posted_date 구간의 실제 은행 출금 명세 줄 (statement_lines 직접 조회·페이지네이션) */
-async function fetchOutflowStatementLinesByPostedDate(
+/** posted_date 구간의 은행 명세 줄 (출금·입금, statement_lines 직접 조회·페이지네이션) */
+async function fetchStatementLinesByPostedDate(
   supabase: SupabaseClient,
   startYmd: string,
-  endYmd: string
+  endYmd: string,
+  direction?: 'inflow' | 'outflow' | null
 ): Promise<RawStatementLine[]> {
   const out: RawStatementLine[] = []
   let from = 0
   for (;;) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('statement_lines')
       .select(
         'id,statement_import_id,posted_date,amount,direction,description,merchant,matched_status'
       )
       .gte('posted_date', startYmd)
       .lte('posted_date', endYmd)
-      .eq('direction', 'outflow')
+    if (direction) query = query.eq('direction', direction)
+    const { data, error } = await query
       .order('posted_date', { ascending: true })
       .order('id', { ascending: true })
       .range(from, from + STATEMENT_LINES_PAGE - 1)
@@ -152,6 +154,7 @@ export type DateViewStatementRow = {
   lineId: string
   postedDate: string
   amount: number
+  direction: 'inflow' | 'outflow'
   /** 표시용 한 줄 (merchant 우선) */
   description: string
   /** 은행 명세 원문(description 컬럼) */
@@ -416,7 +419,7 @@ export async function fetchTicketDateViewReconForDates(
   for (const id of ceIds) if (id) allLedgerSourceKeys.add(`company_expenses:${id}`)
   for (const id of teIds) if (id) allLedgerSourceKeys.add(`tour_expenses:${id}`)
 
-  const stmtRaw = await fetchOutflowStatementLinesByPostedDate(supabase, globalStart, globalEnd)
+  const stmtRaw = await fetchStatementLinesByPostedDate(supabase, globalStart, globalEnd)
 
   const importIdsFromLines = [
     ...new Set(stmtRaw.map((l) => String(l.statement_import_id ?? '').trim()).filter(Boolean)),
@@ -499,10 +502,13 @@ export async function fetchTicketDateViewReconForDates(
         source_id: String(m.source_id ?? ''),
       }))
       const rawDesc = String(line.description ?? '').trim()
+      const isInflow = String(line.direction ?? '').toLowerCase() === 'inflow'
+      const absAmt = Math.abs(Number(line.amount ?? 0))
       const row: DateViewStatementRow = {
         lineId,
         postedDate: posted,
-        amount: Math.abs(Number(line.amount ?? 0)),
+        amount: absAmt,
+        direction: isInflow ? 'inflow' : 'outflow',
         description: desc,
         rawDescription: rawDesc || desc,
         financialAccountName: accountNameById.get(accountId) || accountId || '—',
@@ -512,7 +518,7 @@ export async function fetchTicketDateViewReconForDates(
         linkedSources: linked,
       }
       bundle.statementRows.push(row)
-      addLedgerTotal(bundle.statementTotalByVendor, vk, row.amount)
+      addLedgerTotal(bundle.statementTotalByVendor, vk, isInflow ? -absAmt : absAmt)
     }
     bundle.ledgerRows.sort((a, b) => a.vendorLabel.localeCompare(b.vendorLabel, locale) || a.detail.localeCompare(b.detail))
     bundle.statementRows.sort(

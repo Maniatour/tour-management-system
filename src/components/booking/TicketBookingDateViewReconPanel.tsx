@@ -177,8 +177,8 @@ export function TicketBookingDateViewReconPanel({
     return (
       <p className="mt-2 text-[10px] text-slate-500">
         {ko
-          ? `체크인 ±${dayWindow}일 구간에 앤텔롭 관련 지출·은행 출금 명세가 없습니다. (명세 CSV 업로드·거래일 확인)`
-          : `No canyon ledger or bank outflow lines within ±${dayWindow} days of check-in.`}
+          ? `체크인 ±${dayWindow}일 구간에 앤텔롭 관련 지출·은행 명세(출금·입금)가 없습니다. (명세 CSV 업로드·거래일 확인)`
+          : `No canyon ledger or bank statement lines (outflow/inflow) within ±${dayWindow} days of check-in.`}
       </p>
     )
   }
@@ -314,8 +314,8 @@ export function TicketBookingDateViewReconPanel({
           <div className="flex flex-wrap items-center gap-2 mb-0.5">
             <div className="text-[10px] font-semibold text-slate-700">
               {ko
-                ? `은행 출금 명세 (${bundle.statementRows.length}건 · 업로드 statement_lines)`
-                : `Bank outflow lines (${bundle.statementRows.length} · statement_lines)`}
+                ? `은행 명세 (${bundle.statementRows.length}건 · 출금·입금)`
+                : `Bank statement lines (${bundle.statementRows.length} · outflow & inflow)`}
             </div>
             {canDelete ? (
               <Button
@@ -346,6 +346,7 @@ export function TicketBookingDateViewReconPanel({
                     </th>
                   ) : null}
                   <th className={thCls}>{ko ? '거래일' : 'Posted'}</th>
+                  <th className={thCls}>{ko ? '구분' : 'Type'}</th>
                   <th className={thCls}>{ko ? '벤더' : 'Vendor'}</th>
                   <th className={thCls}>{ko ? '통장' : 'Account'}</th>
                   <th className={thCls}>{ko ? '적요' : 'Description'}</th>
@@ -379,6 +380,13 @@ export function TicketBookingDateViewReconPanel({
                         </td>
                       ) : null}
                       <td className={`${tdCls} tabular-nums whitespace-nowrap`}>{row.postedDate}</td>
+                      <td
+                        className={`${tdCls} whitespace-nowrap font-medium ${
+                          row.direction === 'inflow' ? 'text-emerald-700' : 'text-rose-800'
+                        }`}
+                      >
+                        {row.direction === 'inflow' ? (ko ? '입금' : 'In') : ko ? '출금' : 'Out'}
+                      </td>
                       <td className={`${tdCls} font-medium whitespace-nowrap`}>{row.vendorLabel}</td>
                       <td className={`${tdCls} max-w-[6rem] truncate`} title={row.financialAccountName}>
                         {row.financialAccountName}
@@ -396,7 +404,12 @@ export function TicketBookingDateViewReconPanel({
                           </div>
                         ) : null}
                       </td>
-                      <td className={`${tdCls} text-right tabular-nums whitespace-nowrap`}>
+                      <td
+                        className={`${tdCls} text-right tabular-nums whitespace-nowrap ${
+                          row.direction === 'inflow' ? 'text-emerald-700' : ''
+                        }`}
+                      >
+                        {row.direction === 'inflow' ? '+' : ''}
                         {formatUsd(row.amount)}
                       </td>
                       <td className={tdCls}>

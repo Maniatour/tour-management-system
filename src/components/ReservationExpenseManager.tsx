@@ -8,7 +8,7 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
-import { matchesAmountSearch } from '@/lib/amountSearch'
+import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
@@ -178,6 +178,7 @@ export default function ReservationExpenseManager({
 }: ReservationExpenseManagerProps) {
   
   const t = useTranslations('reservationExpense')
+  const tExpensesSub = useTranslations('expenses.reservationSubTabs')
   const tTour = useTranslations('tours.tourExpense')
   const locale = useLocale()
   const adminList = !reservationId
@@ -203,6 +204,7 @@ export default function ReservationExpenseManager({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [searchTerm, setSearchTerm] = useState('')
+  const searchActive = Boolean(searchTerm.trim())
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -251,12 +253,19 @@ export default function ReservationExpenseManager({
       if (reservationId) {
         params.append('reservation_id', reservationId)
         params.append('limit', '500')
+      } else if (adminList) {
+        // 입금-지출 관리: DB 전체(소프트 삭제 제외)를 submit_on 기준으로 조회
+        params.append('limit', '5000')
+        if (dateFrom) params.append('date_from', dateFrom)
+        if (dateTo) params.append('date_to', dateTo)
+        if (statusFilter !== 'all') params.append('status', statusFilter)
       }
       // 예약 상세에서는 PricingSection·매출 산식과 동일하게 이 예약에 연결된 지출 전체를 불러온다.
       // submittedBy는 신규 등록 시 submitted_by 기본값에만 쓰고, 목록 GET에는 넣지 않는다.
       if (submittedBy && !reservationId) params.append('submitted_by', submittedBy)
-      if (statementMatchFilter === 'unmatched') params.append('statement_match', 'unmatched')
-
+      if (statementMatchFilter === 'unmatched' && !searchActive) {
+        params.append('statement_match', 'unmatched')
+      }
       const response = await fetch(`/api/reservation-expenses?${params}`)
       const result = await response.json()
 
@@ -270,7 +279,16 @@ export default function ReservationExpenseManager({
     } finally {
       setLoading(false)
     }
-  }, [reservationId, submittedBy, statementMatchFilter])
+  }, [
+    reservationId,
+    submittedBy,
+    statementMatchFilter,
+    adminList,
+    dateFrom,
+    dateTo,
+    statusFilter,
+    searchActive,
+  ])
 
   // 데이터 로드
   useEffect(() => {
@@ -735,10 +753,6 @@ export default function ReservationExpenseManager({
   const filteredExpenses = useMemo(() => {
     if (!adminList) return expenses
     return expenses.filter((e) => {
-      if (statusFilter !== 'all' && e.status !== statusFilter) return false
-      const subYmd = e.submit_on ? e.submit_on.slice(0, 10) : ''
-      if (dateFrom && subYmd && subYmd < dateFrom) return false
-      if (dateTo && subYmd && subYmd > dateTo) return false
       if (reimbursementFilter === 'employee_card') {
         const pm = e.payment_method?.trim()
         if (!pm || !employeeLinkedPaymentMethodIds.has(pm)) return false
@@ -750,6 +764,8 @@ export default function ReservationExpenseManager({
       if (searchTerm.trim()) {
         const qRaw = searchTerm.trim()
         if (matchesAmountSearch(e.amount, qRaw)) return true
+        if (matchesAmountSearch(e.reservation_payments_total, qRaw)) return true
+        if (isAmountSearchQuery(qRaw)) return false
         const q = qRaw.toLowerCase()
         const pmId = e.payment_method?.trim() || ''
         const pmLabel = pmId ? paymentMethodMap[pmId] || '' : ''
@@ -761,6 +777,7 @@ export default function ReservationExpenseManager({
           e.submitted_by,
           pmId,
           pmLabel,
+          e.reservations?.product_id,
           e.reservations?.customer_name ?? e.reservations?.customers?.name,
           e.reservations?.customer_email,
         ]
@@ -775,9 +792,6 @@ export default function ReservationExpenseManager({
     adminList,
     expenses,
     searchTerm,
-    statusFilter,
-    dateFrom,
-    dateTo,
     paymentMethodMap,
     reimbursementFilter,
     employeeLinkedPaymentMethodIds,
@@ -985,7 +999,7 @@ export default function ReservationExpenseManager({
               <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
               <input
                 type="text"
-                placeholder={tTour('searchPlaceholder')}
+                placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
@@ -1050,9 +1064,18 @@ export default function ReservationExpenseManager({
                 <option value="all">{t('statementMatchAll')}</option>
                 <option value="unmatched">{t('statementMatchUnmatched')}</option>
               </select>
+              {statementMatchFilter === 'unmatched' ? (
+                <p className="mt-1 text-[11px] sm:text-xs text-amber-800 leading-snug">
+                  {searchTerm.trim()
+                    ? t('statementMatchUnmatchedSearchHint')
+                    : t('statementMatchUnmatchedHint')}
+                </p>
+              ) : null}
             </div>
             <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{tTour('startDate')}</label>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
+                {tExpensesSub('filterDateFrom')}
+              </label>
               <input
                 type="date"
                 value={dateFrom}
@@ -1061,7 +1084,9 @@ export default function ReservationExpenseManager({
               />
             </div>
             <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">{tTour('endDate')}</label>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
+                {tExpensesSub('filterDateTo')}
+              </label>
               <input
                 type="date"
                 value={dateTo}

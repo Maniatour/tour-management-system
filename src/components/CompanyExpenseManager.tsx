@@ -330,7 +330,7 @@ export default function CompanyExpenseManager({
       if (reimbursementFilter !== 'all') {
         params.append('reimbursement', reimbursementFilter)
       }
-      if (statementMatchFilter === 'unmatched') {
+      if (statementMatchFilter === 'unmatched' && !searchTerm.trim()) {
         params.append('statement_match', 'unmatched')
       }
       if (standardLeafFilter && standardLeafFilter !== 'all') {
@@ -1660,7 +1660,7 @@ export default function CompanyExpenseManager({
             <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
             <input
               type="text"
-              placeholder={tTour('searchPlaceholder')}
+              placeholder={t('filters.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -2427,6 +2427,13 @@ export default function CompanyExpenseManager({
               <option value="all">{t('filters.statementMatchAll')}</option>
               <option value="unmatched">{t('filters.statementMatchUnmatched')}</option>
             </select>
+            {statementMatchFilter === 'unmatched' ? (
+              <p className="mt-1 text-[11px] sm:text-xs text-amber-800 leading-snug">
+                {searchTerm.trim()
+                  ? t('filters.statementMatchUnmatchedSearchHint')
+                  : t('filters.statementMatchUnmatchedHint')}
+              </p>
+            ) : null}
           </div>
           <div>
             <label

@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
+import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
 
 const db = supabaseAdmin ?? supabase
+
+const ADMIN_LIST_MAX = 5000
+const RESERVATION_DETAIL_MAX = 500
+const AMOUNT_SEARCH_SCAN_LIMIT = 10_000
 
 // GET: 예약 지출 목록 조회
 export async function GET(request: NextRequest) {
@@ -10,39 +16,140 @@ export async function GET(request: NextRequest) {
     const reservationId = searchParams.get('reservation_id')
     const status = searchParams.get('status')
     const submittedBy = searchParams.get('submitted_by')
+    const dateFrom = searchParams.get('date_from')
+    const dateTo = searchParams.get('date_to')
+    const search = searchParams.get('search')
     /** all | unmatched — 명세 대조 미연결 지출만 */
     const statementMatch = (searchParams.get('statement_match') || 'all').toLowerCase()
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
+    const limitRaw = parseInt(
+      searchParams.get('limit') || (reservationId ? String(RESERVATION_DETAIL_MAX) : String(ADMIN_LIST_MAX)),
+      10
+    )
+    const maxLimit = reservationId ? RESERVATION_DETAIL_MAX : ADMIN_LIST_MAX
+    const limit = Math.min(maxLimit, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : maxLimit))
+    const from = (page - 1) * limit
+    const to = from + limit - 1
 
+    /** 검색어가 있으면 «미대조만» 뷰를 쓰지 않음 — 이미 명세에 연결된 지출도 찾을 수 있게 */
     const tableName =
-      statementMatch === 'unmatched' ? 'reservation_expenses_no_statement_match' : 'reservation_expenses'
+      search?.trim() || statementMatch !== 'unmatched'
+        ? 'reservation_expenses'
+        : 'reservation_expenses_no_statement_match'
+    const useBaseTable = tableName === 'reservation_expenses'
 
-    let query = db
-      .from(tableName)
-      .select(`
+    const submitOnBounds = lvSubmitOnBoundsFromYmdFilter(dateFrom, dateTo)
+
+    const applyListFilters = <
+      Q extends {
+        is: (column: string, value: null) => Q
+        gte: (column: string, value: string) => Q
+        lte: (column: string, value: string) => Q
+        eq: (column: string, value: string) => Q
+      },
+    >(
+      q: Q
+    ): Q => {
+      let next = q
+      if (useBaseTable) {
+        next = next.is('deleted_at', null)
+      }
+      if (submitOnBounds.gte) {
+        next = next.gte('submit_on', submitOnBounds.gte)
+      }
+      if (submitOnBounds.lte) {
+        next = next.lte('submit_on', submitOnBounds.lte)
+      }
+      if (reservationId) {
+        next = next.eq('reservation_id', reservationId)
+      }
+      if (status && status !== 'all') {
+        next = next.eq('status', status)
+      }
+      if (submittedBy) {
+        next = next.eq('submitted_by', submittedBy)
+      }
+      return next
+    }
+
+    let query = applyListFilters(
+      db.from(tableName).select(
+        `
         *,
         reservations (
           id,
           customer_id,
           product_id
         )
-      `)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
+      `,
+        { count: 'exact' }
+      )
+    )
 
-    // 필터 적용
-    if (reservationId) {
-      query = query.eq('reservation_id', reservationId)
-    }
-    if (status) {
-      query = query.eq('status', status)
-    }
-    if (submittedBy) {
-      query = query.eq('submitted_by', submittedBy)
+    if (search && search.trim()) {
+      const raw = search.trim()
+      const like = `%${raw}%`
+      const orParts = [
+        `paid_to.ilike.${like}`,
+        `paid_for.ilike.${like}`,
+        `note.ilike.${like}`,
+        `payment_method.ilike.${like}`,
+        `submitted_by.ilike.${like}`,
+        `reservation_id.ilike.${like}`,
+        `event_id.ilike.${like}`,
+        `id.ilike.${like}`,
+      ]
+
+      const { data: pmRows } = await db
+        .from('payment_methods')
+        .select('id')
+        .or(`method.ilike.${like},display_name.ilike.${like},id.ilike.${like}`)
+      const pmIds = [...new Set((pmRows || []).map((r: { id: string }) => r.id))].slice(0, 200)
+      if (pmIds.length > 0) {
+        orParts.push(`payment_method.in.(${pmIds.join(',')})`)
+      }
+
+      const { data: customerRows } = await db
+        .from('customers')
+        .select('id')
+        .or(`name.ilike.${like},email.ilike.${like}`)
+        .limit(100)
+      const customerIds = (customerRows || []).map((r: { id: string }) => r.id).filter(Boolean)
+      if (customerIds.length > 0) {
+        const { data: reservationRows } = await db
+          .from('reservations')
+          .select('id')
+          .in('customer_id', customerIds)
+          .limit(200)
+        const reservationIdsFromCustomers = (reservationRows || [])
+          .map((r: { id: string }) => r.id)
+          .filter(Boolean)
+        if (reservationIdsFromCustomers.length > 0) {
+          orParts.push(`reservation_id.in.(${reservationIdsFromCustomers.join(',')})`)
+        }
+      }
+
+      if (isAmountSearchQuery(raw)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let scanQ: any = applyListFilters(db.from(tableName).select('id, amount'))
+        const { data: scanRows } = await scanQ.limit(AMOUNT_SEARCH_SCAN_LIMIT)
+        const amountIds = (scanRows || [])
+          .filter((r: { id: string; amount: unknown }) =>
+            matchesAmountSearch(Number(r.amount), raw)
+          )
+          .map((r: { id: string }) => r.id)
+          .slice(0, 200)
+        if (amountIds.length > 0) {
+          orParts.push(`id.in.(${amountIds.join(',')})`)
+        }
+      }
+
+      query = query.or(orParts.join(','))
     }
 
-    const { data, error } = await query
+    query = query.order('submit_on', { ascending: false }).range(from, to)
+
+    const { data, error, count } = await query
 
     if (error) {
       console.error('Error fetching reservation expenses:', error)
@@ -118,9 +225,18 @@ export async function GET(request: NextRequest) {
       }
     )
 
+    const total = count ?? dataWithPayments.length
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+
     return NextResponse.json({
       success: true,
-      data: dataWithPayments
+      data: dataWithPayments,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
     })
 
   } catch (error) {

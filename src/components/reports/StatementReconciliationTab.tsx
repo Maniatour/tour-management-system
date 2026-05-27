@@ -3133,7 +3133,16 @@ export default function StatementReconciliationTab() {
             : table === 'company_expenses'
               ? 'id,amount,submit_on,paid_for,paid_to,description,payment_method'
               : 'id,amount,submit_on,paid_for,paid_to,note,payment_method'
-        const { data, error } = await (supabase as any).from(table).select(sel).in('id', idList)
+        let hydrateQ = (supabase as any).from(table).select(sel).in('id', idList)
+        if (
+          table === 'company_expenses' ||
+          table === 'tour_expenses' ||
+          table === 'reservation_expenses' ||
+          table === 'ticket_bookings'
+        ) {
+          hydrateQ = withActiveExpenseRowsOnly(hydrateQ, table)
+        }
+        const { data, error } = await hydrateQ
         if (error) {
           if (!isAbortLikeError(error)) console.error(error)
           return

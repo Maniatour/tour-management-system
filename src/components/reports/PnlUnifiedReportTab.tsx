@@ -30,16 +30,21 @@ import PnlUnifiedNetProfitSection, {
 } from '@/components/reports/PnlUnifiedNetProfitSection'
 import type { PnlStatementInflowLine } from '@/lib/pnlReportDataFetch'
 import {
-  buildAntelopeAdmissionMappingOriginals,
+  buildCogsLeafIdSet,
+  companyExpenseTourAnchorYmd,
   pnlUsesTourDateBasis,
   resolveTicketBookingPnlLeafId,
-} from '@/lib/pnlAntelopeAdmission'
+} from '@/lib/pnlCogsTourDate'
 import {
+  fetchCompanyExpensesForPnlByAccountingPeriod,
   fetchCompanyExpensesForPnlReport,
+  fetchReservationExpensesForPnlByTourDate,
   fetchReservationExpensesForPnlReport,
-  fetchTicketBookingsForPnlReport,
+  fetchTicketBookingsForPnlByCheckIn,
+  fetchTicketBookingsForPnlBySubmitOn,
   fetchTourExpensesForPnlByTourDate,
   fetchTourExpensesForPnlReport,
+  fetchTourHotelBookingsForPnlByCheckIn,
   fetchTourHotelBookingsForPnlReport,
   PNL_TOUR_HOTEL_BOOKING_MAPPING_ORIGINAL,
   tourHotelBookingAmountForPnl,
@@ -204,18 +209,44 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         mapToLeaf.set(`${row.original_value}::${row.source_table}`, eff)
       }
     }
-    const antelopeOriginals = buildAntelopeAdmissionMappingOriginals(mapToLeaf)
+    const cogsLeafIds = buildCogsLeafIdSet(cats, leafIdSet)
+    const reportStartYm = dateRange.start.slice(0, 7)
+    const reportEndYm = dateRange.end.slice(0, 7)
 
-    const [teRes, reRes, ceRes, tbRes, thRes, teTourRes] = await Promise.all([
+    const [
+      teRes,
+      reRes,
+      ceRes,
+      tbSubmitRes,
+      tbTourRes,
+      thRes,
+      teTourRes,
+      reTourRes,
+      thTourRes,
+      cePeriodRes,
+    ] = await Promise.all([
       fetchTourExpensesForPnlReport(startISO, endISO),
       fetchReservationExpensesForPnlReport(startISO, endISO),
       fetchCompanyExpensesForPnlReport(startISO, endISO),
-      fetchTicketBookingsForPnlReport(dateRange.start, dateRange.end),
+      fetchTicketBookingsForPnlBySubmitOn(startISO, endISO),
+      fetchTicketBookingsForPnlByCheckIn(dateRange.start, dateRange.end),
       fetchTourHotelBookingsForPnlReport(startISO, endISO),
       fetchTourExpensesForPnlByTourDate(dateRange.start, dateRange.end),
+      fetchReservationExpensesForPnlByTourDate(dateRange.start, dateRange.end),
+      fetchTourHotelBookingsForPnlByCheckIn(dateRange.start, dateRange.end),
+      fetchCompanyExpensesForPnlByAccountingPeriod(reportStartYm, reportEndYm),
     ])
     const fetchErr =
-      teRes.error || reRes.error || ceRes.error || tbRes.error || thRes.error || teTourRes.error
+      teRes.error ||
+      reRes.error ||
+      ceRes.error ||
+      tbSubmitRes.error ||
+      tbTourRes.error ||
+      thRes.error ||
+      teTourRes.error ||
+      reTourRes.error ||
+      thTourRes.error ||
+      cePeriodRes.error
     if (fetchErr) {
       console.error('통합 PNL 지출 조회 오류:', fetchErr)
       setLoading(false)
@@ -224,9 +255,14 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     const te = teRes.data
     const re = reRes.data
     const ce = ceRes.data
-    const tb = tbRes.data
+    const tbSubmit = tbSubmitRes.data
+    const tbByTourDate = tbTourRes.data
     const th = thRes.data
     const teByTourDate = teTourRes.data
+    const reByTourDate = reTourRes.data
+    const thByTourDate = thTourRes.data
+    const ceByAccountingPeriod = cePeriodRes.data
+    const cogsTourDateOpts = { cogsLeafIds }
 
     const monthly = new Map<string, Map<string, number>>()
     const detailLines: PnlDetailLine[] = []
@@ -261,15 +297,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       const orig = mappingOriginalForExpense('tour_expenses', r)
       const resolvedLeafId = mapToLeaf.get(`${orig}::tour_expenses`) ?? null
       const bucketKeyTe = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
-      if (
-        pnlUsesTourDateBasis({
-          resolvedLeafId,
-          bucketKey: bucketKeyTe,
-          source: 'tour_expenses',
-          mappingOriginal: orig,
-          antelopeOriginals,
-        })
-      ) {
+      if (pnlUsesTourDateBasis({ resolvedLeafId, bucketKey: bucketKeyTe, ...cogsTourDateOpts })) {
         continue
       }
       const amt = Number(r.amount) || 0
@@ -337,15 +365,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       const orig = mappingOriginalForExpense('tour_expenses', r)
       const resolvedLeafId = mapToLeaf.get(`${orig}::tour_expenses`) ?? null
       const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
-      if (
-        !pnlUsesTourDateBasis({
-          resolvedLeafId,
-          bucketKey,
-          source: 'tour_expenses',
-          mappingOriginal: orig,
-          antelopeOriginals,
-        })
-      ) {
+      if (!pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) {
         continue
       }
       const tourYmd = String(r.tour_date ?? '').slice(0, 10)
@@ -408,13 +428,17 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         submit_on: string | null
         created_at: string | null
       }
+      const orig = mappingOriginalForExpense('reservation_expenses', r)
+      const resolvedLeafId = mapToLeaf.get(`${orig}::reservation_expenses`) ?? null
+      const bucketKeyRe = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      if (pnlUsesTourDateBasis({ resolvedLeafId, bucketKey: bucketKeyRe, ...cogsTourDateOpts })) {
+        continue
+      }
       const amt = Number(r.amount) || 0
       if (r.exclude_from_pnl) {
         excluded += amt
         if (r.submit_on) {
-          const orig = mappingOriginalForExpense('reservation_expenses', r)
-          const resolvedLeafId = mapToLeaf.get(`${orig}::reservation_expenses`) ?? null
-          const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+          const bucketKey = bucketKeyRe
           excludedDetailLines.push({
             id: r.id,
             source: 'reservation_expenses',
@@ -438,17 +462,79 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         continue
       }
       if (!r.submit_on) continue
+      addMonthly(bucketKeyRe, r.submit_on, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'reservation_expenses',
+        bucketKey: bucketKeyRe,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        created_at: r.created_at,
+        paid_to: r.paid_to,
+        paid_for: r.paid_for,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: null,
+        company: null,
+        note: r.note,
+        exclude_from_pnl: r.exclude_from_pnl ?? false,
+      })
+    }
+    for (const x of reByTourDate || []) {
+      const r = x as {
+        id: string
+        amount: unknown
+        paid_for: string | null
+        paid_to: string | null
+        note: string | null
+        payment_method: string | null
+        exclude_from_pnl: boolean | null
+        tour_date?: string | null
+        submit_on: string | null
+        created_at: string | null
+      }
       const orig = mappingOriginalForExpense('reservation_expenses', r)
       const resolvedLeafId = mapToLeaf.get(`${orig}::reservation_expenses`) ?? null
       const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
-      addMonthly(bucketKey, r.submit_on, amt)
+      if (!pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
+      const tourYmd = String(r.tour_date ?? '').slice(0, 10)
+      if (!ymdInDateRange(tourYmd, dateRange.start, dateRange.end)) continue
+      const ym = yearMonthFromYmd(tourYmd)
+      const amt = Number(r.amount) || 0
+      if (r.exclude_from_pnl) {
+        excluded += amt
+        excludedDetailLines.push({
+          id: r.id,
+          source: 'reservation_expenses',
+          bucketKey,
+          resolvedLeafId,
+          mappingOriginalValue: orig,
+          yearMonth: ym,
+          amount: amt,
+          submit_on: r.submit_on,
+          created_at: r.created_at,
+          paid_to: r.paid_to,
+          paid_for: r.paid_for,
+          payment_method: r.payment_method,
+          statementReconciled: false,
+          category: null,
+          company: null,
+          note: r.note,
+          exclude_from_pnl: true,
+        })
+        continue
+      }
+      addMonthlyYm(bucketKey, ym, amt)
       detailLines.push({
         id: r.id,
         source: 'reservation_expenses',
         bucketKey,
         resolvedLeafId,
         mappingOriginalValue: orig,
-        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        yearMonth: ym,
         amount: amt,
         submit_on: r.submit_on,
         created_at: r.created_at,
@@ -475,22 +561,27 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         description: string | null
         payment_method: string | null
         exclude_from_pnl: boolean | null
+        accounting_period?: string | null
         submit_on: string | null
         created_at: string | null
+      }
+      const { leafId: resolvedLeafId, mappingOriginal: orig } = resolveCompanyExpensePnlLeafId(
+        r,
+        cats,
+        leafIdSet,
+        mapToLeaf,
+        locale
+      )
+      const bucketKeyCe = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      if (pnlUsesTourDateBasis({ resolvedLeafId, bucketKey: bucketKeyCe, ...cogsTourDateOpts })) {
+        continue
       }
       const amt = Number(r.amount) || 0
       const memo = [r.notes, r.description].filter(Boolean).join(' · ') || null
       if (r.exclude_from_pnl) {
         excluded += amt
         if (r.submit_on) {
-          const { leafId: resolvedLeafId, mappingOriginal: orig } = resolveCompanyExpensePnlLeafId(
-            r,
-            cats,
-            leafIdSet,
-            mapToLeaf,
-            locale
-          )
-          const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+          const bucketKey = bucketKeyCe
           excludedDetailLines.push({
             id: r.id,
             source: 'company_expenses',
@@ -514,19 +605,11 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         continue
       }
       if (!r.submit_on) continue
-      const { leafId: resolvedLeafId, mappingOriginal: orig } = resolveCompanyExpensePnlLeafId(
-        r,
-        cats,
-        leafIdSet,
-        mapToLeaf,
-        locale
-      )
-      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
-      addMonthly(bucketKey, r.submit_on, amt)
+      addMonthly(bucketKeyCe, r.submit_on, amt)
       detailLines.push({
         id: r.id,
         source: 'company_expenses',
-        bucketKey,
+        bucketKey: bucketKeyCe,
         resolvedLeafId,
         mappingOriginalValue: orig,
         yearMonth: yearMonthFromSubmitOn(r.submit_on),
@@ -543,7 +626,85 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         exclude_from_pnl: r.exclude_from_pnl ?? false,
       })
     }
-    for (const x of tb || []) {
+    const ceTourDateSeen = new Set<string>()
+    for (const x of ceByAccountingPeriod || []) {
+      const r = x as {
+        id: string
+        amount: unknown
+        paid_for: string | null
+        category: string | null
+        standard_paid_for: string | null
+        expense_type: string | null
+        paid_to: string | null
+        notes: string | null
+        description: string | null
+        payment_method: string | null
+        exclude_from_pnl: boolean | null
+        accounting_period?: string | null
+        submit_on: string | null
+        created_at: string | null
+      }
+      if (ceTourDateSeen.has(r.id)) continue
+      ceTourDateSeen.add(r.id)
+      const { leafId: resolvedLeafId, mappingOriginal: orig } = resolveCompanyExpensePnlLeafId(
+        r,
+        cats,
+        leafIdSet,
+        mapToLeaf,
+        locale
+      )
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      if (!pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
+      const tourYmd = companyExpenseTourAnchorYmd(r)
+      if (!ymdInDateRange(tourYmd, dateRange.start, dateRange.end)) continue
+      const ym = yearMonthFromYmd(tourYmd)
+      const amt = Number(r.amount) || 0
+      const memo = [r.notes, r.description].filter(Boolean).join(' · ') || null
+      if (r.exclude_from_pnl) {
+        excluded += amt
+        excludedDetailLines.push({
+          id: r.id,
+          source: 'company_expenses',
+          bucketKey,
+          resolvedLeafId,
+          mappingOriginalValue: orig,
+          yearMonth: ym,
+          amount: amt,
+          submit_on: r.submit_on,
+          created_at: r.created_at,
+          paid_to: r.paid_to,
+          paid_for: r.paid_for,
+          payment_method: r.payment_method,
+          statementReconciled: false,
+          category: r.category,
+          company: null,
+          note: memo,
+          exclude_from_pnl: true,
+        })
+        continue
+      }
+      addMonthlyYm(bucketKey, ym, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'company_expenses',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: ym,
+        amount: amt,
+        submit_on: r.submit_on,
+        created_at: r.created_at,
+        paid_to: r.paid_to,
+        paid_for: r.paid_for,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: r.category,
+        company: null,
+        note: memo,
+        exclude_from_pnl: r.exclude_from_pnl ?? false,
+      })
+    }
+    for (const x of tbSubmit || []) {
       const r = x as {
         id: string
         expense: unknown
@@ -557,12 +718,52 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       }
       const orig = mappingOriginalForExpense('ticket_bookings', r)
       const resolvedLeafId = resolveTicketBookingPnlLeafId(r, orig, mapToLeaf, leafIdSet)
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      if (pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
+      const amt = Number(r.expense) || 0
+      if (!r.submit_on) continue
+      addMonthly(bucketKey, r.submit_on, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'ticket_bookings',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        created_at: r.created_at,
+        paid_to: null,
+        paid_for: null,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: r.category,
+        company: r.company,
+        note: r.note,
+        exclude_from_pnl: false,
+      })
+    }
+    for (const x of tbByTourDate || []) {
+      const r = x as {
+        id: string
+        expense: unknown
+        category: string | null
+        company: string | null
+        note: string | null
+        payment_method: string | null
+        check_in_date?: string | null
+        submit_on: string | null
+        created_at: string | null
+      }
+      const orig = mappingOriginalForExpense('ticket_bookings', r)
+      const resolvedLeafId = resolveTicketBookingPnlLeafId(r, orig, mapToLeaf, leafIdSet)
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      if (!pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
       const tourYmd = String(r.check_in_date ?? '').slice(0, 10)
       if (!ymdInDateRange(tourYmd, dateRange.start, dateRange.end)) continue
       const ym = yearMonthFromYmd(tourYmd)
       if (!ym) continue
       const amt = Number(r.expense) || 0
-      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
       addMonthlyYm(bucketKey, ym, amt)
       detailLines.push({
         id: r.id,
@@ -593,6 +794,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         hotel: string | null
         reservation_name: string | null
         payment_method: string | null
+        check_in_date?: string | null
         submit_on: string | null
         created_at: string | null
       }
@@ -601,6 +803,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       const orig = mappingOriginalForExpense('tour_hotel_bookings', r)
       const resolvedLeafId = mapToLeaf.get(`${orig}::tour_hotel_bookings`) ?? null
       const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      if (pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
       addMonthly(bucketKey, r.submit_on, amt)
       detailLines.push({
         id: r.id,
@@ -609,6 +812,50 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         resolvedLeafId,
         mappingOriginalValue: orig,
         yearMonth: yearMonthFromSubmitOn(r.submit_on),
+        amount: amt,
+        submit_on: r.submit_on,
+        created_at: r.created_at,
+        paid_to: r.hotel,
+        paid_for: r.reservation_name,
+        payment_method: r.payment_method,
+        statementReconciled: false,
+        category: null,
+        company: null,
+        note: null,
+        exclude_from_pnl: false,
+      })
+    }
+    for (const x of thByTourDate || []) {
+      const r = x as {
+        id: string
+        total_price: unknown
+        unit_price: unknown
+        rooms: unknown
+        hotel: string | null
+        reservation_name: string | null
+        payment_method: string | null
+        check_in_date?: string | null
+        submit_on: string | null
+        created_at: string | null
+      }
+      const amt = tourHotelBookingAmountForPnl(r)
+      if (amt === 0) continue
+      const orig = mappingOriginalForExpense('tour_hotel_bookings', r)
+      const resolvedLeafId = mapToLeaf.get(`${orig}::tour_hotel_bookings`) ?? null
+      const bucketKey = bucketForResolvedLeaf(resolvedLeafId, leafIdSet)
+      if (!pnlUsesTourDateBasis({ resolvedLeafId, bucketKey, ...cogsTourDateOpts })) continue
+      const tourYmd = String(r.check_in_date ?? '').slice(0, 10)
+      if (!ymdInDateRange(tourYmd, dateRange.start, dateRange.end)) continue
+      const ym = yearMonthFromYmd(tourYmd)
+      if (!ym) continue
+      addMonthlyYm(bucketKey, ym, amt)
+      detailLines.push({
+        id: r.id,
+        source: 'tour_hotel_bookings',
+        bucketKey,
+        resolvedLeafId,
+        mappingOriginalValue: orig,
+        yearMonth: ym,
         amount: amt,
         submit_on: r.submit_on,
         created_at: r.created_at,
@@ -766,10 +1013,12 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
               <code className="text-xs bg-white px-1 rounded border">ticket_bookings</code>,{' '}
               <code className="text-xs bg-white px-1 rounded border">tour_hotel_bookings</code>(예약 지출 › 투어 호텔
               지출 탭과 동일, <code className="text-xs">total_price</code>·취소 제외).{' '}
-              <strong>입장권</strong> 전체는 <code className="text-xs">check_in_date</code>(투어일) 기준으로
-              기간·월별에 넣습니다(입력일·<code className="text-xs">submit_on</code> 아님).{' '}
-              <strong>앤텔롭 캐년 입장(COGS)</strong>에 해당하는 투어 지출은{' '}
-              <code className="text-xs">tour_date</code> 기준입니다.
+              <strong>COGS (Part III · 투어 직접비)</strong> 하위(CAT024)는 투어일 기준으로 집계합니다 — 투어지출{' '}
+              <code className="text-xs">tour_date</code>, 입장권·투어 호텔{' '}
+              <code className="text-xs">check_in_date</code>, 예약지출은 연결 예약{' '}
+              <code className="text-xs">tour_date</code>, 회사지출(COGS)은{' '}
+              <code className="text-xs">accounting_period</code>(없으면 등록일)입니다. 그 외 표준 카테고리는
+              등록일(<code className="text-xs">submit_on</code>)입니다.
             </li>
             <li>
               행 구조·순서는 <strong>카테고리 매니저 › 표준 카테고리 관리</strong>에 등록된{' '}

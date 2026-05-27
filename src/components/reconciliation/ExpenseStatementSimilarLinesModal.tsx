@@ -44,6 +44,13 @@ function dedupeStatementLineIdsPreserveOrder(ids: string[]): string[] {
   return out
 }
 
+/** 명세 줄에 배정 가능한 금액(이미 다른 원장에 배정된 잔여 한도) */
+function lineMatchableAmount(row: SimilarStatementLineRow): number {
+  const lineAbs = Math.abs(row.amount)
+  const lineRoom = Math.max(0, lineAbs - row.allocated_sum)
+  return lineRoom > 0.009 ? lineRoom : lineAbs
+}
+
 type SourceSummaryInfo = {
   paymentMethod: string | null
   primaryDetail: string | null
@@ -206,7 +213,7 @@ export default function ExpenseStatementSimilarLinesModal({
             dayWindow: ticketDateProbe.dayWindow,
             financialAccountId: ticketDateProbe.financialAccountId,
             ledgerAmount: context.amount,
-            limit: 300
+            limit: 400
           })
         : await fetchSimilarStatementLinesForExpenseRow(supabase, {
             dateYmd: context.dateYmd,
@@ -451,6 +458,11 @@ export default function ExpenseStatementSimilarLinesModal({
   const remainingOnLedger =
     sourceAllocatedSum == null ? null : Math.max(0, ledgerTotalAbs - sourceAllocatedSum)
 
+  const allowTicketMultiLink =
+    Boolean(ticketDateProbe) && context?.sourceTable === 'ticket_bookings' && !appendLink
+
+  const selectedLineCount = dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered).length
+
   useEffect(() => {
     appendAmountUserEditedRef.current = false
   }, [context?.sourceId, appendLink, selectedIdsOrdered.join('|')])
@@ -485,7 +497,7 @@ export default function ExpenseStatementSimilarLinesModal({
       setMessage(t('needSelectLine'))
       return
     }
-    if (!appendLink && ordered.length > 1) {
+    if (!appendLink && ordered.length > 1 && !allowTicketMultiLink) {
       setMessage(t('replaceSelectSingleOnly'))
       return
     }
@@ -499,6 +511,39 @@ export default function ExpenseStatementSimilarLinesModal({
     try {
       const ledgerCap = Math.abs(context.amount)
       const email = user.email
+
+      if (!appendLink && allowTicketMultiLink && ordered.length > 1) {
+        const linePlans: { lineId: string; row: SimilarStatementLineRow; amount: number }[] = []
+        for (const lineId of ordered) {
+          const row = rowById.get(lineId)
+          if (!row) continue
+          const amount = lineMatchableAmount(row)
+          if (amount <= 0.009) continue
+          linePlans.push({ lineId, row, amount })
+        }
+        if (linePlans.length === 0) {
+          setMessage(t('needSelectLine'))
+          return
+        }
+        const multiCap = linePlans.reduce((sum, p) => sum + p.amount, 0)
+        for (let i = 0; i < linePlans.length; i++) {
+          const { lineId, row, amount } = linePlans[i]!
+          await replaceExpenseReconciliationMatch(supabase, {
+            actorEmail: email,
+            sourceTable: context.sourceTable,
+            sourceId: context.sourceId,
+            statementLineId: lineId,
+            statementLineAmount: row.amount,
+            matchedAmount: amount,
+            linkMode: i === 0 ? 'replace' : 'append',
+            ledgerCapAmount: multiCap,
+            syncSourceAmountToStatement: false,
+          })
+        }
+        onApplied?.()
+        onOpenChange(false)
+        return
+      }
 
       if (!appendLink) {
         const row = rowById.get(ordered[0]!)
@@ -617,7 +662,13 @@ export default function ExpenseStatementSimilarLinesModal({
   }
 
   const tableName = context ? t(`sourceTypes.${sourceTableLabelKey(context.sourceTable)}`) : ''
-  const dirLabel = context ? (context.direction === 'inflow' ? t('dirIn') : t('dirOut')) : ''
+  const dirLabel = context
+    ? ticketDateProbe
+      ? `${t('dirOut')} · ${t('dirIn')}`
+      : context.direction === 'inflow'
+        ? t('dirIn')
+        : t('dirOut')
+    : ''
 
   const paymentMethodDisplay = useMemo(() => {
     const raw = sourceSummary?.paymentMethod
@@ -741,6 +792,9 @@ export default function ExpenseStatementSimilarLinesModal({
                   : t('dateProximityModeHint')}
             </p>
             <p className="text-[11px] text-muted-foreground leading-snug">{t('searchGlobalHint')}</p>
+            {allowTicketMultiLink ? (
+              <p className="text-[11px] text-muted-foreground leading-snug">{t('ticketBookingMultiLinkHint')}</p>
+            ) : null}
             <label className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground leading-snug">
               <input
                 type="checkbox"
@@ -996,6 +1050,9 @@ export default function ExpenseStatementSimilarLinesModal({
                   </th>
                   <th className="text-left p-2 font-medium">{t('colAccount')}</th>
                   <th className="text-left p-2 font-medium">{t('colDate')}</th>
+                  {ticketDateProbe ? (
+                    <th className="text-left p-2 font-medium whitespace-nowrap">{t('colDirection')}</th>
+                  ) : null}
                   <th className="text-right p-2 font-medium">{t('colAmount')}</th>
                   <th className="text-right p-2 font-medium whitespace-nowrap">{t('colAllocatedSum')}</th>
                   <th className="text-left p-2 font-medium">{t('colDesc')}</th>
@@ -1024,7 +1081,26 @@ export default function ExpenseStatementSimilarLinesModal({
                       {r.financial_account_name}
                     </td>
                     <td className="p-2 whitespace-nowrap align-middle">{r.posted_date}</td>
-                    <td className="p-2 text-right tabular-nums align-middle">${r.amount.toFixed(2)}</td>
+                    {ticketDateProbe ? (
+                      <td className="p-2 whitespace-nowrap align-middle text-xs">
+                        <span
+                          className={
+                            String(r.direction).toLowerCase() === 'inflow'
+                              ? 'text-emerald-700 font-medium'
+                              : 'text-rose-800 font-medium'
+                          }
+                        >
+                          {String(r.direction).toLowerCase() === 'inflow' ? t('dirIn') : t('dirOut')}
+                        </span>
+                      </td>
+                    ) : null}
+                    <td
+                      className={`p-2 text-right tabular-nums align-middle ${
+                        String(r.direction).toLowerCase() === 'inflow' ? 'text-emerald-700' : ''
+                      }`}
+                    >
+                      ${r.amount.toFixed(2)}
+                    </td>
                     <td className="p-2 text-right tabular-nums text-xs text-muted-foreground align-middle whitespace-nowrap">
                       {r.existing_matches.length > 0 ? (
                         <>
@@ -1095,13 +1171,15 @@ export default function ExpenseStatementSimilarLinesModal({
             >
               {saving
                 ? t('saving')
-                : appendLink && selectedIdsOrdered.length > 1
-                  ? t('connectAppendN', {
-                      n: dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered).length
-                    })
-                  : appendLink
-                    ? t('connectAppend')
-                    : t('connect')}
+                : allowTicketMultiLink && selectedLineCount > 1
+                  ? t('connectTicketMultiN', { n: selectedLineCount })
+                  : appendLink && selectedIdsOrdered.length > 1
+                    ? t('connectAppendN', {
+                        n: dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered).length
+                      })
+                    : appendLink
+                      ? t('connectAppend')
+                      : t('connect')}
             </Button>
           )}
         </DialogFooter>

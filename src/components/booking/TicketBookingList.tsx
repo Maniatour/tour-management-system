@@ -1190,6 +1190,10 @@ export default function TicketBookingList() {
   const [checkInDateFrom, setCheckInDateFrom] = useState('');
   const [checkInDateTo, setCheckInDateTo] = useState('');
   const [tourFilter, setTourFilter] = useState('all'); // 'all', 'connected', 'unconnected'
+  const [companyFilter, setCompanyFilter] = useRoutePersistedState<string>(
+    'ticket-bookings-company-filter',
+    'all'
+  );
   const [futureEventFilter, setFutureEventFilter] = useState(false);
   const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
   /** 예매 요청·변경 요청 등 벤더 응답 대기 행만 */
@@ -4135,12 +4139,27 @@ export default function TicketBookingList() {
     return true;
   };
 
+  const vendorCompanyOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const b of bookings) {
+      const co = invoiceCompanyNorm(b.company);
+      if (co) names.add(co);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, locale === 'ko' ? 'ko' : 'en'));
+  }, [bookings, locale]);
+
+  const matchesCompany = (booking: TicketBooking): boolean => {
+    if (companyFilter === 'all') return true;
+    return invoiceCompanyNorm(booking.company) === companyFilter;
+  };
+
   const bookingsPassingBaseFilters = useMemo(() => {
     return bookings.filter(
       (booking) =>
         matchesSearch(booking) &&
         matchesDate(booking) &&
         matchesTour(booking) &&
+        matchesCompany(booking) &&
         matchesFutureEvent(booking) &&
         matchesCancelDeadline(booking)
     );
@@ -4151,6 +4170,7 @@ export default function TicketBookingList() {
     checkInDateFrom,
     checkInDateTo,
     tourFilter,
+    companyFilter,
     futureEventFilter,
     cancelDeadlineFilter,
     supplierProductsMap,
@@ -4519,6 +4539,7 @@ export default function TicketBookingList() {
     checkInDateFrom,
     checkInDateTo,
     tourFilter,
+    companyFilter,
     futureEventFilter,
     cancelDeadlineFilter,
     pendingRequestOnlyFilter,
@@ -6057,7 +6078,7 @@ export default function TicketBookingList() {
 
       {/* 필터 - 모바일: 2열/스택, 데스크톱: 그리드 */}
       <div className="min-w-0 border-t border-gray-100 px-3 py-3 sm:px-4 sm:py-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               {t('search')}
@@ -6112,6 +6133,28 @@ export default function TicketBookingList() {
               <option value="all">{t('allBookings')}</option>
               <option value="connected">{t('tourConnected')}</option>
               <option value="unconnected">{t('tourNotConnected')}</option>
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              {t('vendorFilter')}
+            </label>
+            <select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+            >
+              <option value="all">{t('allVendors')}</option>
+              {companyFilter !== 'all' &&
+                !vendorCompanyOptions.includes(companyFilter) && (
+                  <option value={companyFilter}>{companyFilter}</option>
+                )}
+              {vendorCompanyOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
             </select>
           </div>
 

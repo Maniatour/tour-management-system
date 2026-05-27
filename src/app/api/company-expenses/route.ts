@@ -126,8 +126,11 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * limit
     const to = from + limit - 1
 
+    /** 검색어가 있으면 «미대조만» 뷰를 쓰지 않음 — 이미 명세에 연결된 지출도 찾을 수 있게 */
     const expenseTable =
-      statementMatch === 'unmatched' ? 'company_expenses_no_statement_match' : 'company_expenses'
+      search?.trim() || statementMatch !== 'unmatched'
+        ? 'company_expenses'
+        : 'company_expenses_no_statement_match'
 
     const listFilterParams: CompanyExpenseListFilterParams = {
       category,
@@ -170,7 +173,12 @@ export async function GET(request: NextRequest) {
         `paid_to.ilike.${like}`,
         `paid_for.ilike.${like}`,
         `description.ilike.${like}`,
+        `notes.ilike.${like}`,
+        `category.ilike.${like}`,
+        `subcategory.ilike.${like}`,
         `payment_method.ilike.${like}`,
+        `submit_by.ilike.${like}`,
+        `id.ilike.${like}`,
       ]
       const { data: pmRows } = await supabase
         .from('payment_methods')
