@@ -112,9 +112,15 @@ Supabase 대시보드에서 다음 설정을 완료하세요:
    - **중요**: Redirect URL은 Supabase에서 자동으로 생성됩니다. 
    - Supabase 대시보드의 **Authentication > URL Configuration**에서 **Site URL** 아래에 표시되는 **Redirect URLs**를 확인하세요.
    - 일반적으로 `https:/tyilwbytyuqrhxekjxcd.supabase.co/auth/v1/callback` 형식입니다.
-3. **Authentication > URL Configuration**에서:
-   - Site URL: `http://localhost:3000`
-   - Redirect URLs: `http://localhost:3000/auth/callback`
+3. **Authentication > URL Configuration**에서 (로그인 후 localhost로 돌아가면 이 설정이 원인인 경우가 많음):
+   - **Site URL**: 운영 도메인 (예: `https://kovegas.com` 또는 `https://tour.maniatour.com`)
+   - **Redirect URLs** (한 줄씩 추가, `redirectTo`와 정확히 일치해야 함):
+     - `http://localhost:3000/auth/callback` (로컬 개발)
+     - `https://<운영-도메인>/auth/callback` (예: `https://kovegas.com/auth/callback`)
+     - 여러 도메인·www를 쓰면 각각 추가 (예: `https://www.kovegas.com/auth/callback`)
+     - Vercel 프리뷰를 쓰면 `https://*.vercel.app/auth/callback` 형태도 추가
+   - `redirectTo`가 목록에 없으면 Supabase가 **Site URL**(localhost로 두었을 때)로 리다이렉트합니다.
+   - 앱 코드는 `signInWithOAuth`의 `redirectTo`로 `{현재 origin}/auth/callback?locale=...` 를 보냅니다 (`src/lib/auth.ts`).
 
 ### 4. Google Cloud Console 설정
 

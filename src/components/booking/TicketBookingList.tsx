@@ -128,6 +128,8 @@ import {
 } from '@/lib/ticketBookingDateViewRecon';
 import { TicketBookingDateViewReconPanel } from '@/components/booking/TicketBookingDateViewReconPanel';
 import { ticketBookingLineTotalUsd } from '@/lib/bookingSettlement';
+import { computeTicketBookingVendorPeriodStats } from '@/lib/ticketBookingVendorPeriodStats';
+import TicketBookingVendorPeriodStatsPanel from '@/components/booking/TicketBookingVendorPeriodStatsPanel';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import type { TicketBookingLike } from '@/utils/ticketInvoiceParse';
@@ -389,6 +391,18 @@ function bookingCheckInYmd(booking: TicketBooking): string {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
   return localYmdFromDate(d);
+}
+
+function bookingSubmitOnYmd(booking: TicketBooking): string {
+  const raw = (booking.submit_on ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  return localYmdFromTimestamp(raw);
+}
+
+type TicketBookingDateRangeBasis = 'check_in' | 'submit_on';
+
+function bookingPeriodYmd(booking: TicketBooking, basis: TicketBookingDateRangeBasis): string {
+  return basis === 'submit_on' ? bookingSubmitOnYmd(booking) : bookingCheckInYmd(booking);
 }
 
 /** 체크인 기간 필터 — 연도 프리셋 (입장권 부킹 관리) */
@@ -1193,6 +1207,10 @@ export default function TicketBookingList() {
   const [companyFilter, setCompanyFilter] = useRoutePersistedState<string>(
     'ticket-bookings-company-filter',
     'all'
+  );
+  const [dateRangeBasis, setDateRangeBasis] = useRoutePersistedState<TicketBookingDateRangeBasis>(
+    'ticket-bookings-date-range-basis',
+    'check_in'
   );
   const [futureEventFilter, setFutureEventFilter] = useState(false);
   const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
@@ -4121,10 +4139,10 @@ export default function TicketBookingList() {
 
   const hasCheckInDateRangeFilter = Boolean(checkInDateFrom || checkInDateTo);
 
-  // 체크인일(시작–종료) 필터
+  // 기간(시작–종료) 필터 — 투어일(체크인) 또는 제출일
   const matchesDate = (booking: TicketBooking): boolean => {
     if (!hasCheckInDateRangeFilter) return true;
-    const ymd = bookingCheckInYmd(booking);
+    const ymd = bookingPeriodYmd(booking, dateRangeBasis);
     if (!ymd) return false;
     if (checkInDateFrom && ymd < checkInDateFrom) return false;
     if (checkInDateTo && ymd > checkInDateTo) return false;
@@ -4153,6 +4171,33 @@ export default function TicketBookingList() {
     return invoiceCompanyNorm(booking.company) === companyFilter;
   };
 
+  const showVendorPeriodStats = Boolean(
+    checkInDateFrom && checkInDateTo && companyFilter !== 'all'
+  );
+
+  const vendorPeriodStatsBookings = useMemo(() => {
+    if (!showVendorPeriodStats) return [];
+    return bookings.filter((booking) => {
+      if (invoiceCompanyNorm(booking.company) !== companyFilter) return false;
+      const ymd = bookingPeriodYmd(booking, dateRangeBasis);
+      if (!ymd) return false;
+      if (ymd < checkInDateFrom || ymd > checkInDateTo) return false;
+      return true;
+    });
+  }, [
+    bookings,
+    checkInDateFrom,
+    checkInDateTo,
+    companyFilter,
+    dateRangeBasis,
+    showVendorPeriodStats,
+  ]);
+
+  const vendorPeriodStats = useMemo(
+    () => computeTicketBookingVendorPeriodStats(vendorPeriodStatsBookings),
+    [vendorPeriodStatsBookings]
+  );
+
   const bookingsPassingBaseFilters = useMemo(() => {
     return bookings.filter(
       (booking) =>
@@ -4169,6 +4214,7 @@ export default function TicketBookingList() {
     searchTermLower,
     checkInDateFrom,
     checkInDateTo,
+    dateRangeBasis,
     tourFilter,
     companyFilter,
     futureEventFilter,
@@ -4538,6 +4584,7 @@ export default function TicketBookingList() {
     selectedStatusFilters,
     checkInDateFrom,
     checkInDateTo,
+    dateRangeBasis,
     tourFilter,
     companyFilter,
     futureEventFilter,
@@ -6159,9 +6206,41 @@ export default function TicketBookingList() {
           </div>
 
           <div className="flex-1 min-w-0">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              {t('checkInDateRange')}
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700">
+                {dateRangeBasis === 'submit_on' ? t('submitDateRange') : t('checkInDateRange')}
+              </label>
+              <div
+                className="inline-flex rounded-md border border-gray-200 p-0.5 bg-white"
+                role="group"
+                aria-label={t('dateRangeBasisAria')}
+              >
+                <button
+                  type="button"
+                  onClick={() => setDateRangeBasis('check_in')}
+                  aria-pressed={dateRangeBasis === 'check_in'}
+                  className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium transition-colors ${
+                    dateRangeBasis === 'check_in'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('dateRangeBasisTourDate')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateRangeBasis('submit_on')}
+                  aria-pressed={dateRangeBasis === 'submit_on'}
+                  className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium transition-colors ${
+                    dateRangeBasis === 'submit_on'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('dateRangeBasisSubmitOn')}
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-1.5">
               <div className="relative min-w-0 flex-1">
                 <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
@@ -6320,6 +6399,17 @@ export default function TicketBookingList() {
           </div>
         </div>
       </div>
+
+      {showVendorPeriodStats ? (
+        <TicketBookingVendorPeriodStatsPanel
+          vendor={companyFilter}
+          from={checkInDateFrom}
+          to={checkInDateTo}
+          dateBasis={dateRangeBasis}
+          stats={vendorPeriodStats}
+          locale={locale}
+        />
+      ) : null}
 
       {/* 데이터 표시 영역 */}
       <div className="min-w-0 max-w-full px-3 pb-4 sm:px-4">
