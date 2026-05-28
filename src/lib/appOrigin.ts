@@ -30,9 +30,10 @@ export function getAppOrigin(): string {
   return 'http://localhost:3000'
 }
 
-/** Supabase Redirect URLs와 정확히 맞추기 위해 쿼리 없이 /auth/callback 만 사용 */
-export function getOAuthCallbackRedirectUrl(): string {
-  return `${getAppOrigin()}/auth/callback`
+/** Supabase Redirect URLs와 정확히 맞추기: /{locale}/auth/callback (쿼리 없음) */
+export function getOAuthCallbackRedirectUrl(locale: string): string {
+  const loc = locale === 'en' || locale === 'ko' ? locale : 'ko'
+  return `${getAppOrigin()}/${loc}/auth/callback`
 }
 
 export function stashOAuthCallbackLocale(locale: string): void {

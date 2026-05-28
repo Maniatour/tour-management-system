@@ -3,21 +3,9 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
-import { stashOAuthCallbackLocale } from '@/lib/appOrigin'
 import { completeOAuthCallback } from '@/lib/authCallback'
 
 const CALLBACK_FAILSAFE_MS = 18_000
-
-/** 구 redirect URL(/ko/auth/callback#…) → /auth/callback#… (hash 유지) */
-function redirectLocaleCallbackToCanonical(validLocale: string) {
-  if (typeof window === 'undefined') return false
-  const { pathname, search, hash } = window.location
-  if (!/^\/(ko|en)\/auth\/callback\/?$/.test(pathname)) return false
-  stashOAuthCallbackLocale(validLocale)
-  const qs = search ? search : ''
-  window.location.replace(`/auth/callback${qs}${hash}`)
-  return true
-}
 
 function AuthCallbackLoading() {
   return (
@@ -38,6 +26,7 @@ function AuthCallbackContent() {
   const validLocale = locale === 'ko' || locale === 'en' ? locale : 'ko'
   const [error, setError] = useState<string | null>(null)
   const finishedRef = useRef(false)
+  const startedRef = useRef(false)
 
   const redirectTo = (() => {
     const raw = searchParams?.get('redirectTo')
@@ -48,8 +37,8 @@ function AuthCallbackContent() {
   })()
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (redirectLocaleCallbackToCanonical(validLocale)) return
+    if (typeof window === 'undefined' || startedRef.current) return
+    startedRef.current = true
 
     let cancelled = false
 
@@ -102,7 +91,9 @@ function AuthCallbackContent() {
       cancelled = true
       clearTimeout(failsafe)
     }
-  }, [router, validLocale, redirectTo, searchParams])
+    // OAuth 콜백은 마운트 1회만 처리 (searchParams 참조 변경 시 무한 재시도 방지)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

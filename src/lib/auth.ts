@@ -99,10 +99,9 @@ export async function signInWithGoogle(locale: string = 'ko') {
       }
     }
 
-    // Supabase Redirect URLs는 경로·쿼리까지 정확히 일치해야 함.
-    // ?locale= 은 허용 목록 불일치 시 Site URL(localhost)로 폴백되므로 sessionStorage에 보관.
+    // Supabase Redirect URLs는 경로까지 정확히 일치해야 함 (예: /ko/auth/callback).
     stashOAuthCallbackLocale(locale)
-    const redirectTo = getOAuthCallbackRedirectUrl()
+    const redirectTo = getOAuthCallbackRedirectUrl(locale)
 
     console.log('Starting Google sign in...', {
       origin,

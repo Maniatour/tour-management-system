@@ -120,7 +120,8 @@ Supabase 대시보드에서 다음 설정을 완료하세요:
      - 여러 도메인·www를 쓰면 각각 추가 (예: `https://www.kovegas.com/auth/callback`)
      - Vercel 프리뷰를 쓰면 `https://*.vercel.app/auth/callback` 형태도 추가
    - `redirectTo`가 목록에 없으면 Supabase가 **Site URL**(localhost로 두었을 때)로 리다이렉트합니다.
-   - 앱은 `redirectTo`로 `{origin}/auth/callback` 만 보냅니다 (쿼리 없음, `src/lib/auth.ts`). locale은 sessionStorage에 잠시 보관합니다.
+   - 앱은 `redirectTo`로 `{origin}/{locale}/auth/callback` 을 보냅니다 (예: `https://www.kovegas.com/ko/auth/callback`, `src/lib/auth.ts`).
+   - 구 URL `/auth/callback` 로 오면 자동으로 `/{locale}/auth/callback` 으로 넘깁니다.
    - Vercel **Production** 환경 변수: `NEXT_PUBLIC_SITE_URL=https://kovegas.com` (끝 슬래시 없음)
 
 ### 4. Google Cloud Console 설정
