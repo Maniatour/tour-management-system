@@ -3,19 +3,19 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
+import { stashOAuthCallbackLocale } from '@/lib/appOrigin'
 import { completeOAuthCallback } from '@/lib/authCallback'
 
 const CALLBACK_FAILSAFE_MS = 18_000
 
-/** 구 redirect URL(/ko/auth/callback#…) → /auth/callback?locale=ko#… (hash 유지) */
+/** 구 redirect URL(/ko/auth/callback#…) → /auth/callback#… (hash 유지) */
 function redirectLocaleCallbackToCanonical(validLocale: string) {
   if (typeof window === 'undefined') return false
   const { pathname, search, hash } = window.location
   if (!/^\/(ko|en)\/auth\/callback\/?$/.test(pathname)) return false
-  const params = new URLSearchParams(search)
-  if (!params.get('locale')) params.set('locale', validLocale)
-  const qs = params.toString()
-  window.location.replace(`/auth/callback${qs ? `?${qs}` : ''}${hash}`)
+  stashOAuthCallbackLocale(validLocale)
+  const qs = search ? search : ''
+  window.location.replace(`/auth/callback${qs}${hash}`)
   return true
 }
 

@@ -1,3 +1,8 @@
+import {
+  getAppOrigin,
+  getOAuthCallbackRedirectUrl,
+  stashOAuthCallbackLocale,
+} from './appOrigin'
 import { createClientSupabase } from './supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -84,24 +89,25 @@ export async function signInWithGoogle(locale: string = 'ko') {
   try {
     const supabase = createClientSupabase()
     
-    // origin이 안전하게 설정되었는지 확인
-    const origin = window.location.origin
+    const origin = getAppOrigin()
     if (!origin) {
-      return { 
-        error: { 
-          message: 'Unable to determine origin. Please refresh the page and try again.', 
-          status: 400 
-        } 
+      return {
+        error: {
+          message: 'Unable to determine origin. Please refresh the page and try again.',
+          status: 400,
+        },
       }
     }
-    
-    // locale 경로(/ko/auth/callback)는 dev에서 간헐적 404 — 루트 콜백 + locale 쿼리 사용
-    const redirectTo = `${origin}/auth/callback?locale=${encodeURIComponent(locale)}`
-    
+
+    // Supabase Redirect URLs는 경로·쿼리까지 정확히 일치해야 함.
+    // ?locale= 은 허용 목록 불일치 시 Site URL(localhost)로 폴백되므로 sessionStorage에 보관.
+    stashOAuthCallbackLocale(locale)
+    const redirectTo = getOAuthCallbackRedirectUrl()
+
     console.log('Starting Google sign in...', {
       origin,
       locale,
-      redirectTo
+      redirectTo,
     })
     
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -201,16 +207,16 @@ export async function resetPassword(email: string) {
   try {
     const supabase = createClientSupabase()
     
-    const origin = window.location.origin
+    const origin = getAppOrigin()
     if (!origin) {
-      return { 
-        error: { 
-          message: 'Unable to determine origin. Please refresh the page and try again.', 
-          status: 400 
-        } 
+      return {
+        error: {
+          message: 'Unable to determine origin. Please refresh the page and try again.',
+          status: 400,
+        },
       }
     }
-    
+
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${origin}/auth/reset-password`,
     })

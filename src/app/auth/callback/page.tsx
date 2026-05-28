@@ -3,17 +3,10 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
+import { resolveOAuthCallbackLocale } from '@/lib/appOrigin'
 import { completeOAuthCallback } from '@/lib/authCallback'
 
 const CALLBACK_FAILSAFE_MS = 18_000
-
-function detectLocale(): string {
-  if (typeof window === 'undefined') return 'ko'
-  const saved = localStorage.getItem('preferred-locale')
-  if (saved === 'en' || saved === 'ko') return saved
-  const browserLang = navigator.language || ''
-  return browserLang.startsWith('en') ? 'en' : 'ko'
-}
 
 function AuthCallbackLoading() {
   return (
@@ -36,9 +29,7 @@ function AuthCallbackContent() {
     if (typeof window === 'undefined') return
 
     let cancelled = false
-    const localeParam = searchParams?.get('locale')
-    const locale =
-      localeParam === 'en' || localeParam === 'ko' ? localeParam : detectLocale()
+    const locale = resolveOAuthCallbackLocale(searchParams?.get('locale'))
     const redirectRaw = searchParams?.get('redirectTo')
     const redirectTo =
       redirectRaw &&
