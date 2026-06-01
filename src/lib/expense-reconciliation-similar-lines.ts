@@ -15,6 +15,7 @@ export type ExpenseReconSourceTable =
   | 'tour_expenses'
   | 'ticket_bookings'
   | 'tour_hotel_bookings'
+  | 'cash_transactions'
 
 export type ExpenseStatementReconContext = {
   sourceTable: ExpenseReconSourceTable
@@ -255,6 +256,176 @@ async function attachExistingMatches(
       allocated_sum: allocated
     }
   })
+}
+
+export type LinkedStatementLinesForSource = {
+  rows: SimilarStatementLineRow[]
+  /** statement_line_id → 이 원장 행에 배정된 금액 */
+  allocatedByLineId: Map<string, number>
+}
+
+/** 이 원장 행에 연결된 명세 줄 — 유사 후보와 무관하게 항상 조회 */
+export async function fetchLinkedStatementLineRowsForExpenseSource(
+  supabase: SupabaseClient,
+  params: {
+    sourceTable: ExpenseReconSourceTable
+    sourceId: string
+    dateYmd: string
+    ledgerAmount: number
+  }
+): Promise<LinkedStatementLinesForSource> {
+  const { sourceTable, sourceId, dateYmd, ledgerAmount } = params
+  const absLedger = Math.abs(ledgerAmount)
+  const tol = amountTolerance(absLedger)
+
+  type MatchRow = { id: string; statement_line_id: string; matched_amount: number | string | null }
+  const matches: MatchRow[] = []
+
+  const { data: matchRows, error: matchErr } = await supabase
+    .from('reconciliation_matches')
+    .select('id, statement_line_id, matched_amount')
+    .eq('source_table', sourceTable)
+    .eq('source_id', sourceId)
+  if (matchErr) throw matchErr
+  for (const row of (matchRows || []) as MatchRow[]) {
+    const lid = String(row.statement_line_id ?? '').trim()
+    if (lid) matches.push(row)
+  }
+
+  if (EXPENSE_TABLES_WITH_STATEMENT_LINE_ID.includes(sourceTable)) {
+    const { data: legacyRow } = await supabase
+      .from(sourceTable)
+      .select('statement_line_id')
+      .eq('id', sourceId)
+      .maybeSingle()
+    const legacyLineId = String((legacyRow as { statement_line_id?: string | null } | null)?.statement_line_id ?? '').trim()
+    if (
+      legacyLineId &&
+      !matches.some((m) => m.statement_line_id === legacyLineId)
+    ) {
+      matches.push({ id: '', statement_line_id: legacyLineId, matched_amount: null })
+    }
+  }
+
+  if (matches.length === 0) {
+    return { rows: [], allocatedByLineId: new Map() }
+  }
+
+  const allocatedByLineId = new Map<string, number>()
+  const lineIds = [...new Set(matches.map((m) => m.statement_line_id))]
+  const lineAmtById = new Map<string, number>()
+
+  type LineRow = {
+    id: string
+    statement_import_id: string | null
+    posted_date: string | null
+    amount: number | string | null
+    direction: string | null
+    description: string | null
+    merchant: string | null
+    matched_status: string | null
+  }
+  const lineById = new Map<string, LineRow>()
+  for (let i = 0; i < lineIds.length; i += 80) {
+    const chunk = lineIds.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('statement_lines')
+      .select(
+        'id, statement_import_id, posted_date, amount, direction, description, merchant, matched_status'
+      )
+      .in('id', chunk)
+    if (error) throw error
+    for (const line of (data || []) as LineRow[]) {
+      if (line.id) {
+        lineById.set(line.id, line)
+        lineAmtById.set(line.id, Math.abs(Number(line.amount ?? 0)))
+      }
+    }
+  }
+
+  for (const m of matches) {
+    const lid = m.statement_line_id
+    let alloc = 0
+    if (m.matched_amount != null && m.matched_amount !== '') {
+      alloc = Math.abs(Number(m.matched_amount))
+    } else {
+      alloc = lineAmtById.get(lid) ?? absLedger
+    }
+    allocatedByLineId.set(lid, alloc)
+  }
+
+  const importIds = [
+    ...new Set(
+      [...lineById.values()]
+        .map((l) => String(l.statement_import_id ?? '').trim())
+        .filter(Boolean)
+    ),
+  ]
+  const importToAccount = new Map<string, string>()
+  for (let i = 0; i < importIds.length; i += 80) {
+    const chunk = importIds.slice(i, i + 80)
+    const { data } = await supabase
+      .from('statement_imports')
+      .select('id, financial_account_id')
+      .in('id', chunk)
+    for (const im of (data || []) as { id: string; financial_account_id: string | null }[]) {
+      if (im.id && im.financial_account_id) {
+        importToAccount.set(im.id, String(im.financial_account_id))
+      }
+    }
+  }
+
+  const accountIds = [...new Set([...importToAccount.values()])]
+  const accountNameById = new Map<string, string>()
+  for (let i = 0; i < accountIds.length; i += 80) {
+    const chunk = accountIds.slice(i, i + 80)
+    const { data } = await supabase.from('financial_accounts').select('id, name').in('id', chunk)
+    for (const a of (data || []) as { id: string; name: string | null }[]) {
+      if (a.id) accountNameById.set(a.id, String(a.name ?? '').trim() || a.id)
+    }
+  }
+
+  const candidates: Omit<SimilarStatementLineRow, 'existing_matches' | 'allocated_sum'>[] = []
+  for (const m of matches) {
+    const line = lineById.get(m.statement_line_id)
+    if (!line) continue
+    const lineAmount = Number(line.amount ?? 0)
+    const absLine = Math.abs(lineAmount)
+    const amountDiff = Math.abs(absLine - absLedger)
+    const posted = String(line.posted_date ?? '').slice(0, 10)
+    const dayDiff = dayDiffFromYmd(posted, dateYmd)
+    const importId = String(line.statement_import_id ?? '')
+    const accountId = importToAccount.get(importId) || ''
+    candidates.push({
+      id: String(line.id),
+      financial_account_id: accountId,
+      financial_account_name: accountNameById.get(accountId) || accountId || '—',
+      posted_date: posted,
+      direction: String(line.direction ?? ''),
+      amount: lineAmount,
+      description: formatStatementLineDescription(
+        line.description == null ? null : String(line.description),
+        line.merchant == null ? null : String(line.merchant)
+      ),
+      matched_status: String(line.matched_status ?? ''),
+      amount_diff: amountDiff,
+      day_diff: dayDiff,
+      score: 10_000 - amountDiff * 10 - dayDiff,
+    })
+  }
+
+  const rows = await attachExistingMatches(supabase, candidates)
+  rows.sort((a, b) => a.posted_date.localeCompare(b.posted_date) || a.id.localeCompare(b.id))
+  return { rows, allocatedByLineId }
+}
+
+export function mergeLinkedAndCandidateRows(
+  linked: SimilarStatementLineRow[],
+  candidates: SimilarStatementLineRow[]
+): SimilarStatementLineRow[] {
+  if (linked.length === 0) return candidates
+  const linkedIds = new Set(linked.map((r) => r.id))
+  return [...linked, ...candidates.filter((r) => !linkedIds.has(r.id))]
 }
 
 /**
@@ -819,6 +990,7 @@ export async function searchStatementLinesAcrossImports(
 function normalizeLedgerAmountForSource(sourceTable: ExpenseReconSourceTable, statementLineAmount: number): number {
   // 지출 원장값은 양수 저장이 기본이므로(입금 원장은 제외) 절대값으로 맞춥니다.
   if (sourceTable === 'payment_records') return statementLineAmount
+  if (sourceTable === 'cash_transactions') return Math.abs(statementLineAmount)
   return Math.abs(statementLineAmount)
 }
 
@@ -1222,6 +1394,12 @@ export async function replaceExpenseReconciliationMatch(
       if (updErr) throw updErr
     } else if (sourceTable === 'tour_hotel_bookings') {
       const { error: updErr } = await supabase.from('tour_hotel_bookings').update({ total_price: ledgerAmount }).eq('id', sourceId)
+      if (updErr) throw updErr
+    } else if (sourceTable === 'cash_transactions') {
+      const { error: updErr } = await supabase
+        .from('cash_transactions')
+        .update({ amount: ledgerAmount })
+        .eq('id', sourceId)
       if (updErr) throw updErr
     }
   }

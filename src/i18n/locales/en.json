@@ -1796,6 +1796,11 @@
       "disabledTitle": "This source cannot be linked to bank statements",
       "columnHeaderShort": "Stmt",
       "modalTitle": "Similar bank statement lines",
+      "currentLinksTitle": "Statement lines linked to this expense",
+      "currentLinksCount": "{count} line(s)",
+      "currentLinksHint": "The rows marked “Current link” below are the existing bank/card matches. To change the link, pick another line and click Connect.",
+      "currentLinkBadge": "Current link",
+      "currentLinkAllocated": "Allocated to this expense",
       "modalHint": "Statement lines already linked to other ledger rows are still listed. Linking only changes this row’s statement link; other expenses already tied to the same line stay linked.",
       "modalSplitHint": "One bank line can be split across multiple expenses (e.g. two guide fees $300 + $670 = one $970 deposit). Pick the same statement line from each expense.",
       "modalMultiLineHint": "The opposite case also works: one expense (e.g. hotel) may appear as several bank lines. Turn on “keep existing links” and allocate each line’s amount separately.",
@@ -1887,6 +1892,7 @@
         "tour": "Tour expense",
         "ticketBookings": "Ticket booking",
         "tourHotelBookings": "Tour hotel booking",
+        "cashTransactions": "Cash management",
         "unknown": "Other"
       }
     }
@@ -3089,7 +3095,17 @@
       "editTitle": "Edit Tour Hotel Booking",
       "cancel": "Cancel",
       "save": "Save",
-      "saving": "Saving..."
+      "saving": "Saving...",
+      "paymentMethod": "Payment Method",
+      "select": "Select",
+      "addNew": "Add new",
+      "add": "Add",
+      "selectTourOptional": "Tour Selection (Optional)",
+      "selectTourPlaceholder": "Select tour (Optional)",
+      "selectTourHelpText": "Only tours whose calendar span (start date through end date / end datetime) includes the check-in date are listed. You may leave it blank if the tour is not created yet.",
+      "enterCheckInToLoadTours": "Enter check-in date to load tours.",
+      "loadingTourOptions": "Loading tours…",
+      "noToursInCheckInWindow": "No tours include this check-in date in their schedule."
     },
     "info": {
       "title": "Booking Management Guide",

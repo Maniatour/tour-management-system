@@ -1,5 +1,6 @@
 import { COGS_STANDARD_ROOT_ID } from '@/lib/companyExpenseStandardUnified'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
+import type { TourReferenceSnapshot } from '@/lib/expense-unified-duplicate-scan'
 import { PNL_ANTELOPE_CANYON_ADMISSION_LEAF_ID } from '@/lib/pnlReportDataFetch'
 import { ticketBookingCanyonKeyFromBooking } from '@/lib/ticketBookingDateView'
 import type { PnlExpenseSource } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
@@ -123,4 +124,135 @@ export function companyExpenseTourAnchorYmd(row: {
   const mo = d.getMonth() + 1
   const day = d.getDate()
   return `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+export function normalizePnlTourDateYmd(raw: string | null | undefined): string | null {
+  const s = String(raw ?? '').trim().slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
+}
+
+export type PnlTourDateRowLike = {
+  id: string
+  tour_date?: string | null
+  check_in_date?: string | null
+  reservation_id?: string | null
+  tour_id?: string | null
+  rn_number?: string | null
+  rooms?: unknown
+  submit_on?: string | null
+  accounting_period?: string | null
+}
+
+export type PnlDetailEnrichment = {
+  tour_id: string | null
+  reservation_id: string | null
+  rn_number: string | null
+  booking_rooms: number | null
+}
+
+function normalizePnlLinkId(raw: string | null | undefined): string | null {
+  const s = String(raw ?? '').trim()
+  return s || null
+}
+
+export function buildPnlDetailEnrichmentLookup(
+  groups: { source: PnlExpenseSourceForTourDate; rows: PnlTourDateRowLike[] | null | undefined }[]
+): Map<string, PnlDetailEnrichment> {
+  const out = new Map<string, PnlDetailEnrichment>()
+  for (const { source, rows } of groups) {
+    for (const r of rows || []) {
+      const roomsRaw = r.rooms
+      const roomsNum =
+        roomsRaw == null || roomsRaw === '' ? null : Number.isFinite(Number(roomsRaw)) ? Number(roomsRaw) : null
+      out.set(`${source}:${String(r.id)}`, {
+        tour_id: normalizePnlLinkId(r.tour_id),
+        reservation_id: normalizePnlLinkId(r.reservation_id),
+        rn_number: normalizePnlLinkId(r.rn_number),
+        booking_rooms: roomsNum,
+      })
+    }
+  }
+  return out
+}
+
+export function attachPnlDetailEnrichment<
+  T extends { id: string; source: PnlExpenseSourceForTourDate },
+>(lines: T[], lookup: ReadonlyMap<string, PnlDetailEnrichment>): (T & PnlDetailEnrichment)[] {
+  return lines.map((l) => {
+    const hit = lookup.get(`${l.source}:${l.id}`)
+    return {
+      ...l,
+      tour_id: hit?.tour_id ?? null,
+      reservation_id: hit?.reservation_id ?? null,
+      rn_number: hit?.rn_number ?? null,
+      booking_rooms: hit?.booking_rooms ?? null,
+    }
+  })
+}
+
+/** 통합 PNL 지출 상세 — 출처별 PNL 집계에 쓰는 투어일·체크인·회계기간 앵커 */
+export function pnlDetailTourDateYmd(
+  source: PnlExpenseSourceForTourDate,
+  row: PnlTourDateRowLike,
+  tourDateByReservationId?: ReadonlyMap<string, string>
+): string | null {
+  if (source === 'tour_expenses') {
+    return normalizePnlTourDateYmd(row.tour_date)
+  }
+  if (source === 'reservation_expenses') {
+    const direct = normalizePnlTourDateYmd(row.tour_date)
+    if (direct) return direct
+    const rid = String(row.reservation_id ?? '').trim()
+    if (rid && tourDateByReservationId?.has(rid)) {
+      return normalizePnlTourDateYmd(tourDateByReservationId.get(rid))
+    }
+    return null
+  }
+  if (source === 'ticket_bookings' || source === 'tour_hotel_bookings') {
+    return normalizePnlTourDateYmd(row.check_in_date)
+  }
+  if (source === 'company_expenses') {
+    return normalizePnlTourDateYmd(
+      companyExpenseTourAnchorYmd({
+        submit_on: row.submit_on ?? null,
+        accounting_period: row.accounting_period,
+      })
+    )
+  }
+  return null
+}
+
+export function buildPnlTourDateLookup(
+  groups: { source: PnlExpenseSourceForTourDate; rows: PnlTourDateRowLike[] | null | undefined }[],
+  tourDateByReservationId?: ReadonlyMap<string, string>
+): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const { source, rows } of groups) {
+    for (const r of rows || []) {
+      const ymd = pnlDetailTourDateYmd(source, r, tourDateByReservationId)
+      if (ymd) out.set(`${source}:${String(r.id)}`, ymd)
+    }
+  }
+  return out
+}
+
+export function attachPnlDetailTourDateYmd<
+  T extends { id: string; source: PnlExpenseSourceForTourDate; tour_date_ymd?: string | null },
+>(lines: T[], lookup: ReadonlyMap<string, string>): (T & { tour_date_ymd: string | null })[] {
+  return lines.map((l) => ({
+    ...l,
+    tour_date_ymd: lookup.get(`${l.source}:${l.id}`) ?? l.tour_date_ymd ?? null,
+  }))
+}
+
+export function attachPnlDetailTourReferences<
+  T extends { tour_id?: string | null; tour_reference?: TourReferenceSnapshot | null },
+>(lines: T[], tourRefs: ReadonlyMap<string, TourReferenceSnapshot>): (T & { tour_reference: TourReferenceSnapshot | null })[] {
+  return lines.map((l) => {
+    const tid = l.tour_id?.trim() || ''
+    return {
+      ...l,
+      tour_reference: tid ? tourRefs.get(tid) ?? null : null,
+    }
+  })
 }

@@ -1,12 +1,38 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
 import BookingHistory from './BookingHistory';
 import TourHotelBookingDeletionReviewModal from './TourHotelBookingDeletionReviewModal';
-import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar } from 'lucide-react';
+import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal';
+import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries';
+import {
+  unlinkExpenseReconciliationMatch,
+  type ExpenseStatementReconContext,
+} from '@/lib/expense-reconciliation-similar-lines';
+import {
+  buildTourHotelBookingStatementReconContextResolved,
+  fetchTourHotelBookingStatementReconDisplayByBookingId,
+  isTourHotelBookingStatementReconDisabled,
+  type TourHotelBookingStatementReconDisplay,
+} from '@/lib/tour-hotel-booking-statement-recon';
+import { TicketBookingStatementReconCell } from '@/components/booking/TicketBookingStatementReconCell';
+import {
+  Grid,
+  Calendar as CalendarIcon,
+  Plus,
+  Search,
+  Calendar,
+  Table,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  X,
+} from 'lucide-react';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import { useAuth } from '@/contexts/AuthContext';
 import { isSuperAdminActor } from '@/lib/superAdmin';
@@ -18,6 +44,21 @@ import {
   updateBookingAudit,
   type TeamAuditProfile,
 } from '@/lib/bookingAudit';
+import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
+import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusText } from '@/utils/tourStatusUtils';
+import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent';
+
+interface TourHotelBookingTourMeta {
+  tour_date: string;
+  tour_status?: string | null;
+  total_people?: number;
+  guide_display_name?: string;
+  products?: {
+    name: string;
+    name_en?: string;
+    name_ko?: string;
+  };
+}
 
 interface TourHotelBooking {
   id: string;
@@ -47,19 +88,202 @@ interface TourHotelBooking {
   audited_by_email?: string | null;
   audited_by_name?: string | null;
   audited_by_nick_name?: string | null;
-  tours?: {
-    tour_date: string;
-    products?: {
-      name: string;
-      name_en?: string;
+  tours?: TourHotelBookingTourMeta | undefined;
+}
+
+type HotelTableGroup = {
+  key: string;
+  label: string;
+  rows: TourHotelBooking[];
+  guideDisplayName?: string;
+  totalPeople?: number;
+  tourId?: string;
+  tourStatus?: string | null;
+};
+
+const HOTEL_TABLE_TH =
+  'px-2 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap';
+const HOTEL_TABLE_CELL = 'px-2 py-1.5 text-[11px] text-gray-900 align-middle whitespace-nowrap';
+const HOTEL_DESKTOP_TABLE_COL_COUNT = 17;
+
+const HOTEL_TABLE_GROUP_STYLES: Array<{
+  headerRow: string;
+  mobileSection: string;
+  mobileHeader: string;
+}> = [
+  {
+    headerRow: 'bg-blue-100 border-y border-blue-200 shadow-sm',
+    mobileSection: 'rounded-xl border-2 border-blue-200 bg-blue-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-blue-100 border-b-2 border-blue-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-emerald-100 border-y border-emerald-200 shadow-sm',
+    mobileSection: 'rounded-xl border-2 border-emerald-200 bg-emerald-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-emerald-100 border-b-2 border-emerald-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-violet-100 border-y border-violet-200 shadow-sm',
+    mobileSection: 'rounded-xl border-2 border-violet-200 bg-violet-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-violet-100 border-b-2 border-violet-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-amber-100 border-y border-amber-200 shadow-sm',
+    mobileSection: 'rounded-xl border-2 border-amber-200 bg-amber-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-amber-100 border-b-2 border-amber-300 px-3 py-2.5',
+  },
+];
+
+function hotelBookingRnGroupKey(booking: TourHotelBooking): string {
+  const rn = (booking.rn_number ?? '').trim();
+  if (!rn) return `__empty_rn__:${booking.id}`;
+  return rn;
+}
+
+function sortHotelBookingsByCheckIn(a: TourHotelBooking, b: TourHotelBooking): number {
+  const dateA = (a.check_in_date || '').trim();
+  const dateB = (b.check_in_date || '').trim();
+  const c = dateA.localeCompare(dateB);
+  if (c !== 0) return c;
+  return a.id.localeCompare(b.id);
+}
+
+function buildHotelRnGroups(
+  bookings: TourHotelBooking[]
+): { key: string; label: string; rows: TourHotelBooking[] }[] {
+  const dateSorted = [...bookings].sort(sortHotelBookingsByCheckIn);
+  const map = new Map<string, TourHotelBooking[]>();
+  for (const b of dateSorted) {
+    const k = hotelBookingRnGroupKey(b);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(b);
+  }
+  const groups = [...map.entries()].map(([key, rows]) => {
+    const rowsSorted = [...rows].sort(sortHotelBookingsByCheckIn);
+    const label = key.startsWith('__empty_rn__:') ? 'RN# 없음' : key;
+    const first = rowsSorted[0]!;
+    const groupSortKey = `${first.check_in_date || ''}\0${first.id}\0${key}`;
+    return { key, label, rows: rowsSorted, groupSortKey };
+  });
+  groups.sort((a, b) => a.groupSortKey.localeCompare(b.groupSortKey));
+  return groups.map(({ key, label, rows }) => ({ key, label, rows }));
+}
+
+function buildHotelTourGroups(
+  bookings: TourHotelBooking[],
+  locale: string,
+  getProductName: (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => string
+): HotelTableGroup[] {
+  const dateSorted = [...bookings].sort(sortHotelBookingsByCheckIn);
+  const linked = new Map<string, TourHotelBooking[]>();
+  const unlinked: TourHotelBooking[] = [];
+
+  for (const b of dateSorted) {
+    const tid = b.tour_id?.trim();
+    if (!tid) {
+      unlinked.push(b);
+      continue;
+    }
+    if (!linked.has(tid)) linked.set(tid, []);
+    linked.get(tid)!.push(b);
+  }
+
+  const groups: Array<HotelTableGroup & { groupSortKey: string }> = [];
+
+  for (const [tid, rows] of linked.entries()) {
+    const rowsSorted = [...rows].sort(sortHotelBookingsByCheckIn);
+    const first = rowsSorted[0]!;
+    const productName = getProductName(first.tours?.products);
+    const tourDate = first.tours?.tour_date || first.check_in_date || '';
+    const headline = productName
+      ? `${tourDate} · ${productName}`
+      : locale.startsWith('ko')
+        ? `투어 (${tid.slice(0, 8)}…)`
+        : `Tour (${tid.slice(0, 8)}…)`;
+    const groupSortKey = `${tourDate}\0${headline}\0${tid}`;
+    const guideDisplayName = first.tours?.guide_display_name?.trim() || undefined;
+    const totalPeopleRaw = first.tours?.total_people;
+    const totalPeople =
+      totalPeopleRaw != null && Number.isFinite(Number(totalPeopleRaw))
+        ? Number(totalPeopleRaw)
+        : undefined;
+    const tourStatus = first.tours?.tour_status?.trim() || undefined;
+    const group: HotelTableGroup & { groupSortKey: string } = {
+      key: `tour:${tid}`,
+      label: headline,
+      rows: rowsSorted,
+      groupSortKey,
+      tourId: tid,
     };
-  } | undefined;
+    if (guideDisplayName) group.guideDisplayName = guideDisplayName;
+    if (totalPeople != null) group.totalPeople = totalPeople;
+    if (tourStatus) group.tourStatus = tourStatus;
+    groups.push(group);
+  }
+
+  if (unlinked.length > 0) {
+    const rowsSorted = [...unlinked].sort(sortHotelBookingsByCheckIn);
+    const label = locale.startsWith('ko') ? '투어 미연결' : 'Tour not linked';
+    groups.push({
+      key: '__unlinked__',
+      label,
+      rows: rowsSorted,
+      groupSortKey: `\uffff${label}`,
+    });
+  }
+
+  groups.sort((a, b) => a.groupSortKey.localeCompare(b.groupSortKey));
+  return groups.map(({ key, label, rows, guideDisplayName, totalPeople, tourId, tourStatus }) => {
+    const out: HotelTableGroup = { key, label, rows };
+    if (guideDisplayName) out.guideDisplayName = guideDisplayName;
+    if (totalPeople != null) out.totalPeople = totalPeople;
+    if (tourId) out.tourId = tourId;
+    if (tourStatus) out.tourStatus = tourStatus;
+    return out;
+  });
+}
+
+function buildHotelDateGroups(
+  bookings: TourHotelBooking[],
+  locale: string
+): { key: string; label: string; rows: TourHotelBooking[] }[] {
+  const map = new Map<string, TourHotelBooking[]>();
+  for (const b of bookings) {
+    const ymd = (b.check_in_date || '').trim().slice(0, 10) || '__no_date__';
+    if (!map.has(ymd)) map.set(ymd, []);
+    map.get(ymd)!.push(b);
+  }
+  const groups = [...map.entries()].map(([key, rows]) => {
+    const rowsSorted = [...rows].sort(sortHotelBookingsByCheckIn);
+    const label =
+      key === '__no_date__'
+        ? locale.startsWith('ko')
+          ? '날짜 없음'
+          : 'No date'
+        : key;
+    return { key, label, rows: rowsSorted, groupSortKey: key === '__no_date__' ? '\uffff' : key };
+  });
+  groups.sort((a, b) => a.groupSortKey.localeCompare(b.groupSortKey));
+  return groups.map(({ key, label, rows }) => ({ key, label, rows }));
+}
+
+/** 체크인 기간 필터 — 연도 프리셋 (투어 호텔 부킹 관리) */
+const HOTEL_CHECK_IN_YEAR_PRESETS = [2025, 2026] as const;
+
+function hotelCheckInYearRange(year: number): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}
+
+function isHotelCheckInYearPresetActive(from: string, to: string, year: number): boolean {
+  const { from: yFrom, to: yTo } = hotelCheckInYearRange(year);
+  return from === yFrom && to === yTo;
 }
 
 export default function TourHotelBookingList() {
   const locale = useLocale();
   const t = useTranslations('booking.calendar');
   const tAudit = useTranslations('booking.audit');
+  const tStmtRecon = useTranslations('expenses.statementRecon');
+  const tRes = useTranslations('reservations');
   const { user, userPosition } = useAuth();
   const teamAuditProfileRef = useRef<TeamAuditProfile | null>(null);
   const [bookingAuditSavingId, setBookingAuditSavingId] = useState<string | null>(null);
@@ -72,6 +296,8 @@ export default function TourHotelBookingList() {
     [user?.email, userPosition]
   );
   const [bookings, setBookings] = useState<TourHotelBooking[]>([]);
+  const bookingsRef = useRef<TourHotelBooking[]>([]);
+  bookingsRef.current = bookings;
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingBooking, setEditingBooking] = useState<TourHotelBooking | null>(null);
@@ -84,10 +310,26 @@ export default function TourHotelBookingList() {
   const [hideAuditedFilter, setHideAuditedFilter] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
-  const [viewMode, setViewMode] = useRoutePersistedState<'card' | 'calendar'>(
+  const [viewMode, setViewMode] = useRoutePersistedState<'card' | 'calendar' | 'table'>(
     'tour-hotel-bookings-view',
     'calendar'
   );
+  const [hotelTableLayout, setHotelTableLayout] = useRoutePersistedState<
+    'flat' | 'byRn' | 'byTour' | 'byDate'
+  >('tour-hotel-bookings-table-layout', 'flat');
+  const [sortField, setSortField] = useState<'date' | 'submit_on' | null>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState(50);
+  const [statementReconciledIds, setStatementReconciledIds] = useState<Set<string>>(() => new Set());
+  const [statementReconDisplay, setStatementReconDisplay] = useState<
+    Map<string, TourHotelBookingStatementReconDisplay[]>
+  >(() => new Map());
+  const [stmtReconOpen, setStmtReconOpen] = useState(false);
+  const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null);
+  const [stmtReconUnlinkingId, setStmtReconUnlinkingId] = useState<string | null>(null);
+  const statementReconScrollRef = useRef<{ x: number; y: number } | null>(null);
+  const statementReconFetchGenRef = useRef(0);
 
   // 상품 이름을 로케일에 따라 반환하는 함수
   const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
@@ -140,6 +382,9 @@ export default function TourHotelBookingList() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TourHotelBooking[]>([]);
   const [hotelDeletionReviewOpen, setHotelDeletionReviewOpen] = useState(false);
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(
+    null
+  );
 
   useEffect(() => {
     fetchBookings();
@@ -268,43 +513,127 @@ export default function TourHotelBookingList() {
 
       const tourIds = [...new Set(bookingsWithTourId.map(booking => booking.tour_id))];
 
+      type TourRow = {
+        id: string;
+        tour_date: string;
+        tour_status?: string | null;
+        tour_guide_id?: string | null;
+        reservation_ids?: unknown;
+        products: { name: string; name_en?: string; name_ko?: string } | null;
+      };
+
       const { data: toursData, error: toursError } = await supabase
         .from('tours')
         .select(`
           id,
           tour_date,
+          tour_status,
+          tour_guide_id,
+          reservation_ids,
           products (
             name,
-            name_en
+            name_en,
+            name_ko
           )
         `)
-        .in('id', tourIds) as { data: Array<{ id: string; tour_date: string; products: { name: string; name_en?: string } | null }> | null; error: Error | null };
+        .in('id', tourIds) as { data: TourRow[] | null; error: Error | null };
 
       if (toursError) {
         console.warn('투어 정보 조회 오류:', toursError);
         return;
       }
 
-      const toursMap = new Map<string, { id: string; tour_date: string; products: { name: string; name_en?: string } | null }>();
-      (toursData || []).forEach(tour => {
+      const toursMap = new Map<string, TourRow>();
+      (toursData || []).forEach((tour) => {
         toursMap.set(tour.id, tour);
       });
 
-      const bookingsWithTours: TourHotelBooking[] = bookingsData.map(booking => {
+      const staffEmailSet = new Set<string>();
+      for (const tour of toursData || []) {
+        const g = tour.tour_guide_id?.trim();
+        if (g) staffEmailSet.add(g);
+      }
+      const staffDisplayByEmailLower = new Map<string, string>();
+      const staffEmails = [...staffEmailSet];
+      const TEAM_STAFF_BATCH = 80;
+      for (let si = 0; si < staffEmails.length; si += TEAM_STAFF_BATCH) {
+        const chunk = staffEmails.slice(si, si + TEAM_STAFF_BATCH);
+        const { data: teamRows, error: teamStaffErr } = await supabase
+          .from('team')
+          .select('email, name_ko, nick_name')
+          .in('email', chunk);
+        if (teamStaffErr) {
+          console.warn('호텔 부킹 투어 staff(team) 조회:', teamStaffErr);
+          continue;
+        }
+        for (const m of teamRows || []) {
+          const em = m.email?.trim();
+          if (!em) continue;
+          const label = String(m.nick_name || m.name_ko || em).trim();
+          staffDisplayByEmailLower.set(em.toLowerCase(), label || em);
+        }
+      }
+      const resolveStaffDisplay = (raw: string | null | undefined): string => {
+        const s = raw?.trim();
+        if (!s) return '';
+        return staffDisplayByEmailLower.get(s.toLowerCase()) || s;
+      };
+
+      const allResIds = new Set<string>();
+      for (const tour of toursData || []) {
+        for (const rid of normalizeReservationIds(tour.reservation_ids)) {
+          allResIds.add(rid);
+        }
+      }
+      const resIdList = [...allResIds];
+      type ResPeopleRow = { id: string; total_people: number | null; status: string | null };
+      let reservationsRows: ResPeopleRow[] = [];
+      const RES_BATCH = 100;
+      for (let i = 0; i < resIdList.length; i += RES_BATCH) {
+        const chunk = resIdList.slice(i, i + RES_BATCH);
+        const { data: resPage, error: resErr } = await supabase
+          .from('reservations')
+          .select('id, total_people, status')
+          .in('id', chunk);
+        if (resErr) {
+          console.warn('호텔 부킹 투어 예약 인원 조회:', resErr);
+          break;
+        }
+        if (resPage?.length) reservationsRows = reservationsRows.concat(resPage as ResPeopleRow[]);
+      }
+      const resById = new Map<string, ResPeopleRow>();
+      for (const r of reservationsRows) resById.set(r.id, r);
+      const tourTotalPeopleByTourId = new Map<string, number>();
+      for (const tour of toursData || []) {
+        let sum = 0;
+        for (const rid of normalizeReservationIds(tour.reservation_ids)) {
+          const r = resById.get(rid);
+          if (!r || isReservationCancelledStatus(r.status)) continue;
+          sum += Number(r.total_people) || 0;
+        }
+        tourTotalPeopleByTourId.set(tour.id, sum);
+      }
+
+      const bookingsWithTours: TourHotelBooking[] = bookingsData.map((booking) => {
         if (booking.tour_id && toursMap.has(booking.tour_id)) {
           const tour = toursMap.get(booking.tour_id)!;
+          const toursPart: TourHotelBookingTourMeta = {
+            tour_date: tour.tour_date,
+            total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
+          };
+          if (tour.tour_status?.trim()) toursPart.tour_status = tour.tour_status.trim();
+          const guide = resolveStaffDisplay(tour.tour_guide_id);
+          if (guide) toursPart.guide_display_name = guide;
           if (tour.products) {
-            return {
-              ...booking,
-              tours: {
-                tour_date: tour.tour_date,
-                products: tour.products,
-              },
-            } as TourHotelBooking;
+            toursPart.products = {
+              name: tour.products.name,
+              ...(tour.products.name_en ? { name_en: tour.products.name_en } : {}),
+              ...(tour.products.name_ko ? { name_ko: tour.products.name_ko } : {}),
+            };
           }
           return {
             ...booking,
-            tours: { tour_date: tour.tour_date },
+            tours: toursPart,
           } as TourHotelBooking;
         }
         return booking;
@@ -409,6 +738,129 @@ export default function TourHotelBookingList() {
     });
   }, [bookings, hideAuditedFilter, searchTerm, statusFilter, checkInDateFrom, checkInDateTo, hasCheckInDateRangeFilter]);
 
+  const handleSort = useCallback(
+    (field: 'date' | 'submit_on') => {
+      if (sortField === field) {
+        setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortField(field);
+        setSortDirection(field === 'date' ? 'desc' : 'desc');
+      }
+    },
+    [sortField]
+  );
+
+  const sortedBookings = useMemo(() => {
+    if (!sortField) return filteredBookings;
+    const arr = [...filteredBookings];
+    if (sortField === 'date') {
+      arr.sort((a, b) => {
+        const dateA = a.check_in_date ? new Date(a.check_in_date).getTime() : 0;
+        const dateB = b.check_in_date ? new Date(b.check_in_date).getTime() : 0;
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+    } else if (sortField === 'submit_on') {
+      arr.sort((a, b) => {
+        const dateA = a.submit_on ? new Date(a.submit_on).getTime() : 0;
+        const dateB = b.submit_on ? new Date(b.submit_on).getTime() : 0;
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+    }
+    return arr;
+  }, [filteredBookings, sortField, sortDirection]);
+
+  const dateViewGroups = useMemo(() => {
+    if (hotelTableLayout !== 'byDate') return null;
+    return buildHotelDateGroups(sortedBookings, locale);
+  }, [hotelTableLayout, sortedBookings, locale]);
+
+  const listTotalPages = useMemo(() => {
+    if (hotelTableLayout === 'byDate' && dateViewGroups) {
+      return Math.max(1, Math.ceil(dateViewGroups.length / listPageSize) || 1);
+    }
+    return Math.max(1, Math.ceil(sortedBookings.length / listPageSize) || 1);
+  }, [hotelTableLayout, dateViewGroups, sortedBookings.length, listPageSize]);
+
+  const listPageEffective = Math.min(listPage, listTotalPages);
+
+  const pagedSortedBookings = useMemo(() => {
+    const start = (listPageEffective - 1) * listPageSize;
+    return sortedBookings.slice(start, start + listPageSize);
+  }, [sortedBookings, listPageEffective, listPageSize]);
+
+  const pagedDateViewGroups = useMemo(() => {
+    if (!dateViewGroups) return null;
+    const start = (listPageEffective - 1) * listPageSize;
+    return dateViewGroups.slice(start, start + listPageSize);
+  }, [dateViewGroups, listPageEffective, listPageSize]);
+
+  const hotelTableGroups = useMemo((): HotelTableGroup[] | null => {
+    if (hotelTableLayout === 'byRn') return buildHotelRnGroups(pagedSortedBookings);
+    if (hotelTableLayout === 'byTour') {
+      return buildHotelTourGroups(pagedSortedBookings, locale, getProductName);
+    }
+    if (hotelTableLayout === 'byDate' && pagedDateViewGroups) {
+      return pagedDateViewGroups.map((g) => ({
+        key: g.key,
+        label: g.label,
+        rows: g.rows,
+      }));
+    }
+    return null;
+  }, [hotelTableLayout, pagedSortedBookings, locale, pagedDateViewGroups]);
+
+  const tableVisibleBookingIdsKey = useMemo(() => {
+    if (viewMode !== 'table') return '';
+    const ids: string[] = [];
+    if (hotelTableGroups) {
+      for (const g of hotelTableGroups) {
+        for (const row of g.rows) {
+          if (row.id) ids.push(row.id);
+        }
+      }
+    } else {
+      for (const b of pagedSortedBookings) {
+        if (b.id) ids.push(b.id);
+      }
+    }
+    return [...new Set(ids)].sort().join('|');
+  }, [viewMode, hotelTableGroups, pagedSortedBookings]);
+
+  useEffect(() => {
+    if (!tableVisibleBookingIdsKey) {
+      setStatementReconciledIds(new Set());
+      setStatementReconDisplay(new Map());
+      return;
+    }
+    const ids = tableVisibleBookingIdsKey.split('|').filter(Boolean);
+    const gen = ++statementReconFetchGenRef.current;
+    let cancelled = false;
+    void Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'tour_hotel_bookings', ids),
+      fetchTourHotelBookingStatementReconDisplayByBookingId(supabase, ids),
+    ]).then(([reconciled, displayMap]) => {
+      if (!cancelled && gen === statementReconFetchGenRef.current) {
+        setStatementReconciledIds(reconciled);
+        setStatementReconDisplay(displayMap);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tableVisibleBookingIdsKey]);
+
+  useEffect(() => {
+    setListPage(1);
+  }, [
+    hotelTableLayout,
+    viewMode,
+    searchTerm,
+    statusFilter,
+    checkInDateFrom,
+    checkInDateTo,
+    hideAuditedFilter,
+  ]);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
@@ -448,12 +900,14 @@ export default function TourHotelBookingList() {
   };
 
   const getPaymentMethodText = (method: string) => {
-    switch (method) {
-      case 'credit_card': return '신용카드';
-      case 'bank_transfer': return '계좌이체';
-      case 'cash': return '현금';
-      case 'other': return '기타';
-      default: return method;
+    const m = (method ?? '').trim();
+    if (!m) return '';
+    switch (m) {
+      case 'credit_card': return locale === 'ko' ? '신용카드' : 'Credit card';
+      case 'bank_transfer': return locale === 'ko' ? '계좌이체' : 'Bank transfer';
+      case 'cash': return locale === 'ko' ? '현금' : 'Cash';
+      case 'other': return locale === 'ko' ? '기타' : 'Other';
+      default: return m;
     }
   };
 
@@ -482,6 +936,514 @@ export default function TourHotelBookingList() {
     setSelectedBookings(uniqueBookings);
     setShowBookingModal(true);
   };
+
+  const restoreStatementReconScroll = useCallback(() => {
+    const saved = statementReconScrollRef.current;
+    statementReconScrollRef.current = null;
+    if (!saved) return;
+    requestAnimationFrame(() => window.scrollTo(saved.x, saved.y));
+  }, []);
+
+  const refreshStatementReconDisplay = useCallback(async (bookingIds: string[]) => {
+    const ids = [...new Set(bookingIds.filter(Boolean))];
+    if (ids.length === 0) return;
+    const [reconciled, displayMap] = await Promise.all([
+      fetchReconciledSourceIdsBatched(supabase, 'tour_hotel_bookings', ids),
+      fetchTourHotelBookingStatementReconDisplayByBookingId(supabase, ids),
+    ]);
+    setStatementReconciledIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (reconciled.has(id)) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+    setStatementReconDisplay((prev) => {
+      const next = new Map(prev);
+      for (const id of ids) {
+        const lines = displayMap.get(id);
+        if (lines && lines.length > 0) next.set(id, lines);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const patchHotelBookingAfterStatementRecon = useCallback(async (bookingId: string) => {
+    const { data, error } = await supabase
+      .from('tour_hotel_bookings')
+      .select('id, total_price')
+      .eq('id', bookingId)
+      .maybeSingle();
+    if (error || !data) return;
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? { ...b, total_price: Number(data.total_price ?? b.total_price) }
+          : b
+      )
+    );
+  }, []);
+
+  const openStatementRecon = useCallback(async (booking: TourHotelBooking) => {
+    if (isTourHotelBookingStatementReconDisabled(booking)) return;
+    statementReconScrollRef.current = { x: window.scrollX, y: window.scrollY };
+    const ctx = await buildTourHotelBookingStatementReconContextResolved(supabase, booking);
+    if (!ctx) return;
+    setStmtReconCtx(ctx);
+    setStmtReconOpen(true);
+  }, []);
+
+  const unlinkStatementRecon = useCallback(
+    async (booking: TourHotelBooking, line: TourHotelBookingStatementReconDisplay) => {
+      const key = line.match_id || `${booking.id}:${line.statement_line_id}`;
+      if (stmtReconUnlinkingId) return;
+      const ok = window.confirm(tStmtRecon('unlinkStatementMatchConfirm'));
+      if (!ok) return;
+      setStmtReconUnlinkingId(key);
+      try {
+        await unlinkExpenseReconciliationMatch(supabase, {
+          sourceTable: 'tour_hotel_bookings',
+          sourceId: booking.id,
+          matchId: line.match_id,
+          statementLineId: line.statement_line_id,
+        });
+        await refreshStatementReconDisplay([booking.id]);
+        await patchHotelBookingAfterStatementRecon(booking.id);
+      } catch (e) {
+        console.error('명세 연결 해제 오류:', e);
+        alert(e instanceof Error ? e.message : tStmtRecon('unlinkStatementMatchError'));
+      } finally {
+        setStmtReconUnlinkingId(null);
+      }
+    },
+    [
+      stmtReconUnlinkingId,
+      tStmtRecon,
+      refreshStatementReconDisplay,
+      patchHotelBookingAfterStatementRecon,
+    ]
+  );
+
+  const refreshAfterStatementReconApply = useCallback(async () => {
+    const ctx = stmtReconCtx;
+    const ids = new Set<string>();
+    if (ctx?.sourceTable === 'tour_hotel_bookings' && ctx.sourceId) ids.add(ctx.sourceId);
+    for (const id of tableVisibleBookingIdsKey.split('|').filter(Boolean)) ids.add(id);
+    await refreshStatementReconDisplay([...ids]);
+    if (ctx?.sourceTable === 'tour_hotel_bookings' && ctx.sourceId) {
+      await patchHotelBookingAfterStatementRecon(ctx.sourceId);
+    }
+    restoreStatementReconScroll();
+  }, [
+    stmtReconCtx,
+    tableVisibleBookingIdsKey,
+    refreshStatementReconDisplay,
+    patchHotelBookingAfterStatementRecon,
+    restoreStatementReconScroll,
+  ]);
+
+  const renderStatementReconCell = useCallback(
+    (booking: TourHotelBooking) => (
+      <TicketBookingStatementReconCell
+        matched={statementReconciledIds.has(booking.id)}
+        disabled={isTourHotelBookingStatementReconDisabled(booking)}
+        lines={statementReconDisplay.get(booking.id) ?? []}
+        titleMatched={tStmtRecon('matchedTitle')}
+        titleUnmatched={tStmtRecon('unmatchedTitle')}
+        titleDisabled={tStmtRecon('disabledTitle')}
+        onOpenPicker={() => void openStatementRecon(booking)}
+        onUnlink={(line) => void unlinkStatementRecon(booking, line)}
+        unlinking={Boolean(
+          stmtReconUnlinkingId &&
+            (statementReconDisplay.get(booking.id) ?? []).some(
+              (l) =>
+                stmtReconUnlinkingId === (l.match_id || `${booking.id}:${l.statement_line_id}`)
+            )
+        )}
+        unlinkTitle={tStmtRecon('unlinkStatementMatch')}
+        unlinkAriaLabel={tStmtRecon('unlinkStatementMatchAria')}
+        compact
+      />
+    ),
+    [
+      statementReconciledIds,
+      statementReconDisplay,
+      openStatementRecon,
+      unlinkStatementRecon,
+      stmtReconUnlinkingId,
+      tStmtRecon,
+    ]
+  );
+
+  const renderHotelTourGroupMeta = (g: Pick<HotelTableGroup, 'guideDisplayName' | 'totalPeople'>) => {
+    if (hotelTableLayout !== 'byTour') return null;
+    const guide = g.guideDisplayName;
+    const people = g.totalPeople;
+    const ko = locale.startsWith('ko');
+    if (!guide && people == null) return null;
+    return (
+      <span className="font-medium text-neutral-700">
+        {guide ? (
+          <>
+            {' · '}
+            {ko ? '가이드 ' : 'Guide '}
+            <span className="text-neutral-900">{guide}</span>
+          </>
+        ) : null}
+        {people != null && Number.isFinite(people) ? (
+          <>
+            {' · '}
+            {ko ? `배정 ${people}명` : `${people} assigned`}
+          </>
+        ) : null}
+      </span>
+    );
+  };
+
+  const openTourDetailModal = useCallback((g: Pick<HotelTableGroup, 'tourId' | 'label'>) => {
+    const tourId = g.tourId?.trim();
+    if (!tourId) return;
+    setTourDetailModal({ tourId, title: g.label });
+  }, []);
+
+  const renderHotelTourGroupTitleBlock = (g: HotelTableGroup, groupHeaderTitle: string) => {
+    const titleText =
+      hotelTableLayout === 'byDate'
+        ? locale === 'ko'
+          ? `체크인 ${groupHeaderTitle}`
+          : `Check-in ${groupHeaderTitle}`
+        : groupHeaderTitle;
+    const statusLabel =
+      g.tourStatus != null && String(g.tourStatus).trim()
+        ? getTourStatusText(String(g.tourStatus), locale.startsWith('ko') ? 'ko' : 'en')
+        : null;
+    const inner = (
+      <>
+        {titleText}
+        {renderHotelTourGroupMeta(g)}
+        {hotelTableLayout === 'byTour' && statusLabel ? (
+          <span
+            className={`ml-1.5 inline-flex align-middle px-2 py-0.5 text-[10px] font-semibold rounded-full ${getTourStatusColor(g.tourStatus ?? null)}`}
+          >
+            {statusLabel}
+          </span>
+        ) : null}
+      </>
+    );
+    if (hotelTableLayout === 'byTour' && g.tourId) {
+      return (
+        <button
+          type="button"
+          onClick={() => openTourDetailModal(g)}
+          className="text-left hover:text-blue-800 hover:underline decoration-blue-400 underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+          title={locale === 'ko' ? '클릭하여 투어 상세 보기' : 'Click to view tour details'}
+        >
+          {inner}
+        </button>
+      );
+    }
+    return <span>{inner}</span>;
+  };
+
+  useEffect(() => {
+    if (!tourDetailModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTourDetailModal(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tourDetailModal]);
+
+  const renderHotelTableThead = () => (
+    <thead className="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th className={`${HOTEL_TABLE_TH} sticky left-0 z-10 min-w-[5rem] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]`}>
+          {t('status')}
+        </th>
+        <th className={HOTEL_TABLE_TH}>{locale === 'ko' ? '호텔' : 'Hotel'}</th>
+        <th className={HOTEL_TABLE_TH}>{locale === 'ko' ? '도시' : 'City'}</th>
+        <th
+          className={`${HOTEL_TABLE_TH} cursor-pointer hover:bg-gray-100 select-none`}
+          onClick={() => handleSort('date')}
+        >
+          <span className="inline-flex items-center gap-1">
+            {t('checkInDate')}
+            {sortField === 'date' ? (
+              <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+            ) : null}
+          </span>
+        </th>
+        <th className={HOTEL_TABLE_TH}>{t('checkOutDate')}</th>
+        <th className={HOTEL_TABLE_TH}>{t('rooms')}</th>
+        <th className={HOTEL_TABLE_TH}>{t('roomType')}</th>
+        <th className={`${HOTEL_TABLE_TH} hidden lg:table-cell`}>{t('unitPrice')}</th>
+        <th className={`${HOTEL_TABLE_TH} hidden lg:table-cell`}>{t('totalPrice')}</th>
+        <th className={`${HOTEL_TABLE_TH} hidden md:table-cell`}>{t('paymentMethod')}</th>
+        <th className={`${HOTEL_TABLE_TH} hidden md:table-cell`}>CC</th>
+        <th className={`${HOTEL_TABLE_TH} hidden md:table-cell`}>RN#</th>
+        <th className={`${HOTEL_TABLE_TH} hidden lg:table-cell min-w-[9rem]`}>{t('tour')}</th>
+        <th className={`${HOTEL_TABLE_TH} hidden xl:table-cell`}>{locale === 'ko' ? '예약자' : 'Guest'}</th>
+        <th className={`${HOTEL_TABLE_TH} text-center min-w-[8rem]`}>{tStmtRecon('columnHeaderShort')}</th>
+        <th
+          className={`${HOTEL_TABLE_TH} cursor-pointer hover:bg-gray-100 select-none`}
+          onClick={() => handleSort('submit_on')}
+        >
+          <span className="inline-flex items-center gap-1">
+            {locale === 'ko' ? '제출일' : 'Submitted'}
+            {sortField === 'submit_on' ? (
+              <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+            ) : null}
+          </span>
+        </th>
+        <th className={`${HOTEL_TABLE_TH} min-w-[7.5rem]`}>{tAudit('columnHeader')}</th>
+        <th className={`${HOTEL_TABLE_TH} min-w-[6rem]`}>{locale === 'ko' ? '작업' : 'Actions'}</th>
+      </tr>
+    </thead>
+  );
+
+  const renderHotelTableRow = (booking: TourHotelBooking) => (
+    <tr
+      key={booking.id}
+      className="align-middle bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+      onClick={() => handleEdit(booking)}
+      title={locale === 'ko' ? '클릭하여 편집' : 'Click to edit'}
+    >
+      <td
+        className={`${HOTEL_TABLE_CELL} sticky left-0 z-10 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+          {getStatusText(booking.status)}
+        </span>
+      </td>
+      <td className={`${HOTEL_TABLE_CELL} max-w-[10rem] truncate font-medium`}>{booking.hotel || '-'}</td>
+      <td className={HOTEL_TABLE_CELL}>{booking.city || '-'}</td>
+      <td className={HOTEL_TABLE_CELL}>{booking.check_in_date || '-'}</td>
+      <td className={HOTEL_TABLE_CELL}>{booking.check_out_date || '-'}</td>
+      <td className={HOTEL_TABLE_CELL}>{booking.rooms ?? '-'}</td>
+      <td className={`${HOTEL_TABLE_CELL} max-w-[8rem] truncate`}>{booking.room_type || '-'}</td>
+      <td className={`${HOTEL_TABLE_CELL} hidden lg:table-cell tabular-nums`}>
+        ${Number(booking.unit_price ?? 0).toLocaleString()}
+      </td>
+      <td className={`${HOTEL_TABLE_CELL} hidden lg:table-cell tabular-nums`}>
+        ${Number(booking.total_price ?? 0).toLocaleString()}
+      </td>
+      <td className={`${HOTEL_TABLE_CELL} hidden md:table-cell`}>
+        {getPaymentMethodText(booking.payment_method) || '-'}
+      </td>
+      <td className={`${HOTEL_TABLE_CELL} hidden md:table-cell`} onClick={(e) => e.stopPropagation()}>
+        <span className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
+          {getCCStatusText(booking.cc)}
+        </span>
+      </td>
+      <td className={`${HOTEL_TABLE_CELL} hidden md:table-cell font-mono text-[10px]`}>
+        {booking.rn_number || '-'}
+      </td>
+      <td className={`${HOTEL_TABLE_CELL} hidden lg:table-cell max-w-[10rem]`}>
+        {booking.tours ? (
+          <div className="truncate">
+            <div>{booking.tours.tour_date}</div>
+            <div className="text-[10px] text-gray-500 truncate">
+              {getProductName(booking.tours?.products)}
+            </div>
+          </div>
+        ) : (
+          '-'
+        )}
+      </td>
+      <td className={`${HOTEL_TABLE_CELL} hidden xl:table-cell max-w-[8rem] truncate`}>
+        {booking.reservation_name || '-'}
+      </td>
+      <td
+        className={`${HOTEL_TABLE_CELL} min-w-[7rem] max-w-[11rem]`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {renderStatementReconCell(booking)}
+      </td>
+      <td className={HOTEL_TABLE_CELL}>{booking.submit_on?.slice(0, 10) || '-'}</td>
+      <td className={HOTEL_TABLE_CELL} onClick={(e) => e.stopPropagation()}>
+        <BookingAuditCell
+          audit={booking}
+          disabled={!user?.email}
+          saving={bookingAuditSavingId === booking.id}
+          onToggle={(next) => void handleToggleHotelBookingAudit(booking, next)}
+          compact
+        />
+      </td>
+      <td className={HOTEL_TABLE_CELL} onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => handleEdit(booking)}
+            className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {t('edit')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleViewHistory(booking.id)}
+            className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600 text-white hover:bg-green-700"
+          >
+            {t('history')}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+
+  const renderHotelMobileCard = (booking: TourHotelBooking) => (
+    <div
+      key={booking.id}
+      className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
+      onClick={() => handleEdit(booking)}
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-sm text-gray-900 truncate">{booking.hotel}</div>
+          <div className="text-xs text-gray-500">{booking.city}</div>
+        </div>
+        <span className={`inline-flex shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+          {getStatusText(booking.status)}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-700">
+        <span className="text-gray-500">{t('checkInDate')}</span>
+        <span>{booking.check_in_date}</span>
+        <span className="text-gray-500">{t('checkOutDate')}</span>
+        <span>{booking.check_out_date}</span>
+        <span className="text-gray-500">{t('rooms')}</span>
+        <span>
+          {booking.rooms} · {booking.room_type || '-'}
+        </span>
+        <span className="text-gray-500">{t('totalPrice')}</span>
+        <span>${Number(booking.total_price ?? 0).toLocaleString()}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+        <BookingAuditCell
+          audit={booking}
+          disabled={!user?.email}
+          saving={bookingAuditSavingId === booking.id}
+          onToggle={(next) => void handleToggleHotelBookingAudit(booking, next)}
+        />
+      </div>
+    </div>
+  );
+
+  const renderHotelTablePagination = () =>
+    sortedBookings.length > 0 ? (
+      <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/90 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <p className="text-xs text-gray-600 sm:text-sm">
+          {hotelTableLayout === 'byDate' && dateViewGroups ? (
+            <>
+              {locale === 'ko' ? '전체' : 'Total'}{' '}
+              <span className="font-semibold text-gray-800">{dateViewGroups.length}</span>
+              {locale === 'ko' ? '일 중 ' : ' days, '}
+              <span className="font-semibold text-gray-800">
+                {(listPageEffective - 1) * listPageSize + 1}
+              </span>
+              –
+              <span className="font-semibold text-gray-800">
+                {Math.min(listPageEffective * listPageSize, dateViewGroups.length)}
+              </span>
+              {locale === 'ko' ? '일째' : ''}
+            </>
+          ) : (
+            <>
+              {locale === 'ko' ? '전체' : 'Total'}{' '}
+              <span className="font-semibold text-gray-800">{sortedBookings.length}</span>
+              {locale === 'ko' ? '건 중 ' : ' items, '}
+              <span className="font-semibold text-gray-800">
+                {(listPageEffective - 1) * listPageSize + 1}
+              </span>
+              –
+              <span className="font-semibold text-gray-800">
+                {Math.min(listPageEffective * listPageSize, sortedBookings.length)}
+              </span>
+              {locale === 'ko' ? '번째' : ''}
+            </>
+          )}
+        </p>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 sm:text-sm">
+            <span className="whitespace-nowrap">
+              {hotelTableLayout === 'byDate'
+                ? locale === 'ko'
+                  ? '페이지당(날짜)'
+                  : 'Per page (dates)'
+                : locale === 'ko'
+                  ? '페이지당'
+                  : 'Per page'}
+            </span>
+            <select
+              value={listPageSize}
+              onChange={(e) => {
+                setListPageSize(Number(e.target.value));
+                setListPage(1);
+              }}
+              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+            >
+              <option value={25}>{hotelTableLayout === 'byDate' ? '25일' : '25건'}</option>
+              <option value={50}>{hotelTableLayout === 'byDate' ? '50일' : '50건'}</option>
+              <option value={100}>{hotelTableLayout === 'byDate' ? '100일' : '100건'}</option>
+              <option value={200}>{hotelTableLayout === 'byDate' ? '200일' : '200건'}</option>
+            </select>
+          </label>
+          <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setListPage(1)}
+              disabled={listPageEffective <= 1}
+              className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+              title={locale === 'ko' ? '첫 페이지' : 'First page'}
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setListPage((p) => {
+                  const cur = Math.min(Math.max(1, p), listTotalPages);
+                  return Math.max(1, cur - 1);
+                })
+              }
+              disabled={listPageEffective <= 1}
+              className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+              title={locale === 'ko' ? '이전' : 'Previous'}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="min-w-[5.5rem] px-2 text-center text-xs font-medium tabular-nums text-gray-800 sm:text-sm">
+              {listPageEffective} / {listTotalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setListPage((p) => {
+                  const cur = Math.min(Math.max(1, p), listTotalPages);
+                  return Math.min(listTotalPages, cur + 1);
+                })
+              }
+              disabled={listPageEffective >= listTotalPages}
+              className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+              title={locale === 'ko' ? '다음' : 'Next'}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setListPage(listTotalPages)}
+              disabled={listPageEffective >= listTotalPages}
+              className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+              title={locale === 'ko' ? '마지막 페이지' : 'Last page'}
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null;
 
   if (loading) {
     return (
@@ -515,6 +1477,7 @@ export default function TourHotelBookingList() {
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              title={locale === 'ko' ? '카드 뷰' : 'Card view'}
             >
               <Grid size={14} />
             </button>
@@ -525,8 +1488,20 @@ export default function TourHotelBookingList() {
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              title={locale === 'ko' ? '달력 뷰' : 'Calendar view'}
             >
               <CalendarIcon size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-md transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title={locale === 'ko' ? '테이블 뷰' : 'Table view'}
+            >
+              <Table size={14} />
             </button>
           </div>
           <button
@@ -605,6 +1580,36 @@ export default function TourHotelBookingList() {
                   className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
                 />
               </div>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {HOTEL_CHECK_IN_YEAR_PRESETS.map((year) => {
+                const active = isHotelCheckInYearPresetActive(checkInDateFrom, checkInDateTo, year);
+                return (
+                  <button
+                    key={year}
+                    type="button"
+                    onClick={() => {
+                      if (active) {
+                        setCheckInDateFrom('');
+                        setCheckInDateTo('');
+                      } else {
+                        const { from, to } = hotelCheckInYearRange(year);
+                        setCheckInDateFrom(from);
+                        setCheckInDateTo(to);
+                      }
+                    }}
+                    aria-pressed={active}
+                    aria-label={t('checkInYearPresetAria', { year })}
+                    className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                      active
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {year}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -886,6 +1891,126 @@ export default function TourHotelBookingList() {
               })()}
             </div>
           </div>
+        ) : viewMode === 'table' ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="text-xs font-medium text-gray-600">
+                {locale === 'ko' ? '테이블 표시' : 'Table layout'}
+              </span>
+              <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-white shadow-sm">
+                {(
+                  [
+                    ['flat', locale === 'ko' ? '전체' : 'All'],
+                    ['byRn', 'RN#별'],
+                    ['byTour', locale === 'ko' ? '투어별' : 'By tour'],
+                    ['byDate', locale === 'ko' ? '날짜별' : 'By date'],
+                  ] as const
+                ).map(([layout, label]) => (
+                  <button
+                    key={layout}
+                    type="button"
+                    onClick={() => setHotelTableLayout(layout)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      hotelTableLayout === layout
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
+              <div className="block space-y-3 sm:hidden p-2">
+                {sortedBookings.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || hideAuditedFilter
+                      ? locale === 'ko'
+                        ? '검색 조건에 맞는 부킹이 없습니다.'
+                        : 'No bookings match your filters.'
+                      : locale === 'ko'
+                        ? '등록된 투어 호텔 부킹이 없습니다.'
+                        : 'No tour hotel bookings registered.'}
+                  </div>
+                ) : hotelTableGroups ? (
+                  <div className="space-y-5">
+                    {hotelTableGroups.map((g, gi) => {
+                      const palette = HOTEL_TABLE_GROUP_STYLES[gi % HOTEL_TABLE_GROUP_STYLES.length]!;
+                      const totalRooms = g.rows.reduce((s, b) => s + (b.rooms || 0), 0);
+                      const groupHeaderTitle =
+                        hotelTableLayout === 'byRn' ? `RN# ${g.label}` : g.label;
+                      return (
+                        <div key={g.key} className={palette.mobileSection}>
+                          <div className={`${palette.mobileHeader} text-xs`}>
+                            <div className="text-sm font-bold text-neutral-900 tracking-tight leading-snug">
+                              {renderHotelTourGroupTitleBlock(g, groupHeaderTitle)}
+                            </div>
+                            <div className="mt-1 text-neutral-700 font-medium">
+                              {locale === 'ko' ? '부킹' : 'Bookings'}: {g.rows.length}
+                              {locale === 'ko' ? '건' : ''} · {locale === 'ko' ? '객실' : 'Rooms'} {totalRooms}
+                            </div>
+                          </div>
+                          <div className="space-y-2.5 p-2.5 bg-white/80">
+                            {g.rows.map((booking) => renderHotelMobileCard(booking))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  pagedSortedBookings.map((booking) => renderHotelMobileCard(booking))
+                )}
+              </div>
+              <div className="hidden min-w-0 w-full max-w-full overflow-x-auto sm:block">
+                <table className="w-full min-w-[1180px] border-collapse text-[11px]">
+                  {renderHotelTableThead()}
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sortedBookings.length === 0 ? (
+                      <tr>
+                        <td colSpan={HOTEL_DESKTOP_TABLE_COL_COUNT} className="px-4 py-10 text-center text-sm text-gray-500">
+                          {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || hideAuditedFilter
+                            ? locale === 'ko'
+                              ? '검색 조건에 맞는 부킹이 없습니다.'
+                              : 'No bookings match your filters.'
+                            : locale === 'ko'
+                              ? '등록된 투어 호텔 부킹이 없습니다.'
+                              : 'No tour hotel bookings registered.'}
+                        </td>
+                      </tr>
+                    ) : hotelTableGroups ? (
+                      hotelTableGroups.flatMap((g, gi) => {
+                        const palette = HOTEL_TABLE_GROUP_STYLES[gi % HOTEL_TABLE_GROUP_STYLES.length]!;
+                        const totalRooms = g.rows.reduce((s, b) => s + (b.rooms || 0), 0);
+                        const groupHeaderTitle =
+                          hotelTableLayout === 'byRn' ? `RN# ${g.label}` : g.label;
+                        return [
+                          <tr key={`${g.key}-header`} className={palette.headerRow}>
+                            <td colSpan={HOTEL_DESKTOP_TABLE_COL_COUNT} className="px-3 py-2 text-xs font-bold text-neutral-900">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span>
+                                  {renderHotelTourGroupTitleBlock(g, groupHeaderTitle)}
+                                </span>
+                                <span className="font-medium text-neutral-700">
+                                  {g.rows.length}
+                                  {locale === 'ko' ? '건' : ' bookings'} · {locale === 'ko' ? '객실' : 'Rooms'}{' '}
+                                  {totalRooms}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>,
+                          ...g.rows.map((booking) => renderHotelTableRow(booking)),
+                        ];
+                      })
+                    ) : (
+                      pagedSortedBookings.map((booking) => renderHotelTableRow(booking))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {renderHotelTablePagination()}
+          </>
         ) : (
           /* 카드뷰 - 모바일 최적화 */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
@@ -1007,7 +2132,7 @@ export default function TourHotelBookingList() {
           </div>
         )}
 
-        {filteredBookings.length === 0 && (
+        {filteredBookings.length === 0 && viewMode !== 'table' && (
           <div className="text-center py-12 text-gray-500">
             <div className="text-lg font-medium mb-2">
               {searchTerm || statusFilter !== 'all' || hasCheckInDateRangeFilter || hideAuditedFilter
@@ -1061,6 +2186,65 @@ export default function TourHotelBookingList() {
           void fetchBookings();
         }}
       />
+
+      <ExpenseStatementSimilarLinesModal
+        open={stmtReconOpen}
+        onOpenChange={(open) => {
+          setStmtReconOpen(open);
+          if (!open) restoreStatementReconScroll();
+        }}
+        context={stmtReconCtx}
+        onApplied={() => void refreshAfterStatementReconApply()}
+      />
+
+      {tourDetailModal &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-2 sm:p-3"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hotel-booking-tour-detail-modal-title"
+            onClick={() => setTourDetailModal(null)}
+          >
+            <div
+              className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                <h3
+                  id="hotel-booking-tour-detail-modal-title"
+                  className="text-lg font-semibold text-gray-900 truncate pr-2"
+                  title={tourDetailModal.title}
+                >
+                  {tourDetailModal.title}
+                </h3>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a
+                    href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                  >
+                    {tRes('card.openTourInNewTab')}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setTourDetailModal(null)}
+                    className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                    aria-label={tRes('card.close')}
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 bg-gray-50">
+                <TourDetailModalContent tourId={tourDetailModal.tourId} />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* 부킹 상세 모달 */}
       {showBookingModal && (

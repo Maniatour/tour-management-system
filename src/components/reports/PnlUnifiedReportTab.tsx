@@ -5,8 +5,15 @@ import { useLocale } from 'next-intl'
 import { PieChart, Save, BookOpen, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries'
+import {
+  fetchDismissedDuplicateKeys,
+  fetchDismissedDuplicateBatchInfo,
+  clearAllDismissedDuplicateKeys,
+  undoLastDismissedDuplicateBatch,
+} from '@/lib/pnlDuplicateDismissals'
 import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fiscal-settings'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import { resolveCompanyExpensePnlLeafId } from '@/lib/companyExpenseStandardUnified'
@@ -17,6 +24,7 @@ import PnlUnifiedExpenseDetailDialog, {
   type PnlExpenseSource,
 } from '@/components/reports/PnlUnifiedExpenseDetailDialog'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
+import PnlTaxReadinessSection from '@/components/reports/PnlTaxReadinessSection'
 import PnlUnifiedDepositSection from '@/components/reports/PnlUnifiedDepositSection'
 import PnlExcludedFromReportSection from '@/components/reports/PnlExcludedFromReportSection'
 import PnlStatementInflowDetailDialog, {
@@ -31,10 +39,18 @@ import PnlUnifiedNetProfitSection, {
 import type { PnlStatementInflowLine } from '@/lib/pnlReportDataFetch'
 import {
   buildCogsLeafIdSet,
+  buildPnlDetailEnrichmentLookup,
+  buildPnlTourDateLookup,
+  attachPnlDetailEnrichment,
+  attachPnlDetailTourDateYmd,
+  attachPnlDetailTourReferences,
   companyExpenseTourAnchorYmd,
+  normalizePnlTourDateYmd,
   pnlUsesTourDateBasis,
   resolveTicketBookingPnlLeafId,
+  type PnlTourDateRowLike,
 } from '@/lib/pnlCogsTourDate'
+import { fetchTourReferenceMap } from '@/lib/expense-unified-duplicate-scan'
 import {
   fetchCompanyExpensesForPnlByAccountingPeriod,
   fetchCompanyExpensesForPnlReport,
@@ -131,6 +147,8 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
   const [standardCategoryRows, setStandardCategoryRows] = useState<ExpenseStandardCategoryPickRow[]>([])
   const [pnlDetailLines, setPnlDetailLines] = useState<PnlDetailLine[]>([])
   const [pnlExcludedExpenseLines, setPnlExcludedExpenseLines] = useState<PnlDetailLine[]>([])
+  const [dismissedDuplicateKeys, setDismissedDuplicateKeys] = useState<Set<string>>(() => new Set())
+  const [dismissedUndoInfo, setDismissedUndoInfo] = useState({ batchCount: 0, lastBatchSize: 0 })
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailDrill, setDetailDrill] = useState<PnlDrillState | null>(null)
   const [excludedExpenseDetailOpen, setExcludedExpenseDetailOpen] = useState(false)
@@ -178,8 +196,9 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     setLedgerBase(editLedger)
   }
 
-  const loadPnl = useCallback(async () => {
-    setLoading(true)
+  const loadPnl = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false
+    if (!silent) setLoading(true)
     const startISO = new Date(dateRange.start + 'T00:00:00').toISOString()
     const endISO = new Date(dateRange.end + 'T23:59:59.999').toISOString()
 
@@ -249,7 +268,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
       cePeriodRes.error
     if (fetchErr) {
       console.error('통합 PNL 지출 조회 오류:', fetchErr)
-      setLoading(false)
+      if (!silent) setLoading(false)
       return
     }
     const te = teRes.data
@@ -265,8 +284,12 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     const cogsTourDateOpts = { cogsLeafIds }
 
     const monthly = new Map<string, Map<string, number>>()
-    const detailLines: PnlDetailLine[] = []
-    const excludedDetailLines: PnlDetailLine[] = []
+    type PnlDetailLineWithoutContext = Omit<
+      PnlDetailLine,
+      'tour_date_ymd' | 'tour_id' | 'reservation_id' | 'rn_number' | 'booking_rooms' | 'tour_reference'
+    >
+    const detailLines: PnlDetailLineWithoutContext[] = []
+    const excludedDetailLines: PnlDetailLineWithoutContext[] = []
     let excluded = 0
 
     const addMonthlyYm = (bucketKey: string, ym: string, amount: number) => {
@@ -877,43 +900,183 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     const tbIds = detailLines.filter((l) => l.source === 'ticket_bookings').map((l) => l.id)
     const thIds = detailLines.filter((l) => l.source === 'tour_hotel_bookings').map((l) => l.id)
 
-    const [teRe, reRe, ceRe, tbRe, thRe] = await Promise.all([
-      fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', teIds),
-      fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reIds),
-      fetchReconciledSourceIdsBatched(supabase, 'company_expenses', ceIds),
-      fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', tbIds),
-      fetchReconciledSourceIdsBatched(supabase, 'tour_hotel_bookings', thIds),
+    const reservationIdsForTourDate = [
+      ...new Set(
+        [...(re || []), ...(reByTourDate || [])]
+          .map((row) => String((row as { reservation_id?: string }).reservation_id ?? '').trim())
+          .filter(Boolean)
+      ),
+    ]
+
+    const tourDateByReservationIdPromise = (async () => {
+      const map = new Map<string, string>()
+      for (let i = 0; i < reservationIdsForTourDate.length; i += 200) {
+        const chunk = reservationIdsForTourDate.slice(i, i + 200)
+        const { data: resRows, error: resTourErr } = await supabase
+          .from('reservations')
+          .select('id, tour_date')
+          .in('id', chunk)
+        if (resTourErr) {
+          console.error('예약 tour_date 조회 오류:', resTourErr)
+          break
+        }
+        for (const row of resRows || []) {
+          const ymd = normalizePnlTourDateYmd(String(row.tour_date ?? ''))
+          if (ymd) map.set(String(row.id), ymd)
+        }
+      }
+      return map
+    })()
+
+    const enrichmentLookup = buildPnlDetailEnrichmentLookup([
+      { source: 'tour_expenses', rows: te as PnlTourDateRowLike[] },
+      { source: 'tour_expenses', rows: teByTourDate as PnlTourDateRowLike[] },
+      { source: 'reservation_expenses', rows: re as PnlTourDateRowLike[] },
+      { source: 'reservation_expenses', rows: reByTourDate as PnlTourDateRowLike[] },
+      { source: 'ticket_bookings', rows: tbSubmit as PnlTourDateRowLike[] },
+      { source: 'ticket_bookings', rows: tbByTourDate as PnlTourDateRowLike[] },
+      { source: 'tour_hotel_bookings', rows: th as PnlTourDateRowLike[] },
+      { source: 'tour_hotel_bookings', rows: thByTourDate as PnlTourDateRowLike[] },
     ])
 
-    const detailLinesWithRecon: PnlDetailLine[] = detailLines.map((l) => ({
-      ...l,
-      statementReconciled:
-        (l.source === 'tour_expenses' && teRe.has(l.id)) ||
-        (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
-        (l.source === 'company_expenses' && ceRe.has(l.id)) ||
-        (l.source === 'ticket_bookings' && tbRe.has(l.id)) ||
-        (l.source === 'tour_hotel_bookings' && thRe.has(l.id)),
-    }))
+    const tourIdsForRef = [
+      ...new Set(
+        [...enrichmentLookup.values()]
+          .map((e) => e.tour_id?.trim() || '')
+          .filter(Boolean)
+      ),
+    ]
+    const tourRefsPromise = fetchTourReferenceMap(tourIdsForRef)
+
+    const [teRe, reRe, ceRe, tbRe, thRe, dismissedKeys, dismissedUndo, tourDateByReservationId, tourRefs] =
+      await Promise.all([
+        fetchReconciledSourceIdsBatched(supabase, 'tour_expenses', teIds),
+        fetchReconciledSourceIdsBatched(supabase, 'reservation_expenses', reIds),
+        fetchReconciledSourceIdsBatched(supabase, 'company_expenses', ceIds),
+        fetchReconciledSourceIdsBatched(supabase, 'ticket_bookings', tbIds),
+        fetchReconciledSourceIdsBatched(supabase, 'tour_hotel_bookings', thIds),
+        fetchDismissedDuplicateKeys(),
+        fetchDismissedDuplicateBatchInfo(),
+        tourDateByReservationIdPromise,
+        tourRefsPromise,
+      ])
+
+    const tourDateLookup = buildPnlTourDateLookup(
+      [
+        { source: 'tour_expenses', rows: te as PnlTourDateRowLike[] },
+        { source: 'tour_expenses', rows: teByTourDate as PnlTourDateRowLike[] },
+        { source: 'reservation_expenses', rows: re as PnlTourDateRowLike[] },
+        { source: 'reservation_expenses', rows: reByTourDate as PnlTourDateRowLike[] },
+        { source: 'company_expenses', rows: ce as PnlTourDateRowLike[] },
+        { source: 'company_expenses', rows: ceByAccountingPeriod as PnlTourDateRowLike[] },
+        { source: 'ticket_bookings', rows: tbSubmit as PnlTourDateRowLike[] },
+        { source: 'ticket_bookings', rows: tbByTourDate as PnlTourDateRowLike[] },
+        { source: 'tour_hotel_bookings', rows: th as PnlTourDateRowLike[] },
+        { source: 'tour_hotel_bookings', rows: thByTourDate as PnlTourDateRowLike[] },
+      ],
+      tourDateByReservationId
+    )
+
+    const detailLinesWithRecon: PnlDetailLine[] = attachPnlDetailTourReferences(
+      attachPnlDetailEnrichment(
+        attachPnlDetailTourDateYmd(
+          detailLines.map((l) => ({
+            ...l,
+            statementReconciled:
+              (l.source === 'tour_expenses' && teRe.has(l.id)) ||
+              (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
+              (l.source === 'company_expenses' && ceRe.has(l.id)) ||
+              (l.source === 'ticket_bookings' && tbRe.has(l.id)) ||
+              (l.source === 'tour_hotel_bookings' && thRe.has(l.id)),
+          })),
+          tourDateLookup
+        ),
+        enrichmentLookup
+      ),
+      tourRefs
+    )
 
     const cells: Record<string, Record<string, number>> = {}
     for (const [cat, mmap] of monthly) {
       cells[cat] = Object.fromEntries(mmap)
     }
 
-    const excludedWithRecon: PnlDetailLine[] = excludedDetailLines.map((l) => ({
-      ...l,
-      statementReconciled:
-        (l.source === 'tour_expenses' && teRe.has(l.id)) ||
-        (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
-        (l.source === 'company_expenses' && ceRe.has(l.id)),
-    }))
+    const excludedWithRecon: PnlDetailLine[] = attachPnlDetailTourReferences(
+      attachPnlDetailEnrichment(
+        attachPnlDetailTourDateYmd(
+          excludedDetailLines.map((l) => ({
+            ...l,
+            statementReconciled:
+              (l.source === 'tour_expenses' && teRe.has(l.id)) ||
+              (l.source === 'reservation_expenses' && reRe.has(l.id)) ||
+              (l.source === 'company_expenses' && ceRe.has(l.id)),
+          })),
+          tourDateLookup
+        ),
+        enrichmentLookup
+      ),
+      tourRefs
+    )
 
     setMonthlyCells(cells)
     setPnlDetailLines(detailLinesWithRecon)
     setPnlExcludedExpenseLines(excludedWithRecon)
+    setDismissedDuplicateKeys(dismissedKeys)
+    setDismissedUndoInfo(dismissedUndo)
     setTotalExcl(excluded)
-    setLoading(false)
+    if (!silent) setLoading(false)
   }, [dateRange, locale])
+
+  const addDismissedDuplicateKeysLocally = useCallback((keys: string[]) => {
+    if (keys.length === 0) return
+    setDismissedDuplicateKeys((prev) => {
+      const next = new Set(prev)
+      for (const k of keys) next.add(k)
+      return next
+    })
+    setDismissedUndoInfo((prev) => ({
+      batchCount: prev.batchCount + 1,
+      lastBatchSize: keys.length,
+    }))
+  }, [])
+
+  const removeDismissedDuplicateKeysLocally = useCallback((keys: string[]) => {
+    if (keys.length === 0) return
+    setDismissedDuplicateKeys((prev) => {
+      const next = new Set(prev)
+      for (const k of keys) next.delete(k)
+      return next
+    })
+    void fetchDismissedDuplicateBatchInfo().then(setDismissedUndoInfo)
+  }, [])
+
+  const undoLastDismissedDuplicateKeysHandler = useCallback(async () => {
+    const n = await undoLastDismissedDuplicateBatch()
+    if (n === 0) {
+      toast.message('되돌릴 «중복 아님» 작업이 없습니다.')
+      return
+    }
+    const [newKeys, newInfo] = await Promise.all([
+      fetchDismissedDuplicateKeys(),
+      fetchDismissedDuplicateBatchInfo(),
+    ])
+    setDismissedDuplicateKeys(newKeys)
+    setDismissedUndoInfo(newInfo)
+    toast.success(`마지막 «중복 아님» 처리 ${n}건을 되돌렸습니다. 중복 의심 후보가 다시 표시됩니다.`)
+  }, [])
+
+  const clearAllDismissedDuplicateKeysHandler = useCallback(async () => {
+    const n = await clearAllDismissedDuplicateKeys()
+    if (n === 0) {
+      toast.message('되돌릴 «중복 아님» 처리가 없습니다.')
+      return
+    }
+    setDismissedDuplicateKeys(new Set())
+    setDismissedUndoInfo({ batchCount: 0, lastBatchSize: 0 })
+    toast.success(`«중복 아님» 처리 ${n}건을 모두 되돌렸습니다. 중복 의심 후보가 다시 표시됩니다.`)
+  }, [])
+
+  const refreshPnlFromDetailDialog = useCallback(() => loadPnl({ silent: true }), [loadPnl])
 
   useEffect(() => {
     loadPnl()
@@ -965,11 +1128,52 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
     return { rowTotals, colTotals, grandTotal }
   }, [monthlyCells, months])
 
+  const expenseDetailDialogs = (
+    <>
+      <PnlUnifiedExpenseDetailDialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        drill={detailDrill}
+        lines={pnlDetailLines}
+        dismissedDuplicateKeys={dismissedDuplicateKeys}
+        onDismissedDuplicateKeysAdded={addDismissedDuplicateKeysLocally}
+        onDismissedDuplicateKeysRemoved={removeDismissedDuplicateKeysLocally}
+        dismissedUndoInfo={dismissedUndoInfo}
+        onUndoLastDismissedDuplicates={undoLastDismissedDuplicateKeysHandler}
+        onClearAllDismissedDuplicates={clearAllDismissedDuplicateKeysHandler}
+        formatMonthLabel={formatMonthLabel}
+        onSaved={refreshPnlFromDetailDialog}
+        expenseStandardCategories={standardCategoryRows}
+        unifiedStandardGroups={unifiedStandardGroups}
+        locale={locale}
+      />
+      <PnlUnifiedExpenseDetailDialog
+        open={excludedExpenseDetailOpen}
+        onOpenChange={setExcludedExpenseDetailOpen}
+        drill={{ mode: 'excluded' }}
+        lines={pnlExcludedExpenseLines}
+        onDismissedDuplicateKeysAdded={addDismissedDuplicateKeysLocally}
+        onDismissedDuplicateKeysRemoved={removeDismissedDuplicateKeysLocally}
+        dismissedUndoInfo={dismissedUndoInfo}
+        onUndoLastDismissedDuplicates={undoLastDismissedDuplicateKeysHandler}
+        onClearAllDismissedDuplicates={clearAllDismissedDuplicateKeysHandler}
+        formatMonthLabel={formatMonthLabel}
+        onSaved={refreshPnlFromDetailDialog}
+        expenseStandardCategories={standardCategoryRows}
+        unifiedStandardGroups={unifiedStandardGroups}
+        locale={locale}
+      />
+    </>
+  )
+
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-      </div>
+      <>
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+        </div>
+        {expenseDetailDialogs}
+      </>
     )
   }
 
@@ -1321,6 +1525,18 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         </div>
       </div>
 
+      <PnlTaxReadinessSection
+        lines={pnlDetailLines}
+        dismissedDuplicateKeys={dismissedDuplicateKeys}
+        dismissedUndoInfo={dismissedUndoInfo}
+        onUndoLastDismissedDuplicates={undoLastDismissedDuplicateKeysHandler}
+        onClearAllDismissedDuplicates={clearAllDismissedDuplicateKeysHandler}
+        onOpenDrill={(drill) => {
+          setDetailDrill(drill)
+          setDetailOpen(true)
+        }}
+      />
+
       <PnlUnifiedNetProfitSection
         months={months}
         depositNet={depositNet}
@@ -1369,27 +1585,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         }}
       />
 
-      <PnlUnifiedExpenseDetailDialog
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        drill={detailDrill}
-        lines={pnlDetailLines}
-        formatMonthLabel={formatMonthLabel}
-        onSaved={loadPnl}
-        expenseStandardCategories={standardCategoryRows}
-        unifiedStandardGroups={unifiedStandardGroups}
-      />
-
-      <PnlUnifiedExpenseDetailDialog
-        open={excludedExpenseDetailOpen}
-        onOpenChange={setExcludedExpenseDetailOpen}
-        drill={{ mode: 'excluded' }}
-        lines={pnlExcludedExpenseLines}
-        formatMonthLabel={formatMonthLabel}
-        onSaved={loadPnl}
-        expenseStandardCategories={standardCategoryRows}
-        unifiedStandardGroups={unifiedStandardGroups}
-      />
+      {expenseDetailDialogs}
 
       <PnlStatementInflowDetailDialog
         open={excludedInflowDetailOpen}

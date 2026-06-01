@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -90,6 +90,7 @@ import {
 } from '@/lib/ticketBookingSoftDelete'
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
 import { isSuperAdminActor } from '@/lib/superAdmin'
+import { isManagerTeamPosition } from '@/lib/roles'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
@@ -523,6 +524,16 @@ export default function ScheduleView() {
     return teamMember?.position?.toLowerCase() === 'super' || userRole === 'admin'
   }, [user, userRole, teamMembers])
 
+  // 스케줄 공유 설정(상품/팀원 선택)을 모든 사용자에게 적용할 수 있는 권한
+  // super/admin 뿐 아니라 Office Manager(매니저)도 포함
+  const canManageSharedSchedule = useMemo(() => {
+    if (isSuperAdmin) return true
+    if (userRole === 'manager') return true
+    if (isManagerTeamPosition(userPosition)) return true
+    const teamMember = teamMembers.find(m => m.email === user?.email)
+    return isManagerTeamPosition(teamMember?.position)
+  }, [isSuperAdmin, userRole, userPosition, teamMembers, user])
+
   /** 배차 표에서 차량명 → VehicleEditModal (super/admin·manager·OP) */
   const canEditVehicleFromSchedule = useMemo(
     () =>
@@ -953,7 +964,7 @@ export default function ScheduleView() {
     key: string,
     value: string[] | number | boolean | Record<string, string[]>
   ) => {
-    if (!isSuperAdmin || !user?.id) return
+    if (!canManageSharedSchedule || !user?.id) return
     
     try {
       if (Array.isArray(value) && value.length === 0) {
@@ -1021,7 +1032,7 @@ export default function ScheduleView() {
       }
 
       // 관리자가 공유 설정으로 저장하는 경우
-      if (saveAsShared && isSuperAdmin) {
+      if (saveAsShared && canManageSharedSchedule) {
         await saveSharedSetting(key, value)
       }
 
@@ -1178,6 +1189,44 @@ export default function ScheduleView() {
       }
     }
   }, [currentDate])
+
+  // 캐시 비우고 새로고침: localStorage 의 스케줄 관련 캐시(특히 공유 설정 캐시)를 모두 지우고
+  // DB 에서 최신 정보를 다시 불러오도록 페이지를 새로고침한다.
+  const [isClearingCache, setIsClearingCache] = useState(false)
+  const handleClearCacheAndRefresh = useCallback(() => {
+    if (pendingCount > 0) {
+      const ok = window.confirm(
+        locale === 'ko'
+          ? '저장하지 않은 변경 사항이 있습니다. 캐시를 비우고 새로고침하면 변경 사항이 사라집니다. 계속할까요?'
+          : 'You have unsaved changes. Clearing cache and refreshing will discard them. Continue?'
+      )
+      if (!ok) return
+    }
+    try {
+      setIsClearingCache(true)
+      // 스케줄 뷰가 사용하는 localStorage 캐시 키 제거 (공유 설정 캐시 + 개인 설정 캐시 + 임시 저장)
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i)
+        if (!key) continue
+        if (
+          key.startsWith('shared_schedule') ||
+          key.startsWith('schedule_selected') ||
+          key === 'schedule_product_colors' ||
+          key === 'schedule_vehicle_row_order' ||
+          key === 'schedule_pending_draft'
+        ) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach((key) => localStorage.removeItem(key))
+    } catch (error) {
+      console.warn('Error clearing schedule cache:', error)
+    } finally {
+      // 캐시를 지운 뒤 DB 기준으로 최신 정보를 다시 로드
+      window.location.reload()
+    }
+  }, [pendingCount, locale])
 
   // 프리셋 id면 스타일 반환, 아니면 레거시 className (하위 호환)
   const getProductDisplayProps = getScheduleProductDisplayProps
@@ -3676,7 +3725,7 @@ export default function ScheduleView() {
     const newSelection = normalizeScheduleSelectedProducts(toggled, products)
     setSelectedProducts(newSelection)
     localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
-    if (isSuperAdmin) {
+    if (canManageSharedSchedule) {
       if (newSelection.length > 0) {
         await saveSharedSetting('schedule_selected_products', newSelection)
         localStorage.setItem('shared_schedule_selected_products', JSON.stringify(newSelection))
@@ -3698,7 +3747,7 @@ export default function ScheduleView() {
     setSelectedTeamMembers(newSelection)
     
     // 관리자가 공유 설정으로 저장하는 경우
-    if (saveAsShared && isSuperAdmin) {
+    if (saveAsShared && canManageSharedSchedule) {
       if (newSelection.length > 0) {
         await saveSharedSetting('schedule_selected_team_members', newSelection)
       }
@@ -3762,7 +3811,7 @@ export default function ScheduleView() {
     newSelection.splice(toIndex, 0, movedItem)
     setSelectedProducts(newSelection)
     localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
-    if (isSuperAdmin) {
+    if (canManageSharedSchedule) {
       await saveSharedSetting('schedule_selected_products', newSelection)
       localStorage.setItem('shared_schedule_selected_products', JSON.stringify(newSelection))
     } else {
@@ -3780,7 +3829,7 @@ export default function ScheduleView() {
     
     // 공유 설정이 존재하면 DB에도 저장 (순서 변경이 다른 사용자에게도 반영)
     const hasSharedSetting = !!localStorage.getItem('shared_schedule_selected_team_members')
-    if (hasSharedSetting && isSuperAdmin) {
+    if (hasSharedSetting && canManageSharedSchedule) {
       await saveSharedSetting('schedule_selected_team_members', newSelection)
     }
     
@@ -5806,6 +5855,18 @@ export default function ScheduleView() {
                   <Plus className="absolute right-1 top-1 h-2.5 w-2.5 sm:h-3 sm:w-3" aria-hidden />
                 </button>
               ) : null}
+
+              {/* 캐시 비우고 새로고침: 새 정보가 바로 반영되지 않을 때 캐시 제거 후 DB 기준으로 다시 로드 */}
+              <button
+                type="button"
+                onClick={handleClearCacheAndRefresh}
+                disabled={isClearingCache}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                title={locale === 'ko' ? '캐시 비우고 새로고침' : 'Clear cache and refresh'}
+                aria-label={locale === 'ko' ? '캐시 비우고 새로고침' : 'Clear cache and refresh'}
+              >
+                <RotateCcw className={`w-4 h-4 sm:w-5 sm:h-5 ${isClearingCache ? 'animate-spin' : ''}`} aria-hidden />
+              </button>
             </div>
           </div>
 
@@ -8466,7 +8527,7 @@ export default function ScheduleView() {
             </div>
 
             <div className="flex flex-col space-y-3">
-              {isSuperAdmin && (
+              {canManageSharedSchedule && (
                 <div className="flex items-center space-x-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <span className="text-sm text-blue-800">
                     적용한 상품 선택·색상이 모든 사용자에게 동일하게 표시됩니다.
@@ -8479,7 +8540,7 @@ export default function ScheduleView() {
                     setSelectedProducts([])
                     await saveUserSetting('schedule_selected_products', [])
                     localStorage.removeItem('schedule_selected_products')
-                    if (isSuperAdmin) {
+                    if (canManageSharedSchedule) {
                       // 데이터베이스에서 공유 설정 삭제
                       await supabase
                         .from('shared_settings')
@@ -8497,7 +8558,7 @@ export default function ScheduleView() {
                     const productsToSave = normalizeScheduleSelectedProducts(selectedProducts, products)
                     setSelectedProducts(productsToSave)
                     localStorage.setItem('schedule_product_colors', JSON.stringify(productColors))
-                    if (isSuperAdmin && productsToSave.length > 0) {
+                    if (canManageSharedSchedule && productsToSave.length > 0) {
                       await saveSharedSetting('schedule_selected_products', productsToSave)
                       await saveSharedSetting('schedule_product_colors', productColors as unknown as string[])
                       localStorage.setItem('shared_schedule_selected_products', JSON.stringify(productsToSave))
@@ -8737,7 +8798,7 @@ export default function ScheduleView() {
             </div>
 
             <div className="flex flex-col space-y-3">
-              {isSuperAdmin && (
+              {canManageSharedSchedule && (
                 <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <input
                     type="checkbox"
@@ -8758,7 +8819,7 @@ export default function ScheduleView() {
                     setShareTeamMembersSetting(false)
                     await saveUserSetting('schedule_selected_team_members', [])
                     localStorage.removeItem('schedule_selected_team_members')
-                    if (isSuperAdmin) {
+                    if (canManageSharedSchedule) {
                       // 데이터베이스에서 공유 설정 삭제
                       await supabase
                         .from('shared_settings')

@@ -11,8 +11,10 @@ import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import type { ExpenseStatementReconContext, SimilarStatementLineRow, SimilarStatementLinesMatchMode } from '@/lib/expense-reconciliation-similar-lines'
 import {
   expenseReconciliationAmountTolerance,
+  fetchLinkedStatementLineRowsForExpenseSource,
   fetchSimilarStatementLinesForExpenseRow,
   fetchStatementLinesForTicketBookingDateProbe,
+  mergeLinkedAndCandidateRows,
   replaceExpenseReconciliationMatch,
   resolveStatementLineConflictsBeforeLink,
   searchStatementLinesAcrossImports,
@@ -154,6 +156,21 @@ async function fetchSourceSummaryInfo(context: ExpenseStatementReconContext): Pr
         secondaryDetail: null
       }
     }
+    case 'cash_transactions': {
+      const { data } = await supabase
+        .from('cash_transactions')
+        .select('transaction_type, description, category, notes')
+        .eq('id', context.sourceId)
+        .maybeSingle()
+      if (!data) return null
+      const type = String(data.transaction_type ?? '').trim()
+      return {
+        paymentMethod: null,
+        primaryDetail: data.description ?? data.category ?? null,
+        secondaryDetail:
+          type === 'deposit' ? '현금 입금' : type === 'withdrawal' ? '현금 출금' : data.category ?? null,
+      }
+    }
     default:
       return base
   }
@@ -163,12 +180,15 @@ export default function ExpenseStatementSimilarLinesModal({
   open,
   onOpenChange,
   context,
-  onApplied
+  onApplied,
+  nestedElevated = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   context: ExpenseStatementReconContext | null
   onApplied?: () => void
+  /** 다른 Dialog(z≥1200) 위에 열 때 — 오버레이·본문 z-[1300] */
+  nestedElevated?: boolean
 }) {
   const t = useTranslations('expenses.statementRecon')
   const { user } = useAuth()
@@ -178,6 +198,8 @@ export default function ExpenseStatementSimilarLinesModal({
     paymentMethodFinancialAccountNameByMethodKey
   } = usePaymentMethodOptions()
   const [rows, setRows] = useState<SimilarStatementLineRow[]>([])
+  const [linkedRows, setLinkedRows] = useState<SimilarStatementLineRow[]>([])
+  const [sourceAllocByLineId, setSourceAllocByLineId] = useState<Map<string, number>>(() => new Map())
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   /** 선택 순서 유지(추가 연결 시 여러 줄을 순서대로 배정) */
@@ -206,25 +228,37 @@ export default function ExpenseStatementSimilarLinesModal({
     setMessage(null)
     setSelectedIdsOrdered([])
     try {
-      const list = ticketDateProbe
-        ? await fetchStatementLinesForTicketBookingDateProbe(supabase, {
+      const linkedPromise = fetchLinkedStatementLineRowsForExpenseSource(supabase, {
+        sourceTable: context.sourceTable,
+        sourceId: context.sourceId,
+        dateYmd: context.dateYmd,
+        ledgerAmount: context.amount,
+      })
+      const candidatesPromise = ticketDateProbe
+        ? fetchStatementLinesForTicketBookingDateProbe(supabase, {
             submitYmd: ticketDateProbe.submitYmd,
             checkInYmd: ticketDateProbe.checkInYmd,
             dayWindow: ticketDateProbe.dayWindow,
             financialAccountId: ticketDateProbe.financialAccountId,
             ledgerAmount: context.amount,
-            limit: 400
+            limit: 400,
           })
-        : await fetchSimilarStatementLinesForExpenseRow(supabase, {
+        : fetchSimilarStatementLinesForExpenseRow(supabase, {
             dateYmd: context.dateYmd,
             amount: context.amount,
             direction: context.direction,
             matchMode,
-            limit: matchMode === 'amountOnly' ? 200 : 100
+            limit: matchMode === 'amountOnly' ? 200 : 100,
           })
-      setRows(list)
+
+      const [linkedPack, list] = await Promise.all([linkedPromise, candidatesPromise])
+      setLinkedRows(linkedPack.rows)
+      setSourceAllocByLineId(linkedPack.allocatedByLineId)
+      setRows(mergeLinkedAndCandidateRows(linkedPack.rows, list))
     } catch (e) {
       setMessage(e instanceof Error ? e.message : t('loadError'))
+      setLinkedRows([])
+      setSourceAllocByLineId(new Map())
       setRows([])
     } finally {
       setLoading(false)
@@ -235,6 +269,8 @@ export default function ExpenseStatementSimilarLinesModal({
     if (open && context) void load()
     if (!open) {
       setRows([])
+      setLinkedRows([])
+      setSourceAllocByLineId(new Map())
       setSelectedIdsOrdered([])
       setMessage(null)
       setMatchMode('dateProximity')
@@ -715,10 +751,14 @@ export default function ExpenseStatementSimilarLinesModal({
   }, [activeAccountTab, accountTabs])
 
   const showAccountTabs = accountTabs.length > 0
+  const linkedLineIdSet = useMemo(() => new Set(linkedRows.map((r) => r.id)), [linkedRows])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] w-full max-w-[min(96vw,72rem)] flex flex-col gap-0 overflow-hidden p-4 sm:p-6">
+      <DialogContent
+        overlayClassName={nestedElevated ? 'z-[1300]' : undefined}
+        className={`max-h-[85vh] w-full max-w-[min(96vw,72rem)] flex flex-col gap-0 overflow-hidden p-4 sm:p-6${nestedElevated ? ' z-[1300]' : ''}`}
+      >
         <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>{t('modalTitle')}</DialogTitle>
           <p className="text-sm text-muted-foreground pt-1">{t('modalHint')}</p>
@@ -776,6 +816,45 @@ export default function ExpenseStatementSimilarLinesModal({
                   · {t('sourceLinkedFinancialAccount')}: {linkedFinancialAccountDisplay ?? t('noLinks')}
                 </span>
               </p>
+            ) : null}
+            {linkedRows.length > 0 ? (
+              <div className="rounded-md border border-emerald-300/80 bg-emerald-50/60 px-3 py-2 space-y-2">
+                <p className="text-xs font-semibold text-emerald-900">
+                  {t('currentLinksTitle')} · {t('currentLinksCount', { count: linkedRows.length })}
+                </p>
+                <p className="text-[11px] text-emerald-900/85 leading-snug">{t('currentLinksHint')}</p>
+                <ul className="space-y-1.5">
+                  {linkedRows.map((r) => {
+                    const alloc = sourceAllocByLineId.get(r.id)
+                    const dirOut = String(r.direction).toLowerCase() !== 'inflow'
+                    return (
+                      <li
+                        key={r.id}
+                        className="rounded border border-emerald-200/90 bg-white/95 px-2.5 py-2 text-[11px] leading-snug text-gray-900"
+                      >
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium tabular-nums">
+                          <span>{r.financial_account_name}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span>{r.posted_date}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className={dirOut ? 'text-rose-800' : 'text-emerald-700'}>
+                            ${Math.abs(r.amount).toFixed(2)}
+                          </span>
+                          {alloc != null ? (
+                            <>
+                              <span className="text-muted-foreground">·</span>
+                              <span className="text-emerald-800">
+                                {t('currentLinkAllocated')}: ${alloc.toFixed(2)}
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-muted-foreground break-words">{r.description || '—'}</p>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
             ) : null}
             <p className="text-[11px] text-muted-foreground leading-snug">
               {ticketDateProbe
@@ -1061,11 +1140,18 @@ export default function ExpenseStatementSimilarLinesModal({
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map((r) => (
+                {visibleRows.map((r) => {
+                  const isCurrentLink = linkedLineIdSet.has(r.id)
+                  const sourceAlloc = sourceAllocByLineId.get(r.id)
+                  return (
                   <tr
                     key={r.id}
                     className={`border-t cursor-pointer hover:bg-muted/50 ${
-                      selectedIdsOrdered.includes(r.id) ? 'bg-emerald-50' : ''
+                      selectedIdsOrdered.includes(r.id)
+                        ? 'bg-emerald-50'
+                        : isCurrentLink
+                          ? 'bg-emerald-50/60'
+                          : ''
                     }`}
                     onClick={() => toggleLineId(r.id)}
                   >
@@ -1078,7 +1164,14 @@ export default function ExpenseStatementSimilarLinesModal({
                       />
                     </td>
                     <td className="p-2 max-w-[9rem] truncate align-middle" title={r.financial_account_name}>
-                      {r.financial_account_name}
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        {isCurrentLink ? (
+                          <span className="inline-flex w-fit rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900">
+                            {t('currentLinkBadge')}
+                          </span>
+                        ) : null}
+                        <span className="truncate">{r.financial_account_name}</span>
+                      </div>
                     </td>
                     <td className="p-2 whitespace-nowrap align-middle">{r.posted_date}</td>
                     {ticketDateProbe ? (
@@ -1105,6 +1198,11 @@ export default function ExpenseStatementSimilarLinesModal({
                       {r.existing_matches.length > 0 ? (
                         <>
                           ${r.allocated_sum.toFixed(2)} / ${Math.abs(r.amount).toFixed(2)}
+                          {isCurrentLink && sourceAlloc != null ? (
+                            <div className="text-[10px] text-emerald-800 font-medium">
+                              {t('currentLinkAllocated')}: ${sourceAlloc.toFixed(2)}
+                            </div>
+                          ) : null}
                         </>
                       ) : (
                         t('noLinks')
@@ -1130,7 +1228,8 @@ export default function ExpenseStatementSimilarLinesModal({
                           ))}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           )}

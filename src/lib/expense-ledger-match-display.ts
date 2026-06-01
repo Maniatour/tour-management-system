@@ -226,6 +226,40 @@ async function fetchTourHotelBookingDetails(
   })
 }
 
+async function fetchCashTransactionDetails(
+  supabase: SupabaseClient,
+  ids: string[],
+  amounts: Map<string, number | null>
+): Promise<LedgerMatchDetail[]> {
+  if (ids.length === 0) return []
+  const { data } = await supabase
+    .from('cash_transactions')
+    .select('id,amount,transaction_date,transaction_type,description,category,notes')
+    .in('id', ids)
+  return ((data || []) as Record<string, unknown>[]).map((r) => {
+    const id = String(r.id)
+    const key = `cash_transactions:${id}`
+    const type = String(r.transaction_type ?? '').trim()
+    const category = String(r.category ?? '').trim()
+    const desc = r.description == null ? null : String(r.description).trim() || null
+    return {
+      source_table: 'cash_transactions',
+      source_id: id,
+      matched_amount: amounts.get(key) ?? null,
+      ledger_amount: Math.abs(Number(r.amount ?? 0)),
+      date_primary_ymd: ymdFromIso(String(r.transaction_date ?? '')),
+      date_secondary_ymd: null,
+      paid_to: category || '—',
+      paid_for: type === 'deposit' ? '현금 입금' : type === 'withdrawal' ? '현금 출금' : '현금 거래',
+      description: desc ?? (r.notes == null ? null : String(r.notes).trim() || null),
+      payment_method: null,
+      rn_number: null,
+      check_in_date_ymd: null,
+      tour_date_ymd: null,
+    }
+  })
+}
+
 async function fetchPaymentRecordDetails(
   supabase: SupabaseClient,
   ids: string[],
@@ -284,6 +318,7 @@ export async function fetchLedgerMatchDetails(
     fetchTicketBookingDetails(supabase, byTable.get('ticket_bookings') ?? [], amounts),
     fetchTourHotelBookingDetails(supabase, byTable.get('tour_hotel_bookings') ?? [], amounts),
     fetchPaymentRecordDetails(supabase, byTable.get('payment_records') ?? [], amounts),
+    fetchCashTransactionDetails(supabase, byTable.get('cash_transactions') ?? [], amounts),
   ])
 
   const byKey = new Map<string, LedgerMatchDetail>()
@@ -298,7 +333,7 @@ export async function fetchLedgerMatchDetails(
 
 export function sourceTableLabelKey(
   table: string
-): 'paymentRecords' | 'reservation' | 'company' | 'tour' | 'ticketBookings' | 'tourHotelBookings' | 'unknown' {
+): 'paymentRecords' | 'reservation' | 'company' | 'tour' | 'ticketBookings' | 'tourHotelBookings' | 'cashTransactions' | 'unknown' {
   switch (table) {
     case 'payment_records':
       return 'paymentRecords'
@@ -312,6 +347,8 @@ export function sourceTableLabelKey(
       return 'ticketBookings'
     case 'tour_hotel_bookings':
       return 'tourHotelBookings'
+    case 'cash_transactions':
+      return 'cashTransactions'
     default:
       return 'unknown'
   }

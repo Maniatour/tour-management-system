@@ -3,8 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fetchUploadApi } from '@/lib/uploadClient';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay';
+import {
+  fetchTicketToursForCheckIn,
+  type TicketTourPickerRow,
+} from '@/lib/ticketBookingToursForCheckIn';
 
 interface TourHotelBooking {
   id?: string;
@@ -159,6 +164,7 @@ export default function TourHotelBookingForm({
   tourId 
 }: TourHotelBookingFormProps) {
   const t = useTranslations('booking.tourHotelBooking');
+  const locale = useLocale();
   const { authUser } = useAuth();
   const [formData, setFormData] = useState<TourHotelBooking>(() =>
     buildInitialFormData(tourId, booking)
@@ -169,11 +175,17 @@ export default function TourHotelBookingForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- booking 전체는 참조가 불안정할 수 있음
   }, [booking?.id, tourId]);
 
-  const [tours, setTours] = useState<any[]>([]);
+  const [tours, setTours] = useState<TicketTourPickerRow[]>([]);
+  const [toursLoading, setToursLoading] = useState(false);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [hotels, setHotels] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [websites, setWebsites] = useState<string[]>([]);
+  const [paymentMethodsList, setPaymentMethodsList] = useState<
+    Array<{ id: string; method: string; display_name: string | null }>
+  >([]);
+  const [showNewPaymentMethodInput, setShowNewPaymentMethodInput] = useState(false);
+  const [newPaymentMethodValue, setNewPaymentMethodValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [showWebsiteSuggestions, setShowWebsiteSuggestions] = useState(false);
   const [filteredWebsites, setFilteredWebsites] = useState<string[]>([]);
@@ -183,87 +195,118 @@ export default function TourHotelBookingForm({
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
-    fetchTours();
     fetchTeamMembers();
     fetchHotels();
     fetchCities();
     fetchWebsites();
+    fetchPaymentMethods();
   }, []);
 
-  const fetchTours = async () => {
+  /** 체크인이 투어 달력 구간(시작~종료일)에 포함되는 투어 (선택 tour는 구간 밖이어도 병합) */
+  useEffect(() => {
+    const tourIdToMerge = formData.tour_id ?? null;
+    void fetchTours(formData.check_in_date, tourIdToMerge);
+    // 투어 드롭다운 값만 바꿀 때는 재조회하지 않음
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formData.tour_id 제외
+  }, [formData.check_in_date]);
+
+  const fetchPaymentMethods = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD 형식
-      
-      console.log('투어 목록 조회 시작...');
-      
-      // 먼저 tours만 조회
-      const { data: toursData, error: toursError } = await supabase
-        .from('tours')
-        .select('id, tour_date, product_id')
-        .gte('tour_date', today) // 오늘 날짜 이후의 투어만
-        .order('tour_date', { ascending: true });
-
-      if (toursError) {
-        console.error('투어 목록 조회 오류:', toursError);
-        throw toursError;
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('id, method, display_name, card_holder_name, user_email')
+        .eq('status', 'active')
+        .order('display_name');
+      if (error) throw error;
+      const rows = data || [];
+      const emails = [
+        ...new Set(rows.map((r) => String(r.user_email || '').toLowerCase()).filter(Boolean)),
+      ];
+      let teamMap = new Map<
+        string,
+        { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }
+      >();
+      if (emails.length > 0) {
+        const { data: teams } = await supabase
+          .from('team')
+          .select('email, nick_name, name_en, name_ko')
+          .in('email', emails);
+        teamMap = new Map(
+          (teams || []).map((t) => [String(t.email).toLowerCase(), t])
+        );
       }
-
-      console.log('투어 데이터:', toursData);
-
-      if (!toursData || toursData.length === 0) {
-        setTours([]);
-        return;
-      }
-
-      // product_id가 있는 투어들만 필터링
-      const toursWithProductId = toursData.filter(tour => tour.product_id);
-      
-      if (toursWithProductId.length === 0) {
-        setTours(toursData);
-        return;
-      }
-
-      // 모든 product_id를 한 번에 조회
-      const productIds = [...new Set(toursWithProductId.map(tour => tour.product_id))];
-      
-      const { data: productsData, error: productsError } = await supabase
-        .from('products')
-        .select(`
-          id,
-          name
-        `)
-        .in('id', productIds);
-
-      if (productsError) {
-        console.warn('상품 정보 조회 오류:', productsError);
-        setTours(toursData);
-        return;
-      }
-
-      // products 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
-      const productsMap = new Map();
-      (productsData || []).forEach(product => {
-        productsMap.set(product.id, product);
-      });
-
-      // 투어 데이터에 상품 정보 추가
-      const toursWithProducts = toursData.map(tour => {
-        if (tour.product_id && productsMap.has(tour.product_id)) {
-          const product = productsMap.get(tour.product_id);
+      setPaymentMethodsList(
+        rows.map((r) => {
+          const em = r.user_email ? String(r.user_email).toLowerCase() : '';
+          const team = em ? teamMap.get(em) : undefined;
+          const label = formatPaymentMethodDisplay(
+            {
+              id: r.id,
+              method: r.method,
+              display_name: r.display_name,
+              user_email: r.user_email,
+              card_holder_name: r.card_holder_name,
+            },
+            team
+              ? {
+                  nick_name: team.nick_name ?? null,
+                  name_en: team.name_en ?? null,
+                  name_ko: team.name_ko ?? null,
+                }
+              : undefined
+          );
           return {
-            ...tour,
-            products: {
-              name: product.name
-            }
+            id: r.id,
+            method: r.method,
+            display_name: label,
           };
-        }
-        return tour;
-      });
+        })
+      );
+    } catch (error) {
+      console.error('결제 방법 목록 조회 오류:', error);
+    }
+  };
 
-      console.log('투어 목록 조회 성공:', toursWithProducts);
-      setTours(toursWithProducts);
+  const handleAddPaymentMethod = async () => {
+    const methodName = newPaymentMethodValue.trim();
+    if (!methodName) return;
+    try {
+      const id = `PAYM-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const res = await fetch('/api/payment-methods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, method: methodName, method_type: 'other', status: 'active' }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message || 'Failed to add payment method');
+      await fetchPaymentMethods();
+      setFormData((prev) => ({ ...prev, payment_method: methodName }));
+      setNewPaymentMethodValue('');
+      setShowNewPaymentMethodInput(false);
+    } catch (error) {
+      console.error('결제 방법 추가 오류:', error);
+      alert(
+        typeof error === 'object' && error && 'message' in error
+          ? String((error as Error).message)
+          : '결제 방법 추가에 실패했습니다.'
+      );
+    }
+  };
+
+  const fetchTours = async (checkInDate: string, tourIdToMerge: string | null) => {
+    try {
+      if (!checkInDate || !String(checkInDate).trim()) {
+        setTours([]);
+        setToursLoading(false);
+        return;
+      }
+      setToursLoading(true);
+      const rows = await fetchTicketToursForCheckIn(supabase as any, checkInDate, tourIdToMerge);
+      setTours(rows);
     } catch (error) {
       console.error('투어 목록 조회 오류:', error);
+    } finally {
+      setToursLoading(false);
     }
   };
 
@@ -582,29 +625,50 @@ export default function TourHotelBookingForm({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                투어 선택 (선택사항)
+                {t('selectTourOptional')}
               </label>
               <select
                 name="tour_id"
                 value={formData.tour_id || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                disabled={Boolean(formData.check_in_date?.trim()) && toursLoading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:bg-gray-50 disabled:text-gray-500"
               >
-                <option value="">투어를 선택하세요 (선택사항)</option>
-                {tours.length > 0 ? (
-                  tours.map(tour => (
-                    <option key={tour.id} value={tour.id}>
-                      {tour.tour_date} - {tour.products?.name || '상품명 없음'}
-                    </option>
-                  ))
+                <option value="">{t('selectTourPlaceholder')}</option>
+                {!formData.check_in_date?.trim() ? (
+                  <option value="" disabled>
+                    {t('enterCheckInToLoadTours')}
+                  </option>
+                ) : toursLoading ? (
+                  <option value="" disabled>
+                    {t('loadingTourOptions')}
+                  </option>
+                ) : tours.length > 0 ? (
+                  tours.map((tour) => {
+                    const productName =
+                      tour.products?.name ||
+                      (locale === 'ko' ? '상품명 없음' : 'No product');
+                    const g = tour.guide_display?.trim();
+                    const a = tour.assistant_display?.trim();
+                    const nameParts = [g, a].filter(Boolean) as string[];
+                    const label =
+                      nameParts.length > 0
+                        ? `${tour.tour_date} ${productName}, ${nameParts.join(', ')}`
+                        : `${tour.tour_date} ${productName}`;
+                    return (
+                      <option key={tour.id} value={tour.id}>
+                        {label}
+                      </option>
+                    );
+                  })
                 ) : (
                   <option value="" disabled>
-                    예정된 투어가 없습니다
+                    {t('noToursInCheckInWindow')}
                   </option>
                 )}
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                투어가 아직 생성되지 않은 경우 비워두고 저장할 수 있습니다.
+                {t('selectTourHelpText')}
               </p>
             </div>
 
@@ -902,20 +966,70 @@ export default function TourHotelBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                결제 방법
+                {t('paymentMethod')}
               </label>
-              <select
-                name="payment_method"
-                value={formData.payment_method || ''}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">선택하세요</option>
-                <option value="credit_card">신용카드</option>
-                <option value="bank_transfer">계좌이체</option>
-                <option value="cash">현금</option>
-                <option value="other">기타</option>
-              </select>
+              {showNewPaymentMethodInput ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newPaymentMethodValue}
+                    onChange={(e) => setNewPaymentMethodValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleAddPaymentMethod();
+                      }
+                      if (e.key === 'Escape') setShowNewPaymentMethodInput(false);
+                    }}
+                    placeholder={t('paymentMethod')}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleAddPaymentMethod()}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    {t('add')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewPaymentMethodInput(false);
+                      setNewPaymentMethodValue('');
+                    }}
+                    className="px-3 py-2 border rounded-md text-sm"
+                  >
+                    {t('cancel')}
+                  </button>
+                </div>
+              ) : (
+                <select
+                  name="payment_method"
+                  value={formData.payment_method || ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '__new__') {
+                      setShowNewPaymentMethodInput(true);
+                      return;
+                    }
+                    setFormData((prev) => ({ ...prev, payment_method: v }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">{t('select')}</option>
+                  {formData.payment_method &&
+                  !paymentMethodsList.some((pm) => pm.method === formData.payment_method) ? (
+                    <option value={formData.payment_method}>{formData.payment_method}</option>
+                  ) : null}
+                  {paymentMethodsList.map((pm) => (
+                    <option key={pm.id} value={pm.method}>
+                      {pm.display_name || pm.method}
+                    </option>
+                  ))}
+                  <option value="__new__">➕ {t('addNew')}</option>
+                </select>
+              )}
             </div>
 
             <div className="relative">

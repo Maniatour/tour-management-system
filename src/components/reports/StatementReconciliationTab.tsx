@@ -292,6 +292,7 @@ type OperationalLedgerSourceTable =
   | 'payment_records'
   | 'ticket_bookings'
   | 'tour_hotel_bookings'
+  | 'cash_transactions'
 
 type OperationalLedgerRow = {
   key: string
@@ -393,6 +394,10 @@ type AutoMatchExpenseCandidate = ExpenseCandidate & {
   standard_paid_for: string | null
   /** 입장권: 체크인일. 호텔: 등록일(submit_on)의 YMD — occurred_at과 쌍으로 후보·점수에 사용 */
   auto_match_alt_ymd?: string | null
+  /** 결제수단(payment_method)에서 해석한 금융 계정 id — 명세 계정과 일치 시 가산점 */
+  financial_account_id: string | null
+  /** 가맹점·적요 텍스트 겹침 비교용(결제처·결제내용·라벨) */
+  match_text: string
 }
 
 const AUTO_MATCH_SOURCE_LABEL: Record<ExpenseCandidate['source_table'], string> = {
@@ -439,7 +444,8 @@ const OPERATIONAL_LEDGER_SOURCE_LABEL: Record<OperationalLedgerSourceTable, stri
   company_expenses: '회사',
   payment_records: '입금',
   ticket_bookings: '티켓',
-  tour_hotel_bookings: '호텔 부킹'
+  tour_hotel_bookings: '호텔 부킹',
+  cash_transactions: '현금 관리'
 }
 
 const EXPENSE_SOURCE_FILTER_OPTIONS: { value: '' | ExpensePickerBrowseTable; label: string }[] = [
@@ -499,6 +505,12 @@ const AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS = 540
 const RECON_STATEMENT_DAY_WINDOW = 4
 /** 자동 매칭 미리보기: 한 실행에서 처리할 명세 줄 상한(실제 대상은 표 현재 페이지의 출금·미연결 줄뿐) */
 const AUTO_MATCH_MAX_STATEMENT_LINES = 800
+/** 자동 매칭: 지출 결제수단의 금융 계정이 명세 계정과 일치할 때 가산점 (후보 제외는 아님) */
+const AUTO_MATCH_ACCOUNT_MATCH_BONUS = 14
+/** 자동 매칭: 결제수단 금융 계정이 명세 계정과 다를 때 감점(데이터가 느슨하므로 약하게) */
+const AUTO_MATCH_ACCOUNT_MISMATCH_PENALTY = 8
+/** 자동 매칭: 가맹점·적요 텍스트 겹침 최대 가산점 */
+const AUTO_MATCH_TEXT_BONUS_MAX = 12
 
 type AutoMatchAmountMode = 'exact' | 'similar' | 'amount_only'
 /** 운영 지출입 자동 매칭 미리보기 — 명세 대조 탭과 별도로 «금액만» 모드 포함 */
@@ -579,12 +591,44 @@ function formatAutoMatchCandidateDates(submitYmd: string, checkInYmd: string | n
   return `${reg} · 체크인 ${formatExpenseSubmitOnUsMdY(checkInYmd)}`
 }
 
-/** 금액·거래일 근접만 반영 (텍스트·라벨·결제수단은 사용하지 않음) */
+/** 텍스트 토큰 집합 — 소문자·영숫자·한글만, 2자 이상 토큰 */
+function autoMatchTextTokenSet(raw: string): Set<string> {
+  const norm = String(raw ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, ' ')
+    .trim()
+  if (!norm) return new Set()
+  const out = new Set<string>()
+  for (const t of norm.split(/\s+/)) {
+    if (t.length >= 2) out.add(t)
+  }
+  return out
+}
+
+/** 명세 적요·가맹점 토큰 vs 지출 결제처·내용 토큰 겹침 가산점(0~AUTO_MATCH_TEXT_BONUS_MAX) */
+function autoMatchTextOverlapBonus(lineTokens: Set<string>, expenseText: string): number {
+  if (lineTokens.size === 0) return 0
+  const expTokens = autoMatchTextTokenSet(expenseText)
+  if (expTokens.size === 0) return 0
+  let shared = 0
+  for (const t of expTokens) if (lineTokens.has(t)) shared += 1
+  if (shared === 0) return 0
+  return Math.min(AUTO_MATCH_TEXT_BONUS_MAX, 4 + shared * 4)
+}
+
+/**
+ * 금액·거래일 근접을 기본 점수로 하고, 결제수단(금융 계정) 일치·가맹점 텍스트 겹침을
+ * 가산/감점으로 반영한다. 결제수단·텍스트는 후보를 거르지 않고 순위만 조정한다.
+ */
 function autoMatchCandidateScore(
   lineAmount: number,
   postedDate: string,
   expense: AutoMatchExpenseCandidate,
-  rule: { maxDayDiff: number; amountMode: AutoMatchAmountMode }
+  rule: { maxDayDiff: number; amountMode: AutoMatchAmountMode },
+  ctx?: {
+    lineTokens?: Set<string>
+    targetFinancialAccountId?: string | null
+  }
 ): number | null {
   const expenseAmt = Number(expense.amount)
   const amountDiff = Math.abs(expenseAmt - lineAmount)
@@ -594,17 +638,32 @@ function autoMatchCandidateScore(
     return null
   }
   const dayDiff = autoMatchDayDiffToLine(postedDate, expense.occurred_at, expense.auto_match_alt_ymd)
+
+  let base: number
   if (rule.amountMode === 'amount_only') {
     const datePenalty = Math.min(55, dayDiff * 0.35)
-    return Math.max(1, Math.round(92 - datePenalty))
+    base = Math.max(1, 92 - datePenalty)
+  } else {
+    if (dayDiff > rule.maxDayDiff) return null
+    const datePenalty = dayDiff * 5
+    const similarAmountPenalty =
+      rule.amountMode === 'similar' && amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS
+        ? Math.min(28, amountDiff * 2.5)
+        : 0
+    base = Math.max(1, 100 - datePenalty - similarAmountPenalty)
   }
-  if (dayDiff > rule.maxDayDiff) return null
-  const datePenalty = dayDiff * 5
-  const similarAmountPenalty =
-    rule.amountMode === 'similar' && amountDiff >= AUTO_MATCH_AMOUNT_EQUAL_EPS
-      ? Math.min(28, amountDiff * 2.5)
-      : 0
-  return Math.max(1, 100 - datePenalty - similarAmountPenalty)
+
+  let accountAdj = 0
+  const targetAcc = ctx?.targetFinancialAccountId
+  if (targetAcc && expense.financial_account_id) {
+    accountAdj =
+      expense.financial_account_id === targetAcc
+        ? AUTO_MATCH_ACCOUNT_MATCH_BONUS
+        : -AUTO_MATCH_ACCOUNT_MISMATCH_PENALTY
+  }
+  const textAdj = ctx?.lineTokens ? autoMatchTextOverlapBonus(ctx.lineTokens, expense.match_text) : 0
+
+  return Math.max(1, Math.round(base + accountAdj + textAdj))
 }
 
 /** 동점·동일 금액 차이일 때 후보 다양성 — 투어·예약이 회사·티켓보다 앞서도록(여전히 DB는 네 테이블 모두 조회) */
@@ -799,7 +858,7 @@ async function fetchTicketBookingsBySubmitOnForAutoMatch(
   for (;;) {
     const { data, error } = await sb
       .from('ticket_bookings')
-      .select('id,expense,submit_on,check_in_date,category,company')
+      .select('id,expense,submit_on,check_in_date,category,company,payment_method')
       .gte('submit_on', startIso)
       .lte('submit_on', endIso)
       .is('deleted_at', null)
@@ -830,7 +889,7 @@ async function fetchTicketBookingsByCheckInForAutoMatch(
   for (;;) {
     const { data, error } = await sb
       .from('ticket_bookings')
-      .select('id,expense,submit_on,check_in_date,category,company')
+      .select('id,expense,submit_on,check_in_date,category,company,payment_method')
       .gte('check_in_date', startYmd)
       .lte('check_in_date', endYmd)
       .is('deleted_at', null)
@@ -1013,7 +1072,7 @@ async function fetchTourHotelBookingsBySubmitOnForAutoMatch(
   for (;;) {
     const { data, error } = await sb
       .from('tour_hotel_bookings')
-      .select('id,total_price,unit_price,rooms,check_in_date,hotel,reservation_name,status,submit_on')
+      .select('id,total_price,unit_price,rooms,check_in_date,hotel,reservation_name,status,submit_on,payment_method')
       .gte('submit_on', startIso)
       .lte('submit_on', endIso)
       .order('submit_on', { ascending: true })
@@ -1045,7 +1104,7 @@ async function fetchAllTourHotelBookingsForAutoMatchByCheckIn(
   for (;;) {
     const { data, error } = await sb
       .from('tour_hotel_bookings')
-      .select('id,total_price,unit_price,rooms,check_in_date,hotel,reservation_name,status,submit_on')
+      .select('id,total_price,unit_price,rooms,check_in_date,hotel,reservation_name,status,submit_on,payment_method')
       .gte('check_in_date', startYmd)
       .lte('check_in_date', endYmd)
       .order('check_in_date', { ascending: true })
@@ -4154,7 +4213,7 @@ export default function StatementReconciliationTab() {
         includedSources.has('company_expenses')
           ? fetchAllExpenseRowsForAutoMatch(
               'company_expenses',
-              'id, amount, submit_on, paid_for, paid_to, standard_paid_for',
+              'id, amount, submit_on, paid_for, paid_to, standard_paid_for, payment_method',
               startIso,
               endIso
             )
@@ -4162,7 +4221,7 @@ export default function StatementReconciliationTab() {
         includedSources.has('tour_expenses')
           ? fetchAllExpenseRowsForAutoMatch(
               'tour_expenses',
-              'id, amount, submit_on, paid_for, paid_to',
+              'id, amount, submit_on, paid_for, paid_to, payment_method',
               startIso,
               endIso
             )
@@ -4170,7 +4229,7 @@ export default function StatementReconciliationTab() {
         includedSources.has('reservation_expenses')
           ? fetchAllExpenseRowsForAutoMatch(
               'reservation_expenses',
-              'id, amount, submit_on, paid_for, paid_to',
+              'id, amount, submit_on, paid_for, paid_to, payment_method',
               startIso,
               endIso
             )
@@ -4194,6 +4253,12 @@ export default function StatementReconciliationTab() {
         fetchAllUsedExpenseKeysForAutoMatch()
       ])
 
+    const resolveFinancialAccountId = (pm: unknown): string | null => {
+      const k = pm == null ? '' : String(pm).trim()
+      if (!k) return null
+      return paymentMethodFinancialAccountById.get(k) ?? null
+    }
+
     const candidates: AutoMatchExpenseCandidate[] = [
       ...ce.map((r: Record<string, unknown>) => ({
         source_table: 'company_expenses' as const,
@@ -4203,7 +4268,9 @@ export default function StatementReconciliationTab() {
         label: `${r.paid_for} / ${r.paid_to}`,
         paid_to: String(r.paid_to ?? ''),
         paid_for: String(r.paid_for ?? ''),
-        standard_paid_for: r.standard_paid_for == null ? null : String(r.standard_paid_for)
+        standard_paid_for: r.standard_paid_for == null ? null : String(r.standard_paid_for),
+        financial_account_id: resolveFinancialAccountId(r.payment_method),
+        match_text: `${String(r.paid_to ?? '')} ${String(r.paid_for ?? '')} ${String(r.standard_paid_for ?? '')}`
       })),
       ...te.map((r: Record<string, unknown>) => ({
         source_table: 'tour_expenses' as const,
@@ -4213,7 +4280,9 @@ export default function StatementReconciliationTab() {
         label: `${r.paid_for} / ${r.paid_to}`,
         paid_to: String(r.paid_to ?? ''),
         paid_for: String(r.paid_for ?? ''),
-        standard_paid_for: null
+        standard_paid_for: null,
+        financial_account_id: resolveFinancialAccountId(r.payment_method),
+        match_text: `${String(r.paid_to ?? '')} ${String(r.paid_for ?? '')}`
       })),
       ...re.map((r: Record<string, unknown>) => ({
         source_table: 'reservation_expenses' as const,
@@ -4223,7 +4292,9 @@ export default function StatementReconciliationTab() {
         label: `${r.paid_for} / ${r.paid_to}`,
         paid_to: String(r.paid_to ?? ''),
         paid_for: String(r.paid_for ?? ''),
-        standard_paid_for: null
+        standard_paid_for: null,
+        financial_account_id: resolveFinancialAccountId(r.payment_method),
+        match_text: `${String(r.paid_to ?? '')} ${String(r.paid_for ?? '')}`
       })),
       ...tb.map((r: Record<string, unknown>) => {
         const checkInRaw = String(r.check_in_date ?? '').trim()
@@ -4237,7 +4308,9 @@ export default function StatementReconciliationTab() {
           label: `${String(r.category ?? '')} / ${String(r.company ?? '')}`,
           paid_to: String(r.company ?? ''),
           paid_for: String(r.category ?? ''),
-          standard_paid_for: null
+          standard_paid_for: null,
+          financial_account_id: resolveFinancialAccountId(r.payment_method),
+          match_text: `${String(r.company ?? '')} ${String(r.category ?? '')}`
         }
       }),
       ...hb.map((r: Record<string, unknown>) => {
@@ -4257,7 +4330,9 @@ export default function StatementReconciliationTab() {
           label: `${String(r.hotel ?? '')} / ${String(r.reservation_name ?? '')}`,
           paid_to: String(r.hotel ?? ''),
           paid_for: String(r.reservation_name ?? '호텔 부킹'),
-          standard_paid_for: null
+          standard_paid_for: null,
+          financial_account_id: resolveFinancialAccountId(r.payment_method),
+          match_text: `${String(r.hotel ?? '')} ${String(r.reservation_name ?? '')}`
         }
       })
     ]
@@ -4267,12 +4342,16 @@ export default function StatementReconciliationTab() {
     const usedForDefaultSelection = new Set(used)
     for (const line of linesForAutoMatch) {
       const amt = Number(line.amount)
+      const lineTokens = autoMatchTextTokenSet(`${line.description ?? ''} ${line.merchant ?? ''}`)
       const options = candidates
         .map((expense) => {
           if (!includedSources.has(expense.source_table)) return null
           const key = `${expense.source_table}:${expense.source_id}`
           if (used.has(key)) return null
-          const score = autoMatchCandidateScore(amt, line.posted_date, expense, matchRule)
+          const score = autoMatchCandidateScore(amt, line.posted_date, expense, matchRule, {
+            lineTokens,
+            targetFinancialAccountId: filterAccountId
+          })
           if (!score) return null
           const { submitYmd, checkInYmd } = autoMatchSubmitAndCheckInYmd(expense)
           return {
@@ -4352,12 +4431,14 @@ export default function StatementReconciliationTab() {
         : amountMode === 'similar'
           ? `비슷한 금액 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일`
           : `금액만 일치(날짜 무시 · 조회 ±${AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS}일)`
+    const autoMatchScoringSuffix = ` 이와 별도로, 지출 결제수단의 금융 계정이 이 명세 계정과 같으면 가산점(다르면 약한 감점), 가맹점·적요 문구가 결제처·결제내용과 겹치면 가산점을 더해 후보 순위를 매깁니다(결제수단·문구로 후보를 거르지는 않습니다).`
     setAutoMatchRuleNarrative(
-      amountMode === 'exact'
+      (amountMode === 'exact'
         ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일 이내입니다. 입장권은 등록일(submit_on)을 명세 기간 ±${fetchPad}일로, 체크인(check_in_date)을 명세·대상 줄 거래일 각 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일로 추가 조회합니다. 점수·날짜 비교는 등록일·체크인 중 명세에 더 가까운 날짜를 씁니다. 호텔 부킹도 등록일·체크인을 병합 조회하며, 그 외 지출은 등록일만 사용합니다.`
         : amountMode === 'similar'
           ? `이 실행의 후보 조건: 명세 금액과 지출 금액이 비슷한 범위(차이가 큰 쪽 대비 12% 이하이거나 $4 이하, 또는 $0.02 미만)이고, 지출 기준일이 명세 거래일 기준 ±${AUTO_MATCH_SIMILAR_DAY_WINDOW}일 이내입니다. 입장권은 등록일을 명세 기간 ±${fetchPad}일, 체크인을 명세·대상 줄 거래일 각 ±${AUTO_MATCH_EXACT_DAY_WINDOW}일로 추가 조회합니다. 호텔 부킹·입장권 모두 등록일·체크인 중 명세에 더 가까운 날짜로 판정합니다. 금액 차이가 허용 범위 안에서도 크면 점수에서 추가로 감점합니다.`
-          : `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)인 지출만 후보로 올리며, 등록일·체크인과 명세 거래일의 차이는 «제외하지 않고» 점수만 조정합니다. 지출·부킹은 선택한 명세 기간을 기준으로 앞뒤 ±${AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS}일 범위(등록일 submit_on·체크인)로만 불러옵니다. 그 밖의 기간에 있는 지출은 후보에 나오지 않습니다.`
+          : `이 실행의 후보 조건: 명세 금액과 지출 금액이 거의 동일(차이 $${AUTO_MATCH_AMOUNT_EQUAL_EPS} 미만)인 지출만 후보로 올리며, 등록일·체크인과 명세 거래일의 차이는 «제외하지 않고» 점수만 조정합니다. 지출·부킹은 선택한 명세 기간을 기준으로 앞뒤 ±${AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS}일 범위(등록일 submit_on·체크인)로만 불러옵니다. 그 밖의 기간에 있는 지출은 후보에 나오지 않습니다.`) +
+        autoMatchScoringSuffix
     )
     setAutoMatchSummaryHint(
       [
@@ -5285,7 +5366,7 @@ export default function StatementReconciliationTab() {
     setOperationalLedgerLoading(true)
     setMessage(null)
     try {
-      const [re, ce, pr, tb, hb] = await Promise.all([
+      const [re, ce, pr, tb, hb, ct] = await Promise.all([
         supabase
           .from('reservation_expenses')
           .select('id,amount,submit_on,paid_for,paid_to,note,payment_method,reservation_id,tour_id')
@@ -5314,9 +5395,14 @@ export default function StatementReconciliationTab() {
             'id,total_price,submit_on,check_in_date,event_date,hotel,reservation_name,payment_method,tour_id'
           )
           .gte('submit_on', startIso)
-          .lte('submit_on', endIso)
+          .lte('submit_on', endIso),
+        supabase
+          .from('cash_transactions')
+          .select('id,amount,transaction_date,transaction_type,description,category,notes')
+          .gte('transaction_date', startIso)
+          .lte('transaction_date', endIso)
       ])
-      const errors = [re.error, ce.error, pr.error, tb.error, hb.error].filter(Boolean)
+      const errors = [re.error, ce.error, pr.error, tb.error, hb.error, ct.error].filter(Boolean)
       if (errors.length > 0) throw errors[0]
 
       const rows: OperationalLedgerRow[] = [
@@ -5410,7 +5496,25 @@ export default function StatementReconciliationTab() {
           check_in_date_ymd: ledgerDateYmdOrNull(r.check_in_date),
           tour_id: r.tour_id == null || String(r.tour_id).trim() === '' ? null : String(r.tour_id),
           hotel_event_date_ymd: ledgerDateYmdOrNull(r.event_date)
-        }))
+        })),
+        ...((ct.data || []) as Record<string, unknown>[]).map((r) => {
+          const txType = String(r.transaction_type ?? '').trim()
+          return {
+            key: operationalLedgerKey('cash_transactions', String(r.id)),
+            source_table: 'cash_transactions' as const,
+            source_id: String(r.id),
+            direction: txType === 'deposit' ? ('inflow' as const) : ('outflow' as const),
+            date: normalizeDateYmd(String(r.transaction_date ?? '')),
+            amount: Number(r.amount ?? 0),
+            party: String(r.category ?? '').trim() || '—',
+            purpose: String(r.description ?? '').trim() || '현금 거래',
+            note: r.notes == null ? null : String(r.notes),
+            payment_method: null,
+            already_matched: false,
+            tour_date_ymd: null,
+            check_in_date_ymd: null
+          }
+        })
       ].filter((r) => Number.isFinite(r.amount) && r.amount !== 0 && r.date.length >= 10)
 
       const tourIdsForLookup = new Set<string>()
@@ -5663,6 +5767,11 @@ export default function StatementReconciliationTab() {
       if (importIds.length === 0) return []
       const importToAccount = new Map(imports.map((im) => [im.id, im.financial_account_id]))
       const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
+      const rowPmKey = row.payment_method == null ? '' : String(row.payment_method).trim()
+      const rowFinancialAccountId = rowPmKey
+        ? paymentMethodFinancialAccountById.get(rowPmKey) ?? null
+        : null
+      const rowTokens = autoMatchTextTokenSet(`${row.party ?? ''} ${row.purpose ?? ''}`)
       const all: StatementLineCandidate[] = []
       for (let i = 0; i < importIds.length; i += 80) {
         const chunk = importIds.slice(i, i + 80)
@@ -5688,6 +5797,16 @@ export default function StatementReconciliationTab() {
           const importId = String(line.statement_import_id ?? '')
           const accountId = importToAccount.get(importId) || ''
           const exactBonus = amountDiff < 0.02 ? 40 : 0
+          const accountAdj =
+            rowFinancialAccountId && accountId
+              ? rowFinancialAccountId === accountId
+                ? AUTO_MATCH_ACCOUNT_MATCH_BONUS
+                : -AUTO_MATCH_ACCOUNT_MISMATCH_PENALTY
+              : 0
+          const textAdj = autoMatchTextOverlapBonus(
+            rowTokens,
+            `${String(line.description ?? '')} ${String(line.merchant ?? '')}`
+          )
           all.push({
             id: String(line.id),
             financial_account_id: accountId,
@@ -5702,7 +5821,7 @@ export default function StatementReconciliationTab() {
             matched_status: String(line.matched_status ?? ''),
             amount_diff: amountDiff,
             day_diff: dayDiff,
-            score: 100 + exactBonus - amountDiff * 10 - dayDiff * 3
+            score: 100 + exactBonus - amountDiff * 10 - dayDiff * 3 + accountAdj + textAdj
           })
         }
       }
@@ -5711,7 +5830,7 @@ export default function StatementReconciliationTab() {
       displayCandidates.sort(sortLedgerStatementCandidatesForPick)
       return displayCandidates.slice(0, 24)
     },
-    [imports, accounts]
+    [imports, accounts, paymentMethodFinancialAccountById]
   )
 
   const findStatementCandidatesForLedgerRow = useCallback(
@@ -6663,8 +6782,9 @@ export default function StatementReconciliationTab() {
               ) : (
                 <span className="block mt-1">
                   드롭다운 조건에 따라 후보가 달라집니다. 점수는 (금액만 모드 포함) 거래일에 가까울수록 유리하게 반영됩니다. 비슷한 금액 모드에서는 금액
-                  차이 감점이 추가될 수 있습니다. 결제수단·문구 일치·라벨 길이는 사용하지 않습니다. 점수·금액차가 같으면 투어·예약 후보가 목록에서 앞쪽에
-                  오도록 정렬합니다.
+                  차이 감점이 추가될 수 있습니다. 또한 지출 <strong>결제수단의 금융 계정이 이 명세 계정과 같으면 가산점</strong>(다르면 약한 감점),{' '}
+                  <strong>가맹점·적요 문구가 결제처·결제내용과 겹치면 가산점</strong>을 더해 순위를 매깁니다(이들로 후보를 거르지는 않습니다). 점수·금액차가
+                  같으면 투어·예약 후보가 목록에서 앞쪽에 오도록 정렬합니다.
                 </span>
               )}
               {autoMatchSummaryHint ? (
@@ -9218,7 +9338,7 @@ export default function StatementReconciliationTab() {
             <div>
               <h3 className="text-sm font-semibold text-slate-900">운영 지출입 찾기</h3>
               <p className="mt-1 text-xs text-slate-600">
-                예약 지출, 회사 지출, payment_records, 티켓, 호텔 부킹을 기간으로 불러옵니다.{' '}
+                예약 지출, 회사 지출, payment_records, 티켓, 호텔 부킹, <strong>현금 관리(cash_transactions)</strong>를 기간으로 불러옵니다.{' '}
                 <strong>«지출입 가져오기»</strong> 직후에는 목록만 표시되며, 명세 후보는{' '}
                 <strong>행의 «금융계정 명세에서 찾기»</strong>를 눌렀을 때만 조회합니다. 여러 건을 한꺼번에 맞출 때는{' '}
                 <strong>자동 매칭 미리보기</strong>에서 조건을 고른 뒤 저장하세요.{' '}

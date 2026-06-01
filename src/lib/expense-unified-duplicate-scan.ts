@@ -424,15 +424,23 @@ function sortUnifiedGroupRows(rows: UnifiedLedgerDuplicateExpenseRow[]): Unified
 
 type DuplicatePairTourLink = Pick<UnifiedLedgerDuplicateExpenseRow, 'source_table' | 'detail_tour_id'>
 
+/** 연결 tour_id가 둘 다 있고 서로 다르면 금액·등록일이 비슷해도 중복 쌍에서 제외 */
+export function expenseDuplicatePairHasDifferentLinkedTours(
+  a: { tour_id?: string | null; detail_tour_id?: string | null },
+  b: { tour_id?: string | null; detail_tour_id?: string | null }
+): boolean {
+  const tourA = (a.tour_id ?? a.detail_tour_id)?.trim() || ''
+  const tourB = (b.tour_id ?? b.detail_tour_id)?.trim() || ''
+  if (!tourA || !tourB) return false
+  return tourA !== tourB
+}
+
 /**
  * 투어 지출끼리 연결 투어 ID가 둘 다 있고 서로 다르면 금액·등록일이 비슷해도 중복 쌍에서 제외합니다.
  */
 export function tourExpenseDuplicatePairHasDifferentLinkedTours(a: DuplicatePairTourLink, b: DuplicatePairTourLink): boolean {
   if (a.source_table !== 'tour_expenses' || b.source_table !== 'tour_expenses') return false
-  const tourA = a.detail_tour_id?.trim() || ''
-  const tourB = b.detail_tour_id?.trim() || ''
-  if (!tourA || !tourB) return false
-  return tourA !== tourB
+  return expenseDuplicatePairHasDifferentLinkedTours(a, b)
 }
 
 function applyLedgerDisplayFields(
@@ -512,7 +520,7 @@ function vehicleShortName(
 }
 
 /** 투어 ID별 참고란 — 상태·가이드·어시·차량(이름만) */
-async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, TourReferenceSnapshot>> {
+export async function fetchTourReferenceMap(tourIds: string[]): Promise<Map<string, TourReferenceSnapshot>> {
   const out = new Map<string, TourReferenceSnapshot>()
   const ids = [...new Set(tourIds.map((x) => x.trim()).filter(Boolean))]
   if (ids.length === 0) return out

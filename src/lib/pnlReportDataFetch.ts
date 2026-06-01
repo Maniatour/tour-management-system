@@ -54,6 +54,7 @@ export type PnlTourExpenseRow = {
   payment_method: string | null
   exclude_from_pnl: boolean | null
   tour_date?: string | null
+  tour_id?: string | null
   submit_on: string | null
   created_at: string | null
 }
@@ -84,6 +85,9 @@ export type PnlTicketBookingRow = {
   payment_method: string | null
   status?: string | null
   check_in_date?: string | null
+  tour_id?: string | null
+  reservation_id?: string | null
+  rn_number?: string | null
   submit_on: string | null
   created_at: string | null
 }
@@ -98,6 +102,7 @@ export type PnlTourHotelBookingRow = {
   payment_method: string | null
   status: string | null
   check_in_date?: string | null
+  tour_id?: string | null
   submit_on: string | null
   created_at: string | null
 }
@@ -111,6 +116,7 @@ export type PnlReservationExpenseRow = {
   payment_method: string | null
   exclude_from_pnl: boolean | null
   reservation_id?: string | null
+  tour_id?: string | null
   tour_date?: string | null
   submit_on: string | null
   created_at: string | null
@@ -121,7 +127,7 @@ export async function fetchTourExpensesForPnlReport(startISO: string, endISO: st
     supabase
       .from('tour_expenses')
       .select(
-        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, submit_on, created_at'
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, tour_id, submit_on, created_at'
       )
       .is('deleted_at', null)
       .gte('submit_on', startISO)
@@ -138,7 +144,7 @@ export async function fetchTourExpensesForPnlByTourDate(startYmd: string, endYmd
     supabase
       .from('tour_expenses')
       .select(
-        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, submit_on, created_at'
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, tour_date, tour_id, submit_on, created_at'
       )
       .is('deleted_at', null)
       .gte('tour_date', startYmd)
@@ -154,7 +160,7 @@ export async function fetchReservationExpensesForPnlReport(startISO: string, end
     supabase
       .from('reservation_expenses')
       .select(
-        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, reservation_id, submit_on, created_at'
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, reservation_id, tour_id, submit_on, created_at'
       )
       .is('deleted_at', null)
       .gte('submit_on', startISO)
@@ -196,7 +202,7 @@ export async function fetchReservationExpensesForPnlByTourDate(startYmd: string,
     const { data, error } = await supabase
       .from('reservation_expenses')
       .select(
-        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, reservation_id, submit_on, created_at'
+        'id, amount, paid_for, paid_to, note, payment_method, exclude_from_pnl, reservation_id, tour_id, submit_on, created_at'
       )
       .is('deleted_at', null)
       .in('reservation_id', chunk)
@@ -250,7 +256,7 @@ export async function fetchTicketBookingsForPnlBySubmitOn(startISO: string, endI
     supabase
       .from('ticket_bookings')
       .select(
-        'id, expense, category, company, note, payment_method, status, check_in_date, submit_on, created_at'
+        'id, expense, category, company, note, payment_method, status, check_in_date, tour_id, reservation_id, rn_number, submit_on, created_at'
       )
       .is('deleted_at', null)
       .is('deletion_requested_at', null)
@@ -271,7 +277,7 @@ export async function fetchTicketBookingsForPnlByCheckIn(startYmd: string, endYm
     supabase
       .from('ticket_bookings')
       .select(
-        'id, expense, category, company, note, payment_method, status, check_in_date, submit_on, created_at'
+        'id, expense, category, company, note, payment_method, status, check_in_date, tour_id, reservation_id, rn_number, submit_on, created_at'
       )
       .is('deleted_at', null)
       .is('deletion_requested_at', null)
@@ -292,7 +298,7 @@ export async function fetchTourHotelBookingsForPnlReport(startISO: string, endIS
     supabase
       .from('tour_hotel_bookings')
       .select(
-        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, check_in_date, submit_on, created_at, deletion_requested_at'
+        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, check_in_date, tour_id, submit_on, created_at, deletion_requested_at'
       )
       .is('deletion_requested_at', null)
       .gte('submit_on', startISO)
@@ -312,7 +318,7 @@ export async function fetchTourHotelBookingsForPnlByCheckIn(startYmd: string, en
     supabase
       .from('tour_hotel_bookings')
       .select(
-        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, check_in_date, submit_on, created_at, deletion_requested_at'
+        'id, total_price, unit_price, rooms, hotel, reservation_name, payment_method, status, check_in_date, tour_id, submit_on, created_at, deletion_requested_at'
       )
       .is('deletion_requested_at', null)
       .gte('check_in_date', startYmd)

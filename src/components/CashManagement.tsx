@@ -18,7 +18,7 @@ import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign,
 import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
-import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
+import type { ExpenseReconSourceTable, ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
@@ -79,7 +79,7 @@ const categories = [
 
 function reconSourceFromCashTransaction(
   tx: CashTransaction
-): { sourceTable: 'payment_records' | 'company_expenses' | 'reservation_expenses'; sourceId: string } | null {
+): { sourceTable: ExpenseReconSourceTable; sourceId: string } | null {
   if (tx.source === 'payment_records' && tx.id.startsWith('pr_')) {
     return { sourceTable: 'payment_records', sourceId: tx.id.slice(3) }
   }
@@ -88,6 +88,9 @@ function reconSourceFromCashTransaction(
   }
   if (tx.source === 'reservation_expenses' && tx.id.startsWith('re_')) {
     return { sourceTable: 'reservation_expenses', sourceId: tx.id.slice(3) }
+  }
+  if (tx.source === 'cash_transactions') {
+    return { sourceTable: 'cash_transactions', sourceId: tx.id }
   }
   return null
 }
