@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   Dialog,
@@ -84,6 +84,7 @@ interface CompanyExpenseRow {
 interface BiweeklyTeamMember {
   email: string
   name_ko: string
+  name_en?: string | null
   position: string
   display_name: string | null
   languages?: string[] | null
@@ -159,6 +160,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [teamMembers, setTeamMembers] = useState<BiweeklyTeamMember[]>([])
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false)
+  const [showMealCounts, setShowMealCounts] = useState(false)
   const [employeeTab, setEmployeeTab] = useState<'active' | 'inactive'>('active')
   const [employeeSearch, setEmployeeSearch] = useState('')
   const employeePickerRef = useRef<HTMLDivElement>(null)
@@ -242,7 +244,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, position, display_name, languages, phone, is_active')
+        .select('email, name_ko, name_en, position, display_name, languages, phone, is_active')
         .order('name_ko')
 
       if (error) {
@@ -2480,21 +2482,34 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               </p>
               {Object.keys(periodMealCounts).length > 0 && (
                 <div className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs">
-                  <div className="font-semibold text-gray-800 mb-1">선택 기간 사무실 식사 (직원별 횟수)</div>
-                  <ul className="space-y-0.5 max-h-32 overflow-y-auto">
-                    {Object.entries(periodMealCounts)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([email, n]) => (
-                        <li key={email} className="flex justify-between gap-2 text-gray-700">
-                          <span className="truncate">
-                            {teamMembers.find((m) => m.email === email)?.display_name ||
-                              teamMembers.find((m) => m.email === email)?.name_ko ||
-                              email}
-                          </span>
-                          <span className="shrink-0 tabular-nums">{n}회</span>
-                        </li>
-                      ))}
-                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => setShowMealCounts((prev) => !prev)}
+                    aria-expanded={showMealCounts}
+                    className="flex w-full items-center justify-between gap-2 font-semibold text-gray-800"
+                  >
+                    <span>선택 기간 사무실 식사 (직원별 횟수)</span>
+                    <ChevronDown
+                      className={`w-4 h-4 shrink-0 text-gray-500 transition-transform ${showMealCounts ? 'rotate-180' : ''}`}
+                      aria-hidden
+                    />
+                  </button>
+                  {showMealCounts && (
+                    <ul className="space-y-0.5 max-h-32 overflow-y-auto mt-1">
+                      {Object.entries(periodMealCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([email, n]) => (
+                          <li key={email} className="flex justify-between gap-2 text-gray-700">
+                            <span className="truncate">
+                              {teamMembers.find((m) => m.email === email)?.display_name ||
+                                teamMembers.find((m) => m.email === email)?.name_ko ||
+                                email}
+                            </span>
+                            <span className="shrink-0 tabular-nums">{n}회</span>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </div>
@@ -2571,6 +2586,32 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   </>
                 )}
               </div>
+
+              {/* 직원 정보 (영어 이름 · 이메일 · 전화번호) */}
+              {selectedEmployee && (() => {
+                const m = teamMembers.find((x) => x.email === selectedEmployee)
+                const nameEn = m?.name_en?.trim() || '—'
+                const phone = m?.phone?.trim() || '—'
+                return (
+                  <div className="bg-gray-50 rounded-md p-3 sm:p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-gray-700">
+                      <User className="w-3.5 h-3.5 shrink-0 text-gray-500" />
+                      <span className="text-gray-600">영어 이름:</span>
+                      <span className="font-medium text-gray-900 truncate">{nameEn}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-700">
+                      <Mail className="w-3.5 h-3.5 shrink-0 text-gray-500" />
+                      <span className="text-gray-600">이메일:</span>
+                      <span className="font-medium text-gray-900 truncate">{selectedEmployee}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-700">
+                      <Phone className="w-3.5 h-3.5 shrink-0 text-gray-500" />
+                      <span className="text-gray-600">전화번호:</span>
+                      <span className="font-medium text-gray-900 truncate">{phone}</span>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
 

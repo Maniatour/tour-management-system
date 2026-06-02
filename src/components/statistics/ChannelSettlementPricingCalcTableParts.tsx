@@ -55,7 +55,7 @@ type RowCellsProps = {
   item: ChannelSettlementStatsItemLike
   ctx: Parameters<typeof buildChannelSettlementPricingCalcDisplay>[1]
   settlementCellClassName?: string
-  settlementTitle?: string
+  settlementTitle?: string | undefined
 }
 
 export function ChannelSettlementPricingCalcRowCells({

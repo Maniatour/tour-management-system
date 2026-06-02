@@ -446,6 +446,23 @@ export async function updateReservation(
       const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
         reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
       )
+      let reservationExpensesTotal = 0
+      try {
+        const { data: expRows } = await supabase
+          .from('reservation_expenses')
+          .select('amount, status')
+          .eq('reservation_id', reservationId)
+          .not('status', 'eq', 'rejected')
+        reservationExpensesTotal =
+          Math.round(
+            ((expRows || []) as Array<{ amount: number | null }>).reduce(
+              (sum, e) => sum + (Number(e.amount) || 0),
+              0
+            ) * 100
+          ) / 100
+      } catch {
+        reservationExpensesTotal = 0
+      }
       const paySm = summarizePaymentRecordsForBalance(paymentRecords)
       const manualRefundAmount = toNum(pricingInfo.refundAmount)
       const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
@@ -512,6 +529,7 @@ export async function updateReservation(
         prepaymentCost: toNum(pricingInfo.prepaymentCost),
         prepaymentTip: toNum(pricingInfo.prepaymentTip),
         refundAmountForCompanyRevenueBlock: refundForRevenue,
+        reservationExpensesTotal,
       })
 
       // DB에 저장할 컬럼을 모두 명시 (card_fee, balance_amount, commission_amount 등 누락 방지)

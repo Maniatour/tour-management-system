@@ -110,6 +110,18 @@ export async function syncReservationPricingAggregates(
       .select('payment_status, amount')
       .eq('reservation_id', reservationId)
 
+    const { data: expenseRows } = await supabase
+      .from('reservation_expenses')
+      .select('amount, status')
+      .eq('reservation_id', reservationId)
+      .not('status', 'eq', 'rejected')
+    const reservationExpensesTotal = roundUsd2(
+      (expenseRows || []).reduce(
+        (sum: number, e: { amount: number | null }) => sum + (Number(e.amount) || 0),
+        0
+      )
+    )
+
     const records: PaymentRecordLike[] = (payRows || []).map((r) => ({
       payment_status: String(r.payment_status || ''),
       amount: Number(r.amount) || 0,
@@ -181,7 +193,8 @@ export async function syncReservationPricingAggregates(
       channels,
       records,
       reservationOptionRows,
-      new Map([[reservationId, optionSum]])
+      new Map([[reservationId, optionSum]]),
+      reservationExpensesTotal
     )
 
     const linePricing = pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]

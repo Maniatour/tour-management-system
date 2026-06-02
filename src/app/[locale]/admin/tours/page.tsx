@@ -602,15 +602,23 @@ export default function AdminTours() {
       const reservationIds = (reservationsData || []).map(r => r.id).filter(Boolean)
       const pricingMap = new Map<string, Database['public']['Tables']['reservation_pricing']['Row']>()
       if (reservationIds.length > 0) {
-        const { data: pricingData } = await supabase
-          .from('reservation_pricing')
-          .select('*')
-          .in('reservation_id', reservationIds)
-        
-        if (pricingData) {
-          pricingData.forEach((pricing: Database['public']['Tables']['reservation_pricing']['Row']) => {
-            pricingMap.set(pricing.reservation_id, pricing)
-          })
+        // URL 길이 한도(520 ERR_FAILED) 회피 위해 reservation_id를 청크로 나눠 조회
+        for (const chunk of chunkStrings(reservationIds)) {
+          const { data: pricingData, error: pricingErr } = await supabase
+            .from('reservation_pricing')
+            .select('*')
+            .in('reservation_id', chunk)
+
+          if (pricingErr) {
+            console.error('Error fetching reservation_pricing (chunk):', pricingErr)
+            continue
+          }
+
+          if (pricingData) {
+            pricingData.forEach((pricing: Database['public']['Tables']['reservation_pricing']['Row']) => {
+              pricingMap.set(pricing.reservation_id, pricing)
+            })
+          }
         }
       }
       setReservationPricingMap(pricingMap)

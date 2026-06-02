@@ -175,6 +175,7 @@ type StatsPricingExtras = {
   onlinePaymentAmount: number
   prepaymentCost: number
   commissionBasePrice: number | null
+  commissionAmount?: number
 }
 
 function defaultStatsExtras(): StatsPricingExtras {
@@ -524,12 +525,6 @@ function mapPricingRowToChannelTabState(p: Record<string, unknown>) {
 
 type ChannelTabPricingState = ReturnType<typeof mapPricingRowToChannelTabState>
 
-/** `channel_settlement_amount` 없음 → 대시 (DB 값만 표시) */
-function formatTourChannelSettlementCell(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return '—'
-  return `$${Number(n).toLocaleString()}`
-}
-
 const CHANNEL_SETTLEMENT_PCT_VERIFY_EPS = 0.02
 
 type ChannelMasterLike = {
@@ -705,6 +700,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
         onlinePaymentAmount: p.onlinePaymentAmount ?? 0,
         prepaymentCost: p.prepaymentCost ?? 0,
         commissionBasePrice: p.commissionBasePrice ?? null,
+        commissionAmount: p.commissionAmount ?? 0,
       }
     },
     [reservationPricingData]
@@ -745,12 +741,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   )
 
   const pricingCalcCtxForItem = useCallback(
-    (item: ReservationItem) => ({
-      returnedAmount: returnedAmountByReservation[item.id] ?? 0,
-      partnerReceived: partnerReceivedByReservation[item.id] ?? 0,
+    (item: { id?: string; channelId?: string; companyTotalRevenue?: number }) => ({
+      returnedAmount: returnedAmountByReservation[item.id ?? ''] ?? 0,
+      partnerReceived: partnerReceivedByReservation[item.id ?? ''] ?? 0,
       isOta: isOtaChannelId(item.channelId),
       channels,
-      computedCompanyTotalRevenue: item.companyTotalRevenue,
+      computedCompanyTotalRevenue: item.companyTotalRevenue ?? 0,
     }),
     [returnedAmountByReservation, partnerReceivedByReservation, isOtaChannelId, channels]
   )
@@ -1073,6 +1069,23 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
             reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
           )
+          let reservationExpensesTotal = 0
+          try {
+            const { data: expRows } = await supabase
+              .from('reservation_expenses')
+              .select('amount, status')
+              .eq('reservation_id', editingReservation.id)
+              .not('status', 'eq', 'rejected')
+            reservationExpensesTotal =
+              Math.round(
+                ((expRows || []) as Array<{ amount: number | null }>).reduce(
+                  (sum, e) => sum + (Number(e.amount) || 0),
+                  0
+                ) * 100
+              ) / 100
+          } catch {
+            reservationExpensesTotal = 0
+          }
           const paySm = summarizePaymentRecordsForBalance(paymentRecords)
           const manualRefundAmount = toNum(pricingInfo.refundAmount)
           const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
@@ -1140,6 +1153,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             prepaymentCost: toNum(pricingInfo.prepaymentCost),
             prepaymentTip: toNum(pricingInfo.prepaymentTip),
             refundAmountForCompanyRevenueBlock: refundForRevenue,
+            reservationExpensesTotal,
           })
 
           await supabase.from('reservation_pricing').upsert({

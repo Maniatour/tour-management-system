@@ -5434,6 +5434,23 @@ export default function ReservationForm({
         const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
           reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
         )
+        let reservationExpensesTotal = 0
+        try {
+          const { data: expRows } = await (supabase as any)
+            .from('reservation_expenses')
+            .select('amount, status')
+            .eq('reservation_id', reservationId)
+            .not('status', 'eq', 'rejected')
+          reservationExpensesTotal =
+            Math.round(
+              ((expRows || []) as Array<{ amount: number | null }>).reduce(
+                (sum, e) => sum + (Number(e.amount) || 0),
+                0
+              ) * 100
+            ) / 100
+        } catch {
+          reservationExpensesTotal = 0
+        }
         const paySm = summarizePaymentRecordsForBalance(paymentRecords)
         const manualRefundAmt = Number(fd.refundAmount) || 0
         const refundForRevenue = computeRefundAmountForCompanyRevenueBlock({
@@ -5500,6 +5517,7 @@ export default function ReservationForm({
           prepaymentCost: Number(fd.prepaymentCost) || 0,
           prepaymentTip: Number(fd.prepaymentTip) || 0,
           refundAmountForCompanyRevenueBlock: refundForRevenue,
+          reservationExpensesTotal,
         })
       }
 

@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   try {
     const emailRouteDb = supabaseAdmin ?? supabase
     const body = await request.json()
-    const { reservationId, email, type = 'both', locale: localeParam, sentBy } = body
+    const { reservationId, email, type = 'both', locale: localeParam, sentBy, includePriceInfo } = body
 
     if (!reservationId || !email) {
       return NextResponse.json(
@@ -299,6 +299,7 @@ export async function POST(request: NextRequest) {
         grandCanyonSunrisePickup,
         productChoices: productChoicesForEmail,
         reservationOptionLines,
+        includePriceInfo: includePriceInfo !== false,
       }
     )
     
@@ -457,6 +458,8 @@ export type GenerateEmailContentOptions = {
   productChoices?: ProductChoiceRowForResidentFees[] | null
   /** Same as receipt: each reservation_options row (e.g. non-resident fee). */
   reservationOptionLines?: ReservationOptionLineForEmail[] | null
+  /** false이면 가격 정보(Price Information) 섹션을 이메일에서 제외 (기본 true) */
+  includePriceInfo?: boolean
 }
 
 export function generateEmailContent(
@@ -476,6 +479,7 @@ export function generateEmailContent(
   const injectProductDetailEditMarkers = options?.injectProductDetailEditMarkers === true
   const pickupHotelRow = options?.pickupHotel ?? null
   const gcSunrise = options?.grandCanyonSunrisePickup ?? null
+  const includePriceInfo = options?.includePriceInfo !== false
 
   const escapeEmailText = (s: string | null | undefined): string => {
     if (s == null || s === '') return ''
@@ -626,7 +630,7 @@ export function generateEmailContent(
 
   // 가격 정보 HTML 생성
   const generatePriceSection = () => {
-    if (!pricing) return ''
+    if (!pricing || !includePriceInfo) return ''
 
     const pax = adults + children + infants
     const niPer = Number(pricing.not_included_price) || 0
@@ -998,7 +1002,48 @@ export function generateEmailContent(
   // 투어 스케줄 HTML 생성
   const generateTourScheduleSection = () => {
     if (!productSchedules || productSchedules.length === 0) return ''
-    
+
+    // 시각 문자열("HH:MM"/"HH:MM:SS") → 0~1439 분, 실패 시 null
+    const parseScheduleTimeToMinutes = (t: unknown): number | null => {
+      if (typeof t !== 'string' || t.trim() === '') return null
+      const parts = t.split(':')
+      const h = parseInt(parts[0], 10)
+      const m = parseInt(parts[1] ?? '0', 10)
+      if (Number.isNaN(h) || Number.isNaN(m)) return null
+      return (((h * 60 + m) % 1440) + 1440) % 1440
+    }
+    const minutesToScheduleTime = (mins: number): string => {
+      const v = ((Math.round(mins) % 1440) + 1440) % 1440
+      const h = Math.floor(v / 60)
+      const m = v % 60
+      return `${h < 10 ? `0${h}` : h}:${m < 10 ? `0${m}` : m}`
+    }
+
+    // 일출 투어 한정: 픽업 예상 종료 시각을 첫 일정 시작으로 맞추고, 모든 시간을 동일하게 이동
+    let scheduleShiftMinutes = 0
+    let useScheduleRebase = false
+    if (gcSunrise) {
+      const firstWithStart = productSchedules.find(
+        (s: any) => parseScheduleTimeToMinutes(s.start_time) != null
+      )
+      const origFirstStart = firstWithStart
+        ? parseScheduleTimeToMinutes(firstWithStart.start_time)
+        : null
+      if (origFirstStart != null) {
+        const targetFirstStart = ((gcSunrise.pickupWindowEndMinutes % 1440) + 1440) % 1440
+        scheduleShiftMinutes = targetFirstStart - origFirstStart
+        useScheduleRebase = true
+      }
+    }
+
+    const shiftScheduleTime = (t: unknown): string | null => {
+      if (typeof t !== 'string' || t.trim() === '') return null
+      if (!useScheduleRebase) return t
+      const mins = parseScheduleTimeToMinutes(t)
+      if (mins == null) return t
+      return minutesToScheduleTime(mins + scheduleShiftMinutes)
+    }
+
     return `
       <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
         <div style="background: #f9fafb; padding: 15px; border-bottom: 1px solid #e5e7eb;">
@@ -1009,16 +1054,19 @@ export function generateEmailContent(
         <div style="padding: 20px;">
           ${productSchedules.map((schedule: any) => {
             const title = isEnglish ? (schedule.title_en || schedule.title_ko) : (schedule.title_ko || schedule.title_en)
+            const displayStartTime = shiftScheduleTime(schedule.start_time)
+            const displayEndTime = shiftScheduleTime(schedule.end_time)
+            // 모든 시간을 동일 delta로 이동하므로 소요 시간은 원본 기준으로 유지
             const duration = schedule.start_time && schedule.end_time ? calculateDuration(schedule.start_time, schedule.end_time) : ''
             
             return `
               <div style="padding: 15px; margin-bottom: 15px; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 4px;">
                 <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
                   <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
-                    ${schedule.start_time ? `
+                    ${displayStartTime ? `
                     <span style="font-size: 16px; font-weight: 600; color: #059669; white-space: nowrap;">
-                      ${formatTime(schedule.start_time)}
-                      ${schedule.end_time ? ` - ${formatTime(schedule.end_time)}` : ''}
+                      ${formatTime(displayStartTime)}
+                      ${displayEndTime ? ` - ${formatTime(displayEndTime)}` : ''}
                     </span>
                     ` : ''}
                     ${duration ? `

@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[preview-email] 요청 수신')
     const body = await request.json()
-    const { reservationId, type = 'both', locale: localeParam } = body
+    const { reservationId, type = 'both', locale: localeParam, includePriceInfo } = body
 
     console.log('[preview-email] 요청 데이터:', { reservationId, type, locale: localeParam })
 
@@ -384,6 +384,7 @@ export async function POST(request: NextRequest) {
           grandCanyonSunrisePickup,
           productChoices: productChoicesForEmail,
           reservationOptionLines,
+          includePriceInfo: includePriceInfo !== false,
         }
       )
       console.log('[preview-email] 이메일 내용 생성 완료')

@@ -289,7 +289,7 @@ export default function ReservationFollowUpSection({
     [followUpPipelineReservation, followUpPipelineCustomers, followUpPipelineProducts, tRes]
   )
 
-  const sendPipelineEmailFromPreview = useCallback(async () => {
+  const sendPipelineEmailFromPreview = useCallback(async (opts?: { includePriceInfo?: boolean }) => {
     if (!pipelineEmailPreview) return
     if (!pipelineEmailPreview.customerEmail?.trim()) {
       alert(tRes('messages.emailSendRequiresCustomerEmail'))
@@ -298,6 +298,7 @@ export default function ReservationFollowUpSection({
     const customers = followUpPipelineCustomers ?? []
     const customer = customers.find((c) => c.id === followUpPipelineReservation?.customerId)
     const sendLocale = resolveReservationEmailLocale(customer?.language ?? null, null)
+    const includePriceInfo = opts?.includePriceInfo !== false
 
     let response: Response
     if (pipelineEmailPreview.emailType === 'resident_inquiry') {
@@ -320,6 +321,7 @@ export default function ReservationFollowUpSection({
           type: 'both',
           locale: sendLocale,
           sentBy: userEmail || null,
+          includePriceInfo,
         }),
       })
     } else if (pipelineEmailPreview.emailType === 'departure') {
@@ -332,6 +334,7 @@ export default function ReservationFollowUpSection({
           type: 'voucher',
           locale: sendLocale,
           sentBy: userEmail || null,
+          includePriceInfo,
         }),
       })
     } else if (pipelineEmailPreview.emailType === 'pickup') {

@@ -35,7 +35,7 @@ interface EmailPreviewModalProps {
   customerEmail: string
   pickupTime?: string | null
   tourDate?: string | null
-  onSend: () => Promise<void>
+  onSend: (opts?: { includePriceInfo?: boolean }) => Promise<void>
 }
 
 export default function EmailPreviewModal({
@@ -61,6 +61,7 @@ export default function EmailPreviewModal({
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [includePriceInfo, setIncludePriceInfo] = useState(true)
   const [productDetailEdit, setProductDetailEdit] =
     useState<ProductDetailEditPayload | null>(null)
   const [editingField, setEditingField] =
@@ -68,6 +69,7 @@ export default function EmailPreviewModal({
   const previewBodyRef = useRef<HTMLDivElement>(null)
 
   const showCopyPrintToolbar = emailType === 'confirmation' || emailType === 'departure'
+  const showPriceToggle = emailType === 'confirmation' || emailType === 'departure'
 
   /** 미리보기 전용: 복사·인쇄 시 수정 버튼·data-pd-field 등 고객용 HTML에 넣지 않을 마크업 제거 */
   const stripAdminPreviewMarkupFromEmailHtml = (html: string): string => {
@@ -231,6 +233,7 @@ ${printHtml}
           body: JSON.stringify({
             reservationId,
             type,
+            includePriceInfo,
           }),
         })
       }
@@ -256,7 +259,7 @@ ${printHtml}
     } finally {
       setLoading(false)
     }
-  }, [isOpen, reservationId, emailType, pickupTime, tourDate])
+  }, [isOpen, reservationId, emailType, pickupTime, tourDate, includePriceInfo])
 
   useEffect(() => {
     loadEmailPreview()
@@ -286,7 +289,7 @@ ${printHtml}
   const handleSend = async () => {
     setSending(true)
     try {
-      await onSend()
+      await onSend(showPriceToggle ? { includePriceInfo } : undefined)
       onClose()
     } catch (error) {
       console.error('이메일 발송 오류:', error)
@@ -398,13 +401,28 @@ ${printHtml}
         </div>
 
         {/* 푸터 */}
-        <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t bg-gray-50">
           <button
             onClick={onClose}
             className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
           >
             닫기
           </button>
+          {showPriceToggle ? (
+            <label
+              className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 select-none"
+              title="이메일에 가격 정보(Price Information) 섹션을 포함할지 선택합니다."
+            >
+              <input
+                type="checkbox"
+                checked={includePriceInfo}
+                onChange={(e) => setIncludePriceInfo(e.target.checked)}
+                disabled={loading || sending}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>가격 정보(Price Information) 표시</span>
+            </label>
+          ) : null}
           <button
             type="button"
             onClick={handleSend}

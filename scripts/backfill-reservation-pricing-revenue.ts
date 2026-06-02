@@ -85,6 +85,19 @@ async function main() {
         amount: Number(r.amount) || 0,
       }))
 
+      const { data: expenseRows } = await supabase
+        .from('reservation_expenses')
+        .select('amount, status')
+        .eq('reservation_id', reservationId)
+        .not('status', 'eq', 'rejected')
+      const reservationExpensesTotal =
+        Math.round(
+          ((expenseRows || []) as Array<{ amount: number | null }>).reduce(
+            (sum, e) => sum + (Number(e.amount) || 0),
+            0
+          ) * 100
+        ) / 100
+
       const cid = String((res as { channel_id?: string | null }).channel_id ?? '').trim()
       let channels: Array<{
         id: string
@@ -141,7 +154,8 @@ async function main() {
         channels,
         records,
         reservationOptionRows,
-        new Map([[reservationId, optionSum]])
+        new Map([[reservationId, optionSum]]),
+        reservationExpensesTotal
       )
 
       if (!stored) {

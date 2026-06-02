@@ -59,13 +59,14 @@ export function ReservationFormEmailSendButtons({
   )
 
   const executeSend = useCallback(
-    async (kind: ReservationFormEmailSendKind) => {
+    async (kind: ReservationFormEmailSendKind, opts?: { includePriceInfo?: boolean }) => {
       const customer = customers.find((c) => c.id === reservation.customerId)
       if (!customer?.email) {
         throw new Error(uiLocale === 'en' ? 'The customer has no email address.' : '고객 이메일이 없습니다.')
       }
 
       const locale = resolveReservationEmailLocale(customer.language ?? null, null)
+      const includePriceInfo = opts?.includePriceInfo !== false
 
       let response: Response
       if (kind === 'confirmation') {
@@ -78,6 +79,7 @@ export function ReservationFormEmailSendButtons({
             type: 'both',
             locale,
             sentBy,
+            includePriceInfo,
           }),
         })
       } else if (kind === 'departure') {
@@ -90,6 +92,7 @@ export function ReservationFormEmailSendButtons({
             type: 'voucher',
             locale,
             sentBy,
+            includePriceInfo,
           }),
         })
       } else {
@@ -197,10 +200,10 @@ export function ReservationFormEmailSendButtons({
           customerEmail={previewEmail}
           pickupTime={reservation.pickUpTime ?? null}
           tourDate={reservation.tourDate ?? null}
-          onSend={async () => {
+          onSend={async (opts) => {
             setSending(previewKind)
             try {
-              await executeSend(previewKind)
+              await executeSend(previewKind, opts)
             } finally {
               setSending(null)
             }

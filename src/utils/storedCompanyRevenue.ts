@@ -76,6 +76,11 @@ export type StoredCompanyRevenueComputeInput = {
   customerPaymentNetForOtaOmitCheck?: number
   commissionAmount?: number
   channelPaymentNet?: number
+  /**
+   * 예약 지출(위약금 등) 총합 — ④ 총매출에서 차감(UI `companyViewRevenueLedger`와 동일).
+   * 미지정 시 0. 음수면 가산(환수)으로 동작해 UI와 부호가 일치한다.
+   */
+  reservationExpensesTotal?: number
 }
 
 export function computeStoredCompanyRevenueFields(
@@ -84,6 +89,8 @@ export function computeStoredCompanyRevenueFields(
   const st = String(inp.reservationStatus || '').toLowerCase().trim()
   const isReservationCancelled = st === 'cancelled' || st === 'canceled'
   const prepTip = Number(inp.prepaymentTip) || 0
+  /** 예약 지출(위약금 등) — UI ④와 동일하게 모든 분기에서 차감(부호 그대로) */
+  const rex = Number(inp.reservationExpensesTotal) || 0
 
   const omitAdditionalDiscountAndCostFromRevenueSum =
     inp.omitAdditionalDiscountAndCostFromSumOverride !== undefined
@@ -98,10 +105,11 @@ export function computeStoredCompanyRevenueFields(
 
   if (isReservationCancelled && !inp.isOTAChannel) {
     const ch = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
-    /** 비-OTA 취소: 투어 환불은 ③ 정산 net에 반영 — 저장 총매출은 정산 베이스(OTA 취소와 동일: refb 재차감 없음) */
+    /** 비-OTA 취소: 투어 환불은 ③ 정산 net에 반영 — 저장 총매출은 정산 베이스(OTA 취소와 동일: refb 재차감 없음) 에서 예약 지출(위약금) 차감 */
+    const tr = roundUsd2(ch - rex)
     return {
-      company_total_revenue: ch,
-      operating_profit: roundUsd2(ch - prepTip),
+      company_total_revenue: tr,
+      operating_profit: roundUsd2(tr - prepTip),
     }
   }
 
@@ -109,7 +117,7 @@ export function computeStoredCompanyRevenueFields(
 
   if (isReservationCancelled && inp.isOTAChannel) {
     const ch = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
-    const tr = roundUsd2(ch - refb)
+    const tr = roundUsd2(ch - rex - refb)
     return {
       company_total_revenue: tr,
       operating_profit: roundUsd2(tr - prepTip),
@@ -124,6 +132,7 @@ export function computeStoredCompanyRevenueFields(
     Number.isFinite(Number(cpn))
   ) {
     let tr = roundUsd2(Math.max(0, Number(cpn) || 0))
+    tr -= rex
     if (refb > 0.005) {
       tr -= refb
     }
@@ -148,6 +157,9 @@ export function computeStoredCompanyRevenueFields(
     commissionAmount: Number(inp.commissionAmount) || 0,
     channelPaymentNet: Number(inp.channelPaymentNet) || 0,
   })
+
+  /** UI ledger와 동일: omit 판정(베이스 기준) 이후 예약 지출(위약금) 차감 */
+  tr -= rex
 
   if (!omitOtaExtras && inp.reservationOptionsActiveSum > 0 && inp.isOTAChannel) {
     tr += inp.reservationOptionsActiveSum

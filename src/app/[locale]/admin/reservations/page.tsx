@@ -117,7 +117,6 @@ import {
   collectReservationActivityDateKeys,
   localYmdSetWhereBecameCancelledFromAuditRows,
   isIntoCancelledLikeTransition,
-  isReservationUpdatedStrictlyAfterAdded,
   reservationIdsSignature,
   statusTransitionSortIndex,
 } from '@/lib/reservationStatusAudit'
@@ -218,7 +217,7 @@ function computeAvgDailyRegisteredByMonthForCalendarYear(
   return out
 }
 
-/** 그룹 날짜 기준: 해당일 등록(addedTime) vs 해당일 수정(updated_at) — 당일 등록+당일 상태변경은 둘 다에 포함 */
+/** 그룹 날짜 기준: 해당일 등록(addedTime) vs 해당일 수정(updated_at) — 당일 등록 건은 등록에만 포함하고 상태변경에선 제외(중복 방지) */
 function splitReservationsByActivityForDate(date: string, reservations: Reservation[]) {
   const registration: Reservation[] = []
   const statusChange: Reservation[] = []
@@ -231,11 +230,7 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
       seenReg.add(r.id)
       registration.push(r)
     }
-    if (
-      updatedKey === date &&
-      !seenStatus.has(r.id) &&
-      (createdKey !== date || isReservationUpdatedStrictlyAfterAdded(r))
-    ) {
+    if (updatedKey === date && !seenStatus.has(r.id) && createdKey !== date) {
       seenStatus.add(r.id)
       statusChange.push(r)
     }
@@ -3781,13 +3776,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [customers, products])
 
   // ???????? ?? ??? - useCallback??? ????????
-  const handleSendEmailFromPreview = useCallback(async () => {
+  const handleSendEmailFromPreview = useCallback(async (opts?: { includePriceInfo?: boolean }) => {
     if (!emailPreviewData) return
 
     if (!emailPreviewData.customerEmail?.trim()) {
       alert(t('messages.emailSendRequiresCustomerEmail'))
       return
     }
+
+    const includePriceInfo = opts?.includePriceInfo !== false
 
     setSendingEmail(emailPreviewData.reservationId)
 
@@ -3824,7 +3821,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             email: emailPreviewData.customerEmail,
             type: 'both',
             locale,
-            sentBy: user?.email || null
+            sentBy: user?.email || null,
+            includePriceInfo
           })
         })
       } else if (emailPreviewData.emailType === 'departure') {
@@ -3839,7 +3837,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             email: emailPreviewData.customerEmail,
             type: 'voucher',
             locale,
-            sentBy: user?.email || null
+            sentBy: user?.email || null,
+            includePriceInfo
           })
         })
       } else if (emailPreviewData.emailType === 'pickup') {
@@ -4662,7 +4661,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   simpleCardStatusTransitionDisplayScopeKey === simpleCardStatusScopeKey
 
                 const statusListFromEvents = simpleCardStatusAuditReady
-                  ? dayReservations.filter((r) => !!simpleCardStatusTransitionMap[`${r.id}|${date}`])
+                  ? dayReservations.filter(
+                      (r) =>
+                        !!simpleCardStatusTransitionMap[`${r.id}|${date}`] &&
+                        isoToLocalCalendarDateKey(r.addedTime) !== date
+                    )
                   : statusListFromUpdated
                 /** events·audit 미동기화 시에도 수정일 기준 후보는 유지(빈 섹션 방지) */
                 const statusList =
@@ -4785,6 +4788,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           reservations: dayReservations.filter((r) => {
                             const st = (r.status || '').toLowerCase()
                             if (st !== 'cancelled' && st !== 'canceled' && st !== 'deleted') return false
+                            /** 당일 등록 건은 등록 집계에만 포함 — 취소 집계에서 중복 제외 */
+                            if (isoToLocalCalendarDateKey(r.addedTime) === date) return false
                             const tr = simpleCardStatusTransitionMap[`${r.id}|${date}`]
                             return isIntoCancelledLikeTransition(tr)
                           }),

@@ -127,7 +127,9 @@ export function computeBalanceChannelMetrics(
   reservation: Reservation,
   channels: BalanceChannelRowInput[],
   paymentRecords: PaymentRecordLike[],
-  reservationOptionSumByReservationId: Map<string, number> | undefined
+  reservationOptionSumByReservationId: Map<string, number> | undefined,
+  /** 예약 지출(위약금 등) 총합 — ④ 총매출에서 차감(UI ledger와 동일). 없으면 0. */
+  reservationExpensesTotal = 0
 ): BalanceChannelMetrics | null {
   if (!p) return null
 
@@ -314,6 +316,7 @@ export function computeBalanceChannelMetrics(
       prepaymentCost: pricingFieldToNumber(p.prepayment_cost),
       prepaymentTip: prepTip,
       refundAmountForCompanyRevenueBlock: refundForRevenue,
+      reservationExpensesTotal,
     })
     companyTotalRevenue = storedRev.company_total_revenue
     operatingProfit = round2(storedRev.operating_profit)
@@ -384,7 +387,9 @@ export function computeReservationPricingStoredRevenueColumns(
   channels: BalanceChannelRowInput[],
   paymentRecords: PaymentRecordLike[],
   reservationOptionRows: ReservationOptionSumRow[],
-  reservationOptionSumByReservationId?: Map<string, number>
+  reservationOptionSumByReservationId?: Map<string, number>,
+  /** 예약 지출(위약금 등) 총합 — ④ 총매출에서 차감(UI ledger와 동일). 없으면 0. */
+  reservationExpensesTotal = 0
 ): { company_total_revenue: number; operating_profit: number } | null {
   const optMapFromRows = aggregateReservationOptionSumsByReservationId(reservationOptionRows)
   const mergedOptMap = new Map<string, number>(reservationOptionSumByReservationId ?? [])
@@ -395,7 +400,14 @@ export function computeReservationPricingStoredRevenueColumns(
     (mergePricingWithLiveOptionTotal(p, reservation.id, mergedOptMap) as
       | ReservationPricingMapValue
       | undefined) ?? p
-  const m = computeBalanceChannelMetrics(pLine, reservation, channels, paymentRecords, mergedOptMap)
+  const m = computeBalanceChannelMetrics(
+    pLine,
+    reservation,
+    channels,
+    paymentRecords,
+    mergedOptMap,
+    reservationExpensesTotal
+  )
   if (!m) return null
 
   const paySm = summarizePaymentRecordsForBalance(paymentRecords)
@@ -470,6 +482,7 @@ export function computeReservationPricingStoredRevenueColumns(
     prepaymentCost: pricingFieldToNumber(pLine.prepayment_cost),
     prepaymentTip: pricingFieldToNumber(pLine.prepayment_tip),
     refundAmountForCompanyRevenueBlock: refundForRevenue,
+    reservationExpensesTotal,
   })
 }
 
