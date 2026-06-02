@@ -650,9 +650,10 @@ export default function TourHotelBookingList() {
   const handleEdit = (booking: TourHotelBooking) => {
     setEditingBooking(booking);
     setShowForm(true);
+    setShowBookingModal(false);
   };
 
-  const handleRequestSoftDelete = async (id: string) => {
+  const handleRequestSoftDelete = async (id: string, opts?: { keepModalOpen?: boolean }) => {
     if (!canBookingMgmtSoftDelete) {
       alert(
         locale === 'ko'
@@ -680,6 +681,11 @@ export default function TourHotelBookingList() {
       if (error) throw error;
 
       setBookings((prev) => prev.filter((booking) => booking.id !== id));
+      if (!opts?.keepModalOpen) {
+        setShowForm(false);
+        setEditingBooking(null);
+        setShowBookingModal(false);
+      }
       alert(
         locale === 'ko'
           ? '삭제 요청되었습니다. 목록에서 숨겨지며 SUPER가 확인 후 영구 삭제합니다.'
@@ -691,9 +697,39 @@ export default function TourHotelBookingList() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!canSuperPurgeHotelBookings) {
+      alert(
+        locale === 'ko'
+          ? '영구 삭제는 SUPER 관리자만 할 수 있습니다.'
+          : 'Only super admins can permanently delete booking rows.'
+      );
+      return;
+    }
+    const msg =
+      locale === 'ko'
+        ? '정말로 이 부킹을 영구 삭제하시겠습니까? (되돌릴 수 없습니다)'
+        : 'Permanently delete this booking? This cannot be undone.';
+    if (!confirm(msg)) return;
+
+    try {
+      const { error } = await supabase.from('tour_hotel_bookings').delete().eq('id', id);
+      if (error) throw error;
+
+      setBookings((prev) => prev.filter((booking) => booking.id !== id));
+      setShowForm(false);
+      setEditingBooking(null);
+      setShowBookingModal(false);
+    } catch (error) {
+      console.error('투어 호텔 부킹 영구 삭제 오류:', error);
+      alert(locale === 'ko' ? '삭제 중 오류가 발생했습니다.' : 'Delete failed.');
+    }
+  };
+
   const handleViewHistory = (bookingId: string) => {
     setSelectedBookingId(bookingId);
     setShowHistory(true);
+    setShowBookingModal(false);
   };
 
   const handleSave = (booking: TourHotelBooking) => {
@@ -1156,6 +1192,74 @@ export default function TourHotelBookingList() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [tourDetailModal]);
 
+  const renderHotelBookingActionButtons = (
+    booking: TourHotelBooking,
+    opts?: { size?: 'compact' | 'touch' }
+  ) => {
+    const touch = opts?.size === 'touch';
+    const btn = touch
+      ? 'flex-1 min-w-0 py-2 px-2 sm:px-3 rounded-md text-xs sm:text-sm font-medium transition-colors'
+      : 'px-1.5 py-0.5 text-[10px] font-medium rounded hover:opacity-90 transition-colors';
+    const wrap = touch ? 'flex flex-wrap gap-2 w-full' : 'flex flex-wrap gap-1';
+
+    return (
+      <div className={wrap}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleEdit(booking);
+          }}
+          className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}
+          title={locale === 'ko' ? '편집' : 'Edit'}
+        >
+          {t('edit')}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleViewHistory(booking.id);
+          }}
+          className={`${btn} bg-green-600 text-white hover:bg-green-700`}
+          title={locale === 'ko' ? '히스토리' : 'History'}
+        >
+          {t('history')}
+        </button>
+        {canBookingMgmtSoftDelete && !booking.deletion_requested_at ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void handleRequestSoftDelete(booking.id);
+            }}
+            className={`${btn} bg-amber-600 text-white hover:bg-amber-700`}
+            title={locale === 'ko' ? '삭제 요청 (목록에서 숨김)' : 'Request deletion'}
+          >
+            {t('delete')}
+          </button>
+        ) : null}
+        {canSuperPurgeHotelBookings && booking.deletion_requested_at ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void handleDelete(booking.id);
+            }}
+            className={`${btn} bg-red-700 text-white hover:bg-red-800`}
+            title={locale === 'ko' ? '영구 삭제' : 'Permanent delete'}
+          >
+            {locale === 'ko' ? '영구 삭제' : 'Purge'}
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
   const renderHotelTableThead = () => (
     <thead className="bg-gray-50 border-b border-gray-200">
       <tr>
@@ -1198,7 +1302,9 @@ export default function TourHotelBookingList() {
           </span>
         </th>
         <th className={`${HOTEL_TABLE_TH} min-w-[7.5rem]`}>{tAudit('columnHeader')}</th>
-        <th className={`${HOTEL_TABLE_TH} min-w-[6rem]`}>{locale === 'ko' ? '작업' : 'Actions'}</th>
+        <th className={`${HOTEL_TABLE_TH} sticky right-0 z-10 min-w-[8rem] bg-gray-50 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)]`}>
+          {locale === 'ko' ? '작업' : 'Actions'}
+        </th>
       </tr>
     </thead>
   );
@@ -1272,23 +1378,11 @@ export default function TourHotelBookingList() {
           compact
         />
       </td>
-      <td className={HOTEL_TABLE_CELL} onClick={(e) => e.stopPropagation()}>
-        <div className="flex flex-wrap gap-1">
-          <button
-            type="button"
-            onClick={() => handleEdit(booking)}
-            className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {t('edit')}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleViewHistory(booking.id)}
-            className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600 text-white hover:bg-green-700"
-          >
-            {t('history')}
-          </button>
-        </div>
+      <td
+        className={`${HOTEL_TABLE_CELL} sticky right-0 z-10 min-w-[8rem] bg-white shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)]`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {renderHotelBookingActionButtons(booking)}
       </td>
     </tr>
   );
@@ -1327,6 +1421,9 @@ export default function TourHotelBookingList() {
           saving={bookingAuditSavingId === booking.id}
           onToggle={(next) => void handleToggleHotelBookingAudit(booking, next)}
         />
+      </div>
+      <div className="mt-3 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+        {renderHotelBookingActionButtons(booking, { size: 'touch' })}
       </div>
     </div>
   );
@@ -2102,29 +2199,7 @@ export default function TourHotelBookingList() {
 
                   {/* 액션 버튼들 */}
                   <div className="mt-4 pt-4 border-t">
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleEdit(booking)}
-                        className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
-                      >
-                        {t('edit')}
-                      </button>
-                      <button
-                        onClick={() => handleViewHistory(booking.id)}
-                        className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
-                      >
-                        {t('history')}
-                      </button>
-                      {canBookingMgmtSoftDelete ? (
-                        <button
-                          type="button"
-                          onClick={() => void handleRequestSoftDelete(booking.id)}
-                          className="flex-1 bg-amber-600 text-white py-2 px-3 rounded-md hover:bg-amber-700 text-sm font-medium transition-colors"
-                        >
-                          {t('delete')}
-                        </button>
-                      ) : null}
-                    </div>
+                    {renderHotelBookingActionButtons(booking, { size: 'touch' })}
                   </div>
                 </div>
               </div>
@@ -2161,6 +2236,40 @@ export default function TourHotelBookingList() {
                   setEditingBooking(null);
                 }}
               />
+              {editingBooking ? (
+                <div className="mt-6 flex flex-wrap gap-2 border-t border-gray-200 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => handleViewHistory(editingBooking.id)}
+                    className="inline-flex items-center rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                  >
+                    {t('history')}
+                  </button>
+                  {canBookingMgmtSoftDelete && !editingBooking.deletion_requested_at ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleRequestSoftDelete(editingBooking.id)}
+                      className="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                    >
+                      {locale === 'ko' ? '삭제 요청' : 'Request delete'}
+                    </button>
+                  ) : null}
+                  {canSuperPurgeHotelBookings && editingBooking.deletion_requested_at ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(editingBooking.id)}
+                      className="inline-flex items-center rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
+                    >
+                      {locale === 'ko' ? '영구 삭제' : 'Permanent delete'}
+                    </button>
+                  ) : null}
+                  {editingBooking.deletion_requested_at && !canSuperPurgeHotelBookings ? (
+                    <span className="self-center text-sm text-amber-700">
+                      {locale === 'ko' ? '삭제 요청됨' : 'Deletion requested'}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -2348,40 +2457,7 @@ export default function TourHotelBookingList() {
                     </div>
 
                     <div className="mt-4 pt-3 border-t">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => {
-                            setEditingBooking(booking);
-                            setShowForm(true);
-                            setShowBookingModal(false);
-                          }}
-                          className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
-                        >
-                          {t('edit')}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedBookingId(booking.id);
-                            setShowHistory(true);
-                            setShowBookingModal(false);
-                          }}
-                          className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
-                        >
-                          {t('history')}
-                        </button>
-                        {canBookingMgmtSoftDelete ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleRequestSoftDelete(booking.id);
-                              setShowBookingModal(false);
-                            }}
-                            className="flex-1 bg-amber-600 text-white py-2 px-3 rounded-md hover:bg-amber-700 text-sm font-medium transition-colors"
-                          >
-                            {t('delete')}
-                          </button>
-                        ) : null}
-                      </div>
+                      {renderHotelBookingActionButtons(booking, { size: 'touch' })}
                     </div>
                   </div>
                 ))}

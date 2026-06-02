@@ -153,7 +153,8 @@ export function computeStoredCompanyRevenueFields(
     tr += inp.reservationOptionsActiveSum
   }
 
-  if (!omitOtaExtras && !isReservationCancelled) {
+  /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
+  if (!isReservationCancelled) {
     const { baseUsd, residentFeesUsd } = splitNotIncludedForDisplay(
       inp.choiceNotIncludedTotal ?? 0,
       inp.choiceNotIncludedBaseTotal ?? 0,

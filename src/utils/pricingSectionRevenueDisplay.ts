@@ -66,9 +66,10 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
     if (inp.reservationOptionsTotalPrice > 0 && inp.isOTAChannel) {
       totalRevenue += inp.reservationOptionsTotalPrice
     }
-    if (inp.notIncludedTotalUsd > 0) {
-      totalRevenue += inp.notIncludedTotalUsd
-    }
+  }
+  /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
+  if (inp.notIncludedTotalUsd > 0) {
+    totalRevenue += inp.notIncludedTotalUsd
   }
 
   const omitDiscCostEffective =

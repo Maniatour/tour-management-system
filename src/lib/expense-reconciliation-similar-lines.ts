@@ -897,6 +897,20 @@ export async function searchStatementLinesAcrossImports(
   if (/^\d{4}-\d{2}-\d{2}$/.test(q)) {
     orParts.push(`posted_date.eq.${q}`)
   }
+  // 금액 검색: "$1,234.56" / "1234.56" / "1234" 형태를 금액(양수·음수 모두)으로 매칭
+  const amountToken = String(params.query ?? '').trim().replace(/[$,\s]/g, '')
+  if (/^\d+(?:\.\d+)?$/.test(amountToken)) {
+    const n = Number(amountToken)
+    if (Number.isFinite(n) && n > 0) {
+      const eps = 0.005
+      const posLo = (n - eps).toFixed(3)
+      const posHi = (n + eps).toFixed(3)
+      const negLo = (-n - eps).toFixed(3)
+      const negHi = (-n + eps).toFixed(3)
+      orParts.push(`and(amount.gte.${posLo},amount.lte.${posHi})`)
+      orParts.push(`and(amount.gte.${negLo},amount.lte.${negHi})`)
+    }
+  }
   const orClause = orParts.join(',')
 
   const seen = new Set<string>()

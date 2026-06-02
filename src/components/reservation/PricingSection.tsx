@@ -1903,7 +1903,8 @@ export default function PricingSection({
       tr += a
     }
 
-    if (!omitOtaExtras && !isReservationCancelled) {
+    /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
+    if (!isReservationCancelled) {
       const { baseUsd, residentFeesUsd } = notIncludedBreakdown
       if (baseUsd > 0.005) {
         lines.push({ sign: '+', labelKo: '불포함 (입장권)', labelEn: 'Not included (admission)', amount: baseUsd })
