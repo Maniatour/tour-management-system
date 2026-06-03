@@ -20,6 +20,12 @@ export type LedgerMatchDetail = {
   rn_number: string | null
   check_in_date_ymd: string | null
   tour_date_ymd: string | null
+  /** 입장권 — 등록일 */
+  submit_on_ymd?: string | null
+  /** 입장권 — 수량 */
+  ea?: number | null
+  /** 입장권 — 연결 투어 요약(날짜·상품명) */
+  linked_tour_label?: string | null
 }
 
 function ymdFromIso(raw: string | null | undefined): string {
@@ -157,6 +163,24 @@ async function fetchReservationExpenseDetails(
   })
 }
 
+function productNameFromTourRow(
+  products: { name?: string; name_en?: string; name_ko?: string } | { name?: string; name_en?: string; name_ko?: string }[] | null | undefined
+): string {
+  const p = products == null ? null : Array.isArray(products) ? products[0] ?? null : products
+  if (!p) return ''
+  return String(p.name ?? p.name_ko ?? p.name_en ?? '').trim()
+}
+
+function formatLinkedTourLabel(
+  tourDate: string | null | undefined,
+  productName: string
+): string | null {
+  const date = ymdFromIso(String(tourDate ?? ''))
+  const name = productName.trim()
+  if (date && name) return `${date} ${name}`
+  return date || name || null
+}
+
 async function fetchTicketBookingDetails(
   supabase: SupabaseClient,
   ids: string[],
@@ -166,14 +190,56 @@ async function fetchTicketBookingDetails(
   const { data } = await supabase
     .from('ticket_bookings')
     .select(
-      'id,expense,submit_on,check_in_date,category,company,rn_number,note,payment_method'
+      'id,expense,submit_on,check_in_date,category,company,rn_number,note,payment_method,ea,tour_id'
     )
     .in('id', ids)
-  return ((data || []) as Record<string, unknown>[]).map((r) => {
+  const rows = (data || []) as Record<string, unknown>[]
+  const tourIds = [
+    ...new Set(
+      rows
+        .map((r) => (r.tour_id == null ? '' : String(r.tour_id).trim()))
+        .filter(Boolean)
+    ),
+  ]
+  const tourMetaById = new Map<string, { tour_date: string | null; linked_tour_label: string | null }>()
+  for (let i = 0; i < tourIds.length; i += 60) {
+    const chunk = tourIds.slice(i, i + 60)
+    const { data: tours } = await supabase
+      .from('tours')
+      .select(
+        `
+        id,
+        tour_date,
+        products (
+          name,
+          name_en,
+          name_ko
+        )
+      `
+      )
+      .in('id', chunk)
+    for (const t of (tours || []) as {
+      id: string
+      tour_date?: string | null
+      products?: { name?: string; name_en?: string; name_ko?: string } | { name?: string; name_en?: string; name_ko?: string }[] | null
+    }[]) {
+      const tourDate = ymdFromIso(String(t.tour_date ?? '')) || null
+      tourMetaById.set(String(t.id), {
+        tour_date: tourDate,
+        linked_tour_label: formatLinkedTourLabel(tourDate, productNameFromTourRow(t.products)),
+      })
+    }
+  }
+
+  return rows.map((r) => {
     const id = String(r.id)
     const key = `ticket_bookings:${id}`
     const checkIn = ymdFromIso(String(r.check_in_date ?? ''))
     const submitYmd = ymdFromIso(String(r.submit_on ?? ''))
+    const tourId = r.tour_id == null ? '' : String(r.tour_id).trim()
+    const tourMeta = tourId ? tourMetaById.get(tourId) : undefined
+    const eaRaw = Number(r.ea ?? 0)
+    const ea = Number.isFinite(eaRaw) ? eaRaw : null
     return {
       source_table: 'ticket_bookings',
       source_id: id,
@@ -187,7 +253,10 @@ async function fetchTicketBookingDetails(
       payment_method: expensePaymentMethodFromRow(r),
       rn_number: r.rn_number == null ? null : String(r.rn_number).trim() || null,
       check_in_date_ymd: checkIn || null,
-      tour_date_ymd: null,
+      tour_date_ymd: tourMeta?.tour_date ?? null,
+      submit_on_ymd: submitYmd || null,
+      ea,
+      linked_tour_label: tourMeta?.linked_tour_label ?? null,
     }
   })
 }
@@ -331,6 +400,53 @@ export async function fetchLedgerMatchDetails(
     .filter((d): d is LedgerMatchDetail => d != null)
 }
 
+function dedupeLedgerMatchRefs(matches: LedgerMatchRef[]): LedgerMatchRef[] {
+  const seen = new Set<string>()
+  const out: LedgerMatchRef[] = []
+  for (const m of matches) {
+    const t = String(m.source_table ?? '').trim()
+    const id = String(m.source_id ?? '').trim()
+    if (!t || !id) continue
+    const key = `${t}:${id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ source_table: t, source_id: id })
+  }
+  return out
+}
+
+/** 테이블 «현재 연결» 열 — 여러 명세 줄에 걸친 원장 상세 일괄 조회 */
+export async function fetchLedgerMatchDetailsBatch(
+  supabase: SupabaseClient,
+  matches: LedgerMatchRef[]
+): Promise<Map<string, LedgerMatchDetail>> {
+  const unique = dedupeLedgerMatchRefs(matches)
+  if (unique.length === 0) return new Map()
+
+  const amounts = new Map<string, number | null>()
+  const byTable = new Map<string, string[]>()
+  for (const m of unique) {
+    if (!byTable.has(m.source_table)) byTable.set(m.source_table, [])
+    byTable.get(m.source_table)!.push(m.source_id)
+  }
+
+  const chunks = await Promise.all([
+    fetchCompanyExpenseDetails(supabase, byTable.get('company_expenses') ?? [], amounts),
+    fetchTourExpenseDetails(supabase, byTable.get('tour_expenses') ?? [], amounts),
+    fetchReservationExpenseDetails(supabase, byTable.get('reservation_expenses') ?? [], amounts),
+    fetchTicketBookingDetails(supabase, byTable.get('ticket_bookings') ?? [], amounts),
+    fetchTourHotelBookingDetails(supabase, byTable.get('tour_hotel_bookings') ?? [], amounts),
+    fetchPaymentRecordDetails(supabase, byTable.get('payment_records') ?? [], amounts),
+    fetchCashTransactionDetails(supabase, byTable.get('cash_transactions') ?? [], amounts),
+  ])
+
+  const out = new Map<string, LedgerMatchDetail>()
+  for (const d of chunks.flat()) {
+    out.set(`${d.source_table}:${d.source_id}`, d)
+  }
+  return out
+}
+
 export function sourceTableLabelKey(
   table: string
 ): 'paymentRecords' | 'reservation' | 'company' | 'tour' | 'ticketBookings' | 'tourHotelBookings' | 'cashTransactions' | 'unknown' {
@@ -365,6 +481,8 @@ export function formatLedgerMatchDetailLines(
     submitDate: string
     checkInDate: string
     tourDate: string
+    linkedTour: string
+    quantity: string
     rn: string
     description: string
     paymentMethod: string
@@ -384,13 +502,23 @@ export function formatLedgerMatchDetailLines(
     { label: labels.paidFor, value: d.paid_for },
   ]
 
+  if (d.submit_on_ymd) {
+    rows.push({ label: labels.submitDate, value: d.submit_on_ymd })
+  }
   if (d.check_in_date_ymd) {
     rows.push({ label: labels.checkInDate, value: d.check_in_date_ymd })
   }
-  if (d.tour_date_ymd && d.tour_date_ymd !== d.date_primary_ymd) {
+  if (d.tour_date_ymd) {
     rows.push({ label: labels.tourDate, value: d.tour_date_ymd })
   }
-  if (d.date_primary_ymd) {
+  if (d.linked_tour_label) {
+    rows.push({ label: labels.linkedTour, value: d.linked_tour_label })
+  }
+  if (d.ea != null && Number.isFinite(Number(d.ea))) {
+    rows.push({ label: labels.quantity, value: String(d.ea) })
+  }
+  const hasExplicitDates = Boolean(d.submit_on_ymd || d.check_in_date_ymd)
+  if (!hasExplicitDates && d.date_primary_ymd) {
     rows.push({
       label: labels.submitDate,
       value: d.date_secondary_ymd

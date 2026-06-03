@@ -35,6 +35,9 @@ export function TicketBookingStatementReconCell({
   const t = useTranslations('expenses.statementRecon')
   const textCls = compact ? 'text-[10px] leading-snug' : 'text-xs leading-snug'
 
+  const isInflow = (line: TicketBookingStatementReconDisplay) =>
+    String(line.direction).toLowerCase() === 'inflow'
+
   return (
     <div className={`flex min-w-0 gap-2 ${compact ? 'flex-col items-center' : 'flex-row items-start'}`}>
       <ExpenseStatementReconIcon
@@ -83,8 +86,8 @@ export function TicketBookingStatementReconCell({
                 </div>
                 <div className="flex flex-wrap items-baseline gap-x-1.5 tabular-nums text-gray-600">
                   <span>{line.posted_date}</span>
-                  <span className="font-semibold text-gray-800">
-                    ${line.amount.toFixed(2)}
+                  <span className={`font-semibold ${isInflow(line) ? 'text-emerald-700' : 'text-gray-800'}`}>
+                    {isInflow(line) ? '-' : ''}${line.amount.toFixed(2)}
                   </span>
                   {line.matched_amount != null &&
                   Math.abs(line.matched_amount - line.amount) > 0.009 ? (
@@ -92,7 +95,7 @@ export function TicketBookingStatementReconCell({
                       className="text-[10px] text-emerald-800"
                       title={t('statementLineAllocatedAmount')}
                     >
-                      (${line.matched_amount.toFixed(2)})
+                      ({isInflow(line) ? '-' : ''}${line.matched_amount.toFixed(2)})
                     </span>
                   ) : null}
                 </div>

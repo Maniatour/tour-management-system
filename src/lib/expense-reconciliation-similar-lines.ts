@@ -1250,7 +1250,9 @@ export async function unlinkAllMatchesOnStatementLines(
 }
 
 /**
- * 한 지출(원장) 행에 이미 명세에 배정된 금액 합계. `matched_amount`가 null인 레거시 행은 해당 명세 줄 절대금액으로 간주합니다.
+ * 한 지출(원장) 행에 이미 명세에 배정된 «순» 금액. 출금은 더하고 입금(환불)은 차감합니다.
+ * 예: 출금 $500 + 입금(환불) $200 연결 → 배정 합 $300.
+ * `matched_amount`가 null인 레거시 행은 해당 명세 줄 절대금액으로 간주합니다.
  */
 export async function sumMatchedAmountAllocatedToSource(
   supabase: SupabaseClient,
@@ -1264,28 +1266,31 @@ export async function sumMatchedAmountAllocatedToSource(
     .eq('source_id', sourceId)
   if (error || !rows?.length) return 0
 
-  const needLineAmount = (rows as { matched_amount: unknown; statement_line_id: string }[]).filter(
-    (r) => r.matched_amount == null || r.matched_amount === ''
-  )
-  const lineAmtById = new Map<string, number>()
-  if (needLineAmount.length > 0) {
-    const ids = [...new Set(needLineAmount.map((r) => r.statement_line_id).filter(Boolean))]
-    for (let i = 0; i < ids.length; i += 60) {
-      const chunk = ids.slice(i, i + 60)
-      const { data: lines } = await supabase.from('statement_lines').select('id, amount').in('id', chunk)
-      for (const l of (lines || []) as { id: string; amount?: unknown }[]) {
-        lineAmtById.set(String(l.id), Math.abs(Number(l.amount ?? 0)))
-      }
+  const typedRows = rows as { matched_amount: unknown; statement_line_id: string }[]
+  const lineInfoById = new Map<string, { abs: number; isInflow: boolean }>()
+  const ids = [...new Set(typedRows.map((r) => r.statement_line_id).filter(Boolean))]
+  for (let i = 0; i < ids.length; i += 60) {
+    const chunk = ids.slice(i, i + 60)
+    const { data: lines } = await supabase
+      .from('statement_lines')
+      .select('id, amount, direction')
+      .in('id', chunk)
+    for (const l of (lines || []) as { id: string; amount?: unknown; direction?: unknown }[]) {
+      lineInfoById.set(String(l.id), {
+        abs: Math.abs(Number(l.amount ?? 0)),
+        isInflow: String(l.direction ?? '').toLowerCase() === 'inflow',
+      })
     }
   }
 
   let sum = 0
-  for (const r of rows as { matched_amount: unknown; statement_line_id: string }[]) {
-    if (r.matched_amount != null && r.matched_amount !== '') {
-      sum += Math.abs(Number(r.matched_amount))
-    } else {
-      sum += lineAmtById.get(r.statement_line_id) ?? 0
-    }
+  for (const r of typedRows) {
+    const info = lineInfoById.get(r.statement_line_id)
+    const amt =
+      r.matched_amount != null && r.matched_amount !== ''
+        ? Math.abs(Number(r.matched_amount))
+        : info?.abs ?? 0
+    sum += info?.isInflow ? -amt : amt
   }
   return sum
 }
@@ -1337,15 +1342,22 @@ export async function replaceExpenseReconciliationMatch(
     }
   }
 
-  const { data: lineRow } = await supabase.from('statement_lines').select('amount').eq('id', statementLineId).maybeSingle()
+  const { data: lineRow } = await supabase
+    .from('statement_lines')
+    .select('amount, direction')
+    .eq('id', statementLineId)
+    .maybeSingle()
   const lineAbs = Math.abs(Number((lineRow as { amount?: unknown } | null)?.amount ?? 0))
+  const lineIsInflow =
+    String((lineRow as { direction?: unknown } | null)?.direction ?? '').toLowerCase() === 'inflow'
 
   let ledgerShare =
     matchedAmountParam != null && Number.isFinite(Number(matchedAmountParam))
       ? Math.abs(Number(matchedAmountParam))
       : Math.abs(Number(statementLineAmount))
 
-  if (linkMode === 'append') {
+  // 입금(환불) 줄은 «순» 배정을 줄이므로 가드 대상에서 제외 — 줄 자체 한도(아래)만 적용
+  if (linkMode === 'append' && !lineIsInflow) {
     const cap = ledgerCapAmount != null && Number.isFinite(Number(ledgerCapAmount)) ? Math.abs(Number(ledgerCapAmount)) : ledgerShare
     const allocated = await sumMatchedAmountAllocatedToSource(supabase, sourceTable, sourceId)
     const remaining = cap - allocated

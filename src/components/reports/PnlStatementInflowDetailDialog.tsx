@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
@@ -53,12 +54,17 @@ export default function PnlStatementInflowDetailDialog({
 }: Props) {
   const [localLines, setLocalLines] = useState<PnlStatementInflowLine[]>(lines)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (open) setLocalLines(lines)
   }, [open, lines])
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    if (!open) setSearch('')
+  }, [open])
+
+  const scoped = useMemo(() => {
     if (!drill) return []
     const excludedOnly = (rows: PnlStatementInflowLine[]) => rows.filter((l) => !l.pnlIncluded)
     if (drill.mode === 'excluded') return excludedOnly(localLines)
@@ -68,6 +74,25 @@ export default function PnlStatementInflowDetailDialog({
     if (drill.mode === 'grand') return localLines
     return localLines.filter((l) => l.yearMonth === drill.month)
   }, [drill, localLines])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return scoped
+    const terms = q.split(/\s+/).filter(Boolean)
+    return scoped.filter((l) => {
+      const haystack = [
+        l.posted_date,
+        String(l.amount),
+        formatPnlMoney(l.amount),
+        l.financial_account_name ?? '',
+        l.description,
+        matchedStatusLabel(l.matched_status),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return terms.every((t) => haystack.includes(t))
+    })
+  }, [scoped, search])
 
   const title = useMemo(() => {
     if (!drill) return '명세 입금 상세'
@@ -144,8 +169,34 @@ export default function PnlStatementInflowDetailDialog({
             필드).
           </p>
         </DialogHeader>
+        <div className="flex items-center gap-2">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="날짜, 금액, 금융 계정, 설명 검색…"
+            className="h-9"
+          />
+          {search.trim() ? (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="shrink-0 text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              지우기
+            </button>
+          ) : null}
+        </div>
+        {search.trim() ? (
+          <p className="text-xs text-muted-foreground -mt-1">
+            검색 결과 {filtered.length}건 (전체 {scoped.length}건)
+          </p>
+        ) : null}
         {filtered.length === 0 ? (
-          <p className="text-sm text-gray-500 py-8 text-center">해당 조건의 명세 입금 내역이 없습니다.</p>
+          <p className="text-sm text-gray-500 py-8 text-center">
+            {search.trim()
+              ? '검색 결과가 없습니다.'
+              : '해당 조건의 명세 입금 내역이 없습니다.'}
+          </p>
         ) : (
           <div className="overflow-x-auto border rounded-md">
             <table className="w-full text-xs sm:text-sm">

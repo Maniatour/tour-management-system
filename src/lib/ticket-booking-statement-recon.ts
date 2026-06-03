@@ -10,8 +10,10 @@ export type TicketBookingStatementReconDisplay = {
   statement_line_id: string
   financial_account_name: string
   posted_date: string
-  /** 명세 줄 거래 금액(부호 포함, 표시는 절대값) */
+  /** 명세 줄 거래 금액(표시는 절대값, 부호는 direction으로 판단) */
   amount: number
+  /** 입·출금 방향 — 입금(inflow)은 리펀 등 차감 표시용 */
+  direction: string
   /** 이 부킹에 배정된 금액 — 분할 연결 시 명세 금액과 다를 수 있음 */
   matched_amount: number | null
   description: string
@@ -76,6 +78,7 @@ export async function fetchTicketBookingStatementReconDisplayByBookingId(
   type LineRow = {
     id: string
     amount: number | string | null
+    direction: string | null
     posted_date: string | null
     description: string | null
     merchant: string | null
@@ -86,7 +89,7 @@ export async function fetchTicketBookingStatementReconDisplayByBookingId(
     const chunk = lineIds.slice(i, i + LINE_CHUNK)
     const { data, error } = await supabase
       .from('statement_lines')
-      .select('id, amount, posted_date, description, merchant, statement_import_id')
+      .select('id, amount, direction, posted_date, description, merchant, statement_import_id')
       .in('id', chunk)
     if (error) throw error
     for (const line of (data || []) as LineRow[]) {
@@ -146,6 +149,7 @@ export async function fetchTicketBookingStatementReconDisplayByBookingId(
       financial_account_name: accountName,
       posted_date: posted,
       amount: Number.isFinite(lineAmt) ? lineAmt : 0,
+      direction: String(line.direction ?? '').trim(),
       matched_amount: alloc,
       description,
     }

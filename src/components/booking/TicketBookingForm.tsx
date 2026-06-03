@@ -1059,15 +1059,34 @@ export default function TicketBookingForm({
     await performSave();
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'ea' || name === 'expense' || name === 'income' ? Number(value) : value
-    }));
-
+  const parseNumericFormField = (raw: string): number | null => {
+    const s = raw.trim();
+    if (s === '' || s === '-') return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
   };
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    if (name === 'ea' || name === 'expense' || name === 'income') {
+      const parsed = parseNumericFormField(value);
+      setFormData((prev) => ({
+        ...prev,
+        [name]:
+          parsed !== null
+            ? parsed
+            : (prev[name as 'ea' | 'expense' | 'income'] as number),
+      }));
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+
+  const isEditingBooking = Boolean(booking?.id);
 
   const submitterDisplayName = useTeamMemberDisplayName(formData.submitted_by);
 
@@ -1435,7 +1454,7 @@ export default function TicketBookingForm({
                 value={formData.ea}
                 onChange={handleChange}
                 required
-                min="1"
+                {...(isEditingBooking ? {} : { min: 1 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -1474,7 +1493,7 @@ export default function TicketBookingForm({
                 value={formData.expense}
                 onChange={handleChange}
                 step="0.01"
-                min="0"
+                {...(isEditingBooking ? {} : { min: 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>

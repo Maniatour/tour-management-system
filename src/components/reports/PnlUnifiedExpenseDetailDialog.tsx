@@ -2,7 +2,18 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Archive, Car, Search, User, Users, X } from 'lucide-react'
+import {
+  Archive,
+  Car,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
+  User,
+  Users,
+  X,
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { apiBearerAuthHeaders } from '@/lib/api-client-bearer'
 import { toast } from 'sonner'
@@ -115,6 +126,9 @@ export type PnlDetailLine = {
 }
 
 type PnlDetailSortKey = 'submit_on' | 'created_at' | 'amount'
+
+const PNL_DETAIL_PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
+const PNL_DETAIL_DEFAULT_PAGE_SIZE = 25
 
 export type PnlDrillMode = 'cell' | 'row' | 'col' | 'grand' | 'excluded' | 'unmatched' | 'duplicates'
 
@@ -687,6 +701,50 @@ async function archivePnlDetailLine(
   throw new Error(`삭제를 지원하지 않는 출처입니다: ${line.source}`)
 }
 
+/** exclude_from_pnl 만 빠르게 토글 저장 — 입장권·호텔 부킹은 미지원 */
+async function persistExcludeFromPnl(line: PnlDetailLine, next: boolean): Promise<void> {
+  switch (line.source) {
+    case 'tour_expenses': {
+      const { error } = await supabase
+        .from('tour_expenses')
+        .update({ exclude_from_pnl: next, updated_at: new Date().toISOString() })
+        .eq('id', line.id)
+      if (error) throw error
+      return
+    }
+    case 'reservation_expenses': {
+      const res = await fetch(`/api/reservation-expenses/${line.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exclude_from_pnl: next }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || json.error || '예약 지출 수정 실패')
+      }
+      return
+    }
+    case 'company_expenses': {
+      const res = await fetch('/api/company-expenses', {
+        method: 'PUT',
+        headers: { ...apiBearerAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: line.id, exclude_from_pnl: next }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json.error || '회사 지출 수정 실패')
+      }
+      return
+    }
+    default:
+      throw new Error('이 출처는 PNL 제외 토글을 지원하지 않습니다.')
+  }
+}
+
+function supportsExcludeFromPnl(source: PnlExpenseSource): boolean {
+  return source !== 'ticket_bookings' && source !== 'tour_hotel_bookings'
+}
+
 export default function PnlUnifiedExpenseDetailDialog({
   open,
   onOpenChange,
@@ -724,6 +782,12 @@ export default function PnlUnifiedExpenseDetailDialog({
   const [searchQuery, setSearchQuery] = useState('')
   /** 비어 있으면 전체 출처 — 하나 이상이면 해당 출처만 표시 */
   const [sourceTablesFilter, setSourceTablesFilter] = useState<PnlExpenseSource[]>([])
+  const [pageSize, setPageSize] = useState<number>(PNL_DETAIL_DEFAULT_PAGE_SIZE)
+  const [page, setPage] = useState(1)
+  const scrollAreaRef = React.useRef<HTMLDivElement>(null)
+  /** PNL 제외 즉시 토글의 낙관적 표시값 (재조회 전까지 유지) */
+  const [excludeOverride, setExcludeOverride] = useState<Record<string, boolean>>({})
+  const [excludeSavingKey, setExcludeSavingKey] = useState<string | null>(null)
 
   const visible = useMemo(() => filterLines(lines, drill), [lines, drill])
   const sourcesInVisible = useMemo(() => {
@@ -771,6 +835,23 @@ export default function PnlUnifiedExpenseDetailDialog({
     rows.sort((a, b) => comparePnlDetailLines(a, b, sortKey, sortDir))
     return rows
   }, [filteredRows, sortKey, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(displayRows.length / pageSize))
+  const safePage = Math.min(Math.max(1, page), totalPages)
+  const pagedRows = useMemo(() => {
+    const start = (safePage - 1) * pageSize
+    return displayRows.slice(start, start + pageSize)
+  }, [displayRows, safePage, pageSize])
+  const pageStartIndex = displayRows.length === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const pageEndIndex = Math.min(safePage * pageSize, displayRows.length)
+
+  const goToPage = useCallback(
+    (next: number) => {
+      setPage(next)
+      scrollAreaRef.current?.scrollTo({ top: 0 })
+    },
+    []
+  )
 
   const toggleSort = useCallback((key: PnlDetailSortKey) => {
     setSortKey((prev) => {
@@ -843,6 +924,8 @@ export default function PnlUnifiedExpenseDetailDialog({
       setFocusedDuplicateGroupIndex(null)
       setStmtReconOpen(false)
       setStmtReconCtx(null)
+      setPage(1)
+      setPageSize(PNL_DETAIL_DEFAULT_PAGE_SIZE)
     }
   }, [open])
 
@@ -854,7 +937,52 @@ export default function PnlUnifiedExpenseDetailDialog({
     setSortKey('submit_on')
     setSortDir('asc')
     setFocusedDuplicateGroupIndex(null)
+    setPage(1)
   }, [drill, visible.length])
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchTrim, sourceTablesFilter, focusedDuplicateGroupIndex, sortKey, sortDir, pageSize])
+
+  useEffect(() => {
+    setExcludeOverride({})
+  }, [lines])
+
+  const lineExcluded = useCallback(
+    (line: PnlDetailLine) => excludeOverride[pnlDetailLineKey(line)] ?? line.exclude_from_pnl,
+    [excludeOverride]
+  )
+
+  const toggleExcludeFromPnl = useCallback(
+    async (line: PnlDetailLine) => {
+      if (!supportsExcludeFromPnl(line.source)) return
+      const key = pnlDetailLineKey(line)
+      const next = !(excludeOverride[key] ?? line.exclude_from_pnl)
+      setExcludeOverride((prev) => ({ ...prev, [key]: next }))
+      setExcludeSavingKey(key)
+      try {
+        await persistExcludeFromPnl(line, next)
+        toast.success(next ? 'PNL 제외 처리했습니다.' : 'PNL 제외를 해제했습니다.')
+        await onSaved()
+      } catch (e) {
+        console.error(e)
+        setExcludeOverride((prev) => {
+          const n = { ...prev }
+          delete n[key]
+          return n
+        })
+        toast.error(e instanceof Error ? e.message : 'PNL 제외 변경에 실패했습니다.')
+      } finally {
+        setExcludeSavingKey(null)
+      }
+    },
+    [excludeOverride, onSaved]
+  )
+
+  const editingLine = useMemo(
+    () => (editingId ? lines.find((l) => pnlDetailLineKey(l) === editingId) ?? null : null),
+    [editingId, lines]
+  )
 
   const toggleDuplicateGroupFilter = useCallback((groupIndex: number) => {
     setFocusedDuplicateGroupIndex((prev) => (prev === groupIndex ? null : groupIndex))
@@ -1419,7 +1547,7 @@ export default function PnlUnifiedExpenseDetailDialog({
           </div>
         ) : null}
 
-        <div className="overflow-auto flex-1 min-h-0 px-2 sm:px-4 py-3 flex flex-col">
+        <div ref={scrollAreaRef} className="overflow-auto flex-1 min-h-0 px-2 sm:px-4 py-3 flex flex-col">
           {visible.length > 0 && (
             <PnlMappingAssignBlock
               visible={visible}
@@ -1494,26 +1622,28 @@ export default function PnlUnifiedExpenseDetailDialog({
                       />
                     </div>
                   </th>
+                  <th className="py-2 pr-2 font-medium whitespace-nowrap text-center w-[64px]">PNL 제외</th>
                   <th className="py-2 pl-1 font-medium whitespace-nowrap w-[72px]"> </th>
                 </tr>
               </thead>
               <tbody>
-                {displayRows.map((line) => {
+                {pagedRows.map((line) => {
                   const key = pnlDetailLineKey(line)
-                  const isEditing = editingId === key
                   const desc = descriptionText(line)
                   const isSelected = selectedKeys.has(key)
                   const dupStyle = duplicateStyleByKey.get(key)
                   return (
                     <React.Fragment key={key}>
                       <tr
-                        className={`border-b border-border/60 align-top ${
+                        className={`border-b border-border/60 align-top cursor-pointer ${
                           isSelected
                             ? 'bg-red-50/90 ring-1 ring-inset ring-red-200'
-                            : dupStyle?.rowClass ?? ''
+                            : dupStyle?.rowClass ?? 'hover:bg-slate-50/80'
                         }`}
+                        title="행을 클릭하면 수정 창이 열립니다"
+                        onClick={() => startEdit(line)}
                       >
-                        <td className="py-2 pl-1 pr-1 align-middle">
+                        <td className="py-2 pl-1 pr-1 align-middle" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             aria-label={`${sourceLabel(line.source)} ${formatMoney(line.amount)} 선택`}
                             checked={isSelected}
@@ -1532,7 +1662,10 @@ export default function PnlUnifiedExpenseDetailDialog({
                                   dupStyle.badgeClass
                                 } ${focusedDuplicateGroupIndex === dupStyle.groupIndex ? 'ring-1 ring-slate-700' : ''}`}
                                 title="클릭하여 이 중복 그룹만 표시"
-                                onClick={() => toggleDuplicateGroupFilter(dupStyle.groupIndex)}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleDuplicateGroupFilter(dupStyle.groupIndex)
+                                }}
                               >
                                 {dupStyle.groupLabel}
                               </button>
@@ -1551,7 +1684,10 @@ export default function PnlUnifiedExpenseDetailDialog({
                         <td className="py-2 pr-2 align-top min-w-[140px] max-w-[220px]">
                           <PnlDetailTourReferenceCell tourRef={line.tour_reference} />
                         </td>
-                        <td className="py-2 pr-2 align-top text-[10px] sm:text-[11px] text-muted-foreground min-w-[120px] max-w-[180px]">
+                        <td
+                          className="py-2 pr-2 align-top text-[10px] sm:text-[11px] text-muted-foreground min-w-[120px] max-w-[180px]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex flex-col gap-1">
                             {line.tour_id ? (
                               <button
@@ -1598,7 +1734,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                         <td className="py-2 pr-2 break-words text-muted-foreground max-w-[160px]" title={line.payment_method || undefined}>
                           {paymentMethodDisplay(line, paymentMethodMap)}
                         </td>
-                        <td className="py-2 pr-2 whitespace-nowrap align-middle">
+                        <td className="py-2 pr-2 whitespace-nowrap align-middle" onClick={(e) => e.stopPropagation()}>
                           <span className="inline-flex items-center gap-0.5">
                             <ExpenseStatementReconIcon
                               matched={line.statementReconciled}
@@ -1634,176 +1770,39 @@ export default function PnlUnifiedExpenseDetailDialog({
                           {desc}
                         </td>
                         <td className="py-2 pr-2 text-right tabular-nums font-medium">{formatMoney(line.amount)}</td>
-                        <td className="py-2 pl-1">
-                          {!isEditing && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 px-2"
-                              disabled={deleting}
-                              onClick={() => startEdit(line)}
-                            >
-                              수정
-                            </Button>
+                        <td
+                          className="py-2 pr-2 align-middle text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {supportsExcludeFromPnl(line.source) ? (
+                            <label className="inline-flex items-center gap-1 cursor-pointer text-[11px] font-normal whitespace-nowrap">
+                              <Checkbox
+                                aria-label="PNL 제외 토글"
+                                checked={lineExcluded(line)}
+                                disabled={deleting || excludeSavingKey === key}
+                                onCheckedChange={() => void toggleExcludeFromPnl(line)}
+                              />
+                              <span className={lineExcluded(line) ? 'text-amber-800' : 'text-muted-foreground'}>
+                                제외
+                              </span>
+                            </label>
+                          ) : (
+                            <span className="text-muted-foreground text-[11px]">—</span>
                           )}
                         </td>
+                        <td className="py-2 pl-1" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            disabled={deleting}
+                            onClick={() => startEdit(line)}
+                          >
+                            수정
+                          </Button>
+                        </td>
                       </tr>
-                      {isEditing && draft && (
-                        <tr className="bg-muted/40 border-b">
-                          <td colSpan={15} className="p-3 sm:p-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-4xl">
-                              <div className="space-y-1">
-                                <Label className="text-xs">금액</Label>
-                                <Input
-                                  className="h-9"
-                                  value={draft.amount}
-                                  onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
-                                  inputMode="decimal"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-xs">지출일</Label>
-                                <Input
-                                  type="date"
-                                  className="h-9"
-                                  value={draft.submitDate}
-                                  onChange={(e) => setDraft({ ...draft, submitDate: e.target.value })}
-                                />
-                              </div>
-
-                              {line.source === 'ticket_bookings' ? (
-                                <>
-                                  <div className="space-y-1 sm:col-span-2">
-                                    <Label className="text-xs">카테고리 (입장권 분류 · 매핑 전)</Label>
-                                    <Input
-                                      className="h-9"
-                                      value={draft.category}
-                                      onChange={(e) => setDraft({ ...draft, category: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="space-y-1 sm:col-span-2">
-                                    <Label className="text-xs">공급업체(회사)</Label>
-                                    <Input
-                                      className="h-9"
-                                      value={draft.company}
-                                      onChange={(e) => setDraft({ ...draft, company: e.target.value })}
-                                    />
-                                  </div>
-                                </>
-                              ) : line.source === 'tour_hotel_bookings' ? (
-                                <>
-                                  <div className="space-y-1">
-                                    <Label className="text-xs">호텔명</Label>
-                                    <Input
-                                      className="h-9"
-                                      value={draft.paid_to}
-                                      onChange={(e) => setDraft({ ...draft, paid_to: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <Label className="text-xs">예약명</Label>
-                                    <Input
-                                      className="h-9"
-                                      value={draft.paid_for}
-                                      onChange={(e) => setDraft({ ...draft, paid_for: e.target.value })}
-                                    />
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="space-y-1">
-                                    <Label className="text-xs">결제처</Label>
-                                    <Input
-                                      className="h-9"
-                                      value={draft.paid_to}
-                                      onChange={(e) => setDraft({ ...draft, paid_to: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <Label className="text-xs">결제내용 (paid_for)</Label>
-                                    <Input
-                                      className="h-9"
-                                      value={draft.paid_for}
-                                      onChange={(e) => setDraft({ ...draft, paid_for: e.target.value })}
-                                    />
-                                  </div>
-                                  {line.source === 'company_expenses' && (
-                                    <div className="space-y-1 sm:col-span-2">
-                                      <Label className="text-xs">회사 지출 카테고리</Label>
-                                      <Input
-                                        className="h-9"
-                                        value={draft.category}
-                                        onChange={(e) => setDraft({ ...draft, category: e.target.value })}
-                                      />
-                                    </div>
-                                  )}
-                                </>
-                              )}
-
-                              <div className="space-y-1 sm:col-span-2">
-                                <Label className="text-xs">메모</Label>
-                                <Input
-                                  className="h-9"
-                                  value={draft.note}
-                                  onChange={(e) => setDraft({ ...draft, note: e.target.value })}
-                                />
-                              </div>
-
-                              <div className="space-y-1 sm:col-span-2">
-                                <Label className="text-xs">표준 카테고리 (통합 PNL 분류)</Label>
-                                <select
-                                  className="h-9 w-full rounded-md border bg-background px-2 text-xs"
-                                  value={draft.standardLeafId}
-                                  onChange={(e) =>
-                                    setDraft({ ...draft, standardLeafId: e.target.value })
-                                  }
-                                >
-                                  <option value="">— 선택 안 함 (매핑 변경 없음) —</option>
-                                  {unifiedStandardGroups.map((gr) => (
-                                    <optgroup key={gr.rootId} label={gr.groupLabel}>
-                                      {gr.items.map((it) => (
-                                        <option key={it.id} value={it.id}>
-                                          {it.displayLabel}
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  ))}
-                                </select>
-                                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                  저장 시 <code className="text-[10px] bg-muted px-1 rounded">expense_category_mappings</code>
-                                  에 반영됩니다. 동일한 결제내용(원문)·출처를 쓰는 다른 지출도 같은 표준 분류로
-                                  묶입니다. 분류만 바꿀 때는 결제내용을 그대로 두고 여기서 리프만 바꾸면 됩니다.
-                                </p>
-                              </div>
-
-                              {line.source !== 'ticket_bookings' && line.source !== 'tour_hotel_bookings' && (
-                                <div className="flex items-center gap-2 sm:col-span-2">
-                                  <Checkbox
-                                    id={`pnl-excl-${key}`}
-                                    checked={draft.exclude_from_pnl}
-                                    onCheckedChange={(c) =>
-                                      setDraft({ ...draft, exclude_from_pnl: c === true })
-                                    }
-                                  />
-                                  <Label htmlFor={`pnl-excl-${key}`} className="text-xs font-normal cursor-pointer">
-                                    통합 PNL·이 표에서 제외 (exclude_from_pnl)
-                                  </Label>
-                                </div>
-                              )}
-
-                              <div className="flex flex-wrap gap-2 sm:col-span-2 pt-1">
-                                <Button type="button" size="sm" disabled={saving} onClick={() => saveEdit(line)}>
-                                  저장
-                                </Button>
-                                <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
-                                  취소
-                                </Button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   )
                 })}
@@ -1811,6 +1810,83 @@ export default function PnlUnifiedExpenseDetailDialog({
             </table>
           )}
         </div>
+
+        {visible.length > 0 && displayRows.length > 0 ? (
+          <div className="px-3 sm:px-4 py-2 border-t bg-white shrink-0 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="tabular-nums">
+                {pageStartIndex.toLocaleString()}–{pageEndIndex.toLocaleString()} /{' '}
+                <strong className="text-foreground font-medium">{displayRows.length.toLocaleString()}</strong>건
+              </span>
+              <label className="hidden sm:flex items-center gap-1">
+                <span>페이지당</span>
+                <select
+                  className="h-8 rounded-md border bg-background px-1.5 text-xs"
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  disabled={deleting}
+                  aria-label="페이지당 표시 개수"
+                >
+                  {PNL_DETAIL_PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+                <span>개</span>
+              </label>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="첫 페이지"
+                disabled={deleting || safePage <= 1}
+                onClick={() => goToPage(1)}
+              >
+                <ChevronsLeft className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="이전 페이지"
+                disabled={deleting || safePage <= 1}
+                onClick={() => goToPage(safePage - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+              </Button>
+              <span className="px-2 text-xs tabular-nums text-foreground whitespace-nowrap">
+                {safePage} / {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="다음 페이지"
+                disabled={deleting || safePage >= totalPages}
+                onClick={() => goToPage(safePage + 1)}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                aria-label="마지막 페이지"
+                disabled={deleting || safePage >= totalPages}
+                onClick={() => goToPage(totalPages)}
+              >
+                <ChevronsRight className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {visible.length > 0 ? (
           <DialogFooter className="px-3 sm:px-4 py-2 border-t bg-slate-50/80 shrink-0 flex-row flex-wrap justify-between gap-2">
@@ -1858,6 +1934,172 @@ export default function PnlUnifiedExpenseDetailDialog({
         ) : null}
       </DialogContent>
     </Dialog>
+
+      <Dialog
+        open={Boolean(editingLine && draft)}
+        onOpenChange={(o) => {
+          if (!o) cancelEdit()
+        }}
+      >
+        <DialogContent className="z-[1300] w-[calc(100vw-1.5rem)] max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              지출 수정{editingLine ? ` — ${sourceLabel(editingLine.source)}` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          {editingLine && draft ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">금액</Label>
+                <Input
+                  className="h-9"
+                  value={draft.amount}
+                  onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+                  inputMode="decimal"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">지출일</Label>
+                <Input
+                  type="date"
+                  className="h-9"
+                  value={draft.submitDate}
+                  onChange={(e) => setDraft({ ...draft, submitDate: e.target.value })}
+                />
+              </div>
+
+              {editingLine.source === 'ticket_bookings' ? (
+                <>
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label className="text-xs">카테고리 (입장권 분류 · 매핑 전)</Label>
+                    <Input
+                      className="h-9"
+                      value={draft.category}
+                      onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label className="text-xs">공급업체(회사)</Label>
+                    <Input
+                      className="h-9"
+                      value={draft.company}
+                      onChange={(e) => setDraft({ ...draft, company: e.target.value })}
+                    />
+                  </div>
+                </>
+              ) : editingLine.source === 'tour_hotel_bookings' ? (
+                <>
+                  <div className="space-y-1">
+                    <Label className="text-xs">호텔명</Label>
+                    <Input
+                      className="h-9"
+                      value={draft.paid_to}
+                      onChange={(e) => setDraft({ ...draft, paid_to: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">예약명</Label>
+                    <Input
+                      className="h-9"
+                      value={draft.paid_for}
+                      onChange={(e) => setDraft({ ...draft, paid_for: e.target.value })}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <Label className="text-xs">결제처</Label>
+                    <Input
+                      className="h-9"
+                      value={draft.paid_to}
+                      onChange={(e) => setDraft({ ...draft, paid_to: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">결제내용 (paid_for)</Label>
+                    <Input
+                      className="h-9"
+                      value={draft.paid_for}
+                      onChange={(e) => setDraft({ ...draft, paid_for: e.target.value })}
+                    />
+                  </div>
+                  {editingLine.source === 'company_expenses' && (
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs">회사 지출 카테고리</Label>
+                      <Input
+                        className="h-9"
+                        value={draft.category}
+                        onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-xs">메모</Label>
+                <Input
+                  className="h-9"
+                  value={draft.note}
+                  onChange={(e) => setDraft({ ...draft, note: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-xs">표준 카테고리 (통합 PNL 분류)</Label>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-xs"
+                  value={draft.standardLeafId}
+                  onChange={(e) => setDraft({ ...draft, standardLeafId: e.target.value })}
+                >
+                  <option value="">— 선택 안 함 (매핑 변경 없음) —</option>
+                  {unifiedStandardGroups.map((gr) => (
+                    <optgroup key={gr.rootId} label={gr.groupLabel}>
+                      {gr.items.map((it) => (
+                        <option key={it.id} value={it.id}>
+                          {it.displayLabel}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  저장 시 <code className="text-[10px] bg-muted px-1 rounded">expense_category_mappings</code>
+                  에 반영됩니다. 동일한 결제내용(원문)·출처를 쓰는 다른 지출도 같은 표준 분류로 묶입니다. 분류만 바꿀
+                  때는 결제내용을 그대로 두고 여기서 리프만 바꾸면 됩니다.
+                </p>
+              </div>
+
+              {supportsExcludeFromPnl(editingLine.source) && (
+                <div className="flex items-center gap-2 sm:col-span-2">
+                  <Checkbox
+                    id="pnl-edit-exclude"
+                    checked={draft.exclude_from_pnl}
+                    onCheckedChange={(c) => setDraft({ ...draft, exclude_from_pnl: c === true })}
+                  />
+                  <Label htmlFor="pnl-edit-exclude" className="text-xs font-normal cursor-pointer">
+                    통합 PNL·이 표에서 제외 (exclude_from_pnl)
+                  </Label>
+                </div>
+              )}
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
+              취소
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saving || !editingLine}
+              onClick={() => editingLine && void saveEdit(editingLine)}
+            >
+              저장
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ExpenseStatementSimilarLinesModal
         open={stmtReconOpen}

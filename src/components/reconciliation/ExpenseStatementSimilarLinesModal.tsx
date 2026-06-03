@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,10 +23,16 @@ import {
 } from '@/lib/expense-reconciliation-similar-lines'
 import {
   fetchLedgerMatchDetails,
+  fetchLedgerMatchDetailsBatch,
   formatLedgerMatchDetailLines,
   sourceTableLabelKey,
   type LedgerMatchDetail,
+  type LedgerMatchRef,
 } from '@/lib/expense-ledger-match-display'
+import {
+  formatTicketBookingTourHeadline,
+  type TicketBookingTourEnrichment,
+} from '@/lib/ticket-booking-tour-display'
 
 const ACCOUNT_TAB_ALL = '__all__'
 const UNKNOWN_ACCOUNT_TAB_ID = '__unknown_account__'
@@ -46,6 +52,76 @@ function dedupeStatementLineIdsPreserveOrder(ids: string[]): string[] {
   return out
 }
 
+/** 입금(inflow)은 출금 대비 반대 방향이므로 마이너스로 표시 */
+function statementLineSignedAmountLabel(row: { amount: number; direction: string }): string {
+  const abs = Math.abs(row.amount)
+  const isInflow = String(row.direction).toLowerCase() === 'inflow'
+  return `${isInflow ? '-' : ''}$${abs.toFixed(2)}`
+}
+
+type LedgerMatchDetailLabelBundle = {
+  sourceType: string
+  allocatedOnStatement: string
+  ledgerAmount: string
+  paidTo: string
+  paidFor: string
+  submitDate: string
+  checkInDate: string
+  tourDate: string
+  linkedTour: string
+  quantity: string
+  rn: string
+  description: string
+  paymentMethod: string
+  recordId: string
+  notFound: string
+}
+
+function StatementTableLinkedMatchCell({
+  match,
+  detail,
+  labels,
+  paymentMethodMap,
+  paymentMethodFinancialAccountNameByPmId,
+  fallbackLabel,
+  sourceTypeLabel,
+}: {
+  match: LedgerMatchRef
+  detail: LedgerMatchDetail | undefined
+  labels: LedgerMatchDetailLabelBundle
+  paymentMethodMap: Record<string, string>
+  paymentMethodFinancialAccountNameByPmId: Record<string, string>
+  fallbackLabel: string
+  sourceTypeLabel: (table: string) => string
+}) {
+  if (!detail) {
+    return <div className="truncate text-muted-foreground">{fallbackLabel}</div>
+  }
+  const pmKey = detail.payment_method?.trim() ?? ''
+  const pmLabel = pmKey
+    ? paymentMethodMap[pmKey] ?? paymentMethodFinancialAccountNameByPmId[pmKey] ?? pmKey
+    : null
+  const typeName = sourceTypeLabel(detail.source_table)
+  const { headline, rows } = formatLedgerMatchDetailLines(
+    detail,
+    { ...labels, sourceType: typeName },
+    pmLabel
+  )
+  return (
+    <div className="rounded border border-slate-200/90 bg-slate-50/90 px-2.5 py-1.5 mb-1.5 last:mb-0 min-w-[16rem]">
+      <p className="font-semibold text-[10px] text-slate-900 leading-snug tabular-nums">{headline}</p>
+      <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] leading-snug">
+        {rows.map((row) => (
+          <div key={`${row.label}-${row.value}`} className="flex min-w-0 items-baseline gap-1">
+            <dt className="shrink-0 text-muted-foreground after:content-[':']">{row.label}</dt>
+            <dd className="min-w-0 break-words font-medium text-slate-800">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
 /** 명세 줄에 배정 가능한 금액(이미 다른 원장에 배정된 잔여 한도) */
 function lineMatchableAmount(row: SimilarStatementLineRow): number {
   const lineAbs = Math.abs(row.amount)
@@ -61,6 +137,12 @@ type SourceSummaryInfo = {
   /** 투어 호텔 부킹 등 — YYYY-MM-DD 표시용 */
   checkInDate?: string | null
   checkOutDate?: string | null
+  /** 입장권 부킹 — 등록일·체크인·연결 투어 */
+  submitOn?: string | null
+  ticketCheckInDate?: string | null
+  ledgerExpense?: number | null
+  tourId?: string | null
+  linkedTour?: TicketBookingTourEnrichment | null
 }
 
 function formatYmdForDisplay(raw: string | null | undefined): string | null {
@@ -114,16 +196,59 @@ async function fetchSourceSummaryInfo(context: ExpenseStatementReconContext): Pr
     case 'ticket_bookings': {
       const { data } = await supabase
         .from('ticket_bookings')
-        .select('payment_method, category, company, note, rn_number')
+        .select(
+          'payment_method, category, company, note, rn_number, submit_on, check_in_date, expense, tour_id'
+        )
         .eq('id', context.sourceId)
         .maybeSingle()
       if (!data) return null
       const rn = data.rn_number == null ? null : String(data.rn_number).trim() || null
+      const tourId = data.tour_id == null ? null : String(data.tour_id).trim() || null
+      let linkedTour: TicketBookingTourEnrichment | null = null
+      if (tourId) {
+        const { data: tourRow } = await supabase
+          .from('tours')
+          .select(
+            `
+            tour_date,
+            products (
+              name,
+              name_en,
+              name_ko
+            )
+          `
+          )
+          .eq('id', tourId)
+          .maybeSingle()
+        if (tourRow) {
+          const tr = tourRow as {
+            tour_date?: string | null
+            products?: { name?: string; name_en?: string; name_ko?: string } | { name?: string; name_en?: string; name_ko?: string }[] | null
+          }
+          const rawProducts = tr.products
+          const product =
+            rawProducts == null
+              ? null
+              : Array.isArray(rawProducts)
+                ? rawProducts[0] ?? null
+                : rawProducts
+          linkedTour = {
+            tour_date: tr.tour_date ?? null,
+            products: product,
+          }
+        }
+      }
+      const expense = Number(data.expense ?? 0)
       return {
         paymentMethod: data.payment_method ?? null,
         primaryDetail: data.category ?? data.note ?? null,
         secondaryDetail: data.company ?? null,
-        rnNumber: rn
+        rnNumber: rn,
+        submitOn: formatYmdForDisplay(data.submit_on),
+        ticketCheckInDate: formatYmdForDisplay(data.check_in_date),
+        ledgerExpense: Number.isFinite(expense) ? Math.abs(expense) : null,
+        tourId,
+        linkedTour,
       }
     }
     case 'tour_hotel_bookings': {
@@ -191,6 +316,7 @@ export default function ExpenseStatementSimilarLinesModal({
   nestedElevated?: boolean
 }) {
   const t = useTranslations('expenses.statementRecon')
+  const locale = useLocale()
   const { user } = useAuth()
   const {
     paymentMethodMap,
@@ -219,6 +345,10 @@ export default function ExpenseStatementSimilarLinesModal({
   const [activeAccountTab, setActiveAccountTab] = useState(ACCOUNT_TAB_ALL)
   const [conflictDetails, setConflictDetails] = useState<LedgerMatchDetail[]>([])
   const [conflictDetailsLoading, setConflictDetailsLoading] = useState(false)
+  const [linkedMatchDetailsByKey, setLinkedMatchDetailsByKey] = useState<Map<string, LedgerMatchDetail>>(
+    () => new Map()
+  )
+  const [linkedMatchDetailsLoading, setLinkedMatchDetailsLoading] = useState(false)
 
   const ticketDateProbe = context?.ticketBookingDateProbe
 
@@ -424,6 +554,15 @@ export default function ExpenseStatementSimilarLinesModal({
     [rowById, primarySelectedId]
   )
 
+  /** 선택한 줄 중 입금(환불)이 하나라도 있으면 — 추가 연결 시 «순» 배정을 줄이므로 잔여 0이어도 허용 */
+  const anySelectedInflow = useMemo(
+    () =>
+      selectedIdsOrdered.some(
+        (id) => String(rowById.get(id)?.direction ?? '').toLowerCase() === 'inflow'
+      ),
+    [selectedIdsOrdered, rowById]
+  )
+
   const conflictingOnSelectedLine = useMemo(() => {
     if (!selectedRow || !context) return []
     return selectedRow.existing_matches.filter(
@@ -474,15 +613,52 @@ export default function ExpenseStatementSimilarLinesModal({
     }
   }, [open, conflictDetailsKey, selectedRow, conflictingOnSelectedLine])
 
-  const detailLabelBundle = {
+  useEffect(() => {
+    if (!open) {
+      setLinkedMatchDetailsByKey(new Map())
+      setLinkedMatchDetailsLoading(false)
+      return
+    }
+    const refs: LedgerMatchRef[] = []
+    for (const r of rows) {
+      for (const m of r.existing_matches) refs.push(m)
+    }
+    for (const r of searchResultRows) {
+      for (const m of r.existing_matches) refs.push(m)
+    }
+    if (refs.length === 0) {
+      setLinkedMatchDetailsByKey(new Map())
+      setLinkedMatchDetailsLoading(false)
+      return
+    }
+    let cancelled = false
+    setLinkedMatchDetailsLoading(true)
+    void fetchLedgerMatchDetailsBatch(supabase, refs)
+      .then((map) => {
+        if (!cancelled) setLinkedMatchDetailsByKey(map)
+      })
+      .catch(() => {
+        if (!cancelled) setLinkedMatchDetailsByKey(new Map())
+      })
+      .finally(() => {
+        if (!cancelled) setLinkedMatchDetailsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, rows, searchResultRows])
+
+  const detailLabelBundle: LedgerMatchDetailLabelBundle = {
     sourceType: t('lineConflictDetailSourceType'),
     allocatedOnStatement: t('lineConflictDetailAllocated'),
     ledgerAmount: t('lineConflictDetailLedgerAmount'),
     paidTo: t('lineConflictDetailPaidTo'),
     paidFor: t('lineConflictDetailPaidFor'),
-    submitDate: t('lineConflictDetailDate'),
+    submitDate: t('sourceSubmitOn'),
     checkInDate: t('lineConflictDetailCheckIn'),
     tourDate: t('lineConflictDetailTourDate'),
+    linkedTour: t('sourceLinkedTour'),
+    quantity: t('colLinkedQuantity'),
     rn: t('lineConflictDetailRn'),
     description: t('lineConflictDetailDescription'),
     paymentMethod: t('sourcePaymentMethod'),
@@ -508,7 +684,9 @@ export default function ExpenseStatementSimilarLinesModal({
       return
     if (remainingOnLedger == null) return
     const lineRoom = Math.max(0, Math.abs(selectedRow.amount) - selectedRow.allocated_sum)
-    const sug = Math.min(remainingOnLedger, lineRoom)
+    // 입금(환불)은 순 배정을 줄이므로 줄 자체 한도 전액을 제안(원장 잔여에 묶이지 않음)
+    const selectedIsInflow = String(selectedRow.direction).toLowerCase() === 'inflow'
+    const sug = selectedIsInflow ? lineRoom : Math.min(remainingOnLedger, lineRoom)
     setAppendAmountStr(sug > 0 ? sug.toFixed(2) : '')
   }, [open, context, appendLink, selectedIdsOrdered.length, selectedRow, remainingOnLedger])
 
@@ -655,18 +833,30 @@ export default function ExpenseStatementSimilarLinesModal({
         return
       }
 
-      for (const lineId of ordered) {
-        const row = rowById.get(lineId)
-        if (!row) continue
+      // 입금(환불) 줄은 잔여 한도와 무관하게 먼저 연결(순 배정을 줄임), 이후 출금 줄을 남은 한도만큼 배정
+      const orderedRows = ordered
+        .map((lineId) => ({ lineId, row: rowById.get(lineId) }))
+        .filter((x): x is { lineId: string; row: SimilarStatementLineRow } => Boolean(x.row))
+      const inflowFirst = [
+        ...orderedRows.filter((x) => String(x.row.direction).toLowerCase() === 'inflow'),
+        ...orderedRows.filter((x) => String(x.row.direction).toLowerCase() !== 'inflow'),
+      ]
 
-        const allocated = await sumMatchedAmountAllocatedToSource(supabase, context.sourceTable, context.sourceId)
-        const remaining = ledgerCap - allocated
-        const capTol = Math.max(0.5, ledgerCap * 0.001)
-        if (remaining <= capTol) break
-
+      for (const { lineId, row } of inflowFirst) {
+        const isInflow = String(row.direction).toLowerCase() === 'inflow'
         const lineAbs = Math.abs(row.amount)
         const lineRoom = Math.max(0, lineAbs - row.allocated_sum)
-        const share = Math.min(remaining, lineRoom)
+        const capTol = Math.max(0.5, ledgerCap * 0.001)
+
+        let share: number
+        if (isInflow) {
+          share = lineRoom
+        } else {
+          const allocated = await sumMatchedAmountAllocatedToSource(supabase, context.sourceTable, context.sourceId)
+          const remaining = ledgerCap - allocated
+          if (remaining <= capTol) continue
+          share = Math.min(remaining, lineRoom)
+        }
         if (share <= capTol) continue
 
         await replaceExpenseReconciliationMatch(supabase, {
@@ -753,11 +943,31 @@ export default function ExpenseStatementSimilarLinesModal({
   const showAccountTabs = accountTabs.length > 0
   const linkedLineIdSet = useMemo(() => new Set(linkedRows.map((r) => r.id)), [linkedRows])
 
+  const isTicketBookingSource = context?.sourceTable === 'ticket_bookings'
+  const linkedTourHeadline = useMemo(() => {
+    if (!sourceSummary?.linkedTour) return null
+    return formatTicketBookingTourHeadline(
+      locale,
+      sourceSummary.linkedTour,
+      t('sourceTypes.ticketBookings'),
+      { appendPeople: true }
+    )
+  }, [sourceSummary?.linkedTour, locale, t])
+  const linkedTourDateYmd = useMemo(() => {
+    const raw = sourceSummary?.linkedTour?.tour_date
+    if (raw == null) return null
+    const s = String(raw).trim()
+    return s.length >= 10 ? s.slice(0, 10) : s || null
+  }, [sourceSummary?.linkedTour?.tour_date])
+
+  const showCurrentLinksPanel =
+    linkedRows.length > 0 || (isTicketBookingSource && sourceSummary != null)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         overlayClassName={nestedElevated ? 'z-[1300]' : undefined}
-        className={`max-h-[85vh] w-full max-w-[min(96vw,72rem)] flex flex-col gap-0 overflow-hidden p-4 sm:p-6${nestedElevated ? ' z-[1300]' : ''}`}
+        className={`max-h-[88vh] w-full max-w-[min(98vw,88rem)] flex flex-col gap-0 overflow-hidden p-4 sm:p-6${nestedElevated ? ' z-[1300]' : ''}`}
       >
         <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>{t('modalTitle')}</DialogTitle>
@@ -767,7 +977,7 @@ export default function ExpenseStatementSimilarLinesModal({
         </DialogHeader>
 
         {context ? (
-          <div className="shrink-0 max-h-[min(30vh,11rem)] overflow-y-auto space-y-1.5 border-b pb-2 mb-2">
+          <div className="shrink-0 max-h-[min(42vh,16rem)] overflow-y-auto space-y-1.5 border-b pb-2 mb-2">
             <p className="text-xs text-muted-foreground tabular-nums">
               {t('ledgerSummary', {
                 table: tableName,
@@ -776,17 +986,17 @@ export default function ExpenseStatementSimilarLinesModal({
                 dir: dirLabel
               })}
             </p>
-            {sourceSummary?.primaryDetail ? (
+            {!isTicketBookingSource && sourceSummary?.primaryDetail ? (
               <p className="text-[11px] text-muted-foreground leading-snug truncate" title={sourceSummary.primaryDetail}>
                 {t('sourcePrimaryDetail')}: {sourceSummary.primaryDetail}
               </p>
             ) : null}
-            {sourceSummary?.secondaryDetail ? (
+            {!isTicketBookingSource && sourceSummary?.secondaryDetail ? (
               <p className="text-[11px] text-muted-foreground leading-snug truncate" title={sourceSummary.secondaryDetail}>
                 {t('sourceSecondaryDetail')}: {sourceSummary.secondaryDetail}
               </p>
             ) : null}
-            {sourceSummary?.rnNumber ? (
+            {!isTicketBookingSource && sourceSummary?.rnNumber ? (
               <p className="text-[11px] text-muted-foreground leading-snug tabular-nums" title={sourceSummary.rnNumber}>
                 {t('sourceRnNumber')}: {sourceSummary.rnNumber}
               </p>
@@ -817,8 +1027,65 @@ export default function ExpenseStatementSimilarLinesModal({
                 </span>
               </p>
             ) : null}
-            {linkedRows.length > 0 ? (
+            {showCurrentLinksPanel ? (
               <div className="rounded-md border border-emerald-300/80 bg-emerald-50/60 px-3 py-2 space-y-2">
+                {isTicketBookingSource && sourceSummary ? (
+                  <div className="rounded border border-emerald-200/90 bg-white/95 px-2.5 py-2 space-y-1.5">
+                    <p className="text-[11px] font-semibold text-emerald-950">
+                      {t('sourceTypes.ticketBookings')}
+                    </p>
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px] leading-snug">
+                      {sourceSummary.primaryDetail ? (
+                        <>
+                          <dt className="text-muted-foreground shrink-0">{t('sourcePrimaryDetail')}</dt>
+                          <dd className="min-w-0 break-words font-medium">{sourceSummary.primaryDetail}</dd>
+                        </>
+                      ) : null}
+                      {sourceSummary.secondaryDetail ? (
+                        <>
+                          <dt className="text-muted-foreground shrink-0">{t('sourceSecondaryDetail')}</dt>
+                          <dd className="min-w-0 break-words">{sourceSummary.secondaryDetail}</dd>
+                        </>
+                      ) : null}
+                      {sourceSummary.submitOn ? (
+                        <>
+                          <dt className="text-muted-foreground shrink-0 tabular-nums">{t('sourceSubmitOn')}</dt>
+                          <dd className="tabular-nums font-medium">{sourceSummary.submitOn}</dd>
+                        </>
+                      ) : null}
+                      {sourceSummary.ticketCheckInDate ? (
+                        <>
+                          <dt className="text-muted-foreground shrink-0 tabular-nums">{t('sourceCheckIn')}</dt>
+                          <dd className="tabular-nums">{sourceSummary.ticketCheckInDate}</dd>
+                        </>
+                      ) : null}
+                      {linkedTourDateYmd ? (
+                        <>
+                          <dt className="text-muted-foreground shrink-0 tabular-nums">{t('sourceTourDate')}</dt>
+                          <dd className="tabular-nums">{linkedTourDateYmd}</dd>
+                        </>
+                      ) : null}
+                      {sourceSummary.rnNumber ? (
+                        <>
+                          <dt className="text-muted-foreground shrink-0 tabular-nums">{t('sourceRnNumber')}</dt>
+                          <dd className="tabular-nums">{sourceSummary.rnNumber}</dd>
+                        </>
+                      ) : null}
+                      {sourceSummary.ledgerExpense != null && sourceSummary.ledgerExpense > 0 ? (
+                        <>
+                          <dt className="text-muted-foreground shrink-0 tabular-nums">{t('sourceLedgerExpense')}</dt>
+                          <dd className="tabular-nums font-medium">${sourceSummary.ledgerExpense.toFixed(2)}</dd>
+                        </>
+                      ) : null}
+                      <dt className="text-muted-foreground shrink-0">{t('sourceLinkedTour')}</dt>
+                      <dd className="min-w-0 break-words font-medium text-emerald-900">
+                        {linkedTourHeadline ?? t('sourceLinkedTourNone')}
+                      </dd>
+                    </dl>
+                  </div>
+                ) : null}
+                {linkedRows.length > 0 ? (
+                  <>
                 <p className="text-xs font-semibold text-emerald-900">
                   {t('currentLinksTitle')} · {t('currentLinksCount', { count: linkedRows.length })}
                 </p>
@@ -838,7 +1105,7 @@ export default function ExpenseStatementSimilarLinesModal({
                           <span>{r.posted_date}</span>
                           <span className="text-muted-foreground">·</span>
                           <span className={dirOut ? 'text-rose-800' : 'text-emerald-700'}>
-                            ${Math.abs(r.amount).toFixed(2)}
+                            {statementLineSignedAmountLabel(r)}
                           </span>
                           {alloc != null ? (
                             <>
@@ -854,6 +1121,10 @@ export default function ExpenseStatementSimilarLinesModal({
                     )
                   })}
                 </ul>
+                  </>
+                ) : isTicketBookingSource ? (
+                  <p className="text-[11px] text-emerald-900/85 leading-snug">{t('currentLinksEmpty')}</p>
+                ) : null}
               </div>
             ) : null}
             <p className="text-[11px] text-muted-foreground leading-snug">
@@ -1136,7 +1407,7 @@ export default function ExpenseStatementSimilarLinesModal({
                   <th className="text-right p-2 font-medium whitespace-nowrap">{t('colAllocatedSum')}</th>
                   <th className="text-left p-2 font-medium">{t('colDesc')}</th>
                   <th className="text-left p-2 font-medium">{t('colStatus')}</th>
-                  <th className="text-left p-2 font-medium">{t('colLinked')}</th>
+                  <th className="text-left p-2 font-medium min-w-[20rem] w-[28rem]">{t('colLinked')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1192,7 +1463,7 @@ export default function ExpenseStatementSimilarLinesModal({
                         String(r.direction).toLowerCase() === 'inflow' ? 'text-emerald-700' : ''
                       }`}
                     >
-                      ${r.amount.toFixed(2)}
+                      {statementLineSignedAmountLabel(r)}
                     </td>
                     <td className="p-2 text-right tabular-nums text-xs text-muted-foreground align-middle whitespace-nowrap">
                       {r.existing_matches.length > 0 ? (
@@ -1218,14 +1489,34 @@ export default function ExpenseStatementSimilarLinesModal({
                           ? t('statusPartial')
                           : t('statusMatched')}
                     </td>
-                    <td className="p-2 text-xs text-muted-foreground max-w-[12rem] align-middle">
-                      {r.existing_matches.length === 0
-                        ? t('noLinks')
-                        : r.existing_matches.map((m, i) => (
-                            <div key={`${m.source_table}-${m.source_id}-${i}`} className="truncate">
-                              {formatMatchLabel(m)}
-                            </div>
+                    <td className="p-2 text-xs text-muted-foreground min-w-[20rem] w-[28rem] max-w-[32rem] align-top">
+                      {r.existing_matches.length === 0 ? (
+                        t('noLinks')
+                      ) : linkedMatchDetailsLoading &&
+                        r.existing_matches.some(
+                          (m) => !linkedMatchDetailsByKey.has(`${m.source_table}:${m.source_id}`)
+                        ) ? (
+                        <p className="text-[10px] text-muted-foreground py-1">{t('colLinkedDetailLoading')}</p>
+                      ) : (
+                        <div className="space-y-0">
+                          {r.existing_matches.map((m, i) => (
+                            <StatementTableLinkedMatchCell
+                              key={`${m.source_table}-${m.source_id}-${i}`}
+                              match={m}
+                              detail={linkedMatchDetailsByKey.get(`${m.source_table}:${m.source_id}`)}
+                              labels={detailLabelBundle}
+                              paymentMethodMap={paymentMethodMap}
+                              paymentMethodFinancialAccountNameByPmId={
+                                paymentMethodFinancialAccountNameByPmId
+                              }
+                              fallbackLabel={formatMatchLabel(m)}
+                              sourceTypeLabel={(table) =>
+                                t(`sourceTypes.${sourceTableLabelKey(table)}`)
+                              }
+                            />
                           ))}
+                        </div>
+                      )}
                     </td>
                   </tr>
                   )
@@ -1264,7 +1555,10 @@ export default function ExpenseStatementSimilarLinesModal({
               disabled={
                 selectedIdsOrdered.length === 0 ||
                 saving ||
-                (appendLink && remainingOnLedger != null && remainingOnLedger < 0.01)
+                (appendLink &&
+                  !anySelectedInflow &&
+                  remainingOnLedger != null &&
+                  remainingOnLedger < 0.01)
               }
               onClick={() => void apply()}
             >

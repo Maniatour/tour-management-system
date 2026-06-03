@@ -44,7 +44,8 @@ import {
   ListPlus,
   Loader2,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Trash2
 } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import {
@@ -503,6 +504,8 @@ const AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING = Math.max(AUTO_MATCH_EXACT_DAY_WINDO
 const AUTO_MATCH_AMOUNT_ONLY_STATEMENT_FETCH_PADDING_DAYS = 540
 /** 명세 대조 화면 전반: 거래일·등록일 기준 ±N일(미매칭 구간, 지출 피커, 운영원장 후보 등) */
 const RECON_STATEMENT_DAY_WINDOW = 4
+/** 지출 연결 모달 — 테이블 탐색 시 «넓게 보기» 옵션의 ±N일 */
+const PICKER_BROWSE_WIDE_DAY_WINDOW = 15
 /** 자동 매칭 미리보기: 한 실행에서 처리할 명세 줄 상한(실제 대상은 표 현재 페이지의 출금·미연결 줄뿐) */
 const AUTO_MATCH_MAX_STATEMENT_LINES = 800
 /** 자동 매칭: 지출 결제수단의 금융 계정이 명세 계정과 일치할 때 가산점 (후보 제외는 아님) */
@@ -1898,6 +1901,8 @@ export default function StatementReconciliationTab() {
   const [securityModalOpen, setSecurityModalOpen] = useState(false)
   const [accountsModalOpen, setAccountsModalOpen] = useState(false)
   const [csvImportModalOpen, setCsvImportModalOpen] = useState(false)
+  const [importManageOpen, setImportManageOpen] = useState(false)
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null)
   const [journalModalOpen, setJournalModalOpen] = useState(false)
   /** 자동 매칭: 미리보기 후 확인 시에만 reconciliation_matches 저장 */
   const [autoMatchPreviewOpen, setAutoMatchPreviewOpen] = useState(false)
@@ -1945,6 +1950,8 @@ export default function StatementReconciliationTab() {
   const [expensePickerBrowseRows, setExpensePickerBrowseRows] = useState<ExpenseOption[]>([])
   const [expensePickerBrowseLoading, setExpensePickerBrowseLoading] = useState(false)
   const [expensePickerBrowseHasMore, setExpensePickerBrowseHasMore] = useState(false)
+  /** 테이블 탐색 조회 폭: false면 ±RECON_STATEMENT_DAY_WINDOW일, true면 ±PICKER_BROWSE_WIDE_DAY_WINDOW일 */
+  const [expensePickerBrowseWide, setExpensePickerBrowseWide] = useState(false)
   const [expensePickerSearchSourceFilter, setExpensePickerSearchSourceFilter] = useState<
     '' | ExpensePickerBrowseTable
   >('')
@@ -2494,6 +2501,15 @@ export default function StatementReconciliationTab() {
     }
     return imports.filter((im) => im.financial_account_id === filterAccountId)
   }, [imports, filterAccountId, isAllAccountsFilter, activeReconciliationAccountIdSet])
+
+  /** 업로드 관리·되돌리기: 최근 등록 순 */
+  const importsForAccountByCreatedDesc = useMemo(
+    () =>
+      [...importsForAccount].sort((a, b) =>
+        String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))
+      ),
+    [importsForAccount]
+  )
 
   const coverageImportIdSet = useMemo(
     () => new Set(importsForAccount.map((im) => im.id)),
@@ -3571,8 +3587,9 @@ export default function StatementReconciliationTab() {
       }
       setExpensePickerBrowseLoading(true)
       try {
-        const startYmd = addCalendarDaysYmd(lineDate, -RECON_STATEMENT_DAY_WINDOW)
-        const endYmd = addCalendarDaysYmd(lineDate, RECON_STATEMENT_DAY_WINDOW)
+        const dayWindow = expensePickerBrowseWide ? PICKER_BROWSE_WIDE_DAY_WINDOW : RECON_STATEMENT_DAY_WINDOW
+        const startYmd = addCalendarDaysYmd(lineDate, -dayWindow)
+        const endYmd = addCalendarDaysYmd(lineDate, dayWindow)
         const start = new Date(`${startYmd}T00:00:00`)
         const end = new Date(`${endYmd}T23:59:59.999`)
         const startIso = start.toISOString()
@@ -3591,9 +3608,10 @@ export default function StatementReconciliationTab() {
         let query = withActiveExpenseRowsOnly(sb.from(table).select(sel), table)
         if (table === 'ticket_bookings') {
           query = query
-            .gte('check_in_date', startYmd)
-            .lte('check_in_date', endYmd)
-            .order('check_in_date', { ascending: false })
+            .or(
+              `and(check_in_date.gte.${startYmd},check_in_date.lte.${endYmd}),and(submit_on.gte.${startIso},submit_on.lte.${endIso})`
+            )
+            .order('check_in_date', { ascending: false, nullsFirst: false })
         } else {
           query = query.gte('submit_on', startIso).lte('submit_on', endIso).order('submit_on', { ascending: false })
         }
@@ -3617,7 +3635,7 @@ export default function StatementReconciliationTab() {
         setExpensePickerBrowseLoading(false)
       }
     },
-    [expensePickerLinePostedYmd]
+    [expensePickerLinePostedYmd, expensePickerBrowseWide]
   )
 
   useEffect(() => {
@@ -3628,6 +3646,7 @@ export default function StatementReconciliationTab() {
     expensePickerBrowsePage,
     expensePickerLineId,
     expensePickerLinePostedYmd,
+    expensePickerBrowseWide,
     loadExpensePickerBrowse
   ])
 
@@ -3636,6 +3655,7 @@ export default function StatementReconciliationTab() {
     setExpensePickerBrowsePage(0)
     setExpensePickerBrowseRows([])
     setExpensePickerBrowseHasMore(false)
+    setExpensePickerBrowseWide(false)
     setExpensePickerSearchSourceFilter('')
     setExpensePickerSearchDateScope('line_window')
     setExpensePickerSearchSort('relevance')
@@ -4591,6 +4611,54 @@ export default function StatementReconciliationTab() {
         ? `가장 최근 명세(기간 종료일 기준)를 잠갔습니다. (${lockTargetImport.period_start ?? ''} ~ ${lockTargetImport.period_end ?? ''})`
         : '명세가 잠겼습니다.'
     )
+  }
+
+  const deleteStatementImport = async (imp: StatementImport) => {
+    if (!canMutateStatementUploads) {
+      setMessage(
+        '명세 업로드 삭제는 info@maniatour.com 계정 또는 team에서 직책이 super인 활성 직원만 사용할 수 있습니다.'
+      )
+      return
+    }
+    const when = imp.created_at ? new Date(imp.created_at).toLocaleString('ko-KR') : ''
+    const fileLabel = imp.original_filename?.trim() || '(파일명 없음)'
+    const period = `${imp.period_start ?? ''} ~ ${imp.period_end ?? ''}`
+    const ok = window.confirm(
+      [
+        '이 명세 업로드 건을 삭제합니다.',
+        '',
+        `파일: ${fileLabel}`,
+        `기간: ${period}`,
+        when ? `등록: ${when}` : '',
+        imp.status === 'locked' ? '상태: 잠김 (삭제 시 이 건의 줄·연결도 함께 제거됩니다)' : '',
+        '',
+        '이 건에 속한 명세 줄과 대조 연결만 삭제됩니다. 다른 업로드 건·지출 원장은 유지됩니다.',
+        '되돌릴 수 없습니다. 계속할까요?'
+      ]
+        .filter(Boolean)
+        .join('\n')
+    )
+    if (!ok) return
+
+    setDeletingImportId(imp.id)
+    setLoading(true)
+    setMessage(null)
+    try {
+      const { error } = await supabase.from('statement_imports').delete().eq('id', imp.id)
+      if (error) throw error
+      setMessage(`명세 업로드 1건을 삭제했습니다. (${fileLabel})`)
+      await loadImports()
+      if (filterAccountId && filterAccountId === imp.financial_account_id) {
+        await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
+        await refreshUnmatchedExpenseKeys()
+      }
+      if (importsForAccount.filter((x) => x.id !== imp.id).length === 0) setImportManageOpen(false)
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : '명세 업로드 삭제에 실패했습니다.')
+    } finally {
+      setDeletingImportId(null)
+      setLoading(false)
+    }
   }
 
   const toggleLineFlags = async (line: StatementLine, field: 'exclude_from_pnl' | 'is_personal') => {
@@ -8118,6 +8186,18 @@ export default function StatementReconciliationTab() {
             <span>·</span>
             <span>
               DB 명세 업로드 <strong>{importsForAccount.length}</strong>건 합산 표시
+              {importsForAccount.length > 0 && canMutateStatementUploads && !isAllAccountsFilter ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                    onClick={() => setImportManageOpen(true)}
+                  >
+                    업로드 관리
+                  </button>
+                </>
+              ) : null}
             </span>
             {filterAccountId && !unmatchedSidebarOpen ? (
               <>
@@ -8316,6 +8396,27 @@ export default function StatementReconciliationTab() {
           <Button
             type="button"
             variant="outline"
+            onClick={() => setImportManageOpen(true)}
+            disabled={
+              loading ||
+              isAllAccountsFilter ||
+              importsForAccount.length === 0 ||
+              !canMutateStatementUploads
+            }
+            title={
+              isAllAccountsFilter
+                ? singleAccountActionHint
+                : !canMutateStatementUploads
+                  ? 'info@maniatour.com 또는 team 직책 super만 삭제할 수 있습니다.'
+                  : '중복 가져오기 등 잘못 올린 업로드 건을 삭제합니다. 다른 업로드 건은 유지됩니다.'
+            }
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            업로드 건 삭제
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
             className="border-amber-300 text-amber-900 hover:bg-amber-50"
             onClick={() => setResetAllMatchesOpen(true)}
             disabled={
@@ -8330,6 +8431,58 @@ export default function StatementReconciliationTab() {
             매칭 전부 초기화
           </Button>
         </div>
+
+        <Dialog open={importManageOpen} onOpenChange={setImportManageOpen}>
+          <DialogContent className="max-w-lg w-[calc(100vw-1.25rem)]">
+            <DialogHeader>
+              <DialogTitle>명세 업로드 건 관리</DialogTitle>
+              <DialogDescription className="text-left text-sm text-slate-600">
+                <strong>{selectedAccountLabel}</strong> 계정의 업로드 목록입니다. 잘못 가져온(중복) 건만 삭제하세요.
+                삭제한 건의 명세 줄·대조 연결만 제거되고, 다른 업로드·지출 원장은 유지됩니다.
+              </DialogDescription>
+            </DialogHeader>
+            <ul className="max-h-[min(50vh,360px)] overflow-y-auto divide-y border rounded-md text-sm">
+              {importsForAccountByCreatedDesc.map((im) => {
+                const when = im.created_at
+                  ? new Date(im.created_at).toLocaleString('ko-KR')
+                  : ''
+                const busy = deletingImportId === im.id
+                return (
+                  <li key={im.id} className="flex flex-wrap items-start gap-2 px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-slate-900 truncate" title={im.original_filename ?? undefined}>
+                        {im.original_filename?.trim() || '(파일명 없음)'}
+                      </p>
+                      <p className="text-xs text-slate-600 tabular-nums">
+                        {im.period_start} ~ {im.period_end}
+                        {im.status ? ` · ${im.status}` : ''}
+                      </p>
+                      {when ? <p className="text-xs text-slate-500">등록 {when}</p> : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={loading || busy || !canMutateStatementUploads}
+                      onClick={() => void deleteStatementImport(im)}
+                    >
+                      {busy ? '삭제 중…' : '삭제'}
+                    </Button>
+                  </li>
+                )
+              })}
+              {importsForAccountByCreatedDesc.length === 0 ? (
+                <li className="px-3 py-4 text-gray-500 text-center">업로드 건 없음</li>
+              ) : null}
+            </ul>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setImportManageOpen(false)}>
+                닫기
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <AlertDialog open={resetAllMatchesOpen} onOpenChange={setResetAllMatchesOpen}>
           <AlertDialogContent className="max-w-md">
@@ -10100,16 +10253,50 @@ export default function StatementReconciliationTab() {
 
               <div className="border-t border-slate-100 pt-3 space-y-2">
                 <div className="text-xs font-medium text-slate-700">
-                  테이블에서 직접 선택
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span>테이블에서 직접 선택</span>
+                    <div className="inline-flex rounded border border-slate-200 overflow-hidden">
+                      <button
+                        type="button"
+                        className={`px-2 py-0.5 text-[11px] ${
+                          expensePickerBrowseWide
+                            ? 'bg-white text-slate-600 hover:bg-slate-50'
+                            : 'bg-slate-700 text-white'
+                        }`}
+                        disabled={loading || expensePickerBrowseLoading}
+                        onClick={() => {
+                          setExpensePickerBrowseWide(false)
+                          setExpensePickerBrowsePage(0)
+                        }}
+                      >
+                        ±{RECON_STATEMENT_DAY_WINDOW}일
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-2 py-0.5 text-[11px] border-l border-slate-200 ${
+                          expensePickerBrowseWide
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                        disabled={loading || expensePickerBrowseLoading}
+                        onClick={() => {
+                          setExpensePickerBrowseWide(true)
+                          setExpensePickerBrowsePage(0)
+                        }}
+                      >
+                        ±{PICKER_BROWSE_WIDE_DAY_WINDOW}일
+                      </button>
+                    </div>
+                  </div>
                   <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
                     위 명세 줄 거래일 <strong className="text-slate-700">{expensePickerLinePostedYmd || '—'}</strong> 기준
-                    ±{RECON_STATEMENT_DAY_WINDOW}일
+                    ±{expensePickerBrowseWide ? PICKER_BROWSE_WIDE_DAY_WINDOW : RECON_STATEMENT_DAY_WINDOW}일
                     {expensePickerBrowseTable === 'ticket_bookings' ? (
-                      <> (<span className="tabular-nums">체크인일</span>)</>
+                      <> (<span className="tabular-nums">체크인일 또는 등록일 submit_on</span>)</>
                     ) : expensePickerBrowseTable ? (
                       <> (<span className="tabular-nums">등록일 submit_on</span>)</>
                     ) : (
-                      <> — 회사·투어·예약은 등록일, 입장권은 체크인일</>
+                      <> — 회사·투어·예약은 등록일, 입장권은 체크인일·등록일</>
                     )}
                     만 조회합니다. 페이지당 {PICKER_BROWSE_PAGE_SIZE}건씩 불러옵니다.
                   </span>
