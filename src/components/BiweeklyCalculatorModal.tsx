@@ -538,7 +538,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           assistant_fee,
           team_type,
           reservation_ids,
-          products!inner(name_ko, name_en)
+          products!inner(name, name_ko, name_en)
         `)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
@@ -584,8 +584,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           return {
             id: tour.id,
             tour_id: tour.id,
-            tour_name: (tour.products as any)?.name_ko || '투어명 없음',
-            tour_name_en: (tour.products as any)?.name_en || null,
+            tour_name: (tour.products as any)?.name_ko || (tour.products as any)?.name || (tour.products as any)?.name_en || '투어명 없음',
+            tour_name_en: (tour.products as any)?.name_en || (tour.products as any)?.name || null,
             date: tour.tour_date,
             team_type: tour.team_type || '',
             tour_guide_id: tour.tour_guide_id,

@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -33,6 +33,8 @@ interface TourHeaderProps {
   onPrintReceipts?: () => void
   onPrintTipEnvelopes?: () => void
   onPrintBalanceEnvelopes?: () => void
+  /** 투어 정보(팀/픽업/부킹) Letter 인쇄 */
+  onPrintTourInfo?: () => void
 }
 
 export default function TourHeader({
@@ -60,7 +62,8 @@ export default function TourHeader({
   onRestoreTour,
   onPrintReceipts,
   onPrintTipEnvelopes,
-  onPrintBalanceEnvelopes
+  onPrintBalanceEnvelopes,
+  onPrintTourInfo
 }: TourHeaderProps) {
   const router = useRouter()
   const t = useTranslations('tours.tourHeader')
@@ -91,6 +94,16 @@ export default function TourHeader({
                 <div className="flex-shrink-0 min-w-0 max-w-[80px] sm:max-w-none">
                   <TourSunriseTime tourDate={tour.tour_date} />
                 </div>
+                {onPrintTourInfo && (
+                  <button
+                    type="button"
+                    onClick={onPrintTourInfo}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
+                    title={params.locale === 'ko' ? '투어 정보 인쇄 (팀/픽업/부킹)' : 'Print tour info'}
+                  >
+                    <FileText className="w-5 h-5" />
+                  </button>
+                )}
                 {onPrintReceipts && (
                   <button
                     type="button"

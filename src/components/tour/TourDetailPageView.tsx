@@ -42,6 +42,7 @@ import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupSche
 import PickupScheduleEmailPreviewModal from '@/components/tour/modals/PickupScheduleEmailPreviewModal'
 import TourEditModal from '@/components/tour/modals/TourEditModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
+import TourPrintModal from '@/components/tour/modals/TourPrintModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
@@ -159,6 +160,7 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
   const [showBatchReceiptModal, setShowBatchReceiptModal] = useState<boolean>(false)
   const [showEditReceiptModal, setShowEditReceiptModal] = useState<boolean>(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
+  const [showTourPrintModal, setShowTourPrintModal] = useState<boolean>(false)
   const [activeSection, setActiveSection] = useState<string>('')
   const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
   
@@ -1828,6 +1830,7 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
         {...(tourData.isStaff && tourData.tour && isTourDeletedStatus(tourData.tour.tour_status)
           ? { onRestoreTour: handleRestoreTour }
           : {})}
+        onPrintTourInfo={() => setShowTourPrintModal(true)}
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
@@ -1871,6 +1874,41 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
               tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
             ].filter(Boolean).join(' & ') || '—'}
             locale={locale}
+          />
+        )
+      })()}
+
+      {/* 투어 정보 인쇄 모달 (팀/픽업/부킹, Letter) */}
+      {(() => {
+        const teamType = tourData.teamType
+        const secondMemberLabel =
+          teamType === 'guide+driver'
+            ? (locale === 'ko' ? '드라이버' : 'Driver')
+            : teamType === '2guide'
+              ? (locale === 'ko' ? '2차 가이드' : '2nd Guide')
+              : (locale === 'ko' ? '어시스턴트' : 'Assistant')
+        return (
+          <TourPrintModal
+            isOpen={showTourPrintModal}
+            onClose={() => setShowTourPrintModal(false)}
+            locale={locale}
+            tourDate={tourData.tour?.tour_date || ''}
+            productName={
+              (locale === 'ko'
+                ? tourData.product?.name_ko || tourData.product?.name_en
+                : tourData.product?.name_en || tourData.product?.name_ko) || ''
+            }
+            guideName={tourData.selectedGuide ? tourData.getTeamMemberName(tourData.selectedGuide) : null}
+            secondMemberLabel={tourData.selectedAssistant ? secondMemberLabel : null}
+            secondMemberName={
+              tourData.selectedAssistant ? tourData.getTeamMemberName(tourData.selectedAssistant) : null
+            }
+            vehicleLabel={tourData.selectedVehicleId ? getVehicleName(tourData.selectedVehicleId) : null}
+            assignedReservations={tourData.assignedReservations}
+            pickupHotels={tourData.pickupHotels}
+            getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || ''}
+            ticketBookings={filteredTicketBookings}
+            tourHotelBookings={tourHotelBookings}
           />
         )
       })()}

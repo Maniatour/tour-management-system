@@ -452,7 +452,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           tour_guide_id,
           assistant_id,
           reservation_ids,
-          products!inner(name_ko)
+          products!inner(name, name_ko, name_en)
         `)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
@@ -505,7 +505,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
               id: tour.id,
               tour_id: tour.id,
               tour_date: tour.tour_date,
-              tour_name: (tour.products as any)?.name_ko || '투어명 없음',
+              tour_name: (tour.products as any)?.name_ko || (tour.products as any)?.name || (tour.products as any)?.name_en || '투어명 없음',
               guide_email: tour.tour_guide_id,
               guide_name: guideName,
               driver_email: tour.assistant_id,
@@ -594,7 +594,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
             id: tour.id,
             tour_id: tour.id,
             tour_date: tour.tour_date,
-            tour_name: (tour.products as any)?.name_ko || '투어명 없음',
+            tour_name: (tour.products as any)?.name_ko || (tour.products as any)?.name || (tour.products as any)?.name_en || '투어명 없음',
             guide_email: tour.tour_guide_id,
             guide_name: guideName,
             driver_email: tour.assistant_id,
@@ -830,7 +830,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           tour_guide_id,
           assistant_id,
           reservation_ids,
-          products!inner(name_ko)
+          products!inner(name, name_ko, name_en)
         `)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
@@ -970,7 +970,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         const total_tour_people = (tour.reservation_ids || []).reduce((s, rid) => s + (peopleMap[rid] ?? 0), 0)
         return {
           tour_date: tour.tour_date,
-          tour_name: (tour.products as { name_ko?: string })?.name_ko || '투어명 없음',
+          tour_name: (tour.products as { name_ko?: string; name?: string; name_en?: string })?.name_ko || (tour.products as { name?: string })?.name || (tour.products as { name_en?: string })?.name_en || '투어명 없음',
           guide_name: tour.tour_guide_id ? (nameMap[tour.tour_guide_id] || null) : null,
           driver_name: tour.assistant_id ? (nameMap[tour.assistant_id] || null) : null,
           total_tour_people,
@@ -1049,7 +1049,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           const base = i >= 0 ? tourDetailBase[i] : null
           return {
             tour_date: t.tour_date,
-            tour_name: (t.products as { name_ko?: string })?.name_ko || '투어명 없음',
+            tour_name: (t.products as { name_ko?: string; name?: string; name_en?: string })?.name_ko || (t.products as { name?: string })?.name || (t.products as { name_en?: string })?.name_en || '투어명 없음',
             tour_id: t.id,
             total_tour_people: base?.total_tour_people ?? 0,
             guide_name: base?.guide_name ?? null,

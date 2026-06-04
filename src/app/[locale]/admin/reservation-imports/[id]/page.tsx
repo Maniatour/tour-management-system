@@ -409,7 +409,8 @@ export default function ReservationImportDetailPage() {
           pickup_hotel: (payload.pickUpHotel as string) || null,
           pickup_time: (payload.pickUpTime as string) || null,
           added_by: user.email,
-          status: 'confirmed',
+          // 폼에서 선택한 예약 상태(문의/대기/확정/완료/취소)를 그대로 반영. 미지정 시 확정
+          status: (payload.status as string) || 'confirmed',
           selected_choices: payload.selectedChoices ?? undefined,
           variant_key: (payload.variantKey as string) || undefined,
           // 새 예약 추가와 동일: 가격·입금 정보 전달 → reservation_pricing + payment_record 저장

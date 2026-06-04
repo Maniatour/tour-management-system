@@ -253,7 +253,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId,
           tour_guide_id,
           assistant_id,
           reservation_ids,
-          products!inner(name_ko)
+          products!inner(name, name_ko, name_en)
         `)
       
       // 단일 투어 모드면 해당 투어만 조회
@@ -447,7 +447,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId,
           toursWithTipData.push({
             id: tour.id,
             tour_date: tour.tour_date,
-            tour_name: (tour.products as any)?.name_ko || '투어명 없음',
+            tour_name: (tour.products as any)?.name_ko || (tour.products as any)?.name || (tour.products as any)?.name_en || '투어명 없음',
             tour_guide_id: tour.tour_guide_id,
             assistant_id: tour.assistant_id,
             guide_name: guideName,

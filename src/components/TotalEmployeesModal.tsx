@@ -242,7 +242,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           team_type,
           product_id,
           reservation_ids,
-          products!inner(name_ko, name_en)
+          products!inner(name, name_ko, name_en)
         `)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
@@ -264,11 +264,12 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           tour_date: string
           tour_status?: string | null
           reservation_ids?: unknown
-          products?: { name_ko?: string | null; name_en?: string | null } | null
+          products?: { name?: string | null; name_ko?: string | null; name_en?: string | null } | null
         }
         const product = t.products
-        const nameKo = (product?.name_ko ?? '').trim()
-        const nameEn = (product?.name_en ?? '').trim()
+        const nameInternal = (product?.name ?? '').trim()
+        const nameKo = (product?.name_ko ?? '').trim() || nameInternal
+        const nameEn = (product?.name_en ?? '').trim() || nameInternal
         const dateStr = typeof t.tour_date === 'string' ? t.tour_date.slice(0, 10) : ''
         const statusStr =
           t.tour_status != null && String(t.tour_status).trim() !== '' ? String(t.tour_status) : null
@@ -1022,6 +1023,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
       return product.name_ko
     } else if (product.name_en) {
       return product.name_en
+    } else if (product.name) {
+      return product.name
     }
     
     return '투어명 없음'
