@@ -19,6 +19,7 @@ import {
   resolveStatementLineConflictsBeforeLink,
   searchStatementLinesAcrossImports,
   sumMatchedAmountAllocatedToSource,
+  unlinkExpenseReconciliationMatch,
   type StatementLineConflictResolution
 } from '@/lib/expense-reconciliation-similar-lines'
 import {
@@ -127,6 +128,29 @@ function lineMatchableAmount(row: SimilarStatementLineRow): number {
   const lineAbs = Math.abs(row.amount)
   const lineRoom = Math.max(0, lineAbs - row.allocated_sum)
   return lineRoom > 0.009 ? lineRoom : lineAbs
+}
+
+/** 추가 연결(append) 시 배정 USD — 입력값 우선, 없으면 원장·명세 한도에서 산출 */
+function computeAppendShareAmount(params: {
+  row: SimilarStatementLineRow
+  ledgerCap: number
+  sourceAllocatedSum: number
+  selfAllocOnLine: number
+  /** true: 선택 줄의 타 지출 연결을 끊고 이 원장만 남긴 뒤 배정(충돌 해결·충돌 UI) */
+  treatLineFreedByConflict: boolean
+  manualStr: string
+}): number | null {
+  const parsed = Number(String(params.manualStr).trim().replace(/,/g, ''))
+  if (Number.isFinite(parsed) && parsed > 0) return Math.abs(parsed)
+
+  const isInflow = String(params.row.direction).toLowerCase() === 'inflow'
+  const lineAbs = Math.abs(params.row.amount)
+  const lineRoom = params.treatLineFreedByConflict
+    ? Math.max(0, lineAbs - Math.abs(params.selfAllocOnLine))
+    : Math.max(0, lineAbs - params.row.allocated_sum)
+  const remainingOnLedger = Math.max(0, params.ledgerCap - params.sourceAllocatedSum)
+  const share = isInflow ? lineRoom : Math.min(remainingOnLedger, lineRoom)
+  return share > 0.009 ? Math.round(share * 100) / 100 : null
 }
 
 type SourceSummaryInfo = {
@@ -326,6 +350,8 @@ export default function ExpenseStatementSimilarLinesModal({
   const [rows, setRows] = useState<SimilarStatementLineRow[]>([])
   const [linkedRows, setLinkedRows] = useState<SimilarStatementLineRow[]>([])
   const [sourceAllocByLineId, setSourceAllocByLineId] = useState<Map<string, number>>(() => new Map())
+  const [matchIdByLineId, setMatchIdByLineId] = useState<Map<string, string | null>>(() => new Map())
+  const [unlinkingLineId, setUnlinkingLineId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   /** 선택 순서 유지(추가 연결 시 여러 줄을 순서대로 배정) */
@@ -352,55 +378,87 @@ export default function ExpenseStatementSimilarLinesModal({
 
   const ticketDateProbe = context?.ticketBookingDateProbe
 
-  const load = useCallback(async () => {
-    if (!context) return
+  const contextRef = useRef(context)
+  const matchModeRef = useRef(matchMode)
+  const tRef = useRef(t)
+  contextRef.current = context
+  matchModeRef.current = matchMode
+  tRef.current = t
+
+  /** context·matchMode 객체 참조 변경만으로 load가 반복되지 않도록 원시값 키 사용 */
+  const contextLoadKey = useMemo(() => {
+    if (!context) return null
+    const p = context.ticketBookingDateProbe
+    return [
+      context.sourceTable,
+      context.sourceId,
+      context.dateYmd,
+      String(context.amount),
+      context.direction,
+      matchMode,
+      p?.submitYmd ?? '',
+      p?.checkInYmd ?? '',
+      String(p?.dayWindow ?? ''),
+      p?.financialAccountId ?? '',
+    ].join('\u0000')
+  }, [context, matchMode])
+
+  const runLoad = useCallback(async (opts?: { preserveSelection?: boolean }) => {
+    const ctx = contextRef.current
+    if (!ctx) return
+    const probe = ctx.ticketBookingDateProbe
+    const mode = matchModeRef.current
     setLoading(true)
     setMessage(null)
-    setSelectedIdsOrdered([])
+    if (!opts?.preserveSelection) setSelectedIdsOrdered([])
     try {
       const linkedPromise = fetchLinkedStatementLineRowsForExpenseSource(supabase, {
-        sourceTable: context.sourceTable,
-        sourceId: context.sourceId,
-        dateYmd: context.dateYmd,
-        ledgerAmount: context.amount,
+        sourceTable: ctx.sourceTable,
+        sourceId: ctx.sourceId,
+        dateYmd: ctx.dateYmd,
+        ledgerAmount: ctx.amount,
       })
-      const candidatesPromise = ticketDateProbe
+      const candidatesPromise = probe
         ? fetchStatementLinesForTicketBookingDateProbe(supabase, {
-            submitYmd: ticketDateProbe.submitYmd,
-            checkInYmd: ticketDateProbe.checkInYmd,
-            dayWindow: ticketDateProbe.dayWindow,
-            financialAccountId: ticketDateProbe.financialAccountId,
-            ledgerAmount: context.amount,
+            submitYmd: probe.submitYmd,
+            checkInYmd: probe.checkInYmd,
+            dayWindow: probe.dayWindow,
+            financialAccountId: probe.financialAccountId,
+            ledgerAmount: ctx.amount,
             limit: 400,
           })
         : fetchSimilarStatementLinesForExpenseRow(supabase, {
-            dateYmd: context.dateYmd,
-            amount: context.amount,
-            direction: context.direction,
-            matchMode,
-            limit: matchMode === 'amountOnly' ? 200 : 100,
+            dateYmd: ctx.dateYmd,
+            amount: ctx.amount,
+            direction: ctx.direction,
+            matchMode: mode,
+            limit: mode === 'amountOnly' ? 200 : 100,
           })
 
       const [linkedPack, list] = await Promise.all([linkedPromise, candidatesPromise])
       setLinkedRows(linkedPack.rows)
       setSourceAllocByLineId(linkedPack.allocatedByLineId)
+      setMatchIdByLineId(linkedPack.matchIdByLineId)
       setRows(mergeLinkedAndCandidateRows(linkedPack.rows, list))
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : t('loadError'))
+      setMessage(e instanceof Error ? e.message : tRef.current('loadError'))
       setLinkedRows([])
       setSourceAllocByLineId(new Map())
+      setMatchIdByLineId(new Map())
       setRows([])
     } finally {
       setLoading(false)
     }
-  }, [context, t, matchMode, ticketDateProbe])
+  }, [])
 
   useEffect(() => {
-    if (open && context) void load()
+    if (open && contextLoadKey != null) void runLoad()
     if (!open) {
       setRows([])
       setLinkedRows([])
       setSourceAllocByLineId(new Map())
+      setMatchIdByLineId(new Map())
+      setUnlinkingLineId(null)
       setSelectedIdsOrdered([])
       setMessage(null)
       setMatchMode('dateProximity')
@@ -415,7 +473,7 @@ export default function ExpenseStatementSimilarLinesModal({
       appendAmountUserEditedRef.current = false
       setActiveAccountTab(ACCOUNT_TAB_ALL)
     }
-  }, [open, context, load])
+  }, [open, contextLoadKey, runLoad])
 
   useEffect(() => {
     if (!open || !context) return
@@ -518,12 +576,52 @@ export default function ExpenseStatementSimilarLinesModal({
   }, [rowSearch, open, context, t, ticketDateProbe, isSearchActive, searchQueryTrimmed])
 
   useEffect(() => {
-    setSelectedIdsOrdered((prev) => prev.filter((id) => visibleRows.some((r) => r.id === id)))
+    setSelectedIdsOrdered((prev) => {
+      const next = prev.filter((id) => visibleRows.some((r) => r.id === id))
+      if (next.length === prev.length && next.every((id, i) => id === prev[i])) return prev
+      return next
+    })
   }, [visibleRows])
 
   const toggleLineId = useCallback((id: string) => {
     setSelectedIdsOrdered((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }, [])
+
+  const unlinkRowKey = (row: SimilarStatementLineRow) =>
+    row.reconciliation_match_id?.trim() || row.id
+
+  const unlinkCurrentLink = useCallback(
+    async (row: SimilarStatementLineRow) => {
+      if (!context || unlinkingLineId) return
+      const lineId = row.id
+      const ok = window.confirm(t('modalUnlinkCurrentLinkConfirm'))
+      if (!ok) return
+      setUnlinkingLineId(unlinkRowKey(row))
+      setMessage(null)
+      try {
+        await unlinkExpenseReconciliationMatch(supabase, {
+          sourceTable: context.sourceTable,
+          sourceId: context.sourceId,
+          matchId: row.reconciliation_match_id ?? matchIdByLineId.get(lineId) ?? null,
+          statementLineId: lineId,
+        })
+        setSelectedIdsOrdered((prev) => prev.filter((id) => id !== lineId))
+        await runLoad({ preserveSelection: true })
+        const n = await sumMatchedAmountAllocatedToSource(
+          supabase,
+          context.sourceTable,
+          context.sourceId
+        )
+        setSourceAllocatedSum(n)
+        onApplied?.()
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : t('modalUnlinkCurrentLinkError'))
+      } finally {
+        setUnlinkingLineId(null)
+      }
+    },
+    [context, unlinkingLineId, matchIdByLineId, t, runLoad, onApplied]
+  )
 
   const allVisibleSelected =
     visibleRows.length > 0 && visibleRows.every((r) => selectedIdsOrdered.includes(r.id))
@@ -570,8 +668,8 @@ export default function ExpenseStatementSimilarLinesModal({
     )
   }, [selectedRow, context])
 
+  /** 선택한 명세 줄에 다른 지출·부킹이 연결됨 — append(기존 연결 유지)여도 표시 */
   const hasLineConflict =
-    !appendLink &&
     selectedIdsOrdered.length === 1 &&
     conflictingOnSelectedLine.length > 0
 
@@ -680,15 +778,37 @@ export default function ExpenseStatementSimilarLinesModal({
   }, [context?.sourceId, appendLink, selectedIdsOrdered.join('|')])
 
   useEffect(() => {
-    if (!open || !context || !appendLink || selectedIdsOrdered.length !== 1 || !selectedRow || appendAmountUserEditedRef.current)
+    if (
+      !open ||
+      !context ||
+      !appendLink ||
+      selectedIdsOrdered.length !== 1 ||
+      !selectedRow ||
+      appendAmountUserEditedRef.current
+    )
       return
-    if (remainingOnLedger == null) return
-    const lineRoom = Math.max(0, Math.abs(selectedRow.amount) - selectedRow.allocated_sum)
-    // 입금(환불)은 순 배정을 줄이므로 줄 자체 한도 전액을 제안(원장 잔여에 묶이지 않음)
-    const selectedIsInflow = String(selectedRow.direction).toLowerCase() === 'inflow'
-    const sug = selectedIsInflow ? lineRoom : Math.min(remainingOnLedger, lineRoom)
-    setAppendAmountStr(sug > 0 ? sug.toFixed(2) : '')
-  }, [open, context, appendLink, selectedIdsOrdered.length, selectedRow, remainingOnLedger])
+    if (sourceAllocatedSum == null) return
+    const amount = computeAppendShareAmount({
+      row: selectedRow,
+      ledgerCap: ledgerTotalAbs,
+      sourceAllocatedSum,
+      selfAllocOnLine: sourceAllocByLineId.get(selectedRow.id) ?? 0,
+      treatLineFreedByConflict: hasLineConflict,
+      manualStr: '',
+    })
+    const next = amount != null ? amount.toFixed(2) : ''
+    setAppendAmountStr((prev) => (prev === next ? prev : next))
+  }, [
+    open,
+    context?.sourceId,
+    appendLink,
+    selectedIdsOrdered.length,
+    selectedRow,
+    hasLineConflict,
+    sourceAllocatedSum,
+    ledgerTotalAbs,
+    sourceAllocByLineId,
+  ])
 
   const selectedAmountDiff = selectedRow ? Math.abs(Math.abs(selectedRow.amount) - Math.abs(context?.amount ?? 0)) : 0
   const syncTol = context ? expenseReconciliationAmountTolerance(Math.abs(context.amount)) : 0
@@ -706,7 +826,10 @@ export default function ExpenseStatementSimilarLinesModal({
       setMessage(t('needLogin'))
       return
     }
-    const ordered = dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered)
+    let ordered = dedupeStatementLineIdsPreserveOrder(selectedIdsOrdered)
+    if (appendLink) {
+      ordered = ordered.filter((id) => !linkedLineIdSet.has(id))
+    }
     if (ordered.length === 0) {
       setMessage(t('needSelectLine'))
       return
@@ -811,12 +934,43 @@ export default function ExpenseStatementSimilarLinesModal({
           setMessage(t('saveError'))
           return
         }
-        const parsed = Number(String(appendAmountStr).trim().replace(/,/g, ''))
-        if (!Number.isFinite(parsed) || parsed <= 0) {
+        if (conflictResolution) {
+          const result = await resolveStatementLineConflictsBeforeLink(supabase, {
+            statementLineId: row.id,
+            keepSourceTable: context.sourceTable,
+            keepSourceId: context.sourceId,
+            resolution: conflictResolution,
+            actorEmail: email,
+          })
+          if (
+            conflictResolution === 'unlinkAndDeleteOthers' &&
+            result.skippedDeleteCount > 0
+          ) {
+            setMessage(t('lineConflictDeleteSkipped', { n: result.skippedDeleteCount }))
+          }
+        }
+        let allocSum =
+          sourceAllocatedSum ??
+          (await sumMatchedAmountAllocatedToSource(supabase, context.sourceTable, context.sourceId))
+        if (conflictResolution) {
+          allocSum = await sumMatchedAmountAllocatedToSource(
+            supabase,
+            context.sourceTable,
+            context.sourceId
+          )
+        }
+        const matchedAmount = computeAppendShareAmount({
+          row,
+          ledgerCap,
+          sourceAllocatedSum: allocSum,
+          selfAllocOnLine: sourceAllocByLineId.get(row.id) ?? 0,
+          treatLineFreedByConflict: Boolean(conflictResolution) || hasLineConflict,
+          manualStr: appendAmountStr,
+        })
+        if (matchedAmount == null) {
           setMessage(t('appendAmountInvalid'))
           return
         }
-        const matchedAmount = Math.abs(parsed)
         await replaceExpenseReconciliationMatch(supabase, {
           actorEmail: email,
           sourceTable: context.sourceTable,
@@ -841,6 +995,25 @@ export default function ExpenseStatementSimilarLinesModal({
         ...orderedRows.filter((x) => String(x.row.direction).toLowerCase() === 'inflow'),
         ...orderedRows.filter((x) => String(x.row.direction).toLowerCase() !== 'inflow'),
       ]
+
+      if (conflictResolution && ordered.length === 1) {
+        const row = rowById.get(ordered[0]!)
+        if (row) {
+          const result = await resolveStatementLineConflictsBeforeLink(supabase, {
+            statementLineId: row.id,
+            keepSourceTable: context.sourceTable,
+            keepSourceId: context.sourceId,
+            resolution: conflictResolution,
+            actorEmail: email,
+          })
+          if (
+            conflictResolution === 'unlinkAndDeleteOthers' &&
+            result.skippedDeleteCount > 0
+          ) {
+            setMessage(t('lineConflictDeleteSkipped', { n: result.skippedDeleteCount }))
+          }
+        }
+      }
 
       for (const { lineId, row } of inflowFirst) {
         const isInflow = String(row.direction).toLowerCase() === 'inflow'
@@ -930,7 +1103,7 @@ export default function ExpenseStatementSimilarLinesModal({
 
   useEffect(() => {
     if (!open) return
-    setActiveAccountTab(preferredAccountTabId)
+    setActiveAccountTab((prev) => (prev === preferredAccountTabId ? prev : preferredAccountTabId))
   }, [open, context?.sourceId, preferredAccountTabId])
 
   useEffect(() => {
@@ -1092,14 +1265,15 @@ export default function ExpenseStatementSimilarLinesModal({
                 <p className="text-[11px] text-emerald-900/85 leading-snug">{t('currentLinksHint')}</p>
                 <ul className="space-y-1.5">
                   {linkedRows.map((r) => {
-                    const alloc = sourceAllocByLineId.get(r.id)
+                    const alloc = r.source_linked_amount ?? sourceAllocByLineId.get(r.id)
                     const dirOut = String(r.direction).toLowerCase() !== 'inflow'
                     return (
                       <li
                         key={r.id}
                         className="rounded border border-emerald-200/90 bg-white/95 px-2.5 py-2 text-[11px] leading-snug text-gray-900"
                       >
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium tabular-nums">
+                        <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium tabular-nums">
                           <span>{r.financial_account_name}</span>
                           <span className="text-muted-foreground">·</span>
                           <span>{r.posted_date}</span>
@@ -1115,6 +1289,22 @@ export default function ExpenseStatementSimilarLinesModal({
                               </span>
                             </>
                           ) : null}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 shrink-0 px-2 text-[10px] text-red-700 hover:bg-red-50 hover:text-red-800"
+                          disabled={unlinkingLineId === unlinkRowKey(r) || saving}
+                          title={t('unlinkStatementMatch')}
+                          aria-label={t('unlinkStatementMatchAria')}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void unlinkCurrentLink(r)
+                          }}
+                        >
+                          {unlinkingLineId === unlinkRowKey(r) ? t('saving') : t('unlinkStatementMatch')}
+                        </Button>
                         </div>
                         <p className="mt-1 text-muted-foreground break-words">{r.description || '—'}</p>
                       </li>
@@ -1145,15 +1335,6 @@ export default function ExpenseStatementSimilarLinesModal({
             {allowTicketMultiLink ? (
               <p className="text-[11px] text-muted-foreground leading-snug">{t('ticketBookingMultiLinkHint')}</p>
             ) : null}
-            <label className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground leading-snug">
-              <input
-                type="checkbox"
-                className="mt-0.5 accent-emerald-600"
-                checked={appendLink}
-                onChange={(e) => setAppendLink(e.target.checked)}
-              />
-              <span>{t('appendLinkCheckbox')}</span>
-            </label>
             {appendLink ? (
               <div className="space-y-1.5 rounded-md border border-emerald-200/80 bg-emerald-50/50 px-3 py-2 text-[11px] text-muted-foreground">
                 {remainingOnLedger != null && sourceAllocatedSum != null ? (
@@ -1413,10 +1594,11 @@ export default function ExpenseStatementSimilarLinesModal({
               <tbody>
                 {visibleRows.map((r) => {
                   const isCurrentLink = linkedLineIdSet.has(r.id)
-                  const sourceAlloc = sourceAllocByLineId.get(r.id)
+                  const sourceAlloc = r.source_linked_amount ?? sourceAllocByLineId.get(r.id)
+                  const rowKey = r.reconciliation_match_id || `${r.id}-${sourceAlloc}`
                   return (
                   <tr
-                    key={r.id}
+                    key={rowKey}
                     className={`border-t cursor-pointer hover:bg-muted/50 ${
                       selectedIdsOrdered.includes(r.id)
                         ? 'bg-emerald-50'
@@ -1437,8 +1619,22 @@ export default function ExpenseStatementSimilarLinesModal({
                     <td className="p-2 max-w-[9rem] truncate align-middle" title={r.financial_account_name}>
                       <div className="flex flex-col gap-0.5 min-w-0">
                         {isCurrentLink ? (
-                          <span className="inline-flex w-fit rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900">
-                            {t('currentLinkBadge')}
+                          <span className="inline-flex flex-wrap items-center gap-1">
+                            <span className="inline-flex w-fit rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-900">
+                              {t('currentLinkBadge')}
+                            </span>
+                            <button
+                              type="button"
+                              className="text-[10px] font-medium text-red-700 underline decoration-red-300 hover:text-red-900 disabled:opacity-50"
+                              disabled={unlinkingLineId === unlinkRowKey(r) || saving}
+                              title={t('unlinkStatementMatch')}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void unlinkCurrentLink(r)
+                              }}
+                            >
+                              {unlinkingLineId === unlinkRowKey(r) ? t('saving') : t('unlinkStatementMatch')}
+                            </button>
                           </span>
                         ) : null}
                         <span className="truncate">{r.financial_account_name}</span>
@@ -1526,10 +1722,22 @@ export default function ExpenseStatementSimilarLinesModal({
           )}
         </div>
 
-        <DialogFooter className="shrink-0 flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2 pt-2 border-t mt-2">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="sm:mr-auto">
-            {t('close')}
-          </Button>
+        <DialogFooter className="shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 border-t mt-2">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:mr-auto">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {t('close')}
+            </Button>
+            <label className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground leading-snug cursor-pointer sm:max-w-[28rem]">
+              <input
+                type="checkbox"
+                className="mt-0.5 shrink-0 accent-emerald-600"
+                checked={appendLink}
+                onChange={(e) => setAppendLink(e.target.checked)}
+              />
+              <span>{t('appendLinkCheckbox')}</span>
+            </label>
+          </div>
+          <div className="flex w-full flex-wrap justify-end gap-2">
           {hasLineConflict ? (
             <>
               <Button
@@ -1575,6 +1783,7 @@ export default function ExpenseStatementSimilarLinesModal({
                       : t('connect')}
             </Button>
           )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

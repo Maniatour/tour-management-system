@@ -14,6 +14,21 @@ export type TourHotelBookingStatementReconDisplay = TicketBookingStatementReconD
 const MATCH_CHUNK = 200
 const LINE_CHUNK = 80
 
+function isDuplicateStatementReconEntry(
+  list: TourHotelBookingStatementReconDisplay[],
+  entry: TourHotelBookingStatementReconDisplay
+): boolean {
+  const mid = String(entry.match_id ?? '').trim()
+  if (mid) {
+    return list.some((x) => String(x.match_id ?? '').trim() === mid)
+  }
+  return list.some(
+    (x) =>
+      !String(x.match_id ?? '').trim() &&
+      x.statement_line_id === entry.statement_line_id
+  )
+}
+
 /** 투어 호텔 부킹별 연결된 명세 줄 — 테이블 뷰 표시용 */
 export async function fetchTourHotelBookingStatementReconDisplayByBookingId(
   supabase: SupabaseClient,
@@ -136,13 +151,7 @@ export async function fetchTourHotelBookingStatementReconDisplayByBookingId(
       statement_line_id: m.statement_line_id,
       ...disp,
     }
-    if (
-      !list.some(
-        (x) =>
-          (entry.match_id && x.match_id === entry.match_id) ||
-          x.statement_line_id === entry.statement_line_id
-      )
-    ) {
+    if (!isDuplicateStatementReconEntry(list, entry)) {
       list.push(entry)
     }
     out.set(m.source_id, list)

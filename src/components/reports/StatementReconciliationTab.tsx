@@ -102,6 +102,7 @@ import StatementSelectedBulkExpenseModal from '@/components/reconciliation/State
 import CompanyExpenseDuplicateCheckModal from '@/components/reconciliation/CompanyExpenseDuplicateCheckModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
 import FinancialAccountLinkedCardsModal from '@/components/reconciliation/FinancialAccountLinkedCardsModal'
+import CoverageMonthDetailDialog from '@/components/reconciliation/CoverageMonthDetailDialog'
 import {
   hashStatementCsvContent,
   makeDedupeKey,
@@ -1879,6 +1880,8 @@ export default function StatementReconciliationTab() {
   const [paymentOptions, setPaymentOptions] = useState<PaymentRecordOption[]>([])
   const [paymentOptionsLoading, setPaymentOptionsLoading] = useState(false)
   const [coverageYear, setCoverageYear] = useState(() => new Date().getFullYear().toString())
+  /** 월 통계 셀(대조/업로드) 클릭 시 해당 월 명세 요약 모달 — 1–12 */
+  const [coverageMonthDetailMonth, setCoverageMonthDetailMonth] = useState<number | null>(null)
 
   const [newAccountName, setNewAccountName] = useState('')
   const [newAccountType, setNewAccountType] = useState<'bank' | 'credit_card'>('credit_card')
@@ -2524,6 +2527,22 @@ export default function StatementReconciliationTab() {
     const year = parseInt(coverageYear, 10)
     return aggregateCoverageMonthStatsFromLines(lines, year, coverageImportIdSet)
   }, [lines, coverageYear, filterAccountId, coverageImportIdSet])
+
+  const coverageMonthDetailLines = useMemo(() => {
+    if (coverageMonthDetailMonth == null || !filterAccountId || coverageImportIdSet.size === 0) {
+      return []
+    }
+    const year = parseInt(coverageYear, 10)
+    if (!Number.isFinite(year)) return []
+    const monthPrefix = `${year}-${String(coverageMonthDetailMonth).padStart(2, '0')}`
+    return lines
+      .filter(
+        (l) =>
+          coverageImportIdSet.has(l.statement_import_id) &&
+          (l.posted_date ?? '').startsWith(monthPrefix)
+      )
+      .sort((a, b) => (a.posted_date || '').localeCompare(b.posted_date || ''))
+  }, [lines, coverageYear, coverageMonthDetailMonth, filterAccountId, coverageImportIdSet])
 
   /** 해당 계정의 모든 명세 업로드 기간을 합친 범위(지출 후보·피커·자동매칭 후보 조회용) */
   const accountExpenseWindow = useMemo(() => {
@@ -8044,9 +8063,15 @@ export default function StatementReconciliationTab() {
                       ) : st.uploaded === 0 ? (
                         <span className="text-slate-400">—</span>
                       ) : (
-                        <span title={`대조 완료 ${st.reconciled}건 / 업로드 ${st.uploaded}건`}>
+                        <button
+                          type="button"
+                          className="rounded px-1 py-0.5 text-slate-800 underline decoration-dotted decoration-slate-400 underline-offset-2 hover:bg-emerald-100/80 hover:text-emerald-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+                          title={`대조 완료 ${st.reconciled}건 / 업로드 ${st.uploaded}건 · 클릭하면 명세 내역 보기`}
+                          aria-label={`${i + 1}월 명세 ${st.reconciled}건 대조, ${st.uploaded}건 업로드 — 내역 보기`}
+                          onClick={() => setCoverageMonthDetailMonth(i + 1)}
+                        >
                           {st.reconciled}/{st.uploaded}
-                        </span>
+                        </button>
                       )}
                     </td>
                   ))}
@@ -10832,6 +10857,22 @@ export default function StatementReconciliationTab() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <CoverageMonthDetailDialog
+        open={coverageMonthDetailMonth != null}
+        onOpenChange={(open) => {
+          if (!open) setCoverageMonthDetailMonth(null)
+        }}
+        year={parseInt(coverageYear, 10) || new Date().getFullYear()}
+        month={coverageMonthDetailMonth ?? 1}
+        accountLabel={selectedAccountLabel}
+        lines={coverageMonthDetailLines}
+        stats={
+          coverageMonthDetailMonth != null
+            ? coverageMonthStats[coverageMonthDetailMonth - 1] ?? { reconciled: 0, uploaded: 0 }
+            : { reconciled: 0, uploaded: 0 }
+        }
+      />
 
       <StatementLinePairPickerDialog
         open={Boolean(linePairPickerAnchor)}

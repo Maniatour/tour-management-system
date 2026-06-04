@@ -20,6 +20,7 @@ import {
   type TourHotelBookingStatementReconDisplay,
 } from '@/lib/tour-hotel-booking-statement-recon';
 import { TicketBookingStatementReconCell } from '@/components/booking/TicketBookingStatementReconCell';
+import { getTicketBookingEffectiveExpenseUsd } from '@/lib/ticket-booking-change-display';
 import {
   Grid,
   Calendar as CalendarIcon,
@@ -1086,6 +1087,7 @@ export default function TourHotelBookingList() {
         matched={statementReconciledIds.has(booking.id)}
         disabled={isTourHotelBookingStatementReconDisabled(booking)}
         lines={statementReconDisplay.get(booking.id) ?? []}
+        bookingExpense={getTicketBookingEffectiveExpenseUsd(booking)}
         titleMatched={tStmtRecon('matchedTitle')}
         titleUnmatched={tStmtRecon('unmatchedTitle')}
         titleDisabled={tStmtRecon('disabledTitle')}

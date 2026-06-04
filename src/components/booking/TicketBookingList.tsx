@@ -54,6 +54,7 @@ import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTour
 import { formatTicketBookingTourHeadline } from '@/lib/ticket-booking-tour-display';
 import { TicketBookingChangeStack } from '@/components/booking/TicketBookingChangeStack';
 import {
+  getTicketBookingEffectiveExpenseUsd,
   getTicketBookingExpenseStack,
   getTicketBookingQtyStack,
   getTicketBookingTimeStack,
@@ -960,19 +961,19 @@ function mergeTicketBookingAxesFromRpcRow(
         ? row.pending_ea
         : row.pending_ea === null
           ? null
-          : b.pending_ea,
+          : (b.pending_ea ?? null),
     pending_time:
       typeof row.pending_time === 'string'
         ? row.pending_time
         : row.pending_time === null
           ? null
-          : b.pending_time,
+          : (b.pending_time ?? null),
     booking_status_before_change:
       typeof row.booking_status_before_change === 'string'
         ? row.booking_status_before_change
         : row.booking_status_before_change === null
           ? null
-          : b.booking_status_before_change,
+          : (b.booking_status_before_change ?? null),
     ea: typeof row.ea === 'number' ? row.ea : b.ea,
     time: typeof row.time === 'string' ? row.time : b.time,
   };
@@ -1251,7 +1252,6 @@ export default function TicketBookingList() {
   const [listPageSize, setListPageSize] = useState(50);
   const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
   const teamAuditProfileRef = useRef<TeamAuditProfile | null>(null);
   const [bookingAuditSavingId, setBookingAuditSavingId] = useState<string | null>(null);
   const [supplierProductsMap, setSupplierProductsMap] = useState<Map<string, { season_dates: SeasonDate[] | null }>>(new Map());
@@ -1557,6 +1557,7 @@ export default function TicketBookingList() {
         matched={statementReconciledIds.has(booking.id)}
         disabled={isTicketBookingStatementReconDisabled(booking)}
         lines={statementReconDisplay.get(booking.id) ?? []}
+        bookingExpense={getTicketBookingEffectiveExpenseUsd(booking)}
         titleMatched={tStmtRecon('matchedTitle')}
         titleUnmatched={tStmtRecon('unmatchedTitle')}
         titleDisabled={tStmtRecon('disabledTitle')}
@@ -2257,42 +2258,6 @@ export default function TicketBookingList() {
       setEnriching(false);
 
       await refreshInvoiceAttachmentMapForBookings(merged.rows);
-
-      // submitted_by 이메일로 team 테이블에서 name_ko 조회
-      const submittedByEmails = [...new Set(
-        (bookingsData || [])
-          .map((booking: TicketBooking) => booking.submitted_by)
-          .filter((email): email is string => !!email && typeof email === 'string' && email.includes('@'))
-      )];
-
-      if (submittedByEmails.length > 0) {
-        try {
-          // team 테이블에서 email 컬럼으로 검색 (대소문자 구분 없이)
-          const { data: teamData, error: teamError } = await supabase
-            .from('team')
-            .select('email, name_ko')
-            .in('email', submittedByEmails);
-
-          if (!teamError && teamData) {
-            const emailToNameMap = new Map<string, string>();
-            (teamData || []).forEach((member: { email: string; name_ko: string | null }) => {
-              if (member.email && member.name_ko) {
-                // 이메일을 소문자로 변환하여 저장 (대소문자 구분 없이 매칭)
-                emailToNameMap.set(member.email.toLowerCase(), member.name_ko);
-              }
-            });
-            setTeamMemberMap(emailToNameMap);
-          } else {
-            console.warn('Team 정보 조회 오류:', teamError);
-            setTeamMemberMap(new Map());
-          }
-        } catch (error) {
-          console.error('Team 정보 조회 중 오류:', error);
-          setTeamMemberMap(new Map());
-        }
-      } else {
-        setTeamMemberMap(new Map());
-      }
     } catch (error) {
       if (!isAbortLikeError(error)) {
         console.error('입장권 부킹 조회 오류:', error);
@@ -3335,7 +3300,10 @@ export default function TicketBookingList() {
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                void handleRequestSoftDelete(booking.id, { fromDetailModal: opts?.fromDetailModal });
+                void handleRequestSoftDelete(
+                  booking.id,
+                  opts?.fromDetailModal ? { fromDetailModal: true } : undefined
+                );
               }}
               className={`${btn} bg-amber-600 text-white hover:bg-amber-700`}
               title={locale === 'ko' ? '삭제 요청 (목록에서 숨김)' : 'Request deletion'}
@@ -3349,7 +3317,10 @@ export default function TicketBookingList() {
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                void handleDelete(booking.id, { fromDetailModal: opts?.fromDetailModal });
+                void handleDelete(
+                  booking.id,
+                  opts?.fromDetailModal ? { fromDetailModal: true } : undefined
+                );
               }}
               className={`${btn} bg-red-700 text-white hover:bg-red-800`}
               title={locale === 'ko' ? '영구 삭제' : 'Permanent delete'}
@@ -3372,7 +3343,10 @@ export default function TicketBookingList() {
                       : 'Permanently delete this adjustment/cancel row now? This cannot be undone.'
                   )
                 ) {
-                  void handleDelete(booking.id, { fromDetailModal: opts?.fromDetailModal });
+                  void handleDelete(
+                  booking.id,
+                  opts?.fromDetailModal ? { fromDetailModal: true } : undefined
+                );
                 }
               }}
               className={`${btn} bg-red-700 text-white hover:bg-red-800`}
@@ -6154,17 +6128,21 @@ export default function TicketBookingList() {
               disabled={
                 pendingRequestOnlyFilter || (viewMode === 'table' && needsReviewEaMismatch)
               }
-              disabledTitle={
-                pendingRequestOnlyFilter
-                  ? locale === 'ko'
-                    ? '요청 중 필터에서는 상태 선택이 적용되지 않습니다.'
-                    : 'Status filter is disabled while “Pending” filter is on.'
-                  : viewMode === 'table' && needsReviewEaMismatch
-                    ? locale === 'ko'
-                      ? '확인 필요 모드에서는 확정·인원 불일치 부킹만 표시됩니다.'
-                      : 'Needs review mode shows only confirmed bookings with headcount mismatch.'
-                    : undefined
-              }
+              {...(pendingRequestOnlyFilter
+                ? {
+                    disabledTitle:
+                      locale === 'ko'
+                        ? '요청 중 필터에서는 상태 선택이 적용되지 않습니다.'
+                        : 'Status filter is disabled while “Pending” filter is on.',
+                  }
+                : viewMode === 'table' && needsReviewEaMismatch
+                  ? {
+                      disabledTitle:
+                        locale === 'ko'
+                          ? '확인 필요 모드에서는 확정·인원 불일치 부킹만 표시됩니다.'
+                          : 'Needs review mode shows only confirmed bookings with headcount mismatch.',
+                    }
+                  : {})}
             />
           </div>
 
@@ -7722,13 +7700,15 @@ export default function TicketBookingList() {
           if (!open) restoreStatementReconScroll()
         }}
         context={stmtReconCtx}
-        onApplied={() => void refreshAfterStatementReconApply()}
+        onApplied={refreshAfterStatementReconApply}
       />
 
       <TicketBookingVendorPartialChangeConfirmModal
         open={vendorPartialChangeModalBooking !== null}
         locale={locale}
-        company={vendorPartialChangeModalBooking?.company}
+        {...(vendorPartialChangeModalBooking?.company
+          ? { company: vendorPartialChangeModalBooking.company }
+          : {})}
         booking={
           vendorPartialChangeModalBooking ?? {
             ea: 0,
@@ -7758,7 +7738,9 @@ export default function TicketBookingList() {
       <TicketBookingVendorConfirmModal
         open={vendorConfirmModalBooking !== null}
         initialRnNumber={vendorConfirmModalBooking?.rn_number?.trim() ?? ''}
-        company={vendorConfirmModalBooking?.company}
+        {...(vendorConfirmModalBooking?.company
+          ? { company: vendorConfirmModalBooking.company }
+          : {})}
         locale={locale}
         saving={
           vendorConfirmModalBooking
@@ -7782,7 +7764,7 @@ export default function TicketBookingList() {
             ? {
                 id: linkTourModalBooking.id,
                 check_in_date: linkTourModalBooking.check_in_date,
-                tour_id: linkTourModalBooking.tour_id,
+                tour_id: linkTourModalBooking.tour_id ?? null,
               }
             : null
         }
@@ -7806,10 +7788,10 @@ export default function TicketBookingList() {
         }
         company={changeModalBooking?.company ?? ''}
         checkInDate={changeModalBooking?.check_in_date ?? ''}
-        category={changeModalBooking?.category}
-        rnNumber={changeModalBooking?.rn_number}
-        note={changeModalBooking?.note}
-        submittedBy={changeModalBooking?.submitted_by}
+        {...(changeModalBooking?.category ? { category: changeModalBooking.category } : {})}
+        {...(changeModalBooking?.rn_number != null ? { rnNumber: changeModalBooking.rn_number } : {})}
+        {...(changeModalBooking?.note != null ? { note: changeModalBooking.note } : {})}
+        {...(changeModalBooking?.submitted_by ? { submittedBy: changeModalBooking.submitted_by } : {})}
         saving={changeModalBooking ? workflowActionSavingId === changeModalBooking.id : false}
         onClose={() => setChangeModalBooking(null)}
         onSubmit={async (pendingEa, pendingTimeRaw) => {

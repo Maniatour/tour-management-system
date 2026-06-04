@@ -78,6 +78,10 @@ type StatementImportRow = {
 
 export type SimilarStatementLineRow = {
   id: string
+  /** reconciliation_matches.id — 같은 명세 줄에 복수 연결 시 목록 행·key 구분 */
+  reconciliation_match_id?: string | null
+  /** 이 원장 행에 대한 해당 매칭의 배정 금액(표시) */
+  source_linked_amount?: number | null
   financial_account_id: string
   financial_account_name: string
   posted_date: string
@@ -262,6 +266,8 @@ export type LinkedStatementLinesForSource = {
   rows: SimilarStatementLineRow[]
   /** statement_line_id → 이 원장 행에 배정된 금액 */
   allocatedByLineId: Map<string, number>
+  /** statement_line_id → reconciliation_matches.id (레거시 단일 연결은 null) */
+  matchIdByLineId: Map<string, string | null>
 }
 
 /** 이 원장 행에 연결된 명세 줄 — 유사 후보와 무관하게 항상 조회 */
@@ -308,10 +314,11 @@ export async function fetchLinkedStatementLineRowsForExpenseSource(
   }
 
   if (matches.length === 0) {
-    return { rows: [], allocatedByLineId: new Map() }
+    return { rows: [], allocatedByLineId: new Map(), matchIdByLineId: new Map() }
   }
 
   const allocatedByLineId = new Map<string, number>()
+  const matchIdByLineId = new Map<string, string | null>()
   const lineIds = [...new Set(matches.map((m) => m.statement_line_id))]
   const lineAmtById = new Map<string, number>()
 
@@ -351,7 +358,9 @@ export async function fetchLinkedStatementLineRowsForExpenseSource(
     } else {
       alloc = lineAmtById.get(lid) ?? absLedger
     }
-    allocatedByLineId.set(lid, alloc)
+    allocatedByLineId.set(lid, (allocatedByLineId.get(lid) ?? 0) + alloc)
+    const mid = String(m.id ?? '').trim()
+    if (mid) matchIdByLineId.set(lid, mid)
   }
 
   const importIds = [
@@ -396,8 +405,17 @@ export async function fetchLinkedStatementLineRowsForExpenseSource(
     const dayDiff = dayDiffFromYmd(posted, dateYmd)
     const importId = String(line.statement_import_id ?? '')
     const accountId = importToAccount.get(importId) || ''
+    const mid = String(m.id ?? '').trim()
+    let sourceAlloc = 0
+    if (m.matched_amount != null && m.matched_amount !== '') {
+      sourceAlloc = Math.abs(Number(m.matched_amount))
+    } else {
+      sourceAlloc = Math.abs(lineAmount)
+    }
     candidates.push({
       id: String(line.id),
+      reconciliation_match_id: mid || null,
+      source_linked_amount: sourceAlloc,
       financial_account_id: accountId,
       financial_account_name: accountNameById.get(accountId) || accountId || '—',
       posted_date: posted,
@@ -416,7 +434,7 @@ export async function fetchLinkedStatementLineRowsForExpenseSource(
 
   const rows = await attachExistingMatches(supabase, candidates)
   rows.sort((a, b) => a.posted_date.localeCompare(b.posted_date) || a.id.localeCompare(b.id))
-  return { rows, allocatedByLineId }
+  return { rows, allocatedByLineId, matchIdByLineId }
 }
 
 export function mergeLinkedAndCandidateRows(

@@ -104,3 +104,23 @@ export function getTicketBookingExpenseStack(booking: {
     ],
   }
 }
+
+/** 명세 합계 대조용 — 변경 요청 중이면 표시·계산에 쓰는 예상 비용 */
+export function getTicketBookingEffectiveExpenseUsd(booking: {
+  ea?: number | null
+  expense?: number | null
+  unit_price?: number | null
+  change_status?: string | null
+  pending_ea?: number | null
+}): number {
+  const cs = (booking.change_status ?? 'none').toLowerCase()
+  const curEa = booking.ea ?? 0
+  const curNum = Number(booking.expense ?? 0)
+  if (!isChangeRequested(cs) || booking.pending_ea == null || booking.pending_ea === curEa) {
+    return Number.isFinite(curNum) ? curNum : 0
+  }
+  const unit = deriveTicketBookingUnitPriceUsd(curEa, curNum, booking.unit_price ?? null)
+  const pendNum =
+    unit > 0 ? Math.round(unit * booking.pending_ea * 100) / 100 : curNum
+  return Number.isFinite(pendNum) ? pendNum : 0
+}

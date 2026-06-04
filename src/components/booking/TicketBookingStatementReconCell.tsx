@@ -1,14 +1,22 @@
 'use client'
 
-import { X } from 'lucide-react'
+import { AlertTriangle, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
+import {
+  BOOKING_STATEMENT_AMOUNT_EPS,
+  bookingStatementMatchesExpense,
+  computeBookingStatementTotals,
+  isStatementLineInflow,
+  lineStatementAllocatedUsd,
+} from '@/lib/ticket-booking-statement-totals'
 import type { TicketBookingStatementReconDisplay } from '@/lib/ticket-booking-statement-recon'
 
 export function TicketBookingStatementReconCell({
   matched,
   disabled,
   lines,
+  bookingExpense,
   titleMatched,
   titleUnmatched,
   titleDisabled,
@@ -22,6 +30,8 @@ export function TicketBookingStatementReconCell({
   matched: boolean
   disabled?: boolean
   lines: TicketBookingStatementReconDisplay[]
+  /** 부킹 행 비용(테이블 표시와 동일·변경 대기 반영 권장) */
+  bookingExpense?: number | null
   titleMatched: string
   titleUnmatched: string
   titleDisabled?: string
@@ -35,8 +45,22 @@ export function TicketBookingStatementReconCell({
   const t = useTranslations('expenses.statementRecon')
   const textCls = compact ? 'text-[10px] leading-snug' : 'text-xs leading-snug'
 
-  const isInflow = (line: TicketBookingStatementReconDisplay) =>
-    String(line.direction).toLowerCase() === 'inflow'
+  const expenseUsd = Math.abs(Number(bookingExpense ?? 0))
+  const totals = lines.length > 0 ? computeBookingStatementTotals(lines) : null
+  const amountMismatch =
+    totals != null && !bookingStatementMatchesExpense(totals, expenseUsd, BOOKING_STATEMENT_AMOUNT_EPS)
+
+  const lineCardClass = (line: TicketBookingStatementReconDisplay) => {
+    if (isStatementLineInflow(line)) {
+      return 'relative rounded border border-sky-200 bg-sky-50'
+    }
+    return 'relative rounded border border-emerald-100 bg-emerald-50/60'
+  }
+
+  const lineHoverClass = (line: TicketBookingStatementReconDisplay) =>
+    isStatementLineInflow(line) ? 'hover:bg-sky-100/80' : 'hover:bg-emerald-50'
+
+  const fmt = (n: number) => n.toFixed(2)
 
   return (
     <div className={`flex min-w-0 gap-2 ${compact ? 'flex-col items-center' : 'flex-row items-start'}`}>
@@ -48,12 +72,53 @@ export function TicketBookingStatementReconCell({
         titleDisabled={titleDisabled}
         onClick={onOpenPicker}
       />
-      <div className={`min-w-0 flex-1 space-y-1 ${compact ? 'w-full text-center' : 'text-left'}`}>
+      <div
+        className={`min-w-0 flex-1 space-y-1 ${compact ? 'w-full text-center' : 'text-left'} ${
+          amountMismatch ? 'rounded-md ring-2 ring-amber-400 ring-offset-1' : ''
+        }`}
+      >
+        {totals ? (
+          <div
+            className={`tabular-nums ${textCls} ${
+              amountMismatch
+                ? 'rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 font-semibold text-amber-950'
+                : 'px-0.5 font-medium text-gray-700'
+            }`}
+            title={t('bookingStatementSumFormula', {
+              outflow: fmt(totals.outflowSum),
+              inflow: fmt(totals.inflowSum),
+              net: fmt(totals.netSum),
+              expense: fmt(expenseUsd),
+            })}
+          >
+            {amountMismatch ? (
+              <AlertTriangle
+                className={`mr-0.5 inline shrink-0 text-amber-600 ${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'}`}
+                aria-hidden
+              />
+            ) : null}
+            <span>
+              {t('bookingStatementSumBreakdown', {
+                outflow: fmt(totals.outflowSum),
+                inflow: fmt(totals.inflowSum),
+                net: fmt(totals.netSum),
+              })}
+            </span>
+            {amountMismatch ? (
+              <span className="block text-amber-900">
+                {t('bookingStatementSumMismatch', {
+                  net: fmt(totals.netSum),
+                  expense: fmt(expenseUsd),
+                })}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {lines.length > 0 ? (
           lines.map((line, i) => (
             <div
               key={line.match_id || `${line.statement_line_id}-${i}`}
-              className={`relative rounded border border-emerald-100 bg-emerald-50/60 ${compact ? '' : 'pr-7'}`}
+              className={`${lineCardClass(line)} ${compact ? '' : 'pr-7'}`}
             >
               {onUnlink && !disabled ? (
                 <button
@@ -79,23 +144,30 @@ export function TicketBookingStatementReconCell({
                   e.stopPropagation()
                   if (!disabled) onOpenPicker()
                 }}
-                className={`block w-full rounded px-1.5 py-1 text-left hover:bg-emerald-50 disabled:opacity-50 ${textCls}`}
+                className={`block w-full rounded px-1.5 py-1 text-left disabled:opacity-50 ${lineHoverClass(line)} ${textCls}`}
               >
                 <div className="font-medium text-gray-800 truncate" title={line.financial_account_name}>
                   {line.financial_account_name}
+                  {isStatementLineInflow(line) ? (
+                    <span className="ml-1 font-normal text-sky-700">({t('statementInflowBadge')})</span>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-baseline gap-x-1.5 tabular-nums text-gray-600">
                   <span>{line.posted_date}</span>
-                  <span className={`font-semibold ${isInflow(line) ? 'text-emerald-700' : 'text-gray-800'}`}>
-                    {isInflow(line) ? '-' : ''}${line.amount.toFixed(2)}
+                  <span
+                    className={`font-semibold ${isStatementLineInflow(line) ? 'text-sky-800' : 'text-gray-800'}`}
+                  >
+                    {isStatementLineInflow(line) ? '−' : ''}$
+                    {lineStatementAllocatedUsd(line).toFixed(2)}
                   </span>
                   {line.matched_amount != null &&
-                  Math.abs(line.matched_amount - line.amount) > 0.009 ? (
+                  Math.abs(line.matched_amount - line.amount) > BOOKING_STATEMENT_AMOUNT_EPS ? (
                     <span
-                      className="text-[10px] text-emerald-800"
+                      className={`text-[10px] ${isStatementLineInflow(line) ? 'text-sky-800' : 'text-emerald-800'}`}
                       title={t('statementLineAllocatedAmount')}
                     >
-                      ({isInflow(line) ? '-' : ''}${line.matched_amount.toFixed(2)})
+                      ({isStatementLineInflow(line) ? '−' : ''}$
+                      {line.matched_amount.toFixed(2)})
                     </span>
                   ) : null}
                 </div>

@@ -22,6 +22,22 @@ export type TicketBookingStatementReconDisplay = {
 const MATCH_CHUNK = 200
 const LINE_CHUNK = 80
 
+/** 동일 명세 줄에 매칭이 여러 건이어도 reconciliation_matches 행마다 표시 */
+function isDuplicateStatementReconEntry(
+  list: TicketBookingStatementReconDisplay[],
+  entry: TicketBookingStatementReconDisplay
+): boolean {
+  const mid = String(entry.match_id ?? '').trim()
+  if (mid) {
+    return list.some((x) => String(x.match_id ?? '').trim() === mid)
+  }
+  return list.some(
+    (x) =>
+      !String(x.match_id ?? '').trim() &&
+      x.statement_line_id === entry.statement_line_id
+  )
+}
+
 /** 입장권 부킹별 연결된 명세 줄(대조됨) — 상세 모달 표시용 */
 export async function fetchTicketBookingStatementReconDisplayByBookingId(
   supabase: SupabaseClient,
@@ -164,13 +180,7 @@ export async function fetchTicketBookingStatementReconDisplayByBookingId(
       statement_line_id: m.statement_line_id,
       ...disp,
     }
-    if (
-      !list.some(
-        (x) =>
-          (entry.match_id && x.match_id === entry.match_id) ||
-          x.statement_line_id === entry.statement_line_id
-      )
-    ) {
+    if (!isDuplicateStatementReconEntry(list, entry)) {
       list.push(entry)
     }
     out.set(m.source_id, list)
