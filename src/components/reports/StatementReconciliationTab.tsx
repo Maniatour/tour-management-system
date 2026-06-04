@@ -62,7 +62,6 @@ import {
   deleteStatementLinePair,
   fetchStatementLinePairsForLineIds,
   insertStatementLinePair,
-  normalizeStatementLinePairEndpoints,
   type StatementLinePairRow,
 } from '@/lib/statement-line-pairs'
 import StatementLinePairPickerDialog from '@/components/reconciliation/StatementLinePairPickerDialog'
@@ -1824,6 +1823,8 @@ export default function StatementReconciliationTab() {
   const [filterAccountId, setFilterAccountId] = useState('')
   /** true면 matched_status가 unmatched·partial인 명세 줄만 표시(완전 대조 제외) */
   const [showOnlyUnmatchedLines, setShowOnlyUnmatchedLines] = useState(true)
+  /** true면 상계(출금·수입 짝) 연결된 줄만 표시 */
+  const [showOnlyPairedLines, setShowOnlyPairedLines] = useState(false)
   /** true면 exclude_from_pnl인 명세 줄을 표에서 숨김 */
   const [hidePnlExcludedLines, setHidePnlExcludedLines] = useState(true)
   /** 표 테이블: 설명·가맹점·금액·일자·방향 등 부분 문자열 검색 */
@@ -2598,6 +2599,13 @@ export default function StatementReconciliationTab() {
     return m
   }, [lines])
 
+  /** 상계 후보 다이얼로그용 명세 줄 id → 금융 계정명 (전체 계정 보기에서 계정 구분) */
+  const lineAccountLabelById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const l of lines) m.set(l.id, accountNameForStatementLine(l))
+    return m
+  }, [lines, accountNameForStatementLine])
+
   /** 지출 키 → 그 지출을 잡고 있는 명세 줄 id 집합 (드롭다운·행마다 matches.some 반복 제거) */
   const expenseKeyToLineIds = useMemo(() => {
     const map = new Map<string, Set<string>>()
@@ -2987,11 +2995,23 @@ export default function StatementReconciliationTab() {
     if (hidePnlExcludedLines) {
       rows = rows.filter((l) => !l.exclude_from_pnl)
     }
+    if (showOnlyPairedLines) {
+      return rows.filter((l) => (pairsByLine.get(l.id)?.length ?? 0) > 0)
+    }
     if (!showOnlyUnmatchedLines) return rows
-    return rows.filter((l) =>
-      isStatementLineShownAsUnmatched(l.matched_status, (matchesByLine.get(l.id) || []).length)
+    return rows.filter(
+      (l) =>
+        isStatementLineShownAsUnmatched(l.matched_status, (matchesByLine.get(l.id) || []).length) &&
+        (pairsByLine.get(l.id)?.length ?? 0) === 0
     )
-  }, [displayLines, hidePnlExcludedLines, showOnlyUnmatchedLines, matchesByLine])
+  }, [
+    displayLines,
+    hidePnlExcludedLines,
+    showOnlyUnmatchedLines,
+    showOnlyPairedLines,
+    matchesByLine,
+    pairsByLine,
+  ])
 
   const pnlExcludedLinesHiddenCount = useMemo(() => {
     if (!hidePnlExcludedLines) return 0
@@ -3055,6 +3075,20 @@ export default function StatementReconciliationTab() {
     [matchesByLine]
   )
 
+  /** 체크박스로 고를 수 있는 줄 — 출금·입금 모두(미대조·미연결·금액>0). 상계 선택까지 포함 */
+  const isStatementLineSelectable = useCallback(
+    (line: StatementLine) => {
+      const lineMs = matchesByLine.get(line.id) || []
+      return (
+        (line.direction === 'outflow' || line.direction === 'inflow') &&
+        lineMs.length === 0 &&
+        isStatementLineShownAsUnmatched(line.matched_status, lineMs.length) &&
+        Number(line.amount) > 0
+      )
+    },
+    [matchesByLine]
+  )
+
   useEffect(() => {
     setSelectedBulkLineIds(new Set())
   }, [filterAccountId])
@@ -3065,11 +3099,11 @@ export default function StatementReconciliationTab() {
       const next = new Set<string>()
       for (const id of prev) {
         const line = reconciliationTableLines.find((l) => l.id === id)
-        if (line && isStatementLineBulkSelectable(line)) next.add(id)
+        if (line && isStatementLineSelectable(line)) next.add(id)
       }
       return next.size === prev.size ? prev : next
     })
-  }, [reconciliationTableLines, isStatementLineBulkSelectable])
+  }, [reconciliationTableLines, isStatementLineSelectable])
 
   const selectedBulkExpenseLines = useMemo((): BulkExpenseCandidateLine[] => {
     if (selectedBulkLineIds.size === 0) return []
@@ -3095,6 +3129,28 @@ export default function StatementReconciliationTab() {
       return next
     })
   }, [])
+
+  /** 체크된 줄 중 선택 가능(미대조) 줄들 — 상계 버튼 판정용 */
+  const selectedSelectableLines = useMemo(() => {
+    if (selectedBulkLineIds.size === 0) return [] as StatementLine[]
+    const out: StatementLine[] = []
+    for (const id of selectedBulkLineIds) {
+      const l = lineById.get(id)
+      if (l && isStatementLineSelectable(l)) out.push(l)
+    }
+    return out
+  }, [selectedBulkLineIds, lineById, isStatementLineSelectable])
+
+  /** 체크가 정확히 출금 1·입금 1이면 그 짝을 반환 */
+  const selectedPairForOffset = useMemo(() => {
+    if (selectedSelectableLines.length !== 2) return null
+    const outs = selectedSelectableLines.filter((l) => l.direction === 'outflow')
+    const ins = selectedSelectableLines.filter((l) => l.direction === 'inflow')
+    if (outs.length === 1 && ins.length === 1) {
+      return { outflow: outs[0], inflow: ins[0] }
+    }
+    return null
+  }, [selectedSelectableLines])
 
   /** 중복 점검: 표의 출금·미대조·아직 매칭 없음 — 최대 200건 */
   const bulkCompanyExpenseCandidates = useMemo(() => {
@@ -4907,7 +4963,57 @@ export default function StatementReconciliationTab() {
     [matchesByLine]
   )
 
-  const addStatementLinePairLink = async (anchorLine: StatementLine, counterpartLineId: string) => {
+  /**
+   * 상계 연결을 낙관적으로 처리 — 즉시 목록에서 숨기고(미대조 필터 기준) DB 저장은 백그라운드로.
+   * 실패 시 롤백.
+   */
+  const addStatementLinePairOptimistic = useCallback(
+    (outflowLine: StatementLine, inflowLine: StatementLine) => {
+      if (!email) {
+        setMessage('로그인이 필요합니다.')
+        return
+      }
+      if (outflowLine.direction !== 'outflow' || inflowLine.direction !== 'inflow') {
+        setMessage('출금 1건과 입금 1건이 필요합니다.')
+        return
+      }
+      const tempId = `temp-pair-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const ticketHint =
+        ticketBookingIdHintForLine(outflowLine.id) ?? ticketBookingIdHintForLine(inflowLine.id)
+      const optimisticRow: StatementLinePairRow = {
+        id: tempId,
+        outflow_line_id: outflowLine.id,
+        inflow_line_id: inflowLine.id,
+        note: null,
+        ticket_booking_id: ticketHint,
+        linked_by: email,
+      }
+      setLinePairs((prev) => [...prev, optimisticRow])
+      setLinePairPickerSaving(true)
+      setMessage('상계 처리 중… (목록에서 숨김)')
+      void (async () => {
+        try {
+          const saved = await insertStatementLinePair(supabase, {
+            outflowLineId: outflowLine.id,
+            inflowLineId: inflowLine.id,
+            linkedBy: email,
+            ticketBookingId: ticketHint,
+          })
+          setLinePairs((prev) => prev.map((p) => (p.id === tempId ? saved : p)))
+          linesMatchesCacheRef.current.clear()
+          setMessage('출금·수입 명세 상계를 연결했습니다.')
+        } catch (e) {
+          setLinePairs((prev) => prev.filter((p) => p.id !== tempId))
+          setMessage(e instanceof Error ? e.message : '상계 연결 저장 실패 — 되돌렸습니다.')
+        } finally {
+          setLinePairPickerSaving(false)
+        }
+      })()
+    },
+    [email, ticketBookingIdHintForLine]
+  )
+
+  const addStatementLinePairLink = (anchorLine: StatementLine, counterpartLineId: string) => {
     if (!email) {
       setMessage('로그인이 필요합니다.')
       return
@@ -4918,30 +5024,18 @@ export default function StatementReconciliationTab() {
       setMessage('상대 명세 줄을 찾을 수 없습니다.')
       return
     }
-    setLinePairPickerSaving(true)
-    setMessage(null)
-    try {
-      const { outflowLineId, inflowLineId } = normalizeStatementLinePairEndpoints(
-        anchorLine.direction,
-        anchorLine.id,
-        counterpartLineId
-      )
-      const ticketHint =
-        ticketBookingIdHintForLine(outflowLineId) ?? ticketBookingIdHintForLine(inflowLineId)
-      await insertStatementLinePair(supabase, {
-        outflowLineId,
-        inflowLineId,
-        linkedBy: email,
-        ticketBookingId: ticketHint,
-      })
-      setLinePairPickerAnchorId(null)
-      setMessage('출금·수입 명세 상계를 연결했습니다.')
-      await loadLinesAndMatchesForAccount(filterAccountId, { force: true })
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : '상계 연결 저장 실패')
-    } finally {
-      setLinePairPickerSaving(false)
-    }
+    const outflowLine = anchorLine.direction === 'outflow' ? anchorLine : counterpart
+    const inflowLine = anchorLine.direction === 'inflow' ? anchorLine : counterpart
+    setLinePairPickerAnchorId(null)
+    addStatementLinePairOptimistic(outflowLine, inflowLine)
+  }
+
+  /** 표에서 체크한 출금 1·입금 1 줄을 상계 연결 (백그라운드·즉시 숨김) */
+  const pairSelectedTwoLines = () => {
+    if (!selectedPairForOffset) return
+    const { outflow, inflow } = selectedPairForOffset
+    setSelectedBulkLineIds(new Set())
+    addStatementLinePairOptimistic(outflow, inflow)
   }
 
   const removeStatementLinePairLink = async (pairId: string) => {
@@ -8158,9 +8252,27 @@ export default function StatementReconciliationTab() {
                   type="checkbox"
                   className="shrink-0"
                   checked={showOnlyUnmatchedLines}
-                  onChange={(e) => setShowOnlyUnmatchedLines(e.target.checked)}
+                  onChange={(e) => {
+                    setShowOnlyUnmatchedLines(e.target.checked)
+                    if (e.target.checked) setShowOnlyPairedLines(false)
+                  }}
                 />
                 미대조만
+              </label>
+              <label
+                className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 border rounded px-2.5 h-9 whitespace-nowrap border-violet-200 bg-violet-50 text-violet-900"
+                title="출금·수입 상계(짝) 연결된 줄만 표시"
+              >
+                <input
+                  type="checkbox"
+                  className="shrink-0"
+                  checked={showOnlyPairedLines}
+                  onChange={(e) => {
+                    setShowOnlyPairedLines(e.target.checked)
+                    if (e.target.checked) setShowOnlyUnmatchedLines(false)
+                  }}
+                />
+                상계만
               </label>
             </div>
           </div>
@@ -8370,7 +8482,7 @@ export default function StatementReconciliationTab() {
               isAllAccountsFilter ||
               !accountExpenseWindow ||
               !canMutateStatementUploads ||
-              selectedBulkLineIds.size === 0
+              selectedBulkExpenseLines.length === 0
             }
             title={
               isAllAccountsFilter
@@ -8380,8 +8492,31 @@ export default function StatementReconciliationTab() {
           >
             <ListChecks className="h-4 w-4 mr-1 shrink-0" />
             선택 일괄 입력
-            {selectedBulkLineIds.size > 0 ? (
-              <span className="ml-1 text-[11px] font-normal text-slate-600">({selectedBulkLineIds.size}건)</span>
+            {selectedBulkExpenseLines.length > 0 ? (
+              <span className="ml-1 text-[11px] font-normal text-slate-600">({selectedBulkExpenseLines.length}건)</span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="border border-violet-300 text-violet-900 hover:bg-violet-50"
+            onClick={() => void pairSelectedTwoLines()}
+            disabled={
+              loading ||
+              reconciliationLinesLoading ||
+              linePairPickerSaving ||
+              !selectedPairForOffset
+            }
+            title={
+              selectedSelectableLines.length === 2 && !selectedPairForOffset
+                ? '출금 1건과 입금 1건을 선택해야 상계할 수 있습니다(같은 방향 2건은 불가).'
+                : '체크한 출금 1건과 입금 1건을 서로 상계 연결합니다. 계정이 달라도 됩니다.'
+            }
+          >
+            <ArrowLeftRight className="h-4 w-4 mr-1 shrink-0" />
+            선택 2건 상계
+            {selectedSelectableLines.length > 0 ? (
+              <span className="ml-1 text-[11px] font-normal text-slate-600">({selectedSelectableLines.length}건)</span>
             ) : null}
           </Button>
           <Button
@@ -8609,7 +8744,7 @@ export default function StatementReconciliationTab() {
                 const payMatches = lineMs.filter((m) => m.source_table === 'payment_records')
                 const linePairRows = pairsByLine.get(line.id) || []
                 const isOut = line.direction === 'outflow'
-                const bulkSelectable = isStatementLineBulkSelectable(line)
+                const selectable = isStatementLineSelectable(line)
                 const bulkSelected = selectedBulkLineIds.has(line.id)
                 const descShown = formatStatementLineDescription(line.description, line.merchant)
                 return (
@@ -8652,14 +8787,18 @@ export default function StatementReconciliationTab() {
                     }
                   >
                     <td className="px-0.5 py-1 sm:px-1 sm:py-1.5 align-middle w-7 min-w-[1.75rem] max-w-[1.75rem] text-center">
-                      {bulkSelectable ? (
+                      {selectable ? (
                         <input
                           type="checkbox"
                           className="rounded border-slate-300"
                           checked={bulkSelected}
-                          disabled={!canMutateStatementUploads || isAllAccountsFilter}
-                          aria-label={`일괄 입력 대상 선택 ${line.posted_date}`}
-                          title={isAllAccountsFilter ? singleAccountActionHint : undefined}
+                          disabled={!canMutateStatementUploads}
+                          aria-label={`선택 ${line.posted_date} (일괄 입력·상계 대상)`}
+                          title={
+                            isOut
+                              ? '출금 줄 선택 (일괄 입력 또는 상계)'
+                              : '입금 줄 선택 (상계: 출금 1건과 함께)'
+                          }
                           onChange={(e) => toggleBulkLineSelection(line.id, e.target.checked)}
                         />
                       ) : (
@@ -8921,13 +9060,11 @@ export default function StatementReconciliationTab() {
                           size="sm"
                           variant="outline"
                           className="h-6 sm:h-7 w-auto max-w-full shrink-0 self-start text-[10px] sm:text-xs py-0.5 px-1.5 sm:py-1 sm:px-2 border-violet-300 text-violet-900 hover:bg-violet-50"
-                          disabled={loading || linePairPickerSaving || isAllAccountsFilter}
+                          disabled={loading || linePairPickerSaving}
                           title={
-                            isAllAccountsFilter
-                              ? singleAccountActionHint
-                              : isOut
-                                ? '환불·크레딧 등 수입 명세 줄과 짝 지음'
-                                : '원 지출(티켓 결제 등) 출금 줄과 짝 지음'
+                            isOut
+                              ? '환불·크레딧 등 수입 명세 줄과 짝 지음(계정 달라도 가능)'
+                              : '원 지출(티켓 결제 등) 출금 줄과 짝 지음(계정 달라도 가능)'
                           }
                           onClick={() => setLinePairPickerAnchorId(line.id)}
                         >
@@ -10881,6 +11018,7 @@ export default function StatementReconciliationTab() {
         }}
         anchor={linePairPickerAnchor}
         poolLines={lines}
+        accountLabelById={lineAccountLabelById}
         existingPairs={linePairPickerAnchorPairs}
         saving={linePairPickerSaving}
         onSelectCounterpart={(counterpartLineId) => {

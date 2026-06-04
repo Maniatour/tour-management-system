@@ -1,4 +1,4 @@
-import { google } from 'googleapis'
+import { sheets as createSheetsClient } from '@googleapis/sheets'
 import { JWT } from 'google-auth-library'
 
 // 타입 정의
@@ -284,7 +284,7 @@ const readGoogleSheetInChunks = async (
 export const readGoogleSheet = async (spreadsheetId: string, range: string, chunkSize?: number) => {
   try {
     const auth = getAuthClient()
-    const sheets = google.sheets({ 
+    const sheets = createSheetsClient({ 
       version: 'v4', 
       auth,
       timeout: 120000, // 120초로 증가 (대용량 시트 및 느린 네트워크 지원)
@@ -417,7 +417,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     }
 
     const auth = getAuthClient()
-    const sheets = google.sheets({ 
+    const sheets = createSheetsClient({ 
       version: 'v4', 
       auth,
       timeout: 20000 // 20초로 축소 (빠른 응답 우선)
@@ -595,7 +595,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
 export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string) => {
   try {
     const auth = getAuthClient()
-    const sheets = google.sheets({ version: 'v4', auth })
+    const sheets = createSheetsClient({ version: 'v4', auth })
 
     // 실제 사용된 범위를 정확히 파악하기 위해 시트 메타데이터 조회
     const response = await retryWithBackoff(async () => {
@@ -755,7 +755,7 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
     console.log(`📊 Reading sheet sample: ${sheetName}`)
     
     const auth = getAuthClient()
-    const sheets = google.sheets({
+    const sheets = createSheetsClient({
       version: 'v4',
       auth,
       timeout: 30000

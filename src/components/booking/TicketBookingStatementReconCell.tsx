@@ -6,9 +6,8 @@ import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseSt
 import {
   BOOKING_STATEMENT_AMOUNT_EPS,
   bookingStatementMatchesExpense,
-  computeBookingStatementTotals,
+  computeBookingStatementView,
   isStatementLineInflow,
-  lineStatementAllocatedUsd,
 } from '@/lib/ticket-booking-statement-totals'
 import type { TicketBookingStatementReconDisplay } from '@/lib/ticket-booking-statement-recon'
 
@@ -46,7 +45,8 @@ export function TicketBookingStatementReconCell({
   const textCls = compact ? 'text-[10px] leading-snug' : 'text-xs leading-snug'
 
   const expenseUsd = Math.abs(Number(bookingExpense ?? 0))
-  const totals = lines.length > 0 ? computeBookingStatementTotals(lines) : null
+  const view = lines.length > 0 ? computeBookingStatementView(lines, expenseUsd) : null
+  const totals = view
   const amountMismatch =
     totals != null && !bookingStatementMatchesExpense(totals, expenseUsd, BOOKING_STATEMENT_AMOUNT_EPS)
 
@@ -158,16 +158,17 @@ export function TicketBookingStatementReconCell({
                     className={`font-semibold ${isStatementLineInflow(line) ? 'text-sky-800' : 'text-gray-800'}`}
                   >
                     {isStatementLineInflow(line) ? '−' : ''}$
-                    {lineStatementAllocatedUsd(line).toFixed(2)}
+                    {(view?.perLineUsd[i] ?? 0).toFixed(2)}
                   </span>
-                  {line.matched_amount != null &&
-                  Math.abs(line.matched_amount - line.amount) > BOOKING_STATEMENT_AMOUNT_EPS ? (
+                  {view != null &&
+                  Math.abs((view.perLineUsd[i] ?? 0) - Math.abs(line.amount)) >
+                    BOOKING_STATEMENT_AMOUNT_EPS ? (
                     <span
                       className={`text-[10px] ${isStatementLineInflow(line) ? 'text-sky-800' : 'text-emerald-800'}`}
                       title={t('statementLineAllocatedAmount')}
                     >
                       ({isStatementLineInflow(line) ? '−' : ''}$
-                      {line.matched_amount.toFixed(2)})
+                      {(view.perLineUsd[i] ?? 0).toFixed(2)} / ${Math.abs(line.amount).toFixed(2)})
                     </span>
                   ) : null}
                 </div>

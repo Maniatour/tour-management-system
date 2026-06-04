@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@formatjs/intl": "^3.1.6",
+    "@googleapis/drive": "^20.2.0",
+    "@googleapis/sheets": "^13.0.2",
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -54,7 +56,6 @@
     "dexie": "^4.4.2",
     "dotenv": "^16.4.5",
     "google-auth-library": "^10.3.0",
-    "googleapis": "^159.0.0",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
     "jspdf": "^4.0.0",

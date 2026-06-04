@@ -34,6 +34,8 @@ type Props = {
   onOpenChange: (open: boolean) => void
   anchor: StatementLinePairPickerAnchor | null
   poolLines: StatementLinePairPickerAnchor[]
+  /** 명세 줄 id → 금융 계정명 (전체 계정 보기에서 후보 계정 구분용) */
+  accountLabelById?: Map<string, string>
   existingPairs: StatementLinePairRow[]
   saving: boolean
   onSelectCounterpart: (counterpartLineId: string) => void | Promise<void>
@@ -44,6 +46,7 @@ export default function StatementLinePairPickerDialog({
   onOpenChange,
   anchor,
   poolLines,
+  accountLabelById,
   existingPairs,
   saving,
   onSelectCounterpart,
@@ -103,6 +106,7 @@ export default function StatementLinePairPickerDialog({
 
   const isOut = anchor?.direction === 'outflow'
   const anchorAmt = anchor ? Math.abs(Number(anchor.amount) || 0) : 0
+  const anchorAccount = anchor ? accountLabelById?.get(anchor.id) ?? null : null
 
   return (
     <Dialog
@@ -125,6 +129,11 @@ export default function StatementLinePairPickerDialog({
               기준 줄: <strong>{anchor.posted_date}</strong> ·{' '}
               {isOut ? '출금' : '수입'}{' '}
               <strong>${anchorAmt.toFixed(2)}</strong>
+              {anchorAccount ? (
+                <span className="ml-1 inline-block rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600 align-middle">
+                  {anchorAccount}
+                </span>
+              ) : null}
               <span className="block mt-0.5 text-slate-500 line-clamp-2">
                 {formatStatementLineDescription(anchor.description, anchor.merchant)}
               </span>
@@ -150,24 +159,40 @@ export default function StatementLinePairPickerDialog({
                 {quickOptions.length === 0 ? (
                   <div className="p-3 text-slate-500 text-sm">근접 후보가 없습니다. 검색을 이용하세요.</div>
                 ) : (
-                  quickOptions.map((c) => (
-                    <button
-                      key={c.lineId}
-                      type="button"
-                      disabled={saving}
-                      className="w-full text-left px-2 py-2 text-sm hover:bg-violet-50 disabled:opacity-50"
-                      onClick={() => void onSelectCounterpart(c.lineId)}
-                    >
-                      <span className="font-medium tabular-nums">${c.amount.toFixed(2)}</span>
-                      <span className="text-slate-600"> · {c.posted_date}</span>
-                      {c.amountDiff >= 0.02 ? (
-                        <span className="text-amber-700 text-[11px] ml-1">
-                          (차이 ${c.amountDiff.toFixed(2)})
-                        </span>
-                      ) : null}
-                      <span className="block text-[11px] text-slate-500 truncate">{c.description}</span>
-                    </button>
-                  ))
+                  quickOptions.map((c) => {
+                    const acct = accountLabelById?.get(c.lineId) ?? null
+                    const crossAccount = Boolean(acct && anchorAccount && acct !== anchorAccount)
+                    return (
+                      <button
+                        key={c.lineId}
+                        type="button"
+                        disabled={saving}
+                        className="w-full text-left px-2 py-2 text-sm hover:bg-violet-50 disabled:opacity-50"
+                        onClick={() => void onSelectCounterpart(c.lineId)}
+                      >
+                        <span className="font-medium tabular-nums">${c.amount.toFixed(2)}</span>
+                        <span className="text-slate-600"> · {c.posted_date}</span>
+                        {c.amountDiff >= 0.02 ? (
+                          <span className="text-amber-700 text-[11px] ml-1">
+                            (차이 ${c.amountDiff.toFixed(2)})
+                          </span>
+                        ) : null}
+                        {acct ? (
+                          <span
+                            className={`ml-1 inline-block rounded px-1 py-0.5 text-[10px] align-middle ${
+                              crossAccount
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {crossAccount ? '타계정 · ' : ''}
+                            {acct}
+                          </span>
+                        ) : null}
+                        <span className="block text-[11px] text-slate-500 truncate">{c.description}</span>
+                      </button>
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -180,19 +205,35 @@ export default function StatementLinePairPickerDialog({
                   {searchResults.length === 0 ? (
                     <div className="p-3 text-slate-500 text-sm">결과 없음</div>
                   ) : (
-                    searchResults.map((c) => (
-                      <button
-                        key={`s:${c.lineId}`}
-                        type="button"
-                        disabled={saving}
-                        className="w-full text-left px-2 py-2 text-sm hover:bg-violet-50 disabled:opacity-50"
-                        onClick={() => void onSelectCounterpart(c.lineId)}
-                      >
-                        <span className="font-medium tabular-nums">${c.amount.toFixed(2)}</span>
-                        <span className="text-slate-600"> · {c.posted_date}</span>
-                        <span className="block text-[11px] text-slate-500 truncate">{c.description}</span>
-                      </button>
-                    ))
+                    searchResults.map((c) => {
+                      const acct = accountLabelById?.get(c.lineId) ?? null
+                      const crossAccount = Boolean(acct && anchorAccount && acct !== anchorAccount)
+                      return (
+                        <button
+                          key={`s:${c.lineId}`}
+                          type="button"
+                          disabled={saving}
+                          className="w-full text-left px-2 py-2 text-sm hover:bg-violet-50 disabled:opacity-50"
+                          onClick={() => void onSelectCounterpart(c.lineId)}
+                        >
+                          <span className="font-medium tabular-nums">${c.amount.toFixed(2)}</span>
+                          <span className="text-slate-600"> · {c.posted_date}</span>
+                          {acct ? (
+                            <span
+                              className={`ml-1 inline-block rounded px-1 py-0.5 text-[10px] align-middle ${
+                                crossAccount
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {crossAccount ? '타계정 · ' : ''}
+                              {acct}
+                            </span>
+                          ) : null}
+                          <span className="block text-[11px] text-slate-500 truncate">{c.description}</span>
+                        </button>
+                      )
+                    })
                   )}
                 </div>
               </div>

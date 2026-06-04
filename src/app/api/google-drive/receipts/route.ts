@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { google } from 'googleapis'
+import { drive as createDriveClient } from '@googleapis/drive'
 import { JWT } from 'google-auth-library'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
@@ -54,7 +54,7 @@ const getDriveClient = () => {
     scopes: SCOPES,
   })
 
-  return google.drive({ version: 'v3', auth })
+  return createDriveClient({ version: 'v3', auth })
 }
 
 // 파일명에서 tour_expenses ID 추출 (ID.Image.xxxxxx.jpg 형식)

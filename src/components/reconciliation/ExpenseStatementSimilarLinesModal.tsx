@@ -909,8 +909,10 @@ export default function ExpenseStatementSimilarLinesModal({
           context.sourceTable !== 'payment_records' && diff > 0.009 && diff <= stol
         const lineAbs = Math.abs(row.amount)
         const lineRoom = Math.max(0, lineAbs - row.allocated_sum)
+        const cappedShare = lineRoom > 0.009 ? Math.min(ledgerCap, lineRoom) : ledgerCap
+        // 순비용 $0(환불 등) 부킹은 ledgerCap=0이라 분할값이 0이 됨 → 0 저장 방지, 명세 줄 전액으로 폴백
         const matchedAmount =
-          lineRoom > 0.009 ? Math.min(ledgerCap, lineRoom) : ledgerCap
+          cappedShare > 0.009 ? cappedShare : lineRoom > 0.009 ? lineRoom : lineAbs
 
         await replaceExpenseReconciliationMatch(supabase, {
           actorEmail: email,
