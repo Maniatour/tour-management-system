@@ -91,6 +91,7 @@ const TOUR_HIGHWAY_MILEAGE_OVERRIDES: Record<string, number> = {
   auxiliary_battery: 40000,
   glow_plug: 60000,
   turbocharger_service: 40000,
+  turbo_resonator_replacement: 50000,
   rear_drum_brake: 20000,
   air_tank_drain: 3000,
   air_brake_lining_inspection: 15000,

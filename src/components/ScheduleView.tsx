@@ -27,6 +27,15 @@ import {
   tourStaffVehicleAssignmentClearPatch,
   tourStatusOptions,
 } from '@/utils/tourStatusUtils'
+import {
+  buildVehicleOilTooltipLines,
+  computeVehicleOilMaintenanceSummary,
+  pickLatestEngineOilByVehicle,
+  type ScheduleTourForOil,
+  type ScheduleVehicleOilMeta,
+  type VehicleMaintenanceOilRecord,
+  type VehicleOilMaintenanceSummary,
+} from '@/lib/scheduleVehicleOilMaintenance'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import ReactCountryFlag from 'react-country-flag'
@@ -767,7 +776,12 @@ export default function ScheduleView() {
     vehicle_category?: string | null
     rental_start_date?: string | null
     rental_end_date?: string | null
+    engine_oil_change_cycle?: number | null
+    recent_engine_oil_change_mileage?: number | null
+    recent_engine_oil_change_date?: string | null
   }>>([])
+  /** 회사 차량 엔진오일 추정용 — fetchData 시 6개월치 투어 (당월 tours 와 id 기준 병합) */
+  const [vehicleOilCalcTours, setVehicleOilCalcTours] = useState<ScheduleTourForOil[]>([])
   // 차량·날짜 셀 클릭 시 투어 배정 모달
   const [showVehicleAssignModal, setShowVehicleAssignModal] = useState(false)
   const [vehicleAssignTarget, setVehicleAssignTarget] = useState<{ vehicleId: string; dateString: string } | null>(null)
@@ -2084,7 +2098,9 @@ export default function ScheduleView() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: allVehiclesData } = await (supabase as any)
         .from('vehicles')
-        .select('id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date')
+        .select(
+          'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date, engine_oil_change_cycle, recent_engine_oil_change_mileage',
+        )
       const isCancelled = (s: string | null | undefined) => {
         if (!s) return false
         const lower = String(s).toLowerCase().trim()
@@ -2113,13 +2129,95 @@ export default function ScheduleView() {
         const bLabel = (b.nick && b.nick.trim()) || b.vehicle_number || b.id
         return String(aLabel).localeCompare(String(bLabel))
       })
-      setScheduleVehicles(sorted.map((v: { id: string; vehicle_number?: string | null; nick?: string | null; vehicle_category?: string | null; rental_start_date?: string | null; rental_end_date?: string | null }) => ({
-        id: v.id,
-        label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
-        vehicle_category: v.vehicle_category ?? null,
-        rental_start_date: v.rental_start_date ?? null,
-        rental_end_date: v.rental_end_date ?? null
-      })))
+      const companyVehicleIds = sorted
+        .filter(
+          (v: { vehicle_category?: string | null }) =>
+            (v.vehicle_category || 'company').toString().toLowerCase() !== 'rental',
+        )
+        .map((v: { id: string }) => v.id)
+
+      const oilChangeByVehicleId = new Map<string, { date: string; mileage: number | null }>()
+      if (companyVehicleIds.length > 0) {
+        const MAINT_PAGE = 1000
+        let maintenanceRows: VehicleMaintenanceOilRecord[] = []
+        for (let from = 0; ; from += MAINT_PAGE) {
+          const { data: batch, error: maintErr } = await supabase
+            .from('vehicle_maintenance')
+            .select('vehicle_id, maintenance_date, mileage, subcategory')
+            .in('vehicle_id', companyVehicleIds)
+            .order('maintenance_date', { ascending: false })
+            .order('mileage', { ascending: false })
+            .range(from, from + MAINT_PAGE - 1)
+          if (maintErr) {
+            console.error('Error fetching vehicle maintenance for oil change:', maintErr)
+            break
+          }
+          const b = (batch || []) as VehicleMaintenanceOilRecord[]
+          maintenanceRows = maintenanceRows.concat(b)
+          if (b.length < MAINT_PAGE) break
+        }
+        for (const [vehicleId, latest] of pickLatestEngineOilByVehicle(maintenanceRows)) {
+          oilChangeByVehicleId.set(vehicleId, latest)
+        }
+      }
+
+      setScheduleVehicles(
+        sorted.map(
+          (v: {
+            id: string
+            vehicle_number?: string | null
+            nick?: string | null
+            vehicle_category?: string | null
+            rental_start_date?: string | null
+            rental_end_date?: string | null
+            engine_oil_change_cycle?: number | null
+            recent_engine_oil_change_mileage?: number | null
+          }) => {
+            const fromMaintenance = oilChangeByVehicleId.get(v.id)
+            const fallbackMileage =
+              v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
+                ? v.recent_engine_oil_change_mileage
+                : null
+            return {
+              id: v.id,
+              label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
+              vehicle_category: v.vehicle_category ?? null,
+              rental_start_date: v.rental_start_date ?? null,
+              rental_end_date: v.rental_end_date ?? null,
+              engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
+              recent_engine_oil_change_mileage: fromMaintenance?.mileage ?? fallbackMileage,
+              recent_engine_oil_change_date: fromMaintenance?.date ?? null,
+            }
+          },
+        ),
+      )
+
+      if (companyVehicleIds.length > 0) {
+        const oilHistStart = firstDayOfMonth.subtract(6, 'month').format('YYYY-MM-DD')
+        const oilHistEnd = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
+        let oilHistTours: ScheduleTourForOil[] = []
+        for (let from = 0; ; from += TOURS_PAGE) {
+          const { data: batch, error: oilToursErr } = await supabase
+            .from('tours')
+            .select('id, tour_date, tour_status, tour_car_id, product_id, products(name)')
+            .gte('tour_date', oilHistStart)
+            .lte('tour_date', oilHistEnd)
+            .in('tour_car_id', companyVehicleIds)
+            .order('tour_date', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, from + TOURS_PAGE - 1)
+          if (oilToursErr) {
+            console.error('Error fetching vehicle oil calc tours:', oilToursErr)
+            break
+          }
+          const b = (batch || []) as ScheduleTourForOil[]
+          oilHistTours = oilHistTours.concat(b)
+          if (b.length < TOURS_PAGE) break
+        }
+        setVehicleOilCalcTours(oilHistTours)
+      } else {
+        setVehicleOilCalcTours([])
+      }
 
       // 예약 데이터 가져오기 (현재 월)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5543,11 +5641,43 @@ export default function ScheduleView() {
         colorClass,
         vehicle_category: v.vehicle_category,
         rental_start_date: v.rental_start_date,
-        rental_end_date: v.rental_end_date
+        rental_end_date: v.rental_end_date,
+        engine_oil_change_cycle: v.engine_oil_change_cycle,
+        recent_engine_oil_change_mileage: v.recent_engine_oil_change_mileage,
+        recent_engine_oil_change_date: v.recent_engine_oil_change_date,
       }
     })
     return { vehicleIdToColor, vehicleList: list }
   }, [scheduleVehicles])
+
+  const toursForOilMaintenance = useMemo(() => {
+    const byId = new Map<string, ScheduleTourForOil>()
+    for (const t of vehicleOilCalcTours) byId.set(t.id, t)
+    for (const t of tours as ScheduleTourForOil[]) byId.set(t.id, t)
+    return [...byId.values()]
+  }, [vehicleOilCalcTours, tours])
+
+  const monthDayDateStrings = useMemo(() => monthDays.map((d) => d.dateString), [monthDays])
+
+  const vehicleOilMaintenanceByVehicleId = useMemo(() => {
+    const map = new Map<string, VehicleOilMaintenanceSummary>()
+    for (const v of scheduleVehicles) {
+      const meta: ScheduleVehicleOilMeta = {
+        id: v.id,
+        vehicle_category: v.vehicle_category ?? null,
+        engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
+        recent_engine_oil_change_mileage: v.recent_engine_oil_change_mileage ?? null,
+        recent_engine_oil_change_date: v.recent_engine_oil_change_date ?? null,
+      }
+      const summary = computeVehicleOilMaintenanceSummary({
+        vehicle: meta,
+        tours: toursForOilMaintenance,
+        visibleDateStrings: monthDayDateStrings,
+      })
+      if (summary) map.set(v.id, summary)
+    }
+    return map
+  }, [scheduleVehicles, toursForOilMaintenance, monthDayDateStrings])
 
   /** 미배정 카드·모달에서 투어에 차량 배정 (pendingChanges + 로컬 상태) */
   const assignVehicleToTourFromModal = useCallback(
@@ -7809,11 +7939,14 @@ export default function ScheduleView() {
               <div className="mt-1 overflow-visible">
                 <table className="w-full" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
                   <tbody className="divide-y divide-gray-200">
-                    {orderedVehiclesForScheduleTable.map(({ id, label, colorClass, rental_start_date, rental_end_date }, index) => {
+                    {orderedVehiclesForScheduleTable.map(({ id, label, colorClass, rental_start_date, rental_end_date, vehicle_category }, index) => {
                       const canMoveUp = index > 0
                       const canMoveDown = index < orderedVehiclesForScheduleTable.length - 1
                       const data = vehicleScheduleData[id]
                       if (!data) return null
+                      const isCompanyVehicleRow =
+                        (vehicle_category || 'company').toString().toLowerCase() !== 'rental'
+                      const oilSummary = vehicleOilMaintenanceByVehicleId.get(id)
                       const allNames = new Set<string>()
                       monthDays.forEach(({ dateString }) => {
                         const dayInfo = data.daily[dateString]
@@ -7824,9 +7957,16 @@ export default function ScheduleView() {
                         }
                       })
                       const sortedNames = [...allNames].filter(Boolean).sort()
-                      const vehicleNameTooltip = sortedNames.length > 0
-                        ? `${sortedNames.join(', ')}\n총 ${sortedNames.length}명`
-                        : label
+                      const crewTooltipLines =
+                        sortedNames.length > 0
+                          ? [`${sortedNames.join(', ')}`, `총 ${sortedNames.length}명`]
+                          : []
+                      const vehicleNameTooltip =
+                        isCompanyVehicleRow && oilSummary
+                          ? buildVehicleOilTooltipLines(oilSummary, crewTooltipLines)
+                          : crewTooltipLines.length > 0
+                            ? crewTooltipLines.join('\n')
+                            : label
                       /** 렌트 구간 ∩ (표시 중인 달 ~ 그 다음 달 말일) 안의 배정일. 다음 달 배차도 툴팁에 포함 */
                       const rentalAssignedDaysCompactList = (() => {
                         const rs = (rental_start_date || '').toString().substring(0, 10)
@@ -7980,14 +8120,31 @@ export default function ScheduleView() {
                             const isInRentalPeriod = rental_start_date && rental_end_date &&
                               dateString >= (rental_start_date || '').toString().substring(0, 10) &&
                               dateString <= (rental_end_date || '').toString().substring(0, 10)
+                            const needsMaintenanceGap =
+                              isCompanyVehicleRow &&
+                              count === 0 &&
+                              (oilSummary?.maintenanceGapDates.has(dateString) ?? false)
+                            const maintenanceGapTooltip =
+                              locale === 'ko'
+                                ? '엔진오일 교체 필요 — 투어 배정 전 정비 권장'
+                                : 'Engine oil change needed before next tour assignment'
                             const baseTdClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''
                             const rentalBgClass = isInRentalPeriod ? 'bg-amber-200' : ''
+                            const maintenanceGapBgClass = needsMaintenanceGap ? 'bg-orange-50 ring-1 ring-orange-400 ring-inset' : ''
                             return (
                               <td
                                 key={dateString}
-                                className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass}`}
+                                className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass} ${maintenanceGapBgClass}`}
                                 style={{ width: dayColumnWidthCalc, minWidth: '40px', boxSizing: 'border-box' }}
-                                title={count > 0 ? cellTooltip : (isInRentalPeriod ? rentalEmptyCellTooltip : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동')}
+                                title={
+                                  needsMaintenanceGap
+                                    ? maintenanceGapTooltip
+                                    : count > 0
+                                      ? cellTooltip
+                                      : isInRentalPeriod
+                                        ? rentalEmptyCellTooltip
+                                        : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동'
+                                }
                                 onClick={(e) => {
                                   if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
                                   setVehicleAssignTarget({ vehicleId: id, dateString })
@@ -8037,6 +8194,13 @@ export default function ScheduleView() {
                                         {guideNames.length > 0 ? guideNames.join(', ') : count}
                                       </span>
                                     </div>
+                                  ) : needsMaintenanceGap ? (
+                                    <span
+                                      className="absolute inset-0 flex items-center justify-center rounded bg-orange-500 px-0.5 text-[8px] font-bold leading-none text-white animate-pulse shadow-sm ring-2 ring-orange-300 ring-inset"
+                                      title={maintenanceGapTooltip}
+                                    >
+                                      정비 필요
+                                    </span>
                                   ) : (
                                     <span className="text-gray-300 text-[10px]">-</span>
                                   )}
