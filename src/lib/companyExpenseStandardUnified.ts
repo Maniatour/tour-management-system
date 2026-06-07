@@ -6,6 +6,9 @@ import {
 /** 차량 수리·정비 등 표준 리프 — 지출 폼에서 정비 작업 연동 조건에 사용 */
 export const VEHICLE_REPAIR_STANDARD_LEAF_ID = 'CAT001-002' as const
 
+/** Contract Labor · 용역비 › Guide Fees · 가이드비 (2주급·가이드 지급 등) */
+export const GUIDE_FEES_STANDARD_LEAF_ID = 'CAT006' as const
+
 /** 매출원가(COGS) 상위 표준 카테고리 — 지출 폼·정규화 목록에서 맨 위에 둠 */
 export const COGS_STANDARD_ROOT_ID = 'CAT024' as const
 

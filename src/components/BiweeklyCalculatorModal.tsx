@@ -29,6 +29,13 @@ import {
   OFFICE_MEAL_POLICY_START,
 } from '@/lib/attendanceMealPolicy'
 import { calculateEmployeePrepaidTips } from '@/lib/prepaid-tips'
+import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
+import {
+  applyStandardLeafToCompanyExpense,
+  buildUnifiedStandardLeafGroups,
+  GUIDE_FEES_STANDARD_LEAF_ID,
+  unifiedStandardTriggerLabel,
+} from '@/lib/companyExpenseStandardUnified'
 
 interface BiweeklyCalculatorModalProps {
   isOpen: boolean
@@ -177,12 +184,31 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [paymentData, setPaymentData] = useState<{
     paid_to: string
     paid_for: string
+    standardPaidForLabel: string
     description: string
     amount: number
     payment_method: string
     photo_url: string
   } | null>(null)
+  const [expenseStandardCategories, setExpenseStandardCategories] = useState<ExpenseStandardCategoryPickRow[]>([])
   const printContentRef = useRef<HTMLDivElement>(null)
+
+  const guideFeesStandardApplied = useMemo(() => {
+    if (expenseStandardCategories.length === 0) return null
+    const byId = new Map(expenseStandardCategories.map((c) => [c.id, c]))
+    return applyStandardLeafToCompanyExpense(GUIDE_FEES_STANDARD_LEAF_ID, byId, { paidForLanguage: 'en' })
+  }, [expenseStandardCategories])
+
+  const guideFeesStandardLabel = useMemo(() => {
+    if (expenseStandardCategories.length === 0) {
+      return 'Contract Labor · 용역비 › Guide Fees · 가이드비'
+    }
+    const groups = buildUnifiedStandardLeafGroups(expenseStandardCategories, 'ko', { includeInactive: true })
+    return (
+      unifiedStandardTriggerLabel(groups, GUIDE_FEES_STANDARD_LEAF_ID) ||
+      'Contract Labor · 용역비 › Guide Fees · 가이드비'
+    )
+  }, [expenseStandardCategories])
 
   // 로컬 날짜를 YYYY-MM-DD로 (toISOString은 UTC라 타임존에서 하루 어긋날 수 있음)
   const toLocalDateString = (d: Date) => {
@@ -517,6 +543,19 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     if (isOpen) {
       fetchTeamMembers()
     }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    void (async () => {
+      const { data, error } = await supabase
+        .from('expense_standard_categories')
+        .select('id, name, name_ko, parent_id, tax_deductible, display_order, is_active')
+        .order('display_order')
+      if (!error && data) {
+        setExpenseStandardCategories(data as ExpenseStandardCategoryPickRow[])
+      }
+    })()
   }, [isOpen])
 
   // 투어 fee 데이터 조회 (선택된 직원 필터링)
@@ -2194,7 +2233,8 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
 
       setPaymentData({
         paid_to: guideName,
-        paid_for: 'Guide Fee',
+        paid_for: guideFeesStandardApplied?.paid_for ?? 'Guide Fees',
+        standardPaidForLabel: guideFeesStandardLabel,
         description: description,
         amount: totalPay,
         payment_method: 'zelle',
@@ -2223,11 +2263,19 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       const { data: authData } = await supabase.auth.getUser()
       const submitBy = authData?.user?.email ?? selectedEmployee
 
+      const byId = new Map(expenseStandardCategories.map((c) => [c.id, c]))
+      const applied =
+        expenseStandardCategories.length > 0
+          ? applyStandardLeafToCompanyExpense(GUIDE_FEES_STANDARD_LEAF_ID, byId, { paidForLanguage: 'en' })
+          : null
+      const standardPaidFor = applied?.paid_for ?? paymentData.paid_for
+
       const { error } = await supabase
         .from('company_expenses')
         .insert({
           paid_to: paymentData.paid_to,
-          paid_for: paymentData.paid_for,
+          paid_for: standardPaidFor,
+          standard_paid_for: standardPaidFor,
           description: paymentData.description,
           amount: paymentData.amount,
           payment_method: paymentData.payment_method,
@@ -2235,7 +2283,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
           paid_to_employee_email: selectedEmployee,
           submit_by: submitBy,
           paid_on: new Date().toISOString(),
-          category: 'payroll',
+          category: applied?.category ?? '인건비',
+          expense_type: applied?.expense_type ?? 'operating',
+          tax_deductible: applied?.tax_deductible ?? true,
           status: 'pending'
         })
 
@@ -3271,17 +3321,13 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 />
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Paid For *
+                  표준 결제 내용
                 </label>
-                <input
-                  type="text"
-                  value={paymentData.paid_for}
-                  onChange={(e) => setPaymentData({ ...paymentData, paid_for: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
-                />
+                <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-sm text-gray-900">
+                  {paymentData.standardPaidForLabel}
+                </div>
               </div>
             </div>
 

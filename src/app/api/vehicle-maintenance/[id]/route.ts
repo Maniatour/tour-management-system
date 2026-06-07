@@ -1,21 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { Database } from '@/lib/database.types'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
+import {
+  normalizeVehicleMaintenanceVehicleId,
+  parseVehicleMaintenanceBody,
+} from '@/lib/vehicleMaintenancePayload'
+import { syncVehicleMaintenanceSchedulesFromRecord } from '@/lib/vehicleMaintenanceScheduleSync'
 
-type VehicleMaintenance = Database['public']['Tables']['vehicle_maintenance']['Row']
-type VehicleMaintenanceUpdate = Database['public']['Tables']['vehicle_maintenance']['Update']
+export const dynamic = 'force-dynamic'
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+type RouteParams = { params: Promise<{ id: string }> }
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const supabase = await createClient()
-    const { id } = params
-    
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
+
+    const { id } = await params
+
     const { data, error } = await supabase
       .from('vehicle_maintenance')
-      .select(`
+      .select(
+        `
         *,
         vehicles (
           id,
@@ -23,20 +28,22 @@ export async function GET(
           vehicle_type,
           vehicle_category
         ),
-        company_expenses (
+        company_expenses!vehicle_maintenance_company_expense_id_fkey (
           id,
           amount,
-          status
+          status,
+          payment_method
         )
-      `)
+      `
+      )
       .eq('id', id)
       .single()
-    
+
     if (error) {
       console.error('차량 정비 조회 오류:', error)
       return NextResponse.json({ error: '차량 정비 기록을 찾을 수 없습니다.' }, { status: 404 })
     }
-    
+
     return NextResponse.json({ data })
   } catch (error) {
     console.error('차량 정비 조회 오류:', error)
@@ -44,62 +51,81 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const supabase = await createClient()
-    const { id } = params
-    const body = await request.json()
-    
-    // 숫자 필드 변환
-    if (body.total_cost) {
-      body.total_cost = parseFloat(body.total_cost)
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
+
+    const { id } = await params
+    const body = (await request.json()) as Record<string, unknown>
+    const { maintenance: updateData, payment_method } = parseVehicleMaintenanceBody(body)
+
+    if (updateData.vehicle_id !== undefined) {
+      updateData.vehicle_id = await normalizeVehicleMaintenanceVehicleId(supabase, updateData.vehicle_id)
     }
-    if (body.labor_cost) {
-      body.labor_cost = parseFloat(body.labor_cost)
+
+    if (
+      updateData.mileage !== undefined &&
+      (updateData.mileage == null || updateData.mileage <= 0)
+    ) {
+      return NextResponse.json({ error: '마일리지를 입력해 주세요.' }, { status: 400 })
     }
-    if (body.parts_cost) {
-      body.parts_cost = parseFloat(body.parts_cost)
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('vehicle_maintenance')
+      .select('company_expense_id')
+      .eq('id', id)
+      .single()
+
+    if (fetchError) {
+      console.error('차량 정비 조회 오류:', fetchError)
+      return NextResponse.json({ error: '차량 정비 기록을 찾을 수 없습니다.' }, { status: 404 })
     }
-    if (body.other_cost) {
-      body.other_cost = parseFloat(body.other_cost)
-    }
-    if (body.mileage) {
-      body.mileage = parseInt(body.mileage)
-    }
-    if (body.warranty_period) {
-      body.warranty_period = parseInt(body.warranty_period)
-    }
-    if (body.next_maintenance_mileage) {
-      body.next_maintenance_mileage = parseInt(body.next_maintenance_mileage)
-    }
-    if (body.maintenance_interval) {
-      body.maintenance_interval = parseInt(body.maintenance_interval)
-    }
-    if (body.mileage_interval) {
-      body.mileage_interval = parseInt(body.mileage_interval)
-    }
-    if (body.quality_rating) {
-      body.quality_rating = parseInt(body.quality_rating)
-    }
-    if (body.satisfaction_rating) {
-      body.satisfaction_rating = parseInt(body.satisfaction_rating)
-    }
-    
+
     const { data, error } = await supabase
       .from('vehicle_maintenance')
-      .update(body)
+      .update(updateData)
       .eq('id', id)
       .select()
       .single()
-    
+
     if (error) {
       console.error('차량 정비 수정 오류:', error)
       return NextResponse.json({ error: '차량 정비 기록을 수정할 수 없습니다.' }, { status: 500 })
     }
-    
+
+    if (existing.company_expense_id) {
+      try {
+        const expenseUpdate: Record<string, unknown> = {}
+        if (updateData.total_cost != null) expenseUpdate.amount = updateData.total_cost
+        if (updateData.service_provider !== undefined) expenseUpdate.paid_to = updateData.service_provider
+        if (updateData.maintenance_type && updateData.category) {
+          expenseUpdate.paid_for = `${updateData.maintenance_type} - ${updateData.category}`
+        }
+        if (updateData.description !== undefined) expenseUpdate.description = updateData.description
+        if (updateData.maintenance_type !== undefined) expenseUpdate.maintenance_type = updateData.maintenance_type
+        if (updateData.category !== undefined) expenseUpdate.subcategory = updateData.category
+        if (updateData.notes !== undefined) expenseUpdate.notes = updateData.notes
+        if (updateData.vehicle_id !== undefined) expenseUpdate.vehicle_id = updateData.vehicle_id
+        if (payment_method) expenseUpdate.payment_method = payment_method
+
+        if (Object.keys(expenseUpdate).length > 0) {
+          await supabase
+            .from('company_expenses')
+            .update(expenseUpdate)
+            .eq('id', existing.company_expense_id)
+        }
+      } catch (expenseError) {
+        console.error('연동된 회사 지출 업데이트 오류:', expenseError)
+      }
+    }
+
+    try {
+      await syncVehicleMaintenanceSchedulesFromRecord(supabase, data)
+    } catch (syncError) {
+      console.error('정기점검 스케줄 동기화 오류:', syncError)
+    }
+
     return NextResponse.json({ data })
   } catch (error) {
     console.error('차량 정비 수정 오류:', error)
@@ -107,24 +133,20 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const supabase = await createClient()
-    const { id } = params
-    
-    const { error } = await supabase
-      .from('vehicle_maintenance')
-      .delete()
-      .eq('id', id)
-    
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
+
+    const { id } = await params
+
+    const { error } = await supabase.from('vehicle_maintenance').delete().eq('id', id)
+
     if (error) {
       console.error('차량 정비 삭제 오류:', error)
       return NextResponse.json({ error: '차량 정비 기록을 삭제할 수 없습니다.' }, { status: 500 })
     }
-    
+
     return NextResponse.json({ message: '차량 정비 기록이 삭제되었습니다.' })
   } catch (error) {
     console.error('차량 정비 삭제 오류:', error)

@@ -81,12 +81,35 @@ const EMPTY_STATISTICS_DATA: StatisticsData = {
   trendData: []
 }
 
-/** 쿼리 정규화(키 정렬) — 이미 동일한 URL이면 router.replace 생략해 불필요한 탐색 파라미터 갱신·리렌더 감소 */
-function normalizedQueryString(sp: URLSearchParams): string {
+/** 쿼리 정규화(키 정렬·디코드 값) — URLSearchParams.toString() 인코딩 차이와 무관하게 동일 여부 판별 */
+function canonicalQueryString(sp: URLSearchParams): string {
   return [...sp.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]) || String(a[1]).localeCompare(String(b[1])))
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .map(([k, v]) => `${k}=${v}`)
     .join('&')
+}
+
+function buildStatisticsSearchParams(input: {
+  activeTab: TabType
+  dateRange: { start: string; end: string }
+  timeRange: TimeRange
+  selectedChart: ChartType
+  searchQuery: string
+  selectedChannelId: string
+  selectedStatuses: string[]
+}): URLSearchParams {
+  const params = new URLSearchParams()
+  params.set('tab', input.activeTab)
+  params.set('start', input.dateRange.start)
+  params.set('end', input.dateRange.end)
+  params.set('tr', input.timeRange)
+  if (input.activeTab === 'reservations') {
+    params.set('chart', input.selectedChart)
+  }
+  if (input.searchQuery.trim()) params.set('q', input.searchQuery.trim())
+  if (input.selectedChannelId) params.set('channel', input.selectedChannelId)
+  if (input.selectedStatuses.length > 0) params.set('statuses', input.selectedStatuses.join(','))
+  return params
 }
 
 export default function AdminReservationStatistics({ }: AdminReservationStatisticsProps) {
@@ -179,6 +202,22 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   })
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') ?? '')
   const endDateInputRef = useRef<HTMLInputElement>(null)
+  const searchParamsKey = searchParams.toString()
+  /** 동일 쿼리로 replace 중복 호출 방지(Next.js가 searchParams 갱신 전 재실행되는 경우) */
+  const pendingUrlSyncRef = useRef<string | null>(null)
+
+  const statisticsQueryInput = useMemo(
+    () => ({
+      activeTab,
+      dateRange,
+      timeRange,
+      selectedChart,
+      searchQuery,
+      selectedChannelId,
+      selectedStatuses,
+    }),
+    [activeTab, dateRange, timeRange, selectedChart, searchQuery, selectedChannelId, selectedStatuses],
+  )
 
   // Manager는 현금/PNL URL로 들어와도 예약 통계 탭으로 보냄
   useEffect(() => {
@@ -201,38 +240,30 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   } = useReservationData({ disableReservationsAutoLoad: skipParentReservationLoad })
 
   // 탭/검색/기간/채널/상태/추이단위(tr)/차트(chart) 변경 시 URL 동기화 (새로고침 시 복원용)
-  // 예전 북마크(?tab=reconciliation)는 아래 동기화보다 먼저 처리 — 쿼리가 덮어씌워지며 리다이렉트 실패하는 것 방지
+  // searchParams 객체는 참조가 매 렌더마다 바뀔 수 있어 searchParamsKey(문자열)만 의존
   useEffect(() => {
-    if (searchParams.get('tab') === 'reconciliation') {
+    const currentSp = new URLSearchParams(searchParamsKey)
+    if (currentSp.get('tab') === 'reconciliation') {
       const loc = pathname.split('/')[1] || 'ko'
       router.replace(`/${loc}/admin/statement-reconciliation`)
       return
     }
-    const params = new URLSearchParams()
-    params.set('tab', activeTab)
-    params.set('start', dateRange.start)
-    params.set('end', dateRange.end)
-    params.set('tr', timeRange)
-    params.set('chart', selectedChart)
-    if (searchQuery.trim()) params.set('q', searchQuery.trim())
-    if (selectedChannelId) params.set('channel', selectedChannelId)
-    if (selectedStatuses.length > 0) params.set('statuses', selectedStatuses.join(','))
-    const desiredQs = normalizedQueryString(params)
-    const currentQs = normalizedQueryString(new URLSearchParams(searchParams.toString()))
-    if (desiredQs === currentQs) return
-    router.replace(desiredQs ? `${pathname}?${desiredQs}` : pathname, { scroll: false })
-  }, [
-    searchParams,
-    activeTab,
-    searchQuery,
-    dateRange,
-    selectedChannelId,
-    selectedStatuses,
-    timeRange,
-    selectedChart,
-    pathname,
-    router
-  ])
+
+    const params = buildStatisticsSearchParams(statisticsQueryInput)
+    const desiredCanonical = canonicalQueryString(params)
+    const currentCanonical = canonicalQueryString(currentSp)
+
+    if (desiredCanonical === currentCanonical) {
+      pendingUrlSyncRef.current = null
+      return
+    }
+
+    if (pendingUrlSyncRef.current === desiredCanonical) return
+    pendingUrlSyncRef.current = desiredCanonical
+
+    const href = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    router.replace(href, { scroll: false })
+  }, [searchParamsKey, statisticsQueryInput, pathname, router])
 
   // 통계 데이터 계산 (예약 통계 탭에서만 필요 — 다른 탭에서 대량 예약 순회 시 메인 스레드 정지 방지)
   const statisticsData = useMemo((): StatisticsData => {

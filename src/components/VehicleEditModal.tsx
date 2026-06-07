@@ -5,6 +5,17 @@ import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Se
 import { supabase } from '@/lib/supabase'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { VEHICLE_STATUS_SELECT_OPTIONS } from '@/lib/vehicleStatus'
+import {
+  MAINTENANCE_DUTY_PRESET_IDS,
+  maintenanceDutyPresetMeta,
+  suggestedEngineOilCycleForPreset,
+} from '@/lib/vehicleMaintenanceDutyPresets'
+import {
+  FUEL_TYPE_LABELS,
+  MAINTENANCE_CLASS_LABELS,
+  MAINTENANCE_VEHICLE_CLASSES,
+  VEHICLE_FUEL_TYPES,
+} from '@/lib/vehicleMaintenanceApplicability'
 import VehicleTypeManagementModal from './VehicleTypeManagementModal'
 
 interface Vehicle {
@@ -21,6 +32,9 @@ interface Vehicle {
   engine_oil_change_cycle: number
   current_mileage: number
   recent_engine_oil_change_mileage: number
+  maintenance_duty_preset?: string
+  fuel_type?: string
+  maintenance_vehicle_class?: string
   status: string
   front_tire_size?: string
   rear_tire_size?: string
@@ -76,6 +90,9 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     engine_oil_change_cycle: 10000,
     current_mileage: 0,
     recent_engine_oil_change_mileage: 0,
+    maintenance_duty_preset: 'tour_highway_severe',
+    fuel_type: 'diesel',
+    maintenance_vehicle_class: 'diesel_van',
     front_tire_size: '',
     rear_tire_size: '',
     windshield_wiper_size: '',
@@ -291,6 +308,11 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         engine_oil_change_cycle: vehicle.engine_oil_change_cycle || 10000,
         current_mileage: vehicle.current_mileage || 0,
         recent_engine_oil_change_mileage: vehicle.recent_engine_oil_change_mileage || 0,
+        maintenance_duty_preset:
+          vehicle.maintenance_duty_preset ||
+          (vehicle.vehicle_category === 'company' ? 'tour_highway_severe' : 'standard'),
+        fuel_type: vehicle.fuel_type || 'diesel',
+        maintenance_vehicle_class: vehicle.maintenance_vehicle_class || 'diesel_van',
         installment_amount: vehicle.installment_amount || 0,
         interest_rate: vehicle.interest_rate || 0,
         monthly_payment: vehicle.monthly_payment || 0,
@@ -343,6 +365,9 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         engine_oil_change_cycle: 10000,
         current_mileage: 0,
         recent_engine_oil_change_mileage: 0,
+        maintenance_duty_preset: 'standard',
+        fuel_type: 'diesel',
+        maintenance_vehicle_class: 'diesel_van',
         front_tire_size: '',
         rear_tire_size: '',
         windshield_wiper_size: '',
@@ -389,19 +414,72 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       setFormData(prev => ({
         ...prev,
         [name]: value,
-        status: 'available'
+        status: 'available',
+        ...(value === 'company'
+          ? {
+              maintenance_duty_preset:
+                prev.maintenance_duty_preset && prev.maintenance_duty_preset !== 'standard'
+                  ? prev.maintenance_duty_preset
+                  : 'tour_highway_severe',
+            }
+          : {}),
       }))
+    } else if (name === 'maintenance_duty_preset') {
+      setFormData(prev => {
+        const suggested = suggestedEngineOilCycleForPreset(value, prev.fuel_type)
+        return {
+          ...prev,
+          maintenance_duty_preset: value,
+          ...(suggested != null ? { engine_oil_change_cycle: suggested } : {}),
+        }
+      })
+    } else if (name === 'fuel_type') {
+      setFormData(prev => {
+        const suggested = suggestedEngineOilCycleForPreset(prev.maintenance_duty_preset, value)
+        let nextClass = prev.maintenance_vehicle_class ?? 'diesel_van'
+        if (value === 'gasoline') {
+          if (nextClass === 'diesel_van' || nextClass === 'motorcoach') {
+            nextClass = 'minivan'
+          }
+        } else if (value === 'diesel') {
+          if (nextClass === 'minivan' || nextClass === 'minibus') {
+            nextClass = 'diesel_van'
+          }
+        }
+        return {
+          ...prev,
+          fuel_type: value,
+          maintenance_vehicle_class: nextClass,
+          ...(suggested != null ? { engine_oil_change_cycle: suggested } : {}),
+        }
+      })
     } else if (name === 'vehicle_type') {
       // 차종 선택 시 자동으로 탑승 인원 설정 및 이미지 가져오기
       const selectedType = vehicleTypes.find(type => type.name === value)
+      const typeLower = value.toLowerCase()
+      const isSedona = typeLower.includes('sedona')
+      const isTransit = typeLower.includes('transit')
       setFormData(prev => {
         const nextCategory = selectedType ? selectedType.vehicle_category : prev.vehicle_category
+        const fuelPatch =
+          isSedona || isTransit
+            ? {
+                fuel_type: 'gasoline' as const,
+                maintenance_vehicle_class: isSedona ? 'minivan' : 'minibus',
+              }
+            : {}
+        const suggested = suggestedEngineOilCycleForPreset(
+          prev.maintenance_duty_preset,
+          fuelPatch.fuel_type ?? prev.fuel_type
+        )
         return {
           ...prev,
           [name]: value,
           capacity: selectedType ? selectedType.passenger_capacity : prev.capacity,
           vehicle_category: nextCategory,
-          status: 'available'
+          status: 'available',
+          ...fuelPatch,
+          ...(suggested != null ? { engine_oil_change_cycle: suggested } : {}),
         }
       })
       
@@ -1180,6 +1258,68 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                       관리 정보
                     </h4>
                     <div className="space-y-3 sm:space-y-4">
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">연료</label>
+                        <select
+                          name="fuel_type"
+                          value={formData.fuel_type ?? 'diesel'}
+                          onChange={handleInputChange}
+                          className={fieldClass}
+                        >
+                          {VEHICLE_FUEL_TYPES.map((id) => (
+                            <option key={id} value={id}>
+                              {FUEL_TYPE_LABELS[id].ko}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">정비 차급</label>
+                        <select
+                          name="maintenance_vehicle_class"
+                          value={formData.maintenance_vehicle_class ?? 'diesel_van'}
+                          onChange={handleInputChange}
+                          className={fieldClass}
+                        >
+                          {MAINTENANCE_VEHICLE_CLASSES.filter((id) => {
+                            if (formData.fuel_type === 'gasoline') {
+                              return id === 'minivan' || id === 'minibus'
+                            }
+                            return id === 'diesel_van' || id === 'motorcoach'
+                          }).map((id) => (
+                            <option key={id} value={id}>
+                              {MAINTENANCE_CLASS_LABELS[id].ko}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">정비 주기 프리셋</label>
+                      <select
+                        name="maintenance_duty_preset"
+                        value={formData.maintenance_duty_preset ?? 'tour_highway_severe'}
+                        onChange={handleInputChange}
+                        className={fieldClass}
+                      >
+                        {MAINTENANCE_DUTY_PRESET_IDS.map((id) => {
+                          const meta = maintenanceDutyPresetMeta(id)
+                          return (
+                            <option key={id} value={id}>
+                              {meta.labelKo}
+                            </option>
+                          )
+                        })}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {maintenanceDutyPresetMeta(formData.maintenance_duty_preset).descriptionKo}
+                        {' · '}
+                        곧 점검 알림: {maintenanceDutyPresetMeta(formData.maintenance_duty_preset).dueSoonMiles.toLocaleString()} mi 전
+                      </p>
+                    </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700">엔진오일 교체 주기 (miles)</label>

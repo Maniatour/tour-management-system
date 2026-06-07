@@ -7,6 +7,7 @@ import { lvSubmitOnBoundsFromYmdFilter } from '@/lib/lasVegasCalendar'
 import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import { Database } from '@/lib/database.types'
+import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMileage'
 
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
 
@@ -46,9 +47,9 @@ async function applyCompanyExpenseListFilters(
     q = q.eq('paid_for', params.paidFor.trim())
   }
   if (params.standardPaidFor === 'set') {
-    q = q.not('standard_paid_for', 'is', null)
+    q = q.not('standard_paid_for', 'is', null).neq('standard_paid_for', '')
   } else if (params.standardPaidFor === 'unset') {
-    q = q.is('standard_paid_for', null)
+    q = q.or('standard_paid_for.is.null,standard_paid_for.eq.')
   }
   const submitOnBounds = lvSubmitOnBoundsFromYmdFilter(params.dateFrom, params.dateTo)
   if (submitOnBounds.gte) {
@@ -267,6 +268,7 @@ export async function POST(request: NextRequest) {
       reimbursed_amount: reimbursedAmountBody,
       reimbursed_on: reimbursedOnBody,
       reimbursement_note: reimbursementNoteBody,
+      mileage,
     } = body
     
     // 필수: 결제처·금액·제출자·결제수단 (paid_for는 선택 — 빈 문자열 저장 가능)
@@ -347,6 +349,12 @@ export async function POST(request: NextRequest) {
       console.error('회사 지출 생성 오류:', error)
       return NextResponse.json({ error: '회사 지출을 생성할 수 없습니다.' }, { status: 500 })
     }
+
+    await applyCompanyExpenseVehicleMileage(supabase, {
+      expenseId: data.id,
+      vehicleId: vehicle_id,
+      mileage,
+    })
     
     return NextResponse.json({ data }, { status: 201 })
   } catch (error) {

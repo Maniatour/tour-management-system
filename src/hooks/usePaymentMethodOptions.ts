@@ -22,6 +22,8 @@ export type PaymentMethodOption = {
   method_type: string | null
   user_email: string | null
   status: string | null
+  /** 직원·금융 계정 등 연결 표시명 */
+  linkedName?: string | null
 }
 
 type TeamRow = {
@@ -104,9 +106,21 @@ export function usePaymentMethodOptions() {
         map[pm.id] = name
         map[pm.method] = name
         const faId = pm.financial_account_id ? String(pm.financial_account_id).trim() : ''
+        let linkedName: string | null = null
         if (faId) {
           const faName = faNameById.get(faId)
           if (faName) faNameByPmId[pm.id] = faName
+        }
+        const faName = faId ? faNameById.get(faId) : undefined
+        const person =
+          (team?.nick_name && team.nick_name.trim()) ||
+          (team?.name_ko && team.name_ko.trim()) ||
+          (team?.name_en && team.name_en.trim()) ||
+          ''
+        if (person && !name.includes(person)) {
+          linkedName = person
+        } else if (faName && !name.includes(faName)) {
+          linkedName = faName
         }
         options.push({
           id: pm.id,
@@ -115,6 +129,7 @@ export function usePaymentMethodOptions() {
           method_type: pm.method_type,
           user_email: pm.user_email,
           status: pm.status,
+          linkedName,
         })
       })
 

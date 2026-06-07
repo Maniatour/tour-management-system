@@ -853,10 +853,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         </div>
       </header>
 
-      {/* 모바일 사이드바 오버레이 */}
+      {/* 모바일 사이드바 오버레이 — ScheduleView 날짜 sticky z-[1010]보다 위 */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 lg:hidden"
+          className="fixed inset-0 z-[1040] lg:hidden"
           onClick={() => setSidebarOpen(false)}
         >
           <div className="fixed inset-0 bg-gray-600 bg-opacity-75" />
@@ -864,7 +864,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       )}
 
       {/* 모바일 사이드바 */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${
+      <div className={`fixed inset-y-0 left-0 z-[1050] w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 flex-shrink-0">

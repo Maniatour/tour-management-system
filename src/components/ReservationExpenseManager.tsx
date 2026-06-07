@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon } from 'lucide-react'
+import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Search, Receipt, Image as ImageIcon, ListOrdered } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useTranslations, useLocale } from 'next-intl'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { PaymentMethodAutocomplete } from '@/components/expense/PaymentMethodAutocomplete'
+import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
 import { isAmountSearchQuery, matchesAmountSearch } from '@/lib/amountSearch'
 import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseReimbursement'
@@ -61,6 +63,7 @@ interface ReservationExpense {
 interface ExpenseVendor {
   id: string
   name: string
+  usage_type?: string | null
 }
 
 interface Reservation {
@@ -224,6 +227,7 @@ export default function ReservationExpenseManager({
   const [reconciledReservationIds, setReconciledReservationIds] = useState<Set<string>>(() => new Set())
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [vendorManagerOpen, setVendorManagerOpen] = useState(false)
   const [tableSortKey, setTableSortKey] = useState<string>('submit_on')
   const [tableSortDir, setTableSortDir] = useState<SortDir>('desc')
   const [adminListPage, setAdminListPage] = useState(1)
@@ -343,11 +347,13 @@ export default function ReservationExpenseManager({
     try {
       const { data, error } = await supabase
         .from('expense_vendors')
-        .select('*')
+        .select('id, name, usage_type')
         .order('name')
 
       if (error) throw error
-      setPaidToOptions(data?.map((v: ExpenseVendor) => v.name) || [])
+      setPaidToOptions(
+        data?.filter((v: ExpenseVendor) => v.usage_type !== 'one_time').map((v: ExpenseVendor) => v.name) || []
+      )
     } catch (error) {
       if (!isAbortLikeError(error)) {
         console.error('Error loading vendors:', error)
@@ -468,11 +474,11 @@ export default function ReservationExpenseManager({
         try {
           const { data: newVendor } = await supabase
             .from('expense_vendors')
-            .insert({ name: formData.custom_paid_to } as any)
+            .insert({ name: formData.custom_paid_to, usage_type: 'one_time' } as any)
             .select()
             .single()
           
-          if (newVendor) {
+          if (newVendor && (newVendor as ExpenseVendor).usage_type !== 'one_time') {
             setPaidToOptions(prev => [...prev, (newVendor as ExpenseVendor).name])
           }
         } catch (error) {
@@ -875,10 +881,13 @@ export default function ReservationExpenseManager({
           va = reservationCustomerLabel(a) ?? ''
           vb = reservationCustomerLabel(b) ?? ''
           break
-        case 'deposit':
-          va = a.reservation_payments_total ?? null
-          vb = b.reservation_payments_total ?? null
+        case 'payment_method': {
+          const pmA = a.payment_method?.trim() || ''
+          const pmB = b.payment_method?.trim() || ''
+          va = pmA ? paymentMethodMap[pmA] || pmA : ''
+          vb = pmB ? paymentMethodMap[pmB] || pmB : ''
           break
+        }
         case 'amount':
           va = a.amount
           vb = b.amount
@@ -906,7 +915,7 @@ export default function ReservationExpenseManager({
       return compareSortValues(va, vb, tableSortDir, sortLocale)
     })
     return rows
-  }, [displayExpenses, tableSortKey, tableSortDir, sortLocale, teamMembers, reservationCustomerLabel])
+  }, [displayExpenses, tableSortKey, tableSortDir, sortLocale, teamMembers, reservationCustomerLabel, paymentMethodMap])
 
   const adminListTotalPages = useMemo(
     () => reservationExpenseTotalPages(sortedDisplayExpenses.length, adminListPageSize),
@@ -968,9 +977,10 @@ export default function ReservationExpenseManager({
     setStmtReconOpen(true)
   }, [])
 
-  const formatDepositCell = (v: number | null | undefined) => {
-    if (v == null) return '—'
-    return formatCurrency(v)
+  const paymentMethodLabel = (pmId: string | null | undefined) => {
+    const id = pmId?.trim()
+    if (!id) return '—'
+    return paymentMethodMap[id] || id
   }
 
   const resetAdminFilters = () => {
@@ -995,15 +1005,27 @@ export default function ReservationExpenseManager({
       {adminList && (
         <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-            <div className="flex-1 relative min-w-0">
-              <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
-              <input
-                type="text"
-                placeholder={t('searchPlaceholder')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-              />
+            <div className="flex flex-1 gap-2 min-w-0">
+              <div className="flex-1 relative min-w-0">
+                <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
+                <input
+                  type="text"
+                  placeholder={t('searchPlaceholder')}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0 text-sm py-1.5 sm:py-2 px-3 border-gray-300 flex items-center gap-1.5 bg-white"
+                onClick={() => setVendorManagerOpen(true)}
+              >
+                <ListOrdered className="w-4 h-4" />
+                <span className="hidden sm:inline">결제처 정리</span>
+                <span className="sm:hidden">결제처</span>
+              </Button>
             </div>
             <button
               type="button"
@@ -1562,8 +1584,8 @@ export default function ReservationExpenseManager({
                         <span className="truncate">{reservationCustomerLabel(expense)}</span>
                       </>
                     )}
-                    <span className="text-gray-400">{t('depositPaymentsTotal')}</span>
-                    <span className="font-medium text-blue-800">{formatDepositCell(expense.reservation_payments_total)}</span>
+                    <span className="text-gray-400">{t('form.paymentMethod')}</span>
+                    <span className="truncate">{paymentMethodLabel(expense.payment_method)}</span>
                   </div>
                   <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
                     {expense.image_url && expense.image_url.trim() !== '' && (
@@ -1632,19 +1654,13 @@ export default function ReservationExpenseManager({
                         onClick={() => handleReservationTableSort('reservation')}
                       />
                     </th>
-                    <th
-                      className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom"
-                      title={t('depositPaymentsTotalHint')}
-                    >
-                      <div className="flex justify-end">
-                        <TableSortHeaderButton
-                          label={t('depositPaymentsTotal')}
-                          active={tableSortKey === 'deposit'}
-                          dir={tableSortDir}
-                          onClick={() => handleReservationTableSort('deposit')}
-                          className="text-right"
-                        />
-                      </div>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider align-bottom">
+                      <TableSortHeaderButton
+                        label={t('form.paymentMethod')}
+                        active={tableSortKey === 'payment_method'}
+                        dir={tableSortDir}
+                        onClick={() => handleReservationTableSort('payment_method')}
+                      />
                     </th>
                     <th className="px-4 py-3 text-right text-xs uppercase tracking-wider align-bottom">
                       <div className="flex justify-end">
@@ -1696,8 +1712,8 @@ export default function ReservationExpenseManager({
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate">
                         {reservationCustomerLabel(expense) ?? '—'}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-right text-blue-800">
-                        {formatDepositCell(expense.reservation_payments_total)}
+                      <td className="px-4 py-3 text-sm text-gray-900 max-w-[160px] truncate">
+                        {paymentMethodLabel(expense.payment_method)}
                       </td>
                       <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium text-right ${amountDisplayClass(expense.amount)}`}>
                         {formatCurrency(expense.amount)}
@@ -2103,6 +2119,12 @@ export default function ReservationExpenseManager({
         }}
         context={stmtReconCtx}
         onApplied={() => void loadExpenses()}
+      />
+
+      <ExpenseVendorManagerModal
+        open={vendorManagerOpen}
+        onOpenChange={setVendorManagerOpen}
+        onUpdated={() => void loadVendors()}
       />
     </div>
   )

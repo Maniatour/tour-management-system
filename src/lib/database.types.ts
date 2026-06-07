@@ -2888,16 +2888,19 @@ export type Database = {
           created_at: string | null
           id: string
           name: string
+          usage_type: string
         }
         Insert: {
           created_at?: string | null
           id?: string
           name: string
+          usage_type?: string
         }
         Update: {
           created_at?: string | null
           id?: string
           name?: string
+          usage_type?: string
         }
         Relationships: []
       }
@@ -9400,6 +9403,136 @@ export type Database = {
           },
         ]
       }
+      vehicle_maintenance_catalog: {
+        Row: {
+          code: string
+          label_ko: string
+          label_en: string | null
+          category_group: string
+          default_mileage_interval: number | null
+          default_month_interval: number | null
+          interval_kind: string
+          legacy_subcategory: string | null
+          sort_order: number
+          is_active: boolean
+          notes_ko: string | null
+          notes_en: string | null
+          applicable_fuel_types: string[] | null
+          applicable_vehicle_classes: string[] | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          label_ko: string
+          label_en?: string | null
+          category_group: string
+          default_mileage_interval?: number | null
+          default_month_interval?: number | null
+          interval_kind?: string
+          legacy_subcategory?: string | null
+          sort_order?: number
+          is_active?: boolean
+          notes_ko?: string | null
+          notes_en?: string | null
+          applicable_fuel_types?: string[] | null
+          applicable_vehicle_classes?: string[] | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          label_ko?: string
+          label_en?: string | null
+          category_group?: string
+          default_mileage_interval?: number | null
+          default_month_interval?: number | null
+          interval_kind?: string
+          legacy_subcategory?: string | null
+          sort_order?: number
+          is_active?: boolean
+          notes_ko?: string | null
+          notes_en?: string | null
+          applicable_fuel_types?: string[] | null
+          applicable_vehicle_classes?: string[] | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      vehicle_maintenance_schedules: {
+        Row: {
+          id: string
+          vehicle_id: string
+          catalog_code: string
+          is_enabled: boolean
+          custom_mileage_interval: number | null
+          custom_month_interval: number | null
+          last_service_date: string | null
+          last_service_mileage: number | null
+          next_due_mileage: number | null
+          next_due_date: string | null
+          notes: string | null
+          last_maintenance_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          vehicle_id: string
+          catalog_code: string
+          is_enabled?: boolean
+          custom_mileage_interval?: number | null
+          custom_month_interval?: number | null
+          last_service_date?: string | null
+          last_service_mileage?: number | null
+          next_due_mileage?: number | null
+          next_due_date?: string | null
+          notes?: string | null
+          last_maintenance_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          vehicle_id?: string
+          catalog_code?: string
+          is_enabled?: boolean
+          custom_mileage_interval?: number | null
+          custom_month_interval?: number | null
+          last_service_date?: string | null
+          last_service_mileage?: number | null
+          next_due_mileage?: number | null
+          next_due_date?: string | null
+          notes?: string | null
+          last_maintenance_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicle_maintenance_schedules_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicle_maintenance_schedules_catalog_code_fkey"
+            columns: ["catalog_code"]
+            isOneToOne: false
+            referencedRelation: "vehicle_maintenance_catalog"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "vehicle_maintenance_schedules_last_maintenance_id_fkey"
+            columns: ["last_maintenance_id"]
+            isOneToOne: false
+            referencedRelation: "vehicle_maintenance"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vehicle_photo_templates: {
         Row: {
           created_at: string | null
@@ -9602,6 +9735,7 @@ export type Database = {
           current_mileage: number | null
           daily_rate: number | null
           engine_oil_change_cycle: number | null
+          fuel_type: string
           front_tire_size: string | null
           headlight_model: string | null
           headlight_model_name: string | null
@@ -9611,6 +9745,8 @@ export type Database = {
           installment_start_date: string | null
           interest_rate: number | null
           is_installment: boolean | null
+          maintenance_duty_preset: string
+          maintenance_vehicle_class: string
           memo: string | null
           mileage_at_purchase: number | null
           monthly_payment: number | null
@@ -9644,6 +9780,7 @@ export type Database = {
           current_mileage?: number | null
           daily_rate?: number | null
           engine_oil_change_cycle?: number | null
+          fuel_type?: string
           front_tire_size?: string | null
           headlight_model?: string | null
           headlight_model_name?: string | null
@@ -9653,6 +9790,8 @@ export type Database = {
           installment_start_date?: string | null
           interest_rate?: number | null
           is_installment?: boolean | null
+          maintenance_duty_preset?: string
+          maintenance_vehicle_class?: string
           memo?: string | null
           mileage_at_purchase?: number | null
           monthly_payment?: number | null
@@ -9686,6 +9825,7 @@ export type Database = {
           current_mileage?: number | null
           daily_rate?: number | null
           engine_oil_change_cycle?: number | null
+          fuel_type?: string
           front_tire_size?: string | null
           headlight_model?: string | null
           headlight_model_name?: string | null
@@ -9695,6 +9835,8 @@ export type Database = {
           installment_start_date?: string | null
           interest_rate?: number | null
           is_installment?: boolean | null
+          maintenance_duty_preset?: string
+          maintenance_vehicle_class?: string
           memo?: string | null
           mileage_at_purchase?: number | null
           monthly_payment?: number | null

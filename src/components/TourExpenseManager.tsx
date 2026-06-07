@@ -86,6 +86,7 @@ interface ExpenseCategory {
 interface ExpenseVendor {
   id: string
   name: string
+  usage_type?: string | null
 }
 
 type ReceiptOcrResult = {
@@ -851,7 +852,7 @@ export default function TourExpenseManager({
     }
   }
 
-  // 벤더 목록 및 paid_to 옵션 로드
+  // 벤더 목록 및 paid_to 옵션 로드 (선택지: 재사용 결제처만)
   const loadVendors = async () => {
     try {
       const { data, error } = await supabase
@@ -860,74 +861,9 @@ export default function TourExpenseManager({
         .order('name')
 
       if (error) throw error
-      setVendors(data || [])
-
-      // Load all unique paid_to values from tour_expenses table
-      const { data: paidToData, error: paidToError } = await supabase
-        .from('tour_expenses')
-        .select('paid_to')
-        .not('paid_to', 'is', null)
-        .neq('paid_to', '')
-
-      if (paidToError) throw paidToError
-      
-      // Normalize function: remove spaces and convert to lowercase for comparison
-      const normalize = (str: string): string => {
-        return str.toLowerCase().replace(/\s+/g, '').trim()
-      }
-      
-      // First pass: count occurrences of each original value
-      const originalCounts: { [key: string]: number } = {}
-      paidToData?.forEach(item => {
-        if (item.paid_to) {
-          originalCounts[item.paid_to] = (originalCounts[item.paid_to] || 0) + 1
-        }
-      })
-      
-      // Second pass: group by normalized value and track the most common original
-      const normalizedGroups: { [normalized: string]: { original: string; totalCount: number; variants: { [original: string]: number } } } = {}
-      
-      Object.keys(originalCounts).forEach(original => {
-        const normalized = normalize(original)
-        const count = originalCounts[original]
-        
-        if (!normalizedGroups[normalized]) {
-          normalizedGroups[normalized] = {
-            original: original,
-            totalCount: count,
-            variants: { [original]: count }
-          }
-        } else {
-          // Add this variant
-          normalizedGroups[normalized].variants[original] = count
-          normalizedGroups[normalized].totalCount += count
-          
-          // Update the representative original to the most common variant
-          const currentRep = normalizedGroups[normalized].original
-          if (count > normalizedGroups[normalized].variants[currentRep]) {
-            normalizedGroups[normalized].original = original
-          }
-        }
-      })
-      
-      // Convert to array and sort by total usage frequency (descending), then alphabetically for same frequency
-      const uniquePaidToValues = Object.values(normalizedGroups)
-        .map(group => group.original)
-        .sort((a, b) => {
-          const normalizedA = normalize(a)
-          const normalizedB = normalize(b)
-          const countA = normalizedGroups[normalizedA].totalCount
-          const countB = normalizedGroups[normalizedB].totalCount
-          
-          const countDiff = countB - countA
-          if (countDiff !== 0) {
-            return countDiff // Sort by frequency first
-          }
-          // If same frequency, sort alphabetically
-          return a.toLowerCase().localeCompare(b.toLowerCase())
-        })
-      
-      setPaidToOptions(uniquePaidToValues)
+      const rows = (data || []) as ExpenseVendor[]
+      setVendors(rows)
+      setPaidToOptions(rows.filter((v) => v.usage_type !== 'one_time').map((v) => v.name))
     } catch (error) {
       console.error('Error loading vendors:', error)
     }
@@ -1034,11 +970,11 @@ export default function TourExpenseManager({
       if (formData.custom_paid_to && !vendors.find(v => v.name === formData.custom_paid_to)) {
         const { data: newVendor } = await supabase
           .from('expense_vendors')
-          .insert({ name: formData.custom_paid_to })
+          .insert({ name: formData.custom_paid_to, usage_type: 'one_time' })
           .select()
           .single()
-        if (newVendor) {
-          setVendors(prev => [...prev, newVendor])
+        if (newVendor && (newVendor as ExpenseVendor).usage_type !== 'one_time') {
+          setVendors(prev => [...prev, newVendor as ExpenseVendor])
         }
       }
       

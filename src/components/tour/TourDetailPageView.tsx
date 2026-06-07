@@ -1879,39 +1879,25 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
       })()}
 
       {/* 투어 정보 인쇄 모달 (팀/픽업/부킹, Letter) */}
-      {(() => {
-        const teamType = tourData.teamType
-        const secondMemberLabel =
-          teamType === 'guide+driver'
-            ? (locale === 'ko' ? '드라이버' : 'Driver')
-            : teamType === '2guide'
-              ? (locale === 'ko' ? '2차 가이드' : '2nd Guide')
-              : (locale === 'ko' ? '어시스턴트' : 'Assistant')
-        return (
-          <TourPrintModal
-            isOpen={showTourPrintModal}
-            onClose={() => setShowTourPrintModal(false)}
-            locale={locale}
-            tourDate={tourData.tour?.tour_date || ''}
-            productName={
-              (locale === 'ko'
-                ? tourData.product?.name_ko || tourData.product?.name_en
-                : tourData.product?.name_en || tourData.product?.name_ko) || ''
-            }
-            guideName={tourData.selectedGuide ? tourData.getTeamMemberName(tourData.selectedGuide) : null}
-            secondMemberLabel={tourData.selectedAssistant ? secondMemberLabel : null}
-            secondMemberName={
-              tourData.selectedAssistant ? tourData.getTeamMemberName(tourData.selectedAssistant) : null
-            }
-            vehicleLabel={tourData.selectedVehicleId ? getVehicleName(tourData.selectedVehicleId) : null}
-            assignedReservations={tourData.assignedReservations}
-            pickupHotels={tourData.pickupHotels}
-            getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || ''}
-            ticketBookings={filteredTicketBookings}
-            tourHotelBookings={tourHotelBookings}
-          />
-        )
-      })()}
+      <TourPrintModal
+        isOpen={showTourPrintModal}
+        onClose={() => setShowTourPrintModal(false)}
+        locale={locale}
+        tourDate={tourData.tour?.tour_date || ''}
+        productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
+        productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
+        guideName={tourData.selectedGuide ? tourData.getTeamMemberName(tourData.selectedGuide) : null}
+        teamType={tourData.teamType}
+        secondMemberName={
+          tourData.selectedAssistant ? tourData.getTeamMemberName(tourData.selectedAssistant) : null
+        }
+        vehicleLabel={tourData.selectedVehicleId ? getVehicleName(tourData.selectedVehicleId) : null}
+        assignedReservations={tourData.assignedReservations}
+        pickupHotels={tourData.pickupHotels}
+        getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || ''}
+        ticketBookings={filteredTicketBookings}
+        tourHotelBookings={tourHotelBookings}
+      />
 
       <div className="px-0 py-6 pb-24 lg:pb-6">
         {/* 4열 그리드 레이아웃 */}

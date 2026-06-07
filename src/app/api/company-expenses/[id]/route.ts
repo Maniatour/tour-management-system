@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { softDeleteExpenseRecord } from '@/lib/expense-soft-delete'
+import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMileage'
 import { Database } from '@/lib/database.types'
 
 type CompanyExpenseUpdate = Database['public']['Tables']['company_expenses']['Update']
@@ -88,6 +89,7 @@ export async function PUT(
       reimbursed_amount: reimbursedAmountBody,
       reimbursed_on: reimbursedOnBody,
       reimbursement_note: reimbursementNoteBody,
+      mileage,
     } = body
 
     const paymentMethodTrimmed =
@@ -180,6 +182,12 @@ export async function PUT(
       console.error('회사 지출 수정 오류:', error)
       return NextResponse.json({ error: '회사 지출을 수정할 수 없습니다.' }, { status: 500 })
     }
+
+    await applyCompanyExpenseVehicleMileage(supabase, {
+      expenseId: id,
+      vehicleId: vehicle_id,
+      mileage,
+    })
 
     return NextResponse.json({ data })
   } catch (error) {

@@ -34,6 +34,19 @@ type TeamCardPaymentMethodRow = Pick<
   'id' | 'method' | 'display_name' | 'status' | 'method_type' | 'user_email' | 'card_holder_name'
 >
 
+/** DB 저장값(영문) + 모달 셀렉트용 한·영 라벨 */
+const TEAM_POSITION_OPTIONS = [
+  { value: 'manager', labelKo: '매니저', labelEn: 'manager' },
+  { value: 'admin', labelKo: '관리자', labelEn: 'admin' },
+  { value: 'tour guide', labelKo: '투어 가이드', labelEn: 'tour guide' },
+  { value: 'driver', labelKo: '운전기사', labelEn: 'driver' },
+  { value: 'op', labelKo: '운영자', labelEn: 'op' },
+] as const
+
+function teamPositionOptionLabel(ko: string, en: string) {
+  return `${ko} (${en})`
+}
+
 /** Supabase public URL → documents 버킷 객체 경로 (관리형 프로필 삭제용) */
 function documentsBucketPathFromPublicUrl(publicUrl: string): string | null {
   const u = publicUrl.trim()
@@ -1591,12 +1604,12 @@ function TeamMemberForm({
                 onChange={(e) => setFormData({...formData, position: e.target.value})}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
               >
-                <option value="">직책 선택</option>
-                <option value="manager">매니저</option>
-                <option value="admin">관리자</option>
-                <option value="tour guide">투어 가이드</option>
-                <option value="driver">운전기사</option>
-                <option value="op">운영자</option>
+                <option value="">직책 선택 (Select position)</option>
+                {TEAM_POSITION_OPTIONS.map(({ value, labelKo, labelEn }) => (
+                  <option key={value} value={value}>
+                    {teamPositionOptionLabel(labelKo, labelEn)}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

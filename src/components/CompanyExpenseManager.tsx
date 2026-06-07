@@ -38,8 +38,12 @@ import {
   Wrench,
   BarChart3,
   BookOpen,
+  ListOrdered,
 } from 'lucide-react'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
+import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
+import type { ExpenseVendorRecord } from '@/lib/expenseVendors'
+import { isReusableExpenseVendor } from '@/lib/expenseVendors'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-similar-lines'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
@@ -72,7 +76,7 @@ import { parseReimbursedAmount, reimbursementOutstanding } from '@/lib/expenseRe
 import { cn } from '@/lib/utils'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import { paidForComboboxHelpWhenStandardUnset } from '@/lib/companyExpenseFormCopy'
-import { collectPaidForFromStandardUnsetExpenses } from '@/lib/companyExpensePaidForSuggestions'
+import { collectPaidForFromStandardUnsetExpenses, collectPaidForFilterOptions } from '@/lib/companyExpensePaidForSuggestions'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 import ReservationExpenseTabPager, {
   RESERVATION_EXPENSE_PAGE_SIZES,
@@ -126,6 +130,8 @@ interface CompanyExpenseFormData {
   category: string
   subcategory: string
   vehicle_id: string
+  /** 차량 선택 시 입력 — vehicles.current_mileage 및 연결 정비 기록에 반영 */
+  mileage: string
   maintenance_type: string
   notes: string
   expense_type: string
@@ -210,6 +216,9 @@ export default function CompanyExpenseManager({
     paid_for_standard_unset: string[]
   } | null>(null)
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [expenseVendors, setExpenseVendors] = useState<ExpenseVendorRecord[]>([])
+  const [vendorManagerOpen, setVendorManagerOpen] = useState(false)
+  const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
   /** reconciliation_matches에 연결된 회사 지출 id */
   const [reconciledExpenseIds, setReconciledExpenseIds] = useState<Set<string>>(() => new Set())
   const [vehicleMaintenanceOpen, setVehicleMaintenanceOpen] = useState(false)
@@ -282,6 +291,7 @@ export default function CompanyExpenseManager({
     category: '',
     subcategory: '',
     vehicle_id: '',
+    mileage: '',
     maintenance_type: '',
     notes: '',
     expense_type: '',
@@ -501,11 +511,30 @@ export default function CompanyExpenseManager({
     void loadExpenseStandardCategories()
   }, [loadExpenseStandardCategories])
 
+  const loadExpenseVendors = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('expense_vendors').select('id, name, usage_type').order('name')
+      if (error) throw error
+      setExpenseVendors(
+        ((data ?? []) as Array<{ id: string; name: string; usage_type?: string | null }>).map((row) => ({
+          id: row.id,
+          name: row.name,
+          usage_type: row.usage_type === 'one_time' ? 'one_time' : 'reusable',
+        }))
+      )
+    } catch (error) {
+      if (!isAbortError(error)) {
+        console.error('결제처 목록 로드 오류:', error)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     loadExpenses()
     loadVehicles()
     loadTeamMembers()
-  }, [loadExpenses, loadVehicles, loadTeamMembers])
+    void loadExpenseVendors()
+  }, [loadExpenses, loadVehicles, loadTeamMembers, loadExpenseVendors])
 
   useEffect(() => {
     let cancelled = false
@@ -542,15 +571,21 @@ export default function CompanyExpenseManager({
     }
   }, [t])
 
-  const paidToDatalistOptions = useMemo(() => {
+  const reusablePaidToOptions = useMemo(() => {
     const s = new Set<string>()
-    expenseSuggestions?.paid_to?.forEach((x) => {
-      if (x) s.add(x)
+    expenseVendors.filter(isReusableExpenseVendor).forEach((v) => {
+      if (v.name) s.add(v.name)
     })
+    return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [expenseVendors])
+
+  /** 직접 입력 시 datalist 힌트 (재사용 + 현재 값) */
+  const paidToDatalistOptions = useMemo(() => {
+    const s = new Set(reusablePaidToOptions)
     const cur = formData.paid_to.trim()
     if (cur) s.add(cur)
     return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
-  }, [expenseSuggestions, formData.paid_to])
+  }, [reusablePaidToOptions, formData.paid_to])
 
   const unifiedStandardGroups: UnifiedStandardLeafGroup[] = useMemo(
     () =>
@@ -794,19 +829,30 @@ export default function CompanyExpenseManager({
   ])
 
   const paidForFilterOptions = useMemo(() => {
-    const s = new Set<string>()
-    if (standardPaidForFilter === 'unset') {
-      collectPaidForFromStandardUnsetExpenses(expenseSuggestions, expenses).forEach((x) => s.add(x))
-    } else {
-      expenseSuggestions?.paid_for?.forEach((x) => {
-        if (x && x.trim()) s.add(x.trim())
-      })
-    }
+    const options = collectPaidForFilterOptions({
+      standardPaidForFilter,
+      expenseSuggestions,
+      expenses,
+    })
+    const s = new Set(options)
     if (paidForFilter && paidForFilter !== 'all' && paidForFilter.trim()) {
       s.add(paidForFilter.trim())
     }
     return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
   }, [expenseSuggestions, expenses, paidForFilter, standardPaidForFilter])
+
+  useEffect(() => {
+    if (paidForFilter === 'all') return
+    if (standardPaidForFilter === 'all') return
+    const allowed = collectPaidForFilterOptions({
+      standardPaidForFilter,
+      expenseSuggestions,
+      expenses,
+    })
+    if (!allowed.includes(paidForFilter)) {
+      setPaidForFilter('all')
+    }
+  }, [standardPaidForFilter, expenseSuggestions, expenses, paidForFilter])
 
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -915,6 +961,20 @@ export default function CompanyExpenseManager({
 
     try {
       setSaving(true)
+
+      const paidToTrim = formData.paid_to.trim()
+      if (
+        paidToTrim &&
+        showCustomPaidTo &&
+        !expenseVendors.some((v) => v.name.toLowerCase() === paidToTrim.toLowerCase())
+      ) {
+        try {
+          await supabase.from('expense_vendors').insert({ name: paidToTrim, usage_type: 'one_time' })
+          await loadExpenseVendors()
+        } catch (vendorErr) {
+          console.warn('결제처 목록 자동 추가 실패:', vendorErr)
+        }
+      }
       
        // 파일 업로드 처리
        let uploadedFileUrls: string[] = []
@@ -1042,6 +1102,7 @@ export default function CompanyExpenseManager({
       category: expense.category ?? '',
       subcategory: expense.subcategory ?? '',
       vehicle_id: expense.vehicle_id ?? '',
+      mileage: vehicleMileagePrefill(expense.vehicle_id ?? ''),
       maintenance_type: expense.maintenance_type ?? '',
       notes: expense.notes ?? '',
       expense_type: expense.expense_type ?? '',
@@ -1074,6 +1135,10 @@ export default function CompanyExpenseManager({
         if (g) setStandardHierarchyLeafId(m)
       }
     }
+    setShowCustomPaidTo(
+      Boolean((expense.paid_to ?? '').trim()) &&
+        !reusablePaidToOptions.includes(expense.paid_to ?? '')
+    )
     setIsDialogOpen(true)
   }
 
@@ -1130,6 +1195,7 @@ export default function CompanyExpenseManager({
       category: '',
       subcategory: '',
       vehicle_id: '',
+      mileage: '',
       maintenance_type: '',
       notes: '',
       expense_type: '',
@@ -1144,6 +1210,7 @@ export default function CompanyExpenseManager({
     setStandardHierarchyLeafId('')
     setStandardLeafConfirmOpen(false)
     setPendingStandardLeafConfirm(null)
+    setShowCustomPaidTo(false)
   }
 
   const getStatusBadge = (status: string | null) => {
@@ -1251,6 +1318,20 @@ export default function CompanyExpenseManager({
   }
 
   const hasUsableVehicleId = (id: string | null | undefined) => Boolean(id && id !== 'none')
+
+  const vehicleMileagePrefill = (vehicleId: string) => {
+    if (!hasUsableVehicleId(vehicleId)) return ''
+    const v = vehicles.find((x) => x.id === vehicleId)
+    return v?.current_mileage != null && v.current_mileage > 0 ? String(v.current_mileage) : ''
+  }
+
+  const handleVehicleIdChange = (value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      vehicle_id: value,
+      mileage: hasUsableVehicleId(value) ? vehicleMileagePrefill(value) : '',
+    }))
+  }
 
   const handleCompanyTableSort = useCallback(
     (key: string) => {
@@ -1656,15 +1737,27 @@ export default function CompanyExpenseManager({
     <div className="space-y-3 sm:space-y-4">
       <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-stretch">
-          <div className="flex-1 relative min-w-0">
-            <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
-            <input
-              type="text"
-              placeholder={t('filters.searchPlaceholder')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
+          <div className="flex flex-1 gap-2 min-w-0">
+            <div className="flex-1 relative min-w-0">
+              <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
+              <input
+                type="text"
+                placeholder={t('filters.searchPlaceholder')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 text-sm py-1.5 sm:py-2 px-3 sm:px-4 border-gray-300 flex items-center gap-1.5"
+              onClick={() => setVendorManagerOpen(true)}
+            >
+              <ListOrdered className="w-4 h-4" />
+              <span className="hidden sm:inline">결제처 정리</span>
+              <span className="sm:hidden">결제처</span>
+            </Button>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:shrink-0">
           <Button
@@ -1705,6 +1798,7 @@ export default function CompanyExpenseManager({
                 setStandardHierarchyLeafId('')
                 setStandardLeafConfirmOpen(false)
                 setPendingStandardLeafConfirm(null)
+                setShowCustomPaidTo(false)
               }
             }}
           >
@@ -1884,57 +1978,100 @@ export default function CompanyExpenseManager({
               <div
                 className={cn(
                   'grid gap-4',
-                  'grid-cols-1 sm:grid-cols-2'
+                  unifiedStandardGroups.length > 0 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'
                 )}
               >
                 <div>
                   <Label htmlFor="paid_to">{t('form.paidTo')} *</Label>
-                  <Input
-                    id="paid_to"
-                    list="company-expense-datalist-paid-to"
-                    autoComplete="off"
-                    value={formData.paid_to}
-                    onChange={(e) => setFormData({ ...formData, paid_to: e.target.value })}
-                    required
-                  />
-                  <datalist id="company-expense-datalist-paid-to">
-                    {paidToDatalistOptions.map((v) => (
-                      <option key={v} value={v} />
-                    ))}
-                  </datalist>
+                  {!showCustomPaidTo ? (
+                    <div className="space-y-2">
+                      <Select
+                        value={formData.paid_to || ''}
+                        onValueChange={(value) => {
+                          if (value === '__custom__') {
+                            setFormData((prev) => ({ ...prev, paid_to: '' }))
+                            setShowCustomPaidTo(true)
+                            return
+                          }
+                          setFormData((prev) => ({ ...prev, paid_to: value }))
+                        }}
+                      >
+                        <SelectTrigger id="paid_to">
+                          <SelectValue placeholder={t('form.suggestOrType')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {reusablePaidToOptions.map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {v}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="__custom__">직접 입력…</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        id="paid_to"
+                        list="company-expense-datalist-paid-to"
+                        autoComplete="off"
+                        value={formData.paid_to}
+                        onChange={(e) => setFormData({ ...formData, paid_to: e.target.value })}
+                        required
+                        placeholder="결제처 직접 입력"
+                      />
+                      <datalist id="company-expense-datalist-paid-to">
+                        {paidToDatalistOptions.map((v) => (
+                          <option key={v} value={v} />
+                        ))}
+                      </datalist>
+                      <button
+                        type="button"
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                        onClick={() => {
+                          setShowCustomPaidTo(false)
+                          setFormData((prev) => ({ ...prev, paid_to: '' }))
+                        }}
+                      >
+                        목록에서 선택
+                      </button>
+                    </div>
+                  )}
                   <p className="text-muted-foreground text-xs mt-1">
-                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.suggestOrType')}
+                    {suggestionsLoading ? t('form.suggestionsLoading') : '목록에서 선택하거나 직접 입력할 수 있습니다.'}
                   </p>
                 </div>
 
-                <div>
-                  <Label htmlFor="paid_for">
-                    {t('form.paidFor')}
-                    <span className="text-muted-foreground font-normal"> · {t('form.paidForOptional')}</span>
-                  </Label>
-                  <Input
-                    id="paid_for"
-                    list="company-expense-datalist-paid-for"
-                    autoComplete="off"
-                    value={formData.paid_for}
-                    onChange={(e) =>
-                      setFormData({ ...formData, paid_for: e.target.value, paid_for_label_id: '' })
-                    }
-                    placeholder={t('form.paidForPlaceholder')}
-                  />
-                  <datalist id="company-expense-datalist-paid-for">
-                    {paidForDatalistOptions.map((v) => (
-                      <option key={v} value={v} />
-                    ))}
-                  </datalist>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    {suggestionsLoading
-                      ? t('form.suggestionsLoading')
-                      : isStandardPaidForUnsetInForm && unifiedStandardGroups.length > 0
-                        ? paidForComboboxHelpWhenStandardUnset(locale)
-                        : t('form.paidForComboboxHelp')}
-                  </p>
-                </div>
+                {unifiedStandardGroups.length === 0 && (
+                  <div>
+                    <Label htmlFor="paid_for">
+                      {t('form.paidFor')}
+                      <span className="text-muted-foreground font-normal"> · {t('form.paidForOptional')}</span>
+                    </Label>
+                    <Input
+                      id="paid_for"
+                      list="company-expense-datalist-paid-for"
+                      autoComplete="off"
+                      value={formData.paid_for}
+                      onChange={(e) =>
+                        setFormData({ ...formData, paid_for: e.target.value, paid_for_label_id: '' })
+                      }
+                      placeholder={t('form.paidForPlaceholder')}
+                    />
+                    <datalist id="company-expense-datalist-paid-for">
+                      {paidForDatalistOptions.map((v) => (
+                        <option key={v} value={v} />
+                      ))}
+                    </datalist>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      {suggestionsLoading
+                        ? t('form.suggestionsLoading')
+                        : isStandardPaidForUnsetInForm && unifiedStandardGroups.length > 0
+                          ? paidForComboboxHelpWhenStandardUnset(locale)
+                          : t('form.paidForComboboxHelp')}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {unifiedStandardGroups.length === 0 && (
@@ -2028,7 +2165,7 @@ export default function CompanyExpenseManager({
                   <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2">
                     <Select
                       value={formData.vehicle_id}
-                      onValueChange={(value) => setFormData({ ...formData, vehicle_id: value })}
+                      onValueChange={handleVehicleIdChange}
                     >
                       <SelectTrigger className="w-full sm:flex-1">
                         <SelectValue placeholder="차량 선택" />
@@ -2055,6 +2192,22 @@ export default function CompanyExpenseManager({
                       </Button>
                     )}
                   </div>
+                  {hasUsableVehicleId(formData.vehicle_id) && (
+                    <div className="mt-2">
+                      <Label htmlFor="mileage">{tVm('form.mileage')}</Label>
+                      <Input
+                        id="mileage"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={formData.mileage}
+                        onChange={(e) => setFormData({ ...formData, mileage: e.target.value })}
+                        placeholder={t('form.mileagePlaceholder')}
+                        className="mt-1"
+                      />
+                      <p className="text-muted-foreground text-xs mt-1">{t('form.mileageHint')}</p>
+                    </div>
+                  )}
                 </div>
                 
                 <div>
@@ -2334,7 +2487,13 @@ export default function CompanyExpenseManager({
             <select
               id="co-filter-standard-paid-for"
               value={standardPaidForFilter}
-              onChange={(e) => setStandardPaidForFilter(e.target.value as 'all' | 'set' | 'unset')}
+              onChange={(e) => {
+                const v = e.target.value as 'all' | 'set' | 'unset'
+                setStandardPaidForFilter(v)
+                if (v === 'unset' || v === 'set') {
+                  setPaidForFilter('all')
+                }
+              }}
               className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="all">{t('filters.all')}</option>
@@ -2378,6 +2537,11 @@ export default function CompanyExpenseManager({
                 </option>
               ))}
             </select>
+            {standardPaidForFilter === 'unset' ? (
+              <p className="mt-1 text-[11px] sm:text-xs text-muted-foreground leading-snug">
+                {t('filters.paidForUnsetOnlyHint')}
+              </p>
+            ) : null}
           </div>
           <div className="flex justify-end sm:justify-start">
             <Button
@@ -3215,6 +3379,14 @@ export default function CompanyExpenseManager({
         createdByEmail={user?.email ?? null}
         onAfterLedgerMutation={() => {
           void loadExpenses()
+        }}
+      />
+
+      <ExpenseVendorManagerModal
+        open={vendorManagerOpen}
+        onOpenChange={setVendorManagerOpen}
+        onUpdated={() => {
+          void loadExpenseVendors()
         }}
       />
     </div>

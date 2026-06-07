@@ -368,6 +368,7 @@ const DOC_SPEC: Record<
   'pickup-hotels': { readGate: 'canViewAdmin', manage: 'canManageOptions' },
   vehicles: { readGate: 'canViewAdmin', manage: 'canManageTours' },
   'vehicle-maintenance': { readGate: 'canViewAdmin', manage: 'canManageTours' },
+  'vehicle-maintenance-catalog': { readGate: 'canViewAdmin', manage: 'canManageTours' },
   team: { readGate: 'canViewAdmin', manage: 'canManageTeam' },
   attendance: { readGate: 'canViewAdmin', manage: 'canManageTeam' },
   'team-chat': { readGate: 'canViewAdmin', manage: 'canManageTeam' },

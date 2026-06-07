@@ -45,6 +45,9 @@ interface Vehicle {
   engine_oil_change_cycle: number
   current_mileage: number
   recent_engine_oil_change_mileage: number
+  maintenance_duty_preset?: string
+  fuel_type?: string
+  maintenance_vehicle_class?: string
   status: string
   front_tire_size?: string
   rear_tire_size?: string
@@ -153,6 +156,9 @@ export default function VehiclesPage() {
           engine_oil_change_cycle,
           current_mileage,
           recent_engine_oil_change_mileage,
+          maintenance_duty_preset,
+          fuel_type,
+          maintenance_vehicle_class,
           status,
           front_tire_size,
           rear_tire_size,
@@ -536,6 +542,7 @@ export default function VehiclesPage() {
         'vehicle_number', 'vin', 'vehicle_type', 'capacity', 'year',
         'mileage_at_purchase', 'purchase_amount', 'purchase_date', 'memo',
         'engine_oil_change_cycle', 'current_mileage', 'recent_engine_oil_change_mileage',
+        'maintenance_duty_preset', 'fuel_type', 'maintenance_vehicle_class',
         'status', 'front_tire_size', 'rear_tire_size', 'windshield_wiper_size',
         'headlight_model', 'headlight_model_name', 'is_installment', 'installment_amount',
         'interest_rate', 'monthly_payment', 'additional_payment', 'payment_due_date',

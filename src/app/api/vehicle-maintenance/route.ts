@@ -1,107 +1,157 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { Database } from '@/lib/database.types'
+import { syncVehicleMaintenanceFromCompanyExpenses } from '@/lib/vehicleMaintenanceFromCompanyExpense'
+import { migrateLegacyVehicleMaintenanceCategories } from '@/lib/vehicleMaintenanceStandardCategory'
+import {
+  normalizeVehicleMaintenanceVehicleId,
+  parseVehicleMaintenanceBody,
+} from '@/lib/vehicleMaintenancePayload'
+import { syncVehicleMaintenanceSchedulesFromRecord } from '@/lib/vehicleMaintenanceScheduleSync'
+import { maintenanceTypesForFilter } from '@/lib/vehicleMaintenanceType'
 
-type VehicleMaintenance = Database['public']['Tables']['vehicle_maintenance']['Row']
 type VehicleMaintenanceInsert = Database['public']['Tables']['vehicle_maintenance']['Insert']
-type VehicleMaintenanceUpdate = Database['public']['Tables']['vehicle_maintenance']['Update']
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
 
-export async function GET() {
-  return Response.json({
-    data: [],
-    pagination: {
-      page: 1,
-      limit: 10,
-      total: 0,
-      totalPages: 1
-    },
-    message: 'vehicle_maintenance API는 아직 구현 중입니다.'
-  })
+export const dynamic = 'force-dynamic'
+
+const LIST_LIMIT = 2_000
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
+    const { searchParams } = new URL(request.url)
+
+    const search = (searchParams.get('search') || '').trim()
+    const vehicleId = searchParams.get('vehicle_id')
+    const maintenanceType = searchParams.get('maintenance_type')
+    const category = searchParams.get('category')
+    const status = searchParams.get('status')
+    const skipSync = searchParams.get('skip_sync') === '1'
+
+    let syncResult = { imported: 0, skipped: 0, categoriesMigrated: 0 }
+    if (!skipSync) {
+      syncResult = {
+        ...(await syncVehicleMaintenanceFromCompanyExpenses(supabase)),
+        categoriesMigrated: await migrateLegacyVehicleMaintenanceCategories(supabase),
+      }
+    }
+
+    let query = supabase
+      .from('vehicle_maintenance')
+      .select(
+        `
+        *,
+        vehicles (
+          id,
+          vehicle_number,
+          vehicle_type,
+          vehicle_category,
+          nick
+        ),
+        company_expenses!vehicle_maintenance_company_expense_id_fkey (
+          payment_method
+        )
+      `
+      )
+      .order('maintenance_date', { ascending: false })
+      .limit(LIST_LIMIT)
+
+    if (vehicleId && vehicleId !== 'all') {
+      query = query.eq('vehicle_id', vehicleId)
+    }
+    if (maintenanceType && maintenanceType !== 'all') {
+      const types = maintenanceTypesForFilter(maintenanceType)
+      if (types?.length === 1) {
+        query = query.eq('maintenance_type', types[0])
+      } else if (types && types.length > 1) {
+        query = query.in('maintenance_type', types)
+      }
+    }
+    if (category && category !== 'all') {
+      query = query.eq('category', category)
+    }
+    if (status && status !== 'all') {
+      query = query.eq('status', status)
+    }
+    if (search) {
+      const like = `%${search}%`
+      query = query.or(
+        `description.ilike.${like},service_provider.ilike.${like},notes.ilike.${like},subcategory.ilike.${like}`
+      )
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('차량 정비 목록 조회 오류:', error)
+      return NextResponse.json({ error: '정비 기록을 불러올 수 없습니다.' }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      data: data ?? [],
+      sync: syncResult,
+      pagination: {
+        page: 1,
+        limit: LIST_LIMIT,
+        total: data?.length ?? 0,
+        totalPages: 1,
+      },
+    })
+  } catch (error) {
+    console.error('차량 정비 목록 조회 오류:', error)
+    return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const body = await request.json()
-    
+    const supabase = await getSupabaseForApiRoute(request)
+    if (supabase instanceof NextResponse) return supabase
+
+    const body = (await request.json()) as Record<string, unknown>
+    const { maintenance: parsed, payment_method } = parseVehicleMaintenanceBody(body)
+
+    const vehicle_id = await normalizeVehicleMaintenanceVehicleId(
+      supabase,
+      parsed.vehicle_id as string | null | undefined
+    )
+    if (!vehicle_id) {
+      return NextResponse.json({ error: '유효한 차량을 선택해 주세요.' }, { status: 400 })
+    }
+
     const {
-      vehicle_id,
       maintenance_date,
-      mileage,
       maintenance_type,
       category,
-      subcategory,
       description,
       total_cost,
-      labor_cost,
-      parts_cost,
-      other_cost,
-      service_provider,
-      service_provider_contact,
-      service_provider_address,
-      warranty_period,
-      warranty_notes,
-      is_scheduled_maintenance,
-      next_maintenance_date,
-      next_maintenance_mileage,
-      maintenance_interval,
-      mileage_interval,
-      parts_replaced,
-      parts_cost_breakdown,
-      quality_rating,
-      satisfaction_rating,
-      issues_found,
-      recommendations,
-      photos,
-      receipts,
-      documents,
-      notes,
-      technician_notes,
-      status,
-      payment_method
-    } = body
-    
-    // 필수 필드 검증
-    if (!vehicle_id || !maintenance_date || !maintenance_type || !category || !description || !total_cost) {
+      mileage,
+    } = parsed
+
+    if (
+      !maintenance_date ||
+      !maintenance_type ||
+      !category ||
+      !description ||
+      total_cost == null ||
+      mileage == null ||
+      mileage <= 0
+    ) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 })
     }
-    
+
     const maintenanceData: VehicleMaintenanceInsert = {
+      ...parsed,
       vehicle_id,
       maintenance_date,
-      mileage: mileage ? parseInt(mileage) : null,
       maintenance_type,
       category,
-      subcategory: subcategory || null,
       description,
-      total_cost: parseFloat(total_cost),
-      labor_cost: labor_cost ? parseFloat(labor_cost) : null,
-      parts_cost: parts_cost ? parseFloat(parts_cost) : null,
-      other_cost: other_cost ? parseFloat(other_cost) : null,
-      service_provider: service_provider || null,
-      service_provider_contact: service_provider_contact || null,
-      service_provider_address: service_provider_address || null,
-      warranty_period: warranty_period ? parseInt(warranty_period) : null,
-      warranty_notes: warranty_notes || null,
-      is_scheduled_maintenance: is_scheduled_maintenance || false,
-      next_maintenance_date: next_maintenance_date || null,
-      next_maintenance_mileage: next_maintenance_mileage ? parseInt(next_maintenance_mileage) : null,
-      maintenance_interval: maintenance_interval ? parseInt(maintenance_interval) : null,
-      mileage_interval: mileage_interval ? parseInt(mileage_interval) : null,
-      parts_replaced: parts_replaced || null,
-      parts_cost_breakdown: parts_cost_breakdown || null,
-      quality_rating: quality_rating ? parseInt(quality_rating) : null,
-      satisfaction_rating: satisfaction_rating ? parseInt(satisfaction_rating) : null,
-      issues_found: issues_found || null,
-      recommendations: recommendations || null,
-      photos: photos || null,
-      receipts: receipts || null,
-      documents: documents || null,
-      notes: notes || null,
-      technician_notes: technician_notes || null,
-      status: status || 'completed',
-      payment_method: payment_method || null
+      total_cost,
+      status: parsed.status || 'completed',
     }
     
     const { data: maintenanceResult, error: maintenanceError } = await supabase
@@ -120,11 +170,11 @@ export async function POST(request: NextRequest) {
     try {
       const expenseData: CompanyExpenseInsert = {
         id: `expense_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        paid_to: service_provider || '정비업체',
+        paid_to: (parsed.service_provider as string | null | undefined) || '정비업체',
         paid_for: `${maintenance_type} - ${category}`,
-        description: description,
-        amount: parseFloat(total_cost),
-        payment_method: payment_method || '현금', // 사용자가 선택한 결제 방법 사용
+        description: description as string,
+        amount: total_cost,
+        payment_method: payment_method || '현금',
         submit_by: 'system', // 시스템 자동 생성
         category: 'vehicle_maintenance',
         subcategory: category,
@@ -157,6 +207,12 @@ export async function POST(request: NextRequest) {
     } catch (expenseError) {
       console.error('회사 지출 생성 중 예외:', expenseError)
       // 정비는 성공했으므로 계속 진행
+    }
+
+    try {
+      await syncVehicleMaintenanceSchedulesFromRecord(supabase, maintenanceResult)
+    } catch (syncError) {
+      console.error('정기점검 스케줄 동기화 오류:', syncError)
     }
     
     return NextResponse.json({ 

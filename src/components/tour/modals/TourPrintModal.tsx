@@ -64,11 +64,12 @@ export interface TourPrintModalProps {
   onClose: () => void
   locale?: string
   tourDate: string
-  productName: string
+  productNameKo: string
+  productNameEn: string
   /** 가이드 표시명 */
   guideName: string | null
-  /** 2차 가이드 / 드라이버 라벨 (예: "2차 가이드", "드라이버") */
-  secondMemberLabel: string | null
+  /** 팀 타입 (2차 가이드/드라이버 라벨 현지화에 사용) */
+  teamType?: '1guide' | '2guide' | 'guide+driver' | string | null
   /** 2차 가이드 / 드라이버 표시명 */
   secondMemberName: string | null
   /** 차량 정보 표시명 */
@@ -177,9 +178,10 @@ export default function TourPrintModal({
   onClose,
   locale = 'ko',
   tourDate,
-  productName,
+  productNameKo,
+  productNameEn,
   guideName,
-  secondMemberLabel,
+  teamType,
   secondMemberName,
   vehicleLabel,
   assignedReservations,
@@ -190,8 +192,30 @@ export default function TourPrintModal({
 }: TourPrintModalProps) {
   const [balanceByResId, setBalanceByResId] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(false)
+  const [printLang, setPrintLang] = useState<'ko' | 'en'>(locale === 'en' ? 'en' : 'ko')
 
-  const isKo = locale === 'ko'
+  // 모달이 열릴 때 현재 locale로 초기화
+  useEffect(() => {
+    if (isOpen) setPrintLang(locale === 'en' ? 'en' : 'ko')
+  }, [isOpen, locale])
+
+  const isKo = printLang === 'ko'
+  const productName = isKo
+    ? productNameKo || productNameEn
+    : productNameEn || productNameKo
+
+  const secondMemberLabel =
+    teamType === 'guide+driver'
+      ? isKo
+        ? '드라이버'
+        : 'Driver'
+      : teamType === '2guide'
+        ? isKo
+          ? '2차 가이드'
+          : '2nd Guide'
+        : isKo
+          ? '어시스턴트'
+          : 'Assistant'
   const L = useMemo(
     () => ({
       title: isKo ? '투어 정보' : 'Tour Information',
@@ -453,13 +477,36 @@ export default function TourPrintModal({
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[820px] max-h-[92vh] overflow-hidden flex flex-col">
         <header className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <h2 className="text-lg font-bold text-gray-900">{L.title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            {/* 언어 선택 토글 */}
+            <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+              <button
+                type="button"
+                onClick={() => setPrintLang('ko')}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  isKo ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                한글
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintLang('en')}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  !isKo ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                English
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-6 bg-gray-100">
@@ -484,10 +531,10 @@ export default function TourPrintModal({
                     <span className="tp-label">{L.guide}</span>
                     {guideName || '—'}
                   </div>
-                  {secondMemberLabel && (
+                  {secondMemberName && (
                     <div className="tp-team-item">
                       <span className="tp-label">{secondMemberLabel}</span>
-                      {secondMemberName || '—'}
+                      {secondMemberName}
                     </div>
                   )}
                   <div className="tp-team-item">

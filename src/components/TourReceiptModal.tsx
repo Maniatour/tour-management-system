@@ -239,7 +239,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
         .order('name')
 
       if (error) throw error
-      setVendors(data || [])
+      setVendors((data || []).filter((v: { usage_type?: string | null }) => v.usage_type !== 'one_time'))
     } catch (error) {
       console.error('Error loading vendors:', error)
     }

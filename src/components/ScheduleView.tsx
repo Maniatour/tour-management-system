@@ -92,6 +92,14 @@ import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountT
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { isManagerTeamPosition } from '@/lib/roles'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import GuideAssignmentEmailModal from '@/components/GuideAssignmentEmailModal'
+import {
+  buildToursAssignmentBaseline,
+  computeGuideAssignmentChanges,
+  guideAssignmentChangeTypeLabel,
+  guideAssignmentRoleLabel,
+  type GuideAssignmentChangeItem,
+} from '@/lib/guideAssignmentSchedule'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -251,6 +259,32 @@ function computeTourAssignedPeopleForScheduleTooltip(tour: Tour, reservations: R
     if (!assignedCanon.has(canonicalReservationIdKey(String(r.id)))) return sum
     return sum + (r.total_people || 0)
   }, 0)
+}
+
+function buildTourStatusSelectOptions(current: string, locale: string) {
+  const known = new Set(tourStatusOptions.map((o) => o.value))
+  if (current && !known.has(current)) {
+    return [
+      {
+        value: current,
+        label: getTourStatusLabel(current, locale),
+        color: getTourStatusColor(current),
+      },
+      ...tourStatusOptions,
+    ]
+  }
+  return tourStatusOptions
+}
+
+function resolveTourStatusSelectValue(
+  current: string,
+  options: typeof tourStatusOptions,
+): string {
+  if (!current) return ''
+  const exact = options.find((o) => o.value === current)
+  if (exact) return exact.value
+  const ci = options.find((o) => o.value.toLowerCase() === current.toLowerCase())
+  return ci?.value ?? current
 }
 
 /** 입장권 부킹에 연결된 투어 안내 문구 (미연결 시 고정 문구) */
@@ -756,6 +790,44 @@ export default function ScheduleView() {
   const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
   const [pendingOffScheduleChanges, setPendingOffScheduleChanges] = useState<{ [key: string]: { team_email: string; off_date: string; reason: string; status: string; action: 'approve' | 'delete' | 'reject' } }>({})
   const pendingCount = useMemo(() => Object.keys(pendingChanges).length + Object.keys(pendingOffScheduleChanges).length, [pendingChanges, pendingOffScheduleChanges])
+
+  /** fetchData 직후 서버 기준 가이드·어시스턴트 배정 (미저장 변경 diff용) */
+  const toursAssignmentBaselineRef = useRef<Record<string, { tour_guide_id: string | null; assistant_id: string | null }>>({})
+  /** 저장 직후 가이드 배정 안내 이메일 모달 */
+  const [guideAssignmentEmailModalOpen, setGuideAssignmentEmailModalOpen] = useState(false)
+  const [guideAssignmentEmailChanges, setGuideAssignmentEmailChanges] = useState<GuideAssignmentChangeItem[]>([])
+
+  const resolveScheduleMemberDisplay = useCallback(
+    (email: string | null) => {
+      if (!email) return '-'
+      const active = teamMembers.find((t) => t.email === email)
+      const inactive = inactiveTeamMembers.find((t) => t.email === email)
+      const m = active ?? inactive
+      return ((m as { nick_name?: string })?.nick_name || m?.name_ko || m?.display_name || email.split('@')[0]) as string
+    },
+    [teamMembers, inactiveTeamMembers],
+  )
+
+  const pendingGuideAssignmentChanges = useMemo(
+    () =>
+      computeGuideAssignmentChanges({
+        baseline: toursAssignmentBaselineRef.current,
+        tours,
+        pendingChanges,
+        getProductName: (productId) =>
+          products.find((p: Product) => p.id === productId)?.name || 'N/A',
+        getMemberName: resolveScheduleMemberDisplay,
+      }),
+    [tours, pendingChanges, products, resolveScheduleMemberDisplay],
+  )
+
+  const pendingGuideAssignmentCount = pendingGuideAssignmentChanges.length
+
+  const openGuideAssignmentEmailModal = useCallback((changes: GuideAssignmentChangeItem[]) => {
+    if (changes.length === 0) return
+    setGuideAssignmentEmailChanges(changes)
+    setGuideAssignmentEmailModalOpen(true)
+  }, [])
   
   // 오프 스케줄 액션 모달 상태
   const [showOffScheduleActionModal, setShowOffScheduleActionModal] = useState(false)
@@ -819,6 +891,12 @@ export default function ScheduleView() {
   )
 
   const [capacityOverflowCreatingKey, setCapacityOverflowCreatingKey] = useState<string | null>(null)
+  /** 정원 초과 알림: 상품·날짜별 투어 배차(차량) 변경 */
+  const [capacityOverflowVehicleModal, setCapacityOverflowVehicleModal] = useState<{
+    productId: string
+    dateString: string
+    productName: string
+  } | null>(null)
 
   /** 스케쥴뷰(상품별 인원) 셀 클릭 → 해당일·상품 예약 목록 */
   const [productCellReservationsModal, setProductCellReservationsModal] = useState<{
@@ -2228,6 +2306,7 @@ export default function ScheduleView() {
       setTeamMembers(teamData || [])
       setInactiveTeamMembers(inactiveTeamData || [])
       setTours(toursWithVehicles)
+      toursAssignmentBaselineRef.current = buildToursAssignmentBaseline(toursWithVehicles)
       setReservations(reservationsData || [])
       setCustomers((customersData || []) as Customer[])
       setTicketBookings(
@@ -2901,7 +2980,18 @@ export default function ScheduleView() {
   const [draftInfo, setDraftInfo] = useState<{ savedAt: string; month: string; count: number } | null>(null)
 
   /** 상단 저장 버튼과 동일: 투어 pending + 오프스케줄 pending 일괄 반영 */
-  const executeBatchSave = useCallback(async (): Promise<boolean> => {
+  const executeBatchSave = useCallback(async (options?: { offerGuideEmail?: boolean }): Promise<boolean> => {
+    const assignmentChangesForEmail = options?.offerGuideEmail
+      ? computeGuideAssignmentChanges({
+          baseline: toursAssignmentBaselineRef.current,
+          tours,
+          pendingChanges,
+          getProductName: (productId) =>
+            products.find((p: Product) => p.id === productId)?.name || 'N/A',
+          getMemberName: resolveScheduleMemberDisplay,
+        })
+      : []
+
     try {
       const tourEntries = Object.entries(pendingChanges)
       for (const [tourId, updateData] of tourEntries) {
@@ -2971,13 +3061,27 @@ export default function ScheduleView() {
       await fetchData()
       await fetchUnassignedTours()
       showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
+      if (options?.offerGuideEmail && assignmentChangesForEmail.length > 0) {
+        openGuideAssignmentEmailModal(assignmentChangesForEmail)
+      }
       return true
     } catch (err) {
       console.error('Batch save unexpected error:', err)
       showMessage('오류', '변경사항 저장 중 오류가 발생했습니다.', 'error')
       return false
     }
-  }, [pendingChanges, pendingOffScheduleChanges, fetchData, fetchUnassignedTours, showMessage, user?.email])
+  }, [
+    pendingChanges,
+    pendingOffScheduleChanges,
+    fetchData,
+    fetchUnassignedTours,
+    showMessage,
+    user?.email,
+    tours,
+    products,
+    resolveScheduleMemberDisplay,
+    openGuideAssignmentEmailModal,
+  ])
 
   /** 상단 취소와 동일: 서버 기준으로 되돌림(미저장 변경 폐기) */
   const discardPendingScheduleChanges = useCallback(async () => {
@@ -2995,12 +3099,17 @@ export default function ScheduleView() {
   const confirmDragAssignSave = useCallback(async () => {
     setDragAssignSaveLoading(true)
     try {
-      const ok = await executeBatchSave()
+      const ok = await executeBatchSave({ offerGuideEmail: true })
       if (ok) setDragAssignSaveModalOpen(false)
     } finally {
       setDragAssignSaveLoading(false)
     }
   }, [executeBatchSave])
+
+  const enableSchedulingModeAndContinue = useCallback(() => {
+    setScheduleExplorationMode(true)
+    setDragAssignSaveModalOpen(false)
+  }, [])
 
   const runPendingScheduleLeave = useCallback(() => {
     const go = pendingScheduleLeaveRef.current
@@ -3012,7 +3121,7 @@ export default function ScheduleView() {
   const handleScheduleLeaveSaveAndGo = useCallback(async () => {
     setScheduleLeaveSaving(true)
     try {
-      const ok = await executeBatchSave()
+      const ok = await executeBatchSave({ offerGuideEmail: true })
       if (ok) runPendingScheduleLeave()
     } finally {
       setScheduleLeaveSaving(false)
@@ -4638,30 +4747,14 @@ export default function ScheduleView() {
 
   const guideModalStatusSelectOptions = useMemo(() => {
     if (!guideModalContent.tourId) return tourStatusOptions
-    const current = guideModalTour?.tour_status || ''
-    const known = new Set(tourStatusOptions.map((o) => o.value))
-    if (current && !known.has(current)) {
-      return [
-        {
-          value: current,
-          label: getTourStatusLabel(current, locale),
-          color: getTourStatusColor(current),
-        },
-        ...tourStatusOptions,
-      ]
-    }
-    return tourStatusOptions
+    return buildTourStatusSelectOptions(guideModalTour?.tour_status || '', locale)
   }, [guideModalContent.tourId, guideModalTour?.tour_status, locale])
 
   const guideModalStatusSelectValue = useMemo(() => {
-    const current = guideModalTour?.tour_status || ''
-    if (!current) return ''
-    const exact = guideModalStatusSelectOptions.find((o) => o.value === current)
-    if (exact) return exact.value
-    const ci = guideModalStatusSelectOptions.find(
-      (o) => o.value.toLowerCase() === current.toLowerCase()
+    return resolveTourStatusSelectValue(
+      guideModalTour?.tour_status || '',
+      guideModalStatusSelectOptions,
     )
-    return ci?.value ?? current
   }, [guideModalTour?.tour_status, guideModalStatusSelectOptions])
 
   const updateTourDetailModalTourStatus = useCallback(
@@ -4682,6 +4775,15 @@ export default function ScheduleView() {
           return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus, ...cleared } : t))
         })
         setTourDetailIframeReloadNonce((n) => n + 1)
+        setScheduleHealthFetched((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            tours: prev.tours.map((t) =>
+              t.id === tourId ? { ...t, tour_status: newStatus, ...cleared } : t,
+            ),
+          }
+        })
       } finally {
         setUpdatingTourDetailModalStatusId(null)
       }
@@ -4747,6 +4849,42 @@ export default function ScheduleView() {
     return items
   }, [productScheduleData, monthDays])
 
+  const capacityOverflowVehicleModalTours = useMemo(() => {
+    if (!capacityOverflowVehicleModal) return [] as Tour[]
+    const { productId, dateString } = capacityOverflowVehicleModal
+    const memberProductIds = isScheduleAirportGroupedRowKey(productId)
+      ? [
+          ...getScheduleAirportMemberIdSetForRowKey(
+            productId,
+            products,
+            airportPickupMemberIdSet,
+            airportSendingMemberIdSet,
+          ),
+        ]
+      : expandScheduleRowProductIds(productId, products)
+    const memberIdSet = new Set(memberProductIds.map((id) => canonicalScheduleProductId(id)))
+    return tours
+      .filter(
+        (t) =>
+          memberIdSet.has(canonicalScheduleProductId(t.product_id)) &&
+          String(t.tour_date || '').slice(0, 10) === dateString &&
+          !isTourCancelled(t.tour_status),
+      )
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  }, [
+    capacityOverflowVehicleModal,
+    tours,
+    products,
+    airportPickupMemberIdSet,
+    airportSendingMemberIdSet,
+  ])
+
+  const capacityOverflowVehicleModalBreakdown = useMemo(() => {
+    if (!capacityOverflowVehicleModal) return null
+    const { productId, dateString } = capacityOverflowVehicleModal
+    return productScheduleData[productId]?.dailyData[dateString]?.tourCapacityBreakdown ?? null
+  }, [capacityOverflowVehicleModal, productScheduleData])
+
   const scheduleHealthFromFetch = useMemo(() => {
     if (!scheduleHealthFetched) {
       return {
@@ -4756,6 +4894,7 @@ export default function ScheduleView() {
           tourDate: string
           productName: string
           missingLabels: string
+          people: number
         }>,
         ticketPeopleMismatch: [] as Array<{
           tourId: string
@@ -4769,6 +4908,7 @@ export default function ScheduleView() {
           tourDate: string
           productId: string
           productName: string
+          tourStatus: string
           tourStatusLabel: string
           pendingResCount: number
           confirmedResCount: number
@@ -4832,7 +4972,9 @@ export default function ScheduleView() {
           '—'
         ).toString(),
         missingLabels: [...miss].sort().join(locale === 'ko' ? ' · ' : ', '),
+        people: computeTourAssignedPeopleForScheduleTooltip(tour, resList),
       }))
+      .filter((row) => row.people > 0)
       .sort((a, b) => a.tourDate.localeCompare(b.tourDate) || a.productName.localeCompare(b.productName))
 
     const tbByTour = new Map<string, typeof tbList>()
@@ -4910,6 +5052,7 @@ export default function ScheduleView() {
       tourDate: string
       productId: string
       productName: string
+      tourStatus: string
       tourStatusLabel: string
       pendingResCount: number
       confirmedResCount: number
@@ -4952,6 +5095,7 @@ export default function ScheduleView() {
           tour.product_id ||
           '—'
         ).toString(),
+        tourStatus: String(tour.tour_status || ''),
         tourStatusLabel: getTourStatusLabel(tour.tour_status, locale),
         pendingResCount,
         confirmedResCount,
@@ -5937,7 +6081,7 @@ export default function ScheduleView() {
             <button
               type="button"
               onClick={() => {
-                void executeBatchSave()
+                void executeBatchSave({ offerGuideEmail: true })
               }}
               disabled={pendingCount === 0}
               className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
@@ -5996,10 +6140,26 @@ export default function ScheduleView() {
             </div>
           )}
           {pendingCount > 0 && (
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <span className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded-full">
                 변경 {pendingCount}건 대기중
               </span>
+              {pendingGuideAssignmentCount > 0 && (
+                <span
+                  className="max-w-[min(100%,28rem)] px-2 py-1 text-[10px] bg-blue-50 text-blue-900 rounded-full truncate"
+                  title={pendingGuideAssignmentChanges
+                    .map(
+                      (c) =>
+                        `${c.tourDate} ${c.productName} ${guideAssignmentRoleLabel(c.role)} ${guideAssignmentChangeTypeLabel(c.changeType)}`,
+                    )
+                    .join(' · ')}
+                >
+                  배정 {pendingGuideAssignmentCount}건 (
+                  {pendingGuideAssignmentChanges.filter((c) => c.changeType === 'added').length} 추가 ·{' '}
+                  {pendingGuideAssignmentChanges.filter((c) => c.changeType === 'changed').length} 변경 ·{' '}
+                  {pendingGuideAssignmentChanges.filter((c) => c.changeType === 'removed').length} 해제)
+                </span>
+              )}
               <button
                 onClick={saveDraftToLocal}
                 className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded-lg hover:bg-purple-600 whitespace-nowrap"
@@ -8962,21 +9122,37 @@ export default function ScheduleView() {
                             {locale === 'ko' ? '명' : ' pax'}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => void handleCreateEmptyTourFromOverflow(item.productId, item.dateString)}
-                          disabled={busy}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          <Plus className="h-3.5 w-3.5" aria-hidden />
-                          {busy
-                            ? locale === 'ko'
-                              ? '생성 중…'
-                              : 'Creating…'
-                            : locale === 'ko'
-                              ? '투어 추가'
-                              : 'Add tour'}
-                        </button>
+                        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCapacityOverflowVehicleModal({
+                                productId: item.productId,
+                                dateString: item.dateString,
+                                productName: item.productName,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-medium text-amber-950 hover:bg-amber-50"
+                          >
+                            <Car className="h-3.5 w-3.5" aria-hidden />
+                            {locale === 'ko' ? '배차 변경' : 'Change vehicle'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleCreateEmptyTourFromOverflow(item.productId, item.dateString)}
+                            disabled={busy}
+                            className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            <Plus className="h-3.5 w-3.5" aria-hidden />
+                            {busy
+                              ? locale === 'ko'
+                                ? '생성 중…'
+                                : 'Creating…'
+                              : locale === 'ko'
+                                ? '투어 추가'
+                                : 'Add tour'}
+                          </button>
+                        </div>
                       </li>
                     )
                   })}
@@ -9041,7 +9217,13 @@ export default function ScheduleView() {
                       >
                         <span className="font-medium text-gray-900">{row.productName}</span>
                         <span className="text-gray-500"> · {row.tourDate}</span>
-                        <div className="text-xs text-violet-800">{row.missingLabels}</div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-violet-800">
+                          <span>{row.missingLabels}</span>
+                          <span className="tabular-nums text-violet-950">
+                            {locale === 'ko' ? '예약' : 'Res.'} {row.people}
+                            {locale === 'ko' ? '명' : ' pax'}
+                          </span>
+                        </div>
                       </button>
                     </li>
                   ))}
@@ -9098,24 +9280,54 @@ export default function ScheduleView() {
               {scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.length === 0 ? (
                 <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
               ) : (
-                <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 text-sm">
-                  {scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.map((row) => (
-                    <li key={row.tourId}>
-                      <button
-                        type="button"
-                        className="w-full rounded-md border border-orange-100 bg-white/90 px-2 py-1.5 text-left hover:bg-orange-100/60"
-                        onClick={() => {
-                          setScheduleHealthModalOpen(false)
-                          openTourDetailModal(row.tourId)
-                        }}
+                <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto pr-1 text-sm">
+                  {scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.map((row) => {
+                    const statusOptions = buildTourStatusSelectOptions(row.tourStatus, locale)
+                    const statusSelectValue = resolveTourStatusSelectValue(row.tourStatus, statusOptions)
+                    return (
+                      <li
+                        key={row.tourId}
+                        className="rounded-md border border-orange-100 bg-white/90 px-2 py-1.5"
                       >
-                        <span className="font-medium text-gray-900">{row.productName}</span>
-                        <span className="text-gray-500"> · {row.tourDate}</span>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-orange-900">
-                          <span>
-                            {locale === 'ko' ? '투어' : 'Tour'}: {row.tourStatusLabel}
-                          </span>
-                          <span className="tabular-nums">
+                        <button
+                          type="button"
+                          className="w-full text-left hover:text-orange-950"
+                          onClick={() => {
+                            setScheduleHealthModalOpen(false)
+                            openTourDetailModal(row.tourId)
+                          }}
+                        >
+                          <span className="font-medium text-gray-900">{row.productName}</span>
+                          <span className="text-gray-500"> · {row.tourDate}</span>
+                        </button>
+                        <div className="mt-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-center">
+                          <Select
+                            {...(statusSelectValue ? { value: statusSelectValue } : {})}
+                            onValueChange={(v) => {
+                              void updateTourDetailModalTourStatus(row.tourId, v)
+                            }}
+                            disabled={updatingTourDetailModalStatusId === row.tourId}
+                          >
+                            <SelectTrigger
+                              className="h-8 w-full min-w-0 text-xs bg-white sm:max-w-[11rem]"
+                              aria-label={
+                                locale === 'ko' ? '투어 상태 변경' : 'Change tour status'
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <SelectValue
+                                placeholder={locale === 'ko' ? '상태 선택' : 'Select status'}
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {statusOptions.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {getTourStatusLabel(option.value, locale)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <span className="text-xs tabular-nums text-orange-900 sm:flex-1">
                             {locale === 'ko' ? '예약' : 'Res.'}{' '}
                             {row.pendingResCount > 0
                               ? locale === 'ko'
@@ -9133,9 +9345,9 @@ export default function ScheduleView() {
                             {locale === 'ko' ? '명' : ' pax'}
                           </span>
                         </div>
-                      </button>
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </section>
@@ -9188,6 +9400,136 @@ export default function ScheduleView() {
               {locale === 'ko' ? '닫기' : 'Close'}
             </button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 정원 초과: 해당 상품·날짜 투어별 차량(배차) 변경 */}
+      <Dialog
+        open={!!capacityOverflowVehicleModal}
+        onOpenChange={(open) => {
+          if (!open) setCapacityOverflowVehicleModal(null)
+        }}
+      >
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto z-[1200]">
+          {capacityOverflowVehicleModal ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">
+                  {locale === 'ko' ? '배차 변경' : 'Change vehicle assignment'}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-gray-600">
+                  <span className="font-medium text-gray-900">
+                    {capacityOverflowVehicleModal.productName}
+                  </span>
+                  {' · '}
+                  {capacityOverflowVehicleModal.dateString}
+                </DialogDescription>
+              </DialogHeader>
+              <p className="text-xs text-gray-500 -mt-1">
+                {locale === 'ko'
+                  ? '차량을 바꾸면 투어 정원이 차량 수용 인원에 맞게 조정됩니다. 변경 후 저장됩니다.'
+                  : 'Changing the vehicle updates tour capacity to match the vehicle. Changes are saved automatically.'}
+              </p>
+              {capacityOverflowVehicleModalTours.length === 0 ? (
+                <p className="mt-3 text-sm text-gray-500">
+                  {locale === 'ko'
+                    ? '이 날짜에 해당하는 투어가 없습니다. 투어 추가 후 배차할 수 있습니다.'
+                    : 'No tours on this date. Add a tour first, then assign vehicles.'}
+                </p>
+              ) : (
+                <ul className="mt-3 space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  {capacityOverflowVehicleModalTours.map((tour, idx) => {
+                    const capRow = capacityOverflowVehicleModalBreakdown?.rows.find(
+                      (r) => r.tourId === tour.id,
+                    )
+                    const teamLabel = capRow
+                      ? locale === 'ko'
+                        ? `${capRow.teamIndex}팀`
+                        : `Team ${capRow.teamIndex}`
+                      : (tour.tour_time && String(tour.tour_time).trim()) ||
+                        (locale === 'ko' ? `투어 ${idx + 1}` : `Tour ${idx + 1}`)
+                    const carId =
+                      tour.tour_car_id && String(tour.tour_car_id).trim()
+                        ? tour.tour_car_id
+                        : SCHEDULE_GUIDE_MODAL_NO_VEHICLE
+                    return (
+                      <li
+                        key={tour.id}
+                        className="rounded-lg border border-amber-100 bg-amber-50/40 p-3 space-y-2"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0 text-sm">
+                            <div className="font-medium text-gray-900">{teamLabel}</div>
+                            {capRow ? (
+                              <div className="text-xs tabular-nums text-red-700 mt-0.5">
+                                {locale === 'ko' ? '배정' : 'Assigned'} {capRow.assigned} / {capRow.max}
+                                {locale === 'ko' ? '명' : ' pax'}
+                                {capRow.guideName && capRow.guideName !== '—' ? (
+                                  <span className="text-gray-600 ml-1">
+                                    · {capRow.guideName}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            className="shrink-0 text-xs text-blue-600 hover:text-blue-800"
+                            onClick={() => {
+                              setCapacityOverflowVehicleModal(null)
+                              openTourDetailModal(tour.id)
+                            }}
+                          >
+                            {locale === 'ko' ? '투어 상세' : 'Tour detail'}
+                          </button>
+                        </div>
+                        <Select
+                          value={carId}
+                          onValueChange={(v) => {
+                            if (v === SCHEDULE_GUIDE_MODAL_NO_VEHICLE) {
+                              applyGuideModalVehicleValue(tour.id, null)
+                            } else {
+                              applyGuideModalVehicleValue(tour.id, v)
+                            }
+                          }}
+                        >
+                          <SelectTrigger
+                            className="h-9 w-full text-sm bg-white"
+                            aria-label={
+                              locale === 'ko'
+                                ? `${teamLabel} 차량 배정`
+                                : `Vehicle for ${teamLabel}`
+                            }
+                          >
+                            <SelectValue placeholder={locale === 'ko' ? '차량 선택' : 'Select vehicle'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={SCHEDULE_GUIDE_MODAL_NO_VEHICLE}>
+                              {locale === 'ko' ? '배정 안 함' : 'None'}
+                            </SelectItem>
+                            {monthVehiclesWithColors.vehicleList.map((v) => (
+                              <SelectItem key={v.id} value={v.id}>
+                                {v.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              <div className="mt-4 flex justify-end border-t border-gray-100 pt-3">
+                <button
+                  type="button"
+                  className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                  onClick={() => setCapacityOverflowVehicleModal(null)}
+                >
+                  {locale === 'ko' ? '닫기' : 'Close'}
+                </button>
+              </div>
+            </>
+          ) : null}
         </DialogContent>
       </Dialog>
 
@@ -9610,13 +9952,42 @@ export default function ScheduleView() {
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-sm text-gray-600 mb-4">
               드래그로 반영한 배정 변경을 서버에 지금 저장하시겠습니까?
               <span className="block mt-2 text-xs text-gray-500">
                 저장 시 상단에 대기 중인 다른 변경사항(오프 스케줄 등)도 함께 저장됩니다.
+                저장 후 배정된 가이드에게 안내 이메일을 보낼 수 있습니다.
               </span>
             </p>
-            <div className="flex justify-end gap-3">
+            {pendingGuideAssignmentCount > 0 && (
+              <div className="mb-4 max-h-32 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                <p className="mb-1 font-medium text-gray-900">가이드 배정 변경 ({pendingGuideAssignmentCount}건)</p>
+                <ul className="space-y-0.5">
+                  {pendingGuideAssignmentChanges.map((c) => (
+                    <li key={c.id}>
+                      <span
+                        className={
+                          c.changeType === 'added'
+                            ? 'text-green-700'
+                            : c.changeType === 'removed'
+                              ? 'text-red-700'
+                              : 'text-amber-700'
+                        }
+                      >
+                        [{guideAssignmentChangeTypeLabel(c.changeType)}]
+                      </span>{' '}
+                      {c.tourDate} {c.productName} · {guideAssignmentRoleLabel(c.role)}
+                      {c.changeType === 'removed'
+                        ? ` · ${c.previousName}`
+                        : c.changeType === 'changed'
+                          ? ` · ${c.previousName} → ${c.newName}`
+                          : ` · ${c.newName}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex flex-wrap justify-end gap-2 sm:gap-3">
               <button
                 type="button"
                 onClick={() => setDragAssignSaveModalOpen(false)}
@@ -9624,6 +9995,15 @@ export default function ScheduleView() {
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
               >
                 나중에
+              </button>
+              <button
+                type="button"
+                onClick={enableSchedulingModeAndContinue}
+                disabled={dragAssignSaveLoading}
+                className="px-4 py-2 text-amber-950 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 disabled:opacity-50"
+                title="저장 확인 없이 여러 배정을 이어서 작업합니다. 상단 저장/취소로 반영합니다."
+              >
+                스케줄링 켜고 계속
               </button>
               <button
                 type="button"
@@ -9638,9 +10018,9 @@ export default function ScheduleView() {
         </div>
       )}
 
-      {/* 확인 모달 */}
+      {/* 확인 모달 — 액션 모달(z-[1100])보다 위에 표시 */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
@@ -9828,7 +10208,7 @@ export default function ScheduleView() {
                     {locale === 'ko' ? '투어 상태' : 'Tour status'}
                   </label>
                   <Select
-                    value={guideModalStatusSelectValue || undefined}
+                    {...(guideModalStatusSelectValue ? { value: guideModalStatusSelectValue } : {})}
                     onValueChange={(v) => {
                       if (!guideModalContent.tourId) return
                       void updateTourDetailModalTourStatus(guideModalContent.tourId, v)
@@ -10482,6 +10862,15 @@ export default function ScheduleView() {
         onClose={closeCancellationReasonModal}
         onSubmit={submitCancellationReasonModal}
       />
+
+      {guideAssignmentEmailModalOpen && (
+        <GuideAssignmentEmailModal
+          isOpen
+          onClose={() => setGuideAssignmentEmailModalOpen(false)}
+          changes={guideAssignmentEmailChanges}
+          sentBy={user?.email ?? null}
+        />
+      )}
 
     </div>
   )

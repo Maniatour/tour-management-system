@@ -1,6 +1,20 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+
+export type PaymentMethodAutocompleteOption = {
+  id: string
+  name: string
+  /** 연결된 직원·금융 계정 등 — 선택지·입력란에 함께 표시 */
+  linkedName?: string | null
+}
+
+function formatPaymentMethodOptionLabel(option: PaymentMethodAutocompleteOption): string {
+  const linked = option.linkedName?.trim()
+  if (!linked) return option.name
+  if (option.name.includes(linked)) return option.name
+  return `${option.name} · ${linked}`
+}
 
 export function PaymentMethodAutocomplete({
   options,
@@ -10,7 +24,7 @@ export function PaymentMethodAutocomplete({
   pleaseSelectLabel,
   className,
 }: {
-  options: { id: string; name: string }[]
+  options: PaymentMethodAutocompleteOption[]
   valueId: string
   onChange: (id: string) => void
   disabled?: boolean
@@ -26,10 +40,18 @@ export function PaymentMethodAutocomplete({
       return
     }
     const sel = options.find((o) => o.id === valueId)
-    if (sel && !open) setQ(sel.name)
+    if (sel && !open) setQ(formatPaymentMethodOptionLabel(sel))
   }, [valueId, options, open])
 
-  const filtered = options.filter((o) => o.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const filtered = options.filter((o) => {
+    const label = formatPaymentMethodOptionLabel(o)
+    const needle = q.trim().toLowerCase()
+    return (
+      label.toLowerCase().includes(needle) ||
+      o.name.toLowerCase().includes(needle) ||
+      (o.linkedName?.toLowerCase().includes(needle) ?? false)
+    )
+  })
 
   return (
     <div className="relative">
@@ -46,9 +68,13 @@ export function PaymentMethodAutocomplete({
         onFocus={() => setOpen(true)}
         onBlur={() => {
           setTimeout(() => setOpen(false), 120)
-          const exact = options.find((o) => o.name.toLowerCase() === q.trim().toLowerCase())
+          const exact = options.find((o) => formatPaymentMethodOptionLabel(o).toLowerCase() === q.trim().toLowerCase())
           if (exact) onChange(exact.id)
-          else onChange('')
+          else {
+            const byName = options.find((o) => o.name.toLowerCase() === q.trim().toLowerCase())
+            if (byName) onChange(byName.id)
+            else onChange('')
+          }
         }}
         className={
           className ??
@@ -65,11 +91,11 @@ export function PaymentMethodAutocomplete({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   onChange(pm.id)
-                  setQ(pm.name)
+                  setQ(formatPaymentMethodOptionLabel(pm))
                   setOpen(false)
                 }}
               >
-                {pm.name}
+                {formatPaymentMethodOptionLabel(pm)}
               </button>
             </li>
           ))}
