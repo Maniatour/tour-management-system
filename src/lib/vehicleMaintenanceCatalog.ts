@@ -123,6 +123,40 @@ export function resolveLastServiceDateForCatalog(params: {
   return lastDate
 }
 
+/** 차량별 카탈로그 code → 최근 정비일 (카탈로그×기록 이중 루프 대신 기록 1-pass) */
+export function buildLastServiceDateMapForVehicle(params: {
+  catalog: VehicleMaintenanceCatalogRow[]
+  vehicleId: string
+  maintenances: {
+    vehicle_id: string | null
+    maintenance_date: string
+    subcategory: string | null
+  }[]
+  schedulesByCode: Map<string, VehicleMaintenanceScheduleRow | null>
+  applicableCatalog?: VehicleMaintenanceCatalogRow[]
+}): Map<string, string> {
+  const map = new Map<string, string>()
+  const items = params.applicableCatalog ?? params.catalog
+  for (const item of items) {
+    const schedule = params.schedulesByCode.get(item.code)
+    if (schedule?.last_service_date) {
+      map.set(item.code, schedule.last_service_date)
+    }
+  }
+
+  for (const row of params.maintenances) {
+    if (row.vehicle_id !== params.vehicleId) continue
+    const codes = catalogCodesForMaintenanceSubcategories(params.catalog, row.subcategory)
+    const d = String(row.maintenance_date)
+    for (const code of codes) {
+      const existing = map.get(code)
+      if (!existing || d > existing) map.set(code, d)
+    }
+  }
+
+  return map
+}
+
 /** 카탈로그 코드 ↔ 구 subcategory 키 매칭 */
 export function catalogCodesForMaintenanceSubcategories(
   catalog: VehicleMaintenanceCatalogRow[],

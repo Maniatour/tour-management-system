@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare, Printer } from 'lucide-react'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
+import { ReservationFormSmsSendButton } from '@/components/reservation/ReservationFormSmsSendButton'
 import { getCustomerName } from '@/utils/reservationUtils'
 
 // 리사이즈 가능한 모달 컴포넌트
@@ -429,6 +430,13 @@ export default function ReservationDetailsPage() {
               </button>
               <div className="hidden sm:block h-6 w-px bg-gray-200 shrink-0" aria-hidden />
               <ReservationFormEmailSendButtons
+                reservation={reservation}
+                customers={(customers as Customer[]) || []}
+                sentBy={user?.email ?? null}
+                uiLocale={params?.locale === 'en' ? 'en' : 'ko'}
+                onSendSuccess={() => setFollowUpFormPipelineRefresh((n) => n + 1)}
+              />
+              <ReservationFormSmsSendButton
                 reservation={reservation}
                 customers={(customers as Customer[]) || []}
                 sentBy={user?.email ?? null}

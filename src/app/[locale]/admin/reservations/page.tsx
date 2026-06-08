@@ -48,6 +48,7 @@ import ReservationActionRequiredModal from '@/components/reservation/Reservation
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
+import { ReservationFormSmsSendButton } from '@/components/reservation/ReservationFormSmsSendButton'
 import { useAuth } from '@/contexts/AuthContext'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import {
@@ -4156,6 +4157,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     [reservations, patchReservationInList, patchOperationalQueueReservation]
   )
 
+  const handlePreTourSmsSendSuccess = useCallback(
+    (reservationId: string) => {
+      patchReservationInList(reservationId, { customerCommunicationChannel: 'text_message' })
+      patchOperationalQueueReservation(reservationId, {
+        customerCommunicationChannel: 'text_message',
+      })
+    },
+    [patchReservationInList, patchOperationalQueueReservation]
+  )
+
   const handleEmailLogsClick = useCallback((reservationId: string) => {
     setSelectedReservationForEmailLogs(reservationId)
     setShowEmailLogs(true)
@@ -4734,6 +4745,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
                           onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
                           onCommunicationChannelChange: handleCommunicationChannelChange,
+                          sentBy: user?.email ?? null,
+                          onPreTourSmsSendSuccess: handlePreTourSmsSendSuccess,
                         }
                       : {})}
                   />
@@ -5038,6 +5051,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           onFollowUpPipelineManualChange: handleFollowUpPipelineManualChange,
                           onCancelFollowUpManualChange: handleCancelFollowUpManualChange,
                           onCommunicationChannelChange: handleCommunicationChannelChange,
+                          sentBy: user?.email ?? null,
+                          onPreTourSmsSendSuccess: handlePreTourSmsSendSuccess,
                         }
                       : {})}
                   />
@@ -5099,6 +5114,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 </button>
                 <div className="hidden sm:block h-6 w-px bg-gray-200 shrink-0" aria-hidden />
                 <ReservationFormEmailSendButtons
+                  reservation={editingReservation}
+                  customers={(customers || []) as Customer[]}
+                  sentBy={user?.email ?? null}
+                  uiLocale={locale === 'en' ? 'en' : 'ko'}
+                  onSendSuccess={() => setFollowUpFormPipelineRefresh((n) => n + 1)}
+                />
+                <ReservationFormSmsSendButton
                   reservation={editingReservation}
                   customers={(customers || []) as Customer[]}
                   sentBy={user?.email ?? null}
@@ -5349,6 +5371,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
             onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
             onCommunicationChannelChange={handleCommunicationChannelChange}
+            sentBy={user?.email ?? null}
+            onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
           />
         )}
       />
@@ -5622,6 +5646,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             onFollowUpPipelineManualChange={handleFollowUpPipelineManualChange}
             onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
             onCommunicationChannelChange={handleCommunicationChannelChange}
+            sentBy={user?.email ?? null}
+            onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
           />
         )}
       />

@@ -37,6 +37,11 @@ function parseStringArray(value: unknown): string[] | null | undefined {
   return value.map(String)
 }
 
+/** vehicle_maintenance PK (TEXT, DB default 없음) */
+export function generateVehicleMaintenanceId(): string {
+  return `MAINT-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
 /** 폼/API body → vehicle_maintenance 저장 필드 (payment_method 등 비테이블 필드 제외) */
 export function parseVehicleMaintenanceBody(body: Record<string, unknown>): {
   maintenance: VehicleMaintenanceInsert | VehicleMaintenanceUpdate

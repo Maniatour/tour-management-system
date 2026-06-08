@@ -44,6 +44,7 @@ import TourEditModal from '@/components/tour/modals/TourEditModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import TourPrintModal from '@/components/tour/modals/TourPrintModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
+import { ReservationFormSmsSendButton } from '@/components/reservation/ReservationFormSmsSendButton'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
@@ -2289,6 +2290,12 @@ export function TourDetailPageView({ tourId }: { tourId: string }) {
               </button>
               <div className="hidden sm:block h-6 w-px bg-gray-200 shrink-0" aria-hidden />
               <ReservationFormEmailSendButtons
+                reservation={editingReservation}
+                customers={tourData.customers as Customer[]}
+                sentBy={authUser?.email ?? null}
+                uiLocale={locale === 'en' ? 'en' : 'ko'}
+              />
+              <ReservationFormSmsSendButton
                 reservation={editingReservation}
                 customers={tourData.customers as Customer[]}
                 sentBy={authUser?.email ?? null}

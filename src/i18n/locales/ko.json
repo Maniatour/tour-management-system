@@ -2594,7 +2594,7 @@
         "phone_call": "전화",
         "chatroom": "채팅방"
       },
-      "pickupHotelIconTitle": "픽업 시간·호텔",
+      "preTourSmsButtonTitle": "투어 사전 연락 SMS",
       "pickupSummaryModalTitle": "픽업 시간·호텔",
       "pickupSummaryTimeLabel": "픽업 시간",
       "pickupSummaryHotelLabel": "픽업 호텔",
@@ -5496,7 +5496,10 @@
       "documents": "관련 문서",
       "notes": "메모",
       "technicianNotes": "정비사 메모",
-      "status": "상태"
+      "status": "상태",
+      "paymentMethod": "결제 방법",
+      "paymentMethodHint": "비워 두면 비용은 등록되고, 아직 지불하지 않은 지불 예정 건으로 표시됩니다.",
+      "paymentMethodPlaceholder": "결제 방법 선택 (비우면 지불 예정)"
     },
     "maintenanceTypes": {
       "maintenance": "정기 정비",
@@ -5597,7 +5600,8 @@
       "status": "상태",
       "actions": "작업",
       "linked": "연동됨",
-      "notLinked": "미연동"
+      "notLinked": "미연동",
+      "paymentPending": "지불 예정"
     },
     "statistics": {
       "totalCost": "총 비용",

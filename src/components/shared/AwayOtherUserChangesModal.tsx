@@ -1,5 +1,6 @@
 'use client'
 
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Bus, User, UserCircle, Users, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -48,9 +49,9 @@ export default function AwayOtherUserChangesModal({
 
   const close = () => onClose(true)
 
-  return (
+  const modal = (
     <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-3"
+      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="away-changes-title"
@@ -157,6 +158,9 @@ export default function AwayOtherUserChangesModal({
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return modal
+  return createPortal(modal, document.body)
 }
 
 function BadgePill({ badge }: { badge: AwayChangeBadge }) {

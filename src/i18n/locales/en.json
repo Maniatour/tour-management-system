@@ -2585,7 +2585,7 @@
         "phone_call": "Phone call",
         "chatroom": "Chat room"
       },
-      "pickupHotelIconTitle": "Pickup time & hotel",
+      "preTourSmsButtonTitle": "Pre-tour contact SMS",
       "pickupSummaryModalTitle": "Pickup time & hotel",
       "pickupSummaryTimeLabel": "Pickup time",
       "pickupSummaryHotelLabel": "Pickup hotel",
@@ -5457,7 +5457,10 @@
       "documents": "Related Documents",
       "notes": "Notes",
       "technicianNotes": "Technician Notes",
-      "status": "Status"
+      "status": "Status",
+      "paymentMethod": "Payment method",
+      "paymentMethodHint": "Leave blank to record the cost as unpaid (payment pending).",
+      "paymentMethodPlaceholder": "Select payment method (blank = payment pending)"
     },
     "maintenanceTypes": {
       "maintenance": "Scheduled Maintenance",
@@ -5558,7 +5561,8 @@
       "status": "Status",
       "actions": "Actions",
       "linked": "Linked",
-      "notLinked": "Not linked"
+      "notLinked": "Not linked",
+      "paymentPending": "Payment pending"
     },
     "statistics": {
       "totalCost": "Total Cost",

@@ -5,11 +5,18 @@ import { Database } from '@/lib/database.types'
 import { syncVehicleMaintenanceFromCompanyExpenses } from '@/lib/vehicleMaintenanceFromCompanyExpense'
 import { migrateLegacyVehicleMaintenanceCategories } from '@/lib/vehicleMaintenanceStandardCategory'
 import {
+  generateVehicleMaintenanceId,
   normalizeVehicleMaintenanceVehicleId,
   parseVehicleMaintenanceBody,
 } from '@/lib/vehicleMaintenancePayload'
 import { syncVehicleMaintenanceSchedulesFromRecord } from '@/lib/vehicleMaintenanceScheduleSync'
 import { maintenanceTypesForFilter } from '@/lib/vehicleMaintenanceType'
+import {
+  buildCompanyExpenseInsertFromMaintenance,
+  fetchExpenseStandardCategoriesForMaintenance,
+  resolveMaintenanceExpenseSubmitBy,
+} from '@/lib/vehicleMaintenanceCompanyExpense'
+import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMileage'
 
 type VehicleMaintenanceInsert = Database['public']['Tables']['vehicle_maintenance']['Insert']
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
@@ -144,6 +151,7 @@ export async function POST(request: NextRequest) {
     }
 
     const maintenanceData: VehicleMaintenanceInsert = {
+      id: generateVehicleMaintenanceId(),
       ...parsed,
       vehicle_id,
       maintenance_date,
@@ -168,23 +176,32 @@ export async function POST(request: NextRequest) {
     // 회사 지출 자동 생성
     let companyExpenseId = null
     try {
-      const expenseData: CompanyExpenseInsert = {
-        id: `expense_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        paid_to: (parsed.service_provider as string | null | undefined) || '정비업체',
-        paid_for: `${maintenance_type} - ${category}`,
-        description: description as string,
-        amount: total_cost,
-        payment_method: payment_method || '현금',
-        submit_by: 'system', // 시스템 자동 생성
-        category: 'vehicle_maintenance',
-        subcategory: category,
-        vehicle_id: vehicle_id,
-        maintenance_type: maintenance_type,
-        notes: `차량 정비 자동 생성 - 정비 ID: ${maintenanceResult.id}`,
-        expense_type: 'maintenance',
-        tax_deductible: true,
-        status: 'pending'
-      }
+      const [standardCats, submitBy] = await Promise.all([
+        fetchExpenseStandardCategoriesForMaintenance(supabase),
+        resolveMaintenanceExpenseSubmitBy(supabase),
+      ])
+
+      const expenseId = `expense_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      const expenseData: CompanyExpenseInsert = buildCompanyExpenseInsertFromMaintenance(
+        {
+          maintenance_date: maintenance_date as string,
+          category: category as string,
+          subcategory: (parsed.subcategory as string | null | undefined) ?? null,
+          description: description as string,
+          total_cost: total_cost as number,
+          service_provider: (parsed.service_provider as string | null | undefined) ?? null,
+          maintenance_type: maintenance_type as string,
+          vehicle_id,
+          mileage: parsed.mileage ?? null,
+        },
+        standardCats,
+        {
+          id: expenseId,
+          payment_method,
+          submit_by: submitBy,
+          autoNotes: `차량 정비 자동 생성 - 정비 ID: ${maintenanceResult.id}`,
+        }
+      )
 
       const { data: expenseResult, error: expenseError } = await supabase
         .from('company_expenses')
@@ -197,7 +214,13 @@ export async function POST(request: NextRequest) {
         // 정비는 생성되었지만 지출 생성 실패 - 경고만 로그
       } else {
         companyExpenseId = expenseResult.id
-        
+
+        await applyCompanyExpenseVehicleMileage(supabase, {
+          expenseId: companyExpenseId,
+          vehicleId: vehicle_id,
+          mileage: parsed.mileage,
+        })
+
         // 정비 기록에 회사 지출 ID 업데이트
         await supabase
           .from('vehicle_maintenance')

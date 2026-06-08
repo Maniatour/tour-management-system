@@ -31,6 +31,7 @@ import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } fro
 import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
+import { ReservationCardSimpleSmsButton } from '@/components/reservation/ReservationCardSimpleSmsButton'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
@@ -216,6 +217,10 @@ interface ReservationCardItemProps {
     reservationId: string,
     channel: CustomerCommunicationChannel
   ) => void | Promise<void>
+  /** 간단 카드: 사전연락 SMS 발송 시 sent_by */
+  sentBy?: string | null
+  /** 간단 카드: SMS 발송 성공 후 (예: 소통 채널 UI 갱신) */
+  onPreTourSmsSendSuccess?: (reservationId: string) => void
 }
 
 function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
@@ -280,6 +285,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onCancelFollowUpManualChange,
   residentCustomerBatchMap,
   onCommunicationChannelChange,
+  sentBy = null,
+  onPreTourSmsSendSuccess,
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
@@ -514,6 +521,15 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     getChannelName(reservation.channelId, channels || [])
                   }
                   onChange={(channel) => onCommunicationChannelChange(reservation.id, channel)}
+                />
+              ) : null}
+              {onCommunicationChannelChange ? (
+                <ReservationCardSimpleSmsButton
+                  reservationId={reservation.id}
+                  customer={customers.find((c) => c.id === reservation.customerId)}
+                  sentBy={sentBy}
+                  uiLocale={locale === 'en' ? 'en' : 'ko'}
+                  onSendSuccess={() => onPreTourSmsSendSuccess?.(reservation.id)}
                 />
               ) : null}
               {showResidentStatusUi && (

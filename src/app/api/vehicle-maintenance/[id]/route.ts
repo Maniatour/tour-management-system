@@ -5,6 +5,11 @@ import {
   parseVehicleMaintenanceBody,
 } from '@/lib/vehicleMaintenancePayload'
 import { syncVehicleMaintenanceSchedulesFromRecord } from '@/lib/vehicleMaintenanceScheduleSync'
+import {
+  buildCompanyExpenseUpdateFromMaintenance,
+  fetchExpenseStandardCategoriesForMaintenance,
+} from '@/lib/vehicleMaintenanceCompanyExpense'
+import { applyCompanyExpenseVehicleMileage } from '@/lib/companyExpenseVehicleMileage'
 
 export const dynamic = 'force-dynamic'
 
@@ -96,24 +101,38 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (existing.company_expense_id) {
       try {
-        const expenseUpdate: Record<string, unknown> = {}
-        if (updateData.total_cost != null) expenseUpdate.amount = updateData.total_cost
-        if (updateData.service_provider !== undefined) expenseUpdate.paid_to = updateData.service_provider
-        if (updateData.maintenance_type && updateData.category) {
-          expenseUpdate.paid_for = `${updateData.maintenance_type} - ${updateData.category}`
-        }
-        if (updateData.description !== undefined) expenseUpdate.description = updateData.description
-        if (updateData.maintenance_type !== undefined) expenseUpdate.maintenance_type = updateData.maintenance_type
-        if (updateData.category !== undefined) expenseUpdate.subcategory = updateData.category
-        if (updateData.notes !== undefined) expenseUpdate.notes = updateData.notes
-        if (updateData.vehicle_id !== undefined) expenseUpdate.vehicle_id = updateData.vehicle_id
-        if (payment_method) expenseUpdate.payment_method = payment_method
+        const standardCats = await fetchExpenseStandardCategoriesForMaintenance(supabase)
+        const expenseUpdate = buildCompanyExpenseUpdateFromMaintenance(
+          {
+            total_cost: updateData.total_cost as number | undefined,
+            service_provider: updateData.service_provider as string | null | undefined,
+            description: updateData.description as string | undefined,
+            category: updateData.category as string | undefined,
+            subcategory: updateData.subcategory as string | null | undefined,
+            maintenance_type: updateData.maintenance_type as string | undefined,
+            vehicle_id: updateData.vehicle_id as string | undefined,
+            maintenance_date: updateData.maintenance_date as string | undefined,
+          },
+          standardCats,
+          {
+            payment_method,
+            includePaymentMethod: 'payment_method' in body,
+          }
+        )
 
         if (Object.keys(expenseUpdate).length > 0) {
           await supabase
             .from('company_expenses')
             .update(expenseUpdate)
             .eq('id', existing.company_expense_id)
+        }
+
+        if (updateData.mileage !== undefined || updateData.vehicle_id !== undefined) {
+          await applyCompanyExpenseVehicleMileage(supabase, {
+            expenseId: existing.company_expense_id,
+            vehicleId: (updateData.vehicle_id as string | undefined) ?? data.vehicle_id,
+            mileage: updateData.mileage ?? data.mileage,
+          })
         }
       } catch (expenseError) {
         console.error('연동된 회사 지출 업데이트 오류:', expenseError)
