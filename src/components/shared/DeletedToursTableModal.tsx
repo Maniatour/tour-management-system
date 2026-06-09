@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { X, Trash2, RotateCcw } from 'lucide-react'
 import { canPermanentDeleteRecords } from '@/utils/tourUtils'
 
@@ -9,6 +9,7 @@ export type DeletedTourRow = {
   tour_date?: string | null
   tour_status?: string | null
   product_id?: string | null
+  product_name?: string | null
   tour_guide_id?: string | null
 }
 
@@ -25,6 +26,8 @@ type Props = {
   /** 삭제됨 → scheduled 로 복구 (스케줄·목록에 다시 표시) */
   onRestoreTour?: (tourId: string) => Promise<void>
   onPermanentDelete: (tourId: string) => Promise<void>
+  /** 다중 영구 삭제 (미전달 시 onPermanentDelete 를 순차 호출) */
+  onPermanentDeleteMany?: (tourIds: string[]) => Promise<void>
   emptyHint?: string
 }
 
@@ -40,14 +43,48 @@ export function DeletedToursTableModal({
   locale,
   onRestoreTour,
   onPermanentDelete,
+  onPermanentDeleteMany,
   emptyHint,
 }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const canPurge = canPermanentDeleteRecords(userEmail)
   const isKo = locale === 'ko'
 
+  const tourIds = useMemo(() => tours.map((t) => t.id), [tours])
+  const allSelected = tourIds.length > 0 && tourIds.every((id) => selectedIds.has(id))
+  const someSelected = selectedIds.size > 0
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedIds(new Set())
+      return
+    }
+    setSelectedIds((prev) => {
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (tourIds.includes(id)) next.add(id)
+      }
+      return next
+    })
+  }, [isOpen, tourIds])
+
   if (!isOpen) return null
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const toggleAll = (checked: boolean) => {
+    setSelectedIds(checked ? new Set(tourIds) : new Set())
+  }
 
   const handleRestore = async (id: string) => {
     if (!onRestoreTour) return
@@ -58,6 +95,11 @@ export function DeletedToursTableModal({
     setRestoringId(id)
     try {
       await onRestoreTour(id)
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     } finally {
       setRestoringId(null)
     }
@@ -71,8 +113,35 @@ export function DeletedToursTableModal({
     setDeletingId(id)
     try {
       await onPermanentDelete(id)
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleBulkPurge = async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    const msg = isKo
+      ? `선택한 ${ids.length}건의 투어를 DB에서 완전히 삭제합니다. 연결 데이터에 따라 일부만 실패할 수 있습니다. 계속할까요?`
+      : `Permanently delete ${ids.length} selected tour(s)? Some may fail if related data exists. Continue?`
+    if (!confirm(msg)) return
+    setBulkDeleting(true)
+    try {
+      if (onPermanentDeleteMany) {
+        await onPermanentDeleteMany(ids)
+      } else {
+        for (const id of ids) {
+          await onPermanentDelete(id)
+        }
+      }
+      setSelectedIds(new Set())
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -104,6 +173,29 @@ export function DeletedToursTableModal({
           </button>
         </div>
 
+        {canPurge && someSelected && !loading && tours.length > 0 ? (
+          <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-100 bg-red-50">
+            <span className="text-sm text-red-900">
+              {isKo ? `${selectedIds.size}건 선택됨` : `${selectedIds.size} selected`}
+            </span>
+            <button
+              type="button"
+              disabled={bulkDeleting || deletingId !== null}
+              onClick={() => void handleBulkPurge()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              {bulkDeleting
+                ? isKo
+                  ? '삭제 중…'
+                  : 'Deleting…'
+                : isKo
+                  ? '선택 영구 삭제'
+                  : 'Delete selected'}
+            </button>
+          </div>
+        ) : null}
+
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <p className="text-sm text-gray-500">{isKo ? '불러오는 중…' : 'Loading…'}</p>
@@ -113,23 +205,59 @@ export function DeletedToursTableModal({
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-600 border-b">
-                  <th className="py-2 pr-2">{isKo ? '투어 ID' : 'Tour'}</th>
-                  <th className="py-2 pr-2">{isKo ? '투어일' : 'Date'}</th>
+                  {canPurge ? (
+                    <th className="py-2 pr-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={(e) => toggleAll(e.target.checked)}
+                        aria-label={isKo ? '전체 선택' : 'Select all'}
+                        className="rounded border-gray-300"
+                      />
+                    </th>
+                  ) : null}
+                  <th className="py-2 pr-2 whitespace-nowrap">{isKo ? '투어일' : 'Date'}</th>
+                  <th className="py-2 pr-2">{isKo ? '상품' : 'Product'}</th>
                   <th className="py-2 pr-2">{isKo ? '상태' : 'Status'}</th>
                   <th className="py-2 pr-2 w-40 text-right">{isKo ? '작업' : 'Actions'}</th>
                 </tr>
               </thead>
               <tbody>
                 {tours.map((t) => (
-                  <tr key={t.id} className="border-b border-gray-100">
-                    <td className="py-2 pr-2 font-mono text-xs">{t.id.slice(0, 8)}…</td>
-                    <td className="py-2 pr-2">{t.tour_date || '—'}</td>
-                    <td className="py-2 pr-2">{t.tour_status || '—'}</td>
-                    <td className="py-2 pr-2 text-right space-x-1">
+                  <tr
+                    key={t.id}
+                    className={`border-b border-gray-100 ${selectedIds.has(t.id) ? 'bg-red-50/40' : ''}`}
+                  >
+                    {canPurge ? (
+                      <td className="py-2 pr-2 align-top">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(t.id)}
+                          onChange={(e) => toggleOne(t.id, e.target.checked)}
+                          aria-label={
+                            isKo
+                              ? `${t.tour_date || ''} ${t.product_name || ''} 선택`
+                              : `Select ${t.tour_date || ''} ${t.product_name || ''}`
+                          }
+                          className="rounded border-gray-300"
+                        />
+                      </td>
+                    ) : null}
+                    <td className="py-2 pr-2 whitespace-nowrap align-top">{t.tour_date || '—'}</td>
+                    <td className="py-2 pr-2 align-top">
+                      <div className="font-medium text-gray-900">
+                        {t.product_name || t.product_id || (isKo ? '상품 미상' : 'Unknown product')}
+                      </div>
+                      <div className="font-mono text-[10px] text-gray-400 mt-0.5" title={t.id}>
+                        {t.id.slice(0, 8)}…
+                      </div>
+                    </td>
+                    <td className="py-2 pr-2 align-top">{t.tour_status || '—'}</td>
+                    <td className="py-2 pr-2 text-right align-top space-x-1">
                       {onRestoreTour ? (
                         <button
                           type="button"
-                          disabled={restoringId === t.id}
+                          disabled={restoringId === t.id || bulkDeleting}
                           onClick={() => void handleRestore(t.id)}
                           className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
@@ -140,8 +268,8 @@ export function DeletedToursTableModal({
                       {canPurge ? (
                         <button
                           type="button"
-                          disabled={deletingId === t.id}
-                          onClick={() => handlePurge(t.id)}
+                          disabled={deletingId === t.id || bulkDeleting}
+                          onClick={() => void handlePurge(t.id)}
                           className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

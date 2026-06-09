@@ -15,7 +15,12 @@ import {
   normalizeReservationIds,
   canonicalReservationIdKey,
 } from '@/utils/tourUtils'
-import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
+import {
+  getCustomerName,
+  getProductNameForLocale,
+  getStatusColor,
+  getStatusLabel,
+} from '@/utils/reservationUtils'
 import {
   getStatusColor as getTourStatusColor,
   getStatusText as getTourStatusLabel,
@@ -537,7 +542,18 @@ function getScheduleRentalVehiclePrefill() {
   }
 }
 
-export default function ScheduleView() {
+export type ScheduleViewTourStatusChangePayload = {
+  tourId: string
+  newStatus: string
+}
+
+type ScheduleViewProps = {
+  /** 스케줄 뷰에서 투어 상태 변경 시 부모(삭제함 등) 동기화 */
+  onTourStatusChanged?: (payload: ScheduleViewTourStatusChangePayload) => void
+}
+
+export default function ScheduleView(props: ScheduleViewProps = {}) {
+  const { onTourStatusChanged } = props
   const router = useRouter()
   const locale = useLocale()
   const tReservations = useTranslations('reservations')
@@ -822,17 +838,23 @@ export default function ScheduleView() {
     [teamMembers, inactiveTeamMembers],
   )
 
+  const resolveScheduleProductName = useCallback(
+    (productId: string | null | undefined, locale: 'ko' | 'en') =>
+      getProductNameForLocale(productId ?? '', products, locale),
+    [products],
+  )
+
   const pendingGuideAssignmentChanges = useMemo(
     () =>
       computeGuideAssignmentChanges({
         baseline: toursAssignmentBaselineRef.current,
         tours,
         pendingChanges,
-        getProductName: (productId) =>
-          products.find((p: Product) => p.id === productId)?.name || 'N/A',
+        getProductName: (productId) => resolveScheduleProductName(productId, 'ko'),
+        getProductNameEn: (productId) => resolveScheduleProductName(productId, 'en'),
         getMemberName: resolveScheduleMemberDisplay,
       }),
-    [tours, pendingChanges, products, resolveScheduleMemberDisplay],
+    [tours, pendingChanges, resolveScheduleProductName, resolveScheduleMemberDisplay],
   )
 
   const pendingGuideAssignmentCount = pendingGuideAssignmentChanges.length
@@ -3084,8 +3106,8 @@ export default function ScheduleView() {
           baseline: toursAssignmentBaselineRef.current,
           tours,
           pendingChanges,
-          getProductName: (productId) =>
-            products.find((p: Product) => p.id === productId)?.name || 'N/A',
+          getProductName: (productId) => resolveScheduleProductName(productId, 'ko'),
+          getProductNameEn: (productId) => resolveScheduleProductName(productId, 'en'),
           getMemberName: resolveScheduleMemberDisplay,
         })
       : []
@@ -3176,7 +3198,7 @@ export default function ScheduleView() {
     showMessage,
     user?.email,
     tours,
-    products,
+    resolveScheduleProductName,
     resolveScheduleMemberDisplay,
     openGuideAssignmentEmailModal,
   ])
@@ -4828,6 +4850,7 @@ export default function ScheduleView() {
           return prev.map((t) => (t.id === tourId ? { ...t, tour_status: newStatus, ...localPatch } : t))
         })
         setUnassignedTourStatusModalTourId(null)
+        onTourStatusChanged?.({ tourId, newStatus })
       } catch (e) {
         console.error(e)
         alert(locale === 'ko' ? '투어 상태 업데이트에 실패했습니다.' : 'Failed to update tour status.')
@@ -4835,7 +4858,7 @@ export default function ScheduleView() {
         setUpdatingUnassignedTourStatusId(null)
       }
     },
-    [locale, isStatusExcludedFromUnassignedList]
+    [locale, isStatusExcludedFromUnassignedList, onTourStatusChanged]
   )
 
   const guideModalTour = useMemo(() => {
@@ -4882,11 +4905,12 @@ export default function ScheduleView() {
             ),
           }
         })
+        onTourStatusChanged?.({ tourId, newStatus })
       } finally {
         setUpdatingTourDetailModalStatusId(null)
       }
     },
-    [tours, tourHandlers, isScheduleStaff, isStatusExcludedFromUnassignedList]
+    [tours, tourHandlers, isScheduleStaff, isStatusExcludedFromUnassignedList, onTourStatusChanged]
   )
 
   // 상품별 총계 계산

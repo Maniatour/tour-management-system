@@ -16,9 +16,9 @@ import {
   isDateLikeSearchTerm,
   isReservationCancelledStatus,
   isReservationDeletedStatus,
-  isTourDeletedStatus,
   tourDateMatchesSearchTerm,
 } from '@/utils/tourUtils'
+import { isTourDeleted } from '@/utils/tourStatusUtils'
 import { DeletedToursTableModal } from '@/components/shared/DeletedToursTableModal'
 import AwayOtherUserChangesModal from '@/components/shared/AwayOtherUserChangesModal'
 import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChangesNotifier'
@@ -210,6 +210,7 @@ export default function AdminTours() {
   const [, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [deletedToursBin, setDeletedToursBin] = useState<ExtendedTour[]>([])
+  const [deletedToursBinLoading, setDeletedToursBinLoading] = useState(false)
   const [showDeletedToursModal, setShowDeletedToursModal] = useState(false)
   const [showNewTourModal, setShowNewTourModal] = useState(false)
   const [showNeedCheckModal, setShowNeedCheckModal] = useState(false)
@@ -722,10 +723,10 @@ export default function AdminTours() {
       })
 
       const deletedTourRows = toursWithDetails.filter((t) =>
-        isTourDeletedStatus((t.tour_status || t.status || '').toString())
+        isTourDeleted((t.tour_status || t.status || '').toString())
       )
       const visibleTourRows = toursWithDetails.filter(
-        (t) => !isTourDeletedStatus((t.tour_status || t.status || '').toString())
+        (t) => !isTourDeleted((t.tour_status || t.status || '').toString())
       )
       setDeletedToursBin(deletedTourRows)
       setTours(visibleTourRows)
@@ -749,6 +750,65 @@ export default function AdminTours() {
       processToursData(toursData)
     }
   }, [toursData, processToursData])
+
+  /** 스케줄 뷰에서는 전체 투어를 로드하지 않으므로, 삭제함은 DB에서 직접 조회 */
+  const fetchDeletedToursBin = useCallback(async () => {
+    setDeletedToursBinLoading(true)
+    try {
+      /** DB 저장값은 주로 `Deleted`(대문자). PostgreSQL eq는 대소문자 구분 */
+      const deletedStatusOr =
+        'tour_status.ilike.deleted,tour_status.ilike.%requested for delete%'
+      const { data, error } = await supabase
+        .from('tours')
+        .select(
+          'id, tour_date, tour_status, product_id, tour_guide_id, assistant_id, products(name_ko, name_en, name)',
+        )
+        .or(deletedStatusOr)
+        .order('tour_date', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(1000)
+      if (error) throw error
+      const rows = ((data ?? []) as Array<
+        ExtendedTour & {
+          products?: { name_ko?: string | null; name_en?: string | null; name?: string | null } | null
+        }
+      >)
+        .filter((t) => isTourDeleted(t.tour_status))
+        .map((t) => {
+          const p = t.products
+          const productName =
+            locale === 'en'
+              ? (p?.name_en || p?.name || p?.name_ko || t.product_name || null)
+              : (p?.name_ko || p?.name || p?.name_en || t.product_name || null)
+          return {
+            ...t,
+            product_name: productName,
+          }
+        })
+      setDeletedToursBin(rows)
+    } catch (error) {
+      console.error('Error loading deleted tours:', error)
+      setDeletedToursBin([])
+    } finally {
+      setDeletedToursBinLoading(false)
+    }
+  }, [supabase, locale])
+
+  useEffect(() => {
+    if (!showDeletedToursModal) return
+    void fetchDeletedToursBin()
+  }, [showDeletedToursModal, fetchDeletedToursBin])
+
+  const handleScheduleTourStatusChanged = useCallback(
+    ({ tourId, newStatus }: { tourId: string; newStatus: string }) => {
+      if (isTourDeleted(newStatus)) {
+        void fetchDeletedToursBin()
+        return
+      }
+      setDeletedToursBin((prev) => prev.filter((t) => t.id !== tourId))
+    },
+    [fetchDeletedToursBin],
+  )
 
   const [asGuideEmail, setAsGuideEmail] = useState<string>('')
   const [showStatusFilter, setShowStatusFilter] = useState(false)
@@ -973,13 +1033,24 @@ export default function AdminTours() {
       }
 
       // 로컬 상태 업데이트
-      setTours(prevTours => 
-        prevTours.map(tour => 
-          tour.id === tourId 
-            ? { ...tour, tour_status: newStatus }
-            : tour
+      if (isTourDeleted(newStatus)) {
+        setTours((prevTours) => {
+          const removed = prevTours.find((t) => t.id === tourId)
+          if (removed) {
+            setDeletedToursBin((prev) => [
+              ...prev.filter((t) => t.id !== tourId),
+              { ...removed, tour_status: newStatus },
+            ])
+          }
+          return prevTours.filter((t) => t.id !== tourId)
+        })
+      } else {
+        setTours((prevTours) =>
+          prevTours.map((tour) =>
+            tour.id === tourId ? { ...tour, tour_status: newStatus } : tour,
+          ),
         )
-      )
+      }
     } catch (error) {
       console.error('Error updating tour status:', error)
       throw error
@@ -1274,7 +1345,7 @@ export default function AdminTours() {
 
       {/* 스케줄 뷰 */}
       {viewMode === 'schedule' && (
-        <ScheduleView />
+        <ScheduleView onTourStatusChanged={handleScheduleTourStatusChanged} />
       )}
 
       {/* 리스트(카드) 뷰 */}
@@ -1527,11 +1598,16 @@ export default function AdminTours() {
         isOpen={showDeletedToursModal}
         onClose={() => setShowDeletedToursModal(false)}
         title={t('deletedToursModalTitle')}
+        loading={deletedToursBinLoading}
         tours={deletedToursBin.map((row) => ({
           id: row.id,
           tour_date: row.tour_date,
           tour_status: (row.tour_status || row.status) as string | null,
           product_id: row.product_id,
+          product_name:
+            row.product_name ||
+            (locale === 'en' ? row.name_en || row.name_ko || row.name : row.name_ko || row.name || row.name_en) ||
+            null,
           tour_guide_id: row.tour_guide_id,
         }))}
         userEmail={adminUserEmail}
@@ -1544,6 +1620,7 @@ export default function AdminTours() {
           }
           setDeletedToursBin((prev) => prev.filter((x) => x.id !== tourId))
           await refetchTours()
+          void fetchDeletedToursBin()
         }}
         onPermanentDelete={async (tourId) => {
           const { error } = await supabase.from('tours').delete().eq('id', tourId)
@@ -1553,6 +1630,18 @@ export default function AdminTours() {
           }
           setDeletedToursBin((prev) => prev.filter((x) => x.id !== tourId))
           await refetchTours()
+          void fetchDeletedToursBin()
+        }}
+        onPermanentDeleteMany={async (tourIds) => {
+          const { error } = await supabase.from('tours').delete().in('id', tourIds)
+          if (error) {
+            alert(locale === 'ko' ? '영구 삭제 실패: ' + error.message : 'Purge failed: ' + error.message)
+            throw error
+          }
+          const idSet = new Set(tourIds)
+          setDeletedToursBin((prev) => prev.filter((x) => !idSet.has(x.id)))
+          await refetchTours()
+          void fetchDeletedToursBin()
         }}
       />
 

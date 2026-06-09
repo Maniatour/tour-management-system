@@ -15,6 +15,8 @@ export interface GuideAssignmentChangeItem {
   tourDate: string
   productId: string
   productName: string
+  /** 영문 수신자 이메일용 상품명 (없으면 productName 사용) */
+  productNameEn?: string
   role: GuideAssignmentRole
   changeType: GuideAssignmentChangeType
   previousEmail: string | null
@@ -70,9 +72,10 @@ export function computeGuideAssignmentChanges(params: {
   }>
   pendingChanges: Record<string, { tour_guide_id?: string | null; assistant_id?: string | null }>
   getProductName: (productId: string | null | undefined) => string
+  getProductNameEn?: (productId: string | null | undefined) => string
   getMemberName: (email: string | null) => string
 }): GuideAssignmentChangeItem[] {
-  const { baseline, tours, pendingChanges, getProductName, getMemberName } = params
+  const { baseline, tours, pendingChanges, getProductName, getProductNameEn, getMemberName } = params
   const items: GuideAssignmentChangeItem[] = []
 
   for (const tour of tours) {
@@ -102,6 +105,7 @@ export function computeGuideAssignmentChanges(params: {
         tourDate: String(tour.tour_date ?? '').slice(0, 10),
         productId: String(tour.product_id ?? ''),
         productName: getProductName(tour.product_id),
+        productNameEn: getProductNameEn?.(tour.product_id) ?? getProductName(tour.product_id),
         role,
         changeType,
         previousEmail: before,
@@ -201,6 +205,9 @@ export function buildGuideAssignmentEmailContent(params: {
   const roleLabel = (role: GuideAssignmentRole) =>
     useEn ? (role === 'guide' ? 'Guide' : 'Assistant') : guideAssignmentRoleLabel(role)
 
+  const productLabel = (item: GuideAssignmentChangeItem) =>
+    useEn ? item.productNameEn || item.productName : item.productName
+
   const rows = items
     .map((item) => {
       const [, m, d] = item.tourDate.split('-')
@@ -215,7 +222,7 @@ export function buildGuideAssignmentEmailContent(params: {
 
       return `<tr>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${dateStr}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${escapeHtml(item.productName)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${escapeHtml(productLabel(item))}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${roleLabel(item.role)}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;background:#fef2f2;">${escapeHtml(beforeSlot)}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;background:#f0fdf4;">${escapeHtml(afterSlot)}</td>
