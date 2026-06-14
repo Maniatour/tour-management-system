@@ -6,6 +6,11 @@ export type Channel = Database['public']['Tables']['channels']['Row']
 export type ProductOption = Database['public']['Tables']['product_options']['Row']
 /** product_option_choices 테이블은 product_options로 통합됨 */
 export type ProductOptionChoice = ProductOption
+/** 가격 계산에 필요한 옵션 선택 최소 필드 (목록 fetch 변환형 포함) */
+export type OptionChoicePriceInput = Pick<
+  ProductOption,
+  'id' | 'adult_price_adjustment' | 'child_price_adjustment' | 'infant_price_adjustment'
+>
 export type Option = Database['public']['Tables']['options']['Row']
 
 export interface PickupHotel {

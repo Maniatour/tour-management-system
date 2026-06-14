@@ -51,17 +51,16 @@ export default function RouteTransitionProgress() {
   }, [pathname])
 
   useEffect(() => {
-    if (prevPathname.current !== pathname) {
-      setActive(true)
-      setProgress(100)
-      const timer = window.setTimeout(() => {
-        setActive(false)
-        setProgress(0)
-      }, 220)
-      prevPathname.current = pathname
-      return () => window.clearTimeout(timer)
-    }
+    if (prevPathname.current === pathname) return
+
+    setActive(true)
+    setProgress(100)
+    const timer = window.setTimeout(() => {
+      setActive(false)
+      setProgress(0)
+    }, 220)
     prevPathname.current = pathname
+    return () => window.clearTimeout(timer)
   }, [pathname])
 
   useEffect(() => {

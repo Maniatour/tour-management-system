@@ -377,11 +377,7 @@ function isPendingToCancelledTransitionBucket(bucketKey: string): boolean {
   return from === 'pending' && (to === 'cancelled' || to === 'canceled')
 }
 
-interface AdminReservationsProps {
-  params: Promise<{ locale: string }>
-}
-
-export default function AdminReservations({ }: AdminReservationsProps) {
+export default function AdminReservations() {
   const t = useTranslations('reservations')
   const { user, userPosition, hasPermission } = useAuth()
   const isSuper = userPosition === 'super'

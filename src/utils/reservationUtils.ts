@@ -6,7 +6,7 @@ import type {
   Product, 
   Channel, 
   ProductOption, 
-  ProductOptionChoice, 
+  OptionChoicePriceInput,
   Reservation 
 } from '@/types/reservation'
 
@@ -252,7 +252,7 @@ export const getStatusColor = (status: string) => {
 }
 
 // 총 가격 계산
-export const calculateTotalPrice = (reservation: Reservation, products: Product[], optionChoices: ProductOptionChoice[]) => {
+export const calculateTotalPrice = (reservation: Reservation, products: Product[], optionChoices: OptionChoicePriceInput[]) => {
   const product = products.find(p => p.id === reservation.productId)
   if (!product || !product.base_price) return 0
   

@@ -1180,7 +1180,7 @@ export function TourDetailPageView({
     reservationId: string,
     channel: CustomerCommunicationChannel
   ) => {
-    const patchReservation = (r: { id: string }) =>
+    const patchReservation = <T extends { id: string }>(r: T): T =>
       r.id === reservationId ? { ...r, customer_communication_channel: channel } : r
 
     tourData.setAllReservations((prev) => prev.map(patchReservation))

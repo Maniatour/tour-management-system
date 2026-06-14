@@ -1622,8 +1622,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               compact
               align="right"
               value={getReservationCommunicationChannel(reservation)}
-              channelId={reservation.channel_id}
-              channelName={channelInfo?.name}
+              channelId={reservation.channel_id ?? null}
+              channelName={channelInfo?.name ?? null}
               onChange={(channel) => onCommunicationChannelChange(reservation.id, channel)}
             />
           ) : null}
