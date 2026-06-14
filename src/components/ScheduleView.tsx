@@ -4001,6 +4001,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   const getTeamMemberDisplayName = (member: Team) => member.nick_name || member.name_ko || member.email
 
+  const cdlDriverEmailSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const member of [...teamMembers, ...inactiveTeamMembers]) {
+      if (member.cdl_driver_license) set.add(member.email)
+    }
+    return set
+  }, [teamMembers, inactiveTeamMembers])
+
   const teamModalSearchNormalized = teamModalSearchQuery.trim().toLowerCase()
   const teamMembersFilteredForModal = useMemo(() => {
     if (!teamModalSearchNormalized) return teamMembers
@@ -6996,6 +7004,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 const selectedIndex = selectedTeamMembers.indexOf(teamMemberId)
                 const canMoveUp = selectedIndex > 0
                 const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedTeamMembers.length - 1
+                const isCdlDriver = cdlDriverEmailSet.has(teamMemberId)
                 // 멀티데이 투어 정보를 미리 계산
                 const multiDayTours: { [dateString: string]: { startDate: string; endDate: string; days: number; extendsToNextMonth: boolean; dayData: DailyData } } = {}
                 
@@ -7094,6 +7103,26 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   }
                 })
                 
+                const isGuideDayOff = (dateString: string) => {
+                  if (!isOffDate(teamMemberId, dateString)) return false
+                  const teamMember = teamMembers.find((member) => member.email === teamMemberId)
+                  const key = `${teamMember?.email}_${dateString}`
+                  const pendingChange = pendingOffScheduleChanges[key]
+                  return pendingChange?.action !== 'delete'
+                }
+
+                const getGuideScheduleCellBgClass = (dateString: string, hasAssignment: boolean) => {
+                  if (isToday(dateString)) {
+                    return 'border-l-2 border-r-2 border-red-500 bg-red-50'
+                  }
+                  if (dateNotes[dateString]?.note) return 'bg-yellow-100'
+                  if (highlightedDate === dateString) return 'bg-yellow-200'
+                  if (isCdlDriver && !hasAssignment && !isGuideDayOff(dateString)) {
+                    return 'bg-sky-100'
+                  }
+                  return 'bg-white'
+                }
+
                 return (
                   <tr 
                     key={teamMemberId} 
@@ -7177,17 +7206,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           
                           // 멀티데이 투어의 연속된 날짜인 경우: 셀 내용은 비워두고(드롭존만 유지), 상단 오버레이에서 하나의 박스로 표시
                           if (continuationTour && !dayData) {
-                            const hasNote = dateNotes[dateString]?.note
                             return (
                               <div 
                                 key={dateString} 
-                                className={`px-1 py-0 text-center text-xs relative ${
-                                  isToday(dateString) 
-                                    ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                                    : hasNote
-                                      ? 'bg-yellow-100'
-                                      : 'bg-white'
-                                }`}
+                                className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, true)}`}
                                 style={{ minWidth: '40px', boxSizing: 'border-box' }}
                               >
                                 <div
@@ -7263,17 +7285,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           }
                           
                           // 일반 셀 렌더링 (1일 투어 또는 멀티데이 투어 시작일)
-                          const hasNote = dateNotes[dateString]?.note
                           return (
                             <div 
                               key={dateString} 
-                              className={`px-1 py-0 text-center text-xs relative ${
-                                isToday(dateString) 
-                                  ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                                  : hasNote
-                                    ? 'bg-yellow-100'
-                                    : 'bg-white'
-                              } ${highlightedDate === dateString ? 'bg-yellow-200' : ''}`}
+                              className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, Boolean(dayData))}`}
                               style={{ minWidth: '40px', boxSizing: 'border-box' }}
                             >
                               <div
@@ -7641,7 +7656,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                     ) : (
                                       /* 드롭 영역 */
                                       <div 
-                                        className="h-full flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
+                                        className={`h-full flex items-center justify-center cursor-pointer transition-colors ${
+                                          isCdlDriver ? 'hover:bg-sky-200' : 'hover:bg-gray-100'
+                                        }`}
                                         onClick={() => openOffScheduleActionModal(null, teamMemberId, dateString)}
                                         onDoubleClick={(e) => {
                                           e.stopPropagation()

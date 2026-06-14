@@ -6778,6 +6778,7 @@ export type Database = {
           bank_number: string | null
           car_plate: string | null
           car_year: number | null
+          cdl_driver_license: boolean | null
           cpr: boolean | null
           cpr_acquired: string | null
           cpr_expired: string | null
@@ -6812,6 +6813,7 @@ export type Database = {
           bank_number?: string | null
           car_plate?: string | null
           car_year?: number | null
+          cdl_driver_license?: boolean | null
           cpr?: boolean | null
           cpr_acquired?: string | null
           cpr_expired?: string | null
@@ -6846,6 +6848,7 @@ export type Database = {
           bank_number?: string | null
           car_plate?: string | null
           car_year?: number | null
+          cdl_driver_license?: boolean | null
           cpr?: boolean | null
           cpr_acquired?: string | null
           cpr_expired?: string | null

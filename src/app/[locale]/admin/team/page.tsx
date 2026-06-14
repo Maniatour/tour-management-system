@@ -1019,6 +1019,12 @@ export default function AdminTeam() {
                             <FileText size={12} className="mr-1" />
                             의료보고서 {member.medical_report ? (member.medical_expired && new Date(member.medical_expired) < new Date() ? '(만료)' : '') : '(없음)'}
                           </span>
+                          {member.cdl_driver_license && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-900">
+                              <Car size={12} className="mr-1" />
+                              CDL
+                            </span>
+                          )}
                           {member.personal_car_model && (
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               <Car size={12} className="mr-1" />
@@ -1383,6 +1389,7 @@ function TeamMemberForm({
     cpr: member?.cpr || false,
     cpr_acquired: member?.cpr_acquired || '',
     cpr_expired: member?.cpr_expired || '',
+    cdl_driver_license: member?.cdl_driver_license || false,
     medical_report: member?.medical_report || false,
     medical_acquired: member?.medical_acquired || '',
     medical_expired: member?.medical_expired || ''
@@ -1959,6 +1966,19 @@ function TeamMemberForm({
                 )}
               </div>
             </div>
+
+            <div className="mt-4 flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="cdl_driver_license"
+                checked={formData.cdl_driver_license || false}
+                onChange={(e) => setFormData({ ...formData, cdl_driver_license: e.target.checked })}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="cdl_driver_license" className="text-sm font-medium text-gray-700">
+                CDL 운전면허 (Commercial Driver&apos;s License)
+              </label>
+            </div>
           </div>
 
           {/* 문서 업로드 섹션 */}
@@ -2438,13 +2458,19 @@ function TeamMemberDetailModal({
           )}
 
           {/* 자격증 정보 */}
-          {(member.cpr || member.medical_report) && (
+          {(member.cpr || member.medical_report || member.cdl_driver_license) && (
             <div>
               <h3 className="text-lg font-medium mb-4 flex items-center">
                 <Shield className="h-5 w-5 mr-2" />
                 자격증 정보
               </h3>
               <div className="space-y-3">
+                {member.cdl_driver_license && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">CDL 운전면허</span>
+                    <p className="text-gray-900">보유</p>
+                  </div>
+                )}
                 {member.cpr && (
                   <div>
                     <span className="text-sm font-medium text-gray-500">CPR 자격증</span>
